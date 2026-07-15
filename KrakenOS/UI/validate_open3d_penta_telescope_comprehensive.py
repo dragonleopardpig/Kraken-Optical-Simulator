@@ -12916,6 +12916,39 @@ def phase_270_camera_mount_orientation(
     return result
 
 
+def phase_271_camera_flange_prompt(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Importing a vendor camera folder asks for the flange-to-sensor optical distance when it
+    cannot be scraped (bugs/0309). User flag (flag_20260715_075815): after importing BC-OM25M "the
+    sensor location is not at the camera physical sensor location ... the optical distance is 12 mm,
+    the information is labelled in one of the picture, not the table. Is the PDF extraction able to
+    read this information?" -- no: 12 mm lives only in the mechanical DRAWING, absent from the spec
+    table and the STEP, so build_camera_record_from_assets leaves camera_front_to_sensor_mm unset and
+    the sensor sits on the mount face. Fix: import_vendor_camera_from_folder prompts (askfloat) before
+    persist; _apply_camera_flange_distance is the pure decision (provider injected) that stamps the
+    value only when missing, never re-prompting a scraped value. Display-free guard: the apply
+    decision, the value reaching _current_camera_front_to_sensor_mm, the build->prompt->persist
+    wiring, and the real BC-OM25M scrape (genuinely missing -> prompt fires)."""
+    result = PhaseResult(
+        name="Phase 271: Camera folder import asks for the flange-to-sensor distance when unscrapable"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_camera_flange_prompt import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"camera-flange-prompt guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("camera-flange-prompt phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13231,6 +13264,7 @@ def main() -> int:
             phase_268_session_persistence,
             phase_269_camera_coupling_persistence,
             phase_270_camera_mount_orientation,
+            phase_271_camera_flange_prompt,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

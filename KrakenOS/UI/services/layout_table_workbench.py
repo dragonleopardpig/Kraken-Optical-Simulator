@@ -734,6 +734,11 @@ class LayoutTableWorkbenchMixin:
                     "body CAD is required to place the camera and couple its sensor."
                 )
             imported = build_camera_record_from_assets(assets)
+            # bugs/0309: a vendor datasheet carries the flange-to-sensor optical
+            # distance only in the mechanical drawing (BC-OM25M = 12 mm), so ask the
+            # user for it here -- before persist -- when it could not be scraped, so
+            # the sensor / image plane snaps to its true axial location.
+            self._prompt_camera_flange_distance(imported, parent)
             write_imported_camera(imported.name, imported.record)
             # Fold the just-written record into the live CAMERA_DATABASE so the
             # STEP import below reverse-resolves it (no app restart needed).
@@ -760,6 +765,70 @@ class LayoutTableWorkbenchMixin:
         self.status_var.set(message)
         self.append_progress(message)
         return imported
+
+    def _apply_camera_flange_distance(self, imported, value_provider):
+        """Stamp the flange-to-sensor (optical) distance onto a freshly imported
+        camera record when the folder import could not recover it (bugs/0309).
+
+        A vendor datasheet gives this distance only in the mechanical drawing
+        (BC-OM25M = 12 mm), so ``build_camera_record_from_assets`` leaves
+        ``camera_front_to_sensor_mm`` unset and the sensor / image plane cannot snap
+        to its true axial location (``_current_camera_front_to_sensor_mm`` reads 0).
+        ``value_provider()`` returns the value in mm (or ``None`` to skip). The
+        provider is INJECTED so the decision is testable without a Tk dialog. Returns
+        the applied value, or ``None`` when already known, declined, or invalid.
+        """
+        record = imported.record
+        existing = record.get("camera_front_to_sensor_mm")
+        try:
+            if existing is not None and float(existing) > 0.0:
+                return None  # already scraped -- do not re-prompt or overwrite
+        except (TypeError, ValueError):
+            pass
+        value = value_provider()
+        if value is None:
+            return None
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not (0.0 < value < 1.0e6):
+            return None
+        record["camera_front_to_sensor_mm"] = value
+        imported.notes.append(
+            f"Flange-to-sensor (optical) distance set to {value:g} mm from the import "
+            "dialog (the datasheet carries it only in the mechanical drawing)."
+        )
+        return value
+
+    def _prompt_camera_flange_distance(self, imported, parent):
+        """Ask the user for the camera's flange-to-sensor optical distance when the
+        folder import could not recover it (bugs/0309). It is a mechanical-drawing
+        dimension, absent from both the spec table and the STEP, so it cannot be
+        scraped. Cancel / blank leaves the record unchanged -- sensor size and FOV
+        coupling are unaffected, only the axial image-plane snap is skipped. Returns
+        the applied value or ``None``.
+        """
+        def provider():
+            try:
+                return simpledialog.askfloat(
+                    "Camera Flange-to-Sensor Distance",
+                    (
+                        f"'{imported.name}': the datasheet does not list the optical "
+                        "distance from the lens-mount flange to the sensor (it appears "
+                        "only in the mechanical drawing -- e.g. BC-OM25M = 12 mm).\n\n"
+                        "Enter it in millimetres so the sensor / image plane lands at "
+                        "the real sensor location. Cancel to skip (sensor size and FOV "
+                        "coupling are unaffected; only the axial snap is skipped)."
+                    ),
+                    parent=parent,
+                    minvalue=0.0,
+                    maxvalue=1000.0,
+                )
+            except Exception:
+                return None
+
+        return self._apply_camera_flange_distance(imported, provider)
 
     def _selected_operand_labels(self) -> list[str]:
         if "merit_mode_list" not in self.__dict__:
