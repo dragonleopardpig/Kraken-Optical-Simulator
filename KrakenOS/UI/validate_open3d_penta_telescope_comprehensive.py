@@ -13243,6 +13243,37 @@ def phase_280_led_import_no_distance_prompt(
     return result
 
 
+def phase_281_beam_splitter_factory(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The one-click "Add Beam Splitter to LED" generates its BS solid parametrically in-process
+    (bugs/0319, user: "Cache is OK as long as user can re-generate in case the cache not found") --
+    no vendor STEP download, the gitignored attachment/prisms/* are absent on a fresh clone. The
+    load-bearing requirement: a BS CUBE must carry a REAL 45-degree diagonal hypotenuse face (two
+    cemented right-angle prisms), because a plain BRepPrimAPI_MakeBox has no diagonal and the
+    resize/coupling detector + the auto-flag-the-coating promote step both expect that face; a PLATE
+    tilts a thin box 45 degrees. Display-free guard: the coating-normal math is 45 deg to +Z, the
+    written cube STEP re-reads to >= 2 solids with a genuine planar face ~45 deg to the axis, the
+    plate STEP has a 45-deg face, and the attachment/cad_cache template regenerates when missing."""
+    result = PhaseResult(
+        name="Phase 281: Parametric beam-splitter generator -- cube keeps a real 45-deg diagonal, cache regenerates"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_beam_splitter_factory import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"beam-splitter-factory guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if not n.startswith("SKIP")])
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("beam-splitter-factory phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13568,6 +13599,7 @@ def main() -> int:
             phase_278_step_export_dimension_annotations,
             phase_279_led_step_hover_all_selectable,
             phase_280_led_import_no_distance_prompt,
+            phase_281_beam_splitter_factory,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
