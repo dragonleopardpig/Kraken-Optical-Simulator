@@ -13049,6 +13049,37 @@ def phase_274_orphaned_camera_delete_field_unpin(
     return result
 
 
+def phase_275_step_export_thickness_dimensions(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The 3D STEP export writes the physical-distance (thickness) dimension overlay as solid leader tubes
+    (task #483, deferred in bugs/0300). On screen the overlay's off-axis side follows the live camera, but a
+    STEP file has no camera, so the export re-runs the SAME add_overlays decision path through a geometry sink
+    with a deterministic view-free offset -- every dimension's shaft + two leaders is captured as world
+    polylines and tubed by the shared ray-tube builder (no text; STEP can't carry billboard labels). Export
+    is gated on the physical-distance toggle and rides the CAD path, exactly like rays. Display-free guard:
+    the record helper emits shaft+2 leaders, the static offset is unit/perpendicular/deterministic, the OCC
+    tubing adds one solid per leader polyline (6 for two dimensions), the editor collector gates on the toggle
+    and a live inspector, and the whole funnel (emit + branch overlay + writer) is wired structurally."""
+    result = PhaseResult(
+        name="Phase 275: The 3D STEP export writes the thickness dimension overlay as leader tubes"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_step_export_thickness_dimensions import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"step-export-thickness-dimensions guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("step-export-thickness-dimensions phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13368,6 +13399,7 @@ def main() -> int:
             phase_272_camera_refresh_update,
             phase_273_camera_delete_field_unpin,
             phase_274_orphaned_camera_delete_field_unpin,
+            phase_275_step_export_thickness_dimensions,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

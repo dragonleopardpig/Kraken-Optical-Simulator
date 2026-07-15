@@ -738,12 +738,14 @@ class LayoutImportExportMixin:
                 )
                 self._update_analysis_progress("Tracing ray envelope", 5, 8)
                 ray_polylines = self._step_export_ray_polylines(system)
+                dimension_polylines = self._step_export_dimension_polylines(system)
                 rows_snapshot = [SurfaceRow(**asdict(row)) for row in self.rows]
                 self._start_native_step_export_worker(
                     system,
                     rows_snapshot,
                     cad_shapes,
                     ray_polylines,
+                    dimension_polylines,
                     output_path,
                 )
                 return
@@ -800,6 +802,7 @@ class LayoutImportExportMixin:
         rows_snapshot: list[SurfaceRow],
         cad_shapes: list[tuple[str, object]],
         ray_polylines: list[np.ndarray],
+        dimension_polylines: list[np.ndarray],
         output_path: Path,
     ) -> None:
         progress_queue: Queue = Queue()
@@ -812,6 +815,7 @@ class LayoutImportExportMixin:
                     cad_shapes,
                     ray_polylines,
                     output_path,
+                    dimension_polylines=dimension_polylines,
                     progress_callback=lambda label, done, total: progress_queue.put(
                         ("progress", str(label), int(done), int(total))
                     ),
@@ -827,7 +831,8 @@ class LayoutImportExportMixin:
         self._step_export_ray_count = len(ray_polylines)
         self.status_var.set("Writing 3D STEP in background...")
         self.append_progress(
-            f"3D STEP writer started: {output_path.name} | ray_envelopes={len(ray_polylines)}"
+            f"3D STEP writer started: {output_path.name} | "
+            f"ray_envelopes={len(ray_polylines)}, dimension_leaders={len(dimension_polylines)}"
         )
         try:
             self.progress_bar.configure(mode="indeterminate")
@@ -878,11 +883,12 @@ class LayoutImportExportMixin:
 
         if terminal_payload[0] == "done":
             _kind, counts = terminal_payload
-            analytic_count, cad_count, ray_count = counts
+            analytic_count, cad_count, ray_count, dimension_count = counts
             output_path = Path(getattr(self, "_step_export_output_path", ""))
             message = (
                 f"3D STEP exported (native CAD + ray envelope): {output_path.name} | "
-                f"analytic_surfaces={analytic_count}, native_steps={cad_count}, ray_envelopes={ray_count}"
+                f"analytic_surfaces={analytic_count}, native_steps={cad_count}, "
+                f"ray_envelopes={ray_count}, dimension_leaders={dimension_count}"
             )
             self.status_var.set(message)
             self.append_progress(message)

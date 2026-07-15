@@ -1785,6 +1785,31 @@ class LayoutOpticalSolidWorkflowMixin:
             )
         return envelope
 
+    def _step_export_dimension_polylines(self, system) -> list[np.ndarray]:
+        """Physical-distance (thickness) overlay as export polylines: shaft +
+        two leaders per dimension, using a deterministic view-free offset. task
+        #483. Returns [] when the overlay is toggled off or the 3D inspector is
+        not open -- parity with rays exporting only when shown in the browser."""
+        show_var = getattr(self, "show_physical_distances_var", None)
+        if show_var is None or not bool(show_var.get()):
+            return []
+        inspector = getattr(self, "_three_d_inspector", None)
+        if inspector is None:
+            return []
+        try:
+            service = inspector._open3d_thickness_dimension_service()
+            scene_bundle = getattr(inspector, "_current_scene_bundle", None)
+            polylines = service.collect_export_geometry(system, scene_bundle)
+        except Exception as exc:
+            self.append_debug(f"3D STEP thickness-dimension export skipped: {exc}")
+            return []
+        cleaned: list[np.ndarray] = []
+        for poly in polylines:
+            pts = np.asarray(poly, dtype=float)
+            if pts.ndim == 2 and pts.shape[0] >= 2 and pts.shape[1] >= 3:
+                cleaned.append(pts[:, :3])
+        return cleaned
+
     def _collect_3d_step_export_meshes(self, system) -> list[tuple[str, object]]:
         _load_3d_backends()
         if pv is None:

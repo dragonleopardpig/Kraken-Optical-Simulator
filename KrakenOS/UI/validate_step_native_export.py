@@ -47,7 +47,7 @@ def main() -> int:
         ],
         dtype=float,
     )
-    analytic_count, cad_count, ray_count = _write_step_with_cad_shapes_and_rays(
+    analytic_count, cad_count, ray_count, _dimension_count = _write_step_with_cad_shapes_and_rays(
         SimpleNamespace(SDT=[], TRANS_2A=[]),
         [],
         [("validation_box", box)],

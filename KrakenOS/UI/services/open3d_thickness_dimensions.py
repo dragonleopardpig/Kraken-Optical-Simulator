@@ -48,6 +48,57 @@ class Open3DThicknessDimensionService:
         # next surface) while the stored thickness omits the solid's reserve dead-space.
         # Keeps the edit dialog + apply WYSIWYG with the drawn "gap from solid" value.
         self._trailing_spacer_gap_offset: dict[int, float] = {}
+        # task #483: when set to a list, add_overlays RECORDS each dimension's
+        # shaft + leader segments here (with a deterministic, view-free offset)
+        # instead of drawing actors, so a 3D STEP export reproduces the physical-
+        # distance overlay as solid leader geometry. None = normal on-screen draw.
+        self._dimension_geometry_sink: list[np.ndarray] | None = None
+
+    def collect_export_geometry(self, system: Any, scene_bundle: Any = None) -> list[np.ndarray]:
+        """Re-run the overlay decision logic and capture each drawn dimension's
+        shaft + leader segments as world-space polylines (task #483).
+
+        The SAME ``add_overlays`` path drives both the on-screen overlay and this
+        export capture, so every special case (overlay carve, branch-detector
+        supersede, promoted-solid span, fold-detector redirect, per-row hide) is
+        shared -- the export can never drift from what is shown. The offset is
+        forced view-free (deterministic world frame) because a STEP file has no
+        camera; the measured span between the two surface points is unchanged,
+        only the annotation side is fixed. Returns [] when the overlay is hidden.
+        """
+        sink: list[np.ndarray] = []
+        prev_sink = self._dimension_geometry_sink
+        # add_overlays rebuilds _trailing_spacer_gap_offset; preserve the live
+        # value so an export pass never disturbs the on-screen edit dialog.
+        prev_spacer = dict(self._trailing_spacer_gap_offset)
+        self._dimension_geometry_sink = sink
+        try:
+            self.add_overlays(system, scene_bundle)
+        finally:
+            self._dimension_geometry_sink = prev_sink
+            self._trailing_spacer_gap_offset = prev_spacer
+        return sink
+
+    def _record_export_dimension(
+        self,
+        base_lo: np.ndarray,
+        base_hi: np.ndarray,
+        start: np.ndarray,
+        end: np.ndarray,
+    ) -> int:
+        """Append one dimension's shaft + two leader polylines to the export sink
+        (each a 2x3 array). Returns 1 so the caller's drawn-count stays accurate."""
+        sink = self._dimension_geometry_sink
+        if sink is None:
+            return 0
+
+        def _seg(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+            return np.asarray([a, b], dtype=float).reshape(2, 3)
+
+        sink.append(_seg(start, end))       # the measured shaft, offset off-axis
+        sink.append(_seg(base_lo, start))   # leader: surface -> shaft near end
+        sink.append(_seg(base_hi, end))     # leader: surface -> shaft far end
+        return 1
 
     def arrow_mesh(
         self,
@@ -402,6 +453,11 @@ class Open3DThicknessDimensionService:
             offset = side * base_offset
             start = p0 + offset
             end = p1 + offset
+            # task #483: export capture -- this per-branch overlay draws directly
+            # (not via _emit_span_dimension), so record it here too.
+            if self._dimension_geometry_sink is not None:
+                count += self._record_export_dimension(p0, p1, start, end)
+                continue
             mesh = self.arrow_mesh(start, end, scene_span=scene_span)
             if mesh is None:
                 continue
@@ -610,6 +666,13 @@ class Open3DThicknessDimensionService:
             screen_axes = None
         screen_up = screen_axes[1] if screen_axes else None
         screen_right = screen_axes[0] if screen_axes else None
+        # task #483: a STEP export capture has no camera -- force the view-free
+        # geometric perpendicular so the exported side is deterministic (the same
+        # world frame every run), not whatever the live camera happened to be.
+        if self._dimension_geometry_sink is not None:
+            view_normal = None
+            screen_up = None
+            screen_right = None
         count = 0
         for row_index, row in enumerate(rows[:-1]):
             try:
@@ -915,6 +978,10 @@ class Open3DThicknessDimensionService:
         pv = self.pv
         start = base_lo + offset
         end = base_hi + offset
+        # task #483: export capture -- record shaft + leaders, draw nothing. This
+        # is the single funnel for the row loop, re-anchored, and LED-edge dims.
+        if self._dimension_geometry_sink is not None:
+            return self._record_export_dimension(base_lo, base_hi, start, end)
         mesh = self.arrow_mesh(start, end, scene_span=scene_span)
         if mesh is None:
             return 0

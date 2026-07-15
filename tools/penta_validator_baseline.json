@@ -275,7 +275,8 @@
     "271": "pass",
     "272": "pass",
     "273": "pass",
-    "274": "pass"
+    "274": "pass",
+    "275": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -551,6 +552,7 @@
     "271": "Phase 271: Camera folder import asks for the flange-to-sensor distance when unscrapable",
     "272": "Phase 272: Imported-camera refresh updates an already-merged camera (re-import flange)",
     "273": "Phase 273: Deleting a camera un-pins the field so the image circle / FOV clears",
-    "274": "Phase 274: Deleting an orphaned camera un-pins the field so the image circle / FOV clears"
+    "274": "Phase 274: Deleting an orphaned camera un-pins the field so the image circle / FOV clears",
+    "275": "Phase 275: The 3D STEP export writes the thickness dimension overlay as leader tubes"
   }
 }

@@ -714,14 +714,17 @@ def _write_step_with_cad_shapes_and_rays(
     *,
     profile_points: int = 64,
     ray_tube_radius_mm: float | None = None,
+    dimension_polylines: list[np.ndarray] | None = None,
     progress_callback=None,
-) -> tuple[int, int, int]:
-    """Write analytic optics, imported CAD shapes, and visible ray tubes.
+) -> tuple[int, int, int, int]:
+    """Write analytic optics, imported CAD shapes, visible ray tubes, and the
+    physical-distance (thickness) dimension leaders.
 
     Imported CAD is preserved as native STEP BRep geometry and transformed into
-    the same placement used by the UI. Rays are written as thin solid tubes
-    rather than wire-only curves because FreeCAD and several mechanical viewers
-    can import STEP wires without rendering them as visible objects.
+    the same placement used by the UI. Rays and dimension leaders are written as
+    thin solid tubes rather than wire-only curves because FreeCAD and several
+    mechanical viewers can import STEP wires without rendering them as visible
+    objects. Returns ``(analytic, cad, ray, dimension)`` counts (task #483).
     """
     try:
         from OCC.Core.BRep import BRep_Builder
@@ -850,7 +853,46 @@ def _write_step_with_cad_shapes_and_rays(
             continue
         ray_count += 1
 
-    if analytic_count + cad_count + ray_count <= 0:
+    # task #483: the physical-distance overlay as solid leader tubes (shaft +
+    # two leaders per dimension), a touch fatter than rays so an annotation reads
+    # distinct from the beam it sits beside. Same cylinder builder as the rays.
+    dimension_count = 0
+    dimension_tube_radius_mm = max(ray_tube_radius_mm * 1.4, 0.12)
+    if progress_callback is not None:
+        progress_callback("Adding dimension leader tubes", 3, 5)
+    for points in (dimension_polylines or ()):
+        pts = np.asarray(points, dtype=float)
+        if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+            continue
+        added_segments = 0
+        for start, end in zip(pts[:-1, :3], pts[1:, :3]):
+            if not np.all(np.isfinite(start)) or not np.all(np.isfinite(end)):
+                continue
+            delta = end - start
+            length = float(np.linalg.norm(delta))
+            if length <= 1e-9:
+                continue
+            direction = delta / length
+            cylinder = BRepPrimAPI_MakeCylinder(
+                gp_Ax2(
+                    gp_Pnt(float(start[0]), float(start[1]), float(start[2])),
+                    gp_Dir(float(direction[0]), float(direction[1]), float(direction[2])),
+                ),
+                dimension_tube_radius_mm,
+                length,
+            )
+            try:
+                dim_shape = cylinder.Shape()
+                if dim_shape.IsNull():
+                    continue
+            except Exception:
+                continue
+            builder.Add(compound, dim_shape)
+            added_segments += 1
+        if added_segments > 0:
+            dimension_count += 1
+
+    if analytic_count + cad_count + ray_count + dimension_count <= 0:
         raise RuntimeError("No valid geometry available for STEP export")
 
     writer = STEPControl_Writer()
@@ -884,4 +926,4 @@ def _write_step_with_cad_shapes_and_rays(
         raise RuntimeError("STEP writer failed")
     if progress_callback is not None:
         progress_callback("STEP file complete", 5, 5)
-    return analytic_count, cad_count, ray_count
+    return analytic_count, cad_count, ray_count, dimension_count

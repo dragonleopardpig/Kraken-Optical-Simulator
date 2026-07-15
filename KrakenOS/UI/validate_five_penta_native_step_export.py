@@ -287,7 +287,7 @@ def main() -> int:
                 except Exception as exc:
                     entry["error"] = str(exc)
                 native_row_export.append(entry)
-        analytic_count, cad_count, ray_count = _write_step_with_cad_shapes_and_rays(
+        analytic_count, cad_count, ray_count, _dimension_count = _write_step_with_cad_shapes_and_rays(
             system,
             app.rows,
             cad_shapes,
