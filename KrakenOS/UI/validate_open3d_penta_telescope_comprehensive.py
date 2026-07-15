@@ -13015,6 +13015,40 @@ def phase_273_camera_delete_field_unpin(
     return result
 
 
+def phase_274_orphaned_camera_delete_field_unpin(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Deleting an ORPHANED camera un-pins the field so the image-circle / object-FOV overlay clears
+    (bugs/0312). User flag (flag_20260715_092801): "Camera deleted, clicked Trace, still the same, FOV,
+    Max Sensor and Image circle remains." -- a 0311 resurface. A layout saved with a camera that isn't in
+    THIS machine's imported-camera registry (cross-machine sync moves the scene .py, not the per-machine
+    JSON) loads with camera_model forced to None, so the flag-setting load-time autofill never runs; yet
+    the Real Image Height field (= sensor half-diagonal, image aperture = the diagonal) is still restored,
+    so 0311's flag-gated reset was skipped and the overlay lingered. Fix: _decouple_camera_model also
+    un-pins on the camera-autofill VALUE signature (image aperture == 2 x Real Image Height), captured
+    before the 0306 Manual->Auto flip -- flag-independent, so it survives the delegation that keeps the
+    flag off the editor. Runs the REAL editor pipeline end-to-end on the MV-150 datasheet scene with the
+    camera hermetically popped from CAMERA_DATABASE: orphaned load keeps the field, delete collapses the
+    image-circle radius to 0."""
+    result = PhaseResult(
+        name="Phase 274: Deleting an orphaned camera un-pins the field so the image circle / FOV clears"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_camera_delete_field_unpin import run_orphaned_camera_check
+        passed, notes = run_orphaned_camera_check()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"orphaned-camera-delete guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("orphaned-camera-delete phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13333,6 +13367,7 @@ def main() -> int:
             phase_271_camera_flange_prompt,
             phase_272_camera_refresh_update,
             phase_273_camera_delete_field_unpin,
+            phase_274_orphaned_camera_delete_field_unpin,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

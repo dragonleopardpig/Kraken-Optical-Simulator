@@ -3143,6 +3143,12 @@ class LayoutTableWorkbenchMixin:
             self.camera_model_var.set(CAMERA_NONE_LABEL)
         stash = getattr(self, "_camera_coverage_precouple_stash", None)
         if stash is None:
+            # bugs/0312: capture the camera-autofill VALUE fingerprint BEFORE the
+            # Manual->Auto flip below, since the flip rewrites the image aperture
+            # mode that is part of that signature. An orphaned-camera load skipped
+            # the flag-setting autofill, so the flag is False here -- the signature
+            # is the only surviving evidence that this field was camera-pinned.
+            pinned_by_signature = self._field_matches_camera_autofill_signature()
             # bugs/0306: a layout saved with a camera coupled *before* the precouple
             # stash was persisted (any legacy camera file) has no pre-camera state to
             # restore. Don't leave the image aperture locked to the now-deleted sensor
@@ -3162,9 +3168,12 @@ class LayoutTableWorkbenchMixin:
             # / FOV on-screen (flag 20260715_084524 "After camera deleted, FOV,
             # Max Sensor, Image circle remains"). Un-pin the field back to the
             # object-mode default -- no camera means no coverage overlay. Gated on
-            # the couple's own pin flag so a surrogate that *legitimately* uses a
-            # Real Image Height field (no camera) is never wiped.
-            if getattr(self, "_camera_pinned_field", False):
+            # the couple's own pin flag OR (bugs/0312) the camera-autofill value
+            # signature, so an orphaned-camera load -- whose invalid model skipped
+            # the flag-setting autofill -- is still un-pinned, while a surrogate
+            # that *legitimately* uses a Real Image Height field (no camera) is
+            # never wiped.
+            if getattr(self, "_camera_pinned_field", False) or pinned_by_signature:
                 self._reset_camera_pinned_field_to_default()
             self._camera_pinned_field = False
             return False
@@ -3188,6 +3197,42 @@ class LayoutTableWorkbenchMixin:
         self._sync_object_controls()
         self._camera_pinned_field = False  # bugs/0311: stash restored the real field
         return True
+
+    def _field_matches_camera_autofill_signature(self) -> bool:
+        """bugs/0312: recognise a camera-pinned field by its VALUE fingerprint,
+        independent of the ``_camera_pinned_field`` flag.
+
+        ``_apply_camera_coverage_autofill`` writes a unique, camera-only signature:
+        image aperture Manual, field ``Real Image Height`` = the sensor
+        half-diagonal, and the Image-surface clear aperture = the sensor
+        *diagonal* -- i.e. ``image_diameter == 2 x field_value`` exactly
+        (``camera_image_coverage_mm`` returns ``(diagonal, 0.5 * diagonal)``).
+
+        The flag alone is not enough: a layout saved with a camera that isn't in
+        THIS machine's registry (cross-machine sync moves the scene, not the
+        per-machine imported-camera JSON) loads with ``camera_model`` forced to
+        None, so the load-time autofill that sets the flag never runs -- yet the
+        Real Image Height field is still restored, so deleting the still-shown
+        camera STEP left the image-circle / FOV overlay on-screen (flag
+        20260715_092801, a 0311 resurface). This value test catches that
+        orphaned-camera case on the editor. It stays narrow: a surrogate that
+        legitimately uses Real Image Height keeps its own (Auto, or non-2x) image
+        aperture, so its aperture never equals twice the field and it is untouched.
+        """
+        if self._current_field_type() != "Real Image Height":
+            return False
+        if self._current_image_diameter_mode() != "Manual":
+            return False
+        if not self.rows or self.rows[-1].surface != "Image":
+            return False
+        try:
+            field_value = float(self.field_value_var.get())
+            image_diameter = float(self.rows[-1].diameter)
+        except (TypeError, ValueError):
+            return False
+        if not (field_value > 0.0 and image_diameter > 0.0):
+            return False
+        return abs(image_diameter - 2.0 * field_value) <= max(0.05, 2e-3 * image_diameter)
 
     def _reset_camera_pinned_field_to_default(self) -> bool:
         """bugs/0311: reset a still-pinned camera field back to the object-mode
