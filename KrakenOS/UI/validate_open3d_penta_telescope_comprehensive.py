@@ -13080,6 +13080,38 @@ def phase_275_step_export_thickness_dimensions(
     return result
 
 
+def phase_276_folded_fov_solve_gap_spill(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """A SECOND Solve-for-Thickness on a two-fold periscope must not silently no-op when a prior fold-leg
+    constraint drained the primary conjugate gap row (flag_20260715_105226_165: FOV 55 + 2 constraints works,
+    FOV 20 with the same constraints "does nothing"). The folded conjugate solve wrote the whole object/image
+    distance correction onto ONE row, so a pinned "object -> mirror" leg from the first solve left row 0 too
+    small to hold the next FOV's larger reduction -> the solve returned False and never retraced. bugs/0314
+    distributes each leg's correction: when the primary row underflows, the overflow spills onto the fold's
+    OTHER leg (slide the mirror) instead of failing, and the constraint split re-pins. Display-free guard: the
+    spill distributor preserves the leg TOTAL / returns None only when truly out of range, the sibling row is
+    the split's far leg, the real two-solve sequence now succeeds with the pin honored, and the plain path is
+    unchanged (single-row write, no spill)."""
+    result = PhaseResult(
+        name="Phase 276: A folded FOV re-solve spills gap overflow onto the fold's other leg (no silent no-op)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_folded_fov_solve_gap_spill import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"folded-fov-solve-gap-spill guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("folded-fov-solve-gap-spill phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13400,6 +13432,7 @@ def main() -> int:
             phase_273_camera_delete_field_unpin,
             phase_274_orphaned_camera_delete_field_unpin,
             phase_275_step_export_thickness_dimensions,
+            phase_276_folded_fov_solve_gap_spill,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

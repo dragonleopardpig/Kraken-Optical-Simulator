@@ -952,6 +952,42 @@ class QuickEstimationService:
             return None  # solid cemented to the next element -- no air gap to move the lens into
         return cand
 
+    def _folded_conjugate_spill_row(self, primary_row: int, side: str) -> "int | None":
+        """The fold leg that ABSORBS overflow when the primary conjugate gap row can't hold the
+        whole distance correction: the sibling (far) leg of ``side``'s fold, so the correction
+        slides the mirror instead of failing. None when there is no fold split, or its near leg
+        is not the primary row (so the far row can't be trusted as the sibling)."""
+        try:
+            if side == "object":
+                split = self.editor._folded_object_conjugate_split()
+            else:
+                split = self.editor._folded_image_conjugate_split()
+        except Exception:
+            return None
+        if not isinstance(split, dict):
+            return None
+        if int(split.get("near_gap_row", -1)) != int(primary_row):
+            return None
+        far = int(split.get("far_gap_row", -1))
+        return far if (far >= 0 and far != int(primary_row)) else None
+
+    def _distribute_folded_gap_delta(self, rows, primary_row, delta, spill_row):
+        """Apply ``delta`` (a change to a folded conjugate's leg TOTAL) to ``rows[primary_row]``.
+        If that drives the primary leg negative, spill the overflow onto ``spill_row`` (the fold's
+        other leg -- i.e. slide the mirror). Returns a list of ``(row, applied_delta)`` to write,
+        preserving the total, or None if even the two legs together can't absorb it (truly out of
+        range). Both legs are floored at 0; the collision floor is enforced by the constraint
+        split that runs after the conjugate solve."""
+        new_primary = float(rows[primary_row].thickness) + float(delta)
+        if new_primary >= 0.0:
+            return [(int(primary_row), float(delta))]
+        if spill_row is None or not (0 <= int(spill_row) < len(rows)):
+            return None
+        if float(rows[int(spill_row)].thickness) + new_primary < 0.0:
+            return None
+        # primary gives up all it has (-> 0); the negative remainder lands on the sibling leg
+        return [(int(primary_row), -float(rows[primary_row].thickness)), (int(spill_row), new_primary)]
+
     def _apply_conjugate_pair(self, object_semi: Any, image_semi: Any) -> tuple[bool, str]:
         # Folded-aware branch (feature): a promoted RA-mirror fold breaks the plain object/image
         # gap-row assumption -- object_thickness_row/image_thickness_row land on the mirror-adjacent
@@ -970,23 +1006,33 @@ class QuickEstimationService:
                 og, ig = int(folded["object_gap_row"]), int(folded["image_gap_row"])
                 if not (0 <= og < len(rows) and 0 <= ig < len(rows)):
                     return False, "Folded conjugate gap rows are unavailable."
-                new_obj_gap = float(rows[og].thickness) + float(folded["object_delta"])
-                new_img_gap = float(rows[ig].thickness) + float(folded["image_delta"])
-                if new_obj_gap < 0.0 or new_img_gap < 0.0:
+                # bugs/0314: the object/image distance correction is a change to the leg TOTAL,
+                # not to one row. A prior fold-leg constraint (a Solve pinning "object -> mirror")
+                # can have drained the primary gap row, so dumping the whole delta on it alone
+                # underflows and the solve silently no-ops -- even though the far leg has ample
+                # room. Spill any overflow onto the fold's OTHER leg (slide the mirror), exactly
+                # what the old error told the user to do by hand.
+                obj_changes = self._distribute_folded_gap_delta(
+                    rows, og, float(folded["object_delta"]),
+                    self._folded_conjugate_spill_row(og, "object"),
+                )
+                img_changes = self._distribute_folded_gap_delta(
+                    rows, ig, float(folded["image_delta"]),
+                    self._folded_conjugate_spill_row(ig, "image"),
+                )
+                if obj_changes is None or img_changes is None:
                     return False, (
                         "FOV out of range on the folded arms (the object or image leg would go "
                         "negative -- slide the fold mirrors first)."
                     )
-                rows[og].thickness = new_obj_gap
-                rows[ig].thickness = new_img_gap
+                changes = obj_changes + img_changes
+                for row_index, applied in changes:
+                    rows[row_index].thickness = float(rows[row_index].thickness) + applied
                 # bugs/0236: the image-leg delta extends the beam along the first fold's
                 # reflected direction, but a free-placed trailing mirror is pinned along
                 # global +Z -- carry it (and any free-placed camera) back onto the beam.
                 from KrakenOS.UI.nonseq_output_ports import carry_free_placed_followers_after_fold
-                carry_free_placed_followers_after_fold(
-                    rows,
-                    [(og, float(folded["object_delta"])), (ig, float(folded["image_delta"]))],
-                )
+                carry_free_placed_followers_after_fold(rows, changes)
                 return True, (
                     f"Solved (folded): object->lens {folded['object_distance']:.6g} mm, "
                     f"lens->sensor {folded['image_distance']:.6g} mm (|m|={folded['magnitude']:.4g})."
