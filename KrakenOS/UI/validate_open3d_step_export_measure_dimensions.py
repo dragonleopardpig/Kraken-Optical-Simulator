@@ -17,8 +17,9 @@ visible measure segment's shaft + two witness polylines -- the SAME geometry
 INDEPENDENT of the physical-distance toggle (a measurement is its own annotation).
 The shared ray-tube writer already tubes every entry, so no writer change.
 
-  (A) GEOMETRY: a visible segment -> shaft (offset a0->a1) + witness p0->a0 +
-      witness p1->a1, exact endpoints; two segments -> 6 polylines.
+  (A) GEOMETRY: a visible segment -> the STABLE trio (shaft offset a0->a1 + witness
+      p0->a0 + witness p1->a1, exact endpoints) followed by arrowhead barbs and the
+      numeric value-text strokes (bugs/0316); two segments -> two annotation blocks.
   (B) HIDDEN/EMPTY: hidden segments (``_hidden_measure_segments``) are skipped;
       no segments -> [].
   (C) TOGGLE-INDEPENDENT: ``_step_export_dimension_polylines`` returns the measure
@@ -38,6 +39,12 @@ from types import SimpleNamespace
 
 import numpy as np
 
+from KrakenOS.UI.services.dimension_export_geometry import (
+    STABLE_PREFIX,
+    annotation_polyline_count,
+    dimension_value_text,
+)
+
 
 def _seg(sid: int, z0: float, z1: float, offset: float) -> dict:
     """A measure segment with raw endpoints (no row anchor, so the resolver is
@@ -56,33 +63,41 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
     def check(name: str, passed: bool, detail: str = "") -> None:
         checks.append((name, bool(passed), str(detail)))
 
-    # --- A. geometry: shaft + two witnesses per visible segment, exact endpoints ---
+    # --- A. geometry: STABLE trio + arrowheads + value text per visible segment ---
     insp = Insp.__new__(Insp)
     insp._measure_segments = [_seg(1, 10.0, 25.0, 40.0), _seg(2, 25.0, 40.0, 40.0)]
     insp._hidden_measure_segments = set()
     geo = insp.collect_measure_export_geometry()
-    check("A two segments -> 6 polylines", len(geo) == 6, str(len(geo)))
-    if len(geo) == 6:
-        # segment 1 (offset +Y by 40): shaft, then the two witness leaders.
+    per = annotation_polyline_count(dimension_value_text(15.0))  # both spans are 15 mm
+    check("A two segments -> 2x annotation polylines", len(geo) == 2 * per, f"{len(geo)} vs {2 * per}")
+    if len(geo) >= STABLE_PREFIX + 2:
+        # segment 1 (offset +Y by 40): the STABLE trio -- shaft, then the two witnesses.
         check("A shaft is the offset dimension line", np.allclose(geo[0], [[0, 40, 10], [0, 40, 25]]), str(geo[0].tolist()))
         check("A witness from p0 to shaft near end", np.allclose(geo[1], [[0, 0, 10], [0, 40, 10]]), str(geo[1].tolist()))
         check("A witness from p1 to shaft far end", np.allclose(geo[2], [[0, 0, 25], [0, 40, 25]]), str(geo[2].tolist()))
-        check("A every polyline is a 2x3 world segment", all(g.shape == (2, 3) for g in geo), "")
+        check("A every polyline is an Nx3 world path", all(g.ndim == 2 and g.shape[0] >= 2 and g.shape[1] == 3 for g in geo), "")
+        # bugs/0316: arrowhead barbs (3-pt chevrons) follow the trio, then text strokes.
+        check("A arrowhead barbs follow the trio", geo[STABLE_PREFIX].shape == (3, 3) and geo[STABLE_PREFIX + 1].shape == (3, 3), "")
+        check("A value-text strokes present after the barbs", len(geo) > 2 * STABLE_PREFIX + 4, str(len(geo)))
         # the two segments occupy different axial spans -- distinct dimensions, not a dup.
-        check("A segment 2 shaft is distinct", np.allclose(geo[3], [[0, 40, 25], [0, 40, 40]]), str(geo[3].tolist()))
+        check("A segment 2 shaft is distinct", np.allclose(geo[per], [[0, 40, 25], [0, 40, 40]]), str(geo[per].tolist()))
 
-    # one segment -> exactly 3 polylines
+    # one segment -> exactly one annotation block
     insp_one = Insp.__new__(Insp)
     insp_one._measure_segments = [_seg(7, 0.0, 12.0, 30.0)]
     insp_one._hidden_measure_segments = set()
-    check("A one segment -> 3 polylines", len(insp_one.collect_measure_export_geometry()) == 3, "")
+    check(
+        "A one segment -> one annotation block",
+        len(insp_one.collect_measure_export_geometry()) == annotation_polyline_count(dimension_value_text(12.0)),
+        "",
+    )
 
     # --- B. hidden segments skipped; empty -> [] ---
     insp.b_hidden = None
     insp._hidden_measure_segments = {2}
     hidden_geo = insp.collect_measure_export_geometry()
-    check("B hidden segment excluded (3 left)", len(hidden_geo) == 3, str(len(hidden_geo)))
-    check("B remaining is the visible segment 1", len(hidden_geo) == 3 and np.allclose(hidden_geo[0], [[0, 40, 10], [0, 40, 25]]), "")
+    check("B hidden segment excluded (1 dim left)", len(hidden_geo) == per, str(len(hidden_geo)))
+    check("B remaining is the visible segment 1", len(hidden_geo) == per and np.allclose(hidden_geo[0], [[0, 40, 10], [0, 40, 25]]), "")
     insp_empty = Insp.__new__(Insp)
     insp_empty._measure_segments = []
     insp_empty._hidden_measure_segments = set()

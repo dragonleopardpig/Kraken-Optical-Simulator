@@ -5,10 +5,11 @@ The overlay is drawn view-dependently on screen (its off-axis side follows the
 live camera), but a STEP file has no camera, so the export re-runs the SAME
 ``add_overlays`` decision path with a geometry sink and a deterministic view-free
 offset -- every dimension's shaft + two leaders are captured as world-space
-polylines and tubed by the shared ray-tube builder. No text is baked (STEP can't
-carry billboard labels); the offset leader geometry itself reads as the
-dimension. Export is gated on the physical-distance toggle and rides the CAD
-path (parity with rays).
+polylines and tubed by the shared ray-tube builder. bugs/0316 adds open-chevron
+arrowheads and vector-stroke value text (a STEP file can't carry a billboard
+label, so the number is stroked as tubed polylines through the same channel).
+Export is gated on the physical-distance toggle and rides the CAD path (parity
+with rays).
 
 All checks are headless: the record helper + static offset are exercised
 directly, the OCC tubing is driven with synthetic polylines, and the wiring is
@@ -22,6 +23,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+
+from KrakenOS.UI.services.dimension_export_geometry import (
+    STABLE_PREFIX,
+    annotation_polyline_count,
+    dimension_value_text,
+)
 
 
 def _topology_solid_count(path: Path) -> int:
@@ -81,12 +88,17 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
     end = np.asarray([-2.0, 0.0, 25.0])
     ret = svc._record_export_dimension(base_lo, base_hi, start, end)
     sink = svc._dimension_geometry_sink
+    per = annotation_polyline_count(dimension_value_text(15.0))  # span 10->25 = 15 mm
     check("record returns 1", ret == 1, str(ret))
-    check("record appends shaft + 2 leaders", len(sink) == 3, str(len(sink)))
-    if len(sink) == 3:
+    check("record appends the annotation block (trio + barbs + text)", len(sink) == per, str(len(sink)))
+    if len(sink) >= STABLE_PREFIX + 2:
+        # bugs/0316: the STABLE trio (shaft + two leaders) is byte-for-byte the pre-0316
+        # output, so these endpoint asserts still hold; barbs + text follow it.
         check("shaft endpoints", np.allclose(sink[0], [start, end]), str(sink[0].tolist()))
         check("leader from base_lo", np.allclose(sink[1], [base_lo, start]), str(sink[1].tolist()))
         check("leader from base_hi", np.allclose(sink[2], [base_hi, end]), str(sink[2].tolist()))
+        check("arrowhead barbs follow the trio", sink[STABLE_PREFIX].shape == (3, 3) and sink[STABLE_PREFIX + 1].shape == (3, 3), "")
+        check("value-text strokes present", len(sink) > STABLE_PREFIX + 2, str(len(sink)))
 
     svc_none = Svc.__new__(Svc)
     svc_none._dimension_geometry_sink = None
@@ -116,8 +128,8 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
         drag_end=base_hi,
     )
     emit_sink = svc_emit._dimension_geometry_sink
-    check("emit records 1 dimension (3 polylines)", emit_ret == 1 and len(emit_sink) == 3, str(len(emit_sink)))
-    if len(emit_sink) == 3:
+    check("emit records 1 dimension", emit_ret == 1 and len(emit_sink) == per, str(len(emit_sink)))
+    if len(emit_sink) >= 1:
         want_shaft = np.asarray([[-4.0, 0.0, 10.0], [-4.0, 0.0, 25.0]])
         check("emit shaft carries the offset", np.allclose(emit_sink[0], want_shaft), str(emit_sink[0].tolist()))
 

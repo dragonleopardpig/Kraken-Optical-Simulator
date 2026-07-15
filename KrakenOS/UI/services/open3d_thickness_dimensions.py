@@ -86,18 +86,18 @@ class Open3DThicknessDimensionService:
         start: np.ndarray,
         end: np.ndarray,
     ) -> int:
-        """Append one dimension's shaft + two leader polylines to the export sink
-        (each a 2x3 array). Returns 1 so the caller's drawn-count stays accurate."""
+        """Append one dimension's full annotation to the export sink -- shaft + two
+        leaders (the STABLE first three), then open-chevron arrowheads and the
+        numeric value text (bugs/0316). Returns 1 so the caller's drawn-count stays
+        accurate (one dimension), regardless of how many stroke polylines it takes."""
         sink = self._dimension_geometry_sink
         if sink is None:
             return 0
+        from KrakenOS.UI.services.dimension_export_geometry import (
+            dimension_annotation_polylines,
+        )
 
-        def _seg(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-            return np.asarray([a, b], dtype=float).reshape(2, 3)
-
-        sink.append(_seg(start, end))       # the measured shaft, offset off-axis
-        sink.append(_seg(base_lo, start))   # leader: surface -> shaft near end
-        sink.append(_seg(base_hi, end))     # leader: surface -> shaft far end
+        sink.extend(dimension_annotation_polylines(base_lo, base_hi, start, end))
         return 1
 
     def arrow_mesh(

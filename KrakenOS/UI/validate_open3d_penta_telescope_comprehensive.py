@@ -13144,6 +13144,38 @@ def phase_277_step_export_measure_dimensions(
     return result
 
 
+def phase_278_step_export_dimension_annotations(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The exported STEP dimensions must carry ARROWHEADS and the numeric VALUE TEXT, not "only lines"
+    (flag_20260715_125033_313: "the output of the thickness overlay is only lines, no arrow, no text").
+    bugs/0313 + 0315 exported each dimension as a shaft + two leader lines only. bugs/0316 adds a shared
+    dimension_export_geometry.dimension_annotation_polylines funnel -- both the blue physical-distance
+    overlay (_record_export_dimension) and the orange Measure tool (collect_measure_export_geometry) route
+    through it -- that appends open-chevron arrowhead barbs and vector-stroke value text (the pythonocc build
+    has no OCC.Core.Font and external deps are forbidden, so the number is stroked in-process). Everything is
+    a multi-point polyline the STEP writer already tubes segment-by-segment, so no writer change. Display-free
+    guard: the STABLE trio survives, barbs land on the shaft ends, the value text stroke count matches the
+    font, the whole annotation is coplanar, and the OCC writer tubes every polyline."""
+    result = PhaseResult(
+        name="Phase 278: The exported STEP dimensions carry arrowheads + numeric value text"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_step_export_dimension_annotations import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"step-export-dimension-annotations guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("step-export-dimension-annotations phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13466,6 +13498,7 @@ def main() -> int:
             phase_275_step_export_thickness_dimensions,
             phase_276_folded_fov_solve_gap_spill,
             phase_277_step_export_measure_dimensions,
+            phase_278_step_export_dimension_annotations,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

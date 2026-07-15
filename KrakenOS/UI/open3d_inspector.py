@@ -15427,16 +15427,23 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def collect_measure_export_geometry(self) -> "list[np.ndarray]":
         """Manual Measure-tool dimensions as 3D STEP export polylines (bugs/0315).
 
-        Each VISIBLE measure segment yields the same three polylines the on-screen
-        overlay draws -- the offset dimension shaft ``a0->a1`` plus the two witness
-        lines ``p0->a0`` and ``p1->a1`` -- minus the billboard label and grab
-        handle. It reuses the exact ``_measure_segment_offsets`` /
+        Each VISIBLE measure segment yields the same shaft ``a0->a1`` + two witness
+        lines ``p0->a0`` / ``p1->a1`` the on-screen overlay draws, PLUS open-chevron
+        arrowheads and the numeric value text (bugs/0316) -- so the exported STEP
+        reads like the screen instead of *"only lines, no arrow, no text"*. It
+        reuses the exact ``_measure_segment_offsets`` /
         ``_measure_segment_offset_endpoints`` resolvers the draw loop uses, so the
-        exported tubes can never drift from what is shown. Hidden segments
+        exported tubes can never drift from what is shown, and funnels the four
+        resolved points through the SAME ``dimension_annotation_polylines`` helper as
+        the blue physical-distance overlay. Hidden segments
         (``_hidden_measure_segments``) are skipped -- parity with the display, and
         with the physical-distance overlay export (bugs/0313). Returns [] when
         there are no measure segments.
         """
+        from KrakenOS.UI.services.dimension_export_geometry import (
+            dimension_annotation_polylines,
+        )
+
         out: "list[np.ndarray]" = []
         segments = getattr(self, "_measure_segments", []) or []
         if not segments:
@@ -15452,10 +15459,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 if resolved is None:
                     continue
                 p0, p1, a0, a1, _mid, _dist = resolved
-                for start, end in ((a0, a1), (p0, a0), (p1, a1)):
-                    arr = np.asarray([start, end], dtype=float).reshape(2, 3)
-                    if np.all(np.isfinite(arr)):
-                        out.append(arr)
+                for poly in dimension_annotation_polylines(p0, p1, a0, a1):
+                    if np.all(np.isfinite(poly)):
+                        out.append(poly)
             except Exception:
                 continue
         return out
@@ -15874,8 +15880,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             label="Hide this measurement",
             command=lambda i=int(index): self.toggle_measure_segment_hidden(i),
         )
-        any_hidden = bool(getattr(self, "_hidden_measure_segments", None))
+        hidden_ids = getattr(self, "_hidden_measure_segments", None) or set()
+        any_hidden = bool(hidden_ids)
+        any_visible = any(int(s.get("id", -1)) not in hidden_ids for s in segments)
         menu.add_separator()
+        menu.add_command(
+            label="Hide all measurements",
+            state=("normal" if any_visible else "disabled"),
+            command=self.hide_all_measure_segments,
+        )
         menu.add_command(
             label="Show all measurements",
             state=("normal" if any_hidden else "disabled"),
@@ -16032,6 +16045,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._hidden_measure_segments = set()
         self._refresh_measure_overlays()
         self.status_var.set("All measurements shown.")
+        self._update_mode_badge()
+
+    def hide_all_measure_segments(self) -> None:
+        """Hide every manual measurement in one go -- the mirror of
+        show_all_measure_segments. Keys the hidden set on each segment's stable id
+        (the exact expression _refresh_measure_overlays checks), so every drawn
+        measurement is suppressed at once."""
+        segments = getattr(self, "_measure_segments", []) or []
+        self._hidden_measure_segments = {int(s.get("id", -1)) for s in segments}
+        self._refresh_measure_overlays()
+        self.status_var.set("All measurements hidden.")
         self._update_mode_badge()
 
     def _apply_source_target_pick(self, row_index: int) -> None:

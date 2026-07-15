@@ -65,6 +65,7 @@ def run_checks() -> "tuple[bool, list[str]]":
         "delete_measure_segment",
         "toggle_measure_segment_hidden",
         "show_all_measure_segments",
+        "hide_all_measure_segments",
         "_measure_segment_index_near_display_xy",
         "_measure_segment_offset_endpoints",
         "_update_measure_hover_highlight",
@@ -78,6 +79,7 @@ def run_checks() -> "tuple[bool, list[str]]":
         toggle = Kraken3DInspector.toggle_measure_segment_hidden
         delete = Kraken3DInspector.delete_measure_segment
         show_all = Kraken3DInspector.show_all_measure_segments
+        hide_all = Kraken3DInspector.hide_all_measure_segments
 
         fake = _fake_inspector([{"id": 0}, {"id": 1}, {"id": 2}])
         toggle(fake, 1)  # hide id 1 (the middle row)
@@ -101,6 +103,15 @@ def run_checks() -> "tuple[bool, list[str]]":
         if fake._hidden_measure_segments:
             failures.append(f"FAIL: show_all_measure_segments must clear the hidden set, got {fake._hidden_measure_segments}")
 
+        # Hide-all in one go: every stable id lands in the hidden set; show-all clears.
+        fake_all = _fake_inspector([{"id": 3}, {"id": 7}, {"id": 9}])
+        hide_all(fake_all)
+        if fake_all._hidden_measure_segments != {3, 7, 9}:
+            failures.append(f"FAIL: hide_all_measure_segments must hide every id, got {fake_all._hidden_measure_segments}")
+        show_all(fake_all)
+        if fake_all._hidden_measure_segments:
+            failures.append(f"FAIL: show_all after hide_all must clear the hidden set, got {fake_all._hidden_measure_segments}")
+
         # Deleting the last visible measurement must also drop its id from hidden.
         fake2 = _fake_inspector([{"id": 5}])
         toggle(fake2, 0)
@@ -122,7 +133,7 @@ def run_checks() -> "tuple[bool, list[str]]":
             "FAIL: the right-click context menu must offer the measure menu "
             "(_maybe_show_measure_menu)")
     menu_src = inspect.getsource(Kraken3DInspector._show_measure_menu)
-    for label in ("Delete this measurement", "Hide this measurement", "Show all measurements"):
+    for label in ("Delete this measurement", "Hide this measurement", "Hide all measurements", "Show all measurements"):
         if label not in menu_src:
             failures.append(f"FAIL: the measure menu must offer '{label}'")
 
