@@ -259,7 +259,15 @@ def _merge_imported_cameras(path: Path | None = None) -> None:
     if not isinstance(payload, dict):
         return
     for name, record in payload.items():
-        if not isinstance(record, dict) or str(name) in CAMERA_DATABASE:
+        if not isinstance(record, dict):
+            continue
+        # bugs/0310: never let an imported record clobber a built-in camera, but
+        # DO add/UPDATE imported entries. The old ``str(name) in CAMERA_DATABASE``
+        # skip also blocked a *re-import* from updating an already-merged camera,
+        # so entering the flange distance (0309) on a second import wrote the JSON
+        # but never reached the running session (the sensor stayed at the mount
+        # face). Keying the guard to the built-in snapshot lets refresh update.
+        if str(name) in _BUILTIN_CAMERA_NAMES:
             continue
         merged = dict(record)
         for key in _IMPORTED_PATH_FIELDS:
@@ -282,6 +290,11 @@ def refresh_imported_cameras() -> None:
     """
     _merge_imported_cameras()
 
+
+# bugs/0310: snapshot the built-in camera names BEFORE folding the imported
+# registry so a later ``refresh_imported_cameras`` can UPDATE an imported entry
+# without ever overwriting a built-in camera of the same name.
+_BUILTIN_CAMERA_NAMES = frozenset(CAMERA_DATABASE)
 
 _merge_imported_cameras()
 
