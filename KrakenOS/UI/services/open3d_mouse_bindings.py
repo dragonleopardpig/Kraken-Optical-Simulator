@@ -38,7 +38,12 @@ class Open3DMouseBindingsService:
         if self._vtk_widget is None:
             return
 
-        drag_threshold_px = 4
+        # bugs/0323: a left-click select tolerates a little hand jitter before it
+        # is treated as a camera orbit. At 4 px a small wobble during the press
+        # flipped the click into an orbit (should_pick went false) and abandoned
+        # the selection; 8 px keeps ordinary clicks as picks without making a
+        # deliberate drag feel sticky.
+        drag_threshold_px = 8
 
         def control_pressed(event) -> bool:
             return self._event_control_pressed(event)
@@ -76,6 +81,11 @@ class Open3DMouseBindingsService:
         def left_press(event):
             record_mouse("mouse_press", event, 1)
             set_event_info(event)
+            # bugs/0323: capture the click-time Alt state so the committed pick
+            # honours face-vs-edge intent even if the user released Alt after the
+            # last hover motion (the pick fires on release; a click has no motion
+            # between, so the press-time modifier is the authoritative read).
+            self._edge_pick_alt_active = self._event_alt_pressed(event)
             # bugs/0156: a click over the navigation cube snaps the view (a
             # face/edge/corner orientation) or applies a discrete-step arrow. The
             # cube owns the click, so skip the scene pick/drag entirely.
@@ -407,6 +417,18 @@ class Open3DMouseBindingsService:
             return "break"
 
         def hover_motion(event):
+            # bugs/0323: Alt held during hover promotes whole-face highlight to
+            # the nearest DRAWN feature edge; plain hover stays whole-face. Record
+            # the live modifier here (the passive <Motion> that also drives the
+            # VTK-side feature hover) so step_feature_pick_for_display_xy can gate
+            # its edge refinement. Set before any early return so orbit/idle frames
+            # don't leave a stale mode.
+            self._edge_pick_alt_active = self._event_alt_pressed(event)
+            # bugs/0323: a bare <Motion> means no button is held, so the right
+            # button has been released -- self-heal the freeze flag here in case
+            # the <ButtonRelease-3> went to the popped context menu (grab) instead
+            # of the widget and never cleared it.
+            self._right_button_active = False
             # Passive hover (no button held): highlight a thickness-dimension
             # handle under the cursor so it reads as draggable/clickable.
             if self._left_drag_active or self._middle_drag_active:
@@ -449,6 +471,24 @@ class Open3DMouseBindingsService:
             except Exception:
                 pass
 
+        def right_press(event):
+            # bugs/0323: freeze the scene hover the instant the right button goes
+            # down so the highlight the context menu is about to act on cannot be
+            # re-picked away by a tiny press-time wobble. The flag self-heals on
+            # the next bare <Motion> (see hover_motion) since a grabbed menu can
+            # swallow the matching <ButtonRelease-3>.
+            self._right_button_active = True
+            record_mouse("mouse_press", event, 3)
+            return self._show_surface_function_context_menu(event)
+
+        def right_motion(event):
+            # Swallow right-drag: without this the unbound <B3-Motion> falls to
+            # the VTK interactor default, which re-hovers and drops the highlight.
+            return "break"
+
+        def right_release(event):
+            self._right_button_active = False
+
         try:
             self._vtk_widget.bind("<ButtonPress-1>", left_press)
             self._vtk_widget.bind("<B1-Motion>", left_motion)
@@ -468,7 +508,9 @@ class Open3DMouseBindingsService:
             self._vtk_widget.bind("<Shift-ButtonPress-1>", middle_press)
             self._vtk_widget.bind("<Shift-B1-Motion>", middle_motion)
             self._vtk_widget.bind("<Shift-ButtonRelease-1>", middle_release)
-            self._vtk_widget.bind("<ButtonPress-3>", self._show_surface_function_context_menu)
+            self._vtk_widget.bind("<ButtonPress-3>", right_press)
+            self._vtk_widget.bind("<B3-Motion>", right_motion)
+            self._vtk_widget.bind("<ButtonRelease-3>", right_release)
             self._vtk_widget.bind("<Motion>", hover_motion, add="+")
         except Exception as exc:
             self.editor.append_debug(f"3D mouse binding override failed: {exc}")

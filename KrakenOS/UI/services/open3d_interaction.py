@@ -764,6 +764,11 @@ class Open3DInteractionService:
         # mouse (CAD-flow step 3) -- the Tk binding drives the live standoff.
         if self._dimension_anchor_pick_mode or getattr(self, "_measure_offset_adjust_mode", False):
             return
+        # bugs/0323: while the right button is held (context-menu gesture) freeze
+        # the scene hover so a small wobble cannot re-pick and drop the highlight
+        # the menu is about to act on. Self-heals on the next bare motion.
+        if getattr(self, "_right_button_active", False):
+            return
         hover_critical = bool(
             self._center_row_to_ray_mode
             or self._step_normal_axis_pick_mode

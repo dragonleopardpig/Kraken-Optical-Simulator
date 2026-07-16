@@ -13432,6 +13432,37 @@ def phase_286_led_beam_splitter_status_visible(
     return result
 
 
+def phase_287_led_edge_pick_modes(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0323 -- LED STEP hover was "very inconsistent" (face<->edge flickered on every plain
+    hover/orbit), showed "phantom" edges that don't match the drawn outline (a wrap-around face's
+    occluded far-side boundary won the pure-2D edge contest -- groups span up to 134 mm on this LED),
+    and dropped the highlight when a click wobbled. Fix: plain hover = WHOLE FACE, hold Alt = nearest
+    DRAWN edge (edge refinement gated on _edge_pick_alt_active); nearest_display_edge takes a
+    depth_reference so the FRONT edge wins over an occluded one; drag threshold 4->8 px and the right
+    button freezes the hover so a click can't jitter it away. Display-free guard: A gate face<->edge,
+    B depth guard picks the front edge (None unchanged), C refinement threads depth, D modifier bits,
+    E/F source contracts."""
+    result = PhaseResult(
+        name="Phase 287: LED STEP hover -- plain=face / Alt=edge, depth-guarded, jitter-tolerant"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_led_edge_pick_modes import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"led-edge-pick-modes guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("led-edge-pick-modes phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13763,6 +13794,7 @@ def main() -> int:
             phase_284_led_beam_splitter_menu_command,
             phase_285_nav_cube_face_local_up,
             phase_286_led_beam_splitter_status_visible,
+            phase_287_led_edge_pick_modes,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

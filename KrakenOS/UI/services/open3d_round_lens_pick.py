@@ -223,6 +223,7 @@ def _edge_refined_feature(
     display_xy,
     *,
     tolerance_px: float = 14.0,
+    pick_point=None,
 ):
     """Refine a whole-face hover to the single nearest OUTLINE edge under the cursor.
 
@@ -252,6 +253,7 @@ def _edge_refined_feature(
         display_xy,
         inspector._world_to_display_2d,
         tolerance_px=float(tolerance_px),
+        depth_reference=pick_point,
     )
     if hit is None:
         return base_feature, base_face_id
@@ -342,9 +344,13 @@ def step_feature_pick_for_display_xy(
                     )
                 except Exception:
                     outline = None
-            feature, face_id = _edge_refined_feature(
-                inspector, base_feature, base_face_id, outline, display_xy
-            )
+            if getattr(inspector, "_edge_pick_alt_active", False):
+                feature, face_id = _edge_refined_feature(
+                    inspector, base_feature, base_face_id, outline, display_xy,
+                    pick_point=pick_point,
+                )
+            else:
+                feature, face_id = base_feature, base_face_id
             return {
                 "feature": feature,
                 "surface_center": inspector._surface_center_from_face_ray_pick(cell_pick),
@@ -367,9 +373,13 @@ def step_feature_pick_for_display_xy(
                     inspector._hover_overlay_for_feature(centroid, raw_outline),
                     np.asarray(normal, dtype=float).reshape(3),
                 )
-                feature, face_id = _edge_refined_feature(
-                    inspector, base_feature, f"F{int(face_index):03d}", raw_outline, display_xy
-                )
+                if getattr(inspector, "_edge_pick_alt_active", False):
+                    feature, face_id = _edge_refined_feature(
+                        inspector, base_feature, f"F{int(face_index):03d}", raw_outline, display_xy,
+                        pick_point=pick_point,
+                    )
+                else:
+                    feature, face_id = base_feature, f"F{int(face_index):03d}"
                 return {
                     "feature": feature,
                     "surface_center": np.asarray(centroid, dtype=float).reshape(3),

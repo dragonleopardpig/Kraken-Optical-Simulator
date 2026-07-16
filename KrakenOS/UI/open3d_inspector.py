@@ -542,6 +542,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._left_drag_moved = False
         self._middle_drag_active = False
         self._middle_drag_last_xy: tuple[int, int] | None = None
+        # bugs/0323: Alt-held hover promotes whole-face highlight to nearest drawn
+        # edge; right button held freezes the hover so a click can't jitter it away.
+        self._edge_pick_alt_active = False
+        self._right_button_active = False
         self._mouse_move_last_ts = 0.0
         self._mouse_move_min_interval_s = 0.035
         self._placement_drag_state: dict[str, object] | None = None
@@ -1912,6 +1916,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return bool(int(getattr(event, "state", 0)) & 0x0004)
         except Exception:
             return False
+
+    @staticmethod
+    def _event_alt_pressed(event) -> bool:
+        # Alt is X11 Mod1 (0x0008) on most setups but surfaces as Mod5 (0x20000)
+        # on some -- match the same two-bit convention the interaction-event and
+        # event-recorder modules already use so the mode fires on either. Held-Alt
+        # promotes plain whole-face hover to nearest-drawn-edge hover (bugs/0323);
+        # the click inherits whatever is highlighted (WYSIWYG).
+        try:
+            bits = int(getattr(event, "state", 0))
+        except Exception:
+            return False
+        return bool(bits & 0x0008 or bits & 0x20000)
 
     @staticmethod
     def _placement_axis_vector(axis: str) -> np.ndarray:

@@ -946,7 +946,7 @@ def _point_segment_distance_2d(px, py, ax, ay, bx, by):
     return float(np.hypot(px - cx, py - cy)), float(t)
 
 
-def nearest_display_edge(points, line_pairs, event_xy, project, tolerance_px: float = 14.0):
+def nearest_display_edge(points, line_pairs, event_xy, project, tolerance_px: float = 14.0, *, depth_reference=None):
     """Find the outline segment whose screen projection is nearest the cursor.
 
     ``project`` maps a world point ``(x, y, z)`` to a display ``(x, y)`` or
@@ -958,6 +958,15 @@ def nearest_display_edge(points, line_pairs, event_xy, project, tolerance_px: fl
     segment within ``tolerance_px`` (``ordinal`` = its stable position in
     ``line_pairs``, a compact per-edge dedup tag), else ``None`` (cursor is not
     near any outline edge, so the caller keeps the whole-face highlight).
+
+    bugs/0323: a single analytic face group can span the whole body (a bore or
+    cylinder wraps front to back -- measured up to 134 mm on the ILS0202 LED), so
+    a FAR-side boundary segment can project near the cursor and win the pure-2D
+    contest even though the user cannot see it (it is behind the solid). When
+    ``depth_reference`` (the world-space front pick point under the cursor) is
+    given, the nearest-in-2D candidates are ranked by 3D distance to that point
+    first, so the FRONT edge the user is pointing at wins; 2D distance breaks
+    ties. Passing ``None`` keeps the original pure-2D behaviour byte-for-byte.
     """
     try:
         pts = np.asarray(points, dtype=float).reshape((-1, 3))
@@ -970,6 +979,14 @@ def nearest_display_edge(points, line_pairs, event_xy, project, tolerance_px: fl
         ey = float(event_xy[1])
     except Exception:
         return None
+    ref = None
+    if depth_reference is not None:
+        try:
+            candidate = np.asarray(depth_reference, dtype=float).reshape(-1)[:3]
+            if candidate.size == 3 and np.all(np.isfinite(candidate)):
+                ref = candidate
+        except Exception:
+            ref = None
     projected: "dict[int, tuple[float, float] | None]" = {}
 
     def project_index(idx: int):
@@ -989,6 +1006,7 @@ def nearest_display_edge(points, line_pairs, event_xy, project, tolerance_px: fl
         return value
 
     best = None
+    best_rank = None
     for ordinal, pair in enumerate(line_pairs):
         try:
             i0 = int(pair[0])
@@ -1004,8 +1022,14 @@ def nearest_display_edge(points, line_pairs, event_xy, project, tolerance_px: fl
         distance, _t = _point_segment_distance_2d(ex, ey, a[0], a[1], b[0], b[1])
         if distance > float(tolerance_px):
             continue
-        if best is None or distance < best[4]:
-            midpoint = tuple(float(value) for value in ((pts[i0] + pts[i1]) * 0.5)[:3])
+        midpoint = tuple(float(value) for value in ((pts[i0] + pts[i1]) * 0.5)[:3])
+        if ref is not None:
+            depth = float(np.linalg.norm(np.asarray(midpoint, dtype=float) - ref))
+            rank = (depth, float(distance))
+        else:
+            rank = (float(distance),)
+        if best_rank is None or rank < best_rank:
+            best_rank = rank
             best = (int(ordinal), i0, i1, midpoint, float(distance))
     return best
 
