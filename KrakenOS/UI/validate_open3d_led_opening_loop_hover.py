@@ -17,6 +17,14 @@ each face's outer silhouette, and snaps plain hover to whichever opening rim is 
 the cursor -- so the central square (a hole loop) is a first-class hover target, honouring
 "all closed edges should be detected".
 
+bugs/0329 -- rim proximity alone was a knife-edge: the emitting square is a WIDE opening,
+so pointing at its MIDDLE (the natural gesture) sat ~98 px from any rim, missed the snap,
+and hover fell through to the whole front panel (which highlights with the opening left as
+a HOLE -- the user: "the face can highlight leaving the CA opening not highlighted... just
+complement it").  So a CONTAINMENT fallback now snaps to the opening whose projected
+polygon the cursor is inside, choosing the one whose projected centroid is nearest -- rim
+proximity stays first, so 0328 is preserved exactly.
+
 What this checks (against the real analytic mesh, no OCC, no GLX)
 ----------------------------------------------------------------
   A. ``opening_loops_for_mesh`` yields the central square (a ~176 mm closed loop that is
@@ -25,8 +33,10 @@ What this checks (against the real analytic mesh, no OCC, no GLX)
      with a finite centroid/normal and an ``F%03d`` face id.
   C. ``step_feature_pick_for_display_xy`` snaps to the square when the cursor is NEAR its
      projected rim -- with NO cell_id (proving proximity, not cell, drives it).
-  D. Selective: a cursor at the square CENTRE (inside, far from every rim segment) and a
-     cursor far off-body do NOT return the square feature.
+  D. bugs/0329 interior hit: a cursor at the square CENTRE (inside the projected polygon,
+     far from every rim segment) DOES snap to the square -- pointing at the open middle
+     highlights the opening, not the surrounding panel.
+  E. Selective: a cursor far off-body does NOT return the square feature.
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_led_opening_loop_hover
@@ -214,17 +224,33 @@ def run_checks() -> "tuple[bool, list[str]]":
     else:
         notes.append("near-rim cursor (no cell_id) -> central-square rim edge (proximity snap fires)")
 
-    # D. Selective: the hole centre and a far cursor must NOT return the square.
-    for tag, xy in (("hole-centre", centre_xy), ("off-body", far_xy)):
-        miss = step_feature_pick_for_display_xy(inspector, "led", xy)
-        if _is_square_hit(miss):
-            failures.append(
-                f"FAIL(D): a {tag} cursor wrongly returned the square opening -- the proximity snap "
-                "is not selective (it should fire only near the rim)"
-            )
-        else:
-            got = None if not isinstance(miss, dict) else miss.get("face_id")
-            notes.append(f"{tag} cursor -> not the square (face_id={got!r})")
+    # D. bugs/0329 interior hit: the hole CENTRE (inside the projected polygon, far from every
+    # rim segment) DOES snap to the square -- pointing at the open middle highlights the opening,
+    # not the surrounding panel ("just complement it").
+    hit_c = step_feature_pick_for_display_xy(inspector, "led", centre_xy)
+    if not _is_square_hit(hit_c):
+        got = None if not isinstance(hit_c, dict) else hit_c.get("face_id")
+        failures.append(
+            "FAIL(D): a cursor at the square CENTRE did NOT snap to the square opening "
+            f"(got face_id={got!r}) -- the interior-hit containment fallback is dead; hovering "
+            "the open middle falls through to the whole panel instead of highlighting the opening"
+        )
+    elif not _overlay_is_line(hit_c["feature"][1]):
+        failures.append("FAIL(D): interior-hit pick overlay is not the rim edge line")
+    else:
+        notes.append("hole-centre cursor (inside projected square, far from rim) -> central-square opening (containment fallback fires)")
+
+    # E. Selective: a far off-body cursor -- neither near a rim nor inside any projected opening
+    # polygon -- must NOT return the square.
+    miss = step_feature_pick_for_display_xy(inspector, "led", far_xy)
+    if _is_square_hit(miss):
+        failures.append(
+            "FAIL(E): an off-body cursor wrongly returned the square opening -- the snap is not "
+            "selective (it should fire only near a rim or inside the projected opening polygon)"
+        )
+    else:
+        got = None if not isinstance(miss, dict) else miss.get("face_id")
+        notes.append(f"off-body cursor -> not the square (face_id={got!r})")
 
     return (not failures), failures + notes
 
@@ -234,11 +260,12 @@ def main() -> int:
     hard = [n for n in notes if n.startswith("FAIL")]
     soft = [n for n in notes if not n.startswith("FAIL")]
     if hard:
-        print("[FAIL] LED opening-loop hover snap (bugs/0328)")
+        print("[FAIL] LED opening-loop hover snap (bugs/0328 rim + bugs/0329 interior)")
         for item in hard:
             print(f"  - {item}")
         return 1
-    print("[PASS] LED plain hover snaps to the nearest closed opening loop, incl. inner hole loops (bugs/0328)")
+    print("[PASS] LED plain hover snaps to the nearest opening loop by rim proximity, and to the "
+          "opening it is hovering INSIDE when far from every rim (bugs/0328 + bugs/0329)")
     for item in soft:
         print(f"  - {item}")
     return 0

@@ -583,6 +583,6 @@
     "287": "Phase 287: LED STEP hover -- plain=face / Alt=edge, depth-guarded, jitter-tolerant",
     "288": "Phase 288: Alt-hover edge mode fires live -- re-pick on the modifier transition",
     "289": "Phase 289: LED clear-aperture opening edge snaps on screen-proximity to its rim loop",
-    "290": "Phase 290: LED plain hover snaps to the nearest closed opening loop (incl. inner hole loops)"
+    "290": "Phase 290: LED plain hover snaps to the nearest opening loop, incl. inner hole loops, by rim OR interior containment"
   }
 }

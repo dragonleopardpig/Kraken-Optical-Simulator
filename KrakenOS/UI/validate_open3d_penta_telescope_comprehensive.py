@@ -13534,11 +13534,18 @@ def phase_290_led_opening_loop_hover(
     fell back to the whole panel ("no improvement at all"). 0328 mines EVERY closed loop from the large
     faces (open3d_opening_loops), drops each face's outer silhouette, and snaps plain hover to whichever
     opening rim is NEAREST the cursor -- so the central square (a hole loop) is a first-class hover target,
-    honouring "all closed edges should be detected". Display-free guard: A the square is mined and its
-    face's outer silhouette is dropped, B its hover feature is a line-loop overlay, C a near-rim cursor
-    (no cell_id) snaps to it, D the hole centre / off-body stay selective (no snap)."""
+    honouring "all closed edges should be detected". bugs/0329 -- rim proximity alone was a knife-edge:
+    the emitting square is a WIDE opening, so pointing at its MIDDLE (the natural gesture) sat ~98px from
+    any rim, missed the 30px snap, and hover fell through to the whole front panel (highlighting the panel
+    with the opening left as a HOLE -- the user: "the face can highlight leaving the CA opening not
+    highlighted... just complement it"). So a CONTAINMENT fallback now snaps to the opening whose projected
+    polygon the cursor is INSIDE (choosing the nearest projected centroid); rim proximity stays first, so
+    0328 is preserved exactly. Display-free guard: A the square is mined and its face's outer silhouette is
+    dropped, B its hover feature is a line-loop overlay, C a near-rim cursor (no cell_id) snaps to it,
+    D the hole CENTRE (inside the projected polygon, far from every rim) snaps to it too (interior hit),
+    E an off-body cursor stays selective (no snap)."""
     result = PhaseResult(
-        name="Phase 290: LED plain hover snaps to the nearest closed opening loop (incl. inner hole loops)"
+        name="Phase 290: LED plain hover snaps to the nearest opening loop, incl. inner hole loops, by rim OR interior containment"
     )
     try:
         from KrakenOS.UI.validate_open3d_led_opening_loop_hover import run_checks

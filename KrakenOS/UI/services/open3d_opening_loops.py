@@ -250,6 +250,40 @@ def loop_outline_polydata(loop: OpeningLoop):
     return _line_polydata(edges)
 
 
+def _project_polygon(points, project) -> "np.ndarray | None":
+    """Project a loop's rim to a screen-space polygon, or None if any point drops out."""
+    poly: "list[np.ndarray]" = []
+    for p in points:
+        xy = project(p)
+        if xy is None:
+            return None
+        try:
+            xy = np.asarray(xy, dtype=float).reshape(2)
+        except Exception:
+            return None
+        if not np.all(np.isfinite(xy)):
+            return None
+        poly.append(xy)
+    if len(poly) < 3:
+        return None
+    return np.asarray(poly, dtype=float)
+
+
+def _point_in_polygon(cursor, poly) -> bool:
+    """Even-odd ray-cast test: is the cursor inside the screen-space polygon?"""
+    x, y = float(cursor[0]), float(cursor[1])
+    n = int(len(poly))
+    inside = False
+    j = n - 1
+    for i in range(n):
+        xi, yi = float(poly[i][0]), float(poly[i][1])
+        xj, yj = float(poly[j][0]), float(poly[j][1])
+        if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
 def nearest_opening_loop(
     loops,
     display_xy,
@@ -258,13 +292,23 @@ def nearest_opening_loop(
     tolerance_px: float = 30.0,
     gate_px: float = 260.0,
 ) -> "OpeningLoop | None":
-    """The opening loop whose projected rim is nearest the cursor, or None.
+    """The opening loop the cursor points AT (inside, else nearest rim), or None.
 
-    A cheap centroid gate (one projection per loop) prunes far loops; the survivors
-    are edge-tested with ``nearest_display_edge`` in SCREEN space (``depth_reference``
-    None -- a recessed rim is far in 3D but projects near the cursor, which is exactly
-    the edge the user points at). Ties break toward the SMALLER opening (the tighter
-    aperture pointed INTO, not a larger surrounding boundary).
+    bugs/0329 -- rim proximity alone is a knife-edge: the emitting square is a WIDE
+    opening, so pointing at its middle (the natural gesture) leaves the cursor ~98 px
+    from any rim -- far outside the ~30 px snap -- and hover fell through to the whole
+    front panel, which highlights with the opening left as a hole. Add a CONTAINMENT
+    fallback: when no rim is within tolerance, snap to the opening whose projected
+    polygon the cursor is INSIDE (the aperture the user is pointing INTO), choosing the
+    one whose projected centroid is nearest the cursor -- so hovering the middle of a
+    wide opening still highlights it, while a thin background slot that merely overlaps
+    the point in projection does not steal the pick.
+
+    Rim proximity stays FIRST so the 0328 behaviour is preserved exactly (hovering a
+    thin opening's edge from outside still snaps to that rim). A cheap centroid gate
+    (one projection per loop) prunes far loops; rim survivors are edge-tested with
+    ``nearest_display_edge`` in SCREEN space (``depth_reference`` None -- a recessed rim
+    is far in 3D but projects near the cursor). Ties break toward the SMALLER opening.
     """
     from .open3d_face_index_edges import nearest_display_edge
 
@@ -272,8 +316,10 @@ def nearest_opening_loop(
         cursor = np.asarray(display_xy, dtype=float).reshape(2)
     except Exception:
         return None
-    best = None
-    best_rank = None
+    rim_best = None
+    rim_rank = None
+    inside_best = None
+    inside_centroid_dist = None
     for loop in loops:
         centroid_xy = project(loop.centroid)
         if centroid_xy is None:
@@ -282,7 +328,8 @@ def nearest_opening_loop(
             centroid_xy = np.asarray(centroid_xy, dtype=float).reshape(2)
         except Exception:
             continue
-        if float(np.linalg.norm(centroid_xy - cursor)) > gate_px:
+        centroid_dist = float(np.linalg.norm(centroid_xy - cursor))
+        if centroid_dist > gate_px:
             continue
         hit = nearest_display_edge(
             loop.points,
@@ -292,10 +339,15 @@ def nearest_opening_loop(
             tolerance_px=float(tolerance_px),
             depth_reference=None,
         )
-        if hit is None:
-            continue
-        rank = (float(hit[4]), float(loop.area))
-        if best_rank is None or rank < best_rank:
-            best_rank = rank
-            best = loop
-    return best
+        if hit is not None:
+            rank = (float(hit[4]), float(loop.area))
+            if rim_rank is None or rank < rim_rank:
+                rim_rank = rank
+                rim_best = loop
+        # Interior hit (0329): fallback for hovering the OPEN MIDDLE of a wide aperture.
+        poly = _project_polygon(loop.points, project)
+        if poly is not None and _point_in_polygon(cursor, poly):
+            if inside_centroid_dist is None or centroid_dist < inside_centroid_dist:
+                inside_centroid_dist = centroid_dist
+                inside_best = loop
+    return rim_best if rim_best is not None else inside_best
