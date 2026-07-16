@@ -13367,6 +13367,39 @@ def phase_284_led_beam_splitter_menu_command(
     return result
 
 
+def phase_285_nav_cube_face_local_up(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0321: a nav-cube FACE or EDGE click now KEEPS the CURRENT view's roll, SNAPPED to the
+    nearest of FOUR clean orientations about the pick sight axis -- the same FreeCAD getNearest-
+    Orientation port that phase 230 applies to CORNERS (nearest of six), extended to faces/edges
+    (nearest of four). Before 0321 a face click forced the canonical absolute up (TOP always +X up),
+    so clicking TOP while looking at an upside-down TOP flipped the picture right-side-up -- the user
+    asked (flags 08:02/08:03) to "respect the current orientation when clicked". The inspector now
+    calls nearest_orientation_up for EVERY pick kind with steps=6 for a corner else 4.
+    `validate_open3d_nav_cube_face_local_up` pins the clean-90-multiple invariant across many views,
+    the nearest-of-4 snap table, idempotence on the four clean rolls, the "upside-down TOP stays
+    upside-down" regression (up -Z->-Z, -X->-X, never the canonical +X), the degenerate fallbacks,
+    and the inspector wiring (kind in face/edge/corner; steps 6 else 4). Display-free."""
+    result = PhaseResult(
+        name="Phase 285: nav cube face/edge roll snaps to the nearest of four clean orientations (respects the current view)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_nav_cube_face_local_up import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"nav-cube-face-local-up guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("nav-cube-face-local-up phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13696,6 +13729,7 @@ def main() -> int:
             phase_282_led_clear_aperture_detect,
             phase_283_led_beam_splitter_orchestration,
             phase_284_led_beam_splitter_menu_command,
+            phase_285_nav_cube_face_local_up,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

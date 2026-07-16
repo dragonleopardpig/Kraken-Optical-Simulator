@@ -11819,11 +11819,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         centre; the reframe recomputes the exact distance/zoom for the orientation,
         so only the view DIRECTION and UP set here matter.
 
-        ``sign`` (the picked ``{-1,0,1}^3`` triple) lets a CORNER snap keep the CURRENT
-        view's roll, snapped to the nearest of six clean orientations about the corner
-        diagonal (FreeCAD NaviCube getNearestOrientation, bugs/0257) -- so clicking a
-        corner after you rotated the scene lands at the roll closest to how you were
-        already looking. Faces/edges keep their absolute ``view_up``.
+        ``sign`` (the picked ``{-1,0,1}^3`` triple) lets EVERY pick keep the CURRENT
+        view's roll, snapped to the nearest clean orientation about the pick's sight axis
+        (FreeCAD NaviCube getNearestOrientation, bugs/0257+0321) -- SIX clean rolls for a
+        corner diagonal, FOUR for a face/edge -- so clicking a face/edge/corner after you
+        rotated the scene lands at the roll closest to how you were already looking. The
+        absolute canonical up still lives on the +yz/... preset buttons (set_camera_preset)
+        and on orientation_pose, so those are unchanged; only the cube CLICK is relative.
         """
         if self._renderer is None:
             return
@@ -11864,10 +11866,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return
         offset = offset / offset_norm
         distance = max(radius * 2.2, 50.0)
-        # bugs/0257: a CORNER pick keeps the CURRENT view's roll, snapped to the nearest of six
-        # clean orientations about the corner diagonal (FreeCAD NaviCube getNearestOrientation) --
-        # so clicking a corner after you rotated the scene lands at the roll closest to how you
-        # were already looking. Only corners snap; faces/edges keep their absolute view_up.
+        # bugs/0257+0321: EVERY pick keeps the CURRENT view's roll, snapped to the nearest clean
+        # orientation about the pick's sight axis (FreeCAD NaviCube getNearestOrientation) -- so
+        # clicking a face/edge/corner after you rotated the scene lands at the roll closest to how
+        # you were already looking (e.g. click TOP while looking at an upside-down TOP and it stays
+        # upside-down, bugs/0321). A corner diagonal has SIX clean rolls; a face/edge has FOUR.
         if sign is not None and current_up is not None and float(np.linalg.norm(current_up)) > 1e-9:
             try:
                 from KrakenOS.UI.services.nav_cube_orientation import (
@@ -11875,7 +11878,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     orientation_kind,
                 )
 
-                if orientation_kind(tuple(int(s) for s in sign)) == "corner":
+                kind = orientation_kind(tuple(int(s) for s in sign))
+                if kind in ("face", "edge", "corner"):
                     try:
                         view_dir = np.asarray(
                             camera.GetDirectionOfProjection(), dtype=float
@@ -11884,7 +11888,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                         view_dir = -offset
                     # current_sight_axis is the live OUT-of-screen direction (-view_dir).
                     view_up = nearest_orientation_up(
-                        offset, view_up, -view_dir, current_up, steps=6
+                        offset, view_up, -view_dir, current_up,
+                        steps=6 if kind == "corner" else 4,
                     )
             except Exception:
                 pass

@@ -16,7 +16,9 @@ The fix (:func:`nav_cube_orientation.nearest_orientation_up`, NaviCube.cpp:954):
 CURRENT camera so its view axis lands on the corner diagonal (this preserves the roll), measure the
 residual roll of that intermediate up from the corner's roll-0 STANDARD up (world +Y projected
 perpendicular to the diagonal -- itself one of the six clean rolls), round it to the nearest
-``2*pi/6`` = 60 deg, and roll the standard up by it. Corners only; faces/edges keep their absolute up.
+``2*pi/6`` = 60 deg, and roll the standard up by it. bugs/0321 extends the SAME snap to faces/edges
+(nearest of FOUR 90-deg rolls); this guard still owns the corner nearest-of-6 math (A-E) and the
+source contract that EVERY pick kind now snaps (F).
 
 What it checks (no display required, pure math + source contract):
   A. Invariant for many (current axis, current up) samples per corner: the result is unit,
@@ -32,8 +34,8 @@ What it checks (no display required, pure math + source contract):
      still yields a finite unit vector perpendicular to the sight line.
   F. Source contract -- inspector: _apply_navigation_cube_orientation takes a ``sign`` arg, reads
      BOTH the live camera up (GetViewUp) and view direction (GetDirectionOfProjection), and calls
-     nearest_orientation_up ONLY for a corner (orientation_kind == "corner"); faces/edges keep
-     their absolute up.
+     nearest_orientation_up for EVERY pick kind (face/edge/corner) -- SIX clean rolls for a corner,
+     FOUR for a face/edge (bugs/0321, was corner-only under bugs/0257).
   G. Source contract -- widget: handle_left_press forwards the picked ``sign`` as the third
      apply_orientation argument.
 """
@@ -186,10 +188,20 @@ def run_checks():
             failures.append("F FAIL: the inspector does not read the live camera up (GetViewUp)")
         if "GetDirectionOfProjection()" not in insp:
             failures.append("F FAIL: the inspector does not read the live view direction (GetDirectionOfProjection) for the roll snap")
-        if 'orientation_kind(' not in insp or '"corner"' not in insp:
+        if 'orientation_kind(' not in insp:
             failures.append(
-                "F FAIL: the roll snap is not gated on a CORNER (orientation_kind == 'corner') -- "
-                "faces/edges must keep their absolute up"
+                "F FAIL: the inspector does not compute the pick kind (orientation_kind) to "
+                "choose the roll-snap step count"
+            )
+        if 'kind in ("face", "edge", "corner")' not in insp:
+            failures.append(
+                "F FAIL: the roll snap is not applied to EVERY pick kind (face/edge/corner) -- "
+                "bugs/0321: clicking a face/edge must also respect the current view's roll"
+            )
+        if 'steps=6 if kind == "corner" else 4' not in insp:
+            failures.append(
+                "F FAIL: the roll snap does not use SIX clean rolls for a corner and FOUR for a "
+                "face/edge (steps=6 if kind == 'corner' else 4)"
             )
     except Exception as exc:  # pragma: no cover - defensive
         failures.append(f"F FAIL: could not read inspector source: {exc!r}")
