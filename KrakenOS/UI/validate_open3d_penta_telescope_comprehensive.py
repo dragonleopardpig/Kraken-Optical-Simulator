@@ -13494,6 +13494,34 @@ def phase_288_alt_hover_refire(
     return result
 
 
+def phase_289_led_ca_edge_hover(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0326 -- rather than keep fighting the pixel-varying per-cell face/edge pick (only a few
+    selectable, phantom-edge whole-face highlight, flaky Alt), the LED clear-aperture OPENING is a
+    deterministic hover target: led_clear_aperture_detect finds it (F267), so plain hover over the
+    opening snaps to its RIM EDGE (a lines-only overlay that renders as gold edge tubes) and a click
+    inherits it (WYSIWYG) through the same pick path. Display-free guard: A edge-feature builder is a
+    line loop, B the shared pick short-circuits on an opening cell, C it stays selective off it."""
+    result = PhaseResult(
+        name="Phase 289: LED clear-aperture opening edge is a deterministic plain-hover target"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_led_ca_edge_hover import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"led-ca-edge-hover guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if n.startswith("FAIL")])
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("led-ca-edge-hover phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13827,6 +13855,7 @@ def main() -> int:
             phase_286_led_beam_splitter_status_visible,
             phase_287_led_edge_pick_modes,
             phase_288_alt_hover_refire,
+            phase_289_led_ca_edge_hover,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

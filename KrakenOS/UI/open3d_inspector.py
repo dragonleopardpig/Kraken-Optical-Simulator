@@ -560,6 +560,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._step_surface_center_axis_pick_mode = False
         self._step_clear_aperture_pick_mode = False
         self._step_clear_aperture_pick_label = ""
+        # bugs/0326: the auto-detected clear-aperture opening face index per STEP
+        # source path (geometry-stable), so plain hover can snap to the opening's
+        # rim edge without re-scoring every mouse move.
+        self._ca_opening_face_index_cache: dict[str, int | None] = {}
         self._step_carry_grid_label: str | None = None
         self._step_carry_grid_spacing_mm: float | None = None
         self._step_carry_hold_after_id: str | None = None
@@ -7643,6 +7647,94 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return face_outline_from_face_indices(mesh, (int(face_index),))
         except Exception:
             return None
+
+    def _clear_aperture_opening_face_index(self, label: str):
+        """The clear-aperture OPENING face index of a STEP overlay, or None.
+
+        Prefers a manually recorded clear aperture (bugs/0134) -- the user's pick
+        always wins -- then falls back to the deterministic rim-around-a-hole
+        auto-detect (bugs/0319 C2). The auto-detect result is geometry-stable, so
+        it is cached per STEP source path to keep plain hover cheap (the analytic
+        document itself is already cached by ``_load_step_analytic_document``)."""
+        label = str(label or "").strip().lower()
+        if not label:
+            return None
+        # Manual override, read fresh (the user can (re)set it at runtime).
+        try:
+            record = self.editor.step_clear_aperture(label)
+        except Exception:
+            record = None
+        if isinstance(record, dict):
+            try:
+                fid = int(record.get("face_index", -1))
+            except Exception:
+                fid = -1
+            if fid >= 0:
+                return fid
+        try:
+            source_path = str(self.editor._step_path_for_label(label) or "")
+        except Exception:
+            source_path = ""
+        cache_key = source_path or f"label:{label}"
+        cache = getattr(self, "_ca_opening_face_index_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return cache[cache_key]
+        resolved = None
+        try:
+            candidates = self.editor.auto_detect_step_clear_aperture_candidates(label)
+        except Exception:
+            candidates = []
+        if candidates:
+            try:
+                resolved = int(candidates[0].face_index)
+            except Exception:
+                resolved = None
+        if isinstance(cache, dict):
+            cache[cache_key] = resolved
+        return resolved
+
+    def _clear_aperture_opening_edge_feature(self, label: str, face_index):
+        """Hover feature (centroid, edge-outline overlay, normal) for a STEP
+        overlay's clear-aperture opening rim, so plain hover over the opening
+        highlights its EDGE as a deterministic, selectable target (bugs/0326)."""
+        label = str(label or "").strip().lower()
+        try:
+            fid = int(face_index)
+        except Exception:
+            return None
+        if fid < 0:
+            return None
+        outline = self._clear_aperture_outline(label, fid)
+        if outline is None or int(getattr(outline, "n_points", 0)) <= 0:
+            return None
+        centroid = None
+        normal = None
+        try:
+            resolved = self.editor._step_overlay_fine_face_centroid_normal(label, fid)
+        except Exception:
+            resolved = None
+        if resolved is not None:
+            centroid = np.asarray(resolved[0], dtype=float).reshape(-1)[:3]
+            normal = np.asarray(resolved[1], dtype=float).reshape(-1)[:3]
+        if centroid is None or centroid.size < 3 or not np.all(np.isfinite(centroid)):
+            try:
+                centroid = np.asarray(outline.center, dtype=float).reshape(-1)[:3]
+            except Exception:
+                return None
+        if normal is None or normal.size < 3 or not np.all(np.isfinite(normal)):
+            normal = np.asarray([0.0, 0.0, 1.0], dtype=float)
+        overlay = self._hover_overlay_for_feature(centroid, outline)
+        feature = (
+            np.asarray(centroid, dtype=float).reshape(3),
+            overlay,
+            np.asarray(normal, dtype=float).reshape(3),
+        )
+        return {
+            "feature": feature,
+            "surface_center": np.asarray(centroid, dtype=float).reshape(3),
+            "face_id": f"F{fid:03d}",
+            "through_pick": None,
+        }
 
     def _add_clear_aperture_highlight_actor(self, label: str) -> None:
         """Persistently outline a STEP overlay's recorded clear aperture so the user

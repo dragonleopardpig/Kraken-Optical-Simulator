@@ -285,6 +285,29 @@ def step_feature_pick_for_display_xy(
     label = str(label or "").strip().lower()
     if not label:
         return None
+    # bugs/0326: the clear-aperture OPENING is a deterministic, always-reliable
+    # hover target (unlike the pixel-varying per-cell face pick that made "only a
+    # few can be selected"/"phantom edge" so brittle). When the picked cell lands
+    # on the detected opening face, snap the hover to the opening's RIM EDGE so the
+    # user can select it directly on plain hover -- no Alt, no fuzziness. The click
+    # inherits this highlight (WYSIWYG), because it re-picks through this same path.
+    ca_lookup = getattr(inspector, "_clear_aperture_opening_face_index", None)
+    if callable(ca_lookup) and int(cell_id) >= 0:
+        try:
+            ca_face_index = ca_lookup(label)
+        except Exception:
+            ca_face_index = None
+        if ca_face_index is not None:
+            try:
+                cell_face_index = inspector.editor.clear_aperture_face_index_for_display_cell(
+                    label, int(cell_id)
+                )
+            except Exception:
+                cell_face_index = None
+            if cell_face_index is not None and int(cell_face_index) == int(ca_face_index):
+                ca_feature = inspector._clear_aperture_opening_edge_feature(label, int(ca_face_index))
+                if isinstance(ca_feature, dict):
+                    return ca_feature
     if inspector._step_label_is_round_lens_like(label):
         round_lens_pick = round_lens_feature_for_display_xy(inspector, label, display_xy)
         if round_lens_pick is not None:
