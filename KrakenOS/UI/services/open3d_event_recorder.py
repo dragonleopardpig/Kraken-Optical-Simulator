@@ -92,6 +92,16 @@ class SceneSnapshot:
     # bugs/0121 hovered-face override fired. Pins why a BS-inside-LED right-click
     # still lands on the LED edge despite the gold outline on the BS face.
     right_click_diagnostics: dict[str, Any] = field(default_factory=dict)
+    # bugs/0330: the LED clear-aperture square highlights the whole panel (F005)
+    # LIVE, yet the square (F053) headless at the SAME camera+render size -- the
+    # miss can only be a projection/size/DPI difference at the live pick instant.
+    # ``render_window_size`` is the render window's pixel size at flag time;
+    # ``opening_hover_debug`` is what the LAST opening-loop hover snap saw (sizes,
+    # cursor, each mined opening's projected centroid + px distance, chosen face).
+    # Together they say whether the square projected onto or away from the cursor
+    # LIVE -- the datum a single before-flag screenshot can never carry.
+    render_window_size: list[int] = field(default_factory=list)
+    opening_hover_debug: dict[str, Any] = field(default_factory=dict)
     camera_position: list[float] = field(default_factory=list)
     camera_focal: list[float] = field(default_factory=list)
     camera_view_up: list[float] = field(default_factory=list)
@@ -586,6 +596,21 @@ class Open3DEventRecorder:
                     snapshot.hover_outline_bounds = [float(v) for v in b[:6]]
             key = getattr(inspector, "_hover_step_cell_key", None)
             snapshot.hover_step_cell_key = None if key is None else str(key)
+        except Exception:
+            pass
+        # bugs/0330: persist the live render size + the last opening-loop hover
+        # snap's projection debug, so a "CA not highlighted" flag reveals whether
+        # the square projected onto or away from the cursor at the live pick.
+        try:
+            widget = getattr(inspector, "_vtk_widget", None)
+            rw = widget.GetRenderWindow() if widget is not None else None
+            if rw is not None:
+                snapshot.render_window_size = [int(v) for v in rw.GetSize()]
+        except Exception:
+            pass
+        try:
+            dbg = getattr(inspector, "_last_opening_hover_debug", None)
+            snapshot.opening_hover_debug = dict(dbg) if isinstance(dbg, dict) else {}
         except Exception:
             pass
         # bugs/0124: carry the last right-click resolution so a re-recorded

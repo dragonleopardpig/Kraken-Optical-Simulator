@@ -339,6 +339,72 @@ def _clear_aperture_opening_edge_pick(
     return feature if isinstance(feature, dict) else None
 
 
+def _stash_opening_hover_debug(inspector: Any, display_xy, loops, project, chosen) -> None:
+    """Record what the opening-loop hover snap SAW at the live pick instant.
+
+    bugs/0330: the ILS0202 LED central emitting square resolves the whole front
+    panel (tooltip F005) LIVE, yet the same code + the flag's exact camera + the
+    flag's render size returns the square (F053) headless. Same inputs, different
+    result -> the divergence can only be a projection/size/DPI difference at the
+    live pick that no post-hoc recording shows. So capture it AT the pick: the
+    render-window pixel size, the renderer viewport size, the Tk widget's logical
+    size, the cursor, and each mined opening's PROJECTED centroid + its pixel
+    distance to the cursor. A ``flag_bug`` then persists this; the next
+    "CA not highlighted" flag decisively separates a projection/size/DPI miss
+    (the square projects far from the cursor) from a snap-logic miss (it projects
+    onto the cursor yet no loop was chosen).
+    """
+    try:
+        cursor = np.asarray(display_xy, dtype=float).reshape(-1)[:2]
+    except Exception:
+        return
+    debug: dict[str, Any] = {}
+    if cursor.size >= 2 and np.all(np.isfinite(cursor[:2])):
+        debug["cursor_xy"] = [float(cursor[0]), float(cursor[1])]
+    try:
+        widget = getattr(inspector, "_vtk_widget", None)
+        rw = widget.GetRenderWindow() if widget is not None else None
+        debug["render_window_size"] = [int(v) for v in rw.GetSize()] if rw is not None else []
+    except Exception:
+        debug["render_window_size"] = []
+    try:
+        renderer = getattr(inspector, "_renderer", None)
+        debug["renderer_viewport_size"] = [int(v) for v in renderer.GetSize()] if renderer is not None else []
+    except Exception:
+        debug["renderer_viewport_size"] = []
+    try:
+        widget = getattr(inspector, "_vtk_widget", None)
+        debug["widget_logical_size"] = (
+            [int(widget.winfo_width()), int(widget.winfo_height())] if widget is not None else []
+        )
+    except Exception:
+        debug["widget_logical_size"] = []
+    debug["n_loops"] = len(loops)
+    debug["chosen_face_index"] = None if chosen is None else int(getattr(chosen, "face_index", -1))
+    loop_rows: list[dict[str, Any]] = []
+    for lp in loops:
+        row: dict[str, Any] = {
+            "face_index": int(getattr(lp, "face_index", -1)),
+            "perimeter": round(float(getattr(lp, "perimeter", 0.0)), 1),
+        }
+        try:
+            projected = project(np.asarray(lp.centroid, dtype=float))
+            projected = None if projected is None else np.asarray(projected, dtype=float).reshape(-1)[:2]
+            if projected is not None and projected.size >= 2 and np.all(np.isfinite(projected[:2])):
+                cx, cy = float(projected[0]), float(projected[1])
+                row["centroid_px"] = [round(cx, 1), round(cy, 1)]
+                if cursor.size >= 2 and np.all(np.isfinite(cursor[:2])):
+                    row["centroid_dist_px"] = round(float(np.hypot(cx - cursor[0], cy - cursor[1])), 1)
+        except Exception:
+            pass
+        loop_rows.append(row)
+    debug["loops"] = loop_rows
+    try:
+        inspector._last_opening_hover_debug = debug
+    except Exception:
+        pass
+
+
 def _opening_loop_hover_pick(
     inspector: Any, label: str, display_xy, *, tolerance_px: float = 30.0
 ):
@@ -380,6 +446,7 @@ def _opening_loop_hover_pick(
     if not loops:
         return None
     loop = nearest_opening_loop(loops, display_xy, project, tolerance_px=float(tolerance_px))
+    _stash_opening_hover_debug(inspector, display_xy, loops, project, loop)
     if loop is None:
         return None
     feature = inspector._opening_loop_hover_feature(label, loop)
