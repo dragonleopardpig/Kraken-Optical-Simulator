@@ -288,7 +288,8 @@
     "284": "pass",
     "285": "pass",
     "286": "pass",
-    "287": "pass"
+    "287": "pass",
+    "288": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -577,6 +578,7 @@
     "284": "Phase 284: Add Beam Splitter to LED -- direct single-click commands, not a VTK-fragile cascade",
     "285": "Phase 285: nav cube face/edge roll snaps to the nearest of four clean orientations (respects the current view)",
     "286": "Phase 286: Add Beam Splitter to LED shows its outcome on the visible 3D-inspector status bar",
-    "287": "Phase 287: LED STEP hover -- plain=face / Alt=edge, depth-guarded, jitter-tolerant"
+    "287": "Phase 287: LED STEP hover -- plain=face / Alt=edge, depth-guarded, jitter-tolerant",
+    "288": "Phase 288: Alt-hover edge mode fires live -- re-pick on the modifier transition"
   }
 }

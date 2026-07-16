@@ -1930,6 +1930,53 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return False
         return bool(bits & 0x0008 or bits & 0x20000)
 
+    def _refresh_edge_pick_alt_state(self, active: bool) -> None:
+        # bugs/0324: the scene FEATURE hover runs on the VTK ``MouseMoveEvent``
+        # observer (``_on_mouse_move``), which the vtkTkRenderWindowInteractor
+        # fires from its OWN ``<Motion>`` binding -- installed before KrakenOS's
+        # ``hover_motion`` (add="+"), the one that records this Alt flag. So the
+        # feature pick read the flag from the PREVIOUS motion (a frame stale), and
+        # pressing Alt with the mouse still produced no motion at all -> "Alt hover
+        # does not work." When the Alt state actually CHANGES, re-fire the hover
+        # pick at the current cursor so the highlight promotes (face->nearest edge)
+        # or demotes immediately, with no dependence on the next mouse nudge.
+        active = bool(active)
+        if active == bool(getattr(self, "_edge_pick_alt_active", False)):
+            self._edge_pick_alt_active = active
+            return
+        self._edge_pick_alt_active = active
+        self._refire_scene_hover_pick()
+
+    def _refire_scene_hover_pick(self) -> None:
+        # Re-run the VTK-side feature hover at the interactor's last cursor
+        # position (set by the previous <Motion>). Reset the move throttle first
+        # so this synthetic move isn't swallowed by ``_mouse_move_due``. Guarded
+        # on the pointer actually being over the 3D widget so an Alt tap while the
+        # cursor rests on the tree/toolbar can't re-pick a stale scene position.
+        interactor = getattr(self, "_vtk_interactor", None)
+        if interactor is None or not self._pointer_over_vtk_widget():
+            return
+        self._mouse_move_last_ts = 0.0
+        try:
+            interactor.MouseMoveEvent()
+        except Exception:
+            pass
+
+    def _pointer_over_vtk_widget(self) -> bool:
+        widget = getattr(self, "_vtk_widget", None)
+        if widget is None:
+            return False
+        try:
+            px = int(widget.winfo_pointerx())
+            py = int(widget.winfo_pointery())
+            wx = int(widget.winfo_rootx())
+            wy = int(widget.winfo_rooty())
+            w = int(widget.winfo_width())
+            h = int(widget.winfo_height())
+        except Exception:
+            return False
+        return wx <= px < wx + w and wy <= py < wy + h
+
     @staticmethod
     def _placement_axis_vector(axis: str) -> np.ndarray:
         axis_key = str(axis or "").strip().lower()

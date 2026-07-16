@@ -423,7 +423,14 @@ class Open3DMouseBindingsService:
             # VTK-side feature hover) so step_feature_pick_for_display_xy can gate
             # its edge refinement. Set before any early return so orbit/idle frames
             # don't leave a stale mode.
-            self._edge_pick_alt_active = self._event_alt_pressed(event)
+            # bugs/0324: this <Motion> binding fires AFTER the VTK MouseMoveEvent
+            # that already ran the feature pick this frame, so on the frame Alt
+            # first changes the pick used the stale flag. Remember whether it
+            # changed and, once we've confirmed a passive scene hover below,
+            # re-fire the pick so the highlight matches the new modifier now.
+            alt_now = self._event_alt_pressed(event)
+            alt_changed = alt_now != bool(getattr(self, "_edge_pick_alt_active", False))
+            self._edge_pick_alt_active = alt_now
             # bugs/0323: a bare <Motion> means no button is held, so the right
             # button has been released -- self-heal the freeze flag here in case
             # the <ButtonRelease-3> went to the popped context menu (grab) instead
@@ -466,6 +473,12 @@ class Open3DMouseBindingsService:
                 self._clear_navigation_cube_hover()
             except Exception:
                 pass
+            # bugs/0324: passive scene hover confirmed (not dragging, not over the
+            # nav cube). If Alt just flipped, the VTK feature pick already ran this
+            # frame with the stale flag -- re-fire it now so the highlight promotes
+            # to the nearest edge (or demotes to whole face) on this very move.
+            if alt_changed:
+                self._refire_scene_hover_pick()
             try:
                 self._update_thickness_hover_highlight(int(event.x), int(event.y))
             except Exception:
@@ -488,6 +501,24 @@ class Open3DMouseBindingsService:
 
         def right_release(event):
             self._right_button_active = False
+
+        def alt_key_press(event):
+            # bugs/0324: press/release the Alt modifier itself (not a mouse move)
+            # to toggle edge-refine hover. X11 modifier keys DON'T auto-repeat, so
+            # a held Alt is one clean KeyPress...KeyRelease pair -- no flicker. This
+            # is bound on the inspector Toplevel (not the click-to-focus VTK
+            # widget), so it fires during plain hover with no prior click, which is
+            # what makes "press Alt while pointing at an edge" work with the mouse
+            # perfectly still.
+            self._refresh_edge_pick_alt_state(True)
+
+        def alt_key_release(event):
+            self._refresh_edge_pick_alt_state(False)
+
+        def clear_alt_on_focus_out(event):
+            # A window-manager Alt-Tab can steal focus mid-hold and swallow the
+            # KeyRelease; drop the mode on focus loss so it can't stick on.
+            self._edge_pick_alt_active = False
 
         try:
             self._vtk_widget.bind("<ButtonPress-1>", left_press)
@@ -512,5 +543,14 @@ class Open3DMouseBindingsService:
             self._vtk_widget.bind("<B3-Motion>", right_motion)
             self._vtk_widget.bind("<ButtonRelease-3>", right_release)
             self._vtk_widget.bind("<Motion>", hover_motion, add="+")
+            # bugs/0324: track the Alt modifier on the inspector Toplevel (self)
+            # so a stationary Alt press/release flips edge-refine hover without a
+            # mouse move. The Toplevel is in the VTK widget's bindtags, so these
+            # fire whether or not the widget has grabbed keyboard focus.
+            self.bind("<KeyPress-Alt_L>", alt_key_press, add="+")
+            self.bind("<KeyPress-Alt_R>", alt_key_press, add="+")
+            self.bind("<KeyRelease-Alt_L>", alt_key_release, add="+")
+            self.bind("<KeyRelease-Alt_R>", alt_key_release, add="+")
+            self.bind("<FocusOut>", clear_alt_on_focus_out, add="+")
         except Exception as exc:
             self.editor.append_debug(f"3D mouse binding override failed: {exc}")

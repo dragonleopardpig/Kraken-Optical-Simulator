@@ -210,9 +210,12 @@ def run_checks() -> "tuple[bool, list[str]]":
     if "drag_threshold_px = 8" not in mb_src:
         failures.append("FAIL(F): left-click drag threshold must be 8 px (jitter tolerance)")
     if "self._edge_pick_alt_active = self._event_alt_pressed(event)" not in mb_src:
-        failures.append("FAIL(F): hover_motion/left_press must record the Alt modifier")
-    if mb_src.count("_edge_pick_alt_active = self._event_alt_pressed") < 2:
-        failures.append("FAIL(F): both hover_motion AND left_press must record Alt")
+        failures.append("FAIL(F): left_press must record the Alt modifier at press time")
+    # bugs/0324 reshaped hover_motion to remember the previous Alt state (so it can
+    # re-fire the pick on a transition); it still records the live modifier, now
+    # via alt_now.
+    if "alt_now = self._event_alt_pressed(event)" not in mb_src:
+        failures.append("FAIL(F): hover_motion must record the live Alt modifier")
     if "self._right_button_active = True" not in mb_src or "self._right_button_active = False" not in mb_src:
         failures.append("FAIL(F): right button must set and clear the hover-freeze flag")
     if '"<B3-Motion>"' not in mb_src or '"<ButtonRelease-3>"' not in mb_src:

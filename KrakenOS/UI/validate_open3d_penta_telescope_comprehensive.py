@@ -13463,6 +13463,37 @@ def phase_287_led_edge_pick_modes(
     return result
 
 
+def phase_288_alt_hover_refire(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0324 -- the bugs/0323 Alt=edge hover gate passed every display-free check yet did NOTHING
+    live: the scene feature pick runs on the VTK MouseMoveEvent observer, which the interactor fires
+    from its own <Motion> binding installed BEFORE KrakenOS's hover_motion (the one that records the
+    Alt flag), so the pick read a one-frame-stale flag -- and pressing Alt with the mouse still fired
+    no event at all. Fix: on an Alt transition, re-fire the hover pick at the cursor (throttle reset,
+    pointer-over guarded) so it promotes/demotes now; track Alt on the Toplevel via
+    <KeyPress/KeyRelease-Alt_L/Alt_R> so a stationary press flips the mode. Display-free guard: A no-op
+    on no change, B/B2 re-fire on each transition, C off-widget no re-pick, D no-interactor safe,
+    E pointer geometry, F source wiring."""
+    result = PhaseResult(
+        name="Phase 288: Alt-hover edge mode fires live -- re-pick on the modifier transition"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_alt_hover_refire import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"alt-hover-refire guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("alt-hover-refire phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13795,6 +13826,7 @@ def main() -> int:
             phase_285_nav_cube_face_local_up,
             phase_286_led_beam_splitter_status_visible,
             phase_287_led_edge_pick_modes,
+            phase_288_alt_hover_refire,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
