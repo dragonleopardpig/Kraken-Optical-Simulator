@@ -13400,6 +13400,38 @@ def phase_285_nav_cube_face_local_up(
     return result
 
 
+def phase_286_led_beam_splitter_status_visible(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0322 -- "right click add BS cube still shows nothing": the one-click
+    editor.add_beam_splitter_to_led narrates success AND every graceful stop (no clear-aperture
+    opening, overlay/promotion failed) on editor.status_var -- the MAIN window bar. The user is in
+    the separate 3D-inspector Toplevel, whose visible bar is the inspector's own status_var; the old
+    context handler ignored the command's return and only echoed the editor bar on an exception, so a
+    stop or success left the inspector silent == "nothing happened" (the command itself works headless:
+    5 auto-detect candidates on AZ85/ILS0202, promotes a real 85 mm BS row). Fix: the handler mirrors
+    the command's message onto the inspector bar for success/stop/exception via _set_inspector_status.
+    Display-free guard checks A success mirrored, B stop reason relayed + logged, C empty-reason
+    fallback non-empty, D exception shown + logged, E source contract."""
+    result = PhaseResult(
+        name="Phase 286: Add Beam Splitter to LED shows its outcome on the visible 3D-inspector status bar"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_led_beam_splitter_status_visible import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"led-beam-splitter-status-visible guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("led-beam-splitter-status-visible phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13730,6 +13762,7 @@ def main() -> int:
             phase_283_led_beam_splitter_orchestration,
             phase_284_led_beam_splitter_menu_command,
             phase_285_nav_cube_face_local_up,
+            phase_286_led_beam_splitter_status_visible,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

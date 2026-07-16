@@ -604,17 +604,49 @@ class Open3DFaceAssignmentService:
         self.promote_selected_step_to_optical_solid_row()
 
     def _add_beam_splitter_to_led_from_context(self, kind: str) -> None:
-        """Right-click "Add Beam Splitter to LED -> Cube/Plate" (bugs/0319): run the
+        """Right-click "Add Beam Splitter to LED (Cube/Plate)" (bugs/0319): run the
         one-click pipeline (generate BS -> overlay -> centre on the LED clear-aperture
-        opening -> glue -> promote -> auto-flag the diagonal coating)."""
+        opening -> glue -> promote -> auto-flag the diagonal coating).
+
+        bugs/0322 -- "right click add BS cube still shows nothing": every outcome of the
+        command (success, graceful stop, exception) is reported ONLY on the editor's
+        main-window status bar (`editor.status_var`). But the user is looking at the 3D
+        inspector Toplevel, whose own visible bar is `self.status_var` (the service proxies
+        attribute access to the inspector). So a graceful stop -- e.g. no clear-aperture
+        opening -- or an error read as "nothing happened": no BS AND no message. Mirror the
+        command's own message onto the VISIBLE inspector bar so the click is never silent."""
+        _short_error_message = _layout_module()._short_error_message
         try:
-            self.editor.add_beam_splitter_to_led(str(kind))
+            result = self.editor.add_beam_splitter_to_led(str(kind))
         except Exception as exc:
             self.editor.append_debug(f"Add Beam Splitter to LED ({kind}) failed: {exc}")
-            try:
-                self.editor.status_var.set(f"Add Beam Splitter to LED failed: {exc}")
-            except Exception:
-                pass
+            self._set_inspector_status(f"Add Beam Splitter to LED failed: {_short_error_message(exc)}")
+            return
+        # The command narrates on `editor.status_var` (main window). Read that back and
+        # echo it to the inspector's visible bar; fall back to a computed line if empty.
+        message = ""
+        try:
+            message = str(self.editor.status_var.get() or "").strip()
+        except Exception:
+            message = ""
+        if not message:
+            message = (
+                f"Added {kind} beam splitter to the LED (S{result.get('row_index')})."
+                if isinstance(result, dict)
+                else "Add Beam Splitter to LED: nothing was added (no clear-aperture opening found)."
+            )
+        if result is None:
+            self.editor.append_debug(f"Add Beam Splitter to LED ({kind}) added nothing: {message}")
+        self._set_inspector_status(message)
+
+    def _set_inspector_status(self, message: str) -> None:
+        """Show ``message`` on the 3D-inspector's OWN status bar (the visible one in the
+        Toplevel). `self.status_var` proxies through to the inspector, unlike
+        `self.editor.status_var`, which is the main window's bar hidden behind it (0322)."""
+        try:
+            self.status_var.set(str(message))
+        except Exception:
+            pass
 
     def _row_has_step_overlay_promotion(self, row_index: int) -> bool:
         """bugs/0093: a promoted optical-solid row that came from a STEP overlay (so

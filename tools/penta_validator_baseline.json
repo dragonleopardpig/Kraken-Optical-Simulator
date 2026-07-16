@@ -286,7 +286,8 @@
     "282": "pass",
     "283": "pass",
     "284": "pass",
-    "285": "pass"
+    "285": "pass",
+    "286": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -573,6 +574,7 @@
     "282": "Phase 282: LED clear-aperture auto-detect -- rim-window signature ranks the opening, F112 on the real STEP",
     "283": "Phase 283: Add Beam Splitter to LED -- pipeline generate->overlay->centre->glue->promote->coat",
     "284": "Phase 284: Add Beam Splitter to LED -- direct single-click commands, not a VTK-fragile cascade",
-    "285": "Phase 285: nav cube face/edge roll snaps to the nearest of four clean orientations (respects the current view)"
+    "285": "Phase 285: nav cube face/edge roll snaps to the nearest of four clean orientations (respects the current view)",
+    "286": "Phase 286: Add Beam Splitter to LED shows its outcome on the visible 3D-inspector status bar"
   }
 }
