@@ -1,5 +1,41 @@
 # 0330 — LED clear-aperture square resolves the whole panel LIVE (a live-only projection miss) — DIAGNOSIS + INSTRUMENTATION
 
+## RESOLUTION (2026-07-16, `flag_20260716_170326_798` read with the new instrumentation) — NOT A PICK BUG
+The instrumented flag settled it, and it was **not** a projection/size/DPI miss and **not** a pick-logic
+miss. All three sizes AGREE (`render_window == renderer_viewport == widget_logical == [1163,904]`), which
+kills the size/DPI theory from the diagnosis below. The decisive anomaly: the opening pick's stash ran at
+`cursor_xy=[1019,402]` with `chosen_face_index=null`, while the user's flag cursor was `vtk_xy=[432,652]`
+(on the square F053) — **590 px apart.**
+
+Two display-free / real-inspector probes resolve the fork projection-bug vs cursor-plumbing:
+- `bugs/diag_0330b_flag798.py` (offscreen VTK, no Xvfb): at the flag camera+size the square F053 projects to
+  bbox `x[430,636] y[450,659]` — exactly where the screenshot draws it — and `nearest_opening_loop([432,652])`
+  → **SQUARE**, `nearest_opening_loop([1019,402])` → **None**. So the projection is correct.
+- `bugs/diag_0330c_flag798_live.py` (REAL `Kraken3DInspector` under Xvfb, analytic pick): at `[432,652]`
+  **every** path returns **F053** — `_step_feature_pick_for_display_xy` (raw, actor=None), stash
+  `cursor=[432,652] chosen=53`, `_step_feature_pick_any_for_display_xy(all)` = `led/F053`, and
+  `(labels=("led",))` = `led/F053`. At `[1019,402]` all return None (correctly — empty panel → F005 fallback).
+
+**Conclusion:** the pick code is correct; the flagged frame is a **stale-hover capture**. The last processed
+passive-hover `<Motion>` was at `[1019,402]` (panel → F005); the mouse then moved to `[432,652]`; and
+`flag_bug()`'s `render_window.Render()` (open3d_inspector.py:8463) re-painted that STALE F005 highlight plus a
+crosshair at the flag cursor — the hover was never re-run at the final position. (The 142 px gap between the
+live-stash square centroid `[674.9,545.4]` and the offscreen `[533.1,554.6]` is the same story: the stash was
+written under the earlier `[1019,402]` hover's camera, before the user rotated to the flag camera —
+`_world_to_display_2d` is byte-identical to raw `WorldToDisplay`, so it is not a projection-function bug.)
+
+**Square opening (F053) geometry:** 45.0 mm × 45.0 mm (four ~41 mm straight edges + ~2 mm rounded corners,
+perimeter 176.6 mm), plane x=51.43, centroid `[51.43, 20.91, 70.89]`; ~206×209 px on screen at the flag camera
+— a large, easy target, so the miss is not about opening size.
+
+**Owed / next (proposed, not yet built):** make the hover/flag **re-pick at the flag cursor** so the recorded
+highlight + stash always match the crosshair — this removes the stale-hover ambiguity and the next "CA not
+highlighted" flag will either show the square correctly highlighted (no bug) or capture a genuine miss with the
+RIGHT cursor. No penta phase / baseline regen this turn (no behavior change to the pick path).
+
+---
+### (original diagnosis below — the size/DPI theory it explores is now SUPERSEDED by the resolution above)
+
 ## Flag / redirect
 After 0329 shipped (the interior-hit containment fallback), the user re-tested on a **fresh** app
 (they quit Kitty and restart for every single test) and recorded `flag_20260716_162559_978`:
