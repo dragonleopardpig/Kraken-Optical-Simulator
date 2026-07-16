@@ -272,6 +272,73 @@ def _edge_refined_feature(
     return refined, edge_face_id
 
 
+def _clear_aperture_opening_edge_pick(
+    inspector: Any, label: str, display_xy, *, tolerance_px: float = 28.0
+):
+    """Select the clear-aperture OPENING's rim by SCREEN proximity to its closed loop.
+
+    bugs/0327: the opening is a see-through hole in a wide frame (the ILS0202 rim is
+    ~13 mm across radius 47->60 mm), so a ray under the cursor falls THROUGH the
+    window onto recessed features behind it -- the flagged hover resolved F005, a
+    sliver ~17 mm back, never the opening. bugs/0326 gated on the picked CELL landing
+    on the opening face, so it never fired there ("still can't highlight the CA
+    opening"). The rim is one deterministic CLOSED edge loop, so pick it by proximity
+    to that loop instead: a big forgiving target that fires wherever the cursor is
+    near the rim, whatever the ray hits behind it.
+
+    Proximity is measured in SCREEN space (``depth_reference=None``): a recessed face
+    is far in 3D but the rim it hides behind projects near the cursor in 2D, which is
+    exactly the edge the user is pointing at -- a 3D metric would be fooled by the
+    depth. ``nearest_display_edge`` is only a hit TEST here; on a hit we return the
+    WHOLE-rim edge feature (the gold ring), not a single segment.
+
+    Returns the opening's rim-edge hover feature dict, or ``None`` when there is no
+    detected opening / the cursor is not near the rim (caller falls through to the
+    normal per-cell pick for the rest of the body).
+    """
+    ca_lookup = getattr(inspector, "_clear_aperture_opening_face_index", None)
+    project = getattr(inspector, "_world_to_display_2d", None)
+    if not callable(ca_lookup) or not callable(project):
+        return None
+    try:
+        ca_face_index = ca_lookup(label)
+    except Exception:
+        ca_face_index = None
+    if ca_face_index is None:
+        return None
+    try:
+        ca_face_index = int(ca_face_index)
+    except Exception:
+        return None
+    if ca_face_index < 0:
+        return None
+    try:
+        outline = inspector._clear_aperture_outline(label, ca_face_index)
+    except Exception:
+        outline = None
+    if outline is None or int(getattr(outline, "n_points", 0)) <= 0:
+        return None
+    try:
+        points = np.asarray(outline.points, dtype=float).reshape((-1, 3))
+    except Exception:
+        return None
+    pairs = line_segment_pairs(outline)
+    if points.shape[0] < 2 or not pairs:
+        return None
+    hit = nearest_display_edge(
+        points,
+        pairs,
+        display_xy,
+        project,
+        tolerance_px=float(tolerance_px),
+        depth_reference=None,
+    )
+    if hit is None:
+        return None
+    feature = inspector._clear_aperture_opening_edge_feature(label, ca_face_index)
+    return feature if isinstance(feature, dict) else None
+
+
 def step_feature_pick_for_display_xy(
     inspector: Any,
     label: str,
@@ -285,29 +352,18 @@ def step_feature_pick_for_display_xy(
     label = str(label or "").strip().lower()
     if not label:
         return None
-    # bugs/0326: the clear-aperture OPENING is a deterministic, always-reliable
-    # hover target (unlike the pixel-varying per-cell face pick that made "only a
-    # few can be selected"/"phantom edge" so brittle). When the picked cell lands
-    # on the detected opening face, snap the hover to the opening's RIM EDGE so the
-    # user can select it directly on plain hover -- no Alt, no fuzziness. The click
-    # inherits this highlight (WYSIWYG), because it re-picks through this same path.
-    ca_lookup = getattr(inspector, "_clear_aperture_opening_face_index", None)
-    if callable(ca_lookup) and int(cell_id) >= 0:
-        try:
-            ca_face_index = ca_lookup(label)
-        except Exception:
-            ca_face_index = None
-        if ca_face_index is not None:
-            try:
-                cell_face_index = inspector.editor.clear_aperture_face_index_for_display_cell(
-                    label, int(cell_id)
-                )
-            except Exception:
-                cell_face_index = None
-            if cell_face_index is not None and int(cell_face_index) == int(ca_face_index):
-                ca_feature = inspector._clear_aperture_opening_edge_feature(label, int(ca_face_index))
-                if isinstance(ca_feature, dict):
-                    return ca_feature
+    # bugs/0326/0327: the clear-aperture OPENING is a deterministic, always-reliable
+    # hover target (unlike the pixel-varying per-cell face pick that made "only a few
+    # can be selected"/"phantom edge" so brittle). It is a see-through hole in a wide
+    # frame, so gating on the picked CELL landing on the opening face (0326) never
+    # fired -- the ray falls THROUGH the window onto recessed features behind it. Snap
+    # to the rim by SCREEN proximity to its closed loop instead (0327): a big forgiving
+    # target that fires wherever the cursor is near the rim edge -- no Alt, no
+    # fuzziness, independent of cell_id. The click inherits this highlight (WYSIWYG),
+    # because it re-picks through this same path.
+    ca_feature = _clear_aperture_opening_edge_pick(inspector, label, display_xy)
+    if ca_feature is not None:
+        return ca_feature
     if inspector._step_label_is_round_lens_like(label):
         round_lens_pick = round_lens_feature_for_display_xy(inspector, label, display_xy)
         if round_lens_pick is not None:

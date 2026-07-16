@@ -13497,14 +13497,16 @@ def phase_288_alt_hover_refire(
 def phase_289_led_ca_edge_hover(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
-    """bugs/0326 -- rather than keep fighting the pixel-varying per-cell face/edge pick (only a few
-    selectable, phantom-edge whole-face highlight, flaky Alt), the LED clear-aperture OPENING is a
-    deterministic hover target: led_clear_aperture_detect finds it (F267), so plain hover over the
-    opening snaps to its RIM EDGE (a lines-only overlay that renders as gold edge tubes) and a click
-    inherits it (WYSIWYG) through the same pick path. Display-free guard: A edge-feature builder is a
-    line loop, B the shared pick short-circuits on an opening cell, C it stays selective off it."""
+    """bugs/0326+0327 -- rather than keep fighting the pixel-varying per-cell face/edge pick (only a
+    few selectable, phantom-edge whole-face highlight, flaky Alt), the LED clear-aperture OPENING is a
+    deterministic hover target: led_clear_aperture_detect finds it (F267). The opening is a see-through
+    hole in a wide frame, so 0326's snap-on-the-picked-CELL never fired (the ray falls THROUGH onto
+    recessed faces); 0327 snaps on SCREEN PROXIMITY to the rim's closed loop instead -- a big forgiving
+    target, independent of cell_id -- highlighting the RIM EDGE (lines-only overlay -> gold edge tubes),
+    click inherits it (WYSIWYG). Display-free guard: A edge-feature builder is a line loop, B a near-rim
+    cursor (no cell_id) snaps, C the hole centre / off-body stay selective (no snap)."""
     result = PhaseResult(
-        name="Phase 289: LED clear-aperture opening edge is a deterministic plain-hover target"
+        name="Phase 289: LED clear-aperture opening edge snaps on screen-proximity to its rim loop"
     )
     try:
         from KrakenOS.UI.validate_open3d_led_ca_edge_hover import run_checks

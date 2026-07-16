@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Display-free guard for bugs/0326 -- plain hover snaps to the LED clear-aperture
-opening's RIM EDGE.
+"""Display-free guard for bugs/0326+0327 -- plain hover snaps to the LED
+clear-aperture opening's RIM EDGE by SCREEN proximity to its closed loop.
 
 Context
 -------
@@ -9,19 +9,29 @@ The general per-cell face/edge hover pick was brittle on the vendor LED
 whole-face highlights read as a "phantom edge", and the Alt-edge mode was flaky
 live.  Rather than keep fighting the fuzzy pick, the clear-aperture *opening* is a
 deterministic, always-reliable target: ``led_clear_aperture_detect`` finds it
-(F267 on this LED), so plain hover over the opening should highlight its rim EDGE
-directly -- no Alt, no per-pixel ambiguity -- and a click inherits that highlight
-(WYSIWYG), because the click re-picks through the same feature path.
+(F267 on this LED).
+
+bugs/0326 gated the snap on the picked CELL landing on the opening face, but the
+opening is a see-through hole in a WIDE frame -- a ray under the cursor falls
+THROUGH the window onto recessed features behind it (the flag resolved F005, a
+sliver ~17 mm back), so the cell gate never fired ("still can't highlight the CA
+opening").  bugs/0327 fixes this: the rim is one deterministic CLOSED edge loop,
+so select it by SCREEN proximity to that loop -- a big forgiving target that fires
+wherever the cursor is near the rim, independent of ``cell_id`` / whatever the ray
+hits behind it.  A click inherits that highlight (WYSIWYG), because the click
+re-picks through the same feature path.
 
 What this checks (against the real analytic mesh, no OCC, no GLX)
 ----------------------------------------------------------------
   A. ``_clear_aperture_opening_edge_feature("led", F)`` returns a feature whose
      overlay is a LINE loop (the rim edge: n_lines > 0, n_polys == 0), with a
      finite centroid/normal and face_id ``F%03d``.
-  B. The shared ``step_feature_pick_for_display_xy`` SHORT-CIRCUITS to that edge
-     feature when the picked cell lands on the opening face group.
-  C. The short-circuit is SELECTIVE: a cell on a different face group does NOT
-     return the clear-aperture edge feature.
+  B. The shared ``step_feature_pick_for_display_xy`` snaps to that rim-edge
+     feature when the cursor is NEAR the projected rim loop -- with NO ``cell_id``
+     supplied (proving the snap is proximity-driven, not cell-driven).
+  C. The snap is SELECTIVE: a cursor at the projected HOLE CENTRE (inside the
+     see-through opening, far from every rim segment) and a cursor far off-body do
+     NOT return the clear-aperture edge feature.
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_led_ca_edge_hover
@@ -39,6 +49,10 @@ _VTP = Path(
 )
 _STEP = Path("attachment/LED/OPT-ILS0202-X-V1.0.2-H.STEP")
 _CA_FACE_INDEX = 266  # F267 opening (see validate_open3d_led_clear_aperture_detect)
+# The opening normal is +y, so a synthetic "camera" that drops the y axis projects
+# the rim to its true ring shape in display space; the scale just makes the
+# rim-vs-hole-centre pixel separation unambiguous for the proximity tolerance.
+_PROJECT_SCALE = 4.0
 
 
 def _face_centroid_normal(mesh, face_index, values):
@@ -117,6 +131,13 @@ class _FakeInspector:
         self.editor = editor
         self._ca_opening_face_index_cache = {}
 
+    def _world_to_display_2d(self, point):
+        # Synthetic orthographic camera looking down the opening's +y normal.
+        p = np.asarray(point, dtype=float).reshape(-1)
+        if p.size < 3 or not np.all(np.isfinite(p[:3])):
+            return None
+        return np.asarray([p[0] * _PROJECT_SCALE, p[2] * _PROJECT_SCALE], dtype=float)
+
     def _step_label_is_round_lens_like(self, label):
         return False
 
@@ -155,7 +176,6 @@ def run_checks() -> "tuple[bool, list[str]]":
     values = np.asarray(_cell_face_index_values(surface, n_cells), dtype=int)
 
     opening_cells = np.where(values == _CA_FACE_INDEX)[0]
-    other_cells = np.where((values >= 0) & (values != _CA_FACE_INDEX))[0]
     if opening_cells.size == 0:
         return False, [f"FAIL: no cells with face index {_CA_FACE_INDEX} in {_VTP.name}"]
 
@@ -189,33 +209,44 @@ def run_checks() -> "tuple[bool, list[str]]":
                 f"lines={int(overlay.GetNumberOfLines())} polys={int(overlay.GetNumberOfPolys())}"
             )
 
-    # B. Full pick short-circuits on an opening cell.
-    hit = step_feature_pick_for_display_xy(
-        inspector, "led", (0.0, 0.0), cell_id=int(opening_cells[0])
+    # Derive cursor positions from the projected rim loop (the same outline the
+    # pick path builds), so the test tracks the real geometry, not magic pixels.
+    outline = inspector._clear_aperture_outline("led", _CA_FACE_INDEX)
+    rim_pts = np.asarray(outline.points, dtype=float).reshape((-1, 3))
+    projected = np.asarray(
+        [inspector._world_to_display_2d(p) for p in rim_pts], dtype=float
     )
+    rim_center_xy = projected.mean(axis=0)
+    # A cursor a few px off an actual rim vertex -- NEAR the loop; no cell_id given.
+    near_xy = tuple(projected[0] + np.asarray([0.0, 6.0]))
+    # The projected hole centre: inside the see-through opening, far from every rim
+    # segment -- exactly where the flagged ray fell THROUGH onto a recessed face.
+    center_xy = tuple(rim_center_xy)
+    far_xy = tuple(rim_center_xy + np.asarray([1.0e5, 0.0]))
+
+    # B. Proximity snap: NEAR the rim, with NO cell_id supplied (proximity, not cell).
+    hit = step_feature_pick_for_display_xy(inspector, "led", near_xy)
     if not isinstance(hit, dict) or hit.get("face_id") != f"F{_CA_FACE_INDEX:03d}":
         failures.append(
-            "FAIL(B): a hover on the opening cell did NOT short-circuit to the clear-aperture edge "
-            f"(got {None if hit is None else hit.get('face_id')!r})"
+            "FAIL(B): a hover NEAR the projected rim loop did NOT snap to the clear-aperture edge "
+            f"(got {None if hit is None else hit.get('face_id')!r}) -- proximity trigger dead"
         )
     elif not _overlay_is_line(hit["feature"][1]):
-        failures.append("FAIL(B): opening-cell pick overlay is not the rim edge line")
+        failures.append("FAIL(B): near-rim pick overlay is not the rim edge line")
     else:
-        notes.append("opening-cell pick -> clear-aperture rim edge (short-circuit fires)")
+        notes.append("near-rim cursor (no cell_id) -> clear-aperture rim edge (proximity snap fires)")
 
-    # C. Selective: a non-opening cell must NOT return the clear-aperture edge.
-    if other_cells.size:
-        miss = step_feature_pick_for_display_xy(
-            inspector, "led", (0.0, 0.0), cell_id=int(other_cells[0])
-        )
+    # C. Selective: the hole centre and a far cursor must NOT return the CA edge.
+    for tag, xy in (("hole-centre", center_xy), ("off-body", far_xy)):
+        miss = step_feature_pick_for_display_xy(inspector, "led", xy)
         miss_id = None if not isinstance(miss, dict) else miss.get("face_id")
         if miss_id == f"F{_CA_FACE_INDEX:03d}":
             failures.append(
-                "FAIL(C): a hover on a NON-opening cell wrongly returned the clear-aperture edge -- "
-                "the short-circuit is not selective"
+                f"FAIL(C): a {tag} cursor wrongly returned the clear-aperture edge -- the proximity "
+                "snap is not selective (it should fire only near the rim)"
             )
         else:
-            notes.append(f"non-opening cell -> not the CA edge (face_id={miss_id!r})")
+            notes.append(f"{tag} cursor -> not the CA edge (face_id={miss_id!r})")
 
     return (not failures), failures + notes
 
@@ -225,11 +256,14 @@ def main() -> int:
     hard = [n for n in notes if n.startswith("FAIL")]
     soft = [n for n in notes if not n.startswith("FAIL")]
     if hard:
-        print("[FAIL] LED clear-aperture opening edge hover (bugs/0326)")
+        print("[FAIL] LED clear-aperture opening edge hover (bugs/0326+0327)")
         for item in hard:
             print(f"  - {item}")
         return 1
-    print("[PASS] LED clear-aperture opening edge is a deterministic plain-hover target (bugs/0326)")
+    print(
+        "[PASS] LED clear-aperture opening edge snaps on screen-proximity to its rim loop "
+        "(bugs/0326+0327)"
+    )
     for item in soft:
         print(f"  - {item}")
     return 0
