@@ -13336,6 +13336,37 @@ def phase_283_led_beam_splitter_orchestration(
     return result
 
 
+def phase_284_led_beam_splitter_menu_command(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """The LED "Add Beam Splitter to LED" actions must be DIRECT single-click commands, not a
+    "... > Cube/Plate" CASCADE (bugs/0320). The Open 3D inspector embeds a VTK render-window
+    interactor that competes for the pointer, so a Tk cascade's submenu often never posts on hover
+    inside that window -- the user clicks the parent, nothing opens, nothing fires, no status line
+    (the 2026-07-16 07:47 recording). The command, the menu build and a programmatic submenu.invoke
+    all work headless; only the interactive cascade in the VTK window is unreliable -- and a single-
+    click command needs no hover-to-post, the same reason the direct "Hide <STEP>" items always
+    worked. Display-free guard: the LED menu adds NO Beam-Splitter cascade, adds two direct Cube/Plate
+    commands, and invoking each reaches editor.add_beam_splitter_to_led(kind)."""
+    result = PhaseResult(
+        name="Phase 284: Add Beam Splitter to LED -- direct single-click commands, not a VTK-fragile cascade"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_led_beam_splitter_menu_command import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"led-beam-splitter-menu-command guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if not n.startswith("SKIP")])
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("led-beam-splitter-menu-command phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13664,6 +13695,7 @@ def main() -> int:
             phase_281_beam_splitter_factory,
             phase_282_led_clear_aperture_detect,
             phase_283_led_beam_splitter_orchestration,
+            phase_284_led_beam_splitter_menu_command,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

@@ -377,17 +377,22 @@ class Open3DFaceAssignmentService:
             # bugs/0319: one-click "Add Beam Splitter to LED". Only on the LED overlay --
             # it generates a parametric BS, centres it on the LED clear-aperture opening,
             # glues, promotes, and auto-flags the 45-degree diagonal coating.
+            # bugs/0320: these are DIRECT commands, not an "... > Cube/Plate" cascade. In
+            # the VTK-embedded 3D inspector the render-window interactor competes for the
+            # pointer, so a cascade's submenu often never posts on hover -- the user clicks
+            # the parent label, nothing opens, nothing fires, no status line (exactly the
+            # 07:47 recording). A single-click command needs no hover-to-post and fires
+            # reliably -- the same reason the direct "Hide <STEP>" items always worked in
+            # this menu. (The 2D main table's cascades are fine; there is no VTK there.)
             if step_label == "led":
-                bs_menu = tk.Menu(menu, tearoff=False)
-                bs_menu.add_command(
-                    label="Cube",
+                menu.add_command(
+                    label="Add Beam Splitter to LED (Cube)",
                     command=lambda: self._add_beam_splitter_to_led_from_context("cube"),
                 )
-                bs_menu.add_command(
-                    label="Plate",
+                menu.add_command(
+                    label="Add Beam Splitter to LED (Plate)",
                     command=lambda: self._add_beam_splitter_to_led_from_context("plate"),
                 )
-                menu.add_cascade(label="Add Beam Splitter to LED", menu=bs_menu)
             if not decoration:
                 menu.add_command(
                     label="Promote to Optical Element",
