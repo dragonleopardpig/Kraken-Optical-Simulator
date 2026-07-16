@@ -339,6 +339,77 @@ def _clear_aperture_opening_edge_pick(
     return feature if isinstance(feature, dict) else None
 
 
+def _opening_loop_hover_pick(
+    inspector: Any, label: str, display_xy, *, tolerance_px: float = 30.0
+):
+    """Snap plain hover to the NEAREST closed opening loop's rim by screen proximity.
+
+    bugs/0328: the clear-aperture opening a user points at is not always a whole
+    analytic FACE. On the ILS0202 LED the emitting *central square* is an INNER hole
+    loop of the wide front panel (F0053), so the per-face CA snap (0327) locked onto
+    the wrong opening (the +y tray slot F0266, ~144 px away) and hover fell back to the
+    whole panel -- "no improvement at all". Mine every closed loop from the LARGE faces
+    (``open3d_opening_loops``), drop each face's outer silhouette, and snap to whichever
+    opening rim is nearest the cursor -- so ANY closed opening (hole loop OR standalone
+    opening face) is a forgiving, deterministic hover target, independent of what the
+    ray hits behind a see-through window.
+
+    Returns the loop's rim-edge hover feature dict, or ``None`` when there is no mined
+    opening near the cursor (caller falls through to the per-cell body pick).
+    """
+    from KrakenOS.UI.services.open3d_opening_loops import (
+        nearest_opening_loop,
+        opening_loops_for_mesh,
+    )
+
+    project = getattr(inspector, "_world_to_display_2d", None)
+    if not callable(project):
+        return None
+    try:
+        mesh = inspector.editor._transformed_imported_step_mesh_for_label(
+            str(label or "").strip().lower()
+        )
+    except Exception:
+        mesh = None
+    if mesh is None:
+        return None
+    try:
+        loops = opening_loops_for_mesh(mesh)
+    except Exception:
+        loops = []
+    if not loops:
+        return None
+    loop = nearest_opening_loop(loops, display_xy, project, tolerance_px=float(tolerance_px))
+    if loop is None:
+        return None
+    feature = inspector._opening_loop_hover_feature(label, loop)
+    return feature if isinstance(feature, dict) else None
+
+
+def _step_opening_hover_pick(inspector: Any, label: str, display_xy):
+    """Plain-hover opening snap with a stable priority (bugs/0326/0327/0328).
+
+    1. A MANUAL clear-aperture pick always wins -- the user's explicit choice.
+    2. Otherwise snap to the NEAREST mined opening loop (the square, tray slot, any
+       hole), so "all closed edges" are hover targets, not just ``candidates[0]``.
+    3. Fall back to the auto-detected CA face rim for openings not mined as loops
+       (e.g. a small CA face below the large-face area gate).
+    """
+    manual = None
+    try:
+        manual = inspector.editor.step_clear_aperture(str(label or "").strip().lower())
+    except Exception:
+        manual = None
+    if isinstance(manual, dict):
+        feature = _clear_aperture_opening_edge_pick(inspector, label, display_xy)
+        if feature is not None:
+            return feature
+    feature = _opening_loop_hover_pick(inspector, label, display_xy)
+    if feature is not None:
+        return feature
+    return _clear_aperture_opening_edge_pick(inspector, label, display_xy)
+
+
 def step_feature_pick_for_display_xy(
     inspector: Any,
     label: str,
@@ -352,16 +423,17 @@ def step_feature_pick_for_display_xy(
     label = str(label or "").strip().lower()
     if not label:
         return None
-    # bugs/0326/0327: the clear-aperture OPENING is a deterministic, always-reliable
+    # bugs/0326/0327/0328: the clear-aperture OPENING is a deterministic, always-reliable
     # hover target (unlike the pixel-varying per-cell face pick that made "only a few
     # can be selected"/"phantom edge" so brittle). It is a see-through hole in a wide
-    # frame, so gating on the picked CELL landing on the opening face (0326) never
-    # fired -- the ray falls THROUGH the window onto recessed features behind it. Snap
-    # to the rim by SCREEN proximity to its closed loop instead (0327): a big forgiving
-    # target that fires wherever the cursor is near the rim edge -- no Alt, no
-    # fuzziness, independent of cell_id. The click inherits this highlight (WYSIWYG),
-    # because it re-picks through this same path.
-    ca_feature = _clear_aperture_opening_edge_pick(inspector, label, display_xy)
+    # frame, so gating on the picked CELL landing on the opening face (0326) never fired
+    # -- the ray falls THROUGH the window onto recessed features behind it. Snap to the
+    # rim by SCREEN proximity to its closed loop instead (0327). 0328: the opening the
+    # user points at can be an INNER hole loop of a wide face (the ILS0202 central
+    # square), not the auto-detected face; snap to the NEAREST mined opening loop so ANY
+    # closed opening fires -- no Alt, no fuzziness, independent of cell_id. The click
+    # inherits this highlight (WYSIWYG), because it re-picks through this same path.
+    ca_feature = _step_opening_hover_pick(inspector, label, display_xy)
     if ca_feature is not None:
         return ca_feature
     if inspector._step_label_is_round_lens_like(label):

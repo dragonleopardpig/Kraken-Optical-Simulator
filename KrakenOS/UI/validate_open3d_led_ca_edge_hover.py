@@ -21,17 +21,30 @@ wherever the cursor is near the rim, independent of ``cell_id`` / whatever the r
 hits behind it.  A click inherits that highlight (WYSIWYG), because the click
 re-picks through the same feature path.
 
+bugs/0328 GENERALISED this: plain hover now snaps to the NEAREST of *every* mined
+opening loop (``open3d_opening_loops``), not just the auto-detected CA face -- so
+an inner hole loop of a wide face (the central emitting square) is a target too.
+This guard therefore no longer asserts "hover near F266 -> exactly F266": F266 is
+the +y tray slot, one of a DENSE cluster of tray openings (F306/F167/F168/F166...)
+whose projected rims nearly coincide, so the nearest-rim rule may return a
+neighbour -- which is correct (it highlights the rim under the cursor).  What must
+still hold is that the auto-detected CA slot SURVIVES 0328 as a first-class hover
+target and the tray region stays opening-live.
+
 What this checks (against the real analytic mesh, no OCC, no GLX)
 ----------------------------------------------------------------
   A. ``_clear_aperture_opening_edge_feature("led", F)`` returns a feature whose
      overlay is a LINE loop (the rim edge: n_lines > 0, n_polys == 0), with a
-     finite centroid/normal and face_id ``F%03d``.
-  B. The shared ``step_feature_pick_for_display_xy`` snaps to that rim-edge
-     feature when the cursor is NEAR the projected rim loop -- with NO ``cell_id``
-     supplied (proving the snap is proximity-driven, not cell-driven).
-  C. The snap is SELECTIVE: a cursor at the projected HOLE CENTRE (inside the
-     see-through opening, far from every rim segment) and a cursor far off-body do
-     NOT return the clear-aperture edge feature.
+     finite centroid/normal and face_id ``F%03d`` -- the fallback builder used for
+     CA faces below the loop-mining area gate.
+  B. The auto-detected CA slot F266 is present among the 0328 mined opening loops,
+     and ``_opening_loop_hover_feature`` on that loop yields a LINE-loop overlay
+     with face_id ``F266`` -- the auto CA opening is a first-class mined target.
+  C. The shared ``step_feature_pick_for_display_xy`` returns a rim-edge LINE
+     opening feature (an ``F`` id, not a poly fill, not None) when the cursor is
+     NEAR F266's mined rim -- the tray region is opening-live on plain hover (no
+     ``cell_id``).  NOT pinned to exactly F266: the tray openings are clustered.
+  D. Selective: a cursor far off-body returns None (the snap fires only near a rim).
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_led_ca_edge_hover
@@ -122,6 +135,7 @@ class _FakeInspector:
     _clear_aperture_opening_face_index = _I._clear_aperture_opening_face_index
     _clear_aperture_opening_edge_feature = _I._clear_aperture_opening_edge_feature
     _clear_aperture_outline = _I._clear_aperture_outline
+    _opening_loop_hover_feature = _I._opening_loop_hover_feature
     _hover_overlay_for_feature = staticmethod(_I._hover_overlay_for_feature)
     _edge_pick_alt_active = False
     _picker = None
@@ -168,6 +182,7 @@ def run_checks() -> "tuple[bool, list[str]]":
     import pyvista as pv
 
     from KrakenOS.UI.services.open3d_face_index_edges import _cell_face_index_values
+    from KrakenOS.UI.services.open3d_opening_loops import opening_loops_for_mesh
     from KrakenOS.UI.services.open3d_round_lens_pick import step_feature_pick_for_display_xy
 
     mesh = pv.read(str(_VTP))
@@ -209,44 +224,73 @@ def run_checks() -> "tuple[bool, list[str]]":
                 f"lines={int(overlay.GetNumberOfLines())} polys={int(overlay.GetNumberOfPolys())}"
             )
 
-    # Derive cursor positions from the projected rim loop (the same outline the
-    # pick path builds), so the test tracks the real geometry, not magic pixels.
-    outline = inspector._clear_aperture_outline("led", _CA_FACE_INDEX)
-    rim_pts = np.asarray(outline.points, dtype=float).reshape((-1, 3))
-    projected = np.asarray(
-        [inspector._world_to_display_2d(p) for p in rim_pts], dtype=float
-    )
-    rim_center_xy = projected.mean(axis=0)
-    # A cursor a few px off an actual rim vertex -- NEAR the loop; no cell_id given.
-    near_xy = tuple(projected[0] + np.asarray([0.0, 6.0]))
-    # The projected hole centre: inside the see-through opening, far from every rim
-    # segment -- exactly where the flagged ray fell THROUGH onto a recessed face.
-    center_xy = tuple(rim_center_xy)
-    far_xy = tuple(rim_center_xy + np.asarray([1.0e5, 0.0]))
-
-    # B. Proximity snap: NEAR the rim, with NO cell_id supplied (proximity, not cell).
-    hit = step_feature_pick_for_display_xy(inspector, "led", near_xy)
-    if not isinstance(hit, dict) or hit.get("face_id") != f"F{_CA_FACE_INDEX:03d}":
+    # B. The auto-detected CA slot survives 0328 as a first-class MINED opening loop.
+    mined = opening_loops_for_mesh(mesh)
+    ca_loops = [lp for lp in mined if int(lp.face_index) == _CA_FACE_INDEX]
+    if not ca_loops:
+        faces = sorted({int(lp.face_index) for lp in mined})
         failures.append(
-            "FAIL(B): a hover NEAR the projected rim loop did NOT snap to the clear-aperture edge "
-            f"(got {None if hit is None else hit.get('face_id')!r}) -- proximity trigger dead"
+            f"FAIL(B): the auto CA slot F{_CA_FACE_INDEX:03d} is NOT among the mined opening loops "
+            f"(mined faces={faces}) -- 0328 dropped the detected clear aperture from the hover set"
         )
-    elif not _overlay_is_line(hit["feature"][1]):
-        failures.append("FAIL(B): near-rim pick overlay is not the rim edge line")
+        ca_loop = None
     else:
-        notes.append("near-rim cursor (no cell_id) -> clear-aperture rim edge (proximity snap fires)")
-
-    # C. Selective: the hole centre and a far cursor must NOT return the CA edge.
-    for tag, xy in (("hole-centre", center_xy), ("off-body", far_xy)):
-        miss = step_feature_pick_for_display_xy(inspector, "led", xy)
-        miss_id = None if not isinstance(miss, dict) else miss.get("face_id")
-        if miss_id == f"F{_CA_FACE_INDEX:03d}":
+        ca_loop = max(ca_loops, key=lambda lp: lp.perimeter)  # the tray-slot rim, not a screw hole
+        loop_feat = inspector._opening_loop_hover_feature("led", ca_loop)
+        if not isinstance(loop_feat, dict) or loop_feat.get("face_id") != f"F{_CA_FACE_INDEX:03d}":
+            got = None if not isinstance(loop_feat, dict) else loop_feat.get("face_id")
             failures.append(
-                f"FAIL(C): a {tag} cursor wrongly returned the clear-aperture edge -- the proximity "
-                "snap is not selective (it should fire only near the rim)"
+                f"FAIL(B): mined F{_CA_FACE_INDEX:03d} loop feature face_id {got!r} != "
+                f"'F{_CA_FACE_INDEX:03d}'"
+            )
+        elif not _overlay_is_line(loop_feat["feature"][1]):
+            failures.append("FAIL(B): mined CA-loop overlay is not a LINE rim (n_lines>0, n_polys==0)")
+        else:
+            notes.append(
+                f"auto CA slot F{_CA_FACE_INDEX:03d} is a mined loop "
+                f"(perim={ca_loop.perimeter:.1f}mm) with a line-rim overlay"
+            )
+
+    # Cursor positions from the MINED tray-slot rim (drop-y projection); the pick path
+    # projects with the same _world_to_display_2d, so this tracks the real geometry.
+    if ca_loop is not None:
+        rim = np.asarray(ca_loop.points, dtype=float).reshape(-1, 3)
+        projected = np.asarray([inspector._world_to_display_2d(p) for p in rim], dtype=float)
+        # The rim vertex with the greatest clearance from all OTHER mined loops -- the
+        # least-ambiguous point on the densely-clustered tray region.
+        others = [lp for lp in mined if lp is not ca_loop]
+        def _clear(xy):
+            best = 9.0e9
+            for lp in others:
+                op = np.asarray([inspector._world_to_display_2d(p) for p in lp.points], dtype=float)
+                best = min(best, float(np.min(np.linalg.norm(op - xy, axis=1))))
+            return best
+        best_i = int(np.argmax([_clear(xy) for xy in projected]))
+        near_xy = tuple(projected[best_i] + np.asarray([0.0, 6.0]))
+        far_xy = tuple(projected.mean(axis=0) + np.asarray([1.0e5, 0.0]))
+
+        # C. Near the mined rim -> a rim-edge LINE opening feature (an 'F' id, not a poly
+        #    fill, not None). NOT pinned to exactly F266: the tray openings are clustered,
+        #    so the nearest-rim rule may return an adjacent opening -- still an opening.
+        hit = step_feature_pick_for_display_xy(inspector, "led", near_xy)
+        if not isinstance(hit, dict):
+            failures.append("FAIL(C): a hover NEAR the mined tray rim returned nothing -- region not opening-live")
+        elif not str(hit.get("face_id", "")).startswith("F"):
+            failures.append(f"FAIL(C): near-rim pick face_id {hit.get('face_id')!r} is not an 'F%03d' opening id")
+        elif not _overlay_is_line(hit["feature"][1]):
+            failures.append("FAIL(C): near-rim pick overlay is a FILL, not the rim edge line -- whole-face fallback")
+        else:
+            notes.append(f"near tray rim (no cell_id) -> opening rim edge {hit.get('face_id')!r} (region opening-live)")
+
+        # D. Selective: a far off-body cursor returns None (snap fires only near a rim).
+        miss = step_feature_pick_for_display_xy(inspector, "led", far_xy)
+        if miss is not None:
+            failures.append(
+                f"FAIL(D): an off-body cursor returned {miss.get('face_id')!r} -- the snap is not "
+                "selective (it should return nothing far from every rim)"
             )
         else:
-            notes.append(f"{tag} cursor -> not the CA edge (face_id={miss_id!r})")
+            notes.append("off-body cursor -> None (selective)")
 
     return (not failures), failures + notes
 
@@ -256,13 +300,13 @@ def main() -> int:
     hard = [n for n in notes if n.startswith("FAIL")]
     soft = [n for n in notes if not n.startswith("FAIL")]
     if hard:
-        print("[FAIL] LED clear-aperture opening edge hover (bugs/0326+0327)")
+        print("[FAIL] LED clear-aperture opening edge hover (bugs/0326+0327, 0328-aware)")
         for item in hard:
             print(f"  - {item}")
         return 1
     print(
-        "[PASS] LED clear-aperture opening edge snaps on screen-proximity to its rim loop "
-        "(bugs/0326+0327)"
+        "[PASS] auto CA slot F266 survives 0328 as a mined opening + tray region stays "
+        "opening-live on plain hover (bugs/0326+0327)"
     )
     for item in soft:
         print(f"  - {item}")

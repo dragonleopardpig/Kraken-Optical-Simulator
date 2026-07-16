@@ -13524,6 +13524,38 @@ def phase_289_led_ca_edge_hover(
     return result
 
 
+def phase_290_led_opening_loop_hover(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0328 -- the opening a user points at is not always a whole analytic FACE. On the vendor LED
+    the central emitting SQUARE is an INNER hole loop of the wide front panel face (F0053), not a face of
+    its own, and none of the five auto-detected clear-aperture candidates lies on the front panel, so the
+    per-face CA snap (0326/0327) locked onto the wrong opening (+y tray slot F266, ~144px away) and hover
+    fell back to the whole panel ("no improvement at all"). 0328 mines EVERY closed loop from the large
+    faces (open3d_opening_loops), drops each face's outer silhouette, and snaps plain hover to whichever
+    opening rim is NEAREST the cursor -- so the central square (a hole loop) is a first-class hover target,
+    honouring "all closed edges should be detected". Display-free guard: A the square is mined and its
+    face's outer silhouette is dropped, B its hover feature is a line-loop overlay, C a near-rim cursor
+    (no cell_id) snaps to it, D the hole centre / off-body stay selective (no snap)."""
+    result = PhaseResult(
+        name="Phase 290: LED plain hover snaps to the nearest closed opening loop (incl. inner hole loops)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_led_opening_loop_hover import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"led-opening-loop-hover guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if n.startswith("FAIL")])
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("led-opening-loop-hover phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13858,6 +13890,7 @@ def main() -> int:
             phase_287_led_edge_pick_modes,
             phase_288_alt_hover_refire,
             phase_289_led_ca_edge_hover,
+            phase_290_led_opening_loop_hover,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

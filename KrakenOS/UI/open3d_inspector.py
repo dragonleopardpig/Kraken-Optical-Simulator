@@ -7736,6 +7736,49 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             "through_pick": None,
         }
 
+    def _opening_loop_hover_feature(self, label: str, loop):
+        """Hover feature for a mined OPENING loop (bugs/0328).
+
+        The clear aperture a user points at can be an INNER hole loop of a wide face
+        (the ILS0202 central emitting square is a hole in the front panel F0053), not
+        a whole face -- so it is not reachable through the per-face CA path. Highlight
+        the loop's rim as a lines-only overlay (gold edge tubes, like the CA rim), so
+        plain hover over ANY closed opening lights up its edge. ``face_id`` is the
+        owning analytic face so a click still resolves to a real face group."""
+        from KrakenOS.UI.services.open3d_opening_loops import loop_outline_polydata
+
+        try:
+            pts = np.asarray(loop.points, dtype=float).reshape(-1, 3)
+        except Exception:
+            return None
+        if pts.shape[0] < 3:
+            return None
+        outline = loop_outline_polydata(loop)
+        if outline is None or int(getattr(outline, "n_points", 0)) <= 0:
+            return None
+        centroid = np.asarray(getattr(loop, "centroid", pts.mean(axis=0)), dtype=float).reshape(-1)[:3]
+        if centroid.size < 3 or not np.all(np.isfinite(centroid)):
+            centroid = pts.mean(axis=0)
+        normal = np.asarray(getattr(loop, "normal", [0.0, 0.0, 1.0]), dtype=float).reshape(-1)[:3]
+        if normal.size < 3 or not np.all(np.isfinite(normal)) or float(np.linalg.norm(normal)) < 1e-9:
+            normal = np.asarray([0.0, 0.0, 1.0], dtype=float)
+        overlay = self._hover_overlay_for_feature(centroid, outline)
+        feature = (
+            np.asarray(centroid, dtype=float).reshape(3),
+            overlay,
+            np.asarray(normal, dtype=float).reshape(3),
+        )
+        try:
+            fid = int(getattr(loop, "face_index", -1))
+        except Exception:
+            fid = -1
+        return {
+            "feature": feature,
+            "surface_center": np.asarray(centroid, dtype=float).reshape(3),
+            "face_id": f"F{fid:03d}" if fid >= 0 else "",
+            "through_pick": None,
+        }
+
     def _add_clear_aperture_highlight_actor(self, label: str) -> None:
         """Persistently outline a STEP overlay's recorded clear aperture so the user
         always sees which window is the component's CA (bugs/0134). Cyan so it reads
