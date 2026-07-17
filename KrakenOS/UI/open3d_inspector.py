@@ -177,6 +177,56 @@ def _layout_editor_class():
     return _layout_module().KrakenLayoutEditor
 
 
+_RUNNING_BUILD_STAMP: "dict[str, object] | None" = None
+
+
+def _open3d_running_build_stamp() -> "dict[str, object]":
+    """Best-effort git fingerprint of the CODE the running app was launched from.
+
+    Stamped into every flag bundle's state.json so a re-recorded bug can be told
+    apart from a STALE app running pre-fix code -- the recurring "is this
+    recording actually on the new build?" ambiguity that a fix + guard cannot
+    resolve from the bundle alone. Computed once per process (the checkout does
+    not change while the app runs) and never raises: a non-git install yields
+    ``{"git": None}``.
+    """
+    global _RUNNING_BUILD_STAMP
+    if _RUNNING_BUILD_STAMP is not None:
+        return _RUNNING_BUILD_STAMP
+    stamp: "dict[str, object]" = {"git": None}
+    try:
+        import subprocess
+
+        repo_dir = os.path.dirname(os.path.abspath(__file__))
+
+        def _git(*args: str) -> "str | None":
+            try:
+                out = subprocess.run(
+                    ["git", "-C", repo_dir, *args],
+                    capture_output=True,
+                    text=True,
+                    timeout=2.0,
+                )
+            except Exception:
+                return None
+            if out.returncode != 0:
+                return None
+            return out.stdout.strip() or None
+
+        head = _git("rev-parse", "--short", "HEAD")
+        if head is not None:
+            dirty = _git("status", "--porcelain")
+            stamp = {
+                "git": head,
+                "branch": _git("rev-parse", "--abbrev-ref", "HEAD"),
+                "dirty": bool(dirty),
+            }
+    except Exception:
+        stamp = {"git": None}
+    _RUNNING_BUILD_STAMP = stamp
+    return stamp
+
+
 def _load_3d_backends() -> None:
     global pv, vtkTkRenderWindowInteractor, vtkOrientationMarkerWidget, vtkCameraOrientationWidget
     global vtkAxesActor, vtkActor, vtkCellPicker, vtkPropPicker, vtkDataSetMapper, vtkRenderer, vtkTextActor, vtkBillboardTextActor3D
@@ -8817,6 +8867,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             payload = {
                 "version": 1,
                 "captured_at_iso": datetime.now().isoformat(timespec="seconds"),
+                "build": _open3d_running_build_stamp(),
                 "description": "",
                 "screenshot": "screenshot.png",
                 "screenshot_kind": "dialog" if screenshot_is_dialog else "scene_3d",

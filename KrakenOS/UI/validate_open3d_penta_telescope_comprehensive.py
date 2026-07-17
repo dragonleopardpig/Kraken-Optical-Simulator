@@ -13897,6 +13897,33 @@ def phase_300_clear_aperture_snap_auto_detect(
     return result
 
 
+def phase_301_flag_bundle_build_stamp(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0345 -- every flag bundle stamps the running code's git build. Two cycles in a row re-flagged bugs already
+    fixed AND guarded (0343 's' hotkey, 0344 CA snap), but the bundle's state.json carried no fingerprint of the CODE
+    the app was launched from, so a STALE app (pre-fix) could not be told apart from a real regression. flag_bug now
+    writes _open3d_running_build_stamp() (short HEAD + branch + dirty) under 'build'. Display-free guard: the stamp is
+    a never-raising dict that resolves a short SHA in a checkout, and the flag_bug payload includes it."""
+    result = PhaseResult(
+        name="Phase 301: flag bundles stamp the running git build (stale-app recordings are distinguishable)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_flag_bundle_build_stamp import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"flag-bundle-build-stamp guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if n.startswith("FAIL")])
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("flag-bundle-build-stamp phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14242,6 +14269,7 @@ def main() -> int:
             phase_298_clear_aperture_snap_from_record,
             phase_299_context_menu_focus_restore,
             phase_300_clear_aperture_snap_auto_detect,
+            phase_301_flag_bundle_build_stamp,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
