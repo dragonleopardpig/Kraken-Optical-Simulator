@@ -305,6 +305,93 @@ def run_checks() -> "tuple[bool, list[str]]":
     if 'anchor_mode="feature_center"' not in handler_src:
         failures.append("FAIL(3c): the CA snap handler must arm the feature_center anchor mode")
 
+    # 4) bugs/0337 -- one-click CA->optical-axis snap when the scene has a single axis.
+    # The two-step "click the dotted axis" is unusable for an opening offset from an
+    # axis that runs THROUGH the body (hidden near the opening, visible only in the
+    # screen corners), so a single unambiguous axis snaps on the menu click alone.
+    Svc = fa_mod.Open3DFaceAssignmentService
+    one_axis = [{
+        "axis_id": "axis:global", "axis_label": "Optical Axis",
+        "points": np.asarray([[0.0, 0.0, -100.0], [0.0, 0.0, 100.0]], dtype=float),
+    }]
+
+    def _closest(pts, c):
+        c = np.asarray(c, dtype=float).reshape(-1)[:3]
+        return np.asarray([0.0, 0.0, float(c[2])]), np.asarray([0.0, 0.0, 1.0])
+
+    svc = types.SimpleNamespace(
+        _optical_axis_pick_records=one_axis,
+        editor=types.SimpleNamespace(_closest_polyline_point_and_direction=_closest),
+    )
+    info = Svc._single_optical_axis_pick_info(svc, (5.0, 1.0, 2.0))
+    if not isinstance(info, dict):
+        failures.append("FAIL(4): a single optical axis must yield a one-click pick payload")
+    else:
+        if str(info.get("axis_id", "")) != "axis:global":
+            failures.append(f"FAIL(4): single-axis payload must carry the axis id, got {info.get('axis_id')!r}")
+        pw = np.asarray(info.get("picked_world", []), dtype=float).reshape(-1)
+        if pw.size < 3 or not np.allclose(pw[:3], [5.0, 1.0, 2.0]):
+            failures.append("FAIL(4): picked_world must be the opening centre (perpendicular-foot target)")
+
+    two_axes = [
+        {"axis_id": "axis:global", "points": np.asarray([[0, 0, -100], [0, 0, 100]], dtype=float)},
+        {"axis_id": "axis:branch", "points": np.asarray([[0, 10, -100], [0, 10, 100]], dtype=float)},
+    ]
+    svc_multi = types.SimpleNamespace(
+        _optical_axis_pick_records=two_axes,
+        editor=types.SimpleNamespace(_closest_polyline_point_and_direction=_closest),
+    )
+    if Svc._single_optical_axis_pick_info(svc_multi, (0.0, 0.0, 0.0)) is not None:
+        failures.append("FAIL(4): several optical axes must NOT auto-pick (keep the two-step)")
+
+    svc_empty = types.SimpleNamespace(
+        _optical_axis_pick_records=[],
+        editor=types.SimpleNamespace(_closest_polyline_point_and_direction=_closest),
+    )
+    if Svc._single_optical_axis_pick_info(svc_empty, (0.0, 0.0, 0.0)) is not None:
+        failures.append("FAIL(4): no optical axis records must return None")
+
+    # 4b) behavioural: single axis -> arm THEN apply in one right-click (no 2nd click).
+    seq = {"arm": 0, "apply": 0}
+    handler_svc = _fake_axis_inspector()
+    handler_svc._optical_axis_pick_records = one_axis
+    handler_svc.editor._closest_polyline_point_and_direction = _closest
+    handler_svc._single_optical_axis_pick_info = types.MethodType(Svc._single_optical_axis_pick_info, handler_svc)
+
+    def _arm(label, *, anchor_mode="body_center", feature_center=None, feature_normal=None):
+        seq["arm"] += 1
+        handler_svc._step_normal_axis_pick_mode = True
+
+    handler_svc.start_step_normal_axis_pick = _arm
+    handler_svc._apply_step_normal_axis_pick = lambda _ai: seq.__setitem__("apply", seq["apply"] + 1)
+    Svc._snap_clear_aperture_to_optical_axis_from_context(handler_svc, "led", (5.0, 1.0, 2.0), (0.0, 0.0, 1.0))
+    if seq["arm"] != 1:
+        failures.append("FAIL(4b): the CA snap must arm the feature_center pick")
+    if seq["apply"] != 1:
+        failures.append("FAIL(4b): a single optical axis must apply the snap immediately (one click)")
+
+    # 4c) behavioural: several axes -> arm only, no immediate apply (two-step retained).
+    seq2 = {"arm": 0, "apply": 0}
+    handler_multi = _fake_axis_inspector()
+    handler_multi._optical_axis_pick_records = two_axes
+    handler_multi.editor._closest_polyline_point_and_direction = _closest
+    handler_multi._single_optical_axis_pick_info = types.MethodType(Svc._single_optical_axis_pick_info, handler_multi)
+
+    def _arm2(label, *, anchor_mode="body_center", feature_center=None, feature_normal=None):
+        seq2["arm"] += 1
+        handler_multi._step_normal_axis_pick_mode = True
+
+    handler_multi.start_step_normal_axis_pick = _arm2
+    handler_multi._apply_step_normal_axis_pick = lambda _ai: seq2.__setitem__("apply", seq2["apply"] + 1)
+    Svc._snap_clear_aperture_to_optical_axis_from_context(handler_multi, "led", (0.0, 0.0, 0.0), (0.0, 0.0, 1.0))
+    if seq2["arm"] != 1 or seq2["apply"] != 0:
+        failures.append("FAIL(4c): several optical axes must keep the explicit click-the-axis step")
+
+    # 4d) source contract: the handler one-clicks through the helper + apply.
+    snap_src = inspect.getsource(Svc._snap_clear_aperture_to_optical_axis_from_context)
+    if "_single_optical_axis_pick_info" not in snap_src or "_apply_step_normal_axis_pick" not in snap_src:
+        failures.append("FAIL(4d): the CA snap handler must one-click via _single_optical_axis_pick_info + _apply_step_normal_axis_pick")
+
     return (not failures), failures
 
 

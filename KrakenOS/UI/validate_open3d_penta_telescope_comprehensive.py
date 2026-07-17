@@ -13615,9 +13615,13 @@ def phase_292_led_ca_alt_toggle_and_axis_snap(
     several). Display-free guard: 1 the Alt owning-surface resolver + the plain-EDGE/Alt-SURFACE branch;
     2 the feature_center arm stores geometry + prompts for the intended axis (non-finite does not arm);
     3 dispatch delegates to the feature-center apply, which calls the center+normal engine (NOT translate-
-    only) with the stored geometry + clicked axis frame; the menu + markers are wired."""
+    only) with the stored geometry + clicked axis frame; the menu + markers are wired.
+    bugs/0337: the two-step arm is unusable when the axis runs THROUGH the body (hidden/offset beyond the
+    hover+click tolerance near the opening), so with exactly ONE optical axis the snap finishes in a single
+    click -- 4 _single_optical_axis_pick_info yields an apply-ready payload for one axis (None for several or
+    none), and the CA snap arms then applies immediately; multi-axis scenes keep the explicit pick."""
     result = PhaseResult(
-        name="Phase 292: LED CA Alt toggles edge<->surface + right-click snap centres AND normals the opening on the intended axis"
+        name="Phase 292: LED CA Alt toggles edge<->surface + right-click snap centres AND normals the opening on the intended axis (one-click when a single axis)"
     )
     try:
         from KrakenOS.UI.validate_open3d_led_ca_axis_snap import run_checks

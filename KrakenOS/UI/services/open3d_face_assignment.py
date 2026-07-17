@@ -990,11 +990,20 @@ class Open3DFaceAssignmentService:
         """Right-click "Snap Clear Aperture -> Optical Axis (center + normal)".
 
         bugs/0333: unlike the translate-only ``_center_clear_aperture_from_context``,
-        this centres AND normalises the OPENING the user hovered -- passing its own
-        centroid + normal to the shared axis-pick machine armed in ``feature_center``
-        mode, which then prompts the user to click the INTENDED optical axis (there can
-        be several) and snaps both rotation and translation via
-        ``snap_step_feature_normal_to_optical_axis``."""
+        this centres AND normalises the OPENING -- passing its own centroid + normal to
+        the shared axis-pick machine armed in ``feature_center`` mode, then snapping
+        both rotation and translation via ``snap_step_feature_normal_to_optical_axis``.
+
+        bugs/0337: arming is only STEP ONE of a two-step pick -- the user then has to
+        click the dotted Optical Axis guide. That is unusable for an opening offset
+        from the axis: the axis runs THROUGH the body, so near the opening it is hidden
+        inside the solid, and its only visible stubs sit in the far screen corners well
+        outside the 28 px hover / 40 px click tolerance. The user hovers the opening,
+        the axis never highlights, and the click never lands ("I can't select the
+        Optical Axis"). When the scene has exactly ONE optical axis there is nothing to
+        disambiguate, so we finish the snap in a single click: synthesise that axis's
+        pick payload (polyline + the opening centre as the target) and apply it
+        immediately. Multi-axis scenes still fall back to the explicit pick."""
         label = str(label).strip().lower()
         try:
             self.start_step_normal_axis_pick(
@@ -1007,6 +1016,57 @@ class Open3DFaceAssignmentService:
             le = _layout_module()
             self.status_var.set(f"Snap Clear Aperture -> Optical Axis failed: {le._short_error_message(exc)}")
             self.editor.append_debug(f"Open 3D clear-aperture axis-snap arm failed: {exc}")
+            return
+        if not bool(getattr(self, "_step_normal_axis_pick_mode", False)):
+            # The arm bailed (opening geometry unavailable); its status stands.
+            return
+        axis_info = self._single_optical_axis_pick_info(center)
+        if axis_info is None:
+            # Several optical axes -- keep the explicit "click the intended axis" step.
+            return
+        self._apply_step_normal_axis_pick(axis_info)
+        self.render()
+
+    def _single_optical_axis_pick_info(self, feature_center):
+        """Return an apply-ready axis-pick payload IFF the scene has exactly one
+        optical axis (bugs/0337), else ``None`` so the caller keeps the two-step pick.
+
+        ``picked_world`` is set to the opening centroid, so
+        ``_optical_axis_frame_from_pick`` projects it onto the axis (its perpendicular
+        foot) as the snap target -- exactly the point the two-step click aims at, minus
+        the aiming."""
+        records = []
+        for record in list(getattr(self, "_optical_axis_pick_records", None) or []):
+            try:
+                points = np.asarray(record.get("points"), dtype=float)
+            except Exception:
+                continue
+            if points.ndim == 2 and points.shape[0] >= 2 and points.shape[1] >= 3:
+                records.append((record, points[:, :3]))
+        if not records:
+            return None
+        axis_ids = {str(rec.get("axis_id", "") or "") for rec, _pts in records}
+        if len(axis_ids) != 1:
+            return None
+        try:
+            center = np.asarray(feature_center, dtype=float).reshape(-1)[:3]
+        except Exception:
+            center = np.asarray([], dtype=float)
+        chosen = records[0][0]
+        if center.size >= 3 and np.all(np.isfinite(center[:3])) and len(records) > 1:
+            best_d = None
+            for rec, pts in records:
+                try:
+                    pt, _dir = self.editor._closest_polyline_point_and_direction(pts, center[:3])
+                    dist = float(np.linalg.norm(np.asarray(pt, dtype=float).reshape(-1)[:3] - center[:3]))
+                except Exception:
+                    continue
+                if best_d is None or dist < best_d:
+                    best_d, chosen = dist, rec
+        axis_info = dict(chosen)
+        if center.size >= 3 and np.all(np.isfinite(center[:3])):
+            axis_info["picked_world"] = np.asarray(center[:3], dtype=float)
+        return axis_info
 
     def _clear_clear_aperture_from_context(self, label: str) -> None:
         """Right-click "Forget Clear Aperture": drop the persisted CA record."""

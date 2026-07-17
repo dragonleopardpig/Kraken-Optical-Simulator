@@ -588,7 +588,7 @@
     "289": "Phase 289: LED clear-aperture opening edge snaps on screen-proximity to its rim loop",
     "290": "Phase 290: LED plain hover snaps to the nearest opening loop, incl. inner hole loops, by rim OR interior containment",
     "291": "Phase 291: LED CA opening survives an off-body hover (no shared-mesh strip) + debounced trailing re-pick",
-    "292": "Phase 292: LED CA Alt toggles edge<->surface + right-click snap centres AND normals the opening on the intended axis",
+    "292": "Phase 292: LED CA Alt toggles edge<->surface + right-click snap centres AND normals the opening on the intended axis (one-click when a single axis)",
     "293": "Phase 293: LED CA left-click pins the opening only (persistent); right-click opening menu (no hop); popup dismisses on click-elsewhere"
   }
 }
