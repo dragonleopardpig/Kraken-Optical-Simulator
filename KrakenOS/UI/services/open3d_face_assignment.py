@@ -15,6 +15,21 @@ def _layout_module():
     return layout_editor_module
 
 
+def _usable_axis_pick_records(source):
+    """Filter raw optical-axis records to ``(record, Nx3 points)`` pairs -- the same
+    valid-points gate ``_add_optical_axis_pick_overlays`` applies when it appends to
+    ``_optical_axis_pick_records`` (bugs/0346)."""
+    usable = []
+    for record in list(source or []):
+        try:
+            points = np.asarray(record.get("points"), dtype=float)
+        except Exception:
+            continue
+        if points.ndim == 2 and points.shape[0] >= 2 and points.shape[1] >= 3:
+            usable.append((record, points[:, :3]))
+    return usable
+
+
 class Open3DFaceAssignmentService:
     """Handle Open 3D right-click face-function assignment workflows."""
 
@@ -1149,14 +1164,20 @@ class Open3DFaceAssignmentService:
         ``_optical_axis_frame_from_pick`` projects it onto the axis (its perpendicular
         foot) as the snap target -- exactly the point the two-step click aims at, minus
         the aiming."""
-        records = []
-        for record in list(getattr(self, "_optical_axis_pick_records", None) or []):
+        records = _usable_axis_pick_records(getattr(self, "_optical_axis_pick_records", None))
+        if not records:
+            # bugs/0346: ``_optical_axis_pick_records`` is (re)populated only by a scene
+            # refresh (open3d_scene_refresh -> _add_optical_axis_pick_overlays). When the
+            # CA snap fires before that refresh has run, the list is still empty, so a
+            # genuine SINGLE-axis scene wrongly falls through to the unusable two-step
+            # pick (the axis is buried in the body -> "optical axis no highlight, click on
+            # it no snap"). Rebuild the exact records the refresh would append, straight
+            # from the source, so auto-complete no longer depends on refresh timing.
             try:
-                points = np.asarray(record.get("points"), dtype=float)
+                source = self._optical_axis_records_for_3d(None)
             except Exception:
-                continue
-            if points.ndim == 2 and points.shape[0] >= 2 and points.shape[1] >= 3:
-                records.append((record, points[:, :3]))
+                source = None
+            records = _usable_axis_pick_records(source)
         if not records:
             return None
         axis_ids = {str(rec.get("axis_id", "") or "") for rec, _pts in records}

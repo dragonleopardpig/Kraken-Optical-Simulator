@@ -302,7 +302,8 @@
     "298": "pass",
     "299": "pass",
     "300": "pass",
-    "301": "pass"
+    "301": "pass",
+    "302": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -605,6 +606,7 @@
     "298": "Phase 298: a DEFINED clear aperture is snappable to the optical axis from its record (no live hover/pin)",
     "299": "Phase 299: dismissing a right-click popup restores render-pane focus so the 's' flag hotkey keeps working",
     "300": "Phase 300: an auto-detected clear aperture (no manual record) is snappable to the optical axis",
-    "301": "Phase 301: flag bundles stamp the running git build (stale-app recordings are distinguishable)"
+    "301": "Phase 301: flag bundles stamp the running git build (stale-app recordings are distinguishable)",
+    "302": "Phase 302: single-axis CA->optical-axis snap auto-completes without a prior refresh (empty pick list)"
   }
 }

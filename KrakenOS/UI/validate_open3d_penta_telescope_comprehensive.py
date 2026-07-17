@@ -13924,6 +13924,34 @@ def phase_301_flag_bundle_build_stamp(
     return result
 
 
+def phase_302_ca_snap_autocomplete_fallback(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0346 (flag_20260717_160019_506, build-stamped FRESH) -- "right click snap to optical axis still not working,
+    optical axis no highlight, click on it no snap." _optical_axis_pick_records is repopulated only by a scene refresh,
+    so when the single-axis CA snap fires before that refresh the list is empty, _single_optical_axis_pick_info returns
+    None, and the snap falls through to the bugs/0337 two-step pick the user can't complete (axis buried in the body).
+    Fix: fall back to _optical_axis_records_for_3d(None) -- the same source the refresh derives records from -- so a
+    single-axis scene auto-completes regardless of refresh timing; multi-axis still keeps the explicit click."""
+    result = PhaseResult(
+        name="Phase 302: single-axis CA->optical-axis snap auto-completes without a prior refresh (empty pick list)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_ca_snap_autocomplete_fallback import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"ca-snap-autocomplete-fallback guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if n.startswith("FAIL")])
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("ca-snap-autocomplete-fallback phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14270,6 +14298,7 @@ def main() -> int:
             phase_299_context_menu_focus_restore,
             phase_300_clear_aperture_snap_auto_detect,
             phase_301_flag_bundle_build_stamp,
+            phase_302_ca_snap_autocomplete_fallback,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
