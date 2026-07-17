@@ -427,6 +427,23 @@ class Open3DFaceAssignmentService:
                 label="Forget Clear Aperture",
                 command=lambda picked_label=step_label: self._clear_clear_aperture_from_context(picked_label),
             )
+        # bugs/0339: the one-click "Add Beam Splitter to LED" lives only in the
+        # whole-body STEP menu, but once a CA opening is PINNED every right-click
+        # is diverted here (open3d_face_assignment.py, the _has_selected_step_opening
+        # guard). A snap done from a NON-right-click path leaves the opening pinned,
+        # so the user right-clicks to add a BS and only ever sees the opening menu
+        # ("right click add BS Cube or Plate not working"). Offer it here too -- the
+        # pinned opening IS the LED clear aperture the BS centres on.
+        if step_label == "led":
+            menu.add_separator()
+            menu.add_command(
+                label="Add Beam Splitter to LED (Cube)",
+                command=lambda: self._add_beam_splitter_to_led_from_context("cube"),
+            )
+            menu.add_command(
+                label="Add Beam Splitter to LED (Plate)",
+                command=lambda: self._add_beam_splitter_to_led_from_context("plate"),
+            )
         menu.add_separator()
         menu.add_command(label="Deselect opening", command=lambda: self._clear_open3d_selection())
         self._popup_context_menu(menu, event)

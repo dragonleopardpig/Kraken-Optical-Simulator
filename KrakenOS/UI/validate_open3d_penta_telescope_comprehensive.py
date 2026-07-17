@@ -13716,6 +13716,67 @@ def phase_294_step_selection_mode_toggle(
     return result
 
 
+def phase_295_single_persistent_feature_selection(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0340 -- only ONE persistent STEP feature selection at a time. User (imported LED, after the 0338
+    selection-mode work): "face and edge can be selected in sequence, which shouldn't be the case." The two
+    persistent pins -- a clear-aperture OPENING (0334, _set_selected_step_opening) and a STEP FACE (0338,
+    _set_selected_step_face) -- lived in separate slots and each setter cleared only its OWN slot, so a click
+    that pinned a face left a previously-pinned opening/edge lit (two cyan outlines). Each setter now ALSO
+    clears the other slot, so pinning one feature drops the other. Display-free guard: pin an opening (opening
+    only), pin a face while the opening is pinned (opening CLEARED), pin an opening again (face CLEARED), and
+    neither order ever leaves both pinned."""
+    result = PhaseResult(
+        name="Phase 295: only one persistent STEP feature selection at a time (face pin drops opening pin and vice versa)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_single_persistent_feature_selection import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"single-persistent-feature-selection guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if n.startswith("FAIL")])
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("single-persistent-feature-selection phase failed without detail")
+    return result
+
+
+def phase_296_opening_menu_add_beam_splitter(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0339 -- the pinned-opening right-click menu offers "Add Beam Splitter to LED". User (imported LED):
+    "after snapping the CA to optical axis, right click add BS Cube or Plate not working." ... "The snapping is
+    not from the right click menu." The one-click Add-BS commands lived only in the whole-body STEP menu, but a
+    PINNED clear-aperture opening (0334) diverts every right-click to _show_selected_opening_context_menu (the
+    _has_selected_step_opening guard). A snap from a NON-right-click path leaves the opening pinned, so Add BS
+    was unreachable. The opening menu now also offers "Add Beam Splitter to LED (Cube)/(Plate)" when the opening
+    belongs to the LED, routing to the same _add_beam_splitter_to_led_from_context pipeline. Display-free guard:
+    build the opening menu for a pinned LED opening (both Add-BS labels present), for a non-LED overlay opening
+    (no Add-BS labels), plus a source contract (step_label == 'led' gate + BS-pipeline routing)."""
+    result = PhaseResult(
+        name="Phase 296: pinned LED clear-aperture opening menu offers 'Add Beam Splitter to LED (Cube/Plate)'"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_opening_menu_add_bs import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"opening-menu-add-bs guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if n.startswith("FAIL")])
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("opening-menu-add-bs phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14055,6 +14116,8 @@ def main() -> int:
             phase_292_led_ca_alt_toggle_and_axis_snap,
             phase_293_led_ca_persistent_select_and_menu,
             phase_294_step_selection_mode_toggle,
+            phase_295_single_persistent_feature_selection,
+            phase_296_opening_menu_add_beam_splitter,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

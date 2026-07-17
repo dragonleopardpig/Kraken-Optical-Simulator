@@ -19452,6 +19452,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         """
         # Drop any prior persistent rim before drawing the new one.
         self._clear_selected_step_opening(render=False)
+        # bugs/0340: only ONE persistent feature selection at a time -- pinning an
+        # opening drops any pinned face so a face + an opening/edge can't both stay
+        # lit ("face and edge can be selected in sequence").
+        self._clear_selected_step_face(render=False)
         try:
             center_arr = np.asarray(center, dtype=float).reshape(3) if center is not None else None
         except Exception:
@@ -19557,6 +19561,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         """
         # Drop any prior persistent face outline before drawing the new one.
         self._clear_selected_step_face(render=False)
+        # bugs/0340: only ONE persistent feature selection at a time -- pinning a
+        # face drops any pinned opening so a face + an opening/edge can't both stay
+        # lit ("face and edge can be selected in sequence").
+        self._clear_selected_step_opening(render=False)
         try:
             center_arr = np.asarray(center, dtype=float).reshape(3) if center is not None else None
         except Exception:
