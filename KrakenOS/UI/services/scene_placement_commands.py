@@ -4924,36 +4924,80 @@ class ScenePlacementMixin:
         span_a = float(extents[1])
         return span_a if span_a > 0.0 else None
 
-    def _led_beam_splitter_opening_plan(self):
-        """Where a beam splitter should centre on the LED: ``(face_index, world
-        centroid, side_mm)``, or None.
+    def _led_beam_splitter_openings(self):
+        """The LED's clear-aperture openings for the BS flow, best first:
+        ``[(face_index, world centroid, outward world normal, span_mm), ...]``.
 
-        Prefers the C2 auto-detect (rim-window signature); falls back to a manually
-        picked clear aperture (``STEP_CLEAR_APERTURE_PICK``).  ``side_mm`` is the
-        opening's smaller in-plane span (clamped) so the BS is sized to fit."""
+        bugs/0349: a coaxial LED (e.g. OPT-CO90) has TWO windows, PERPENDICULAR to
+        each other. The old "auto-detect rank #1" rule could pick the OTHER window
+        than the one the user just snapped onto the optical axis -- the follow-up
+        centering then dragged the LED sideways to centre that other window, un-doing
+        the user's alignment ("add BS cube push the LED STEP away"). Gather ALL
+        candidates (auto-detect plus the persisted manual record) and order by
+        (distance of the centroid from the global optical axis, how parallel the
+        normal is to the axis, detect rank) -- so the user's aligned THROUGH window
+        sorts first and its perpendicular partner second. Normals are outward
+        (sign-checked against the LED body centre)."""
         if self._step_path_for_label("led") is None:
-            return None
-        face_index = None
-        candidates = self.auto_detect_step_clear_aperture_candidates("led")
-        if candidates:
-            face_index = int(candidates[0].face_index)
-        else:
-            record = self.step_clear_aperture("led")
-            if isinstance(record, dict):
-                try:
-                    face_index = int(record.get("face_index"))
-                except Exception:
-                    face_index = None
-        if face_index is None:
-            return None
-        resolved = self._step_overlay_fine_face_centroid_normal("led", face_index)
-        if resolved is None:
-            return None
-        center_world, _normal, _area = resolved
-        span = self._step_analytic_face_inplane_span("led", face_index)
-        side_mm = float(span) if span and span > 0.0 else 25.0
-        side_mm = float(min(max(side_mm, 8.0), 90.0))
-        return int(face_index), np.asarray(center_world, dtype=float).reshape(-1)[:3], side_mm
+            return []
+        face_indices: list[int] = []
+        for cand in self.auto_detect_step_clear_aperture_candidates("led"):
+            try:
+                fid = int(cand.face_index)
+            except Exception:
+                continue
+            if fid not in face_indices:
+                face_indices.append(fid)
+        record = self.step_clear_aperture("led")
+        if isinstance(record, dict):
+            try:
+                fid = int(record.get("face_index"))
+            except Exception:
+                fid = None
+            if fid is not None and fid >= 0 and fid not in face_indices:
+                face_indices.append(fid)
+        try:
+            led_mesh = self._transformed_imported_step_mesh_for_label("led")
+            led_center = np.asarray(led_mesh.center, dtype=float).reshape(-1)[:3]
+        except Exception:
+            led_center = None
+        openings = []
+        for order, fid in enumerate(face_indices):
+            resolved = self._step_overlay_fine_face_centroid_normal("led", fid)
+            if resolved is None:
+                continue
+            centroid, normal, _area = resolved
+            centroid = np.asarray(centroid, dtype=float).reshape(-1)[:3]
+            normal = np.asarray(normal, dtype=float).reshape(-1)[:3]
+            norm = float(np.linalg.norm(normal))
+            normal = normal / norm if norm > 1.0e-9 else np.asarray([0.0, 0.0, 1.0], dtype=float)
+            if led_center is not None and float(np.dot(normal, centroid - led_center)) < 0.0:
+                normal = -normal
+            span = self._step_analytic_face_inplane_span("led", fid)
+            span_mm = float(span) if span and span > 0.0 else 25.0
+            axis_dist = float(np.linalg.norm(centroid[:2]))
+            axis_parallel = abs(float(normal[2]))  # 1 = faces along the global axis
+            openings.append(((round(axis_dist, 6), round(1.0 - axis_parallel, 6), order), fid, centroid, normal, span_mm))
+        openings.sort(key=lambda item: item[0])
+        return [(fid, centroid, normal, span_mm) for _key, fid, centroid, normal, span_mm in openings]
+
+    @staticmethod
+    def _line_line_meet_point(point_a, dir_a, point_b, dir_b) -> np.ndarray:
+        """Closest-approach midpoint of two 3D lines (the crossing point when they
+        genuinely intersect, a robust midpoint when nearly-perpendicular lines are a
+        hair skew from CAD tolerances)."""
+        p_a = np.asarray(point_a, dtype=float).reshape(3)
+        p_b = np.asarray(point_b, dtype=float).reshape(3)
+        d_a = np.asarray(dir_a, dtype=float).reshape(3)
+        d_b = np.asarray(dir_b, dtype=float).reshape(3)
+        cross = np.cross(d_a, d_b)
+        denom = float(np.dot(cross, cross))
+        if denom <= 1.0e-12:
+            return (p_a + p_b) / 2.0
+        offset = p_b - p_a
+        t = float(np.dot(np.cross(offset, d_b), cross)) / denom
+        s = float(np.dot(np.cross(offset, d_a), cross)) / denom
+        return ((p_a + t * d_a) + (p_b + s * d_b)) / 2.0
 
     def _flag_beam_splitter_coating_face(self, row_index: int, *, tilt_deg: float = 45.0, tol_deg: float = 20.0):
         """Auto-flag the promoted BS row's 45-degree diagonal as the Beam Splitter
@@ -5010,15 +5054,78 @@ class ScenePlacementMixin:
         if self._step_path_for_label("led") is None:
             self.status_var.set("Add Beam Splitter to LED: import the LED STEP first.")
             return None
-        plan = self._led_beam_splitter_opening_plan()
-        if plan is None:
+        openings = self._led_beam_splitter_openings()
+        # bugs/0349: a CA->axis snap records an axis ANCHOR on the LED -- the user's
+        # explicit declaration of the THROUGH window. Trust it over auto-detect rank.
+        anchor = self._step_overlay_axis_anchor("led")
+        anchor_point = None
+        anchor_normal = None
+        if isinstance(anchor, dict):
+            try:
+                pt = np.asarray(anchor.get("target_point"), dtype=float).reshape(-1)[:3]
+                if pt.size >= 3 and np.all(np.isfinite(pt[:3])):
+                    anchor_point = pt[:3]
+            except Exception:
+                anchor_point = None
+            try:
+                dv = np.asarray(anchor.get("target_direction"), dtype=float).reshape(-1)[:3]
+                norm = float(np.linalg.norm(dv))
+                if norm > 1.0e-9 and np.all(np.isfinite(dv[:3])):
+                    anchor_normal = dv[:3] / norm
+            except Exception:
+                anchor_normal = None
+        if not openings and anchor_point is None:
             self.status_var.set(
                 "Add Beam Splitter to LED: could not find the LED clear-aperture opening. "
                 "Right-click the LED window -> Set as Clear Aperture, then retry."
             )
             return None
-        face_index, opening_center, side_mm = plan
-        opening_z = float(opening_center[2])
+        # bugs/0349: the THROUGH window (the one on/along the optical axis -- the one
+        # the user aligned) leads. A coaxial LED also has a PERPENDICULAR side window:
+        # the BS must sit INSIDE the housing where the two window axes cross, oriented
+        # so the diagonal folds the side arm into the through axis, overlapping the
+        # LED body (that overlap is the vendor cavity, not a collision).
+        face_index = None
+        opening_center = None
+        opening_normal = None
+        span_a = 0.0
+        if openings:
+            face_index, opening_center, opening_normal, span_a = openings[0]
+        if anchor_point is not None:
+            matched = None
+            for fid, centroid, normal, span in openings:
+                if float(np.linalg.norm(np.asarray(centroid, dtype=float) - anchor_point)) <= max(2.0, 0.1 * float(span)):
+                    matched = (fid, centroid, normal, span)
+                    break
+            if matched is not None:
+                face_index, opening_center, opening_normal, span_a = matched
+            elif anchor_normal is not None:
+                # The snapped window did not survive the auto-detect verification --
+                # trust the snap itself (no CA persist / centering for a synthetic
+                # window: it is on-axis by construction, so the LED never moves).
+                face_index = None
+                opening_center = anchor_point
+                opening_normal = anchor_normal
+                span_a = 0.0
+        if opening_center is None or opening_normal is None:
+            self.status_var.set(
+                "Add Beam Splitter to LED: could not resolve the LED through window. "
+                "Right-click the LED window -> Set as Clear Aperture, then retry."
+            )
+            return None
+        side_face_index = None
+        side_span = 0.0
+        for fid_b, center_b, normal_b, span_b in openings:
+            if face_index is not None and int(fid_b) == int(face_index):
+                continue
+            if abs(float(np.dot(opening_normal, normal_b))) < 0.5:  # >60 deg apart
+                side_face_index = int(fid_b)
+                side_span = float(span_b)
+                break
+        side_mm = float(max(span_a, side_span))
+        if side_mm <= 0.0:
+            side_mm = 25.0
+        side_mm = float(min(max(side_mm, 8.0), 90.0))
 
         # 1) Generate the parametric BS, sized to the opening (regen if cache missing).
         try:
@@ -5041,13 +5148,71 @@ class ScenePlacementMixin:
             self.status_var.set("Add Beam Splitter to LED: could not overlay the generated BS.")
             return None
 
-        # 3) Set the LED clear aperture + centre it on the global optical axis.
-        self.set_step_clear_aperture("led", face_index)
-        self.center_clear_aperture_on_optical_axis("led")
+        # 3) Set the LED clear aperture to the THROUGH window + centre it on the
+        #    global optical axis (a no-op when the user already snapped it there --
+        #    bugs/0349: the old code could persist + centre the OTHER coaxial window
+        #    and drag the aligned LED sideways). A synthetic anchor-derived window is
+        #    on-axis by construction: nothing to persist, nothing to centre.
+        if face_index is not None:
+            self.set_step_clear_aperture("led", face_index)
+            self.center_clear_aperture_on_optical_axis("led")
+            # The centering may have translated the LED -- re-resolve the windows so
+            # the BS seats against their POST-centering positions.
+            resolved_a = self._step_overlay_fine_face_centroid_normal("led", face_index)
+            if resolved_a is not None:
+                opening_center = np.asarray(resolved_a[0], dtype=float).reshape(-1)[:3]
+                normal_a = np.asarray(resolved_a[1], dtype=float).reshape(-1)[:3]
+                norm = float(np.linalg.norm(normal_a))
+                if norm > 1.0e-9 and float(np.dot(normal_a / norm, opening_normal)) < 0.0:
+                    normal_a = -normal_a
+                opening_normal = normal_a / norm if norm > 1.0e-9 else opening_normal
+        side_center = None
+        side_normal = None
+        if side_face_index is not None:
+            resolved_b = self._step_overlay_fine_face_centroid_normal("led", side_face_index)
+            if resolved_b is not None:
+                side_center = np.asarray(resolved_b[0], dtype=float).reshape(-1)[:3]
+                side_normal = np.asarray(resolved_b[1], dtype=float).reshape(-1)[:3]
+                norm = float(np.linalg.norm(side_normal))
+                side_normal = side_normal / norm if norm > 1.0e-9 else None
 
-        # 4) Centre the BS on that same opening (now at (0,0,z) on the axis). The BS
-        #    template is origin-centred, so its placement offset IS its world centre.
-        self._set_step_placement_offset_xyz("optical", (0.0, 0.0, opening_z))
+        # 4) Orient the BS from the window normals, then seat it by MEASUREMENT (the
+        #    overlay import re-bases a STEP to front=min-z, so "placement == centre"
+        #    was never true -- bugs/0349). Template frame: through-beam along +Z,
+        #    diagonal folds +Z -> +X. With R.Z = -n_A and R.X = n_B, light entering
+        #    from the side window (travelling -n_B) exits along the through window's
+        #    outward normal n_A.
+        z_axis = -np.asarray(opening_normal, dtype=float).reshape(3)
+        if side_normal is not None:
+            x_axis = np.asarray(side_normal, dtype=float).reshape(3)
+        else:
+            seed = np.asarray([1.0, 0.0, 0.0], dtype=float)
+            if abs(float(np.dot(seed, z_axis))) > 0.9:
+                seed = np.asarray([0.0, 1.0, 0.0], dtype=float)
+            x_axis = seed
+        x_axis = x_axis - z_axis * float(np.dot(x_axis, z_axis))
+        x_norm = float(np.linalg.norm(x_axis))
+        x_axis = x_axis / x_norm if x_norm > 1.0e-9 else np.asarray([1.0, 0.0, 0.0], dtype=float)
+        y_axis = np.cross(z_axis, x_axis)
+        rotation = np.column_stack((x_axis, y_axis, z_axis))
+        angles = self._step_angles_from_rotation_matrix(rotation)
+        self._set_step_rotation_deg_tuple("optical", angles)
+        if side_center is not None and side_normal is not None:
+            # Crossing of the two window axes -- the vendor BS cavity centre.
+            target_center = self._line_line_meet_point(
+                opening_center, opening_normal, side_center, side_normal
+            )
+        else:
+            # Single-window LED: keep the 0319 semantics (BS centred on the opening).
+            target_center = np.asarray(opening_center, dtype=float).reshape(3)
+        bs_mesh = self._transformed_imported_step_mesh_for_label("optical")
+        if bs_mesh is None or int(getattr(bs_mesh, "n_points", 0)) <= 0:
+            self.status_var.set("Add Beam Splitter to LED: generated BS mesh unavailable for seating.")
+            return None
+        mesh_center = np.asarray(bs_mesh.center, dtype=float).reshape(-1)[:3]
+        current_offset = np.asarray(self._step_placement_offset_xyz("optical"), dtype=float).reshape(3)
+        delta = np.asarray(target_center, dtype=float).reshape(3) - mesh_center
+        self._set_step_placement_offset_xyz("optical", tuple(float(v) for v in (current_offset + delta)))
 
         # 5) Glue the BS to the LED so they move as one.
         self.set_optical_led_glue(True)
@@ -5078,8 +5243,11 @@ class ScenePlacementMixin:
             "kind": kind,
             "row_index": row_index,
             "side_mm": float(side_mm),
-            "opening_face_index": int(face_index),
+            "opening_face_index": (int(face_index) if face_index is not None else None),
             "opening_center": tuple(float(v) for v in opening_center[:3]),
+            "side_opening_face_index": (int(side_face_index) if side_face_index is not None else None),
+            "bs_center": tuple(float(v) for v in np.asarray(target_center, dtype=float).reshape(3)),
+            "bs_rotation_deg": tuple(float(v) for v in angles),
             "bs_path": str(solid.path),
             "coating_tilt_deg": float(solid.coating_tilt_deg),
             "coating_face": (coating.get("face_id") if isinstance(coating, dict) else None),

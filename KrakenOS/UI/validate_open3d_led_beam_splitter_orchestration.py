@@ -11,10 +11,17 @@ editor so no display, OCC, or STEP is required.
 
 What it checks
 --------------
-  A. Full pipeline order + args: generate -> import(path=) -> set CA(led, opening) ->
-     centre CA(led) -> place BS at the opening's on-axis centre -> glue(True) ->
-     promote(optical, clear_overlay=True) -> auto-flag the diagonal coating; the BS is
-     sized to the opening span; the returned summary carries the row + coating face.
+  A. Full pipeline order + args: generate -> import(path=) -> set CA(led, THROUGH
+     window) -> centre CA(led) -> orient the BS from the window normals -> seat it by
+     measurement -> glue(True) -> promote(optical, clear_overlay=True) -> auto-flag the
+     diagonal coating; the BS is sized to the opening span; the returned summary
+     carries the row + coating face.
+  A2 (bugs/0349). Coaxial LED with TWO perpendicular windows: the THROUGH window (the
+     one on/along the optical axis) is chosen even when auto-detect ranks the side
+     window first, so the centering is a NO-OP on an aligned LED (it is never pushed
+     away); the BS is sized to the larger window, rotated so the diagonal folds the
+     side arm into the through axis, and seated at the CROSSING of the two window
+     axes -- overlapping the LED housing (the vendor cavity), glued.
   B. The coating picker grabs the largest ~45-degree face and ignores axis-aligned
      housing faces (so a plain box or a mis-picked face is never flagged).
   C. Graceful stops: an unknown kind and a missing LED both return None with a status
@@ -51,21 +58,36 @@ class _SpyEditor:
 
     # The three real methods under test (bound to the spy instance).
     add_beam_splitter_to_led = ScenePlacementMixin.add_beam_splitter_to_led
-    _led_beam_splitter_opening_plan = ScenePlacementMixin._led_beam_splitter_opening_plan
+    _led_beam_splitter_openings = ScenePlacementMixin._led_beam_splitter_openings
+    _line_line_meet_point = staticmethod(ScenePlacementMixin._line_line_meet_point)
+    _step_angles_from_rotation_matrix = staticmethod(ScenePlacementMixin._step_angles_from_rotation_matrix)
     _flag_beam_splitter_coating_face = ScenePlacementMixin._flag_beam_splitter_coating_face
 
     def __init__(self, *, led_present=True, opening_face_index=112,
                  opening_centroid=(7.3, -1.3, 36.5), opening_span=55.0,
-                 auto_candidates=True, promoted_faces=None):
+                 auto_candidates=True, promoted_faces=None, openings=None,
+                 led_body_center=(0.0, 0.0, 90.0), bs_mesh_center=None):
         self.calls: list[tuple] = []
         self.status_messages: list[str] = []
         self.status_var = SimpleNamespace(set=self.status_messages.append)
         self._led_present = bool(led_present)
         self._opening_face_index = int(opening_face_index)
-        self._opening_centroid = np.asarray(opening_centroid, dtype=float)
         self._opening_span = float(opening_span)
         self._auto_candidates = bool(auto_candidates)
         self._promoted_faces = promoted_faces if promoted_faces is not None else _default_promoted_faces()
+        # openings: [(face_index, centroid, outward_normal, span_mm)] in DETECT-RANK order.
+        if openings is None:
+            openings = [(int(opening_face_index), np.asarray(opening_centroid, dtype=float),
+                         np.asarray((0.0, 0.0, -1.0)), float(opening_span))]
+        self._openings = [(int(fid), np.asarray(c, dtype=float), np.asarray(n, dtype=float), float(s))
+                          for fid, c, n, s in openings]
+        self._led_body_center = np.asarray(led_body_center, dtype=float)
+        self._led_shift = np.zeros(3)
+        self._ca_face_index = None
+        self._optical_offset = np.zeros(3)
+        self._bs_mesh_center = (np.asarray(bs_mesh_center, dtype=float)
+                                if bs_mesh_center is not None else None)
+        self._axis_anchor = None
 
     # --- leaf collaborators (stubs) ---------------------------------------
     def _step_path_for_label(self, label):
@@ -75,21 +97,47 @@ class _SpyEditor:
 
     def auto_detect_step_clear_aperture_candidates(self, label):
         if str(label).strip().lower() == "led" and self._auto_candidates:
-            return [SimpleNamespace(face_index=self._opening_face_index,
-                                    span_mm=(self._opening_span, self._opening_span),
-                                    area_mm2=462.0, score=0.93)]
+            return [SimpleNamespace(face_index=fid, area_mm2=462.0, score=0.93)
+                    for fid, _c, _n, _s in self._openings]
         return []
 
     def step_clear_aperture(self, label):
         return None
 
-    def _step_overlay_fine_face_centroid_normal(self, label, face_index):
-        if int(face_index) == self._opening_face_index:
-            return self._opening_centroid.copy(), np.asarray((0.0, 0.0, -1.0)), 462.0
+    def _step_overlay_axis_anchor(self, label):
+        return dict(self._axis_anchor) if isinstance(self._axis_anchor, dict) else None
+
+    def _opening_by_face(self, face_index):
+        for fid, centroid, normal, span in self._openings:
+            if fid == int(face_index):
+                return fid, centroid, normal, span
         return None
 
+    def _step_overlay_fine_face_centroid_normal(self, label, face_index):
+        item = self._opening_by_face(face_index)
+        if item is None:
+            return None
+        _fid, centroid, normal, _span = item
+        return centroid + self._led_shift, np.asarray(normal, dtype=float), 462.0
+
     def _step_analytic_face_inplane_span(self, label, face_index):
-        return self._opening_span
+        item = self._opening_by_face(face_index)
+        return item[3] if item is not None else None
+
+    def _step_placement_offset_xyz(self, label):
+        return tuple(float(v) for v in self._optical_offset)
+
+    def _set_step_rotation_deg_tuple(self, label, angles):
+        self.calls.append(("_set_step_rotation_deg_tuple",
+                           {"label": label, "angles": tuple(float(v) for v in angles)}))
+
+    def _transformed_imported_step_mesh_for_label(self, label):
+        if str(label).strip().lower() == "led":
+            return SimpleNamespace(center=self._led_body_center + self._led_shift, n_points=8)
+        side = self._openings[0][3] if self._openings else 55.0
+        center = (self._bs_mesh_center if self._bs_mesh_center is not None
+                  else np.asarray((0.0, 0.0, side / 2.0)))
+        return SimpleNamespace(center=center + self._optical_offset, n_points=8)
 
     def import_optical_step(self, dialog_parent=None, *, path=None, refresh_open_3d=True):
         self.calls.append(("import_optical_step", {"path": path, "refresh_open_3d": refresh_open_3d}))
@@ -97,15 +145,22 @@ class _SpyEditor:
 
     def set_step_clear_aperture(self, label, face_index):
         self.calls.append(("set_step_clear_aperture", {"label": label, "face_index": int(face_index)}))
+        self._ca_face_index = int(face_index)
         return {"face_index": int(face_index)}
 
     def center_clear_aperture_on_optical_axis(self, label):
         self.calls.append(("center_clear_aperture_on_optical_axis", {"label": label}))
+        item = self._opening_by_face(self._ca_face_index) if self._ca_face_index is not None else None
+        if item is not None:
+            centroid = item[1] + self._led_shift
+            self._led_shift = self._led_shift + np.asarray((-centroid[0], -centroid[1], 0.0))
         return {"label": label}
 
     def _set_step_placement_offset_xyz(self, label, offset_xyz):
         self.calls.append(("_set_step_placement_offset_xyz",
                            {"label": label, "offset": tuple(float(v) for v in offset_xyz)}))
+        if str(label).strip().lower() == "optical":
+            self._optical_offset = np.asarray(offset_xyz, dtype=float).reshape(3)
 
     def set_optical_led_glue(self, glued):
         self.calls.append(("set_optical_led_glue", {"glued": bool(glued)}))
@@ -188,6 +243,7 @@ def _check_pipeline(failures: list[str], notes: list[str]) -> None:
         "import_optical_step",
         "set_step_clear_aperture",
         "center_clear_aperture_on_optical_axis",
+        "_set_step_rotation_deg_tuple",
         "_set_step_placement_offset_xyz",
         "set_optical_led_glue",
         "promote",
@@ -211,9 +267,22 @@ def _check_pipeline(failures: list[str], notes: list[str]) -> None:
     offset = ed.first("_set_step_placement_offset_xyz") or {}
     if offset.get("label") != "optical":
         failures.append(f"FAIL(A): the BS ('optical') offset should be set, got label {offset.get('label')!r}")
-    got_off = offset.get("offset", (None, None, None))
-    if not (abs(got_off[0]) < 1e-9 and abs(got_off[1]) < 1e-9 and abs(got_off[2] - 36.5) < 1e-6):
-        failures.append(f"FAIL(A): BS should centre on the on-axis opening (0,0,36.5), got {got_off}")
+    # Seat by measurement: the SEATED transformed-mesh centre must land on the
+    # post-centering opening centre (0,0,36.5) -- placement is whatever delta gets it
+    # there (the overlay re-bases a STEP to front=min, bugs/0349).
+    seated = np.asarray(ed._transformed_imported_step_mesh_for_label("optical").center, dtype=float)
+    if not np.allclose(seated, (0.0, 0.0, 36.5), atol=1e-6):
+        failures.append(f"FAIL(A): seated BS centre should be the on-axis opening (0,0,36.5), got {tuple(seated)}")
+    rot = ed.first("_set_step_rotation_deg_tuple") or {}
+    if rot.get("label") != "optical":
+        failures.append(f"FAIL(A): the BS ('optical') rotation should be set, got {rot.get('label')!r}")
+    else:
+        R = ScenePlacementMixin._step_rotation_matrix_from_angles(*rot.get("angles", (0.0, 0.0, 0.0)))
+        if not np.allclose(R @ np.asarray((0.0, 0.0, 1.0)), (0.0, 0.0, 1.0), atol=1e-6):
+            failures.append(
+                "FAIL(A): single -Z-facing window -> the BS through-axis (+Z) must stay along +Z "
+                f"(R.Z={tuple((R @ np.asarray((0.0, 0.0, 1.0))).round(6))})"
+            )
 
     glue = ed.first("set_optical_led_glue") or {}
     if glue.get("glued") is not True:
@@ -237,6 +306,101 @@ def _check_pipeline(failures: list[str], notes: list[str]) -> None:
     notes.append(
         f"pipeline: {'->'.join(pruned)}; side={result.get('side_mm')}mm coating={result.get('coating_face')}"
     )
+
+
+def _check_two_window_seat(failures: list[str], notes: list[str]) -> None:
+    """bugs/0349 (flag_20260717_212714_748): coaxial LED, TWO perpendicular windows;
+    auto-detect ranks the SIDE window first (the flag's condition). The through window
+    must still win, the aligned LED must NOT move, and the BS must seat at the crossing
+    of the two window axes, folded toward the side window."""
+    through = (112, (0.0, 0.0, 70.89), (0.0, 0.0, -1.0), 55.0)
+    side = (266, (0.0, 45.5, 28.39), (0.0, 1.0, 0.0), 85.0)
+    original = spc.generate_beam_splitter
+    spc.generate_beam_splitter = _fake_generate
+    try:
+        ed = _SpyEditor(openings=[side, through], bs_mesh_center=(0.0, 0.0, 42.5))
+        result = ed.add_beam_splitter_to_led("cube")
+    finally:
+        spc.generate_beam_splitter = original
+    if result is None:
+        failures.append("FAIL(A2): two-window coaxial scene returned None")
+        return
+    ca = ed.first("set_step_clear_aperture") or {}
+    if ca.get("face_index") != 112:
+        failures.append(
+            f"FAIL(A2): the THROUGH window (112, on-axis) must be chosen over the side window "
+            f"auto-detect ranked first, got {ca.get('face_index')} (bugs/0349 'LED pushed away')"
+        )
+    if not np.allclose(ed._led_shift, (0.0, 0.0, 0.0), atol=1e-9):
+        failures.append(
+            f"FAIL(A2): centering an ALREADY-ALIGNED through window must not move the LED, "
+            f"got shift {tuple(ed._led_shift)} (the bugs/0349 push)"
+        )
+    if abs(float(result.get("side_mm", 0.0)) - 85.0) > 1e-6:
+        failures.append(f"FAIL(A2): BS should size to the larger window span 85, got {result.get('side_mm')}")
+    rot = ed.first("_set_step_rotation_deg_tuple") or {}
+    R = ScenePlacementMixin._step_rotation_matrix_from_angles(*rot.get("angles", (0.0, 0.0, 0.0)))
+    if not np.allclose(R @ np.asarray((0.0, 0.0, 1.0)), (0.0, 0.0, 1.0), atol=1e-6):
+        failures.append("FAIL(A2): through-axis must align the -Z-facing window (R.Z == +Z)")
+    if not np.allclose(R @ np.asarray((1.0, 0.0, 0.0)), (0.0, 1.0, 0.0), atol=1e-6):
+        failures.append(
+            "FAIL(A2): the diagonal's fold axis (template +X) must aim at the +Y side window "
+            f"(R.X={tuple((R @ np.asarray((1.0, 0.0, 0.0))).round(6))})"
+        )
+    seated = np.asarray(ed._transformed_imported_step_mesh_for_label("optical").center, dtype=float)
+    if not np.allclose(seated, (0.0, 0.0, 28.39), atol=1e-6):
+        failures.append(
+            f"FAIL(A2): BS must seat at the crossing of the two window axes (0,0,28.39), got {tuple(seated)}"
+        )
+    glue = ed.first("set_optical_led_glue") or {}
+    if glue.get("glued") is not True:
+        failures.append("FAIL(A2): the seated BS must be glued to the LED")
+    if not failures:
+        notes.append("two-window seat: through=112 kept, LED unmoved, side 85, folded to +Y, centre (0,0,28.39)")
+
+
+def _check_anchor_synthetic_through(failures: list[str], notes: list[str]) -> None:
+    """bugs/0349, the flag's exact live condition: the user CA-snapped a window onto
+    the axis (axis anchor recorded), but auto-detect only verifies the OTHER (side)
+    window. The anchor must supply the through window: no CA persist, no centering
+    (the LED must not move), BS seated at the crossing, folded toward the side window."""
+    side = (266, (0.0, 45.5, 28.39), (0.0, 1.0, 0.0), 85.0)
+    original = spc.generate_beam_splitter
+    spc.generate_beam_splitter = _fake_generate
+    try:
+        ed = _SpyEditor(openings=[side], bs_mesh_center=(0.0, 0.0, 42.5))
+        ed._axis_anchor = {
+            "target_point": (0.0, 0.0, 70.89),
+            "target_direction": (0.0, 0.0, -1.0),
+            "source": "feature_normal_axis_snap",
+        }
+        result = ed.add_beam_splitter_to_led("cube")
+    finally:
+        spc.generate_beam_splitter = original
+    if result is None:
+        failures.append("FAIL(A3): anchor + side-window-only scene returned None")
+        return
+    names = ed.call_names()
+    if "set_step_clear_aperture" in names or "center_clear_aperture_on_optical_axis" in names:
+        failures.append(
+            "FAIL(A3): a synthetic anchor-derived through window must NOT persist a CA "
+            "or centre the LED (that is the bugs/0349 push)"
+        )
+    if not np.allclose(ed._led_shift, (0.0, 0.0, 0.0), atol=1e-9):
+        failures.append(f"FAIL(A3): the LED must not move, got shift {tuple(ed._led_shift)}")
+    if result.get("opening_face_index") is not None:
+        failures.append("FAIL(A3): the synthetic through window carries no face index")
+    if abs(float(result.get("side_mm", 0.0)) - 85.0) > 1e-6:
+        failures.append(f"FAIL(A3): BS should size to the side window span 85, got {result.get('side_mm')}")
+    seated = np.asarray(ed._transformed_imported_step_mesh_for_label("optical").center, dtype=float)
+    if not np.allclose(seated, (0.0, 0.0, 28.39), atol=1e-6):
+        failures.append(f"FAIL(A3): BS must seat at the axis-crossing (0,0,28.39), got {tuple(seated)}")
+    rot = ed.first("_set_step_rotation_deg_tuple") or {}
+    R = ScenePlacementMixin._step_rotation_matrix_from_angles(*rot.get("angles", (0.0, 0.0, 0.0)))
+    if not np.allclose(R @ np.asarray((1.0, 0.0, 0.0)), (0.0, 1.0, 0.0), atol=1e-6):
+        failures.append("FAIL(A3): the diagonal must fold toward the +Y side window")
+    if not failures:
+        notes.append("anchor-synthetic through: no CA persist/centering, LED unmoved, seat (0,0,28.39)")
 
 
 def _check_coating_picker(failures: list[str]) -> None:
@@ -340,6 +504,8 @@ def run_checks() -> "tuple[bool, list[str]]":
     failures: list[str] = []
     notes: list[str] = []
     _check_pipeline(failures, notes)
+    _check_two_window_seat(failures, notes)
+    _check_anchor_synthetic_through(failures, notes)
     _check_coating_picker(failures)
     _check_graceful_stops(failures)
     _check_span(failures)
