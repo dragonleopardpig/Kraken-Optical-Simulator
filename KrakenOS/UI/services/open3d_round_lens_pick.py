@@ -477,6 +477,63 @@ def _step_opening_hover_pick(inspector: Any, label: str, display_xy):
     return _clear_aperture_opening_edge_pick(inspector, label, display_xy)
 
 
+def _opening_owning_surface_feature(inspector: Any, label: str, opening_feature):
+    """Alt over a clear-aperture OPENING -> highlight the whole OWNING face (Surface).
+
+    bugs/0332: plain hover on an opening highlights its EDGE (rim). Alt toggles to
+    the SURFACE the opening is cut into -- the owning analytic face carried on the
+    opening feature's ``face_id`` -- mirroring the body-face path where plain=whole
+    face and Alt=nearest drawn edge. Returns a feature dict shaped like the per-cell
+    body pick, or ``None`` when the owning face index can't be resolved (the caller
+    then keeps the edge feature, so Alt is inert rather than blanking the hover).
+    """
+    if not isinstance(opening_feature, dict):
+        return None
+    face_id = str(opening_feature.get("face_id", "") or "").strip()
+    if not face_id.startswith("F"):
+        return None
+    try:
+        face_index = int(face_id[1:])
+    except Exception:
+        return None
+    if face_index < 0:
+        return None
+    label = str(label or "").strip().lower()
+    try:
+        mesh = inspector.editor._transformed_imported_step_mesh_for_label(label)
+    except Exception:
+        mesh = None
+    if mesh is None:
+        return None
+    outline = face_outline_from_face_indices(mesh, (face_index,))
+    if outline is None or int(getattr(outline, "n_points", 0)) <= 0:
+        return None
+    centroid = None
+    normal = None
+    try:
+        resolved = inspector.editor._step_overlay_fine_face_centroid_normal(label, face_index)
+    except Exception:
+        resolved = None
+    if resolved is not None:
+        centroid = np.asarray(resolved[0], dtype=float).reshape(-1)[:3]
+        normal = np.asarray(resolved[1], dtype=float).reshape(-1)[:3]
+    if centroid is None or centroid.size < 3 or not np.all(np.isfinite(centroid)):
+        return None
+    if normal is None or normal.size < 3 or not np.all(np.isfinite(normal)):
+        normal = np.asarray([0.0, 0.0, 1.0], dtype=float)
+    feature = (
+        np.asarray(centroid, dtype=float).reshape(3),
+        inspector._hover_overlay_for_feature(centroid, outline),
+        np.asarray(normal, dtype=float).reshape(3),
+    )
+    return {
+        "feature": feature,
+        "surface_center": np.asarray(centroid, dtype=float).reshape(3),
+        "face_id": f"F{face_index:03d}",
+        "through_pick": None,
+    }
+
+
 def step_feature_pick_for_display_xy(
     inspector: Any,
     label: str,
@@ -500,8 +557,17 @@ def step_feature_pick_for_display_xy(
     # square), not the auto-detected face; snap to the NEAREST mined opening loop so ANY
     # closed opening fires -- no Alt, no fuzziness, independent of cell_id. The click
     # inherits this highlight (WYSIWYG), because it re-picks through this same path.
+    alt_active = bool(getattr(inspector, "_edge_pick_alt_active", False))
     ca_feature = _step_opening_hover_pick(inspector, label, display_xy)
     if ca_feature is not None:
+        # bugs/0332: Alt toggles the opening hover from its EDGE (rim, the plain
+        # default) to the SURFACE that owns it -- the mirror of the body-face path
+        # (plain=whole face, Alt=nearest edge). Fall through to the edge feature
+        # when the owning surface can't be resolved so Alt stays inert, not blank.
+        if alt_active:
+            surface_feature = _opening_owning_surface_feature(inspector, label, ca_feature)
+            if surface_feature is not None:
+                return surface_feature
         return ca_feature
     if inspector._step_label_is_round_lens_like(label):
         round_lens_pick = round_lens_feature_for_display_xy(inspector, label, display_xy)
