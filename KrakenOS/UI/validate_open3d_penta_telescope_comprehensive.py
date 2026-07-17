@@ -13952,6 +13952,35 @@ def phase_302_ca_snap_autocomplete_fallback(
     return result
 
 
+def phase_303_ca_snap_folded_axis_autocomplete(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0347 (flag_20260717_164901_740, build-stamped 8834ecfa -- the bugs/0346 fix running) -- "right click
+    snapping still not working" on the folded AZ85 RA-mirror scene, LED opening ~0.77 mm off axis yet it never moved.
+    A promoted mirror splits the ONE optical axis into segments axis:global + axis:global:reflected[:N], so the
+    _optical_axis_records_for_3d(None) fallback returned THREE records and _single_optical_axis_pick_info's
+    len(axis_ids) != 1 gate read them as ambiguous -> None -> the snap stayed stuck in the unusable two-step arm.
+    Fix: count axes by BASE id (_base_optical_axis_id collapses the :reflected fold suffix) so folded segments of one
+    axis auto-complete on the nearest segment, while genuinely distinct traced axes (axis:ray:...) keep the pick."""
+    result = PhaseResult(
+        name="Phase 303: folded-scene CA->optical-axis snap auto-completes (fold segments count as one axis)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_ca_snap_folded_axis_autocomplete import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"ca-snap-folded-axis-autocomplete guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if n.startswith("FAIL")])
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("ca-snap-folded-axis-autocomplete phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14299,6 +14328,7 @@ def main() -> int:
             phase_300_clear_aperture_snap_auto_detect,
             phase_301_flag_bundle_build_stamp,
             phase_302_ca_snap_autocomplete_fallback,
+            phase_303_ca_snap_folded_axis_autocomplete,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

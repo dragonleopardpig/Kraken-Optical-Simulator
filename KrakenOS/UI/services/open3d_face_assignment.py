@@ -30,6 +30,24 @@ def _usable_axis_pick_records(source):
     return usable
 
 
+def _base_optical_axis_id(axis_id) -> str:
+    """Collapse a folded optical-axis guide's segment id to its base axis (bugs/0347).
+
+    A promoted-mirror fold draws ONE optical axis as several dotted guide segments:
+    ``axis:global`` (incoming) plus ``axis:global:reflected`` / ``axis:global:reflected:N``
+    (the reflected middle/outgoing legs, bugs/0200/0216). They are segments of the SAME
+    axis, so the one-click CA auto-complete (``_single_optical_axis_pick_info``) must count
+    them as ONE axis, not several to disambiguate between -- otherwise a folded RA-mirror
+    scene wrongly falls through to the unusable two-step pick ("right click snapping still
+    not working"). Genuinely distinct traced beam axes carry ``axis:ray:...`` ids (no
+    ``:reflected`` marker, ray_display_geometry.py), so they stay distinct and still keep
+    the explicit pick."""
+    text = str(axis_id or "")
+    marker = ":reflected"
+    index = text.find(marker)
+    return text[:index] if index != -1 else text
+
+
 class Open3DFaceAssignmentService:
     """Handle Open 3D right-click face-function assignment workflows."""
 
@@ -1180,7 +1198,11 @@ class Open3DFaceAssignmentService:
             records = _usable_axis_pick_records(source)
         if not records:
             return None
-        axis_ids = {str(rec.get("axis_id", "") or "") for rec, _pts in records}
+        # bugs/0347: a promoted-mirror fold splits the ONE global axis into several
+        # dotted guide SEGMENTS (axis:global + axis:global:reflected[:N]); count them as
+        # one axis so a folded scene still auto-completes. Genuinely distinct traced beam
+        # axes (axis:ray:...) survive the collapse and keep the explicit two-step pick.
+        axis_ids = {_base_optical_axis_id(rec.get("axis_id", "")) for rec, _pts in records}
         if len(axis_ids) != 1:
             return None
         try:

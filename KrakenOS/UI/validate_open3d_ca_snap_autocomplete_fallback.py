@@ -26,14 +26,17 @@ Fix
   ``_single_optical_axis_pick_info`` falls back to ``_optical_axis_records_for_3d(None)``
   -- the SAME source ``_add_optical_axis_pick_overlays`` derives the pick records from --
   when ``_optical_axis_pick_records`` yields no usable records, so the single-axis
-  auto-complete no longer depends on refresh timing. A folded/multi-axis scene still
-  returns ``None`` (keep the explicit disambiguating click); a populated pick list is
-  used directly (no behaviour change, no extra work).
+  auto-complete no longer depends on refresh timing. A scene with genuinely DISTINCT
+  optical axes still returns ``None`` (keep the explicit disambiguating click) -- but a
+  single axis a mirror merely FOLDS into ``axis:global:reflected*`` segments counts as one
+  axis and auto-completes (bugs/0347). A populated pick list is used directly (no extra
+  work).
 
 What it checks
 --------------
   1. Empty pick list + SINGLE-axis source -> an apply-ready payload (the fix).
-  2. Empty pick list + MULTI-axis source -> None (keep the two-step disambiguation).
+  2. Empty pick list + genuinely DISTINCT axes -> None; folded segments of ONE axis
+     (axis:global + axis:global:reflected*) -> payload (bugs/0347).
   3. Empty pick list + empty source -> None; a source that RAISES -> None (never leaks).
   4. A populated pick list is used directly -- the fallback source is NOT consulted.
   5. Module helper ``_usable_axis_pick_records`` filters to valid Nx3-point records.
@@ -108,10 +111,17 @@ def run_checks() -> "tuple[bool, list[str]]":
     if calls["source"] < 1:
         failures.append("FAIL(1): the empty pick list must consult the _optical_axis_records_for_3d fallback")
 
-    # 2) Empty pick list + multi-axis source -> None (keep the two-step disambiguation).
-    svc, _c = _stub([], [_axis_record("axis:global"), _axis_record("axis:global:reflected", y=10.0)])
+    # 2) Empty pick list + genuinely DISTINCT axes -> None (keep the two-step pick); a
+    # single axis a mirror merely FOLDS into reflected segments -> payload (bugs/0347).
+    svc, _c = _stub([], [_axis_record("axis:global"), _axis_record("axis:ray:0:segment:2", y=10.0)])
     if info(svc, (0.0, 0.0, 0.0)) is not None:
-        failures.append("FAIL(2): several optical axes in the fallback source must NOT auto-pick")
+        failures.append("FAIL(2): several DISTINCT optical axes in the fallback source must NOT auto-pick")
+    svc, _c = _stub([], [_axis_record("axis:global"), _axis_record("axis:global:reflected", y=10.0)])
+    if info(svc, (0.0, 0.0, 0.0)) is None:
+        failures.append(
+            "FAIL(2): a single axis FOLDED into axis:global + axis:global:reflected segments "
+            "must auto-complete, not disambiguate (bugs/0347)"
+        )
 
     # 3) Empty pick list + empty source -> None; source that raises -> None.
     svc, _c = _stub([], [])
