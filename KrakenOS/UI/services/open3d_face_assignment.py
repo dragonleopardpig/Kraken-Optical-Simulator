@@ -533,6 +533,18 @@ class Open3DFaceAssignmentService:
         dismiss is driven from those primary press handlers instead (they call
         _dismiss_active_context_menu directly); the widget binds here are a
         harmless backup for any press path that does not "break".
+
+        bugs/0348: the MENU's own <Unmap>/<FocusOut> must NOT tear the menu down
+        synchronously. Tk delivers a clicked entry's command only AFTER unposting
+        (menu.tcl tk::MenuInvoke: MenuUnpost first, then invoke), so the <Unmap>
+        fires in between -- a synchronous dismiss destroy()s the menu right there
+        and the not-yet-delivered command dies as a silent background TclError
+        ("invalid command name .!menu"). EVERY entry of EVERY 3D right-click menu
+        was a no-op in the live app ("still unable to right click and snap"),
+        while probes calling menu.invoke()/the handlers directly kept passing.
+        Defer the menu-bound teardown one event-loop turn (identity-guarded so a
+        newer menu posted in the meantime is left alone); the scene-click paths
+        above stay synchronous -- no entry invoke is pending on a scene click.
         """
         self._dismiss_active_context_menu()
         object.__setattr__(self._inspector, "_active_context_menu", menu)
@@ -541,6 +553,17 @@ class Open3DFaceAssignmentService:
 
         def _dismiss(_event=None):
             self._dismiss_active_context_menu()
+            return None
+
+        def _dismiss_if_current() -> None:
+            if getattr(self._inspector, "_active_context_menu", None) is menu:
+                self._dismiss_active_context_menu()
+
+        def _deferred_dismiss(_event=None):
+            try:
+                self._inspector.after_idle(_dismiss_if_current)
+            except Exception:
+                _dismiss_if_current()
             return None
 
         if widget is not None:
@@ -552,8 +575,8 @@ class Open3DFaceAssignmentService:
                 bind_ids = []
         object.__setattr__(self._inspector, "_active_context_menu_binds", bind_ids)
         try:
-            menu.bind("<Unmap>", _dismiss, add="+")
-            menu.bind("<FocusOut>", _dismiss, add="+")
+            menu.bind("<Unmap>", _deferred_dismiss, add="+")
+            menu.bind("<FocusOut>", _deferred_dismiss, add="+")
         except Exception:
             pass
         try:
@@ -599,10 +622,14 @@ class Open3DFaceAssignmentService:
             # no longer woring ... click the menu grayed out item ... then the 's'
             # shorcut can flag again"). Hand focus back to the render pane so the
             # hotkey keeps working after a click-elsewhere dismiss.
+            # bugs/0348: the dismiss now also runs (deferred) AFTER an entry click's
+            # command -- skip the focus grab while a modal dialog holds a Tk grab so
+            # an entry that opened a dialog keeps its keyboard focus.
             widget = getattr(self._inspector, "_vtk_widget", None)
             if widget is not None:
                 try:
-                    widget.focus_set()
+                    if widget.grab_current() is None:
+                        widget.focus_set()
                 except Exception:
                     pass
 

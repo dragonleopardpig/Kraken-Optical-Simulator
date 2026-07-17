@@ -13981,6 +13981,69 @@ def phase_303_ca_snap_folded_axis_autocomplete(
     return result
 
 
+def phase_304_context_menu_entry_delivery(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0348 (flag_20260717_204504_767, LED-only scene) -- "still unable to right click and snap the CA to
+    optical axis". Tk delivers a clicked menu entry's command only AFTER unposting (tk::MenuInvoke: unpost, then
+    invoke); the <Unmap>-bound bugs/0336 dismiss destroy()ed the menu in between, so EVERY entry of the two menus
+    posted through _popup_context_menu (STEP body + pinned opening) was a silent no-op in the live app while
+    menu.invoke()-based probes kept passing. Fix: the menu-bound teardown is deferred one event-loop turn
+    (identity-guarded); scene-click dismissal stays synchronous. This phase runs the stub guard AND replays Tk's
+    real unpost -> invoke order on a menu posted through the REAL _popup_context_menu in the live app."""
+    result = PhaseResult(
+        name="Phase 304: right-click menu entry click delivers its command (unmap dismiss deferred)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_context_menu_entry_delivery import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"context-menu-entry-delivery guard raised: {exc!r}")
+        return result
+    for note in notes:
+        result.notes.append(note)
+    live_ok = False
+    try:
+        import tkinter as tk
+
+        svc = inspector._face_assignment_service()
+        fired: dict[str, bool] = {"hit": False}
+        menu = tk.Menu(inspector, tearoff=False)
+        menu.add_command(label="delivery probe", command=lambda: fired.__setitem__("hit", True))
+
+        class _Ev:
+            x_root = 60
+            y_root = 60
+
+        svc._popup_context_menu(menu, _Ev())
+        # Tk's entry-click order, back-to-back with no event pump in between.
+        try:
+            menu.tk.call("tk::MenuUnpost", menu._w)
+        except tk.TclError as exc:
+            result.notes.append(f"live: tk::MenuUnpost raised {exc!r} (menu destroyed mid-unpost)")
+        try:
+            menu.invoke(0)
+        except tk.TclError as exc:
+            result.notes.append(f"live: entry invoke after unpost raised {exc!r} -- command dropped")
+        inspector.update_idletasks()
+        live_ok = bool(fired["hit"])
+        if not live_ok:
+            result.notes.append("live: menu entry command did NOT run after Tk's unpost->invoke order (bugs/0348)")
+        if getattr(inspector, "_active_context_menu", None) is not None:
+            live_ok = False
+            result.notes.append("live: deferred teardown left the menu registered as active")
+    except Exception as exc:  # pragma: no cover - defensive
+        live_ok = False
+        result.notes.append(f"live delivery replay raised: {exc!r}")
+    result.passed = bool(passed) and live_ok
+    result.detail["stub_guard"] = "pass" if passed else "fail"
+    result.detail["live_delivery"] = "pass" if live_ok else "fail"
+    if not result.passed and not result.notes:
+        result.notes.append("context-menu-entry-delivery phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14329,6 +14392,7 @@ def main() -> int:
             phase_301_flag_bundle_build_stamp,
             phase_302_ca_snap_autocomplete_fallback,
             phase_303_ca_snap_folded_axis_autocomplete,
+            phase_304_context_menu_entry_delivery,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
