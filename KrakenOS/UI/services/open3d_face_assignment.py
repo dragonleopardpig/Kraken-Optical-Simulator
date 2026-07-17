@@ -362,6 +362,23 @@ class Open3DFaceAssignmentService:
                 command=lambda picked_label=step_label: self.start_step_clear_aperture_pick(picked_label),
             )
             if self.editor.step_clear_aperture(step_label) is not None:
+                # bugs/0342: a DEFINED clear aperture is snappable from its own
+                # record -- offer the center+normal snap here, not just when the
+                # cursor happens to sit on the see-through opening (opening_feature)
+                # and not just while the rim is pinned. After "Set Clear Aperture"
+                # the refresh drops the pin and the follow-up right-click lands on a
+                # housing face, so without this the snap was unreachable ("still
+                # can't right click snap CA to optical axis even though I set the CA
+                # first"). Skip when the opening-hover path above already added it.
+                if opening_feature is None:
+                    ca_center, ca_normal = self._clear_aperture_record_center_normal(step_label)
+                    if ca_center is not None and ca_normal is not None:
+                        menu.add_command(
+                            label="Snap Clear Aperture -> Optical Axis (center + normal)",
+                            command=lambda picked_label=step_label, c=ca_center, n=ca_normal: self._snap_clear_aperture_to_optical_axis_from_context(
+                                picked_label, c, n
+                            ),
+                        )
                 menu.add_command(
                     label="Center Clear Aperture -> Optical Axis",
                     command=lambda picked_label=step_label: self._center_clear_aperture_from_context(picked_label),
@@ -406,7 +423,8 @@ class Open3DFaceAssignmentService:
         display = self.editor._step_overlay_display_label(step_label).upper()
         menu = tk.Menu(self, tearoff=False)
         menu.add_command(label=f"{display} STEP {face_id or 'clear aperture'} (opening)", state="disabled")
-        if normal.size >= 3 and np.all(np.isfinite(normal[:3])):
+        normal_finite = bool(normal.size >= 3 and np.all(np.isfinite(normal[:3])))
+        if normal_finite:
             menu.add_command(
                 label="Snap Clear Aperture -> Optical Axis (center + normal)",
                 command=lambda picked_label=step_label, c=center[:3].copy(), n=normal[:3].copy(): self._snap_clear_aperture_to_optical_axis_from_context(
@@ -419,6 +437,17 @@ class Open3DFaceAssignmentService:
             command=lambda picked_label=step_label: self.start_step_clear_aperture_pick(picked_label),
         )
         if self.editor.step_clear_aperture(step_label) is not None:
+            # bugs/0342: keep the snap reachable even when the pinned rim carries no
+            # usable normal -- a DEFINED clear aperture is snappable from its record.
+            if not normal_finite:
+                ca_center, ca_normal = self._clear_aperture_record_center_normal(step_label)
+                if ca_center is not None and ca_normal is not None:
+                    menu.add_command(
+                        label="Snap Clear Aperture -> Optical Axis (center + normal)",
+                        command=lambda picked_label=step_label, c=ca_center, n=ca_normal: self._snap_clear_aperture_to_optical_axis_from_context(
+                            picked_label, c, n
+                        ),
+                    )
             menu.add_command(
                 label="Center Clear Aperture -> Optical Axis",
                 command=lambda picked_label=step_label: self._center_clear_aperture_from_context(picked_label),
@@ -454,9 +483,15 @@ class Open3DFaceAssignmentService:
 
         tk_popup grabs the pointer, but the heavyweight VTK render window swallows
         the next click before the grab can unpost the menu, so the popup used to
-        stick. We keep a reference to the live menu and bind the VTK Tk widget's
-        button-press + the menu's own <Unmap>/<FocusOut> to tear it down, so a
-        click anywhere in the 3D scene (or losing focus) drops the popup.
+        stick. We keep a reference to the live menu and bind the menu's own
+        <Unmap>/<FocusOut> to tear it down on focus loss.
+
+        bugs/0341: the click-elsewhere dismiss does NOT ride on the VTK widget's
+        <Button-1/2/3> binds below -- left_press/middle_press are bound first and
+        return "break", which aborts these add="+" handlers. The scene-click
+        dismiss is driven from those primary press handlers instead (they call
+        _dismiss_active_context_menu directly); the widget binds here are a
+        harmless backup for any press path that does not "break".
         """
         self._dismiss_active_context_menu()
         object.__setattr__(self._inspector, "_active_context_menu", menu)
@@ -974,6 +1009,42 @@ class Open3DFaceAssignmentService:
             self.refresh_from_editor(force_retrace=True)
         except Exception as exc:
             self.editor.append_debug(f"Open 3D face->axis center refresh failed: {exc}")
+
+    def _clear_aperture_record_center_normal(self, label: str):
+        """World ``(center, normal)`` of a STEP overlay's PERSISTED clear aperture.
+
+        bugs/0342: once the CA is DEFINED (the bugs/0134 record stores its analytic
+        face index), its centre + unit normal are known from the stored face -- so
+        the center+normal snap can be offered straight from the record, with no live
+        opening hover and no pinned rim. Returns ``(None, None)`` when no record
+        resolves on the current transformed mesh.
+        """
+        label = str(label or "").strip().lower()
+        try:
+            record = self.editor.step_clear_aperture(label)
+        except Exception:
+            record = None
+        if not isinstance(record, dict):
+            return None, None
+        try:
+            resolved = self.editor._step_overlay_fine_face_centroid_normal(
+                label, record.get("face_index")
+            )
+        except Exception:
+            resolved = None
+        if resolved is None:
+            return None, None
+        centroid, normal, _area = resolved
+        try:
+            center = np.asarray(centroid, dtype=float).reshape(-1)[:3]
+            normal = np.asarray(normal, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return None, None
+        if center.size < 3 or normal.size < 3:
+            return None, None
+        if not (np.all(np.isfinite(center[:3])) and np.all(np.isfinite(normal[:3]))):
+            return None, None
+        return center[:3].copy(), normal[:3].copy()
 
     def _center_clear_aperture_from_context(self, label: str) -> None:
         """Right-click "Center Clear Aperture -> Optical Axis": translate the body

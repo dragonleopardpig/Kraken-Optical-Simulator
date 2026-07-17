@@ -13777,6 +13777,66 @@ def phase_296_opening_menu_add_beam_splitter(
     return result
 
 
+def phase_297_context_menu_dismiss_on_click(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0341 -- a scene click dismisses a live right-click popup. User (imported LED): "clicking elsewhere
+    still not destroying right click pop up menu." bugs/0336 tried to dismiss via an add="+" <Button-1/2/3> bind
+    on the VTK Tk widget, but left_press/middle_press/right_press are bound FIRST and return "break" on nearly
+    every path, aborting the trailing dismiss handler -- so the popup stuck. left_press and middle_press now call
+    _dismiss_active_context_menu directly (they always fire on a scene click), before any pick/orbit/nav-cube
+    snap. Display-free guard: source contract that BOTH primary press closures dismiss, plus the dismiss
+    primitive unposts + clears re-entrantly."""
+    result = PhaseResult(
+        name="Phase 297: a scene left/middle click dismisses a live right-click popup (primary press handlers, not shadowed binds)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_context_menu_dismiss_on_click import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"context-menu-dismiss guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if n.startswith("FAIL")])
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("context-menu-dismiss phase failed without detail")
+    return result
+
+
+def phase_298_clear_aperture_snap_from_record(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0342 -- snap the CA to the optical axis from its persisted record. User (imported LED): "still can't
+    right click snap CA to optical axis even though I set the CA first, then right click again to snap." The
+    center+normal snap was offered only on a live opening hover (opening_feature) or while the rim was PINNED,
+    but "Set Clear Aperture" refreshes and drops the pin, and the follow-up right-click lands on a housing face
+    (flag prior_hover_key ('step','led','F053')) -- so the snap item was absent though a CA record existed. Once
+    the CA is DEFINED its centre+normal are known from the record (_step_overlay_fine_face_centroid_normal); the
+    body menu and the pinned-opening menu now offer the snap straight from the record. Display-free guard:
+    _clear_aperture_record_center_normal returns (center, normal) for a resolved record and (None, None)
+    otherwise, plus a source contract for both menus."""
+    result = PhaseResult(
+        name="Phase 298: a DEFINED clear aperture is snappable to the optical axis from its record (no live hover/pin)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_clear_aperture_snap_from_record import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"clear-aperture-snap-from-record guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if n.startswith("FAIL")])
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("clear-aperture-snap-from-record phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14118,6 +14178,8 @@ def main() -> int:
             phase_294_step_selection_mode_toggle,
             phase_295_single_persistent_feature_selection,
             phase_296_opening_menu_add_beam_splitter,
+            phase_297_context_menu_dismiss_on_click,
+            phase_298_clear_aperture_snap_from_record,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

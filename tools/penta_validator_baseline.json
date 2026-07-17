@@ -297,7 +297,9 @@
     "293": "pass",
     "294": "pass",
     "295": "pass",
-    "296": "pass"
+    "296": "pass",
+    "297": "pass",
+    "298": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -595,6 +597,8 @@
     "293": "Phase 293: LED CA left-click pins the opening only (persistent); right-click opening menu (no hop); popup dismisses on click-elsewhere",
     "294": "Phase 294: 'Move/Rotate whole body' checkbox = selection-mode switch (unchecked pins face/opening only; checked = body + gizmo)",
     "295": "Phase 295: only one persistent STEP feature selection at a time (face pin drops opening pin and vice versa)",
-    "296": "Phase 296: pinned LED clear-aperture opening menu offers 'Add Beam Splitter to LED (Cube/Plate)'"
+    "296": "Phase 296: pinned LED clear-aperture opening menu offers 'Add Beam Splitter to LED (Cube/Plate)'",
+    "297": "Phase 297: a scene left/middle click dismisses a live right-click popup (primary press handlers, not shadowed binds)",
+    "298": "Phase 298: a DEFINED clear aperture is snappable to the optical axis from its record (no live hover/pin)"
   }
 }

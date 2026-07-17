@@ -81,6 +81,14 @@ class Open3DMouseBindingsService:
         def left_press(event):
             record_mouse("mouse_press", event, 1)
             set_event_info(event)
+            # bugs/0341: a left-click anywhere in the scene must tear down a live
+            # right-click popup. The 0336 dismiss relied on an add="+" <Button-1>
+            # bind on this same widget, but left_press is bound FIRST and returns
+            # "break" on nearly every path, which aborts the trailing dismiss
+            # handler -- so the popup stuck ("clicking elsewhere still not
+            # destroying right click pop up menu"). Dismiss here, from the primary
+            # handler that always fires, before any pick / orbit / nav-cube snap.
+            self._face_assignment_service()._dismiss_active_context_menu()
             # bugs/0323: capture the click-time Alt state so the committed pick
             # honours face-vs-edge intent even if the user released Alt after the
             # last hover motion (the pick fires on release; a click has no motion
@@ -377,6 +385,9 @@ class Open3DMouseBindingsService:
         def middle_press(event):
             record_mouse("mouse_press", event, 2)
             set_event_info(event)
+            # bugs/0341: a middle-click (pan) elsewhere in the scene also drops a
+            # live right-click popup -- same shadowed-bind reason as left_press.
+            self._face_assignment_service()._dismiss_active_context_menu()
             self._cancel_step_carry_hold_timer()
             self._cancel_row_carry_hold_timer()
             self._middle_drag_active = True
