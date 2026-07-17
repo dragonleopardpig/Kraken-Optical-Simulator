@@ -510,6 +510,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._selected_opening_face_id = ""
         self._selected_opening_center: np.ndarray | None = None
         self._selected_opening_normal: np.ndarray | None = None
+        # bugs/0338: a persistent, face-ONLY selection, the surface analogue of the
+        # opening pin above. With the "Move/Rotate whole body" checkbox UNCHECKED a
+        # left-click on a STEP pins just the picked face here (never the whole body /
+        # gizmo); cleared on click-elsewhere via _clear_open3d_selection.
+        self._selected_face_outline_actor = None
+        self._selected_face_label = ""
+        self._selected_face_id = ""
+        self._selected_face_center: np.ndarray | None = None
+        self._selected_face_normal: np.ndarray | None = None
         # bugs/0336: the currently-posted right-click menu (+ the temporary VTK
         # widget button bindings that dismiss it). tk_popup releases its grab
         # immediately on X11, so a click in the heavyweight GL canvas never
@@ -677,7 +686,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.carry_snap_mm_var = tk.StringVar(value="")
         self.show_rays_var = tk.BooleanVar(value=True)
         self.ray_pick_enabled_var = tk.BooleanVar(value=False)
-        self.show_rotation_handles_var = tk.BooleanVar(value=True)
+        # bugs/0338: this checkbox is a selection-MODE switch. Default UNCHECKED so a
+        # click picks a FACE or clear-aperture opening (the primary LED interaction);
+        # the user opts INTO whole-body move + gizmo by checking it ("activate the
+        # gizmo with some other toggle", bugs/0334).
+        self.show_rotation_handles_var = tk.BooleanVar(value=False)
         self.show_reference_surfaces_var = tk.BooleanVar(value=False)
         self.show_detector_overlays_var = tk.BooleanVar(value=False)
         self.show_terminal_diagnostics_var = tk.BooleanVar(value=False)
@@ -6075,15 +6088,23 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         )
 
     def _toggle_rotation_handles(self) -> None:
+        # bugs/0338: this checkbox is now a selection-MODE switch, so flipping it
+        # resets any live selection -- a pinned face/opening is meaningless in
+        # whole-body mode, and a selected body + gizmo is meaningless in face/edge
+        # mode. Clear first so the two modes never cross.
+        self._clear_open3d_selection(render=False)
         if self._show_rotation_handles():
             self.refresh_from_editor()
-            self.status_var.set("Rotation handles shown.")
+            self.status_var.set(
+                "Whole-body move mode: click a STEP to select the whole body and show its Move/Rotate handles."
+            )
             return
-        removed = self._remove_step_rotation_handle_actors()
-        removed = self._remove_placement_rotation_handle_actors() or removed
-        self.status_var.set("Rotation handles hidden.")
-        if removed:
-            self.render()
+        self._remove_step_rotation_handle_actors()
+        self._remove_placement_rotation_handle_actors()
+        self.status_var.set(
+            "Face/edge select mode: click a STEP face or clear-aperture opening (no whole-body pick, no gizmo)."
+        )
+        self.render()
 
     def _rotation_handle_step_deg(self) -> float:
         try:
@@ -6138,6 +6159,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self._close_step_rotation_handler()
                 changed = True
             if self._clear_selected_step_opening(render=False):
+                changed = True
+            if self._clear_selected_step_face(render=False):
                 changed = True
             self._set_step_hover_outline(None, None, render=False)
             if self._picked_step_label is not None:
@@ -19511,6 +19534,124 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def _has_selected_step_opening(self) -> bool:
         """True when a persistent CA opening selection is currently pinned."""
         return bool(self._selected_opening_label) and self._selected_opening_center is not None
+
+    def _set_selected_step_face(
+        self,
+        label,
+        face_id,
+        center,
+        normal,
+        outline_mesh,
+        *,
+        render: bool = True,
+    ) -> bool:
+        """Pin a PERSISTENT face-only selection (bugs/0338), the surface analogue
+        of _set_selected_step_opening.
+
+        With the "Move/Rotate whole body" checkbox UNCHECKED, a left-click on a STEP
+        pins ONLY the picked face here instead of selecting the whole body. Like the
+        opening rim it survives hover changes and is torn down only by
+        _clear_selected_step_face (all deselect paths funnel through
+        _clear_open3d_selection), so the user can right-click the face without the
+        pick hopping.
+        """
+        # Drop any prior persistent face outline before drawing the new one.
+        self._clear_selected_step_face(render=False)
+        try:
+            center_arr = np.asarray(center, dtype=float).reshape(3) if center is not None else None
+        except Exception:
+            center_arr = None
+        try:
+            normal_arr = np.asarray(normal, dtype=float).reshape(3) if normal is not None else None
+        except Exception:
+            normal_arr = None
+        self._selected_face_label = str(label or "").strip()
+        self._selected_face_id = str(face_id or "").strip()
+        self._selected_face_center = center_arr
+        self._selected_face_normal = normal_arr
+        if (
+            self._renderer is not None
+            and outline_mesh is not None
+            and int(getattr(outline_mesh, "n_points", 0)) > 0
+            and vtkActor is not None
+            and vtkDataSetMapper is not None
+        ):
+            try:
+                has_surface = False
+                try:
+                    has_surface = int(outline_mesh.GetNumberOfPolys()) > 0
+                except Exception:
+                    try:
+                        has_surface = int(getattr(outline_mesh, "n_faces_strict", 0)) > 0
+                    except Exception:
+                        has_surface = False
+                mapper = vtkDataSetMapper()
+                mapper.SetInputData(outline_mesh)
+                try:
+                    mapper.ScalarVisibilityOff()
+                except Exception:
+                    pass
+                actor = vtkActor()
+                actor.SetMapper(mapper)
+                prop = actor.GetProperty()
+                # Distinct cyan matches the pinned-opening language ("this is the
+                # sticky selection"), set apart from the transient gold hover.
+                prop.SetColor(0.1, 0.95, 0.95)
+                prop.SetOpacity(1.0)
+                prop.SetLineWidth(5.0)
+                if has_surface:
+                    try:
+                        prop.EdgeVisibilityOff()
+                    except Exception:
+                        pass
+                try:
+                    prop.SetAmbient(1.0)
+                    prop.SetDiffuse(0.0)
+                    prop.RenderLinesAsTubesOn()
+                except Exception:
+                    pass
+                actor.PickableOff()
+                self._add_renderer_view_prop(actor)
+                self._selected_face_outline_actor = actor
+            except Exception:
+                self._selected_face_outline_actor = None
+        if render:
+            self.render()
+        return True
+
+    def _clear_selected_step_face(self, *, render: bool = True) -> bool:
+        """Tear down the persistent face selection (bugs/0338).
+
+        Returns True if anything was actually cleared, so _clear_open3d_selection
+        can fold the result into its own `changed` bookkeeping.
+        """
+        changed = False
+        if self._selected_face_outline_actor is not None:
+            try:
+                self._remove_renderer_view_prop(self._selected_face_outline_actor)
+            except Exception:
+                pass
+            self._selected_face_outline_actor = None
+            changed = True
+        if self._selected_face_label:
+            self._selected_face_label = ""
+            changed = True
+        if self._selected_face_id:
+            self._selected_face_id = ""
+            changed = True
+        if self._selected_face_center is not None:
+            self._selected_face_center = None
+            changed = True
+        if self._selected_face_normal is not None:
+            self._selected_face_normal = None
+            changed = True
+        if changed and render:
+            self.render()
+        return changed
+
+    def _has_selected_step_face(self) -> bool:
+        """True when a persistent face selection is currently pinned."""
+        return bool(self._selected_face_label) and self._selected_face_center is not None
 
     @staticmethod
     def _picked_feature_info(actor, picker) -> tuple[np.ndarray, object | None, np.ndarray | None] | None:

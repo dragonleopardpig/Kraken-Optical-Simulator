@@ -294,7 +294,8 @@
     "290": "pass",
     "291": "pass",
     "292": "pass",
-    "293": "pass"
+    "293": "pass",
+    "294": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -589,6 +590,7 @@
     "290": "Phase 290: LED plain hover snaps to the nearest opening loop, incl. inner hole loops, by rim OR interior containment",
     "291": "Phase 291: LED CA opening survives an off-body hover (no shared-mesh strip) + debounced trailing re-pick",
     "292": "Phase 292: LED CA Alt toggles edge<->surface + right-click snap centres AND normals the opening on the intended axis (one-click when a single axis)",
-    "293": "Phase 293: LED CA left-click pins the opening only (persistent); right-click opening menu (no hop); popup dismisses on click-elsewhere"
+    "293": "Phase 293: LED CA left-click pins the opening only (persistent); right-click opening menu (no hop); popup dismisses on click-elsewhere",
+    "294": "Phase 294: 'Move/Rotate whole body' checkbox = selection-mode switch (unchecked pins face/opening only; checked = body + gizmo)"
   }
 }

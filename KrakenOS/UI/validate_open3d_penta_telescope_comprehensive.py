@@ -13679,6 +13679,43 @@ def phase_293_led_ca_persistent_select_and_menu(
     return result
 
 
+def phase_294_step_selection_mode_toggle(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0338 -- the "Move/Rotate whole body" checkbox becomes a selection-MODE switch. User directive:
+    "any click on a STEP will either pick edge or surface. So in order to select whole body with gizmo, the
+    current checkbox should also disable selection of edges and surface once checked" ... "with the checkbox
+    unchecked, user can either select face or edge, but not whole body." UNCHECKED (the new DEFAULT) -> a
+    left-click pins a FACE or a clear-aperture opening as a PERSISTENT selection (the face pin mirrors the 0334
+    opening pin: _set_selected_step_face / _clear_selected_step_face / _has_selected_step_face on the inspector;
+    _select_step_face_from_feature on the interaction service), NO whole-body select, NO gizmo. CHECKED -> a
+    left-click selects the whole body + shows its Move/Rotate handles; face/edge picking is disabled. Flipping
+    the checkbox clears the live selection (_toggle_rotation_handles -> _clear_open3d_selection) so the two modes
+    never cross, and every deselect path drops the pinned face (_clear_open3d_selection -> _clear_selected_step_face).
+    Display-free guard: 1 the inspector persistent-face state round-trip (set/has/clear, idempotent); 2 the
+    service face-pin (finite pins with surface centre + remembered feature, non-finite refuses); 3 source
+    contracts -- the idle branch gates on _show_rotation_handles() and routes face/opening BEFORE
+    select_step_component, the clear folds in the face clear, the toggle resets the selection, and the checkbox
+    defaults UNCHECKED."""
+    result = PhaseResult(
+        name="Phase 294: 'Move/Rotate whole body' checkbox = selection-mode switch (unchecked pins face/opening only; checked = body + gizmo)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_step_selection_mode_toggle import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"step-selection-mode-toggle guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if n.startswith("FAIL")])
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("step-selection-mode-toggle phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14017,6 +14054,7 @@ def main() -> int:
             phase_291_led_hover_repick_and_mesh_integrity,
             phase_292_led_ca_alt_toggle_and_axis_snap,
             phase_293_led_ca_persistent_select_and_menu,
+            phase_294_step_selection_mode_toggle,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

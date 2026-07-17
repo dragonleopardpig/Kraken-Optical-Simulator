@@ -292,7 +292,7 @@ class Open3DTopControlsPanel:
         ttk.Label(carry_toolbar, text="Hold-drag STEP to move freely; Ctrl+drag rotates view.").pack(side="left")
         pack_commit_checkbutton(
             carry_toolbar,
-            "Move/Rotate handles",
+            "Move/Rotate whole body",
             variable=self.inspector.show_rotation_handles_var,
             command=self.inspector._toggle_rotation_handles,
             padx=(12, 0),

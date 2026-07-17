@@ -150,6 +150,55 @@ class Open3DInteractionService:
         self.render()
         return True
 
+    def _select_step_face_from_feature(self, step_label: Any, feature_pick: dict) -> bool:
+        """Pin a STEP face as a PERSISTENT, face-only selection (bugs/0338).
+
+        The surface analogue of _select_step_opening_from_feature: with the
+        "Move/Rotate whole body" checkbox UNCHECKED, a left-click on a STEP face
+        lands here instead of selecting the whole body. It pins the picked face
+        (cyan outline that survives hover) and remembers the feature so the
+        right-click face menu / axis snaps keep working. Returns True when a face
+        was pinned so the caller skips the body-select path; False (no valid
+        geometry) lets the caller fall back.
+        """
+        feature = feature_pick.get("feature") if isinstance(feature_pick, dict) else None
+        surface_center = feature_pick.get("surface_center") if isinstance(feature_pick, dict) else None
+        face_id = str(feature_pick.get("face_id", "") if isinstance(feature_pick, dict) else "").strip()
+        center = None
+        normal = None
+        outline_mesh = None
+        if isinstance(feature, (tuple, list)):
+            if len(feature) >= 1:
+                center = feature[0]
+            if len(feature) >= 2:
+                outline_mesh = feature[1]
+            if len(feature) >= 3:
+                normal = feature[2]
+        if surface_center is not None:
+            center = surface_center
+        try:
+            center_arr = np.asarray(center, dtype=float).reshape(-1) if center is not None else None
+        except Exception:
+            center_arr = None
+        if center_arr is None or center_arr.size < 3 or not np.all(np.isfinite(center_arr[:3])):
+            return False
+        self._set_selected_step_face(step_label, face_id, center_arr[:3], normal, outline_mesh)
+        # Keep the feature context so the right-click face menu + axis snaps resolve.
+        self._remember_selected_step_feature(
+            step_label,
+            feature,
+            surface_center_world=center_arr[:3],
+            face_id=face_id,
+        )
+        label_txt = str(step_label or "").strip().upper()
+        face_txt = f" {face_id}" if face_id else ""
+        self.status_var.set(
+            f"Selected face{face_txt} on {label_txt}. "
+            "Right-click for options; click elsewhere to deselect. Check 'Move/Rotate whole body' to move the body."
+        )
+        self.render()
+        return True
+
     @_timed_open3d_interaction
     def _on_left_button_press(self, obj, _event) -> None:
         le = _layout_module()
@@ -486,13 +535,26 @@ class Open3DInteractionService:
                         actor_key=actor_key,
                         cell_id=step_cell_id,
                     )
-                # bugs/0334: a left-click on a highlighted clear-aperture opening
-                # pins ONLY that opening (persistent cyan rim), never the whole
-                # STEP body -- no body select, no rotation gizmo. The move gizmo
-                # stays reachable via the "Move/Rotate handles" checkbox.
-                if isinstance(feature_pick, dict) and feature_pick.get("opening"):
-                    if self._select_step_opening_from_feature(step_label, feature_pick):
+                # bugs/0338: the "Move/Rotate whole body" checkbox is a selection-
+                # MODE switch. UNCHECKED -> a click pins a FACE or clear-aperture
+                # opening (persistent), never the whole body / gizmo. CHECKED -> a
+                # click selects the whole body and shows its Move/Rotate handles;
+                # face/edge picking is disabled. (bugs/0334 first routed the opening
+                # away from the body path; 0338 generalises that to faces and gates
+                # it on the mode switch, so the gizmo is opt-in.)
+                if not self._show_rotation_handles():
+                    if isinstance(feature_pick, dict) and feature_pick.get("opening"):
+                        if self._select_step_opening_from_feature(step_label, feature_pick):
+                            return
+                    if self._select_step_face_from_feature(step_label, feature_pick):
                         return
+                    # Could not resolve a face/opening -- stay in face/edge mode,
+                    # do NOT fall through to a whole-body select.
+                    self.status_var.set(
+                        f"Could not resolve a face on {step_label.upper()}. "
+                        "Hover the face until it highlights, then click."
+                    )
+                    return
                 feature = feature_pick.get("feature") if feature_pick is not None else None
                 surface_center = feature_pick.get("surface_center") if feature_pick is not None else None
                 picked_face_id = str(feature_pick.get("face_id", "") if feature_pick is not None else "").strip()
@@ -502,11 +564,11 @@ class Open3DInteractionService:
                 self.sync_step_admin_canvas_selection(f"overlay:{str(step_label).strip().lower()}")
                 if remembered:
                     self.status_var.set(
-                        f"Selected {step_label.upper()} STEP face. Rotation handles remain active; "
-                        "use Snap STEP Normal->Optical Axis or Center Surface->Optical Axis when ready."
+                        f"Selected {step_label.upper()} whole body. Move/Rotate handles active; "
+                        "uncheck 'Move/Rotate whole body' to pick a face or opening."
                     )
                 else:
-                    self.status_var.set(f"Selected {step_label.upper()} STEP. Use the colored rotation handles or Center STEP Axis.")
+                    self.status_var.set(f"Selected {step_label.upper()} whole body. Use the colored Move/Rotate handles or Center STEP Axis.")
                 return
             if requested_label is not None and requested_label != step_label:
                 self.status_var.set(f"CAD STEP picked: {step_label}. Center mode is armed for {str(requested_label).upper()}.")
