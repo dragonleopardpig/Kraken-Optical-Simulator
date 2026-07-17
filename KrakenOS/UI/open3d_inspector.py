@@ -501,6 +501,21 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._hover_step_actor = None
         self._hover_step_outline_actor = None
         self._hover_step_cell_key = None
+        # bugs/0334: a PERSISTENT clear-aperture opening selection. A left-click on a
+        # highlighted CA opening pins its rim here (survives hover changes) so the user
+        # can right-click it without the selection hopping; cleared on click-elsewhere
+        # via _clear_open3d_selection. Distinct from the transient hover outline above.
+        self._selected_opening_outline_actor = None
+        self._selected_opening_label = ""
+        self._selected_opening_face_id = ""
+        self._selected_opening_center: np.ndarray | None = None
+        self._selected_opening_normal: np.ndarray | None = None
+        # bugs/0336: the currently-posted right-click menu (+ the temporary VTK
+        # widget button bindings that dismiss it). tk_popup releases its grab
+        # immediately on X11, so a click in the heavyweight GL canvas never
+        # unposts the menu -- these let a click-elsewhere tear it down.
+        self._active_context_menu = None
+        self._active_context_menu_binds: list[tuple[object, str, str]] = []
         # bugs/0124: diagnostics for the last right-click resolution (recorded into
         # the bug-repro state.json so a re-recorded BS-inside-LED right-click pins
         # why the 0121 hovered-face override didn't fire).
@@ -6122,6 +6137,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             if self._step_rotation_active_label is not None:
                 self._close_step_rotation_handler()
                 changed = True
+            if self._clear_selected_step_opening(render=False):
+                changed = True
             self._set_step_hover_outline(None, None, render=False)
             if self._picked_step_label is not None:
                 self._set_step_highlight(None, render=False)
@@ -7627,6 +7644,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._step_carry_snap_ray_mode = False
         self._step_carry_snap_target_mode = False
         self._clear_selected_step_feature_state()
+        # bugs/0334: the opening just moved onto the axis, so its pinned rim is now
+        # stale -- drop it (the render below repaints without a ghost outline).
+        self._clear_selected_step_opening(render=False)
         try:
             self.editor._selected_step_label = None
         except Exception:
@@ -19386,6 +19406,111 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self._hover_step_outline_actor = None
         if render:
             self.render()
+
+    def _set_selected_step_opening(
+        self,
+        label,
+        face_id,
+        center,
+        normal,
+        outline_mesh,
+        *,
+        render: bool = True,
+    ) -> bool:
+        """Pin a PERSISTENT clear-aperture opening selection (bugs/0334).
+
+        A left-click on a highlighted CA opening lands here: it stashes the
+        opening's geometry (label / face_id / centre / normal) and draws a
+        dedicated cyan rim actor that survives hover changes -- unlike the
+        transient gold hover outline, this is only torn down by
+        _clear_selected_step_opening (all deselect paths funnel through
+        _clear_open3d_selection). That stickiness lets the user right-click the
+        opening without the pick hopping to the body behind it.
+        """
+        # Drop any prior persistent rim before drawing the new one.
+        self._clear_selected_step_opening(render=False)
+        try:
+            center_arr = np.asarray(center, dtype=float).reshape(3) if center is not None else None
+        except Exception:
+            center_arr = None
+        try:
+            normal_arr = np.asarray(normal, dtype=float).reshape(3) if normal is not None else None
+        except Exception:
+            normal_arr = None
+        self._selected_opening_label = str(label or "").strip()
+        self._selected_opening_face_id = str(face_id or "").strip()
+        self._selected_opening_center = center_arr
+        self._selected_opening_normal = normal_arr
+        if (
+            self._renderer is not None
+            and outline_mesh is not None
+            and int(getattr(outline_mesh, "n_points", 0)) > 0
+            and vtkActor is not None
+            and vtkDataSetMapper is not None
+        ):
+            try:
+                mapper = vtkDataSetMapper()
+                mapper.SetInputData(outline_mesh)
+                try:
+                    mapper.ScalarVisibilityOff()
+                except Exception:
+                    pass
+                actor = vtkActor()
+                actor.SetMapper(mapper)
+                prop = actor.GetProperty()
+                # Distinct cyan so the pinned selection reads apart from the gold
+                # hover language; opaque + a touch thicker so it stays legible.
+                prop.SetColor(0.1, 0.95, 0.95)
+                prop.SetOpacity(1.0)
+                prop.SetLineWidth(5.0)
+                try:
+                    prop.SetAmbient(1.0)
+                    prop.SetDiffuse(0.0)
+                    prop.RenderLinesAsTubesOn()
+                except Exception:
+                    pass
+                actor.PickableOff()
+                self._add_renderer_view_prop(actor)
+                self._selected_opening_outline_actor = actor
+            except Exception:
+                self._selected_opening_outline_actor = None
+        if render:
+            self.render()
+        return True
+
+    def _clear_selected_step_opening(self, *, render: bool = True) -> bool:
+        """Tear down the persistent CA opening selection (bugs/0334).
+
+        Returns True if anything was actually cleared, so _clear_open3d_selection
+        can fold the result into its own `changed` bookkeeping.
+        """
+        changed = False
+        if self._selected_opening_outline_actor is not None:
+            try:
+                self._remove_renderer_view_prop(self._selected_opening_outline_actor)
+            except Exception:
+                pass
+            self._selected_opening_outline_actor = None
+            changed = True
+        if self._selected_opening_label:
+            self._selected_opening_label = ""
+            changed = True
+        if self._selected_opening_face_id:
+            self._selected_opening_face_id = ""
+            changed = True
+        if self._selected_opening_center is not None:
+            self._selected_opening_center = None
+            changed = True
+        if self._selected_opening_normal is not None:
+            self._selected_opening_normal = None
+            changed = True
+        if changed and render:
+            self.render()
+        return changed
+
+    def _has_selected_step_opening(self) -> bool:
+        """True when a persistent CA opening selection is currently pinned."""
+        return bool(self._selected_opening_label) and self._selected_opening_center is not None
 
     @staticmethod
     def _picked_feature_info(actor, picker) -> tuple[np.ndarray, object | None, np.ndarray | None] | None:

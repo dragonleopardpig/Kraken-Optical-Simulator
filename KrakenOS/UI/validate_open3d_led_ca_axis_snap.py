@@ -154,6 +154,8 @@ def _fake_axis_inspector():
         _hide_regular_rays_for_center_axis_pick=lambda *_a, **_k: None,
         _world_xyz_text=lambda _c: "(x,y,z)",
         _clear_selected_step_feature_state=lambda *_a, **_k: None,
+        # bugs/0334: the CA-snap apply tail now drops the pinned opening rim.
+        _clear_selected_step_opening=lambda *_a, **_k: False,
         _set_optical_axis_highlight=lambda *_a, **_k: None,
         _restore_rays_after_step_axis_pick=lambda _l: False,
         refresh_from_editor=lambda *_a, **_k: None,

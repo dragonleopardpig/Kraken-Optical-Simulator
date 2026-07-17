@@ -13635,6 +13635,46 @@ def phase_292_led_ca_alt_toggle_and_axis_snap(
     return result
 
 
+def phase_293_led_ca_persistent_select_and_menu(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0334-0336 -- the CLICK step on the LED clear-aperture (CA) opening, after hover-highlight.
+    0334: a left-click on a highlighted CA opening used to select the whole STEP body (+ move gizmo). Now it
+    pins ONLY that opening as a PERSISTENT cyan rim (_set_selected_step_opening / _clear_selected_step_opening
+    / _has_selected_step_opening on the inspector; _select_step_opening_from_feature on the interaction service
+    + a feature_pick.get("opening") branch in _on_left_button_press that returns BEFORE select_step_component).
+    The rim survives hover changes and clears only via _clear_open3d_selection (click-elsewhere) or a CA snap;
+    the body move gizmo stays reachable through the existing "Move/Rotate handles" checkbox. 0335: a right-click
+    while an opening is pinned used to re-pick a fresh cell that fell THROUGH the see-through hole to the body
+    ("the selection hop"). Now it builds an OPENING-ONLY menu (_show_selected_opening_context_menu) straight
+    from the pinned geometry -- guarded ahead of _right_click_pick_context -- offering the CA actions only, never
+    the whole-body promote items. 0336: tk_popup releases its grab immediately on X11 and the heavyweight GL
+    canvas swallows the next click, so the popup stuck; all context menus now post through _popup_context_menu,
+    which binds the VTK widget's button-press to _dismiss_active_context_menu so a click anywhere in the 3D
+    scene unposts the menu. Display-free guard: 1 the inspector state round-trip + the service opening-pin
+    (finite pins, non-finite falls through) + the left-click source branch; 2 the opening-only menu builds the
+    CA actions and NO promote items (refuses empty geometry, guarded ahead of the body re-pick); 3
+    _popup_context_menu binds + records the live menu, _dismiss_active_context_menu unposts + unbinds (re-entrancy
+    safe), the body menu posts through it, and deselect + CA snap both drop the pinned rim."""
+    result = PhaseResult(
+        name="Phase 293: LED CA left-click pins the opening only (persistent); right-click opening menu (no hop); popup dismisses on click-elsewhere"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_led_ca_persistent_select import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"led-ca-persistent-select guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if n.startswith("FAIL")])
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("led-ca-persistent-select phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13972,6 +14012,7 @@ def main() -> int:
             phase_290_led_opening_loop_hover,
             phase_291_led_hover_repick_and_mesh_integrity,
             phase_292_led_ca_alt_toggle_and_axis_snap,
+            phase_293_led_ca_persistent_select_and_menu,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

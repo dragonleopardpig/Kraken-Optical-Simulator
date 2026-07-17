@@ -103,6 +103,53 @@ class Open3DInteractionService:
             return
         setattr(self._inspector, name, value)
 
+    def _select_step_opening_from_feature(self, step_label: Any, feature_pick: dict) -> bool:
+        """Pin a clear-aperture opening as a PERSISTENT, opening-only selection.
+
+        bugs/0334: a left-click on a highlighted CA opening lands here instead of
+        selecting the whole STEP body. It stashes the opening geometry on the
+        inspector (drawing a cyan rim that survives hover) and also remembers the
+        feature so the right-click menu / axis-snap keep working. Returns True
+        when the opening was pinned so the caller skips the body-select path.
+        """
+        feature = feature_pick.get("feature") if isinstance(feature_pick, dict) else None
+        surface_center = feature_pick.get("surface_center") if isinstance(feature_pick, dict) else None
+        face_id = str(feature_pick.get("face_id", "") if isinstance(feature_pick, dict) else "").strip()
+        center = None
+        normal = None
+        outline_mesh = None
+        if isinstance(feature, (tuple, list)):
+            if len(feature) >= 1:
+                center = feature[0]
+            if len(feature) >= 2:
+                outline_mesh = feature[1]
+            if len(feature) >= 3:
+                normal = feature[2]
+        if surface_center is not None:
+            center = surface_center
+        try:
+            center_arr = np.asarray(center, dtype=float).reshape(-1) if center is not None else None
+        except Exception:
+            center_arr = None
+        if center_arr is None or center_arr.size < 3 or not np.all(np.isfinite(center_arr[:3])):
+            return False
+        self._set_selected_step_opening(step_label, face_id, center_arr[:3], normal, outline_mesh)
+        # Keep the feature context so the right-click CA menu + axis snap resolve.
+        self._remember_selected_step_feature(
+            step_label,
+            feature,
+            surface_center_world=center_arr[:3],
+            face_id=face_id,
+        )
+        label_txt = str(step_label or "").strip().upper()
+        face_txt = f" {face_id}" if face_id else ""
+        self.status_var.set(
+            f"Selected clear-aperture opening{face_txt} on {label_txt}. "
+            "Right-click for options; click elsewhere to deselect."
+        )
+        self.render()
+        return True
+
     @_timed_open3d_interaction
     def _on_left_button_press(self, obj, _event) -> None:
         le = _layout_module()
@@ -439,6 +486,13 @@ class Open3DInteractionService:
                         actor_key=actor_key,
                         cell_id=step_cell_id,
                     )
+                # bugs/0334: a left-click on a highlighted clear-aperture opening
+                # pins ONLY that opening (persistent cyan rim), never the whole
+                # STEP body -- no body select, no rotation gizmo. The move gizmo
+                # stays reachable via the "Move/Rotate handles" checkbox.
+                if isinstance(feature_pick, dict) and feature_pick.get("opening"):
+                    if self._select_step_opening_from_feature(step_label, feature_pick):
+                        return
                 feature = feature_pick.get("feature") if feature_pick is not None else None
                 surface_center = feature_pick.get("surface_center") if feature_pick is not None else None
                 picked_face_id = str(feature_pick.get("face_id", "") if feature_pick is not None else "").strip()

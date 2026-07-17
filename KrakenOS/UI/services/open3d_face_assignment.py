@@ -59,6 +59,15 @@ class Open3DFaceAssignmentService:
                 return "break"
         except Exception:
             pass
+        # bugs/0335: when a clear-aperture opening is PINNED (a prior left-click
+        # left a persistent cyan rim, bugs/0334), the right-click must act on that
+        # opening -- not re-pick the body behind the see-through hole (the "hop").
+        # Build an opening-only menu straight from the pinned geometry.
+        try:
+            if self._has_selected_step_opening() and self._show_selected_opening_context_menu(event):
+                return "break"
+        except Exception:
+            pass
         context = self._right_click_pick_context(event)
         if context is None:
             self._debug_trace(
@@ -366,6 +375,94 @@ class Open3DFaceAssignmentService:
             self.status_var.set("Right-click assignment requires a file-backed optical CAD/STL row.")
             return "break"
 
+        self._popup_context_menu(menu, event)
+        return "break"
+
+    def _show_selected_opening_context_menu(self, event) -> bool:
+        """Build an opening-only right-click menu from the PINNED CA selection.
+
+        bugs/0335: driven entirely by the persistent opening geometry stashed on
+        the inspector by the left-click (bugs/0334) -- no fresh cell pick, so the
+        selection cannot hop to the recessed face behind the see-through hole.
+        Offers the clear-aperture actions only (Snap center+normal to axis, set /
+        center / forget CA), never the whole-body promote items. Returns False if
+        the pinned geometry cannot be resolved so the caller falls back.
+        """
+        le = _layout_module()
+        step_label = str(getattr(self, "_selected_opening_label", "") or "").strip().lower()
+        if step_label not in le.STEP_OVERLAY_LABEL_SET:
+            return False
+        try:
+            center = np.asarray(self._selected_opening_center, dtype=float).reshape(-1)[:3]
+        except Exception:
+            center = np.asarray([], dtype=float)
+        if center.size < 3 or not np.all(np.isfinite(center[:3])):
+            return False
+        try:
+            normal = np.asarray(self._selected_opening_normal, dtype=float).reshape(-1)[:3]
+        except Exception:
+            normal = np.asarray([], dtype=float)
+        face_id = str(getattr(self, "_selected_opening_face_id", "") or "").strip()
+        display = self.editor._step_overlay_display_label(step_label).upper()
+        menu = tk.Menu(self, tearoff=False)
+        menu.add_command(label=f"{display} STEP {face_id or 'clear aperture'} (opening)", state="disabled")
+        if normal.size >= 3 and np.all(np.isfinite(normal[:3])):
+            menu.add_command(
+                label="Snap Clear Aperture -> Optical Axis (center + normal)",
+                command=lambda picked_label=step_label, c=center[:3].copy(), n=normal[:3].copy(): self._snap_clear_aperture_to_optical_axis_from_context(
+                    picked_label, c, n
+                ),
+            )
+        menu.add_separator()
+        menu.add_command(
+            label="Set Clear Aperture (pick window face)...",
+            command=lambda picked_label=step_label: self.start_step_clear_aperture_pick(picked_label),
+        )
+        if self.editor.step_clear_aperture(step_label) is not None:
+            menu.add_command(
+                label="Center Clear Aperture -> Optical Axis",
+                command=lambda picked_label=step_label: self._center_clear_aperture_from_context(picked_label),
+            )
+            menu.add_command(
+                label="Forget Clear Aperture",
+                command=lambda picked_label=step_label: self._clear_clear_aperture_from_context(picked_label),
+            )
+        menu.add_separator()
+        menu.add_command(label="Deselect opening", command=lambda: self._clear_open3d_selection())
+        self._popup_context_menu(menu, event)
+        return True
+
+    def _popup_context_menu(self, menu, event) -> None:
+        """Post a right-click menu and make it dismiss on click-elsewhere (bugs/0336).
+
+        tk_popup grabs the pointer, but the heavyweight VTK render window swallows
+        the next click before the grab can unpost the menu, so the popup used to
+        stick. We keep a reference to the live menu and bind the VTK Tk widget's
+        button-press + the menu's own <Unmap>/<FocusOut> to tear it down, so a
+        click anywhere in the 3D scene (or losing focus) drops the popup.
+        """
+        self._dismiss_active_context_menu()
+        object.__setattr__(self._inspector, "_active_context_menu", menu)
+        widget = getattr(self, "_vtk_widget", None)
+        bind_ids: list[tuple[object, str, str]] = []
+
+        def _dismiss(_event=None):
+            self._dismiss_active_context_menu()
+            return None
+
+        if widget is not None:
+            try:
+                for sequence in ("<Button-1>", "<Button-2>", "<Button-3>"):
+                    bind_id = widget.bind(sequence, _dismiss, add="+")
+                    bind_ids.append((widget, sequence, bind_id))
+            except Exception:
+                bind_ids = []
+        object.__setattr__(self._inspector, "_active_context_menu_binds", bind_ids)
+        try:
+            menu.bind("<Unmap>", _dismiss, add="+")
+            menu.bind("<FocusOut>", _dismiss, add="+")
+        except Exception:
+            pass
         try:
             menu.tk_popup(int(event.x_root), int(event.y_root))
         finally:
@@ -373,7 +470,35 @@ class Open3DFaceAssignmentService:
                 menu.grab_release()
             except Exception:
                 pass
-        return "break"
+
+    def _dismiss_active_context_menu(self) -> None:
+        """Unpost + unbind the currently-live right-click menu, if any (bugs/0336).
+
+        State is cleared to ``None``/``[]`` *before* touching the menu so that an
+        ``<Unmap>`` fired by our own ``unpost`` re-enters as a harmless no-op.
+        """
+        menu = getattr(self._inspector, "_active_context_menu", None)
+        binds = getattr(self._inspector, "_active_context_menu_binds", None) or []
+        object.__setattr__(self._inspector, "_active_context_menu", None)
+        object.__setattr__(self._inspector, "_active_context_menu_binds", [])
+        for widget, sequence, bind_id in list(binds):
+            try:
+                widget.unbind(sequence, bind_id)
+            except Exception:
+                pass
+        if menu is not None:
+            try:
+                menu.unpost()
+            except Exception:
+                pass
+            try:
+                menu.grab_release()
+            except Exception:
+                pass
+            try:
+                menu.destroy()
+            except Exception:
+                pass
 
     def append_element_context_actions(self, menu, *, row_index=None, step_label=None) -> bool:
         """Append the *element-level* right-click actions -- the ones keyed only by
