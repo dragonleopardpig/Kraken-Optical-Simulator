@@ -13563,6 +13563,40 @@ def phase_290_led_opening_loop_hover(
     return result
 
 
+def phase_291_led_hover_repick_and_mesh_integrity(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0331 -- after an OFF-BODY hover the LED clear-aperture opening stopped highlighting (flags
+    978/798/718/630/408). Two defects. ROOT CAUSE: the off-body/miss hover pick runs the STEP overlay
+    face-metadata compute, which strips every cell-data array off the mesh before extract_surface/
+    triangulate -- but that mesh is the SHARED, memoized display mesh and the strip ran IN PLACE, so the
+    live mesh lost its kraken_step_* face indices; triangle_array_and_face_index then returns empty,
+    opening_loops_for_mesh collapses 21 -> 0, and the opening pick can never resolve the CA again (the
+    strip also bumps MTime, so every id/MTime-keyed cache recomputes into the poisoned state -- a permanent
+    freeze). Fix: deep-copy the fetched mesh BEFORE stripping. THROTTLE: the 35 ms mouse-move throttle
+    dropped the resting cursor's final move, so the highlight froze 300-590 px behind the cursor; fix adds
+    a debounced one-shot trailing re-pick. Display-free guard: Section 1 proves opening_loops_for_mesh and
+    the kraken_step_* arrays SURVIVE a metadata compute on the shared mesh; Section 2 asserts the trailing
+    re-pick timer contract (schedule / debounce / fire-at-rest / not-during-carry / cancel / no-widget)."""
+    result = PhaseResult(
+        name="Phase 291: LED CA opening survives an off-body hover (no shared-mesh strip) + debounced trailing re-pick"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_led_hover_repick import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"led-hover-repick guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if n.startswith("FAIL")])
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("led-hover-repick phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13898,6 +13932,7 @@ def main() -> int:
             phase_288_alt_hover_refire,
             phase_289_led_ca_edge_hover,
             phase_290_led_opening_loop_hover,
+            phase_291_led_hover_repick_and_mesh_integrity,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

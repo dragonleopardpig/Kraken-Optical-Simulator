@@ -782,8 +782,16 @@ class Open3DInteractionService:
             and not hover_critical
             and not self._mouse_move_due()
         ):
+            # bugs/0331: a dropped move must still resolve when the mouse STOPS --
+            # schedule a debounced trailing re-pick so the resting cursor is hovered.
+            self._schedule_trailing_hover_repick()
             open3d_trace_event("on_mouse_move_throttled")
             return
+        # This move got through the throttle and will paint a fresh highlight, so
+        # any pending trailing re-pick is stale -- drop it (a later throttled move
+        # reschedules its own). The synthetic re-fire re-enters here with the
+        # throttle reset, so it lands in this branch too and self-clears.
+        self._cancel_trailing_hover_repick()
         try:
             x, y = self._vtk_interactor.GetEventPosition() if self._vtk_interactor is not None else (-1, -1)
             self._timing_event("mouse_move_processed", x=int(x), y=int(y), hover_critical=hover_critical)

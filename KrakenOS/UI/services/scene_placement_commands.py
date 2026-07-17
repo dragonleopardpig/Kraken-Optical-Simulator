@@ -4181,6 +4181,15 @@ class ScenePlacementMixin:
         mesh = self._transformed_imported_step_mesh_for_label(label)
         if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
             return normalize_optical_solid_face_metadata({})
+        # bugs/0331: this is the SHARED, memoized display mesh. The cell-data
+        # stripping below mutates in place, so without a private copy first the
+        # strip poisons the live mesh's kraken_step_* face-index arrays --
+        # collapsing opening_loops_for_mesh() to zero and permanently freezing
+        # the CA opening-hover highlight after any off-body hover.
+        try:
+            mesh = mesh.copy(deep=True)
+        except Exception:
+            pass
         # Strip every cell-data array before extract_surface /
         # triangulate. Several layers add per-cell arrays sized to the
         # original tessellation:

@@ -548,6 +548,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._right_button_active = False
         self._mouse_move_last_ts = 0.0
         self._mouse_move_min_interval_s = 0.035
+        # bugs/0331: one-shot timer that re-picks the hover at the RESTING cursor
+        # after the throttle drops a move (see _schedule_trailing_hover_repick).
+        self._trailing_hover_repick_after_id = None
         self._placement_drag_state: dict[str, object] | None = None
         self._thickness_drag_state: dict[str, object] | None = None
         self._step_carry_active_label: str | None = None
@@ -1965,6 +1968,57 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             interactor.MouseMoveEvent()
         except Exception:
             pass
+
+    def _schedule_trailing_hover_repick(self) -> None:
+        # bugs/0331: the mouse-move throttle (``_mouse_move_due``, 35 ms) drops the
+        # motion events that arrive closer than the interval. A mouse coming to REST
+        # fires its last few reports inside one throttle window (HW reports at
+        # ~125 Hz / 8 ms) and X11 coalesces a fast flick into a couple of far-apart
+        # events, so the FINAL resting position routinely never gets a hover pick --
+        # the feature highlight (and the opening snap) freeze at the last PROCESSED
+        # move, 300-590 px behind the cursor. That is the whole "CA not highlighting
+        # / the next window gets highlighted" family (flags 978/798/718/630/408): the
+        # pick logic resolves the opening correctly AT the resting cursor, it just
+        # never ran there. Schedule a single trailing re-pick so the resting cursor
+        # is always hovered. Debounced: each throttled move cancels the prior timer,
+        # so only the last one survives and fires once, ~one interval after motion
+        # stops.
+        widget = getattr(self, "_vtk_widget", None)
+        if widget is None:
+            return
+        self._cancel_trailing_hover_repick()
+        delay_ms = max(1, int(round(float(self._mouse_move_min_interval_s) * 1000.0)) + 5)
+        try:
+            self._trailing_hover_repick_after_id = widget.after(
+                delay_ms, self._on_trailing_hover_repick
+            )
+        except Exception:
+            self._trailing_hover_repick_after_id = None
+
+    def _cancel_trailing_hover_repick(self) -> None:
+        after_id = getattr(self, "_trailing_hover_repick_after_id", None)
+        self._trailing_hover_repick_after_id = None
+        widget = getattr(self, "_vtk_widget", None)
+        if after_id is None or widget is None:
+            return
+        try:
+            widget.after_cancel(after_id)
+        except Exception:
+            pass
+
+    def _on_trailing_hover_repick(self) -> None:
+        # bugs/0331: the debounced timer fired -- the mouse has been at rest for one
+        # throttle interval. Re-run the feature hover at the resting cursor. Skip
+        # while a carry drag/follow owns the mouse (those paths bypass the throttle
+        # already, so no trailing timer is theirs to honour) so a late timer cannot
+        # inject a spurious pick mid-gesture.
+        self._trailing_hover_repick_after_id = None
+        if (
+            self._step_carry_drag_state is not None
+            or self._step_carry_follow_state is not None
+        ):
+            return
+        self._refire_scene_hover_pick()
 
     def _pointer_over_vtk_widget(self) -> bool:
         widget = getattr(self, "_vtk_widget", None)
