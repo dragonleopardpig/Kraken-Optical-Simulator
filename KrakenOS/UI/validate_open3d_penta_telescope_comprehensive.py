@@ -13816,7 +13816,7 @@ def phase_298_clear_aperture_snap_from_record(
     (flag prior_hover_key ('step','led','F053')) -- so the snap item was absent though a CA record existed. Once
     the CA is DEFINED its centre+normal are known from the record (_step_overlay_fine_face_centroid_normal); the
     body menu and the pinned-opening menu now offer the snap straight from the record. Display-free guard:
-    _clear_aperture_record_center_normal returns (center, normal) for a resolved record and (None, None)
+    _clear_aperture_opening_center_normal returns (center, normal) for a resolved opening and (None, None)
     otherwise, plus a source contract for both menus."""
     result = PhaseResult(
         name="Phase 298: a DEFINED clear aperture is snappable to the optical axis from its record (no live hover/pin)"
@@ -13834,6 +13834,66 @@ def phase_298_clear_aperture_snap_from_record(
         result.notes.append(note)
     if not result.passed and not result.notes:
         result.notes.append("clear-aperture-snap-from-record phase failed without detail")
+    return result
+
+
+def phase_299_context_menu_focus_restore(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0343 -- dismissing a popup restores the 's' flag-hotkey focus. User (imported LED): "right click
+    elsewhere closes the pop up, but shortcut 's' no longer woring. I right click again and click the menu grayed
+    out item, it closes, then the 's' shorcut can flag again." bugs/0341 dismisses via menu.destroy(), but tk_popup
+    stole keyboard focus for the menu and destroying it ourselves (unlike a menu-item click) leaves focus in limbo,
+    so the Toplevel-level <KeyPress-s> hotkey stops firing. _dismiss_active_context_menu now hands focus back to the
+    render pane (_vtk_widget.focus_set()) after tearing down a LIVE menu; the pre-post clear (no live menu) must not
+    steal focus. Display-free guard: focus restored on a live dismiss, left alone on the empty clear, plus source
+    contract."""
+    result = PhaseResult(
+        name="Phase 299: dismissing a right-click popup restores render-pane focus so the 's' flag hotkey keeps working"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_context_menu_focus_restore import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"context-menu-focus-restore guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if n.startswith("FAIL")])
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("context-menu-focus-restore phase failed without detail")
+    return result
+
+
+def phase_300_clear_aperture_snap_auto_detect(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0344 -- an AUTO-DETECTED clear aperture is snappable. User (imported LED): "right click snap still not
+    working." bugs/0342 offered the snap only inside the step_clear_aperture(...) is not None branch (a MANUAL
+    record), but the imported LED auto-detects its CA (bugs/0319 C2: 5 candidates, top face 266, finite
+    centre+normal) with NO manual record, and the hover highlight already keys off that auto-detect via
+    _clear_aperture_opening_face_index. So the opening lit up on hover but had no snap item. The snap now resolves
+    from _clear_aperture_opening_face_index (manual OR auto-detect) and is offered OUTSIDE the manual-record gate in
+    both menus. Display-free guard: the face-index resolver falls back to auto-detect with no manual record, and the
+    snap sits before the manual-record gate in both menus."""
+    result = PhaseResult(
+        name="Phase 300: an auto-detected clear aperture (no manual record) is snappable to the optical axis"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_clear_aperture_snap_auto_detect import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"clear-aperture-snap-auto-detect guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if n.startswith("FAIL")])
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("clear-aperture-snap-auto-detect phase failed without detail")
     return result
 
 
@@ -14180,6 +14240,8 @@ def main() -> int:
             phase_296_opening_menu_add_beam_splitter,
             phase_297_context_menu_dismiss_on_click,
             phase_298_clear_aperture_snap_from_record,
+            phase_299_context_menu_focus_restore,
+            phase_300_clear_aperture_snap_auto_detect,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

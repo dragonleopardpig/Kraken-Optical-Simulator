@@ -361,24 +361,28 @@ class Open3DFaceAssignmentService:
                 label="Set Clear Aperture (pick window face)...",
                 command=lambda picked_label=step_label: self.start_step_clear_aperture_pick(picked_label),
             )
+            # bugs/0342: a DEFINED clear aperture is snappable from its own centre +
+            # normal -- offer the snap here, not just when the cursor sits on the
+            # see-through opening (opening_feature) or while the rim is pinned. After
+            # "Set Clear Aperture" the refresh drops the pin and the follow-up
+            # right-click lands on a housing face, so without this the snap was
+            # unreachable ("still can't right click snap CA ... even though I set the
+            # CA first"). bugs/0344: gate on the OPENING resolving (manual record OR
+            # auto-detect), not on the manual record alone -- the imported LED
+            # auto-detects its CA with no manual record, so the manual-record gate hid
+            # the snap ("right click snap still not working"). Skip when the
+            # opening-hover path above already added it.
+            if opening_feature is None:
+                ca_center, ca_normal = self._clear_aperture_opening_center_normal(step_label)
+                if ca_center is not None and ca_normal is not None:
+                    menu.add_command(
+                        label="Snap Clear Aperture -> Optical Axis (center + normal)",
+                        command=lambda picked_label=step_label, c=ca_center, n=ca_normal: self._snap_clear_aperture_to_optical_axis_from_context(
+                            picked_label, c, n
+                        ),
+                    )
             if self.editor.step_clear_aperture(step_label) is not None:
-                # bugs/0342: a DEFINED clear aperture is snappable from its own
-                # record -- offer the center+normal snap here, not just when the
-                # cursor happens to sit on the see-through opening (opening_feature)
-                # and not just while the rim is pinned. After "Set Clear Aperture"
-                # the refresh drops the pin and the follow-up right-click lands on a
-                # housing face, so without this the snap was unreachable ("still
-                # can't right click snap CA to optical axis even though I set the CA
-                # first"). Skip when the opening-hover path above already added it.
-                if opening_feature is None:
-                    ca_center, ca_normal = self._clear_aperture_record_center_normal(step_label)
-                    if ca_center is not None and ca_normal is not None:
-                        menu.add_command(
-                            label="Snap Clear Aperture -> Optical Axis (center + normal)",
-                            command=lambda picked_label=step_label, c=ca_center, n=ca_normal: self._snap_clear_aperture_to_optical_axis_from_context(
-                                picked_label, c, n
-                            ),
-                        )
+                # Center / Forget act on the MANUAL record, so they stay gated on it.
                 menu.add_command(
                     label="Center Clear Aperture -> Optical Axis",
                     command=lambda picked_label=step_label: self._center_clear_aperture_from_context(picked_label),
@@ -436,18 +440,22 @@ class Open3DFaceAssignmentService:
             label="Set Clear Aperture (pick window face)...",
             command=lambda picked_label=step_label: self.start_step_clear_aperture_pick(picked_label),
         )
+        # bugs/0342: keep the snap reachable even when the pinned rim carries no usable
+        # normal -- a clear aperture is snappable from its resolved centre + normal.
+        # bugs/0344: resolve from the OPENING (manual record OR auto-detect), not gated
+        # on a manual record, so an auto-detected opening pinned with no finite normal
+        # is still snappable.
+        if not normal_finite:
+            ca_center, ca_normal = self._clear_aperture_opening_center_normal(step_label)
+            if ca_center is not None and ca_normal is not None:
+                menu.add_command(
+                    label="Snap Clear Aperture -> Optical Axis (center + normal)",
+                    command=lambda picked_label=step_label, c=ca_center, n=ca_normal: self._snap_clear_aperture_to_optical_axis_from_context(
+                        picked_label, c, n
+                    ),
+                )
         if self.editor.step_clear_aperture(step_label) is not None:
-            # bugs/0342: keep the snap reachable even when the pinned rim carries no
-            # usable normal -- a DEFINED clear aperture is snappable from its record.
-            if not normal_finite:
-                ca_center, ca_normal = self._clear_aperture_record_center_normal(step_label)
-                if ca_center is not None and ca_normal is not None:
-                    menu.add_command(
-                        label="Snap Clear Aperture -> Optical Axis (center + normal)",
-                        command=lambda picked_label=step_label, c=ca_center, n=ca_normal: self._snap_clear_aperture_to_optical_axis_from_context(
-                            picked_label, c, n
-                        ),
-                    )
+            # Center / Forget act on the MANUAL record, so they stay gated on it.
             menu.add_command(
                 label="Center Clear Aperture -> Optical Axis",
                 command=lambda picked_label=step_label: self._center_clear_aperture_from_context(picked_label),
@@ -551,6 +559,19 @@ class Open3DFaceAssignmentService:
                 menu.destroy()
             except Exception:
                 pass
+            # bugs/0343: tk_popup stole keyboard focus for the menu. When WE tear it
+            # down (the bugs/0341 click-elsewhere dismiss) Tk does not restore focus
+            # the way a menu-item click does, so it is left in limbo and the
+            # Toplevel-level <KeyPress-s> flag-bug hotkey stops firing ("shortcut 's'
+            # no longer woring ... click the menu grayed out item ... then the 's'
+            # shorcut can flag again"). Hand focus back to the render pane so the
+            # hotkey keeps working after a click-elsewhere dismiss.
+            widget = getattr(self._inspector, "_vtk_widget", None)
+            if widget is not None:
+                try:
+                    widget.focus_set()
+                except Exception:
+                    pass
 
     def append_element_context_actions(self, menu, *, row_index=None, step_label=None) -> bool:
         """Append the *element-level* right-click actions -- the ones keyed only by
@@ -1010,26 +1031,31 @@ class Open3DFaceAssignmentService:
         except Exception as exc:
             self.editor.append_debug(f"Open 3D face->axis center refresh failed: {exc}")
 
-    def _clear_aperture_record_center_normal(self, label: str):
-        """World ``(center, normal)`` of a STEP overlay's PERSISTED clear aperture.
+    def _clear_aperture_opening_center_normal(self, label: str):
+        """World ``(center, normal)`` of a STEP overlay's clear-aperture OPENING.
 
-        bugs/0342: once the CA is DEFINED (the bugs/0134 record stores its analytic
-        face index), its centre + unit normal are known from the stored face -- so
-        the center+normal snap can be offered straight from the record, with no live
-        opening hover and no pinned rim. Returns ``(None, None)`` when no record
-        resolves on the current transformed mesh.
+        bugs/0342: once the CA is DEFINED its centre + unit normal are known from the
+        stored face, so the center+normal snap can be offered straight from it -- no
+        live opening hover and no pinned rim.
+
+        bugs/0344: the opening resolves for hover/highlight whenever
+        ``_clear_aperture_opening_face_index`` finds it -- from the MANUAL bugs/0134
+        record OR the bugs/0319 auto-detect. The snap must key off the SAME resolver,
+        else an auto-detected LED opening lights up on hover but has no snap item
+        ("right click snap still not working" -- the imported LED auto-detects its
+        clear aperture, face 266, with no manual record). Returns ``(None, None)``
+        when neither a manual record nor an auto-detected candidate resolves on the
+        current transformed mesh.
         """
         label = str(label or "").strip().lower()
         try:
-            record = self.editor.step_clear_aperture(label)
+            face_index = self._clear_aperture_opening_face_index(label)
         except Exception:
-            record = None
-        if not isinstance(record, dict):
+            face_index = None
+        if face_index is None:
             return None, None
         try:
-            resolved = self.editor._step_overlay_fine_face_centroid_normal(
-                label, record.get("face_index")
-            )
+            resolved = self.editor._step_overlay_fine_face_centroid_normal(label, face_index)
         except Exception:
             resolved = None
         if resolved is None:

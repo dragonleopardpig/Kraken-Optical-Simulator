@@ -299,7 +299,9 @@
     "295": "pass",
     "296": "pass",
     "297": "pass",
-    "298": "pass"
+    "298": "pass",
+    "299": "pass",
+    "300": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -599,6 +601,8 @@
     "295": "Phase 295: only one persistent STEP feature selection at a time (face pin drops opening pin and vice versa)",
     "296": "Phase 296: pinned LED clear-aperture opening menu offers 'Add Beam Splitter to LED (Cube/Plate)'",
     "297": "Phase 297: a scene left/middle click dismisses a live right-click popup (primary press handlers, not shadowed binds)",
-    "298": "Phase 298: a DEFINED clear aperture is snappable to the optical axis from its record (no live hover/pin)"
+    "298": "Phase 298: a DEFINED clear aperture is snappable to the optical axis from its record (no live hover/pin)",
+    "299": "Phase 299: dismissing a right-click popup restores render-pane focus so the 's' flag hotkey keeps working",
+    "300": "Phase 300: an auto-detected clear aperture (no manual record) is snappable to the optical axis"
   }
 }
