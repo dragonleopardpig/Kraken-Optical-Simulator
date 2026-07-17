@@ -196,6 +196,13 @@ class Open3DFaceAssignmentService:
             menu.add_separator()
             self.append_element_context_actions(menu, row_index=int(row_index))
         elif step_label in STEP_OVERLAY_LABEL_SET:
+            # bugs/0333: remember whether the cursor is over a clear-aperture OPENING
+            # (plain-hover pick sets ``opening``). The opening carries its own centroid
+            # + normal, so the right-click menu can offer a center+normal axis snap that
+            # uses the OPENING geometry -- not the recessed face the see-through ray
+            # pick below lands on behind the hole. Initialised before the try so the
+            # except path still leaves it defined.
+            opening_feature = None
             try:
                 feature_pick = self._step_feature_pick_for_display_xy(
                     step_label,
@@ -205,6 +212,11 @@ class Open3DFaceAssignmentService:
                     cell_id=cell_id,
                 )
                 through_pick = feature_pick.get("through_pick") if isinstance(feature_pick, dict) else None
+                opening_feature = (
+                    feature_pick
+                    if isinstance(feature_pick, dict) and bool(feature_pick.get("opening"))
+                    else None
+                )
                 if through_pick is not None:
                     face = through_pick.face
                     point = np.asarray(through_pick.point_world, dtype=float).reshape(3)
@@ -307,6 +319,31 @@ class Open3DFaceAssignmentService:
                     picked_label, picked_center
                 ),
             )
+            # bugs/0333: when the cursor is over a clear-aperture OPENING, offer a
+            # center + normal snap that uses the OPENING's own centroid + normal (not
+            # the recessed face behind the hole). Arms the axis-pick machine so the
+            # user clicks the INTENDED optical axis next -- one action does both.
+            if opening_feature is not None:
+                try:
+                    op_center = np.asarray(opening_feature.get("surface_center"), dtype=float).reshape(-1)[:3]
+                except Exception:
+                    op_center = np.asarray([], dtype=float)
+                try:
+                    op_normal = np.asarray(opening_feature.get("feature")[2], dtype=float).reshape(-1)[:3]
+                except Exception:
+                    op_normal = np.asarray([], dtype=float)
+                if (
+                    op_center.size >= 3
+                    and op_normal.size >= 3
+                    and np.all(np.isfinite(op_center[:3]))
+                    and np.all(np.isfinite(op_normal[:3]))
+                ):
+                    menu.add_command(
+                        label="Snap Clear Aperture -> Optical Axis (center + normal)",
+                        command=lambda picked_label=step_label, c=op_center[:3].copy(), n=op_normal[:3].copy(): self._snap_clear_aperture_to_optical_axis_from_context(
+                            picked_label, c, n
+                        ),
+                    )
             # bugs/0134: a dedicated clear-aperture pick. The coarse face pick above
             # grabs whatever planar cluster the cursor lands on (often a housing
             # face, not the CA window); this arms a one-click fine-face pick whose
@@ -823,6 +860,28 @@ class Open3DFaceAssignmentService:
         except Exception as exc:
             self.editor.append_debug(f"Open 3D clear-aperture center refresh failed: {exc}")
         self.status_var.set(f"{label.upper()} clear aperture centred on the optical axis.")
+
+    def _snap_clear_aperture_to_optical_axis_from_context(self, label: str, center, normal) -> None:
+        """Right-click "Snap Clear Aperture -> Optical Axis (center + normal)".
+
+        bugs/0333: unlike the translate-only ``_center_clear_aperture_from_context``,
+        this centres AND normalises the OPENING the user hovered -- passing its own
+        centroid + normal to the shared axis-pick machine armed in ``feature_center``
+        mode, which then prompts the user to click the INTENDED optical axis (there can
+        be several) and snaps both rotation and translation via
+        ``snap_step_feature_normal_to_optical_axis``."""
+        label = str(label).strip().lower()
+        try:
+            self.start_step_normal_axis_pick(
+                label,
+                anchor_mode="feature_center",
+                feature_center=center,
+                feature_normal=normal,
+            )
+        except Exception as exc:
+            le = _layout_module()
+            self.status_var.set(f"Snap Clear Aperture -> Optical Axis failed: {le._short_error_message(exc)}")
+            self.editor.append_debug(f"Open 3D clear-aperture axis-snap arm failed: {exc}")
 
     def _clear_clear_aperture_from_context(self, label: str) -> None:
         """Right-click "Forget Clear Aperture": drop the persisted CA record."""

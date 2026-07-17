@@ -292,7 +292,8 @@
     "288": "pass",
     "289": "pass",
     "290": "pass",
-    "291": "pass"
+    "291": "pass",
+    "292": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -585,6 +586,7 @@
     "288": "Phase 288: Alt-hover edge mode fires live -- re-pick on the modifier transition",
     "289": "Phase 289: LED clear-aperture opening edge snaps on screen-proximity to its rim loop",
     "290": "Phase 290: LED plain hover snaps to the nearest opening loop, incl. inner hole loops, by rim OR interior containment",
-    "291": "Phase 291: LED CA opening survives an off-body hover (no shared-mesh strip) + debounced trailing re-pick"
+    "291": "Phase 291: LED CA opening survives an off-body hover (no shared-mesh strip) + debounced trailing re-pick",
+    "292": "Phase 292: LED CA Alt toggles edge<->surface + right-click snap centres AND normals the opening on the intended axis"
   }
 }

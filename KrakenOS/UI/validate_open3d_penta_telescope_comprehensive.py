@@ -13597,6 +13597,44 @@ def phase_291_led_hover_repick_and_mesh_integrity(
     return result
 
 
+def phase_292_led_ca_alt_toggle_and_axis_snap(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0332 + 0333 -- two clear-aperture (CA) UX fixes on the vendor LED. 0332: Alt over a CA OPENING
+    was a no-op (the opening pick returned early, ungated). Now Alt TOGGLES the opening hover from its EDGE
+    (rim, the plain default) to the SURFACE that owns it (whole owning-face outline via
+    _opening_owning_surface_feature), mirroring the body-face path (plain=whole face, Alt=nearest edge); it
+    falls back to the edge feature when the owning surface can't be resolved, so Alt is inert not blank.
+    0333: the old right-click "Center Clear Aperture -> Optical Axis" was TRANSLATE-ONLY to a hard-coded
+    global x=0/y=0 axis and never rotated the normal, so a tilted/off-axis opening stayed tilted+off-axis.
+    Now both opening builders mark 'opening': True so the menu offers "Snap Clear Aperture -> Optical Axis
+    (center + normal)", which arms start_step_normal_axis_pick in the new feature_center mode with the
+    opening's OWN centroid+normal; clicking an axis routes _apply_step_normal_axis_pick ->
+    _apply_step_feature_center_axis_pick -> snap_step_feature_normal_to_optical_axis (rotate normal opposite
+    the axis AND translate centre onto it), prompting the user to click the INTENDED axis (there can be
+    several). Display-free guard: 1 the Alt owning-surface resolver + the plain-EDGE/Alt-SURFACE branch;
+    2 the feature_center arm stores geometry + prompts for the intended axis (non-finite does not arm);
+    3 dispatch delegates to the feature-center apply, which calls the center+normal engine (NOT translate-
+    only) with the stored geometry + clicked axis frame; the menu + markers are wired."""
+    result = PhaseResult(
+        name="Phase 292: LED CA Alt toggles edge<->surface + right-click snap centres AND normals the opening on the intended axis"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_led_ca_axis_snap import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"led-ca-axis-snap guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if n.startswith("FAIL")])
+    for note in notes:
+        result.notes.append(note)
+    if not result.passed and not result.notes:
+        result.notes.append("led-ca-axis-snap phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -13933,6 +13971,7 @@ def main() -> int:
             phase_289_led_ca_edge_hover,
             phase_290_led_opening_loop_hover,
             phase_291_led_hover_repick_and_mesh_integrity,
+            phase_292_led_ca_alt_toggle_and_axis_snap,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

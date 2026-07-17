@@ -560,6 +560,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._step_carry_snap_target_mode = False
         self._step_normal_axis_pick_mode = False
         self._step_normal_axis_anchor_mode = "body_center"
+        # bugs/0333: "feature_center" anchor mode snaps a clear-aperture OPENING
+        # (its own centroid + normal, supplied here) to the clicked optical axis --
+        # center AND normal in one action -- instead of requiring a face selection.
+        self._step_normal_axis_feature_center: np.ndarray | None = None
+        self._step_normal_axis_feature_normal: np.ndarray | None = None
+        self._step_normal_axis_feature_label = ""
         self._step_surface_center_axis_pick_mode = False
         self._step_clear_aperture_pick_mode = False
         self._step_clear_aperture_pick_label = ""
@@ -7308,7 +7314,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             dtype=float,
         )
 
-    def start_step_normal_axis_pick(self, label: str | None = None, *, anchor_mode: str = "body_center") -> None:
+    def start_step_normal_axis_pick(
+        self,
+        label: str | None = None,
+        *,
+        anchor_mode: str = "body_center",
+        feature_center=None,
+        feature_normal=None,
+    ) -> None:
         """Arm the click-the-axis-to-snap state machine.
 
         ``anchor_mode`` controls which point on the STEP lands at the
@@ -7321,6 +7334,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
           the axis click. Lens body extends to one side.
         - ``"pick_point"``: the exact point you clicked on the face
           lands on the axis click. Useful for edge-precise alignment.
+        - ``"feature_center"`` (bugs/0333): a clear-aperture OPENING
+          whose centroid + normal are supplied via ``feature_center`` /
+          ``feature_normal``; centres AND normalises it on the clicked
+          axis without needing a face selection.
         """
         service = self.editor._open3d_step_state_service()
         label = service.selected_import_label((label, self._selected_step_feature_label))
@@ -7328,21 +7345,50 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.status_var.set("Snap STEP Normal->Optical Axis: select or import a STEP component first.")
             return
         mode_text = str(anchor_mode).strip().lower()
-        if mode_text == "pick_point":
+        if mode_text == "feature_center":
+            anchor_mode = "feature_center"
+        elif mode_text == "pick_point":
             anchor_mode = "pick_point"
         elif mode_text == "body_center":
             anchor_mode = "body_center"
         else:
             anchor_mode = "surface_center"
-        selection = self._step_feature_action_selection(
-            label=label,
-            require_pick_point=True,
-            require_surface_center=(anchor_mode == "surface_center"),
-            require_normal=True,
-        )
-        if selection is None:
-            self.status_var.set("Snap STEP Normal->Optical Axis: click a planar STEP face first.")
-            return
+        if anchor_mode == "feature_center":
+            center = (
+                np.asarray(feature_center, dtype=float).reshape(-1)[:3]
+                if feature_center is not None
+                else np.asarray([], dtype=float)
+            )
+            normal = (
+                np.asarray(feature_normal, dtype=float).reshape(-1)[:3]
+                if feature_normal is not None
+                else np.asarray([], dtype=float)
+            )
+            if (
+                center.size < 3
+                or normal.size < 3
+                or not np.all(np.isfinite(center[:3]))
+                or not np.all(np.isfinite(normal[:3]))
+            ):
+                self.status_var.set("Snap Clear Aperture->Optical Axis: opening geometry is unavailable.")
+                return
+            self._step_normal_axis_feature_center = np.asarray(center[:3], dtype=float)
+            self._step_normal_axis_feature_normal = np.asarray(normal[:3], dtype=float)
+            self._step_normal_axis_feature_label = label
+            selection = None
+        else:
+            self._step_normal_axis_feature_center = None
+            self._step_normal_axis_feature_normal = None
+            self._step_normal_axis_feature_label = ""
+            selection = self._step_feature_action_selection(
+                label=label,
+                require_pick_point=True,
+                require_surface_center=(anchor_mode == "surface_center"),
+                require_normal=True,
+            )
+            if selection is None:
+                self.status_var.set("Snap STEP Normal->Optical Axis: click a planar STEP face first.")
+                return
         self._step_normal_axis_pick_mode = True
         self._step_normal_axis_anchor_mode = anchor_mode
         self._step_surface_center_axis_pick_mode = False
@@ -7363,6 +7409,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if anchor_mode == "body_center":
             coordinate = self._step_body_center_world(label)
             anchor_text = "body center"
+        elif anchor_mode == "feature_center":
+            coordinate = self._step_normal_axis_feature_center
+            anchor_text = "clear aperture center"
         elif anchor_mode == "surface_center":
             coordinate = selection.surface_center_world
             anchor_text = "surface center"
@@ -7370,7 +7419,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             coordinate = selection.pick_point_world
             anchor_text = "picked point"
         self.status_var.set(
-            f"Snap {label.upper()} STEP normal using {anchor_text}: click the dotted Optical Axis guide. "
+            f"Snap {label.upper()} STEP normal using {anchor_text}: click the intended dotted Optical Axis guide. "
             f"Anchor={self._world_xyz_text(coordinate)}."
         )
 
@@ -7407,6 +7456,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
     def _apply_step_normal_axis_pick(self, axis_info: dict[str, object]) -> None:
         mode_text = str(getattr(self, "_step_normal_axis_anchor_mode", "body_center")).strip().lower()
+        if mode_text == "feature_center":
+            self._apply_step_feature_center_axis_pick(axis_info)
+            return
         if mode_text == "pick_point":
             anchor_mode = "pick_point"
         elif mode_text == "surface_center":
@@ -7522,6 +7574,94 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             anchor_text = "surface center"
         self.status_var.set(
             f"{label.upper()} STEP face normal snapped to {axis_label} using {anchor_text} "
+            f"(error {angle_error:.6g} deg). Use 'Step rotation handles' in the toolbar if you need to flip."
+        )
+
+    def _apply_step_feature_center_axis_pick(self, axis_info: dict[str, object]) -> None:
+        """Center + normal a clear-aperture OPENING onto the clicked optical axis.
+
+        bugs/0333: the right-click "Snap Clear Aperture -> Optical Axis" path stores
+        the opening's own centroid + normal (``start_step_normal_axis_pick`` armed in
+        ``feature_center`` mode). When the user clicks an axis guide, snap BOTH -- the
+        shared ``snap_step_feature_normal_to_optical_axis`` engine rotates the opening
+        normal opposite the axis AND translates its centre onto the axis. The old menu
+        item only TRANSLATED, to a hard-coded global x=0/y=0 axis, and never rotated,
+        so a tilted / off-axis opening stayed tilted and off-axis (Issue 2a)."""
+        label = str(getattr(self, "_step_normal_axis_feature_label", "") or "").strip().lower()
+        center = getattr(self, "_step_normal_axis_feature_center", None)
+        normal = getattr(self, "_step_normal_axis_feature_normal", None)
+        center = np.asarray(center, dtype=float).reshape(-1)[:3] if center is not None else np.asarray([], dtype=float)
+        normal = np.asarray(normal, dtype=float).reshape(-1)[:3] if normal is not None else np.asarray([], dtype=float)
+        if (
+            not label
+            or center.size < 3
+            or normal.size < 3
+            or not np.all(np.isfinite(center[:3]))
+            or not np.all(np.isfinite(normal[:3]))
+        ):
+            self.status_var.set("Snap Clear Aperture->Optical Axis: opening geometry is unavailable.")
+            return
+        axis_frame = self._optical_axis_frame_from_pick(axis_info, self._picker)
+        if axis_frame is None:
+            self.status_var.set("Snap Clear Aperture->Optical Axis: could not resolve the clicked optical axis.")
+            return
+        try:
+            result = self.editor.snap_step_feature_normal_to_optical_axis(
+                label, center[:3], normal[:3], axis_frame=axis_frame
+            )
+        except Exception as exc:
+            self.status_var.set(f"Snap Clear Aperture->Optical Axis failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"3D clear-aperture axis snap failed: {exc}")
+            return
+        if result is None:
+            self.status_var.set(self.editor.status_var.get())
+            return
+        self._step_carry_active_label = None
+        self._step_carry_follow_state = None
+        self._step_normal_axis_pick_mode = False
+        self._step_normal_axis_anchor_mode = "body_center"
+        self._step_normal_axis_feature_center = None
+        self._step_normal_axis_feature_normal = None
+        self._step_normal_axis_feature_label = ""
+        self._step_surface_center_axis_pick_mode = False
+        self._step_carry_snap_ray_mode = False
+        self._step_carry_snap_target_mode = False
+        self._clear_selected_step_feature_state()
+        try:
+            self.editor._selected_step_label = None
+        except Exception:
+            pass
+        self._step_rotation_active_label = None
+        self._set_axis_pick_cursor(False)
+        self._set_optical_axis_highlight(None)
+        try:
+            restore_rays = self._restore_rays_after_step_axis_pick(label)
+            self.refresh_from_editor(force_retrace=restore_rays)
+            axis_id = str(axis_info.get("axis_id", "") or "").strip()
+            if axis_id:
+                self._set_optical_axis_highlight(axis_id)
+        except Exception as exc:
+            self.editor.append_debug(f"3D clear-aperture axis snap refresh failed: {exc}")
+        try:
+            self.editor._selected_step_label = None
+        except Exception:
+            pass
+        self._step_rotation_active_label = None
+        try:
+            if self._remove_step_rotation_handle_actors():
+                self.render()
+        except Exception:
+            pass
+        try:
+            admin = getattr(self, "_open3d_step_admin_panel_instance", None)
+            if admin is not None:
+                admin.clear_selection(update_properties=False)
+        except Exception:
+            pass
+        axis_label = str(result.get("axis_label", "optical axis"))
+        angle_error = float(result.get("angle_error_deg", float("nan")))
+        self.status_var.set(
+            f"{label.upper()} clear aperture centred + normal on {axis_label} "
             f"(error {angle_error:.6g} deg). Use 'Step rotation handles' in the toolbar if you need to flip."
         )
 
@@ -7788,6 +7928,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             "surface_center": np.asarray(centroid, dtype=float).reshape(3),
             "face_id": f"F{fid:03d}",
             "through_pick": None,
+            "opening": True,
         }
 
     def _opening_loop_hover_feature(self, label: str, loop):
@@ -7831,6 +7972,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             "surface_center": np.asarray(centroid, dtype=float).reshape(3),
             "face_id": f"F{fid:03d}" if fid >= 0 else "",
             "through_pick": None,
+            "opening": True,
         }
 
     def _add_clear_aperture_highlight_actor(self, label: str) -> None:
