@@ -43,7 +43,7 @@
 
   <rect x="276" y="82" width="248" height="248" rx="8" class="glass"/>
   <line x1="300" y1="106" x2="500" y2="306" class="splitter"/>
-  <text x="338" y="143" text-anchor="middle" transform="rotate(45 338 143)" class="strong">splitter plane</text>
+  <text x="334" y="126" text-anchor="middle" transform="rotate(45 334 126)" class="strong">splitter plane</text>
 
   <line x1="65" y1="150" x2="344" y2="150" class="beam-in" marker-end="url(#arrow-amber)"/>
   <line x1="65" y1="260" x2="454" y2="260" class="beam-in"/>
@@ -65,7 +65,7 @@
 
   <line x1="344" y1="150" x2="454" y2="260" class="dimension"
         marker-start="url(#arrow-blue)" marker-end="url(#arrow-blue)"/>
-  <text x="428" y="232" text-anchor="middle" transform="rotate(45 428 232)" class="strong">W<tspan dy="3" font-size="9">footprint</tspan><tspan dy="-3"> = W / |cos θ|</tspan></text>
+  <text x="440" y="228" text-anchor="middle" transform="rotate(45 440 228)" class="strong">W<tspan dy="3" font-size="9">footprint</tspan><tspan dy="-3"> = W / |cos θ|</tspan></text>
   <line x1="454" y1="260" x2="454" y2="312" class="construct"/>
   <path d="M475.2 281.2 A30 30 0 0 1 454 290" class="construct"/>
   <text x="478" y="303" class="label">θ</text>
