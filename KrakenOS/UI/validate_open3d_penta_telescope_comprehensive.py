@@ -14102,6 +14102,81 @@ def phase_306_measure_edge_pick(
     return result
 
 
+def phase_307_receiving_cone_overlay(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0354 -- the imaging lens's receiving-angle cone: a faint translucent loft
+    between the imaged-FOV rectangle and the entrance pupil, anchored on the shared
+    first-order machinery (0297), gated on its Overlays toggle."""
+    result = PhaseResult(
+        name="Phase 307: receiving-angle cone overlay (imaged FOV -> entrance pupil)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_receiving_cone_overlay import run_checks
+
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"receiving-cone guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("receiving-cone phase failed without detail")
+    return result
+
+
+def phase_308_illumination_volume_overlay(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0355 -- the flat LED's illumination volume: emitting rect -> mirror-law
+    fold at the optical axis -> Object plane, with a CONGRUENT folded footprint
+    (reflection is an isometry, per the corrected coaxial_led_dark_edges physics)."""
+    result = PhaseResult(
+        name="Phase 308: LED illumination volume overlay (folded, congruent footprint)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_illumination_volume_overlay import run_checks
+
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"illumination-volume guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("illumination-volume phase failed without detail")
+    return result
+
+
+def phase_309_led_ray_hard_stop(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0356 -- drawn rays reflected toward the flat LED terminate AT the opaque
+    plate via the bugs/0088 hard-stop clip contract; the LED's own flood and rays
+    missing the plate board pass free."""
+    result = PhaseResult(
+        name="Phase 309: drawn rays hard-stop at the opaque flat LED plate"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_led_ray_hard_stop import run_checks
+
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"led-ray-hard-stop guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("led-ray-hard-stop phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14453,6 +14528,9 @@ def main() -> int:
             phase_304_context_menu_entry_delivery,
             phase_305_analysis_overlays_reached_image_branch,
             phase_306_measure_edge_pick,
+            phase_307_receiving_cone_overlay,
+            phase_308_illumination_volume_overlay,
+            phase_309_led_ray_hard_stop,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

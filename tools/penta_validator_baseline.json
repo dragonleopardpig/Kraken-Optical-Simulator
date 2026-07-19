@@ -306,7 +306,10 @@
     "97": "pass",
     "98": "pass",
     "99": "pass",
-    "306": "pass"
+    "306": "pass",
+    "307": "pass",
+    "308": "pass",
+    "309": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -613,6 +616,9 @@
     "97": "Open 3D NS mesh trace caches solid cell normals (lossless speed-up)",
     "98": "Open 3D planar optical solid traces against a lossless decimated proxy",
     "99": "Open 3D NS branching-requirement memoised per system (split still fires)",
-    "306": "Measure Alt+click picks drawn edges (edge-to-edge distance)"
+    "306": "Measure Alt+click picks drawn edges (edge-to-edge distance)",
+    "307": "receiving-angle cone overlay (imaged FOV -> entrance pupil)",
+    "308": "LED illumination volume overlay (folded, congruent footprint)",
+    "309": "drawn rays hard-stop at the opaque flat LED plate"
   }
 }

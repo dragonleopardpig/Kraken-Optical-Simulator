@@ -844,6 +844,16 @@ class Open3DSceneRefreshService:
         illumination_marker_rays_actors = 0
         if bool(getattr(self, "show_illumination_marker_rays_var", None) is not None and self.show_illumination_marker_rays_var.get()):
             illumination_marker_rays_actors = self._add_illumination_marker_ray_overlays(system, scene_bundle)
+        # bugs/0354: the imaging lens's receiving-angle cone (imaged FOV -> entrance pupil),
+        # a faint translucent skin. Live-read here so the toggle is a render-only refresh.
+        receiving_cone_actors = 0
+        if bool(getattr(self, "show_receiving_cone_var", None) is not None and self.show_receiving_cone_var.get()):
+            receiving_cone_actors = self._add_receiving_cone_overlays(system, scene_bundle)
+        # bugs/0355: each physical LED's illumination volume (emitting rect -> BS fold -> FOV),
+        # a faint translucent folded envelope. Live-read here; render-only refresh.
+        illumination_volume_actors = 0
+        if bool(getattr(self, "show_illumination_volume_var", None) is not None and self.show_illumination_volume_var.get()):
+            illumination_volume_actors = self._add_illumination_volume_overlays(system, scene_bundle)
         # bugs/0283: each enabled, non-marker scene source (an emitting LED etc.) drawn as a first-class
         # glyph (emitting-aperture panel + direction arrow), keyed by source_id for the browser's Scene
         # Sources group. Always drawn -- per-source visibility is re-applied by
@@ -872,6 +882,14 @@ class Open3DSceneRefreshService:
             # bugs/0088: hard-stop -- the drawn ray never crosses a detector/Image
             # plane. Computed once per refresh from the scene's is_detector targets.
             detector_hard_stop_planes = KrakenLayoutEditor._detector_planes_for_hard_stop(scene_bundle, radius)
+            # bugs/0356: the flat LED plate is opaque -- drawn rays reflected toward the
+            # LED terminate AT the plate (same clip contract as the detector planes).
+            try:
+                detector_hard_stop_planes = list(detector_hard_stop_planes) + list(
+                    self.editor._led_plate_planes_for_hard_stop()
+                )
+            except Exception:
+                pass
             ray_radius = max(radius * 0.0015, 0.08)
             bounded_ray_count = 0
             suppressed_endpoint_count = 0

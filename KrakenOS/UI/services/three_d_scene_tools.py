@@ -4095,6 +4095,99 @@ class ThreeDSceneToolsMixin:
             chroma=chroma,
         )
 
+    def receiving_cone_overlay_spec(self, system, scene_bundle=None):
+        """bugs/0354: the imaging lens's RECEIVING-angle cone -- the translucent loft
+        between the imaged-FOV rectangle at the Object plane and the lens entrance
+        pupil. Anchors ride the existing first-order machinery: the camera's
+        object-space FOV (sensor dims / |m|), the Object-plane z, and the
+        first-order transmissive reference's entrance pupil (the bugs/0297 shared
+        first order -- PosPupInp z + RadPupInp radius). Returns a draw-ready spec
+        dict or None when any anchor is unavailable (never guesses)."""
+        del scene_bundle
+        fov = None
+        try:
+            fov = self._camera_fov_object_half_extents()
+        except Exception:
+            fov = None
+        if fov is None:
+            return None
+        try:
+            object_z = float(self._object_surface_plane_z(0))
+        except Exception:
+            return None
+        pupil_z = None
+        pupil_radius = None
+        try:
+            pupil_system, _pupil_rows, pupil_index = self._pupil_model_inputs(
+                system, build_reference=True
+            )
+            pupil = Kos.PupilCalc(
+                pupil_system,
+                pupil_index,
+                self._current_wavelength(),
+                self._current_aperture_type(),
+                self._current_aperture_value(),
+            )
+            z = float(np.asarray(getattr(pupil, "PosPupInp", None), dtype=float).reshape(-1)[2])
+            pupil_z = z if np.isfinite(z) else None
+            r = float(np.asarray(getattr(pupil, "RadPupInp", np.nan), dtype=float).reshape(-1)[0])
+            pupil_radius = r if np.isfinite(r) and r > 1e-9 else None
+        except Exception:
+            pupil_z = None
+            pupil_radius = None
+        if pupil_z is None:
+            return None
+        if pupil_radius is None:
+            try:
+                pupil_radius = abs(float(self._current_aperture_value())) * 0.5
+            except Exception:
+                return None
+            if not (pupil_radius > 1e-9):
+                return None
+        from KrakenOS.UI.services.receiving_cone_overlay import build_receiving_cone_overlay
+
+        return build_receiving_cone_overlay(
+            float(fov[0]), float(fov[1]), object_z, float(pupil_z), float(pupil_radius)
+        )
+
+    def _led_plate_planes_for_hard_stop(self):
+        """bugs/0356: the flat LED plate is OPAQUE -- append it to the bugs/0088
+        hard-stop planes so drawn rays reflected toward the LED terminate AT the
+        plate instead of sailing past display-only vendor CAD. One plane per
+        enabled, physical, NON-marker scene source (the 0282/0285 predicate), in
+        the same ``(center, normal, radial_limit)`` contract the detector planes
+        use; the normal points INTO the plate so the LED's own flood (starting on
+        the plane, heading away) is never clipped."""
+        from KrakenOS.UI.services.led_ray_hard_stop import led_plate_hard_stop_plane
+        from KrakenOS.UI.services.scene_source_analysis import (
+            scene_source_spec_is_face_bound_marker,
+        )
+
+        planes = []
+        try:
+            descriptors = self._drawable_scene_source_descriptors() or []
+        except Exception:
+            descriptors = []
+        for source in descriptors:
+            try:
+                settings = dict(getattr(source, "settings", {}) or {})
+                if scene_source_spec_is_face_bound_marker(settings):
+                    continue
+                origin = np.asarray(
+                    getattr(source, "origin", (0.0, 0.0, 0.0)), dtype=float
+                ).reshape(3)
+                direction = np.asarray(
+                    getattr(source, "direction", (0.0, 0.0, 1.0)), dtype=float
+                ).reshape(3)
+                half_x = float(settings.get("radius_x", settings.get("radius", 0.0)) or 0.0)
+                half_y = float(settings.get("radius_y", settings.get("radius", 0.0)) or 0.0)
+                plane = led_plate_hard_stop_plane(origin, direction, half_x, half_y)
+                if plane is not None:
+                    planes.append(plane)
+            except Exception:
+                continue
+        return planes
+
     def source_illumination_rays_overlay_spec(self, system, scene_bundle, *, wavelength=None):
         """Build the coaxial-LED illumination-ray overlay spec (the REAL traced LED->BS->object rays,
         green where they reach the FOV / red where the BS-exit stop clips them), or None. Lazy +

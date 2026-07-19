@@ -121,6 +121,10 @@ class Open3DTopControlsPanel:
                 # Additive full-surface EMISSION from a marked CAD/STL face (bugs/0267): the marked face
                 # floods its whole surface with traced rays, isolated from the imaging trace (0266).
                 MenuCheckbutton("Illum emission", self.inspector.show_illumination_marker_rays_var, self.inspector._on_scene_visibility_changed),
+                # bugs/0354: translucent receiving-angle cone, imaged FOV -> entrance pupil.
+                MenuCheckbutton("Accept cone", self.inspector.show_receiving_cone_var, self.inspector._on_scene_visibility_changed),
+                # bugs/0355: translucent LED illumination volume, emitting rect -> BS fold -> FOV.
+                MenuCheckbutton("Illum volume", self.inspector.show_illumination_volume_var, self.inspector._on_scene_visibility_changed),
             ),
         )
         # flag_20260709_114618_526: face-on the sensor so the on-detector overlays (illumination

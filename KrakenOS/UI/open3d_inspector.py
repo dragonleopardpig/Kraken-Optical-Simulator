@@ -773,6 +773,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # Defaults ON so marking a face gives immediate visual feedback -- cheap when no marker exists
         # (the bundle builder returns empty). Lazy + cached on the editor; render-only toggle (0166).
         self.show_illumination_marker_rays_var = tk.BooleanVar(value=True)
+        # bugs/0354: the imaging lens's RECEIVING-angle cone -- translucent loft from the
+        # imaged FOV to the entrance pupil. Render-only toggle (0166); anchors first-order.
+        self.show_receiving_cone_var = tk.BooleanVar(value=False)
+        # bugs/0355: the flat LED's illumination VOLUME -- translucent folded envelope
+        # LED -> BS fold -> FOV, congruent legs (reflection is an isometry). Render-only.
+        self.show_illumination_volume_var = tk.BooleanVar(value=False)
         self.slide_along_axis_mode_var = tk.BooleanVar(value=False)
         self.show_live_controls_panel_var = tk.BooleanVar(value=True)
         self.show_scene_components_panel_var = tk.BooleanVar(value=True)
@@ -1852,6 +1858,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             show_pixel_grid=bool(self.show_pixel_grid_var.get()),
             show_source_illumination=bool(self.show_source_illumination_var.get()),
             show_source_illumination_rays=bool(self.show_source_illumination_rays_var.get()),
+            show_receiving_cone=bool(self.show_receiving_cone_var.get()),
+            show_illumination_volume=bool(self.show_illumination_volume_var.get()),
             counts=self._debug_actor_counts(),
         )
         # bugs/0166: reference-surface / detector / thickness / terminal-diagnostic /
@@ -12948,6 +12956,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         "show_source_illumination_var",
         "show_source_illumination_rays_var",
         "show_illumination_marker_rays_var",
+        "show_receiving_cone_var",
+        "show_illumination_volume_var",
     )
 
     def _open3d_session_sidecar_path(self, layout_path):
@@ -14147,6 +14157,93 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         vn = float(np.linalg.norm(v))
         v = v / vn if vn > 1e-9 else np.asarray((0.0, 1.0, 0.0))
         return d, u, v
+
+    def _add_receiving_cone_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
+        """bugs/0354: draw the imaging lens's receiving-angle cone as one faint
+        translucent skin (imaged FOV -> entrance pupil). Render-only; the anchors
+        come from the editor's first-order machinery via
+        ``receiving_cone_overlay_spec`` and never guess."""
+        if self._renderer is None or pv is None:
+            return 0
+        try:
+            spec = self.editor.receiving_cone_overlay_spec(system, scene_bundle)
+        except Exception as exc:
+            self.editor.append_debug(f"Receiving-cone overlay failed: {exc}")
+            return 0
+        if not spec:
+            return 0
+        try:
+            points = np.asarray(spec.get("points"), dtype=float)
+            faces = np.asarray(spec.get("faces"), dtype=np.int64)
+            if points.ndim != 2 or points.shape[0] < 6 or faces.size < 4:
+                return 0
+            mesh = pv.PolyData(points[:, :3], faces=faces)
+            actor = self._add_mesh_actor(
+                mesh,
+                color=tuple(spec.get("color", (0.25, 0.62, 0.88))),
+                opacity=float(spec.get("opacity", 0.12)),
+                backface_culling=False,
+            )
+            return 1 if actor is not None else 0
+        except Exception:
+            return 0
+
+    def _add_illumination_volume_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
+        """bugs/0355: draw each physical LED's illumination as one faint translucent
+        VOLUME -- the emitting rectangle (the same frame as the 0283 source glyph)
+        extruded to the beam-splitter fold and on to the Object plane. The fold is
+        derived from the optical axis by the mirror law (no BS pose dependency);
+        an emitter already aiming down the axis draws a single straight leg."""
+        if self._renderer is None or pv is None:
+            return 0
+        try:
+            descriptors = self.editor._drawable_scene_source_descriptors() or []
+        except Exception as exc:
+            self.editor.append_debug(f"Illumination-volume overlay skipped: {exc}")
+            return 0
+        if not descriptors:
+            return 0
+        try:
+            object_z = float(self.editor._object_surface_plane_z(0))
+        except Exception:
+            return 0
+        from KrakenOS.UI.services.illumination_volume_overlay import (
+            build_illumination_volume_overlay,
+        )
+
+        count = 0
+        for source in descriptors:
+            try:
+                settings = dict(getattr(source, "settings", {}) or {})
+                origin = np.asarray(
+                    getattr(source, "origin", (0.0, 0.0, 0.0)), dtype=float
+                ).reshape(3)
+                d, u, v = self._scene_source_glyph_basis(
+                    getattr(source, "direction", (0.0, 0.0, 1.0))
+                )
+                half_u = float(settings.get("radius_x", settings.get("radius", 0.0)) or 0.0)
+                half_v = float(settings.get("radius_y", settings.get("radius", 0.0)) or 0.0)
+                spec = build_illumination_volume_overlay(
+                    origin, d, u, v, half_u, half_v, object_z
+                )
+                if not spec:
+                    continue
+                mesh = pv.PolyData(
+                    np.asarray(spec["points"], dtype=float),
+                    faces=np.asarray(spec["faces"], dtype=np.int64),
+                )
+                actor = self._add_mesh_actor(
+                    mesh,
+                    color=tuple(spec.get("color", (0.35, 0.85, 1.0))),
+                    opacity=float(spec.get("opacity", 0.10)),
+                    backface_culling=False,
+                    track_source_id=str(getattr(source, "source_id", "") or "") or None,
+                )
+                if actor is not None:
+                    count += 1
+            except Exception:
+                continue
+        return count
 
     def _add_scene_source_glyphs(self, system, scene_bundle: SceneBundle | None) -> int:
         """bugs/0283: draw each enabled, non-marker scene source (an emitting LED etc.) as a
