@@ -14074,6 +14074,34 @@ def phase_305_analysis_overlays_reached_image_branch(
     return result
 
 
+def phase_306_measure_edge_pick(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0353 -- Measure tool edge-to-edge picks. Alt+click in MEASURE mode picks
+    the nearest DRAWN edge as an entity (the hover contract's modifier, penta
+    287/288); pick pairs reduce to two world points via the clamped closest-pair
+    math in services/measure_edge_pick (a 51.00 mm opening's parallel edges measure
+    exactly 51.00), point+edge projects onto the edge, and the plain point-click
+    path stays byte-identical so every existing measure guard holds."""
+    result = PhaseResult(
+        name="Phase 306: Measure Alt+click picks drawn edges (edge-to-edge distance)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_measure_edge_pick import run_checks
+
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"measure-edge-pick guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("measure-edge-pick phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14424,6 +14452,7 @@ def main() -> int:
             phase_303_ca_snap_folded_axis_autocomplete,
             phase_304_context_menu_entry_delivery,
             phase_305_analysis_overlays_reached_image_branch,
+            phase_306_measure_edge_pick,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

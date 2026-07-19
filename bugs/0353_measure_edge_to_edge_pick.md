@@ -1,6 +1,7 @@
 # 0353 — Measure tool: edge-to-edge picks (click one edge, then the other, read the opening)
 
-**Status:** designed, awaiting go-ahead (no code yet).
+**Status:** IMPLEMENTED 2026-07-19 (guard `validate_open3d_measure_edge_pick`, penta phase 306,
+baseline appended surgically per the bugs/0280 precedent). Implementation notes at the bottom.
 **Flags:** 20260719_142831_679 ("LED Botton view"), 20260719_142846_785 ("LED Front view") — snapshots of
 the OPT-CO90 module's two window openings, taken because the Measure tool could not produce the numbers.
 
@@ -66,3 +67,31 @@ snap unchanged. This mirrors the hover contract (plain = face, **Alt = nearest d
   skew pair; point+edge projection), WIRING (Alt routes to the edge resolver, recognised-component gate
   honoured), INTEGRATION (two parallel drawn edges 51.00 mm apart → recorded segment length 51.00).
   New penta phase at the next free slot + baseline regen.
+
+## Implementation notes (as shipped)
+
+- Pure geometry: `services/measure_edge_pick.py` — clamped segment-segment closest pair (Ericson
+  5.1.9) over polylines, `closest_point_on_polyline`, the `reduce_measure_picks` rules, and
+  `collinear_edge_run` (extends the picked outline segment to its full straight run; corners, forks
+  and chain ends stop the walk, so one side of a rounded-rectangle window is ONE edge).
+- Edge source: the click resolver `_measure_resolve_edge` rides `_measure_resolve_snap` (same
+  magnetism + recognised gate), maps the hit to its STEP label, then hit-tests the label's
+  literally-drawn edge/rim polylines (`_step_component_edge_outline`, the bugs/0304 machinery
+  guarded by phase 267) with the shared front-depth-ranked `nearest_display_edge`. Row-actor
+  bodies have no drawn-edge outline; point picks still work there.
+- Flow: `_on_measure_edge_pick` — edge-first ARMS `_measure_pending_edge` (persistent orange
+  highlight, `_show_measure_pending_edge`); edge+edge completes via closest pair; point-first +
+  edge-second projects the LIVE first point onto the edge; a re-anchor edge pick reduces against
+  the segment's LIVE other endpoint; a plain click with an armed edge reduces in the point path.
+  All reductions feed the untouched `_record_measure_point`, so lanes, the offset-adjust modal,
+  session persistence and STEP export work unchanged.
+- Alt truth at click time is the press-time capture (`mouse_bindings.py` left_press), and the live
+  measure hover already promotes its gold highlight to the nearest edge under Alt (the 0323 gate
+  inside `step_feature_pick_for_display_xy`) — no new key handling was needed (0324's transition
+  re-fire also carries over for free).
+- Escape does not exit measure mode (pre-existing contract), so the pending edge follows the same
+  lifecycle as `_measure_p0`: cleared by start/clear/completion.
+- Also repaired in passing: `validate_open3d_measure_center_snap_lanes` check #1 needled the
+  obsolete literal `_measure_axis_snap_for_pick(self._actor_key(hit_actor), world)` — no such code
+  exists at HEAD (verified by grep), so the check was silently failing BEFORE this feature (the
+  phase-86 stale-baseline class). Needle updated to the live `(hit_key, world)` form.

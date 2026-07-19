@@ -48,7 +48,7 @@ def run_checks() -> list[tuple[str, bool, str]]:
     press_src = inspect.getsource(Kraken3DInspector._on_left_button_press)
     wiring_ok = (
         "bugs/0115" in press_src
-        and "_measure_axis_snap_for_pick(self._actor_key(hit_actor), world)" in press_src
+        and "_measure_axis_snap_for_pick(hit_key, world)" in press_src
         and "world = snapped" in press_src
         and "normal = None" in press_src
     )

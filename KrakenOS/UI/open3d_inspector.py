@@ -15394,6 +15394,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._measure_pick_mode = True
         self._measure_p0 = None
         self._measure_reanchor = None
+        self._clear_measure_pending_edge()
         self._measure_offset_adjust_mode = False
         self._measure_offset_adjust_state = None
         for _flag in (
@@ -15413,6 +15414,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._measure_pick_mode = False
         self._measure_p0 = None
         self._measure_reanchor = None
+        self._clear_measure_pending_edge()
         self._measure_offset_adjust_mode = False
         self._measure_offset_adjust_state = None
         self._measure_segments = []
@@ -15519,6 +15521,169 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return None
         return self._project_world_onto_optical_axis(world)
 
+    def _clear_measure_pending_edge(self) -> None:
+        # bugs/0353: drop the armed first-EDGE pick and its highlight actor.
+        self._measure_pending_edge = None
+        for _actor in getattr(self, "_measure_pending_edge_actors", []) or []:
+            try:
+                self._remove_renderer_view_prop(_actor)
+            except Exception:
+                pass
+        self._measure_pending_edge_actors = []
+
+    def _show_measure_pending_edge(self, polyline) -> None:
+        """bugs/0353: persistent highlight of the armed first-EDGE pick (measure
+        orange, thicker than the hover outline) so the entity stays visibly selected
+        while the user aims the second Alt+click."""
+        self._clear_measure_pending_edge()
+        if self._renderer is None or vtkActor is None or vtkDataSetMapper is None:
+            return
+        try:
+            pts = np.asarray(polyline, dtype=float).reshape(-1, 3)
+        except Exception:
+            return
+        if pts.shape[0] < 2 or not np.all(np.isfinite(pts)):
+            return
+        try:
+            import pyvista as pv
+
+            n = int(pts.shape[0])
+            poly = pv.PolyData(pts)
+            poly.lines = np.concatenate(([n], np.arange(n, dtype=np.int64)))
+            mapper = vtkDataSetMapper()
+            mapper.SetInputData(poly)
+            try:
+                mapper.ScalarVisibilityOff()
+            except Exception:
+                pass
+            act = vtkActor()
+            act.SetMapper(mapper)
+            act.PickableOff()
+            prop = act.GetProperty()
+            prop.SetColor(1.0, 0.55, 0.0)
+            prop.SetLineWidth(5.0)
+            try:
+                prop.SetAmbient(1.0)
+                prop.SetDiffuse(0.0)
+                prop.RenderLinesAsTubesOn()
+            except Exception:
+                pass
+            self._add_renderer_view_prop(act)
+            self._measure_pending_edge_actors = [act]
+        except Exception:
+            self._measure_pending_edge_actors = []
+
+    def _measure_resolve_edge(self, x: int, y: int):
+        """bugs/0353: resolve the nearest DRAWN edge under the cursor for a measure
+        Alt+click. Rides the same snap magnetism + recognised-component gate as the
+        point pick, then hit-tests the label's literally-drawn edge/rim polylines
+        (``_step_component_edge_outline``, the bugs/0304 machinery) with the shared
+        front-depth-ranked ``nearest_display_edge``, and extends the hit segment to
+        its full collinear run so a subdivided straight edge measures as ONE edge.
+        Returns ``{"polyline": (M,3), "hit_key": str, "label": str}`` or None."""
+        resolved = self._measure_resolve_snap(int(x), int(y))
+        if resolved is None:
+            return None
+        hit_key, world = resolved[0], resolved[1]
+        sx, sy = resolved[3], resolved[4]
+        if not self._measure_recognised_component(hit_key):
+            return None
+        label = (getattr(self, "_actor_step_map", None) or {}).get(hit_key)
+        if not label:
+            # Row-actor bodies carry no drawn-edge outline; point picks still work.
+            return None
+        try:
+            outline = self._step_component_edge_outline(str(label))
+        except Exception:
+            outline = None
+        if outline is None:
+            return None
+        from KrakenOS.UI.services.measure_edge_pick import collinear_edge_run
+        from KrakenOS.UI.services.open3d_face_index_edges import (
+            line_segment_pairs,
+            nearest_display_edge,
+        )
+
+        try:
+            pts = np.asarray(outline.points, dtype=float).reshape(-1, 3)
+        except Exception:
+            return None
+        pairs = line_segment_pairs(outline)
+        if pts.shape[0] < 2 or not pairs:
+            return None
+        hit = nearest_display_edge(
+            pts,
+            pairs,
+            (int(sx), int(sy)),
+            self._world_to_display_2d,
+            tolerance_px=14.0,
+            depth_reference=world,
+        )
+        if hit is None:
+            return None
+        _ordinal, i0, i1, _mid, _dist = hit
+        polyline = collinear_edge_run(pts, pairs, (int(i0), int(i1)))
+        return {"polyline": polyline, "hit_key": hit_key, "label": str(label)}
+
+    def _on_measure_edge_pick(self, edge) -> None:
+        """bugs/0353: fold an Alt+click EDGE pick into the 2-point measure flow.
+        Every pair reduces to two world points (services/measure_edge_pick), so the
+        segment/label/offset-handle/persistence/STEP-export pipeline is untouched:
+        edge+edge -> closest pair (an opening's clear width); point+edge -> the
+        closest point on the edge; a re-anchor pick reduces against the segment's
+        LIVE other endpoint."""
+        from KrakenOS.UI.services.measure_edge_pick import (
+            closest_point_on_polyline,
+            closest_points_between_polylines,
+        )
+
+        polyline = np.asarray(edge.get("polyline"), dtype=float).reshape(-1, 3)
+        reanchor = getattr(self, "_measure_reanchor", None)
+        if isinstance(reanchor, dict):
+            fixed = None
+            try:
+                segs = list(getattr(self, "_measure_segments", []))
+                seg = segs[int(reanchor.get("seg", -1))]
+                other = 1 - int(reanchor.get("end", 0))
+                fixed = self._resolve_measure_point(
+                    seg[f"p{other}"], seg.get(f"r{other}"), float(seg.get(f"dz{other}", 0.0))
+                )
+            except Exception:
+                fixed = None
+            if fixed is None:
+                self.status_var.set("Measure: edge re-anchor could not resolve the fixed endpoint.")
+                return
+            q, _dist = closest_point_on_polyline(polyline, fixed)
+            self._clear_measure_snap_marker()
+            self._record_measure_point(np.asarray(q, dtype=float), None)
+            return
+        p0 = getattr(self, "_measure_p0", None)
+        if p0 is not None:
+            # Point-first, edge-second: project the LIVE first point onto the edge.
+            first = self._resolve_measure_point(p0.get("p"), p0.get("r"), float(p0.get("dz", 0.0)))
+            q, _dist = closest_point_on_polyline(polyline, first)
+            self._clear_measure_snap_marker()
+            self._record_measure_point(np.asarray(q, dtype=float), None)
+            return
+        pending = getattr(self, "_measure_pending_edge", None)
+        if pending is not None:
+            pa, pb, _dist = closest_points_between_polylines(pending["polyline"], polyline)
+            self._clear_measure_pending_edge()
+            self._clear_measure_snap_marker()
+            self._record_measure_point(np.asarray(pa, dtype=float), None)
+            self._record_measure_point(np.asarray(pb, dtype=float), None)
+            return
+        # First pick is an EDGE: arm it and wait for the opposite edge / a point.
+        self._measure_pending_edge = {
+            "polyline": polyline,
+            "hit_key": edge.get("hit_key"),
+            "label": edge.get("label"),
+        }
+        self._show_measure_pending_edge(polyline)
+        self.status_var.set(
+            "Measure: first EDGE armed -- Alt+click the opposite edge (or click a point)."
+        )
+
     def _record_measure_point(self, world, normal=None) -> None:
         point = np.asarray(world, dtype=float).reshape(-1)[:3]
         if point.size < 3 or not np.all(np.isfinite(point)):
@@ -15554,6 +15719,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._measure_segments = segs
         self._measure_p0 = None
         self._measure_pick_mode = False
+        self._clear_measure_pending_edge()
         try:
             self._set_axis_pick_cursor(False)
         except Exception:
@@ -15914,7 +16080,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._set_measure_snap_cursor(True)
             if getattr(self, "_measure_p0", None) is None:
                 self._clear_measure_preview()
-                self.status_var.set("Measure: click the FIRST edge/surface (snaps to the optical axis).")
+                if getattr(self, "_measure_pending_edge", None) is not None:
+                    # bugs/0353: an EDGE is armed; the next pick closes the pair.
+                    self.status_var.set(
+                        "Measure: first EDGE armed -- Alt+click the opposite edge (or click a point)."
+                    )
+                else:
+                    self.status_var.set("Measure: click the FIRST edge/surface (snaps to the optical axis).")
             else:
                 # bugs/0115 (Commit 2): rubber-band the forming dimension from the
                 # first anchor to the snapped point under the cursor.
@@ -19410,6 +19582,23 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             and self._renderer is not None
             and self._vtk_interactor is not None
         ):
+            # bugs/0353: Alt+click picks the nearest DRAWN EDGE as an entity (the
+            # hover contract's modifier, penta 287/288); pick pairs reduce to two
+            # world points, so everything downstream is the plain 2-point flow.
+            if getattr(self, "_edge_pick_alt_active", False):
+                edge = None
+                try:
+                    ex, ey = self._vtk_interactor.GetEventPosition()
+                    edge = self._measure_resolve_edge(int(ex), int(ey))
+                except Exception:
+                    edge = None
+                if edge is not None:
+                    self._on_measure_edge_pick(edge)
+                else:
+                    self.status_var.set(
+                        "Measure: no drawn edge under the cursor -- Alt+click aims at a drawn edge."
+                    )
+                return
             hit_key = None
             world = None
             normal = None
@@ -19437,6 +19626,21 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     world = snapped
                     normal = None  # on-axis points span point-to-point along the axis
                 self._clear_measure_snap_marker()
+                # bugs/0353: an armed first-EDGE pick reduces against this point --
+                # record the edge's closest point first, the clicked point completes.
+                pending = getattr(self, "_measure_pending_edge", None)
+                if (
+                    pending is not None
+                    and getattr(self, "_measure_p0", None) is None
+                    and not isinstance(getattr(self, "_measure_reanchor", None), dict)
+                ):
+                    from KrakenOS.UI.services.measure_edge_pick import closest_point_on_polyline
+
+                    anchor, _d = closest_point_on_polyline(
+                        pending["polyline"], np.asarray(world, dtype=float).reshape(-1)[:3]
+                    )
+                    self._clear_measure_pending_edge()
+                    self._record_measure_point(np.asarray(anchor, dtype=float), None)
                 self._record_measure_point(world, normal)
             else:
                 self.status_var.set("Measure: click ON an edge/surface (the pick missed).")
