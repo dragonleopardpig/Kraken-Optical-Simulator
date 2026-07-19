@@ -22,6 +22,7 @@ from KrakenOS.UI.scene_source_analysis import (
     scene_source_feature_text,
     scene_source_from_spec,
     scene_source_setting_value,
+    scene_source_spec_couples_to_imaging_launch,
     scene_source_spec_is_face_bound_marker,
     scene_sources_summary_text,
     source_panel_summary_text,
@@ -44,6 +45,7 @@ from KrakenOS.UI.source_trace_helpers import (
     SOURCE_MODEL_DEFAULT,
     SOURCE_MODEL_VALUES,
     SOURCE_MODEL_ZEMAX_RAYFILE,
+    random_cone_directions,
 )
 from KrakenOS.UI.zemax_rayfile import sample_zemax_rayfile
 
@@ -1292,7 +1294,7 @@ class SourceModelingMixin:
         scene_source_specs = self._scene_source_specs_for_trace(
             self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", []))
         )
-        marker_sources: list[SceneSource3D] = []
+        additive_sources: list[SceneSource3D] = []
         if scene_source_specs:
             sources = [
                 self._scene_source_from_spec(
@@ -1303,22 +1305,24 @@ class SourceModelingMixin:
                 )
                 for index, spec in enumerate(scene_source_specs)
             ]
-            # A face-bound illumination source (bugs/0264) is a DESIGNATION MARKER, not a trace
-            # driver: the image plane / detector / optical axis are imaging conjugates fixed by the
-            # object, so a marker must never REPLACE the imaging trace (bugs/0266). Only a non-marker
-            # physical source short-circuits to source-driven tracing; a marker-only scene falls
-            # through to the imaging reference below, and the markers ride along (display/table) --
-            # the reference stays sources[0] so imaging rays are tagged with the imaging source, not
-            # the marker.
+            # Face-bound markers and explicitly coupled coaxial LEDs are additive, not imaging-trace
+            # drivers: the image plane / detector / optical axis stay fixed by the Object conjugate.
+            # Only a physical non-marker, non-coupled source short-circuits to source-driven tracing.
+            # Additive-only scenes fall through to the imaging reference below; that reference stays
+            # sources[0] so Object-launched rays retain imaging metadata.
             if any(
                 bool(source.enabled)
                 and bool(source.physical)
                 and not scene_source_spec_is_face_bound_marker(source)
+                and not scene_source_spec_couples_to_imaging_launch(source)
                 for source in sources
             ):
                 return sources
-            marker_sources = [
-                source for source in sources if scene_source_spec_is_face_bound_marker(source)
+            additive_sources = [
+                source
+                for source in sources
+                if scene_source_spec_is_face_bound_marker(source)
+                or scene_source_spec_couples_to_imaging_launch(source)
             ]
         stats = self._source_statistics(sample_count=sample_count, wavelength=wavelength_value)
         source_model = str(stats.get("source_model", self._current_source_model()))
@@ -1364,7 +1368,7 @@ class SourceModelingMixin:
                     for key, value in stats.items()
                 },
             ),
-            *marker_sources,
+            *additive_sources,
         ]
 
     @staticmethod
@@ -1545,17 +1549,18 @@ class SourceModelingMixin:
             np.random.set_state(numpy_state)
 
     @staticmethod
-    def _random_cone_directions(ray_count: int, cone_angle_deg: float, rng: np.random.Generator):
-        count = max(1, int(ray_count))
-        cone_rad = max(float(np.deg2rad(cone_angle_deg)), 1e-12)
-        cos_min = float(np.cos(cone_rad))
-        cos_theta = rng.uniform(cos_min, 1.0, count)
-        sin_theta = np.sqrt(np.clip(1.0 - cos_theta * cos_theta, 0.0, 1.0))
-        phi = rng.uniform(0.0, 2.0 * np.pi, count)
-        return (
-            sin_theta * np.cos(phi),
-            sin_theta * np.sin(phi),
-            cos_theta,
+    def _random_cone_directions(
+        ray_count: int,
+        cone_angle_deg: float,
+        rng: np.random.Generator,
+        *,
+        angular_weight: str = SOURCE_ANGULAR_WEIGHT_DEFAULT,
+    ):
+        return random_cone_directions(
+            ray_count,
+            cone_angle_deg,
+            rng,
+            angular_weight=angular_weight,
         )
 
     def _source_angular_weight_function(self, cone_angle_deg: float):
@@ -1662,7 +1667,12 @@ class SourceModelingMixin:
             cone_angle = self._current_source_cone_angle()
             if cone_angle > 1e-12:
                 rng = np.random.default_rng(self._current_source_seed())
-                l_values, m_values, n_values = self._random_cone_directions(ray_count, cone_angle, rng)
+                l_values, m_values, n_values = self._random_cone_directions(
+                    ray_count,
+                    cone_angle,
+                    rng,
+                    angular_weight=self._current_source_angular_weight(),
+                )
             else:
                 l_values = np.zeros(ray_count, dtype=float)
                 m_values = np.zeros(ray_count, dtype=float)
@@ -1695,7 +1705,12 @@ class SourceModelingMixin:
                 np.random.set_state(np_state)
         else:
             rng = np.random.default_rng(self._current_source_seed())
-            l_values, m_values, n_values = self._random_cone_directions(ray_count, cone_angle, rng)
+            l_values, m_values, n_values = self._random_cone_directions(
+                ray_count,
+                cone_angle,
+                rng,
+                angular_weight=self._current_source_angular_weight(),
+            )
             z_values = np.zeros(ray_count, dtype=float)
             if source_model == "Random line source":
                 x_values = rng.uniform(-radius, radius, ray_count)
@@ -1838,7 +1853,15 @@ class SourceModelingMixin:
             if cone_angle > 1e-12:
                 seed = int(round(self._source_spec_float(settings, "seed", 1, minimum=0.0))) % (2**32 - 1)
                 rng = np.random.default_rng(seed)
-                l_values, m_values, n_values = self._random_cone_directions(ray_count, cone_angle, rng)
+                l_values, m_values, n_values = self._random_cone_directions(
+                    ray_count,
+                    cone_angle,
+                    rng,
+                    angular_weight=str(
+                        settings.get("angular_weight", SOURCE_ANGULAR_WEIGHT_DEFAULT)
+                        or SOURCE_ANGULAR_WEIGHT_DEFAULT
+                    ),
+                )
             else:
                 l_values = np.zeros(ray_count, dtype=float)
                 m_values = np.zeros(ray_count, dtype=float)
@@ -1856,7 +1879,15 @@ class SourceModelingMixin:
         seed = int(round(self._source_spec_float(settings, "seed", 1, minimum=0.0))) % (2**32 - 1)
         rng = np.random.default_rng(seed)
         cone_angle = self._source_spec_float(settings, ("cone_deg", "source_cone_angle"), 1e-9, minimum=0.0)
-        l_values, m_values, n_values = self._random_cone_directions(ray_count, max(cone_angle, 1e-9), rng)
+        l_values, m_values, n_values = self._random_cone_directions(
+            ray_count,
+            max(cone_angle, 1e-9),
+            rng,
+            angular_weight=str(
+                settings.get("angular_weight", SOURCE_ANGULAR_WEIGHT_DEFAULT)
+                or SOURCE_ANGULAR_WEIGHT_DEFAULT
+            ),
+        )
         z_values = np.zeros(ray_count, dtype=float)
         if model == "Random circle source":
             r = radius * np.sqrt(rng.uniform(0.0, 1.0, ray_count))
@@ -1900,6 +1931,35 @@ class SourceModelingMixin:
                 # bugs/0266: a face-bound illumination marker must not be launched into the imaging
                 # preview trace -- it designates + tracks a face for display, it does not replace the
                 # object-driven imaging trace that fixes the image plane / detector / optical axis.
+                continue
+            if scene_source_spec_couples_to_imaging_launch(source):
+                # A coupled coaxial LED is additive. Its descriptor constrains Object-plane imaging
+                # origins, while its physical rays are traced into an isolated illumination keeper.
+                # Letting it reach the preview service's source early-return would replace the imaging
+                # conjugates it is meant to illuminate.
+                continue
+            bundle = self._build_scene_source_bundle(source)
+            if bundle is None or len(np.asarray(bundle[0])) <= 0:
+                continue
+            bundles.append(bundle)
+            sources.append(source)
+        return bundles, sources
+
+    def _build_coupled_illumination_source_bundles(
+        self, wavelength: float
+    ) -> tuple[
+        list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+        list[SceneSource3D],
+    ]:
+        """Build the additive physical-LED bundles for an isolated illumination trace."""
+        if not self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", [])):
+            return [], []
+        bundles = []
+        sources = []
+        for source in self._collect_scene_sources(wavelength=wavelength):
+            if not (bool(source.enabled) and bool(source.physical)):
+                continue
+            if not scene_source_spec_couples_to_imaging_launch(source):
                 continue
             bundle = self._build_scene_source_bundle(source)
             if bundle is None or len(np.asarray(bundle[0])) <= 0:

@@ -334,10 +334,24 @@ def _check_real_vendor_scene(failures: list[str], notes: list[str]) -> None:
         editor._last_preview_trace_signature = editor._preview_trace_signature()
         return editor.source_illumination_overlay_spec(system, bundle)
 
+    def _without_fixture_source(editor):
+        # This attachment now intentionally ships with a coupled side LED. Each
+        # legacy scenario below must establish its own source population so the
+        # "marked only" and "none" assertions remain meaningful.
+        editor.layout_scene_source_specs = []
+
+    def _with_added_led(editor):
+        _without_fixture_source(editor)
+        editor.add_illumination_led_source()
+
+    def _with_marker(editor):
+        _without_fixture_source(editor)
+        editor.create_illumination_source_at_face(1, face_id="S001/F001", aim="inward")
+
     try:
-        led = _load(lambda ed: ed.add_illumination_led_source())
-        marked = _load(lambda ed: ed.create_illumination_source_at_face(1, face_id="S001/F001", aim="inward"))
-        none_src = _load(None)
+        led = _load(_with_added_led)
+        marked = _load(_with_marker)
+        none_src = _load(_without_fixture_source)
     except Exception as exc:
         failures.append(f"REAL: driving the vendor scene raised {exc!r}")
         return

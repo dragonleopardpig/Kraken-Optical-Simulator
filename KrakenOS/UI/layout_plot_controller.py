@@ -1756,6 +1756,7 @@ def build_preview_trace_signature(
     nonseq_ns_limit: object,
     nonseq_target_surface_index: object,
     full_pupil_mode: object,
+    coupled_imaging_launch_signature: object = (),
 ) -> tuple[object, ...]:
     return (
         row_specs_signature,
@@ -1790,6 +1791,7 @@ def build_preview_trace_signature(
         bool(nonseq_energy_probability),
         int(nonseq_ns_limit),
         nonseq_target_surface_index,
+        coupled_imaging_launch_signature,
         bool(full_pupil_mode),
     )
 

@@ -6040,7 +6040,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         visible = {
             str(label).strip().lower()
             for label in (labels or [])
-            if str(label).strip() and not self.is_step_label_hidden(str(label).strip().lower())
+            if str(label).strip()
+            and not self.is_step_label_hidden(str(label).strip().lower())
+            and not self._step_label_has_only_invisible_body_actors(str(label).strip().lower())
         }
         self._open3d_step_rotation_handle_service().reconcile_to_labels(visible)
 
@@ -6062,8 +6064,78 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 return True
         return False
 
+    def _step_label_has_only_invisible_body_actors(self, label: str) -> bool:
+        """True only when at least one live body actor is known and all are invisible."""
+        label = str(label or "").strip().lower()
+        actors = [
+            self._actor_by_key.get(actor_key)
+            for actor_key in list(self._step_actor_map.get(label, []) or [])
+        ]
+        actors = [actor for actor in actors if actor is not None]
+        if not actors:
+            return False
+        for actor in actors:
+            try:
+                if int(actor.GetVisibility()):
+                    return False
+            except Exception:
+                return False
+        return True
+
+    def _row_body_actor_keys(self, row_index: int) -> list[str]:
+        """Registered pick-body keys for a row, using the indexed map on hover's hot path."""
+        try:
+            row_index = int(row_index)
+        except (TypeError, ValueError):
+            return []
+        keys: list[str] = []
+        for actor_key in list(self._row_actor_map.get(row_index, []) or []):
+            try:
+                if int(self._actor_row_map.get(actor_key)) == row_index:
+                    keys.append(actor_key)
+            except (TypeError, ValueError):
+                continue
+        if keys:
+            return list(dict.fromkeys(keys))
+        # Defensive fallback for an older/manually assembled scene map. Normal
+        # `_add_mesh_actor(pick_row_index=...)` always takes the indexed path.
+        for actor_key, mapped_row in (self._actor_row_map or {}).items():
+            try:
+                if int(mapped_row) == row_index:
+                    keys.append(actor_key)
+            except (TypeError, ValueError):
+                continue
+        return list(dict.fromkeys(keys))
+
+    def _row_has_only_invisible_body_actors(self, row_index: int) -> bool:
+        """True only when a row has live registered body actors and all are invisible.
+
+        The row face-ray fallback reads cached CAD geometry and therefore needs
+        the same live-visibility contract as imported STEP fallback picking.
+        Only keys also owned by ``_actor_row_map`` qualify: the indexed
+        ``_row_actor_map`` also contains edge, label, and other non-body props.
+        """
+        try:
+            row_index = int(row_index)
+        except (TypeError, ValueError):
+            return False
+        actors = [
+            self._actor_by_key.get(actor_key)
+            for actor_key in self._row_body_actor_keys(row_index)
+        ]
+        actors = [actor for actor in actors if actor is not None]
+        if not actors:
+            return False
+        for actor in actors:
+            try:
+                if int(actor.GetVisibility()):
+                    return False
+            except Exception:
+                return False
+        return True
+
     def _ensure_step_rotation_handles_for_label(self, label: str) -> int:
-        if self.is_step_label_hidden(label):  # bugs/0027: no gizmo on a hidden element
+        if self.is_step_label_hidden(label) or self._step_label_has_only_invisible_body_actors(label):
             return 0
         return self._open3d_step_rotation_handle_service().ensure_for_label(label)
 
@@ -12016,11 +12088,29 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         and the orange sensor square, which are drawn coplanar with the detector. Hidden: the LED
         plate, lens bodies, ray polylines, and the optical-axis guide, which are all displaced along
         the axis (the nearest is ~200 mm off in the coaxial scene). Records what it hid on
-        ``_sensor_isolation_restore`` so ``set_camera_preset`` can bring it all back. The nav cube
-        lives in a separate overlay renderer and is never touched."""
+        ``_sensor_isolation_restore`` so ``set_camera_preset`` can bring it all back. Hidden props
+        are also made non-pickable while isolated: the cached STEP face-ray fallback does not use
+        VTK visibility, and otherwise an invisible camera/LED can create a gold ghost hover face
+        (flags 20260719_081736/081909). Move/rotate handles in the gizmo layer follow the same rule;
+        the nav cube owns different renderers and is never touched."""
         if self._renderer is None:
             return 0
         self._show_sensor_isolation_hidden()  # re-show a prior isolate's actors; keep the intent
+        # Entering this view invalidates any face that was hovered in the full scene. Remove the
+        # transient face actor/tooltip and cursor immediately instead of waiting for another mouse
+        # move over the now-isolated canvas.
+        try:
+            self._set_step_hover_outline(None, None, render=False)
+        except Exception:
+            pass
+        try:
+            self._update_hover_status("", render=False)
+        except Exception:
+            pass
+        try:
+            self._set_axis_pick_cursor(False)
+        except Exception:
+            pass
         keep_ids: set[int] = set()
         try:
             for actor_key in self._row_actor_map.get(int(det_row_index), []) or []:
@@ -12032,40 +12122,63 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         n_hat = np.asarray(normal, dtype=float).reshape(3)
         c = np.asarray(center, dtype=float).reshape(3)
         hidden: list[object] = []
-        try:
-            collection = self._renderer.GetActors()
-            collection.InitTraversal()
-        except Exception:
-            return 0
-        while True:
+        pickable_restore: list[tuple[object, int]] = []
+        renderers = [self._renderer]
+        gizmo_renderer = getattr(self, "_gizmo_overlay_renderer", None)
+        if gizmo_renderer is not None and gizmo_renderer is not self._renderer:
+            renderers.append(gizmo_renderer)
+        seen_actor_ids: set[int] = set()
+        for renderer in renderers:
             try:
-                actor = collection.GetNextItem()
-            except Exception:
-                break
-            if actor is None:
-                break
-            if id(actor) in keep_ids:
-                continue
-            try:
-                if not int(actor.GetVisibility()):
-                    continue
-                b = np.asarray(actor.GetBounds(), dtype=float)
+                collection = renderer.GetActors()
+                collection.InitTraversal()
             except Exception:
                 continue
-            if b.size != 6 or not np.all(np.isfinite(b)) or b[0] > b[1]:
-                continue
-            corners = np.array(
-                [(b[i], b[2 + j], b[4 + k]) for i in (0, 1) for j in (0, 1) for k in (0, 1)],
-                dtype=float,
-            )
-            max_offset = float(np.max(np.abs((corners - c) @ n_hat)))
-            if max_offset > float(band):
+            while True:
                 try:
+                    actor = collection.GetNextItem()
+                except Exception:
+                    break
+                if actor is None:
+                    break
+                actor_id = id(actor)
+                if actor_id in seen_actor_ids:
+                    continue
+                seen_actor_ids.add(actor_id)
+                if actor_id in keep_ids:
+                    continue
+                try:
+                    if not int(actor.GetVisibility()):
+                        continue
+                    b = np.asarray(actor.GetBounds(), dtype=float)
+                except Exception:
+                    continue
+                if b.size != 6 or not np.all(np.isfinite(b)) or b[0] > b[1]:
+                    continue
+                corners = np.array(
+                    [(b[i], b[2 + j], b[4 + k]) for i in (0, 1) for j in (0, 1) for k in (0, 1)],
+                    dtype=float,
+                )
+                max_offset = float(np.max(np.abs((corners - c) @ n_hat)))
+                if max_offset <= float(band):
+                    continue
+                try:
+                    try:
+                        was_pickable = int(actor.GetPickable())
+                    except Exception:
+                        was_pickable = None
                     actor.SetVisibility(False)
                     hidden.append(actor)
+                    if was_pickable is not None:
+                        try:
+                            actor.SetPickable(False)
+                            pickable_restore.append((actor, int(was_pickable)))
+                        except Exception:
+                            pass
                 except Exception:
                     pass
         self._sensor_isolation_restore = hidden
+        self._sensor_isolation_pickable_restore = pickable_restore
         # Persist the intent so a later scene rebuild -- an overlay toggle re-creates every actor
         # visible, wiping these hides (flag_20260709_150713_387) -- can re-apply it while the view is
         # still active. Stored as plain numbers so it survives across rebuilt actor objects.
@@ -12088,6 +12201,23 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 pass
         self._sensor_isolation_restore = []
+        for actor, was_pickable in self.__dict__.get("_sensor_isolation_pickable_restore") or []:
+            try:
+                actor.SetPickable(int(was_pickable))
+            except Exception:
+                pass
+        self._sensor_isolation_pickable_restore = []
+        # A user can persistently hide a row/STEP/source from the browser while
+        # Normal-to-Sensor is active. Reassert that saved state after restoring
+        # the temporary isolation so leaving/re-invoking the view cannot re-show it.
+        try:
+            self._apply_scene_element_visibility()
+        except Exception:
+            pass
+        try:
+            self._reconcile_step_rotation_handles(self._selected_step_labels)
+        except Exception:
+            pass
 
     def _restore_sensor_isolation(self) -> None:
         """Leave the Normal-to-Sensor view: re-show the hidden actors AND drop the isolation intent so
@@ -20603,7 +20733,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # cached face geometry regardless of visibility, so gate it here (the
         # single wrapper every hover/pick/axis-snap path routes through) to stop
         # a hidden STEP popping its gold hover outline + face tooltip (bug 0029).
+        label = str(label or "").strip().lower()
         if self.is_step_label_hidden(label):
+            return None
+        # Normal-to-Sensor (and any other temporary scene isolation) hides the
+        # actor without adding its label to the user's persistent hidden set.
+        # The cached geometry picker below is renderer-independent, so reject a
+        # label whose mapped body actors exist but are all currently invisible.
+        if self._step_label_has_only_invisible_body_actors(label):
             return None
         return step_feature_pick_for_display_xy(
             self,
@@ -20630,6 +20767,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         return pick
 
     def _row_face_ray_pick_for_display_xy(self, row_index: int, display_xy) -> FaceRayPick | None:
+        try:
+            row_index = int(row_index)
+        except (TypeError, ValueError):
+            return None
+        if self.is_scene_row_hidden(row_index):
+            return None
+        # Cached CAD metadata remains ray-pickable after a temporary actor hide
+        # (notably Normal-to-Sensor isolation). If this row has registered live
+        # pick bodies and all of them are invisible, the row is not interactive.
+        if self._row_has_only_invisible_body_actors(row_index):
+            return None
         ray = self._display_pick_ray(display_xy)
         if ray is None:
             return None

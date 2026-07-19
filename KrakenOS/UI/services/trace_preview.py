@@ -211,12 +211,19 @@ class TracePreviewService:
                     self._trace_preview_bundles(system, rays, wavelength, preview_bundles)
                     self._preview_field_ray_count = len(pupil_samples) * 2
             else:
-                field_values = self._sample_field_values(self._current_field_height())
+                coupled_half = self._coupled_imaging_launch_half_extents()
+                if coupled_half is not None:
+                    field_pairs = self._sample_imaging_field_grid_pairs()
+                else:
+                    field_pairs = [
+                        (0.0, float(value))
+                        for value in self._sample_field_values(self._current_field_height())
+                    ]
                 object_distance = self._current_object_distance()
                 if full_pupil:
                     disk_pts = self._sample_pupil_disk(pupil_radius)
-                    for field_value in field_values:
-                        origin = np.array([0.0, float(field_value), 0.0], dtype=float)
+                    for field_x, field_y in field_pairs:
+                        origin = np.array([float(field_x), float(field_y), 0.0], dtype=float)
                         x_vals: list[float] = []
                         y_vals: list[float] = []
                         z_vals: list[float] = []
@@ -251,8 +258,8 @@ class TracePreviewService:
                     self._preview_field_ray_count = len(disk_pts)
                 else:
                     pupil_samples = self._sample_ray_heights(pupil_radius)
-                    for field_value in field_values:
-                        origin = np.array([0.0, float(field_value), 0.0], dtype=float)
+                    for field_x, field_y in field_pairs:
+                        origin = np.array([float(field_x), float(field_y), 0.0], dtype=float)
                         x_values: list[float] = []
                         y_values: list[float] = []
                         z_values: list[float] = []
@@ -360,11 +367,19 @@ class TracePreviewService:
                 pupil.Samp = max(1, self._current_ray_count() // 2)
                 pupil.Ptype = pattern or "fan"
             pupil.FieldType = "height"
-            field_values = self._sample_field_values(self._current_field_height())
+            coupled_half = self._coupled_imaging_launch_half_extents()
+            field_pairs = (
+                self._sample_imaging_field_grid_pairs()
+                if coupled_half is not None
+                else [
+                    (0.0, float(value))
+                    for value in self._sample_field_values(self._current_field_height())
+                ]
+            )
             last_bundle = 1
-            for field_value in field_values:
-                pupil.FieldX = 0.0
-                pupil.FieldY = float(field_value)
+            for field_x, field_y in field_pairs:
+                pupil.FieldX = float(field_x)
+                pupil.FieldY = float(field_y)
                 bundle = self._pupil_pattern_bundle(pupil)
                 last_bundle = max(1, len(np.asarray(bundle[0])))
                 preview_bundles.append(bundle)
@@ -729,7 +744,7 @@ class TracePreviewService:
             field_values = self._sample_field_values(self._current_field_angle_deg())
         else:
             pupil.FieldType = "height"
-            field_values = self._sample_field_values(self._current_field_height())
+            field_values = self._finite_imaging_field_values(axis)
         bundles = []
         for field_value in field_values:
             value = float(field_value)
@@ -842,7 +857,7 @@ class TracePreviewService:
                 bundle = self._center_infinity_bundle_on_launch_reference(bundle, system=system)
                 bundles.append(bundle)
         else:
-            field_values = self._sample_field_values(self._current_field_height())
+            field_values = self._finite_imaging_field_values(axis)
             object_distance = self._current_object_distance()
             for field_value in field_values:
                 origin = np.array([0.0, 0.0, 0.0], dtype=float)

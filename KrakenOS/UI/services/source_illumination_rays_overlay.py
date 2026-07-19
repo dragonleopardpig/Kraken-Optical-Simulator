@@ -47,8 +47,18 @@ ILLUM_MARKER_RAY_MIN_SPAN_MM = 1.0
 
 
 def _record_polyline(record, min_z_span):
-    """World-coord polyline for one ray: the LED origin followed by each surface hit. None when the ray
-    is degenerate (fewer than 2 finite vertices, or collapsed at the source plane)."""
+    """World-coord polyline for one ray, preferring the engine's full traced path and falling back to
+    the LED origin plus surface hits. None for a degenerate/collapsed source-plane ray."""
+    # Isolated coupled-source records carry the engine's full path, including
+    # the terminal post-exit free-flight segment toward the Object plane. A
+    # hit-only reconstruction stops at the cube exit and visually hides the
+    # very reflected leg this overlay is meant to explain.
+    traced = record.get("traced_polyline_world")
+    if traced is not None:
+        arr = np.asarray(traced, dtype=float)
+        if arr.ndim == 2 and arr.shape[0] >= 2 and np.all(np.isfinite(arr)):
+            if float(arr[:, 2].max() - arr[:, 2].min()) >= float(min_z_span):
+                return arr
     try:
         start = (
             float(record.get("source_x", 0.0)),

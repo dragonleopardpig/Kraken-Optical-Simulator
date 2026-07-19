@@ -11997,12 +11997,14 @@ def phase_245_normal_to_sensor_isolation(
     (flag_20260709_125338_765), and it must SURVIVE overlay toggles (flag_20260709_150713_387 +
     "none of the overlays should re-enable other elements"). `validate_open3d_normal_to_sensor_isolation`
     drives the real _isolate/_restore/_reapply against stub actors (display-free): the detector body
-    (row map) + coplanar overlays (proximity) stay; the four off-plane props hide; leaving the view
-    (set_camera_preset) restores them; a re-invoke is idempotent; and a scene rebuild (any overlay
-    toggle routes through refresh_scene) re-hides the props while the view stays active.
+    (row map) + coplanar overlays (proximity) stay; the off-plane props hide and become non-pickable;
+    cached STEP/CAD-row ray pickers and gizmos reject those known-invisible bodies (flags
+    20260719_081736/081909); leaving the view restores visibility and original pickability without
+    overriding persistent browser hides; a re-invoke is idempotent; and a scene rebuild (any overlay
+    toggle routes through refresh_scene) re-hides the props while active.
     """
     result = PhaseResult(
-        name="Phase 245: Normal to Sensor isolates the detector and survives overlay toggles"
+        name="Phase 245: Normal to Sensor isolates interaction and survives overlay toggles"
     )
     try:
         from KrakenOS.UI.validate_open3d_normal_to_sensor_isolation import run_checks

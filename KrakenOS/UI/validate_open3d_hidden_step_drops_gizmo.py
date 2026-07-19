@@ -59,12 +59,16 @@ class _ReconcileStub:
     """Just enough of the inspector for _reconcile_step_rotation_handles: a hidden
     set + the handle-service accessor. The real method runs against this."""
 
-    def __init__(self, hidden) -> None:
+    def __init__(self, hidden, invisible=()) -> None:
         self._hidden = {str(h).strip().lower() for h in hidden}
+        self._invisible = {str(h).strip().lower() for h in invisible}
         self._service = _FakeHandleService()
 
     def is_step_label_hidden(self, label: str) -> bool:
         return str(label).strip().lower() in self._hidden
+
+    def _step_label_has_only_invisible_body_actors(self, label: str) -> bool:
+        return str(label).strip().lower() in self._invisible
 
     def _open3d_step_rotation_handle_service(self):
         return self._service
@@ -110,6 +114,17 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         notes.append(
             f"FAIL: hiding the only selected label did not clear the gizmo target "
             f"(got {stub2._service.reconciled_with!r}, expected empty) (bugs/0136)"
+        )
+        passed = False
+
+    # Normal-to-Sensor is a temporary actor hide, not a browser-hidden label.
+    # It must follow the same no-gizmo contract without corrupting hidden state.
+    stub3 = _ReconcileStub(hidden=set(), invisible={"camera"})
+    Kraken3DInspector._reconcile_step_rotation_handles(stub3, {"camera", "optical"})
+    if stub3._service.reconciled_with != {"optical"}:
+        notes.append(
+            "FAIL: a temporarily invisible camera survived into the gizmo reconcile target "
+            f"(got {stub3._service.reconciled_with!r})"
         )
         passed = False
 

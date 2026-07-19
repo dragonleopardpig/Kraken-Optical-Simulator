@@ -31,7 +31,7 @@ The intuition trap: "55 is bigger than 39, so it must cover"
 
 Read flat off the datasheet, the numbers look comfortable:
 
-* Flat area LED: **55 mm** (fold axis) × 78 mm (perpendicular axis).
+* Flat area LED: **55 mm** (fold axis) × 74 mm (perpendicular axis).
 * Beam-splitter cube: **55 × 55 × 78 mm**.
 * Field of view: **39 × 39 mm**.
 
@@ -82,7 +82,7 @@ Why only two edges go dark
 --------------------------
 
 The foreshortening only happens on the fold axis. The perpendicular axis
-never tilts, so its aperture stays at the full **78 mm** — twice the 39 mm
+never tilts, so the LED aperture stays at the full **74 mm** — nearly twice the 39 mm
 field. That axis over-fills the FOV and both of its edges stay bright.
 
 .. figure:: ../_static/knowledge_base/coaxial_led_dark_edges/03_fov_coverage.svg
@@ -93,11 +93,84 @@ field. That axis over-fills the FOV and both of its edges stay bright.
    Plan view of the 39 × 39 mm field. The fold axis (horizontal) is
    starved — its ≈ 39 mm aperture just reaches the field, so the two
    fold-axis edges fall into penumbra. The perpendicular axis (vertical)
-   carries the full 78 mm and lights the field uniformly.
+   carries the full 74 mm LED aperture and lights the field uniformly.
 
 That asymmetry is the tell: a *uniform* fall-off on all four sides would
 point to a centering or vignetting problem, but **two dark edges on one
 axis** is the signature of a foreshortened fold aperture.
+
+
+Opt in: bound the imaging launch to the illuminated field
+----------------------------------------------------------
+
+The Open 3D editor's imaging-preview rays for a finite conjugate still
+originate on the **Object plane**. A coaxial LED can optionally bound those
+object-plane origins to its effective illuminated rectangle by adding
+``couple_to_imaging_launch`` to the physical scene-source specification:
+
+.. code-block:: python
+
+   {
+       "model": "Random rectangle source",
+       "role": "illumination",
+       "physical": True,
+       "enabled": True,
+       "radius_x": 37.0,
+       "radius_y": 27.5,
+       "cone_deg": 90.0,
+       "angular_weight": "Cosine-weighted",
+       "couple_to_imaging_launch": True,
+       "coaxial_illuminator": True,
+       "coaxial_aperture_fold_mm": 55.0,
+       "coaxial_aperture_perp_mm": 74.0,
+       "coaxial_fold_angle_deg": 45.0,
+       "coaxial_fold_axis": "x",
+   }
+
+The flag is deliberately opt-in and is accepted only for an enabled,
+physical source with a valid coaxial-illuminator descriptor. For a finite
+object, KrakenOS computes
+
+.. math::
+
+   A_{\mathrm{launch}}
+   = A_{\mathrm{folded\ LED}}
+   \cap A_{\mathrm{configured\ field}}
+   \cap A_{\mathrm{camera\ FOV}},
+
+where the camera term is applied when a registered camera and finite
+magnification are available. The folded-LED rectangle has dimensions
+
+.. math::
+
+   w_{\mathrm{fold}} =
+   w_{\mathrm{aperture}}\left|\cos\theta\right|,
+   \qquad
+   w_{\mathrm{perp}} = w_{\mathrm{aperture,perp}}.
+
+The fold-axis label selects whether those two dimensions bound X or Y. The
+Object row's round drawing diameter is not substituted for this rectangular
+intersection. For the MV-150 values, the 55 × 74 mm LED folded at 45° gives
+38.8909 × 74 mm; intersecting it with the 39 × 39 mm camera field produces
+a **38.8909 × 39 mm** imaging-launch rectangle.
+
+The coupled LED remains additive. Its physical LED rays are kept in an
+isolated illumination trace when illumination records are needed; they do not
+replace or contaminate the Object-driven imaging keeper, image conjugates, or
+detector placement. The imaging ray origins remain at the Object plane and
+only their finite-field X/Y bounds change.
+
+Set ``couple_to_imaging_launch`` to ``False`` (or remove it) to opt out. This
+restores the existing uncoupled scene-source and finite-field launch paths; it
+does not delete or disable the LED source itself. Infinity-object layouts and
+sources without a valid coaxial descriptor also follow the uncoupled paths.
+
+``angular_weight="Cosine-weighted"`` is the Lambertian projected-solid-angle
+law for scene-source directions. Together with ``cone_deg=90.0`` it samples
+the complete forward Lambertian hemisphere. A smaller cone gives a truncated
+Lambertian lobe; authored angles above 90° are clamped to the forward
+hemisphere. This angular law controls the physical LED trace independently of
+the rectangular imaging-launch bound.
 
 
 Seeing it in the ray trace: the "Illum rays" overlay
@@ -160,6 +233,19 @@ than the axis with the biggest raw spread.
 
 Reproduce and validate
 -----------------------
+
+The opt-in Object-plane launch coupling and Lambertian source sampler have a
+focused display-free guard. The existing effective-area guard independently
+checks the geometric footprint and the two-edge detector overlay:
+
+.. code-block:: bash
+
+   python -m KrakenOS.UI.validate_open3d_coaxial_imaging_launch
+   python -m KrakenOS.UI.validate_open3d_effective_illumination_area
+
+The coupling guard checks that the physical LED stays isolated from the
+imaging keeper, that the imaging origins remain on the Object plane inside the
+38.8909 × 39 mm rectangle, and that opting out restores the uncoupled path.
 
 The geometry kernel is pure NumPy in
 ``KrakenOS/UI/services/source_illumination_rays_overlay.py``; the editor

@@ -69,8 +69,15 @@ def dedupe_scene_source_ids(specs: list[dict[str, object]]) -> list[dict[str, ob
     return output
 
 
-def source_spec_bool(spec: dict[str, object], key: str, default: bool) -> bool:
-    value = spec.get(key, default)
+def source_spec_bool(spec: dict[str, object], keys, default: bool) -> bool:
+    """Read the first present boolean key, allowing the same alias tuples as float settings."""
+    if isinstance(keys, str):
+        keys = (keys,)
+    value = default
+    for key in keys:
+        if key in spec:
+            value = spec.get(key, default)
+            break
     if isinstance(value, str):
         return value.strip().lower() not in {"0", "false", "no", "off", "disabled"}
     return bool(value)
@@ -135,6 +142,7 @@ def source_spec_vector(spec: dict[str, object], vector_keys, component_keys, def
 
 
 COAXIAL_ILLUMINATOR_KEY = "coaxial_illuminator"
+COUPLE_TO_IMAGING_LAUNCH_KEY = "couple_to_imaging_launch"
 
 
 def coaxial_illuminator_descriptor(spec: object) -> dict[str, object] | None:
@@ -183,6 +191,36 @@ def coaxial_illuminator_descriptor(spec: object) -> dict[str, object] | None:
         "fold_axis": fold_axis,
         "penumbra_mm": penumbra_mm,
     }
+
+
+def scene_source_spec_couples_to_imaging_launch(spec: object) -> bool:
+    """Return whether an illumination source bounds the object-driven imaging launch.
+
+    A coupled source is deliberately *additive*: KrakenOS continues to launch the
+    imaging rays from the Object plane, while the source's coaxial descriptor limits
+    those field origins to the illuminated footprint.  The physical LED is traced in
+    an isolated illumination pass, so it cannot replace the imaging conjugates.
+
+    Coupling is opt-in because many scene sources are themselves the primary traced
+    rays (stray-light and source-to-detector layouts).  A valid coaxial descriptor is
+    required; a bare flag can never fabricate launch geometry.
+    """
+    if isinstance(spec, dict):
+        settings: object = spec
+    else:
+        settings = getattr(spec, "settings", None)
+    if not isinstance(settings, dict):
+        return False
+    enabled = source_spec_bool(
+        settings,
+        (
+            COUPLE_TO_IMAGING_LAUNCH_KEY,
+            "couple_to_imaging",
+            "imaging_launch_coupled",
+        ),
+        False,
+    )
+    return bool(enabled and coaxial_illuminator_descriptor(settings) is not None)
 
 
 def scene_source_from_spec(

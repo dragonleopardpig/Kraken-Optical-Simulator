@@ -3639,7 +3639,8 @@ class ThreeDSceneToolsMixin:
     def source_illumination_overlay_spec(self, system, scene_bundle, *, wavelength=None):
         """Build the detector relative-illumination heatmap spec (the coaxial-LED dark edges drawn
         on the sensor), or None. Lazy + signature-cached + render-only, like the other detector
-        overlays (bugs/0166): it REUSES the existing preview trace's ray records -- it never re-traces.
+        overlays (bugs/0166). Additive coupled LEDs use an isolated illumination keeper so their
+        physical trace cannot replace or contaminate the Object-plane imaging keeper.
         """
         if system is None or scene_bundle is None:
             return None
@@ -3703,13 +3704,21 @@ class ThreeDSceneToolsMixin:
         # is also not launched). It floods ZERO rays onto the detector, so the heatmap re-binned the same
         # sparse imaging fan and re-fabricated the exact radial "symmetric dark" 0280 killed (reproduced:
         # bundles launched=0, 117 imaging hits at +-6.8mm -> centre 1.00 / edge 0.22 / corner 0.08). Gate
-        # on at least one NON-marker source, matching exactly what _build_scene_source_bundles LAUNCHES.
+        # on a live primary-driving source, matching exactly what _build_scene_source_bundles launches;
+        # an additive coupled LED is excluded for the same reason as a marker.
         try:
-            from KrakenOS.UI.scene_source_analysis import scene_source_spec_is_face_bound_marker
+            from KrakenOS.UI.scene_source_analysis import (
+                scene_source_spec_couples_to_imaging_launch,
+                scene_source_spec_is_face_bound_marker,
+            )
 
             specs = self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", []) or [])
             has_scene_source = any(
-                not scene_source_spec_is_face_bound_marker(spec) for spec in specs
+                bool(spec.get("enabled", True))
+                and bool(spec.get("physical", True))
+                and not scene_source_spec_is_face_bound_marker(spec)
+                and not scene_source_spec_couples_to_imaging_launch(spec)
+                for spec in specs
             )
         except Exception:
             has_scene_source = True  # can't tell -> preserve prior behavior; never hide a real LED map
@@ -3811,15 +3820,30 @@ class ThreeDSceneToolsMixin:
         entering the beam-splitter cube) is the IN-GLASS leg -- extending it under-spreads the exit cone
         by ~n and lands the footprint short (the 0272 lesson: the refracted free-flight point is a
         terminal event, absent from ``hits``).  During the bugs/0223 async capture/replay window -- or if
-        the isolated trace fails -- fall back to the preview records (the pre-0289 behavior), which are
-        exact whenever the source needs no relay (an object-plane LED)."""
+        the isolated trace fails -- ordinary source-driven scenes fall back to their preview records (the
+        pre-0289 behavior). Coupled scenes return no illumination records instead of ever substituting
+        their Object-launched imaging records."""
+        coupled_active = False
+        try:
+            coupled_active = self._coupled_imaging_launch_descriptor() is not None
+        except Exception:
+            coupled_active = False
         if (
             self.__dict__.get("_preview_trace_bundle_capture") is not None
             or self.__dict__.get("_preview_trace_bundle_replay") is not None
         ):
+            # Primary records are Object-launched imaging rays in a coupled scene; returning them here
+            # would fabricate illumination density during async capture/replay.
+            if coupled_active:
+                return []
             return list(self._collect_ray_analysis_records())
         try:
             bundles, sources = self._build_scene_source_bundles(float(wavelength))
+            coupled_bundles, coupled_sources = self._build_coupled_illumination_source_bundles(
+                float(wavelength)
+            )
+            bundles = [*bundles, *coupled_bundles]
+            sources = [*sources, *coupled_sources]
             if not bundles:
                 return []
             rays_illum = Kos.raykeeper(system)
@@ -3833,6 +3857,8 @@ class ThreeDSceneToolsMixin:
                 self.__dict__["_force_nonseq_preview_trace"] = prior_force
             return self._isolated_ray_analysis_records(system, rays_illum)
         except Exception:
+            if coupled_active:
+                return []
             try:
                 return list(self._collect_ray_analysis_records())
             except Exception:
@@ -4056,10 +4082,15 @@ class ThreeDSceneToolsMixin:
     def source_illumination_rays_overlay_spec(self, system, scene_bundle, *, wavelength=None):
         """Build the coaxial-LED illumination-ray overlay spec (the REAL traced LED->BS->object rays,
         green where they reach the FOV / red where the BS-exit stop clips them), or None. Lazy +
-        signature-cached + render-only (bugs/0166): it REUSES the preview trace's per-ray records and
-        never re-traces -- this is the mechanism behind Feature A's on-detector dark-edge heatmap."""
+        signature-cached + render-only (bugs/0166). Coupled LEDs are traced into an isolated keeper;
+        ordinary source-driven scenes continue to reuse the primary keeper."""
         if system is None or scene_bundle is None:
             return None
+        if wavelength is None:
+            try:
+                wavelength = float(self._current_wavelength())
+            except Exception:
+                wavelength = 0.55
         try:
             signature = (self._preview_trace_signature(), "source_illumination_rays")
         except Exception:
@@ -4067,14 +4098,24 @@ class ThreeDSceneToolsMixin:
         cache = self.__dict__.get("_source_illumination_rays_overlay_cache")
         if signature is not None and isinstance(cache, tuple) and len(cache) == 2 and cache[0] == signature:
             return cache[1]
-        spec = self._compute_source_illumination_rays_overlay_spec(scene_bundle)
+        spec = self._compute_source_illumination_rays_overlay_spec(
+            system, scene_bundle, float(wavelength)
+        )
         if signature is not None:
             self._source_illumination_rays_overlay_cache = (signature, spec)
         return spec
 
-    def _compute_source_illumination_rays_overlay_spec(self, scene_bundle):
+    def _compute_source_illumination_rays_overlay_spec(self, system, scene_bundle, wavelength: float):
         try:
-            records = self._collect_ray_analysis_records()
+            coupled_active = self._coupled_imaging_launch_descriptor() is not None
+        except Exception:
+            coupled_active = False
+        try:
+            records = (
+                self._isolated_scene_source_records(system, float(wavelength))
+                if coupled_active
+                else self._collect_ray_analysis_records()
+            )
         except Exception:
             return None
         if not records:

@@ -20,6 +20,10 @@ from KrakenOS.UI.layout_plot_controller import (
     preview_trace_signature_matches,
 )
 from KrakenOS.UI.scene_geometry import SceneSource3D
+from KrakenOS.UI.scene_source_analysis import (
+    coaxial_illuminator_descriptor,
+    scene_source_spec_couples_to_imaging_launch,
+)
 from KrakenOS.UI.services.ray_display_geometry import _raykeeper_has_non_primary_branch_paths
 from KrakenOS.UI.services.row_spec_contracts import _row_specs_signature
 from KrakenOS.UI.services.trace_preview import TracePreviewService
@@ -114,6 +118,8 @@ class TracePreviewSamplingMixin:
         magnification is unavailable, so plain scenes keep the object-aperture
         clamp alone (and rays still launch -- never vanish).
         """
+        # Keep this helper self-contained: several display-free guards bind it
+        # directly onto a tiny editor double without the rest of this mixin.
         try:
             sensor = self._current_camera_sensor_active_mm()
         except Exception:
@@ -122,25 +128,198 @@ class TracePreviewSamplingMixin:
             return None
         try:
             mag = self._current_finite_paraxial_magnification()
+            m = abs(float(mag))
+            half_w = abs(float(sensor[0])) * 0.5 / m
+            half_h = abs(float(sensor[1])) * 0.5 / m
+        except (TypeError, ValueError, IndexError, ZeroDivisionError):
+            return None
         except Exception:
-            mag = None
-        if mag is None:
+            return None
+        inscribed = min(half_w, half_h)
+        return float(inscribed) if np.isfinite(inscribed) and inscribed > 1e-9 else None
+
+    def _camera_fov_object_half_extents(self) -> tuple[float, float] | None:
+        """Object-plane half width/height of the registered camera FOV rectangle."""
+        try:
+            sensor = self._current_camera_sensor_active_mm()
+        except Exception:
+            sensor = None
+        if not sensor:
             return None
         try:
+            mag = self._current_finite_paraxial_magnification()
             m = abs(float(mag))
         except (TypeError, ValueError):
+            return None
+        except Exception:
             return None
         if not np.isfinite(m) or m <= 1e-9:
             return None
         try:
-            half_w = abs(float(sensor[0])) * 0.5
-            half_h = abs(float(sensor[1])) * 0.5
+            half_w = abs(float(sensor[0])) * 0.5 / m
+            half_h = abs(float(sensor[1])) * 0.5 / m
         except (TypeError, ValueError, IndexError):
             return None
-        inscribed = min(half_w, half_h)
-        if inscribed <= 1e-9:
+        if not (np.isfinite(half_w) and np.isfinite(half_h) and half_w > 1e-9 and half_h > 1e-9):
             return None
-        return inscribed / m
+        return float(half_w), float(half_h)
+
+    def _coupled_imaging_launch_descriptor(self) -> dict[str, object] | None:
+        """First live coaxial LED explicitly coupled to the Object-plane imaging launch."""
+        try:
+            specs = self._normalize_scene_source_specs(
+                getattr(self, "layout_scene_source_specs", []) or []
+            )
+        except Exception:
+            return None
+        for spec in specs:
+            if not (bool(spec.get("enabled", True)) and bool(spec.get("physical", True))):
+                continue
+            if not scene_source_spec_couples_to_imaging_launch(spec):
+                continue
+            descriptor = coaxial_illuminator_descriptor(spec)
+            if descriptor is not None:
+                return descriptor
+        return None
+
+    def _coupled_imaging_launch_half_extents(self) -> tuple[float, float] | None:
+        """Effective illuminated Object-plane half extents, intersected with the imaging FOV.
+
+        The descriptor carries the raw LED/aperture geometry.  The fold axis is foreshortened by
+        ``cos(fold_angle)`` and the perpendicular axis is unchanged.  The result is intersected with
+        the configured square field and, when available, the camera's rectangular object-space FOV.
+        It intentionally does not use the Object row's round display diameter: vendor layouts can
+        carry a smaller object disc while the registered sensor still images the full rectangular FOV.
+        """
+        if self._current_object_mode() == "Infinity":
+            return None
+        descriptor = self._coupled_imaging_launch_descriptor()
+        if descriptor is None:
+            return None
+        try:
+            aperture_fold = float(descriptor["aperture_fold_mm"])
+            aperture_perp = float(descriptor["aperture_perp_mm"])
+            fold_angle = float(descriptor.get("fold_angle_deg", 45.0))
+        except (KeyError, TypeError, ValueError):
+            return None
+        fold_half = 0.5 * aperture_fold * abs(float(np.cos(np.deg2rad(fold_angle))))
+        perp_half = 0.5 * aperture_perp
+        if not (
+            np.isfinite(fold_half)
+            and np.isfinite(perp_half)
+            and fold_half > 1e-9
+            and perp_half > 1e-9
+        ):
+            return None
+        if str(descriptor.get("fold_axis", "x")).strip().lower() == "y":
+            half_x, half_y = perp_half, fold_half
+        else:
+            half_x, half_y = fold_half, perp_half
+
+        # Finite field height is radial.  Its inscribed square is the authored rectangular FOV.
+        try:
+            requested_axis_half = abs(float(self._current_field_height())) / float(np.sqrt(2.0))
+        except Exception:
+            requested_axis_half = 0.0
+        if requested_axis_half > 1e-9:
+            half_x = min(half_x, requested_axis_half)
+            half_y = min(half_y, requested_axis_half)
+        camera_half = self._camera_fov_object_half_extents()
+        if camera_half is not None:
+            half_x = min(half_x, float(camera_half[0]))
+            half_y = min(half_y, float(camera_half[1]))
+        if not (half_x > 1e-9 and half_y > 1e-9):
+            return None
+        return float(half_x), float(half_y)
+
+    def _sample_imaging_field_grid_pairs(self) -> list[tuple[float, float]]:
+        """Finite-object field pairs, using a rectangular coupled-illumination bound when active."""
+        half = self._coupled_imaging_launch_half_extents()
+        if half is None:
+            return self._sample_field_grid_pairs(self._launch_field_radial_max())
+        count = self._current_field_count()
+        if count <= 1:
+            return [(0.0, 0.0)]
+        x_values = np.linspace(-float(half[0]), float(half[0]), count)
+        y_values = np.linspace(-float(half[1]), float(half[1]), count)
+        return [(float(x), float(y)) for y in y_values for x in x_values]
+
+    def _finite_imaging_field_values(self, axis: str) -> list[float]:
+        """One-axis finite field samples for a meridional/display-slice launch."""
+        half = self._coupled_imaging_launch_half_extents()
+        if half is None:
+            return self._sample_field_values(self._current_field_height())
+        count = self._current_field_count()
+        if count <= 1:
+            return [0.0]
+        maximum = float(half[0] if str(axis).lower() == "x" else half[1])
+        return [float(value) for value in np.linspace(-maximum, maximum, count)]
+
+    def _world_section_imaging_field_pairs(self) -> list[tuple[float, float]]:
+        if self._coupled_imaging_launch_half_extents() is not None:
+            return self._sample_imaging_field_grid_pairs()
+        return self._field_cross_pairs_for_world_sections(self._current_field_height())
+
+    def _coupled_imaging_launch_signature(self) -> tuple:
+        """Cache fingerprint for LED enable/geometry changes that move imaging launch origins."""
+        try:
+            specs = self._normalize_scene_source_specs(
+                getattr(self, "layout_scene_source_specs", []) or []
+            )
+        except Exception:
+            return ()
+
+        def _number(spec: dict[str, object], key: str, default: float = 0.0) -> float:
+            try:
+                value = float(spec.get(key, default))
+            except (TypeError, ValueError):
+                value = float(default)
+            return round(value if np.isfinite(value) else float(default), 9)
+
+        def _integer(spec: dict[str, object], key: str) -> int:
+            try:
+                return int(float(spec.get(key, 0) or 0))
+            except (TypeError, ValueError):
+                return 0
+
+        signature = []
+        for spec in specs:
+            if not scene_source_spec_couples_to_imaging_launch(spec):
+                continue
+            descriptor = coaxial_illuminator_descriptor(spec) or {}
+            signature.append(
+                (
+                    str(spec.get("source_id", "") or ""),
+                    bool(spec.get("enabled", True)),
+                    bool(spec.get("physical", True)),
+                    str(spec.get("model", "") or ""),
+                    str(spec.get("role", "") or ""),
+                    _number(spec, "source_x"),
+                    _number(spec, "source_y"),
+                    _number(spec, "source_z"),
+                    _number(spec, "source_l"),
+                    _number(spec, "source_m"),
+                    _number(spec, "source_n", 1.0),
+                    _number(spec, "radius_x", _number(spec, "radius")),
+                    _number(spec, "radius_y", _number(spec, "radius")),
+                    _number(spec, "cone_deg"),
+                    _integer(spec, "ray_count"),
+                    _integer(spec, "seed"),
+                    _number(spec, "power", 1.0),
+                    _number(spec, "wavelength"),
+                    str(spec.get("angular_weight", "") or ""),
+                    float(descriptor.get("aperture_fold_mm", 0.0) or 0.0),
+                    float(descriptor.get("aperture_perp_mm", 0.0) or 0.0),
+                    float(descriptor.get("fold_angle_deg", 0.0) or 0.0),
+                    str(descriptor.get("fold_axis", "x") or "x"),
+                    (
+                        None
+                        if descriptor.get("penumbra_mm", None) is None
+                        else float(descriptor["penumbra_mm"])
+                    ),
+                )
+            )
+        return tuple(signature)
 
     def _sample_field_grid_pairs(self, maximum: float) -> list[tuple[float, float]]:
         """Sample full-field preview points as an X/Y grid inscribed in the
@@ -231,6 +410,7 @@ class TracePreviewSamplingMixin:
             nonseq_ns_limit=self._current_nonseq_ns_limit(),
             nonseq_target_surface_index=self._current_nonseq_target_surface_index(),
             full_pupil_mode=self._is_full_pupil_mode(),
+            coupled_imaging_launch_signature=self._coupled_imaging_launch_signature(),
         )
 
     def _build_temporary_preview_trace(self):
@@ -385,7 +565,7 @@ class TracePreviewSamplingMixin:
         angles_deg = np.asarray([0.0] if ray_count == 1 else np.linspace(-cone_deg, cone_deg, ray_count), dtype=float)
         angles_rad = np.deg2rad(angles_deg)
         axis_index = 0 if self._current_display_slice_axis() == "x" else 1
-        field_values = self._sample_field_values(self._current_field_height())
+        field_values = self._finite_imaging_field_values("x" if axis_index == 0 else "y")
         bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
         for field_value in field_values:
             x_values = np.zeros(ray_count, dtype=float)
@@ -438,7 +618,7 @@ class TracePreviewSamplingMixin:
         field_pairs = (
             [(0.0, 0.0)]
             if self._current_object_mode() == "Infinity"
-            else self._sample_field_grid_pairs(self._launch_field_radial_max())
+            else self._sample_imaging_field_grid_pairs()
         )
         bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
         for field_x, field_y in field_pairs:
@@ -511,7 +691,7 @@ class TracePreviewSamplingMixin:
                     )
                 )
         else:
-            pairs = self._sample_field_grid_pairs(self._launch_field_radial_max())
+            pairs = self._sample_imaging_field_grid_pairs()
             for field_x, field_y in pairs:
                 bundles.append(
                     self._orient_source_points_and_dirs(
@@ -1099,7 +1279,7 @@ class TracePreviewSamplingMixin:
         if self._current_object_mode() == "Infinity":
             field_pairs = self._field_cross_pairs_for_world_sections(self._current_field_angle_deg())
         else:
-            field_pairs = self._field_cross_pairs_for_world_sections(self._current_field_height())
+            field_pairs = self._world_section_imaging_field_pairs()
         return self._build_world_bundles_from_pupil_points(pupil_points, field_pairs=field_pairs, system=system)
 
     def _build_world_bundles_from_pupil_points(
@@ -1145,7 +1325,7 @@ class TracePreviewSamplingMixin:
             pairs = (
                 field_pairs
                 if field_pairs is not None
-                else self._sample_field_grid_pairs(self._launch_field_radial_max())
+                else self._sample_imaging_field_grid_pairs()
             )
             for field_x, field_y in pairs:
                 origin = np.array([-float(field_x), -float(field_y), 0.0], dtype=float)
@@ -1463,7 +1643,7 @@ class TracePreviewSamplingMixin:
             pupil.Samp = kraken_pattern_samp_for_count(pupil.Ptype, self._current_ray_count())
             pupil.FieldType = "height"
             bundles = []
-            for field_x, field_y in self._sample_field_grid_pairs(self._launch_field_radial_max()):
+            for field_x, field_y in self._sample_imaging_field_grid_pairs():
                 pupil.FieldX = float(field_x)
                 pupil.FieldY = float(field_y)
                 bundle = self._pupil_pattern_bundle(pupil)
@@ -1480,7 +1660,7 @@ class TracePreviewSamplingMixin:
         disk_pts = self._sample_pupil_disk(radius)
         object_distance = self._current_object_distance()
         bundles = []
-        for field_x, field_y in self._sample_field_grid_pairs(self._launch_field_radial_max()):
+        for field_x, field_y in self._sample_imaging_field_grid_pairs():
             origin = np.array([-float(field_x), -float(field_y), 0.0], dtype=float)
             x_vals: list[float] = []
             y_vals: list[float] = []

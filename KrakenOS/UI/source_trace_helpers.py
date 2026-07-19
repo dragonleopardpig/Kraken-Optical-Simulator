@@ -13,6 +13,7 @@ from KrakenOS.UI.scene_source_analysis import (
     normalize_scene_source_specs,
     scene_source_from_spec,
     scene_source_setting_value,
+    scene_source_spec_couples_to_imaging_launch,
     scene_source_spec_is_face_bound_marker,
     source_spec_float,
 )
@@ -628,7 +629,21 @@ def orient_source_points_and_dirs(
     )
 
 
-def random_cone_directions(ray_count: int, cone_angle_deg: float, rng: np.random.Generator):
+def random_cone_directions(
+    ray_count: int,
+    cone_angle_deg: float,
+    rng: np.random.Generator,
+    *,
+    angular_weight: str = SOURCE_ANGULAR_WEIGHT_DEFAULT,
+):
+    r"""Sample directions inside a cone.
+
+    ``Cosine-weighted`` is the Lambertian projected-solid-angle law.  Within
+    a cone of half-angle :math:`\theta_{max}`, its CDF is
+    ``sin(theta)**2 / sin(theta_max)**2``.  Other labels retain the historic
+    uniform-solid-angle sampler; the panel's legacy rejection sampler still
+    handles its Gaussian/edge-weighted circle and square modes.
+    """
     count = max(1, int(ray_count))
     cone_rad = max(float(np.deg2rad(cone_angle_deg)), 0.0)
     if cone_rad <= 1e-12:
@@ -637,8 +652,17 @@ def random_cone_directions(ray_count: int, cone_angle_deg: float, rng: np.random
             np.zeros(count, dtype=float),
             np.ones(count, dtype=float),
         )
-    cos_min = float(np.cos(cone_rad))
-    cos_theta = rng.uniform(cos_min, 1.0, count)
+    weight = str(angular_weight or SOURCE_ANGULAR_WEIGHT_DEFAULT).strip().lower()
+    if weight in {"cosine-weighted", "cosine weighted", "lambertian"}:
+        # A Lambertian emitter occupies the forward hemisphere.  Clamp a
+        # larger authored cone rather than allowing negative projected flux.
+        lambertian_cone = min(cone_rad, 0.5 * np.pi)
+        sin2_max = float(np.sin(lambertian_cone) ** 2)
+        sin2_theta = rng.uniform(0.0, sin2_max, count)
+        cos_theta = np.sqrt(np.clip(1.0 - sin2_theta, 0.0, 1.0))
+    else:
+        cos_min = float(np.cos(cone_rad))
+        cos_theta = rng.uniform(cos_min, 1.0, count)
     sin_theta = np.sqrt(np.clip(1.0 - cos_theta * cos_theta, 0.0, 1.0))
     phi = rng.uniform(0.0, 2.0 * np.pi, count)
     return (
@@ -938,7 +962,15 @@ def build_scene_source_bundle(source: SceneSource3D):
         if cone_angle > 1e-12:
             seed = int(round(source_spec_float(settings, "seed", 1, minimum=0.0))) % (2**32 - 1)
             rng = np.random.default_rng(seed)
-            l_values, m_values, n_values = random_cone_directions(ray_count, cone_angle, rng)
+            l_values, m_values, n_values = random_cone_directions(
+                ray_count,
+                cone_angle,
+                rng,
+                angular_weight=str(
+                    settings.get("angular_weight", SOURCE_ANGULAR_WEIGHT_DEFAULT)
+                    or SOURCE_ANGULAR_WEIGHT_DEFAULT
+                ),
+            )
         else:
             l_values = np.zeros(ray_count, dtype=float)
             m_values = np.zeros(ray_count, dtype=float)
@@ -956,7 +988,15 @@ def build_scene_source_bundle(source: SceneSource3D):
     seed = int(round(source_spec_float(settings, "seed", 1, minimum=0.0))) % (2**32 - 1)
     rng = np.random.default_rng(seed)
     cone_angle = source_spec_float(settings, ("cone_deg", "source_cone_angle"), 0.0, minimum=0.0)
-    l_values, m_values, n_values = random_cone_directions(ray_count, cone_angle, rng)
+    l_values, m_values, n_values = random_cone_directions(
+        ray_count,
+        cone_angle,
+        rng,
+        angular_weight=str(
+            settings.get("angular_weight", SOURCE_ANGULAR_WEIGHT_DEFAULT)
+            or SOURCE_ANGULAR_WEIGHT_DEFAULT
+        ),
+    )
     z_values = np.zeros(ray_count, dtype=float)
     if model == "Random circle source":
         r = radius * np.sqrt(rng.uniform(0.0, 1.0, ray_count))
@@ -1216,6 +1256,9 @@ def build_saved_layout_rays(system, surfaces: list[dict[str, Any]], settings: di
         # bugs/0266: a face-bound illumination marker is a display designation, not an imaging-trace
         # driver -- it must not hijack the saved-layout render's object-driven trace.
         and not scene_source_spec_is_face_bound_marker(source)
+        # A coaxial LED coupled to Object-plane imaging is traced additively by the editor. The saved
+        # 2-D script has only one keeper, so preserve the object-driven imaging trace here as well.
+        and not scene_source_spec_couples_to_imaging_launch(source)
     ]
     if sources:
         trace_loop = kos_module.NsTraceLoop if use_nonseq and hasattr(kos_module, "NsTraceLoop") else kos_module.TraceLoop

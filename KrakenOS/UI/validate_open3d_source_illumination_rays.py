@@ -123,6 +123,20 @@ def _validate_line_cells(points: np.ndarray, lines: np.ndarray) -> str | None:
 def _check_pure_geometry(failures: list[str]) -> None:
     records, n_reach, n_clip = _synthetic_records()
 
+    full_path = np.asarray([[1.0, 2.0, 3.0], [4.0, 5.0, -7.0]], dtype=float)
+    preferred = sir._record_polyline(
+        {
+            "source_x": 1.0,
+            "source_y": 2.0,
+            "source_z": 3.0,
+            "hits": [{"x": 2.0, "y": 3.0, "z": 4.0}],
+            "traced_polyline_world": full_path,
+        },
+        1.0,
+    )
+    if preferred is None or not np.array_equal(preferred, full_path):
+        failures.append("PURE: full engine polyline was not preferred over the hit-only reconstruction")
+
     spec = sir.build_source_illumination_rays_overlay(records)
     if spec is None:
         failures.append("PURE: build_source_illumination_rays_overlay returned None for valid records")
