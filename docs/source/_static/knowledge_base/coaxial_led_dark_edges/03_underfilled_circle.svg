@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420"
+     font-family="Arial, Helvetica, sans-serif" role="img"
+     aria-labelledby="under-circle-title under-circle-desc">
+  <title id="under-circle-title">Underfilled circular collimated beam</title>
+  <desc id="under-circle-desc">A collimated 30 millimetre circular beam makes a 42.43 by 30 millimetre elliptical footprint on a 45 degree splitter but remains a 30 millimetre circle after reflection.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#6b7280"/>
+    </marker>
+    <style>
+      .title{fill:#111827;font-size:17px;font-weight:700}
+      .subtitle{fill:#374151;font-size:12px}
+      .panel{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.2}
+      .label{fill:#111827;font-size:12px}
+      .strong{fill:#111827;font-size:12px;font-weight:700}
+      .small{fill:#4b5563;font-size:11px}
+      .beam{fill:#fde047;fill-opacity:.72;stroke:#b45309;stroke-width:2}
+      .pass{fill:#99f6e4;fill-opacity:.72;stroke:#0f766e;stroke-width:2}
+      .aperture{fill:#dbeafe;fill-opacity:.36;stroke:#1d4ed8;stroke-width:2;stroke-dasharray:7 4}
+      .flow{stroke:#6b7280;stroke-width:1.6;fill:none}
+      .axis{stroke:#9ca3af;stroke-width:1;stroke-dasharray:4 4}
+    </style>
+  </defs>
+
+  <text x="400" y="24" text-anchor="middle" class="title">Case 2 — underfilled circle: ellipse on the splitter, circle after reflection</text>
+  <text x="400" y="44" text-anchor="middle" class="subtitle">the oblique surface footprint is not the outgoing cross-section</text>
+
+  <rect x="28" y="75" width="214" height="286" rx="8" class="panel"/>
+  <rect x="293" y="75" width="214" height="286" rx="8" class="panel"/>
+  <rect x="558" y="75" width="214" height="286" rx="8" class="panel"/>
+  <path d="M247 218 H282" class="flow" marker-end="url(#arrow)"/>
+  <path d="M512 218 H547" class="flow" marker-end="url(#arrow)"/>
+
+  <text x="135" y="99" text-anchor="middle" class="strong">Incident normal section</text>
+  <line x1="70" y1="218" x2="200" y2="218" class="axis"/>
+  <line x1="135" y1="153" x2="135" y2="283" class="axis"/>
+  <circle cx="135" cy="218" r="34.5" class="beam"/>
+  <text x="135" y="294" text-anchor="middle" class="strong">diameter 30 mm</text>
+  <text x="135" y="320" text-anchor="middle" class="small">circle fits projected opening</text>
+
+  <text x="400" y="99" text-anchor="middle" class="strong">Footprint on 45° splitter</text>
+  <rect x="310" y="128" width="180" height="180" class="aperture"/>
+  <ellipse cx="400" cy="218" rx="49" ry="34.5" class="beam"/>
+  <text x="400" y="278" text-anchor="middle" class="strong">42.43 × 30 mm ellipse</text>
+  <text x="400" y="297" text-anchor="middle" class="small">diameter / cos 45° along fold plane</text>
+  <text x="400" y="329" text-anchor="middle" class="small">fully contained: no rays rejected</text>
+
+  <text x="665" y="99" text-anchor="middle" class="strong">Reflected normal section</text>
+  <line x1="600" y1="218" x2="730" y2="218" class="axis"/>
+  <line x1="665" y1="153" x2="665" y2="283" class="axis"/>
+  <circle cx="665" cy="218" r="34.5" class="pass"/>
+  <text x="665" y="294" text-anchor="middle" class="strong">diameter 30 mm</text>
+  <text x="665" y="320" text-anchor="middle" class="small">circle restored in outgoing normal plane</text>
+
+  <text x="400" y="393" text-anchor="middle" class="label">Reflection changes direction; it does not retain the splitter-plane ellipse.</text>
+</svg>

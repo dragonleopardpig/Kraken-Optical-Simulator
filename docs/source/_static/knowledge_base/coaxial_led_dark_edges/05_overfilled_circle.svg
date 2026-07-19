@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420"
+     font-family="Arial, Helvetica, sans-serif" role="img"
+     aria-labelledby="over-circle-title over-circle-desc">
+  <title id="over-circle-title">Overfilled circular collimated beam</title>
+  <desc id="over-circle-desc">A 70 millimetre circular beam is clipped by the MV-150 cube. The outgoing section is a circle with two parallel flat sides, 55 by 70 millimetres overall, rather than an ellipse.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#6b7280"/>
+    </marker>
+    <pattern id="reject-hatch" width="8" height="8" patternUnits="userSpaceOnUse"
+             patternTransform="rotate(45)">
+      <rect width="8" height="8" fill="#fee2e2"/>
+      <line x1="0" y1="0" x2="0" y2="8" stroke="#b91c1c" stroke-width="3"/>
+    </pattern>
+    <clipPath id="ellipse-clip">
+      <ellipse cx="400" cy="218" rx="99" ry="70"/>
+    </clipPath>
+    <clipPath id="aperture-clip">
+      <rect x="322" y="140" width="156" height="156"/>
+    </clipPath>
+    <style>
+      .title{fill:#111827;font-size:17px;font-weight:700}
+      .subtitle{fill:#374151;font-size:12px}
+      .panel{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.2}
+      .label{fill:#111827;font-size:12px}
+      .strong{fill:#111827;font-size:12px;font-weight:700}
+      .small{fill:#4b5563;font-size:11px}
+      .beam{fill:#fde047;fill-opacity:.72;stroke:#b45309;stroke-width:2}
+      .pass{fill:#99f6e4;fill-opacity:.8;stroke:#0f766e;stroke-width:2}
+      .aperture{fill:#dbeafe;fill-opacity:.25;stroke:#1d4ed8;stroke-width:2;stroke-dasharray:7 4}
+      .reject{fill:url(#reject-hatch);stroke:#b91c1c;stroke-width:1.3}
+      .flow{stroke:#6b7280;stroke-width:1.6;fill:none}
+      .axis{stroke:#9ca3af;stroke-width:1;stroke-dasharray:4 4}
+    </style>
+  </defs>
+
+  <text x="400" y="24" text-anchor="middle" class="title">Case 4 — overfilled circle: clipped disk, not ellipse</text>
+  <text x="400" y="44" text-anchor="middle" class="subtitle">70 mm diameter incident bundle; rectangular projected aperture clips two circular segments</text>
+
+  <rect x="28" y="75" width="214" height="286" rx="8" class="panel"/>
+  <rect x="293" y="75" width="214" height="286" rx="8" class="panel"/>
+  <rect x="558" y="75" width="214" height="286" rx="8" class="panel"/>
+  <path d="M247 218 H282" class="flow" marker-end="url(#arrow)"/>
+  <path d="M512 218 H547" class="flow" marker-end="url(#arrow)"/>
+
+  <text x="135" y="99" text-anchor="middle" class="strong">Incident normal section</text>
+  <line x1="50" y1="218" x2="220" y2="218" class="axis"/>
+  <line x1="135" y1="133" x2="135" y2="303" class="axis"/>
+  <circle cx="135" cy="218" r="70" class="beam"/>
+  <text x="135" y="318" text-anchor="middle" class="strong">diameter 70 mm</text>
+  <text x="135" y="337" text-anchor="middle" class="small">overfills fold-axis opening</text>
+
+  <text x="400" y="99" text-anchor="middle" class="strong">Required footprint vs cube interface</text>
+  <ellipse cx="400" cy="218" rx="99" ry="70" class="beam"/>
+  <rect x="301" y="140" width="21" height="156" class="reject" clip-path="url(#ellipse-clip)"/>
+  <rect x="478" y="140" width="21" height="156" class="reject" clip-path="url(#ellipse-clip)"/>
+  <ellipse cx="400" cy="218" rx="99" ry="70" class="pass" clip-path="url(#aperture-clip)"/>
+  <rect x="322" y="140" width="156" height="156" class="aperture"/>
+  <text x="400" y="322" text-anchor="middle" class="small">98.99 × 70 mm elliptical footprint</text>
+  <text x="400" y="340" text-anchor="middle" class="small">77.78 × 78 interface; cube ports are equivalent</text>
+
+  <text x="665" y="99" text-anchor="middle" class="strong">Reflected normal section</text>
+  <line x1="580" y1="218" x2="750" y2="218" class="axis"/>
+  <line x1="665" y1="133" x2="665" y2="303" class="axis"/>
+  <path d="M610 174.7
+           A70 70 0 0 1 720 174.7
+           L720 261.3
+           A70 70 0 0 1 610 261.3 Z" class="pass"/>
+  <line x1="610" y1="174.7" x2="610" y2="261.3" stroke="#b91c1c" stroke-width="2"/>
+  <line x1="720" y1="174.7" x2="720" y2="261.3" stroke="#b91c1c" stroke-width="2"/>
+  <text x="665" y="318" text-anchor="middle" class="strong">55 × 70 mm bounding box</text>
+  <text x="665" y="337" text-anchor="middle" class="small">two flat chords; not an ellipse</text>
+
+  <text x="400" y="393" text-anchor="middle" class="label">An ellipse would require a circular aperture in the tilted plane or anamorphic optics.</text>
+</svg>

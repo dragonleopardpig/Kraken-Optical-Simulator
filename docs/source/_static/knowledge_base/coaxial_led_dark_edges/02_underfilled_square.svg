@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420"
+     font-family="Arial, Helvetica, sans-serif" role="img"
+     aria-labelledby="under-square-title under-square-desc">
+  <title id="under-square-title">Underfilled square collimated beam</title>
+  <desc id="under-square-desc">A collimated 30 by 30 millimetre square beam expands to a 42.43 by 30 millimetre footprint on a 45 degree splitter, fits within the clear aperture, and remains 30 by 30 millimetres after reflection.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#6b7280"/>
+    </marker>
+    <style>
+      .title{fill:#111827;font-size:17px;font-weight:700}
+      .subtitle{fill:#374151;font-size:12px}
+      .panel{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.2}
+      .label{fill:#111827;font-size:12px}
+      .strong{fill:#111827;font-size:12px;font-weight:700}
+      .small{fill:#4b5563;font-size:11px}
+      .beam{fill:#fde047;fill-opacity:.72;stroke:#b45309;stroke-width:2}
+      .pass{fill:#99f6e4;fill-opacity:.72;stroke:#0f766e;stroke-width:2}
+      .aperture{fill:#dbeafe;fill-opacity:.36;stroke:#1d4ed8;stroke-width:2;stroke-dasharray:7 4}
+      .flow{stroke:#6b7280;stroke-width:1.6;fill:none}
+      .axis{stroke:#9ca3af;stroke-width:1;stroke-dasharray:4 4}
+    </style>
+  </defs>
+
+  <text x="400" y="24" text-anchor="middle" class="title">Case 1 — underfilled square: reflection preserves 30 × 30 mm</text>
+  <text x="400" y="44" text-anchor="middle" class="subtitle">ideal centred collimated beam; planes shown normal to each chief ray except the middle splitter-plane footprint</text>
+
+  <rect x="28" y="75" width="214" height="286" rx="8" class="panel"/>
+  <rect x="293" y="75" width="214" height="286" rx="8" class="panel"/>
+  <rect x="558" y="75" width="214" height="286" rx="8" class="panel"/>
+  <path d="M247 218 H282" class="flow" marker-end="url(#arrow)"/>
+  <path d="M512 218 H547" class="flow" marker-end="url(#arrow)"/>
+
+  <text x="135" y="99" text-anchor="middle" class="strong">Incident normal section</text>
+  <line x1="70" y1="220" x2="200" y2="220" class="axis"/>
+  <line x1="135" y1="155" x2="135" y2="285" class="axis"/>
+  <rect x="100.5" y="183.5" width="69" height="69" class="beam"/>
+  <text x="135" y="294" text-anchor="middle" class="strong">30 × 30 mm</text>
+  <text x="135" y="320" text-anchor="middle" class="small">Wf &lt; Cf and Wp &lt; Cp</text>
+
+  <text x="400" y="99" text-anchor="middle" class="strong">Footprint on 45° splitter</text>
+  <rect x="310" y="140" width="180" height="180" class="aperture"/>
+  <rect x="351" y="183" width="98" height="69" class="beam"/>
+  <text x="400" y="272" text-anchor="middle" class="strong">42.43 × 30 mm footprint</text>
+  <text x="400" y="291" text-anchor="middle" class="small">inside the physical clear aperture</text>
+  <text x="400" y="329" text-anchor="middle" class="small">footprint stretch = 30 / cos 45°</text>
+
+  <text x="665" y="99" text-anchor="middle" class="strong">Reflected normal section</text>
+  <line x1="600" y1="220" x2="730" y2="220" class="axis"/>
+  <line x1="665" y1="155" x2="665" y2="285" class="axis"/>
+  <rect x="630.5" y="183.5" width="69" height="69" class="pass"/>
+  <text x="665" y="294" text-anchor="middle" class="strong">30 × 30 mm</text>
+  <text x="665" y="320" text-anchor="middle" class="small">no clipping; shape and size preserved</text>
+
+  <rect x="240" y="381" width="14" height="14" class="beam"/>
+  <text x="261" y="393" class="label">beam</text>
+  <rect x="347" y="381" width="14" height="14" class="aperture"/>
+  <text x="368" y="393" class="label">clear aperture</text>
+  <rect x="497" y="381" width="14" height="14" class="pass"/>
+  <text x="518" y="393" class="label">surviving outgoing beam</text>
+</svg>

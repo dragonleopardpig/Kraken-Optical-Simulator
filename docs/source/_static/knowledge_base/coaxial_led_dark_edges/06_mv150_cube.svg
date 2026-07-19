@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 470"
+     font-family="Arial, Helvetica, sans-serif" role="img"
+     aria-labelledby="mv150-title mv150-desc">
+  <title id="mv150-title">Correct aperture projection for the MV-150 beam-splitter cube</title>
+  <desc id="mv150-desc">The MV-150 solid has a 55 by 55 millimetre fold-plane cross-section and a 77.78 millimetre internal diagonal. Projecting that diagonal at 45 degrees gives 55 millimetres. A collimated 55 by 74 millimetre bundle fits inside the nominal 55 by 78 millimetre opening and surrounds the 39 by 39 millimetre field.</desc>
+  <defs>
+    <marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#b45309"/>
+    </marker>
+    <marker id="arrow-teal" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#0f766e"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#1d4ed8"/>
+    </marker>
+    <style>
+      .title{fill:#111827;font-size:17px;font-weight:700}
+      .subtitle{fill:#374151;font-size:12px}
+      .panel{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.2}
+      .label{fill:#111827;font-size:12px}
+      .strong{fill:#111827;font-size:12px;font-weight:700}
+      .small{fill:#4b5563;font-size:11px}
+      .glass{fill:#0ea5e9;fill-opacity:.1;stroke:#0ea5e9;stroke-width:2}
+      .splitter{stroke:#1d4ed8;stroke-width:4}
+      .incident{stroke:#b45309;stroke-width:2;fill:none}
+      .outgoing{stroke:#0f766e;stroke-width:2;fill:none}
+      .dimension{stroke:#1d4ed8;stroke-width:1.4;fill:none}
+      .cube-aperture{fill:#dbeafe;fill-opacity:.35;stroke:#1d4ed8;stroke-width:2.5;stroke-dasharray:7 4}
+      .source{fill:#fde047;fill-opacity:.56;stroke:#b45309;stroke-width:2}
+      .fov{fill:#99f6e4;fill-opacity:.65;stroke:#0f766e;stroke-width:2.5}
+      .correct{fill:#047857;font-size:14px;font-weight:700}
+      .contrast{fill:#b91c1c;font-size:12px;font-weight:700}
+      .construct{stroke:#9ca3af;stroke-width:1;stroke-dasharray:4 4}
+    </style>
+  </defs>
+
+  <text x="400" y="24" text-anchor="middle" class="title">MV-150 — project the 77.78 mm diagonal, not the 55 mm cube side</text>
+  <text x="400" y="44" text-anchor="middle" class="subtitle">nominal optical geometry; usable clear aperture can be smaller after bevels, coating borders or housing</text>
+
+  <rect x="28" y="68" width="354" height="338" rx="8" class="panel"/>
+  <rect x="418" y="68" width="354" height="338" rx="8" class="panel"/>
+
+  <text x="205" y="94" text-anchor="middle" class="strong">Fold-plane cross-section of the CAD solid</text>
+  <rect x="95" y="122" width="220" height="220" class="glass"/>
+  <line x1="95" y1="342" x2="315" y2="122" class="splitter"/>
+  <text x="190" y="220" text-anchor="middle" transform="rotate(-45 190 220)" class="strong">internal interface 55√2 = 77.78 mm</text>
+
+  <line x1="366" y1="232" x2="208" y2="232" class="incident" marker-end="url(#arrow-amber)"/>
+  <line x1="205" y1="235" x2="205" y2="350" class="outgoing" marker-end="url(#arrow-teal)"/>
+  <text x="290" y="218" text-anchor="end" class="small" fill="#b45309">incident −X</text>
+  <text x="218" y="340" class="small" fill="#0f766e">reflected −Z</text>
+
+  <line x1="95" y1="362" x2="315" y2="362" class="dimension"
+        marker-start="url(#arrow-blue)" marker-end="url(#arrow-blue)"/>
+  <text x="205" y="380" text-anchor="middle" class="strong">55 mm</text>
+  <line x1="335" y1="122" x2="335" y2="342" class="dimension"
+        marker-start="url(#arrow-blue)" marker-end="url(#arrow-blue)"/>
+  <text x="352" y="235" text-anchor="middle" transform="rotate(-90 352 235)" class="strong">55 mm</text>
+  <text x="205" y="112" text-anchor="middle" class="small">extruded 78 mm perpendicular to this view</text>
+
+  <text x="595" y="94" text-anchor="middle" class="strong">Outgoing normal plane / Object-plane coverage</text>
+  <rect x="520" y="128" width="150" height="213" class="cube-aperture"/>
+  <rect x="520" y="134" width="150" height="202" class="source"/>
+  <rect x="542" y="182" width="106" height="106" class="fov"/>
+  <line x1="595" y1="112" x2="595" y2="359" class="construct"/>
+  <line x1="498" y1="235" x2="692" y2="235" class="construct"/>
+
+  <text x="595" y="148" text-anchor="middle" class="small" fill="#b45309">55 × 74 collimated source envelope</text>
+  <text x="595" y="230" text-anchor="middle" class="strong" fill="#0f766e">39 × 39 FOV</text>
+  <text x="595" y="305" text-anchor="middle" class="small" fill="#1d4ed8">projected cube opening: 55 × 78</text>
+
+  <line x1="520" y1="360" x2="670" y2="360" class="dimension"
+        marker-start="url(#arrow-blue)" marker-end="url(#arrow-blue)"/>
+  <text x="595" y="378" text-anchor="middle" class="strong">55 mm fold-axis support</text>
+  <text x="595" y="399" text-anchor="middle" class="small">margins: 8 mm/fold side; 17.5 mm/perpendicular side</text>
+
+  <text x="400" y="430" text-anchor="middle" class="correct">(55√2) cos 45° = 55 mm — the full cube diagonal projects back to the cube side</text>
+  <text x="400" y="452" text-anchor="middle" class="contrast">55 cos 45° = 38.89 mm applies only when 55 mm was measured along a separate tilted aperture</text>
+</svg>

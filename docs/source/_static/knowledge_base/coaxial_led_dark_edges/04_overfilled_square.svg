@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420"
+     font-family="Arial, Helvetica, sans-serif" role="img"
+     aria-labelledby="over-square-title over-square-desc">
+  <title id="over-square-title">Overfilled square collimated beam</title>
+  <desc id="over-square-desc">A 70 by 70 millimetre square beam makes a 98.99 by 70 millimetre footprint on the splitter. The MV-150 clear interface clips the fold direction, leaving a 55 by 70 millimetre rectangular outgoing beam rather than 38.9 by 70.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#6b7280"/>
+    </marker>
+    <pattern id="reject-hatch" width="8" height="8" patternUnits="userSpaceOnUse"
+             patternTransform="rotate(45)">
+      <rect width="8" height="8" fill="#fee2e2"/>
+      <line x1="0" y1="0" x2="0" y2="8" stroke="#b91c1c" stroke-width="3"/>
+    </pattern>
+    <style>
+      .title{fill:#111827;font-size:17px;font-weight:700}
+      .subtitle{fill:#374151;font-size:12px}
+      .panel{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.2}
+      .label{fill:#111827;font-size:12px}
+      .strong{fill:#111827;font-size:12px;font-weight:700}
+      .small{fill:#4b5563;font-size:11px}
+      .beam{fill:#fde047;fill-opacity:.72;stroke:#b45309;stroke-width:2}
+      .pass{fill:#99f6e4;fill-opacity:.78;stroke:#0f766e;stroke-width:2}
+      .aperture{fill:#dbeafe;fill-opacity:.28;stroke:#1d4ed8;stroke-width:2;stroke-dasharray:7 4}
+      .reject{fill:url(#reject-hatch);stroke:#b91c1c;stroke-width:1.5}
+      .flow{stroke:#6b7280;stroke-width:1.6;fill:none}
+      .axis{stroke:#9ca3af;stroke-width:1;stroke-dasharray:4 4}
+    </style>
+  </defs>
+
+  <text x="400" y="24" text-anchor="middle" class="title">Case 3 — overfilled square: rectangular aperture clipping</text>
+  <text x="400" y="44" text-anchor="middle" class="subtitle">70 × 70 mm incident bundle; nominal MV-150 projected opening 55 × 78 mm</text>
+
+  <rect x="28" y="75" width="214" height="286" rx="8" class="panel"/>
+  <rect x="293" y="75" width="214" height="286" rx="8" class="panel"/>
+  <rect x="558" y="75" width="214" height="286" rx="8" class="panel"/>
+  <path d="M247 218 H282" class="flow" marker-end="url(#arrow)"/>
+  <path d="M512 218 H547" class="flow" marker-end="url(#arrow)"/>
+
+  <text x="135" y="99" text-anchor="middle" class="strong">Incident normal section</text>
+  <line x1="50" y1="218" x2="220" y2="218" class="axis"/>
+  <line x1="135" y1="133" x2="135" y2="303" class="axis"/>
+  <rect x="65" y="148" width="140" height="140" class="beam"/>
+  <text x="135" y="318" text-anchor="middle" class="strong">70 × 70 mm</text>
+  <text x="135" y="337" text-anchor="middle" class="small">larger than fold-axis acceptance</text>
+
+  <text x="400" y="99" text-anchor="middle" class="strong">Required footprint vs cube interface</text>
+  <rect x="301" y="148" width="198" height="140" class="beam"/>
+  <rect x="301" y="148" width="21" height="140" class="reject"/>
+  <rect x="478" y="148" width="21" height="140" class="reject"/>
+  <rect x="322" y="140" width="156" height="156" class="aperture"/>
+  <rect x="322" y="148" width="156" height="140" class="pass"/>
+  <text x="400" y="322" text-anchor="middle" class="small">98.99 × 70 mm footprint</text>
+  <text x="400" y="340" text-anchor="middle" class="small">77.78 × 78 interface; cube ports are equivalent</text>
+
+  <text x="665" y="99" text-anchor="middle" class="strong">Reflected normal section</text>
+  <line x1="580" y1="218" x2="750" y2="218" class="axis"/>
+  <line x1="665" y1="133" x2="665" y2="303" class="axis"/>
+  <rect x="610" y="148" width="110" height="140" class="pass"/>
+  <text x="665" y="318" text-anchor="middle" class="strong">55 × 70 mm</text>
+  <text x="665" y="337" text-anchor="middle" class="small">min(70,55) × min(70,78)</text>
+
+  <rect x="237" y="382" width="14" height="14" class="reject"/>
+  <text x="258" y="394" class="label">rejected rays</text>
+  <rect x="378" y="382" width="14" height="14" class="aperture"/>
+  <text x="399" y="394" class="label">clear interface</text>
+  <rect x="522" y="382" width="14" height="14" class="pass"/>
+  <text x="543" y="394" class="label">surviving bundle</text>
+</svg>

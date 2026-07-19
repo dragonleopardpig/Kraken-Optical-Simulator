@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450"
+     font-family="Arial, Helvetica, sans-serif" role="img"
+     aria-labelledby="experiment-title experiment-desc">
+  <title id="experiment-title">Reported physical MV-150 two-edge camera result</title>
+  <desc id="experiment-desc">The user-reported physical camera image, mapped to a 39 by 39 millimetre object-space field of view, has an approximately 35 by 39 millimetre usable-bright threshold contour. The remaining four millimetres on the fold axis appear as two approximately two millimetre dark-edge bands. This end-to-end camera result is narrower than the nominal cube and source envelopes.</desc>
+  <defs>
+    <linearGradient id="measured-field" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#374151"/>
+      <stop offset="5.13%" stop-color="#fde68a"/>
+      <stop offset="11%" stop-color="#fde047"/>
+      <stop offset="89%" stop-color="#fde047"/>
+      <stop offset="94.87%" stop-color="#fde68a"/>
+      <stop offset="100%" stop-color="#374151"/>
+    </linearGradient>
+    <linearGradient id="measured-bar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#6b7280"/>
+      <stop offset="12%" stop-color="#fde047"/>
+      <stop offset="88%" stop-color="#fde047"/>
+      <stop offset="100%" stop-color="#6b7280"/>
+    </linearGradient>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#1d4ed8"/>
+    </marker>
+    <style>
+      .title{fill:#111827;font-size:17px;font-weight:700}
+      .subtitle{fill:#374151;font-size:12px}
+      .panel{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1.2}
+      .label{fill:#111827;font-size:12px}
+      .strong{fill:#111827;font-size:12px;font-weight:700}
+      .small{fill:#4b5563;font-size:11px}
+      .fov{fill:url(#measured-field);stroke:#111827;stroke-width:2}
+      .bright{fill:none;stroke:#0f766e;stroke-width:2;stroke-dasharray:7 4}
+      .dimension{stroke:#1d4ed8;stroke-width:1.4;fill:none}
+      .cube{fill:#dbeafe;fill-opacity:.35;stroke:#1d4ed8;stroke-width:2;stroke-dasharray:7 4}
+      .source{fill:#fef3c7;stroke:#b45309;stroke-width:2}
+      .fovbar{fill:#e5e7eb;stroke:#111827;stroke-width:1.5}
+      .measure{fill:url(#measured-bar);stroke:#0f766e;stroke-width:2}
+      .dark{fill:#b91c1c;font-size:11px;font-weight:700}
+      .formula{fill:#0f766e;font-size:14px;font-weight:700}
+    </style>
+  </defs>
+
+  <text x="400" y="24" text-anchor="middle" class="title">Physical MV-150 camera result — two dark side edges, ≈35 × 39 mm bright</text>
+  <text x="400" y="44" text-anchor="middle" class="subtitle">55 × 74 mm flat LED with diffuser; 55 × 55 × 78 mm beam-splitter solid; 39 × 39 mm FOV</text>
+
+  <rect x="28" y="68" width="354" height="368" rx="8" class="panel"/>
+  <rect x="418" y="68" width="354" height="368" rx="8" class="panel"/>
+
+  <text x="205" y="88" text-anchor="middle" class="strong">Camera image mapped to object-space FOV</text>
+  <rect x="75" y="112" width="260" height="260" class="fov"/>
+  <rect x="88.3" y="112" width="233.4" height="260" class="bright"/>
+  <text x="205" y="238" text-anchor="middle" class="strong">usable bright ≈ 35 × 39 mm</text>
+  <text x="82" y="249" text-anchor="middle" transform="rotate(-90 82 249)" class="dark">dark edge</text>
+  <text x="328" y="249" text-anchor="middle" transform="rotate(90 328 249)" class="dark">dark edge</text>
+
+  <line x1="75" y1="101" x2="335" y2="101" class="dimension"
+        marker-start="url(#arrow-blue)" marker-end="url(#arrow-blue)"/>
+  <text x="343" y="105" class="small">39 mm</text>
+  <line x1="88.3" y1="386" x2="321.7" y2="386" class="dimension"
+        marker-start="url(#arrow-blue)" marker-end="url(#arrow-blue)"/>
+  <text x="205" y="404" text-anchor="middle" class="small">≈35 mm usable-bright fold width</text>
+  <text x="205" y="424" text-anchor="middle" class="dark">(39 − 35) / 2 ≈ 2 mm per side</text>
+
+  <text x="595" y="94" text-anchor="middle" class="strong">Nominal envelopes versus reported bright width</text>
+
+  <rect x="485" y="126" width="220" height="34" class="cube"/>
+  <text x="595" y="148" text-anchor="middle" class="label">nominal cube fold acceptance: 55 mm</text>
+
+  <rect x="485" y="187" width="220" height="34" class="source"/>
+  <text x="595" y="209" text-anchor="middle" class="label">collimated source reference: 55 mm</text>
+
+  <rect x="517" y="248" width="156" height="34" class="fovbar"/>
+  <text x="595" y="270" text-anchor="middle" class="label">FOV fold width: 39 mm</text>
+
+  <rect x="525" y="309" width="140" height="34" class="measure"/>
+  <text x="595" y="331" text-anchor="middle" class="strong">reported usable bright: ≈35 mm</text>
+
+  <text x="595" y="370" text-anchor="middle" class="formula">camera result constrains the end-to-end image chain</text>
+  <text x="595" y="391" text-anchor="middle" class="small">Separate illumination, target BRDF, lens vignetting and sensor</text>
+  <text x="595" y="407" text-anchor="middle" class="small">response before using this as an Object-plane input.</text>
+</svg>
