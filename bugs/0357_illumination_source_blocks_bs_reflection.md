@@ -20,6 +20,31 @@ but the axis + in-cube reflected stubs remain). Physically the covered side is a
 the imaging arm hitting it is absorbed (exactly the 0273 face-block physics, which today engages
 only for MARKED faces, not for scene sources).
 
+## CONFIRMED on build 5a955e86 (flag 20260719_204715_749)
+
+The re-flag runs the newest build, so the 0356 display clip alone does not resolve the symptom:
+the reflected arm still draws (in-cube stubs at minimum) and "Optical Axis 2" still spawns —
+`traced_chief_ray_segment` is not a ray polyline and never sees the hard-stop planes. Root fix =
+absorb at the covered face inside the trace (below); also verify in-app whether the 0356 clip
+engages at all on this scene (the plane sits at the source panel origin, normal −emit_dir).
+
+## Implementation anchors found 2026-07-19 (for the build session)
+
+- Extension point: `analysis_compute_workflow._illumination_block_face_ids_by_row` (:571) —
+  today marker-only (`face_anchor_row`/`face_anchor_face_id`); add coverage-derived entries from
+  `_drawable_scene_source_descriptors()` (enabled+physical+non-marker).
+- Face geometry: promoted rows' world-frame display mesh
+  `_transformed_imported_step_mesh_for_label(label)` carries `kraken_step_face_index` cell data
+  (NEVER mutate — memoized, bug 0331); per-face centroid/normal by grouping cells. Analytic route:
+  `scene_placement_commands._step_overlay_fine_face_centroid_normal(label, face_index)` (:4722).
+- ⚠️ OPEN VERIFICATION: face_id convention — raw faces use `f"F{face_index:03d}"`
+  (round_lens_pick:230), but the trace-side `OpticalSolidFaceIlluminationBlock` matcher may
+  compare metadata face_ids; confirm in `KrakenSys.__OpticalSolidFaceInteraction` before wiring.
+- Row↔label: `_promoted_optical_solid_row_index(label)` (scene_placement_commands:2848) inverts.
+- Cache: `_row_specs_signature` already keys on `illumination_block_face_ids`
+  (row_spec_contracts:72) — coverage-derived ids flow into the same field, so the 0273 gotcha is
+  covered automatically.
+
 ## Design (reuse 0273 wholesale)
 
 Detect coverage at build time: for each enabled, physical, NON-marker scene source, find the
