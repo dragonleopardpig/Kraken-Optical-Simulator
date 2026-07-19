@@ -286,6 +286,9 @@ class Open3DTopControlsPanel:
         # measure -> a dimension between two picked edges/surfaces, plus Clear. start_measure_pick
         # sets the "click 2 edges/surfaces" status, so the help text is conveyed at click time.
         pack_command_button(scene_toolbar, "Measure", command=self.inspector.start_measure_pick, padx=(12, 0))
+        # bugs/0358: dedicated CAD-style ENTITY measure -- every click picks an edge
+        # (closest edge-to-edge distance), no Alt, no axis snap. Plain Measure untouched.
+        pack_command_button(scene_toolbar, "Measure E/E", command=self.inspector.start_measure_entity_pick, padx=(4, 0))
         pack_command_button(scene_toolbar, "Clear meas.", command=self.inspector.clear_measurements, padx=(4, 0))
         return scene_toolbar
 

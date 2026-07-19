@@ -14296,10 +14296,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         )
         amber = (1.0, 0.80, 0.20)
         drawn = False
-        # Translucent emitting panel (flat-shaded so it reads as an evenly-lit emitter face).
+        # bugs/0357: SOLID emitting panel (was 0.28 translucent) -- the user reads the
+        # LED as an opaque plate covering the BS side, so draw it that way.
         panel = pv.PolyData(corners, faces=np.asarray([4, 0, 1, 2, 3]))
         if self._add_mesh_actor(
-            panel, color=amber, opacity=0.28, backface_culling=False,
+            panel, color=amber, opacity=1.0, backface_culling=False,
             flat_shading=True, track_source_id=source_id,
         ) is not None:
             drawn = True
@@ -15485,10 +15486,23 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         )
         self._update_mode_badge()
 
+    def start_measure_entity_pick(self) -> None:
+        """bugs/0358: the dedicated CAD-style ENTITY measure -- every click picks an
+        edge (or falls back to the face outline), no Alt needed, NO axis snap; two
+        picks give the closest edge-to-edge / face-to-face distance. The plain
+        Measure button is untouched (user: "Don't change the current Measure
+        button")."""
+        self.start_measure_pick()
+        self._measure_entity_mode = True
+        self.status_var.set(
+            "Measure E/E: click the FIRST edge or face (entity pick, no axis snap)."
+        )
+
     def start_measure_pick(self) -> None:
         # CAD-style 2-point measure (project_open3d_three_followups): the next two left-clicks
         # on edges/surfaces drop a distance dimension between them.
         self._measure_pick_mode = True
+        self._measure_entity_mode = False
         self._measure_p0 = None
         self._measure_reanchor = None
         self._clear_measure_pending_edge()
@@ -15509,6 +15523,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
     def clear_measurements(self) -> None:
         self._measure_pick_mode = False
+        self._measure_entity_mode = False
         self._measure_p0 = None
         self._measure_reanchor = None
         self._clear_measure_pending_edge()
@@ -19682,7 +19697,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             # bugs/0353: Alt+click picks the nearest DRAWN EDGE as an entity (the
             # hover contract's modifier, penta 287/288); pick pairs reduce to two
             # world points, so everything downstream is the plain 2-point flow.
-            if getattr(self, "_edge_pick_alt_active", False):
+            # bugs/0358: the dedicated Measure-E/E button arms _measure_entity_mode,
+            # where EVERY click is an edge pick (no Alt, and never the axis-snapped
+            # point fallback the user's second click kept landing on).
+            if getattr(self, "_measure_entity_mode", False) or getattr(
+                self, "_edge_pick_alt_active", False
+            ):
                 edge = None
                 try:
                     ex, ey = self._vtk_interactor.GetEventPosition()
@@ -19691,6 +19711,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     edge = None
                 if edge is not None:
                     self._on_measure_edge_pick(edge)
+                elif getattr(self, "_measure_entity_mode", False):
+                    self.status_var.set(
+                        "Measure E/E: no drawn edge under the cursor -- click ON an edge."
+                    )
                 else:
                     self.status_var.set(
                         "Measure: no drawn edge under the cursor -- Alt+click aims at a drawn edge."

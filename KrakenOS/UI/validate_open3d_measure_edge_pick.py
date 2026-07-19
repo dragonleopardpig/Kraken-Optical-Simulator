@@ -184,9 +184,13 @@ def run_checks() -> tuple[bool, list[str]]:
         "_measure_pending_edge",
         "_measure_resolve_snap",  # the legacy point path must survive verbatim
         "closest_point_on_polyline",  # armed-edge reduction against a point click
+        "_measure_entity_mode",  # bugs/0358: the dedicated E/E button forces edge picks
     ):
         if needle not in press_src:
             failures.append(f"_on_left_button_press lost its {needle} wiring")
+    entity_src = inspect.getsource(Kraken3DInspector.start_measure_entity_pick)
+    if "start_measure_pick" not in entity_src or "_measure_entity_mode" not in entity_src:
+        failures.append("start_measure_entity_pick must arm entity mode over the plain flow")
 
     resolve_src = inspect.getsource(Kraken3DInspector._measure_resolve_edge)
     for needle in (

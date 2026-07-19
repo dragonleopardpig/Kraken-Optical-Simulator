@@ -103,8 +103,11 @@ class Open3DLiveControlsPanel:
         ttk.Button(parent, text="Measure (2 points)", command=inspector.start_measure_pick).grid(
             row=0, column=0, sticky="w"
         )
-        ttk.Button(parent, text="Clear", command=inspector.clear_measurements).grid(
+        ttk.Button(parent, text="Measure E/E", command=inspector.start_measure_entity_pick).grid(
             row=0, column=1, sticky="w", padx=(6, 0)
+        )
+        ttk.Button(parent, text="Clear", command=inspector.clear_measurements).grid(
+            row=0, column=2, sticky="w", padx=(6, 0)
         )
         ttk.Label(
             parent,
