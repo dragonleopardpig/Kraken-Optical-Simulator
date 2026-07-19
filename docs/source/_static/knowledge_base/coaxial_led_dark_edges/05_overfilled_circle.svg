@@ -37,7 +37,7 @@
   </defs>
 
   <text x="400" y="24" text-anchor="middle" class="title">Case 4 — overfilled circle: clipped disk, not ellipse</text>
-  <text x="400" y="44" text-anchor="middle" class="subtitle">70 mm diameter incident bundle; rectangular projected aperture clips two circular segments</text>
+  <text x="400" y="44" text-anchor="middle" class="subtitle">incident diameter D = 70 mm; projected aperture Cf × Cp = 55 × 78 mm clips two circular segments</text>
 
   <rect x="28" y="75" width="214" height="286" rx="8" class="panel"/>
   <rect x="293" y="75" width="214" height="286" rx="8" class="panel"/>
@@ -49,7 +49,7 @@
   <line x1="50" y1="218" x2="220" y2="218" class="axis"/>
   <line x1="135" y1="133" x2="135" y2="303" class="axis"/>
   <circle cx="135" cy="218" r="70" class="beam"/>
-  <text x="135" y="318" text-anchor="middle" class="strong">diameter 70 mm</text>
+  <text x="135" y="318" text-anchor="middle" class="strong">diameter D = 70 mm</text>
   <text x="135" y="337" text-anchor="middle" class="small">overfills fold-axis opening</text>
 
   <text x="400" y="99" text-anchor="middle" class="strong">Required footprint vs cube interface</text>
@@ -71,7 +71,7 @@
   <line x1="610" y1="174.7" x2="610" y2="261.3" stroke="#b91c1c" stroke-width="2"/>
   <line x1="720" y1="174.7" x2="720" y2="261.3" stroke="#b91c1c" stroke-width="2"/>
   <text x="665" y="318" text-anchor="middle" class="strong">55 × 70 mm bounding box</text>
-  <text x="665" y="337" text-anchor="middle" class="small">two flat chords; not an ellipse</text>
+  <text x="665" y="337" text-anchor="middle" class="small">Ω<tspan dy="2.5" font-size="8">out</tspan><tspan dy="-2.5"> = disk ∩ rectangle — not an ellipse</tspan></text>
 
   <text x="400" y="393" text-anchor="middle" class="label">An ellipse would require a circular aperture in the tilted plane or anamorphic optics.</text>
 </svg>

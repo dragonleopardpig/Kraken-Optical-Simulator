@@ -1,13 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 460"
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600"
      font-family="Arial, Helvetica, sans-serif" role="img"
      aria-labelledby="lambertian-title lambertian-desc">
   <title id="lambertian-title">Lambertian emitter propagation through a finite aperture</title>
-  <desc id="lambertian-desc">In an unfolded reflection view, points across a finite Lambertian emitter send many ray angles through an aperture to a geometry-dependent object-plane irradiance distribution with penumbra. The emitter outline is not a fixed beam cross-section.</desc>
+  <desc id="lambertian-desc">In an unfolded reflection view, points across a finite Lambertian emitter send straight rays at many angles through an aperture, over the unfolded distance L, to a geometry-dependent object-plane irradiance distribution with penumbra. The emitter outline is not a fixed beam cross-section. A lower inset draws the irradiance-integral geometry: a source element dA s around s, the object point P, their separation r, and the obliquity angles theta s and theta P to the plane normals.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
             markerWidth="7" markerHeight="7" orient="auto">
       <path d="M0,0 L10,5 L0,10 Z" fill="#b45309"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#1d4ed8"/>
+    </marker>
+    <marker id="arrow-violet" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#7c3aed"/>
     </marker>
     <linearGradient id="irradiance" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#374151"/>
@@ -30,11 +38,20 @@
       .plane{stroke:#9ca3af;stroke-width:1;stroke-dasharray:5 4}
       .penumbra{fill:#b91c1c;font-size:11px;font-weight:700}
       .callout{fill:#eff6ff;stroke:#1d4ed8;stroke-width:1.2}
+      .dimension{stroke:#1d4ed8;stroke-width:1.4;fill:none}
+      .integral{stroke:#7c3aed;stroke-width:2;fill:none}
+      .normal-dash{stroke:#6b7280;stroke-width:1.2;stroke-dasharray:4 3;fill:none}
+      .arc{stroke:#7c3aed;stroke-width:1.2;fill:none}
+      .sym{fill:#5b21b6;font-size:12px;font-weight:700}
     </style>
   </defs>
 
   <text x="400" y="24" text-anchor="middle" class="title">A Lambertian emitter is not a same-size collimated beam</text>
   <text x="400" y="44" text-anchor="middle" class="subtitle">unfolded reflection view: source position + angular distribution + aperture visibility determine Object-plane irradiance</text>
+
+  <line x1="90" y1="64" x2="710" y2="64" class="dimension"
+        marker-start="url(#arrow-blue)" marker-end="url(#arrow-blue)"/>
+  <text x="400" y="58" text-anchor="middle" class="small">unfolded source → Object distance L</text>
 
   <line x1="90" y1="78" x2="90" y2="340" class="plane"/>
   <line x1="390" y1="78" x2="390" y2="340" class="plane"/>
@@ -45,7 +62,7 @@
   <circle cx="100" cy="210" r="3" fill="#b45309"/>
   <circle cx="100" cy="262" r="3" fill="#b45309"/>
   <text x="90" y="425" text-anchor="middle" class="strong">55 × 74 mm emitter</text>
-  <text x="90" y="443" text-anchor="middle" class="small">many directions per point</text>
+  <text x="90" y="443" text-anchor="middle" class="small">angles per point — half-angle α</text>
 
   <rect x="380" y="80" width="20" height="92" class="wall"/>
   <rect x="380" y="248" width="20" height="92" class="wall"/>
@@ -56,13 +73,13 @@
   <text x="710" y="425" text-anchor="middle" class="strong">Object-plane irradiance E(x,y)</text>
   <text x="710" y="443" text-anchor="middle" class="small">geometry-dependent profile</text>
 
-  <path d="M100 158 L390 178 L710 116" class="ray" marker-end="url(#arrow)"/>
-  <path d="M100 158 L390 198 L710 188" class="ray" marker-end="url(#arrow)"/>
-  <path d="M100 210 L390 188 L710 142" class="ray" marker-end="url(#arrow)"/>
-  <path d="M100 210 L390 210 L710 210" class="chief"/>
-  <path d="M100 210 L390 232 L710 278" class="ray" marker-end="url(#arrow)"/>
-  <path d="M100 262 L390 222 L710 232" class="ray" marker-end="url(#arrow)"/>
-  <path d="M100 262 L390 242 L710 304" class="ray" marker-end="url(#arrow)"/>
+  <path d="M100 158 L710 200" class="ray" marker-end="url(#arrow)"/>
+  <path d="M100 158 L710 242" class="ray" marker-end="url(#arrow)"/>
+  <path d="M100 210 L710 164" class="ray" marker-end="url(#arrow)"/>
+  <path d="M100 210 L710 210" class="chief"/>
+  <path d="M100 210 L710 256" class="ray" marker-end="url(#arrow)"/>
+  <path d="M100 262 L710 178" class="ray" marker-end="url(#arrow)"/>
+  <path d="M100 262 L710 220" class="ray" marker-end="url(#arrow)"/>
 
   <path d="M100 145 L380 110" class="ray"/>
   <circle cx="380" cy="110" r="3" fill="#b91c1c"/>
@@ -70,7 +87,28 @@
   <circle cx="380" cy="310" r="3" fill="#b91c1c"/>
   <text x="318" y="98" class="penumbra">blocked angular rays</text>
 
-  <rect x="190" y="350" width="320" height="55" rx="7" class="callout"/>
-  <text x="350" y="371" text-anchor="middle" class="strong">A plane fold can be “unfolded” into this straight path.</text>
-  <text x="350" y="390" text-anchor="middle" class="small">It redirects radiance but does not form a 1:1 real image of the LED.</text>
+  <rect x="150" y="350" width="400" height="68" rx="7" class="callout"/>
+  <text x="350" y="368" text-anchor="middle" class="strong">A plane fold can be “unfolded” into this straight path.</text>
+  <text x="350" y="386" text-anchor="middle" class="small">It redirects radiance but does not form a 1:1 real image of the LED.</text>
+  <text x="350" y="404" text-anchor="middle" class="small">support: Ω<tspan dy="2.5" font-size="8">object</tspan><tspan dy="-2.5"> ≈ Ω</tspan><tspan dy="2.5" font-size="8">source</tspan><tspan dy="-2.5"> ⊕ disk(L tan α); hemisphere → unbounded</tspan></text>
+
+  <text x="400" y="470" text-anchor="middle" class="label">E(P) = ∫ L<tspan dy="2.5" font-size="9">e</tspan><tspan dy="-2.5">(s→P) T(s,P) cos θ</tspan><tspan dy="2.5" font-size="9">s</tspan><tspan dy="-2.5"> cos θ</tspan><tspan dy="2.5" font-size="9">P</tspan><tspan dy="-2.5"> / r² dA</tspan><tspan dy="2.5" font-size="9">s</tspan><tspan dy="-2.5"> — s runs over the visible source area A</tspan><tspan dy="2.5" font-size="9">visible</tspan></text>
+
+  <line x1="300" y1="528" x2="300" y2="578" stroke="#ca8a04" stroke-width="3"/>
+  <line x1="300" y1="548" x2="300" y2="564" stroke="#b45309" stroke-width="7"/>
+  <circle cx="300" cy="556" r="3" fill="#7c3aed"/>
+  <text x="288" y="560" text-anchor="end" class="sym">s</text>
+  <text x="300" y="594" text-anchor="middle" class="small">source element dA<tspan dy="2.5" font-size="8">s</tspan></text>
+  <line x1="300" y1="556" x2="348" y2="556" class="normal-dash"/>
+  <line x1="300" y1="556" x2="470" y2="500" class="integral" marker-end="url(#arrow-violet)"/>
+  <text x="378" y="520" class="sym">r</text>
+  <path d="M336 556 A36 36 0 0 0 334.2 544.8" class="arc"/>
+  <text x="349" y="552" class="sym" font-size="11">θ<tspan dy="2.5" font-size="8">s</tspan></text>
+  <line x1="470" y1="482" x2="470" y2="538" stroke="#0f766e" stroke-width="3"/>
+  <circle cx="470" cy="500" r="3" fill="#7c3aed"/>
+  <text x="480" y="496" class="sym">P</text>
+  <line x1="470" y1="500" x2="424" y2="500" class="normal-dash"/>
+  <path d="M436.2 511.2 A36 36 0 0 1 434 500" class="arc"/>
+  <text x="404" y="507" class="sym" font-size="11">θ<tspan dy="2.5" font-size="8">P</tspan></text>
+  <text x="520" y="560" class="small">radiance L<tspan dy="2.5" font-size="8">e</tspan><tspan dy="-2.5">(s→P) and throughput T(s,P) act along r</tspan></text>
 </svg>

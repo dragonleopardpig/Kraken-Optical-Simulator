@@ -3,7 +3,7 @@
      font-family="Arial, Helvetica, sans-serif" role="img"
      aria-labelledby="experiment-title experiment-desc">
   <title id="experiment-title">Reported physical MV-150 two-edge camera result</title>
-  <desc id="experiment-desc">The user-reported physical camera image, mapped to a 39 by 39 millimetre object-space field of view, has an approximately 35 by 39 millimetre usable-bright threshold contour. The remaining four millimetres on the fold axis appear as two approximately two millimetre dark-edge bands. This end-to-end camera result is narrower than the nominal cube and source envelopes.</desc>
+  <desc id="experiment-desc">The user-reported physical camera image, mapped to a 39 by 39 millimetre object-space field of view, has an approximately 35 by 39 millimetre usable-bright threshold contour. The remaining four millimetres on the fold axis appear as two approximately two millimetre dark-edge bands. This end-to-end camera result is narrower than the nominal cube and source envelopes. The equivalent tilted-aperture width A equivalent of about forty-nine and a half millimetres is only a fitted model proxy, not a physical stop.</desc>
   <defs>
     <linearGradient id="measured-field" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0%" stop-color="#374151"/>
@@ -77,7 +77,8 @@
   <rect x="525" y="309" width="140" height="34" class="measure"/>
   <text x="595" y="331" text-anchor="middle" class="strong">reported usable bright: ≈35 mm</text>
 
-  <text x="595" y="370" text-anchor="middle" class="formula">camera result constrains the end-to-end image chain</text>
-  <text x="595" y="391" text-anchor="middle" class="small">Separate illumination, target BRDF, lens vignetting and sensor</text>
-  <text x="595" y="407" text-anchor="middle" class="small">response before using this as an Object-plane input.</text>
+  <text x="595" y="366" text-anchor="middle" class="formula">camera result constrains the end-to-end image chain</text>
+  <text x="595" y="386" text-anchor="middle" class="small">A<tspan dy="2.5" font-size="8">equivalent</tspan><tspan dy="-2.5"> = 35 / cos 45° ≈ 49.50 mm (45°-plane proxy, not a stop)</tspan></text>
+  <text x="595" y="404" text-anchor="middle" class="small">Separate illumination, target BRDF, lens vignetting and</text>
+  <text x="595" y="420" text-anchor="middle" class="small">sensor response before using this as an Object-plane input.</text>
 </svg>

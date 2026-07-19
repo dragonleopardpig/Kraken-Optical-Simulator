@@ -47,7 +47,7 @@
   <text x="205" y="94" text-anchor="middle" class="strong">Fold-plane cross-section of the CAD solid</text>
   <rect x="95" y="122" width="220" height="220" class="glass"/>
   <line x1="95" y1="342" x2="315" y2="122" class="splitter"/>
-  <text x="190" y="220" text-anchor="middle" transform="rotate(-45 190 220)" class="strong">internal interface 55√2 = 77.78 mm</text>
+  <text x="190" y="220" text-anchor="middle" transform="rotate(-45 190 220)" class="strong">internal interface A<tspan dy="3" font-size="9">diagonal</tspan><tspan dy="-3"> = 55√2 = 77.78 mm</tspan></text>
 
   <line x1="366" y1="232" x2="208" y2="232" class="incident" marker-end="url(#arrow-amber)"/>
   <line x1="205" y1="235" x2="205" y2="350" class="outgoing" marker-end="url(#arrow-teal)"/>
@@ -71,13 +71,13 @@
 
   <text x="595" y="148" text-anchor="middle" class="small" fill="#b45309">55 × 74 collimated source envelope</text>
   <text x="595" y="230" text-anchor="middle" class="strong" fill="#0f766e">39 × 39 FOV</text>
-  <text x="595" y="305" text-anchor="middle" class="small" fill="#1d4ed8">projected cube opening: 55 × 78</text>
+  <text x="595" y="305" text-anchor="middle" class="small" fill="#1d4ed8">projected cube opening C<tspan dy="2.5" font-size="8">f</tspan><tspan dy="-2.5"> × C</tspan><tspan dy="2.5" font-size="8">p</tspan><tspan dy="-2.5"> = 55 × 78</tspan></text>
 
   <line x1="520" y1="360" x2="670" y2="360" class="dimension"
         marker-start="url(#arrow-blue)" marker-end="url(#arrow-blue)"/>
   <text x="595" y="378" text-anchor="middle" class="strong">55 mm fold-axis support</text>
   <text x="595" y="399" text-anchor="middle" class="small">margins: 8 mm/fold side; 17.5 mm/perpendicular side</text>
 
-  <text x="400" y="430" text-anchor="middle" class="correct">(55√2) cos 45° = 55 mm — the full cube diagonal projects back to the cube side</text>
+  <text x="400" y="430" text-anchor="middle" class="correct">C<tspan dy="3" font-size="10">f</tspan><tspan dy="-3"> = A</tspan><tspan dy="3" font-size="10">diagonal</tspan><tspan dy="-3"> cos 45° = (55√2) cos 45° = 55 mm — the full diagonal projects back to the cube side</tspan></text>
   <text x="400" y="452" text-anchor="middle" class="contrast">55 cos 45° = 38.89 mm applies only when 55 mm was measured along a separate tilted aperture</text>
 </svg>

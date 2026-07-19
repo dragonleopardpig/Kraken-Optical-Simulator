@@ -3,7 +3,7 @@
      font-family="Arial, Helvetica, sans-serif" role="img"
      aria-labelledby="projection-title projection-desc">
   <title id="projection-title">Projection rule for a planar optical fold</title>
-  <desc id="projection-desc">An ideal collimated beam has width W before and after reflection. Its footprint on a splitter tilted by theta is W divided by cosine theta. A physical clear length A on that splitter accepts A cosine theta.</desc>
+  <desc id="projection-desc">An ideal collimated beam has width W before and after reflection. Its footprint on a splitter tilted by theta is W footprint equals W divided by cosine theta. A physical clear length A on that splitter accepts C fold equals A cosine theta. At the upper hit point the reflection-law vectors are drawn: incident direction d, surface normal n, reflected direction d r, the incidence angle theta between minus d and n, and the deviation delta equals one hundred eighty degrees minus two theta.</desc>
   <defs>
     <marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5"
             markerWidth="7" markerHeight="7" orient="auto">
@@ -16,6 +16,10 @@
     <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5"
             markerWidth="6" markerHeight="6" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 Z" fill="#1d4ed8"/>
+    </marker>
+    <marker id="arrow-violet" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#7c3aed"/>
     </marker>
     <style>
       .title{fill:#111827;font-size:17px;font-weight:700}
@@ -61,10 +65,20 @@
 
   <line x1="344" y1="150" x2="454" y2="260" class="dimension"
         marker-start="url(#arrow-blue)" marker-end="url(#arrow-blue)"/>
-  <text x="414" y="218" text-anchor="middle" transform="rotate(45 414 218)" class="strong">W / |cos θ|</text>
+  <text x="428" y="232" text-anchor="middle" transform="rotate(45 428 232)" class="strong">W<tspan dy="3" font-size="9">footprint</tspan><tspan dy="-3"> = W / |cos θ|</tspan></text>
   <line x1="454" y1="260" x2="454" y2="312" class="construct"/>
   <path d="M475.2 281.2 A30 30 0 0 1 454 290" class="construct"/>
   <text x="478" y="303" class="label">θ</text>
+
+  <line x1="344" y1="150" x2="426" y2="150" class="construct"/>
+  <path d="M390 150 A46 46 0 0 1 344 196" class="construct"/>
+  <text x="398" y="176" class="label">δ = 180° − 2θ</text>
+  <line x1="344" y1="150" x2="308" y2="186" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow-violet)"/>
+  <text x="296" y="200" class="strong" fill="#7c3aed">n</text>
+  <path d="M322.8 171.2 A30 30 0 0 1 314 150" class="construct"/>
+  <text x="303" y="168" class="label">θ</text>
+  <text x="252" y="168" class="strong" fill="#b45309">d</text>
+  <text x="320" y="348" class="strong" fill="#0f766e">d<tspan dy="3" font-size="9">r</tspan></text>
 
   <line x1="550" y1="92" x2="734" y2="92" class="construct"/>
   <line x1="550" y1="92" x2="680" y2="222" class="splitter"/>
@@ -73,7 +87,9 @@
   <line x1="550" y1="92" x2="550" y2="242" class="construct"/>
   <line x1="680" y1="222" x2="680" y2="242" class="construct"/>
   <text x="618" y="145" transform="rotate(45 618 145)" class="strong">physical aperture A</text>
-  <text x="615" y="263" text-anchor="middle" class="formula">projected clear width = A |cos θ|</text>
+  <path d="M584 92 A34 34 0 0 1 574.1 116.1" class="construct"/>
+  <text x="592" y="114" class="label">θ</text>
+  <text x="615" y="263" text-anchor="middle" class="formula">C<tspan dy="3" font-size="10">fold</tspan><tspan dy="-3"> = A |cos θ| — projected clear width</tspan></text>
   <text x="642" y="294" text-anchor="middle" class="small">Use A only when it was measured</text>
   <text x="642" y="310" text-anchor="middle" class="small">along the tilted aperture plane.</text>
 </svg>

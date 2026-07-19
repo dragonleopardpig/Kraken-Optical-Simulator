@@ -88,21 +88,29 @@ splitter plane**, its accepted transverse width is
 
 Here :math:`\theta` is the surface tilt relative to the incident transverse
 plane—equivalently, the incidence angle from the surface normal. For a
-specular fold, the chief-ray deflection is :math:`\delta=2\theta`. Thus a
-90° path turn uses :math:`\theta=45^\circ`; the KrakenOS field named
-``coaxial_fold_angle_deg`` currently stores this 45° surface/incidence
-angle, not the 90° change in propagation direction.
+specular fold, the chief ray deviates from its original direction by
+:math:`\delta = 180^\circ - 2\theta` — not :math:`2\theta`; at 45° both
+expressions give 90°, which is what lets that shorthand survive casual
+checks. Thus a 90° path turn uses :math:`\theta=45^\circ`; the KrakenOS
+field named ``coaxial_fold_angle_deg`` currently stores this 45°
+surface/incidence angle, not the 90° change in propagation direction.
 
 .. figure:: ../_static/knowledge_base/coaxial_led_dark_edges/01_projection_rule.svg
-   :alt: A planar fold preserves normal beam width while the beam footprint stretches on the tilted splitter and a tilted aperture projects by cosine
+   :alt: Reflection-law vectors d, n and d r with incidence angle theta and deviation delta; the beam footprint W footprint stretches on the tilted splitter while a tilted aperture length A projects to C fold
    :align: center
    :width: 100%
 
-   The incoming and reflected normal sections both have width :math:`W`.
-   Only the footprint on the splitter is
-   :math:`W/|\cos\theta|`. The inverse calculation,
-   :math:`A|\cos\theta|`, converts a physical tilted-aperture length
-   :math:`A` back to accepted normal beam width.
+   The reflection-law vectors are drawn at the upper hit point: incident
+   direction :math:`\mathbf d`, surface normal :math:`\mathbf n`,
+   reflected direction :math:`\mathbf d_{\mathrm r}`, the incidence angle
+   :math:`\theta` between :math:`-\mathbf d` and :math:`\mathbf n`, and
+   the deviation :math:`\delta = 180^\circ - 2\theta` measured from the
+   un-deflected continuation. The incoming and reflected normal sections
+   both have width :math:`W`; only the splitter footprint is
+   :math:`W_{\mathrm{footprint}} = W/|\cos\theta|`. The inverse
+   calculation, :math:`C_{\mathrm{fold}} = A|\cos\theta|`, converts a
+   physical tilted-aperture length :math:`A` back to accepted normal
+   beam width.
 
 For a rectangular collimated bundle with incident widths
 :math:`W_f\times W_p` and a projected clear aperture
@@ -435,13 +443,17 @@ Its irradiance falls with angle and distance, while the cube, housing,
 windows and other stops bound the visible source solid angle.
 
 .. figure:: ../_static/knowledge_base/coaxial_led_dark_edges/07_lambertian_source.svg
-   :alt: A Lambertian area emitter sends multiple angles through a finite aperture to a geometry-dependent Object-plane irradiance distribution with penumbra
+   :alt: A Lambertian area emitter sends straight rays at many angles through a finite aperture over the unfolded distance L to a geometry-dependent Object-plane irradiance distribution; a lower inset draws the irradiance-integral geometry with source element dA s, object point P, separation r and obliquity angles theta s and theta P
    :align: center
    :width: 100%
 
    A physical emitter size is not a beam cross-section. The object receives
    an irradiance distribution assembled from all source points and all
-   accepted directions.
+   accepted directions, propagated in straight lines over the unfolded
+   distance :math:`L`. The lower band draws the irradiance-integral
+   geometry: a source element :math:`\mathrm dA_s` around :math:`s`, the
+   object point :math:`P`, their separation :math:`r`, and the obliquity
+   angles :math:`\theta_s` and :math:`\theta_P` to the two plane normals.
 
 At an Object-plane point :math:`P`, a useful radiometric statement is
 

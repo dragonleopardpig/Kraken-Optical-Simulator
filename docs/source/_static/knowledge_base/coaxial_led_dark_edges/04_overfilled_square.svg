@@ -31,7 +31,7 @@
   </defs>
 
   <text x="400" y="24" text-anchor="middle" class="title">Case 3 — overfilled square: rectangular aperture clipping</text>
-  <text x="400" y="44" text-anchor="middle" class="subtitle">70 × 70 mm incident bundle; nominal MV-150 projected opening 55 × 78 mm</text>
+  <text x="400" y="44" text-anchor="middle" class="subtitle">incident bundle Wf × Wp = 70 × 70 mm; nominal MV-150 projected opening Cf × Cp = 55 × 78 mm</text>
 
   <rect x="28" y="75" width="214" height="286" rx="8" class="panel"/>
   <rect x="293" y="75" width="214" height="286" rx="8" class="panel"/>
@@ -60,7 +60,7 @@
   <line x1="665" y1="133" x2="665" y2="303" class="axis"/>
   <rect x="610" y="148" width="110" height="140" class="pass"/>
   <text x="665" y="318" text-anchor="middle" class="strong">55 × 70 mm</text>
-  <text x="665" y="337" text-anchor="middle" class="small">min(70,55) × min(70,78)</text>
+  <text x="665" y="337" text-anchor="middle" class="small">= min(Wf,Cf) × min(Wp,Cp)</text>
 
   <rect x="237" y="382" width="14" height="14" class="reject"/>
   <text x="258" y="394" class="label">rejected rays</text>
