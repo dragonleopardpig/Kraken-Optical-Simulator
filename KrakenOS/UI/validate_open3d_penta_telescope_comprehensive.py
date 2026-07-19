@@ -14177,6 +14177,56 @@ def phase_309_led_ray_hard_stop(
     return result
 
 
+def phase_310_illumination_source_face_block(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0357 -- a free illumination source whose panel covers a promoted face
+    joins the 0273 absorb map: the imaging trace absorbs at the plate (killing the
+    BS reflect arm + its branch optical axis) while the LED's own bundles trace
+    with the suppression flag scoped per-bundle."""
+    result = PhaseResult(
+        name="Phase 310: illumination source covering a face blocks the imaging arm"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_illumination_source_face_block import run_checks
+
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"illumination-source-face-block guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("illumination-source-face-block phase failed without detail")
+    return result
+
+
+def phase_311_browser_group_hide(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0360 -- the elements browser's right-click Hide/Show on a PARENT node
+    cascades over the parent and every resolvable descendant."""
+    result = PhaseResult(
+        name="Phase 311: browser parent Hide/Show cascades to all children"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_browser_group_hide import run_checks
+
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"browser-group-hide guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("browser-group-hide phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14531,6 +14581,8 @@ def main() -> int:
             phase_307_receiving_cone_overlay,
             phase_308_illumination_volume_overlay,
             phase_309_led_ray_hard_stop,
+            phase_310_illumination_source_face_block,
+            phase_311_browser_group_hide,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

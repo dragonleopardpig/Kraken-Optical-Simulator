@@ -587,6 +587,80 @@ class AnalysisComputeWorkflowMixin:
             face_id = str(spec.get("face_anchor_face_id", "") or "").strip()
             if row_index >= 0 and face_id:
                 out.setdefault(row_index, set()).add(face_id)
+        # bugs/0357: a FREE physical illumination source whose emitting panel is seated ON a
+        # promoted face (the LED plate covering the BS side) blocks that face exactly like a
+        # face-bound marker -- the imaging trace absorbs there, so the beam-splitter reflection
+        # branch (its rays AND its branch optical axis) dies at the plate. The source's own
+        # flood is exempted per-bundle at trace time (trace_preview scopes the 0273
+        # suppression flag to illumination-source bundles).
+        for row_index, ids in self._coverage_illumination_block_face_ids().items():
+            out.setdefault(row_index, set()).update(ids)
+        return out
+
+    def _coverage_illumination_block_face_ids(self) -> dict[int, set[str]]:
+        """bugs/0357: ``{row_index -> {face_id}}`` for promoted-solid faces COVERED by a free
+        physical illumination source's emitting panel: plane-parallel to the panel, seated on
+        the panel plane (|along| <= 3 mm), face centre within the panel board (half-diagonal
+        + 2 mm). Face geometry comes from the same world-frame records the 0264 face-anchor
+        pick uses, so the collected face_id is exactly what the trace-side matcher compares."""
+        from KrakenOS.UI.scene_source_analysis import scene_source_spec_is_face_bound_marker
+
+        out: dict[int, set[str]] = {}
+        try:
+            descriptors = self._drawable_scene_source_descriptors() or []
+        except Exception:
+            return out
+        panels: list[tuple[np.ndarray, np.ndarray, float]] = []
+        for source in descriptors:
+            try:
+                settings = dict(getattr(source, "settings", {}) or {})
+                if scene_source_spec_is_face_bound_marker(settings):
+                    continue
+                origin = np.asarray(getattr(source, "origin", (0.0, 0.0, 0.0)), dtype=float).reshape(3)
+                direction = np.asarray(getattr(source, "direction", (0.0, 0.0, 1.0)), dtype=float).reshape(3)
+                norm = float(np.linalg.norm(direction))
+                half_x = float(settings.get("radius_x", settings.get("radius", 0.0)) or 0.0)
+                half_y = float(settings.get("radius_y", settings.get("radius", 0.0)) or 0.0)
+                board = float(np.hypot(max(half_x, 0.0), max(half_y, 0.0)))
+                if norm <= 1e-9 or board <= 1e-9 or not np.all(np.isfinite(origin)):
+                    continue
+                panels.append((origin, direction / norm, board))
+            except Exception:
+                continue
+        if not panels:
+            return out
+        for row_index, row in enumerate(getattr(self, "rows", []) or []):
+            if not type(self)._is_open3d_promoted_optical_solid_row(row):
+                continue
+            try:
+                faces = self._scene_source_face_anchor_records(int(row_index)) or []
+            except Exception:
+                continue
+            for face in faces:
+                try:
+                    face_id = str(face.get("face_id", "") or "").strip()
+                    centroid = np.asarray(face.get("centroid_world"), dtype=float).reshape(3)
+                    normal = np.asarray(face.get("normal_world"), dtype=float).reshape(3)
+                except Exception:
+                    continue
+                if not face_id or not np.all(np.isfinite(centroid)) or not np.all(np.isfinite(normal)):
+                    continue
+                n_norm = float(np.linalg.norm(normal))
+                if n_norm <= 1e-9:
+                    continue
+                normal = normal / n_norm
+                for origin, direction, board in panels:
+                    if abs(float(np.dot(normal, direction))) < 0.985:
+                        continue
+                    delta = centroid - origin
+                    along = abs(float(np.dot(delta, direction)))
+                    if along > 3.0:
+                        continue
+                    lateral = float(np.linalg.norm(delta - np.dot(delta, direction) * direction))
+                    if lateral > board + 2.0:
+                        continue
+                    out.setdefault(int(row_index), set()).add(face_id)
+                    break
         return out
 
     def _mtf_worker_count(self, ray_count: int) -> int:

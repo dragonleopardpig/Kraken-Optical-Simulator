@@ -199,9 +199,16 @@ def run_checks() -> tuple[bool, list[str]]:
         "nearest_display_edge",
         "collinear_edge_run",
         "depth_reference",
+        "_actor_row_map",  # bugs/0359: promoted (row-actor) bodies resolve too
+        "_promoted_body_label_and_axis",
     ):
         if needle not in resolve_src:
             failures.append(f"_measure_resolve_edge lost its {needle} wiring")
+
+    hover_entity_src = inspect.getsource(Kraken3DInspector._update_measure_hover_highlight)
+    for needle in ("_measure_entity_mode", "_measure_resolve_edge", "_clear_measure_snap_marker"):
+        if needle not in hover_entity_src:
+            failures.append(f"the entity-mode hover lost its {needle} wiring (bugs/0359)")
 
     for owner, method in (
         ("start_measure_pick", Kraken3DInspector.start_measure_pick),

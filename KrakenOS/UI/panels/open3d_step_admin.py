@@ -916,9 +916,81 @@ class Open3DStepAdminPanel:
             return
         self.refresh()  # re-tag the tree so hidden items grey out
 
+    def _iter_descendant_iids(self, iid: str):
+        """bugs/0360: every descendant iid under a tree node, depth-first."""
+        tree = self._tree
+        if tree is None:
+            return
+        try:
+            stack = list(tree.get_children(iid))
+        except Exception:
+            return
+        while stack:
+            child = stack.pop()
+            yield str(child)
+            try:
+                stack.extend(tree.get_children(child))
+            except Exception:
+                continue
+
+    def _set_element_hidden_cascade(self, iid: str, rows, label, hidden: bool, display_key, source_id) -> None:
+        """bugs/0360: hide/show a PARENT and every resolvable descendant in one click
+        (the user's 'right click the parent Hide and all its children hide')."""
+        count = 0
+        if rows or label is not None or display_key is not None or source_id is not None:
+            try:
+                self._set_element_hidden(rows, label, hidden, display_key, source_id)
+                count += 1
+            except Exception:
+                pass
+        for child in self._iter_descendant_iids(iid):
+            c_rows, c_label, c_display_key, c_source_id = self._resolve_iid_target(child)
+            if not c_rows and c_label is None and c_display_key is None and c_source_id is None:
+                continue
+            try:
+                self._set_element_hidden(c_rows, c_label, hidden, c_display_key, c_source_id)
+                count += 1
+            except Exception:
+                continue
+        self.inspector.status_var.set(
+            ("Hid " if hidden else "Showing ") + f"{count} scene item(s) under this group."
+        )
+
     def _show_element_context_menu(self, event, iid: str) -> None:
         rows, label, display_key, source_id = self._resolve_iid_target(iid)
+        has_children = False
+        try:
+            has_children = bool(self._tree is not None and self._tree.get_children(iid))
+        except Exception:
+            has_children = False
         if not rows and label is None and display_key is None and source_id is None:
+            if not has_children:
+                return
+            # bugs/0360: a pure GROUP node (parent with children, no element identity of
+            # its own) -- Hide/Show cascades over every resolvable descendant.
+            menu = tk.Menu(self.inspector, tearoff=False)
+            group_name = ""
+            try:
+                group_name = str(self._tree.item(iid, "text")) if self._tree is not None else ""
+            except Exception:
+                group_name = ""
+            menu.add_command(label=(group_name.strip() or "Group"), state="disabled")
+            menu.add_separator()
+            menu.add_command(
+                label="Hide",
+                command=lambda: self._set_element_hidden_cascade(iid, [], None, True, None, None),
+            )
+            menu.add_command(
+                label="Show",
+                command=lambda: self._set_element_hidden_cascade(iid, [], None, False, None, None),
+            )
+            try:
+                menu.tk_popup(int(event.x_root), int(event.y_root))
+            finally:
+                try:
+                    menu.grab_release()
+                except Exception:
+                    pass
             return
         hidden = self._element_is_hidden(rows, label, display_key, source_id)
         tree = self._tree
@@ -951,7 +1023,19 @@ class Open3DStepAdminPanel:
         if added_actions:
             menu.add_separator()
         show_word = "Show" if display_key is not None else "Unhide"
-        if hidden:
+        if has_children:
+            # bugs/0360: a PARENT element -- Hide/Show applies to it AND every child.
+            if hidden:
+                menu.add_command(
+                    label=show_word,
+                    command=lambda: self._set_element_hidden_cascade(iid, rows, label, False, display_key, source_id),
+                )
+            else:
+                menu.add_command(
+                    label="Hide",
+                    command=lambda: self._set_element_hidden_cascade(iid, rows, label, True, display_key, source_id),
+                )
+        elif hidden:
             menu.add_command(label=show_word, command=lambda: self._set_element_hidden(rows, label, False, display_key, source_id))
         else:
             menu.add_command(label="Hide", command=lambda: self._set_element_hidden(rows, label, True, display_key, source_id))

@@ -4,8 +4,16 @@
 side, the imaging ray shouldn't reflected out from it, and there shouldn't be any second optical
 axis created. Can make the illumination source solid color instead of translucent one?"
 
-**Status:** glyph part SHIPPED 2026-07-19 (source panel now opacity 1.0 solid, was 0.28
-translucent); the trace-level block is DESIGNED below, not yet implemented.
+**Status:** FULLY SHIPPED 2026-07-19 — glyph solid (earlier commit) + the trace-level block
+(guard `validate_open3d_illumination_source_face_block`, penta phase 310). As built:
+`_coverage_illumination_block_face_ids` (analysis_compute_workflow) detects a free physical
+non-marker source panel seated on a promoted face (plane-parallel ≥0.985, |along| ≤ 3 mm, centre
+within panel half-diagonal + 2 mm) via the 0264 world-face records, and merges those face_ids into
+the 0273 `illumination_block_face_ids` map — the imaging trace force-absorbs at the plate, so the
+reflect arm, its rays AND its branch optical axis die. The LED's own flood is exempted PER-BUNDLE:
+the non-seq trace loop scopes `_suppress_illumination_face_absorption` to bundles whose source role
+is "illumination" (trace_preview). The signature already keys on the block ids (0273), so no cache
+gotcha.
 
 ## Shipped now
 

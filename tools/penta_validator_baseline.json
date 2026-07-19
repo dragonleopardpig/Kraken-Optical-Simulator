@@ -309,7 +309,9 @@
     "306": "pass",
     "307": "pass",
     "308": "pass",
-    "309": "pass"
+    "309": "pass",
+    "310": "pass",
+    "311": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -619,6 +621,8 @@
     "306": "Measure Alt+click picks drawn edges (edge-to-edge distance)",
     "307": "receiving-angle cone overlay (imaged FOV -> entrance pupil)",
     "308": "LED illumination volume overlay (folded, congruent footprint)",
-    "309": "drawn rays hard-stop at the opaque flat LED plate"
+    "309": "drawn rays hard-stop at the opaque flat LED plate",
+    "310": "illumination source covering a face blocks the imaging arm",
+    "311": "browser parent Hide/Show cascades to all children"
   }
 }

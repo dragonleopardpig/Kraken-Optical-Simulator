@@ -3,7 +3,11 @@
 **Flag:** 20260719_205024_892 (build 5a955e86) — "the Measure E/E not behaving like normal distance
 measurement of CAD software. Still showing optical axis snap."
 
-**Status:** root-caused 2026-07-19, NOT yet fixed. Two defects:
+**Status:** FIXED 2026-07-19 (needles added to the phase-306 guard). (1) entity-mode hover now
+resolves + gold-highlights the EDGE the click would pick (WYSIWYG), never draws the axis-snap "X",
+and says so in the status line; (2) `_measure_resolve_edge` resolves ROW actors through the promote
+provenance (`_promoted_body_label_and_axis` on the row's advanced dict) so promoted solids (the BS
+cube) are measurable. Original analysis:
 
 ## 1. The hover still runs the plain axis-snap flow in entity mode
 

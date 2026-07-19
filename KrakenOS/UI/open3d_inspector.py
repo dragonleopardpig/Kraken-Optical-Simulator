@@ -15702,7 +15702,21 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return None
         label = (getattr(self, "_actor_step_map", None) or {}).get(hit_key)
         if not label:
-            # Row-actor bodies carry no drawn-edge outline; point picks still work.
+            # bugs/0359: promoted optical solids are ROW actors -- recover the promote
+            # provenance step-label from the row's advanced metadata so their drawn
+            # edges are measurable too (the flagged BS cube case).
+            row_index = (getattr(self, "_actor_row_map", None) or {}).get(hit_key)
+            if row_index is not None:
+                try:
+                    from KrakenOS.UI.services.layout_import_export import (
+                        _promoted_body_label_and_axis,
+                    )
+
+                    row = (getattr(self.editor, "rows", None) or [])[int(row_index)]
+                    label, _axis = _promoted_body_label_and_axis(dict(getattr(row, "advanced", {}) or {}))
+                except Exception:
+                    label = None
+        if not label:
             return None
         try:
             outline = self._step_component_edge_outline(str(label))
@@ -16181,6 +16195,49 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         sx = resolved[3] if resolved else None
         sy = resolved[4] if resolved else None
         pickable = self._measure_recognised_component(hit_key)
+        if getattr(self, "_measure_entity_mode", False):
+            # bugs/0359: the Measure-E/E hover previews the EDGE the click would pick
+            # (WYSIWYG) and NEVER the axis-snapped "X" marker the user flagged.
+            edge = None
+            if x is not None and y is not None:
+                try:
+                    edge = self._measure_resolve_edge(int(x), int(y))
+                except Exception:
+                    edge = None
+            self._clear_measure_snap_marker()
+            self._clear_measure_preview()
+            if edge is not None:
+                outline = None
+                hover_key = None
+                try:
+                    pts = np.asarray(edge["polyline"], dtype=float).reshape(-1, 3)
+                    poly = pv.PolyData(pts)
+                    poly.lines = np.concatenate(([len(pts)], np.arange(len(pts), dtype=np.int64)))
+                    outline = self._hover_overlay_for_feature(pts[len(pts) // 2], poly)
+                    hover_key = (
+                        "measure_entity_edge",
+                        str(edge.get("label", "") or ""),
+                        tuple(np.round(pts[0], 3).tolist()),
+                        tuple(np.round(pts[-1], 3).tolist()),
+                    )
+                except Exception:
+                    outline = None
+                    hover_key = None
+                self._set_step_hover_outline(outline, hover_key, render=False)
+                self._set_measure_snap_cursor(True)
+                if getattr(self, "_measure_pending_edge", None) is not None:
+                    self.status_var.set("Measure E/E: click to pick the SECOND edge.")
+                else:
+                    self.status_var.set("Measure E/E: click to pick the FIRST edge.")
+            else:
+                self._set_step_hover_outline(None, None, render=False)
+                self._set_measure_snap_cursor(False)
+                self.status_var.set("Measure E/E: hover a drawn edge (no axis snap in this mode).")
+            try:
+                self.render()
+            except Exception:
+                pass
+            return
         if pickable and sx is not None:
             self._set_dimension_anchor_snap_highlight(hit_key, int(sx), int(sy))
             try:

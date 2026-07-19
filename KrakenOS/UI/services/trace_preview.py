@@ -507,6 +507,19 @@ class TracePreviewService:
                             clean=int(clean),
                         )
                         source = bundle_sources[bundle_index] if bundle_sources is not None and bundle_index < len(bundle_sources) else None
+                        # bugs/0357: an illumination-source bundle must pass THROUGH a
+                        # 0273/0357-blocked (LED-covered) face -- it IS that plate's own
+                        # flood entering the solid. Scope the suppression flag to this
+                        # bundle only, so the imaging/coupled launch still absorbs there.
+                        suppress_block = (
+                            source is not None
+                            and str(getattr(source, "role", "") or "").strip().lower() == "illumination"
+                        )
+                        prior_suppress = bool(
+                            getattr(system, "_suppress_illumination_face_absorption", False)
+                        )
+                        if suppress_block:
+                            system._suppress_illumination_face_absorption = True
                         metadata = self._source_metadata_for_bundle(
                             bundle,
                             wavelength,
@@ -520,6 +533,8 @@ class TracePreviewService:
                         try:
                             Kos.NsTraceLoop(*bundle, wavelength, rays, clean=clean, source_metadata=metadata)
                         finally:
+                            if suppress_block:
+                                system._suppress_illumination_face_absorption = prior_suppress
                             ns_loop_stats = {}
                             if hasattr(system, "NsTraceTimingSnapshot"):
                                 ns_loop_stats = system.NsTraceTimingSnapshot(reset=True)
