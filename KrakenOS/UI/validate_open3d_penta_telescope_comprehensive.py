@@ -14046,6 +14046,34 @@ def phase_304_context_menu_entry_delivery(
     return result
 
 
+def phase_305_analysis_overlays_reached_image_branch(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0352 -- the MV-150 BS cube has one reflected non-imaging detector and one transmit
+    branch that reaches the real Image plane. The shared analysis anchor rejected the WHOLE scene
+    merely because a branch detector existed, so Focus, Distortion, Astigmatism, Spot map, and
+    Pixel grid all returned no spec while Illumination (with its own branch-aware resolver) worked.
+    The selector now prefers a canonical detector or exactly one unsuppressed reached-Image branch;
+    multiple reached-Image arms remain ambiguous until the UI can select an arm."""
+    result = PhaseResult(
+        name="Phase 305: image Analysis Overlays use the unique reached-Image BS branch"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_analysis_overlays_reached_image_branch import run_checks
+
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"reached-image analysis-overlay guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if n.startswith(("POLICY", "REAL"))])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("reached-image analysis-overlay phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14395,6 +14423,7 @@ def main() -> int:
             phase_302_ca_snap_autocomplete_fallback,
             phase_303_ca_snap_folded_axis_autocomplete,
             phase_304_context_menu_entry_delivery,
+            phase_305_analysis_overlays_reached_image_branch,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

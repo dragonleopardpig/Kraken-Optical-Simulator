@@ -3177,21 +3177,33 @@ class ThreeDSceneToolsMixin:
     def _best_focus_surface_anchor_target(self, scene_bundle: SceneBundle | None):
         """Pick the flat image-plane target the curved best-focus surface floats over.
 
-        First deliverable = the centered, single-image-plane case: the primary
-        sequential image (the highest real-row target). A scene with beam-splitter
-        branch detectors (each arm images its own field) is SKIPPED for now -- a
-        per-branch best-focus surface is a follow-up.
+        Prefer the primary prescription Image/detector target.  Non-sequential
+        beam-splitter previews can replace that drawable target with synthetic branch
+        detectors; when exactly one branch is explicitly stamped ``reached_image``, it
+        is the same canonical image plane and is therefore a valid anchor.  Multiple
+        reached-image branches remain intentionally unsupported until the analysis UI
+        can select an arm instead of drawing one result on an arbitrary detector.
+
+        The distinction matters for the MV-150 cube scene: its reflected leaf gets a
+        derived ``converging_rays`` detector beside the cube, while its transmitted leaf
+        reaches the real Image row.  Rejecting the scene merely because the reflected
+        detector exists suppresses Focus, Distortion, Astigmatism, Spot-map and Pixel-grid
+        together, leaving only the independently anchored Illumination overlay.
         """
         if scene_bundle is None:
             return None
-        anchor = None
-        anchor_row = -1
-        has_branch_detector = False
+        canonical: list[tuple[int, object]] = []
+        reached_image_branches: list[object] = []
         for target in list(getattr(scene_bundle, "targets", []) or []):
-            metadata = getattr(target, "metadata", None)
+            metadata = getattr(target, "metadata", None) or {}
             source = str(metadata.get("target_source", "")) if isinstance(metadata, dict) else ""
             if source == "branch_detector":
-                has_branch_detector = True
+                if (
+                    str(metadata.get("focus_source", "")) == "reached_image"
+                    and not bool(metadata.get("draw_suppressed", False))
+                    and bool(getattr(target, "is_detector", False))
+                ):
+                    reached_image_branches.append(target)
                 continue
             try:
                 row_index = int(getattr(target, "row_index", -1))
@@ -3199,12 +3211,14 @@ class ThreeDSceneToolsMixin:
                 row_index = -1
             if row_index >= 100000:  # synthetic branch-detector row
                 continue
-            if row_index >= anchor_row:
-                anchor_row = row_index
-                anchor = target
-        if has_branch_detector:
-            return None
-        return anchor
+            is_image = str(getattr(target, "surface", "") or "") == "Image"
+            if bool(getattr(target, "is_detector", False)) or is_image:
+                canonical.append((row_index, target))
+        if canonical:
+            return max(canonical, key=lambda item: item[0])[1]
+        if len(reached_image_branches) == 1:
+            return reached_image_branches[0]
+        return None
 
     @staticmethod
     def _best_focus_surface_radius(target) -> float:
@@ -3224,8 +3238,9 @@ class ThreeDSceneToolsMixin:
         Lazy + cached by the preview-trace signature: the field-curvature scan
         (`_sample_field_curvature_distortion`) traces dense meridional/sagittal fans,
         so it must NOT recompute on every render-only refresh (the bugs/0166 overlay
-        toggles re-render the cached scene). Returns None for branch / fieldless /
-        sizeless scenes so nothing draws there.
+        toggles re-render the cached scene). Returns None for fieldless, sizeless, or
+        ambiguous multi-image-branch scenes so nothing draws on an arbitrary plane;
+        a unique branch stamped ``reached_image`` is the canonical Image plane.
         """
         if system is None or scene_bundle is None:
             return None
@@ -3332,10 +3347,11 @@ class ThreeDSceneToolsMixin:
 
         Same lazy + signature-cached contract as ``best_focus_surface_overlay_spec``
         (the field scan is expensive; the bugs/0166 overlay toggles re-render the cached
-        scene). Anchors on the primary sequential image plane; branch / fieldless /
-        sizeless scenes return None. When ``lift_onto_best_focus`` (the user has the
-        Focus-surf overlay on too) the warped grid is laid onto the curved best-focus
-        bowl -- the "distorted bowl".
+        scene). Anchors on the primary sequential image plane, including a unique
+        synthetic branch stamped ``reached_image``; ambiguous multi-image-branch,
+        fieldless, and sizeless scenes return None. When ``lift_onto_best_focus`` (the
+        user has the Focus-surf overlay on too) the warped grid is laid onto the curved
+        best-focus bowl -- the "distorted bowl".
         """
         if system is None or scene_bundle is None:
             return None

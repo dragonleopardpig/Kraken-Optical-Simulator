@@ -17,8 +17,9 @@ This guard pins (all headless, no VTK):
     returns a surface that genuinely DEVIATES from the flat image plane (non-trivial
     field curvature), and the lazy field-curvature scan is CACHED (a second call
     returns the same object).
-  * ANCHOR: a beam-splitter scene (a branch-detector target present) is SKIPPED for
-    now (returns None) -- the per-branch surface is a follow-up.
+  * ANCHOR: a canonical Image target survives unrelated branch detectors; when the
+    drawable Image is superseded, one unsuppressed ``reached_image`` branch is the
+    canonical plane; multiple reached-image arms remain ambiguous and return None.
   * RENDER-ONLY / TOGGLE contract: ``refresh_scene`` reads ``show_best_focus_surface_var``
     and calls ``_add_best_focus_surface_overlays``; that renderer never rebuilds the
     system; and the toggle handler routes through the bugs/0166 display-toggle gate
@@ -232,37 +233,61 @@ def _check_integration(failures: list[str], notes: list[str]) -> None:
     )
 
 
-def _check_anchor_skips_branch_scene(failures: list[str]) -> None:
+def _check_anchor_selection(failures: list[str]) -> None:
     editor, _system, _path = _double_gauss_editor()
     if editor is None:
         editor = _snapshot_editor([], {})
         editor.tk = object()
 
     class _Target:
-        def __init__(self, metadata, row_index):
+        def __init__(self, metadata, row_index, *, surface="Image", is_detector=True):
             self.metadata = metadata
             self.row_index = row_index
+            self.surface = surface
             self.center_world = np.zeros(3)
             self.normal_world = np.array([0.0, 0.0, 1.0])
             self.tangent_world = np.array([1.0, 0.0, 0.0])
             self.diameter = 10.0
             self.active_width_mm = 0.0
             self.active_height_mm = 0.0
-            self.is_detector = True
+            self.is_detector = is_detector
 
     class _Bundle:
         def __init__(self, targets):
             self.targets = targets
 
-    branch_bundle = _Bundle([
-        _Target({"target_source": "table_row"}, 5),
-        _Target({"target_source": "branch_detector"}, 100000),
-    ])
-    if editor._best_focus_surface_anchor_target(branch_bundle) is not None:
-        failures.append("ANCHOR: a branch-detector scene was not skipped (should return None)")
+    canonical = _Target({"target_source": "table_row"}, 8)
+    reflect = _Target(
+        {"target_source": "branch_detector", "focus_source": "converging_rays"},
+        100000,
+        surface="",
+    )
+    reached = _Target(
+        {"target_source": "branch_detector", "focus_source": "reached_image"},
+        100001,
+        surface="",
+    )
+    object_target = _Target(
+        {"target_source": "table_row"}, 0, surface="Object", is_detector=False
+    )
 
-    plain_bundle = _Bundle([_Target({"target_source": "table_row"}, 5)])
-    if editor._best_focus_surface_anchor_target(plain_bundle) is None:
+    if editor._best_focus_surface_anchor_target(_Bundle([canonical, reflect])) is not canonical:
+        failures.append("ANCHOR: an unrelated branch displaced the canonical Image target")
+    if editor._best_focus_surface_anchor_target(_Bundle([object_target, reflect, reached])) is not reached:
+        failures.append("ANCHOR: a unique reached-image branch was not selected")
+
+    second_reached = _Target(
+        {"target_source": "branch_detector", "focus_source": "reached_image"},
+        100002,
+        surface="",
+    )
+    if editor._best_focus_surface_anchor_target(
+        _Bundle([object_target, reached, second_reached])
+    ) is not None:
+        failures.append("ANCHOR: multiple reached-image arms should remain ambiguous")
+
+    plain_bundle = _Bundle([canonical])
+    if editor._best_focus_surface_anchor_target(plain_bundle) is not canonical:
         failures.append("ANCHOR: a plain image-plane target was not selected")
 
 
@@ -313,7 +338,7 @@ def run_checks() -> "tuple[bool, list[str]]":
     notes: list[str] = []
     _check_pure_geometry(failures)
     _check_integration(failures, notes)
-    _check_anchor_skips_branch_scene(failures)
+    _check_anchor_selection(failures)
     _check_source_contracts(failures)
     return (not failures), (failures + notes)
 
