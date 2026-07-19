@@ -66,6 +66,93 @@ incident direction :math:`\mathbf d` to
    \mathbf d_{\mathrm r}
    = \mathbf d - 2(\mathbf d\!\cdot\!\mathbf n)\mathbf n .
 
+Derivation by normal and tangential components
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Assume :math:`\mathbf d` and :math:`\mathbf n` are unit vectors, and let
+:math:`\mathbf d` point in the direction of travel **toward** the splitter.
+The vector projection of :math:`\mathbf d` onto the surface normal is
+
+.. math::
+
+   \mathbf d_\perp
+   = \operatorname{proj}_{\mathbf n}(\mathbf d)
+   = (\mathbf d\!\cdot\!\mathbf n)\mathbf n .
+
+Subtracting that projection leaves the component parallel to the splitter:
+
+.. math::
+
+   \mathbf d_\parallel
+   = \mathbf d-\mathbf d_\perp
+   = \mathbf d-(\mathbf d\!\cdot\!\mathbf n)\mathbf n .
+
+Ideal specular reflection keeps the tangential component and reverses only
+the normal component. Therefore
+
+.. math::
+
+   \begin{aligned}
+   \mathbf d_{\mathrm r}
+   &= \mathbf d_\parallel-\mathbf d_\perp \\
+   &= \left[\mathbf d-(\mathbf d\!\cdot\!\mathbf n)\mathbf n\right]
+      -(\mathbf d\!\cdot\!\mathbf n)\mathbf n \\
+   &= \boxed{\mathbf d-2(\mathbf d\!\cdot\!\mathbf n)\mathbf n}.
+   \end{aligned}
+
+Geometrically, subtracting :math:`\mathbf d_\perp` once brings the vector
+head onto the tangent plane; subtracting the same component a second time
+moves it an equal distance to the reflected side. That is the origin of the
+factor 2—it is not a beam-width scale factor.
+
+.. figure:: ../_static/knowledge_base/coaxial_led_dark_edges/00_specular_reflection_derivation.svg
+   :alt: Derivation of the reflected direction vector by decomposing incident direction d into a component parallel to the splitter and a component along its normal, then reversing only the normal component
+   :align: center
+   :width: 100%
+
+   With the normal drawn toward the incident half-space,
+   :math:`\mathbf d\!\cdot\!\mathbf n<0`; hence
+   :math:`\mathbf d_\perp` points into the surface. Reflection changes it to
+   :math:`-\mathbf d_\perp`, while :math:`\mathbf d_\parallel` is unchanged.
+   The two vector additions in the right panel reconstruct
+   :math:`\mathbf d` and :math:`\mathbf d_{\mathrm r}`.
+
+The result satisfies the reflection law directly. Its normal component has
+equal magnitude and opposite sign,
+
+.. math::
+
+   \mathbf d_{\mathrm r}\!\cdot\!\mathbf n
+   = -\mathbf d\!\cdot\!\mathbf n,
+
+while its tangential component is unchanged. Because the two components are
+orthogonal,
+
+.. math::
+
+   \lVert\mathbf d_{\mathrm r}\rVert
+   =\lVert\mathbf d\rVert=1.
+
+For a normal facing the incident half-space, the directed-vector statement of
+equal incidence and reflection angles is
+
+.. math::
+
+   \angle(-\mathbf d,\mathbf n)
+   =\angle(\mathbf d_{\mathrm r},\mathbf n).
+
+Thus the physical incident and reflected ray lines obey equal angles even
+though :math:`\mathbf d` itself points *toward* the hit point. Reversing the
+chosen normal (:math:`\mathbf n\rightarrow-\mathbf n`) leaves the formula
+unchanged. If a non-unit normal is supplied, use
+
+.. math::
+
+   \mathbf d_{\mathrm r}
+   = \mathbf d
+     -2\frac{\mathbf d\!\cdot\!\mathbf n}
+             {\mathbf n\!\cdot\!\mathbf n}\mathbf n .
+
 This is an orthogonal transformation: it preserves distances and angles.
 Consequently, an unclipped collimated square remains congruent to the square,
 and an unclipped circular bundle remains circular, when each is measured in a
