@@ -197,7 +197,11 @@ def run_checks():
     controls_src = TOP_CONTROLS_PATH.read_text(encoding="utf-8") if TOP_CONTROLS_PATH.exists() else ""
     if "def import_machine_vision_lens_from_folder" not in inspector_src:
         failures.append("Open-3D inspector does not expose import_machine_vision_lens_from_folder")
-    if "self.editor.import_machine_vision_lens_from_folder(dialog_parent=self)" not in inspector_src:
+    # bugs/0371 needle repair: the 0294 SIGSEGV fix (986fe41b) rebound the call
+    # through a local ``editor`` variable, so the old ``self.editor.…`` literal was
+    # silently stale-failing for a week. Match the call itself (substring works for
+    # both forms) -- the contract is delegation WITH dialog_parent=self.
+    if "editor.import_machine_vision_lens_from_folder(dialog_parent=self)" not in inspector_src:
         failures.append("3D importer does not delegate to the editor with dialog_parent=self")
     if "if model is None" not in inspector_src or "refresh_from_editor" not in inspector_src:
         failures.append("3D importer does not guard cancellation / rebuild the scene")
@@ -228,6 +232,42 @@ def run_checks():
             built = import_lens_folder(VENDOR_FOLDER)
             if abs(built.effl - 82.39) > 0.5:
                 failures.append(f"real folder build EFL {built.effl} != ~82.39")
+
+    # bugs/0371: Rodenstock/LINOS-style spec rows -- lower case, "(mm)" units, an
+    # f' token in the EFL label, "*)" in-air footnotes, and a bracketed
+    # magnification range -- must parse alongside the PYRITE "[mm]" style
+    # (the Apo-Rodagon-D 1x 4/75 sheet that failed the folder import).
+    import unittest.mock
+
+    from KrakenOS.UI.services import datasheet_prescription_import as dpi
+
+    rodenstock_text = (
+        "Specification ON 8501-9002 image circle max. (mm) 82 working distance "
+        "(mm) 100 -130 focal length f' (mm) 74.9 interface M39 x1/26\" (Leico) "
+        "magnification W [range] -1 [ -1.2 ... -0.8]filter thread M40.5 x0.5 "
+        "SF (mm) -44.2f-stop0 EnP 0 ExP 1 S'F' (mm) *) 44.2 4 18. "
+        "HH' (mm) *) -14.355.6 13.4"
+    )
+    with unittest.mock.patch.object(dpi, "extract_pdf_text", return_value=rodenstock_text):
+        rod = dpi.parse_datasheet_cardinals("synthetic-rodenstock.pdf")
+    if rod is None:
+        failures.append("Rodenstock-style sheet must parse (bugs/0371)")
+    else:
+        if abs(float(rod.effl) - 74.9) > 1e-9:
+            failures.append(f"Rodenstock EFL {rod.effl} != 74.9")
+        if rod.front_focal is None or abs(float(rod.front_focal) + 44.2) > 1e-9:
+            failures.append(f"Rodenstock SF {rod.front_focal} != -44.2")
+        if rod.back_focal is None or abs(float(rod.back_focal) - 44.2) > 1e-9:
+            failures.append(f"Rodenstock S'F' {rod.back_focal} != 44.2 (footnote marker)")
+        if rod.magnification is None or abs(float(rod.magnification) + 1.0) > 1e-9:
+            failures.append(f"Rodenstock magnification {rod.magnification} != -1")
+        if rod.image_circle is None or abs(float(rod.image_circle) - 82.0) > 1e-9:
+            failures.append(f"Rodenstock image circle {rod.image_circle} != 82")
+        if rod.hh is not None:
+            failures.append(
+                "the column-glued (mm)-style HH' row must stay UNPARSED -- a misparse "
+                "(-14.355 from '-14.355.6') would silently corrupt the solve"
+            )
 
     return (not failures), failures
 

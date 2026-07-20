@@ -357,6 +357,13 @@ def parse_datasheet_cardinals(path: str | Path) -> DatasheetCardinals | None:
     if effl is None:
         # Fall back to the plain "Focal length" spec-row when f'eff is absent.
         effl = _first_float(text, r"Focal len\w*\s*\[?mm?\]?\s*(-?\d[\d.]*)")
+    if effl is None:
+        # bugs/0371: Rodenstock/LINOS-style sheets (Apo-Rodagon etc.) write
+        # "focal length f' (mm) 74.9" -- lower case, an f' token between label and
+        # value, and PARENTHESISED units. Accept both unit styles generally.
+        effl = _first_float(
+            text, r"(?i)focal\s+len\w*\s*f?['’]?\s*[\[(]\s*mm\s*[\])]\s*(-?\d+\.?\d*)"
+        )
     if effl is None or not (math.isfinite(effl) and abs(effl) > 1e-6):
         return None
 
@@ -364,11 +371,31 @@ def parse_datasheet_cardinals(path: str | Path) -> DatasheetCardinals | None:
     cardinals.front_focal = _first_float(text, r"(?<![A-Za-z'])SF\s*\[mm\]\s*(-?\d[\d.]*)")
     cardinals.back_focal = _first_float(text, r"S'F'\s*\[mm\]\s*(-?\d[\d.]*)")
     cardinals.hh = _first_float(text, r"HH'\s*\[mm\]\s*(-?\d[\d.]*)")
+    # bugs/0371: the same rows in the (mm)-style sheets, with an optional "*)"
+    # in-air footnote marker between the unit and the value. The number token is
+    # kept tight ((-?\d+\.?\d*)) so a column-glued run like "-44.2f-stop0" still
+    # yields the clean leading value. HH'/span are deliberately NOT extended to
+    # the (mm) style: those rows glue their columns ("-14.355.6") and a misparse
+    # would silently corrupt the solve -- SF + S'F' + EFL are sufficient for the
+    # exact two-group solution, the honest subset.
+    if cardinals.front_focal is None:
+        cardinals.front_focal = _first_float(
+            text, r"(?<![A-Za-z'])SF\s*\(\s*mm\s*\)\s*(?:\*\)\s*)?(-?\d+\.?\d*)"
+        )
+    if cardinals.back_focal is None:
+        cardinals.back_focal = _first_float(
+            text, r"S'F'\s*\(\s*mm\s*\)\s*(?:\*\)\s*)?(-?\d+\.?\d*)"
+        )
     # Sigma d row: "d [mm] Σ 43.19" -- the "d" glues onto the previous number, so
     # anchor on the sigma glyph (U+03A3), the only one in the table.
     cardinals.span = _first_float(text, r"Σ\s*(-?\d[\d.]*)")
     cardinals.fno = _first_float(text, r"F/(\d+\.?\d*)\s*\.\.\.\s*F/")
     cardinals.image_circle = _first_float(text, r"Max\.\s*sensor size\s*\[mm\]\s*(\d[\d.]*)")
+    if cardinals.image_circle is None:
+        # bugs/0371: "image circle max. (mm) 82" spelling.
+        cardinals.image_circle = _first_float(
+            text, r"(?i)image\s+circle\s+max\.?\s*[\[(]\s*mm\s*[\])]\s*(\d+\.?\d*)"
+        )
 
     lens_id = re.search(r"ID \[standard\]\s*(\d+)", text)
     if lens_id is not None:
@@ -392,5 +419,11 @@ def parse_datasheet_cardinals(path: str | Path) -> DatasheetCardinals | None:
         title_mag = _first_float(text, r"PYRITE\s+[\d.]+/[\d.]+/([\d.]+)x")
         if title_mag is not None and title_mag > 0.0:
             cardinals.magnification = -abs(title_mag)
+    if cardinals.magnification is None:
+        # bugs/0371: "magnification W [range] -1 [ -1.2 ... -0.8]" spelling -- the
+        # nominal value precedes the bracketed range.
+        cardinals.magnification = _first_float(
+            text, r"(?i)magnification\s+\w?\s*\[range\]\s*(-?\d+\.?\d*)"
+        )
 
     return cardinals
