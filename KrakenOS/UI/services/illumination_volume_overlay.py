@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import numpy as np
 
-ILLUMINATION_VOLUME_COLOR = (0.35, 0.85, 1.0)  # the illumination cyan family (0267)
+ILLUMINATION_VOLUME_COLOR = (1.0, 0.80, 0.20)  # match the source-glyph amber (user ask 2026-07-20)
 ILLUMINATION_VOLUME_OPACITY = 0.10
 _EPS = 1e-9
 

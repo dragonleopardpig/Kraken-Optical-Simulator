@@ -813,7 +813,16 @@ class Open3DStepAdminPanel:
         if iid in ("category:sources", "empty:sources"):
             self._show_scene_sources_context_menu(event)
             return "break"
-        if not iid or iid.startswith("category:") or iid.startswith("empty:"):
+        if not iid or iid.startswith("empty:"):
+            return "break"
+        if iid.startswith("category:"):
+            # bugs/0361: category headers ("Optical Element", "Imaging Lens", ...) must
+            # reach the 0360 group Hide/Show menu -- the old gate swallowed the click
+            # SILENTLY in the router, so the group menu was dead code for them (the 0348
+            # trap class: the menu probe passed while the live click never arrived).
+            # Skip the selection routing, matching the sources path, so the properties
+            # pane stays untouched.
+            self._show_element_context_menu(event, iid)
             return "break"
         try:
             tree.selection_set(iid)

@@ -19,3 +19,12 @@ In the elements browser (`Open3DStepAdminPanel`):
 - Unresolvable descendants are skipped; the status line reports how many items were affected.
 
 In-app eyeball owed.
+
+## 0361 follow-up (flag 20260720_074526_766, build ff5e90a7)
+
+The user's right-click on "Optical Elements"/"Imaging Lens" produced NO menu: those are
+`category:*` iids and `_on_tree_right_click` hard-dropped every category header before
+`_show_element_context_menu` ran — the 0360 group branch was dead code for them (the 0348 trap
+class: menu probes pass, the router swallows the live click). FIXED 2026-07-20: `category:*` iids
+now route to the group menu (selection skipped, matching the sources path); `category:sources`
+keeps its Add-LED menu; `empty:*` stays menu-less. Guard extended with a ROUTER probe.

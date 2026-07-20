@@ -14234,7 +14234,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 )
                 actor = self._add_mesh_actor(
                     mesh,
-                    color=tuple(spec.get("color", (0.35, 0.85, 1.0))),
+                    color=tuple(spec.get("color", (1.0, 0.80, 0.20))),
                     opacity=float(spec.get("opacity", 0.10)),
                     backface_culling=False,
                     track_source_id=str(getattr(source, "source_id", "") or "") or None,

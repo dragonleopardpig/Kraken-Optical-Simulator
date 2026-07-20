@@ -80,6 +80,59 @@ def run_checks() -> tuple[bool, list[str]]:
         if needle not in menu_src:
             failures.append(f"the browser context menu lost its {needle} wiring")
 
+    # bugs/0361: the 0348 trap class -- the group menu can be perfect while the ROUTER
+    # swallows the right-click before it. Probe _on_tree_right_click routing directly.
+    class _RouterTree:
+        def __init__(self, iid):
+            self._iid = iid
+
+        def identify_row(self, _y):
+            return self._iid
+
+        def selection_set(self, _iid):
+            pass
+
+        def focus(self, _iid):
+            pass
+
+    class _RouterPanel:
+        _on_tree_right_click = Open3DStepAdminPanel._on_tree_right_click
+
+        def __init__(self, iid):
+            self._tree = _RouterTree(iid)
+            self.menu_iids: list[str] = []
+            self.sources_menu = 0
+
+        def _show_element_context_menu(self, _event, iid):
+            self.menu_iids.append(str(iid))
+
+        def _show_scene_sources_context_menu(self, _event):
+            self.sources_menu += 1
+
+        def _on_tree_select(self, *_a, **_k):
+            pass
+
+    event = SimpleNamespace(y=10, x_root=0, y_root=0)
+    router = _RouterPanel("category:optical")
+    router._on_tree_right_click(event)
+    if router.menu_iids != ["category:optical"]:
+        failures.append(
+            "right-clicking a category header must reach the group menu "
+            f"(bugs/0361), got {router.menu_iids!r}"
+        )
+    router_sources = _RouterPanel("category:sources")
+    router_sources._on_tree_right_click(event)
+    if router_sources.sources_menu != 1 or router_sources.menu_iids:
+        failures.append("category:sources must keep its Add-LED menu routing")
+    router_empty = _RouterPanel("empty:optical")
+    router_empty._on_tree_right_click(event)
+    if router_empty.menu_iids or router_empty.sources_menu:
+        failures.append("empty placeholders must stay menu-less")
+    router_leaf = _RouterPanel("row:3")
+    router_leaf._on_tree_right_click(event)
+    if router_leaf.menu_iids != ["row:3"]:
+        failures.append("leaf routing regressed")
+
     return (not failures), failures
 
 
