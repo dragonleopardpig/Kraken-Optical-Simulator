@@ -15800,9 +15800,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return
         pending = getattr(self, "_measure_pending_edge", None)
         if pending is not None:
-            pa, pb, _dist = closest_points_between_polylines(pending["polyline"], polyline)
+            # bugs/0367: clear the armed edge FIRST so a throw in the reduce can never
+            # strand it (the user was left with a stuck orange edge and no dimension).
+            pending_polyline = np.asarray(pending["polyline"], dtype=float)
             self._clear_measure_pending_edge()
             self._clear_measure_snap_marker()
+            try:
+                pa, pb, _dist = closest_points_between_polylines(pending_polyline, polyline)
+            except Exception:
+                # Degenerate second edge: fall back to the new edge's own endpoints.
+                pa, pb = polyline[0], polyline[-1]
             self._record_measure_point(np.asarray(pa, dtype=float), None)
             self._record_measure_point(np.asarray(pb, dtype=float), None)
             return
@@ -19767,17 +19774,47 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             if getattr(self, "_measure_entity_mode", False) or getattr(
                 self, "_edge_pick_alt_active", False
             ):
+                entity_mode = bool(getattr(self, "_measure_entity_mode", False))
                 edge = None
+                world = None
                 try:
                     ex, ey = self._vtk_interactor.GetEventPosition()
                     edge = self._measure_resolve_edge(int(ex), int(ey))
+                    if edge is None:
+                        # bugs/0367: fall back to the snapped POINT so a click that
+                        # lands on a FACE (or misses the sparse drawn-edge set of a big
+                        # STEP body like the camera) still COMPLETES -- CAD measures
+                        # edge->face too, and the user must never be stranded with an
+                        # armed edge and no way to finish. NO axis snap in this flow.
+                        snap = self._measure_resolve_snap(int(ex), int(ey))
+                        if snap is not None and snap[1] is not None:
+                            candidate = np.asarray(snap[1], dtype=float).reshape(-1)[:3]
+                            if candidate.size == 3 and np.all(np.isfinite(candidate)):
+                                world = candidate
                 except Exception:
                     edge = None
+                    world = None
                 if edge is not None:
                     self._on_measure_edge_pick(edge)
-                elif getattr(self, "_measure_entity_mode", False):
+                    return
+                pending = getattr(self, "_measure_pending_edge", None)
+                has_p0 = getattr(self, "_measure_p0", None) is not None
+                if world is not None and (pending is not None or has_p0 or entity_mode):
+                    from KrakenOS.UI.services.measure_edge_pick import (
+                        closest_point_on_polyline,
+                    )
+
+                    if pending is not None:
+                        # edge (armed) -> point: reduce the armed edge against the point.
+                        anchor, _dist = closest_point_on_polyline(pending["polyline"], world)
+                        self._clear_measure_pending_edge()
+                        self._clear_measure_snap_marker()
+                        self._record_measure_point(np.asarray(anchor, dtype=float), None)
+                    self._clear_measure_snap_marker()
+                    self._record_measure_point(np.asarray(world, dtype=float), None)
+                elif entity_mode:
                     self.status_var.set(
-                        "Measure E/E: no drawn edge under the cursor -- click ON an edge."
+                        "Measure E/E: click on an edge or a surface to measure."
                     )
                 else:
                     self.status_var.set(

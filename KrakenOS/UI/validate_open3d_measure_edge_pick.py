@@ -175,6 +175,18 @@ def run_checks() -> tuple[bool, list[str]]:
     if fake3._measure_pending_edge is not None:
         failures.append("plain two-point flow must never touch the pending edge")
 
+    # bugs/0367: a degenerate SECOND edge must NEVER strand the armed edge -- the
+    # pending edge is cleared before the reduce, so the user can always continue.
+    fake4 = _Fake()
+    fake4._on_measure_edge_pick({"polyline": EDGE_A, "hit_key": "led", "label": "led"})
+    if fake4._measure_pending_edge is None:
+        failures.append("first edge must arm before the strand-proof test")
+    fake4._on_measure_edge_pick(
+        {"polyline": np.array([[np.nan, 0.0, 0.0], [np.nan, 1.0, 0.0]]), "hit_key": "led", "label": "led"}
+    )
+    if fake4._measure_pending_edge is not None:
+        failures.append("a degenerate second edge must not leave the armed edge stranded (bugs/0367)")
+
     # --- 3) WIRING: source needles ---------------------------------------------------
     press_src = inspect.getsource(Kraken3DInspector._on_left_button_press)
     for needle in (
@@ -185,9 +197,17 @@ def run_checks() -> tuple[bool, list[str]]:
         "_measure_resolve_snap",  # the legacy point path must survive verbatim
         "closest_point_on_polyline",  # armed-edge reduction against a point click
         "_measure_entity_mode",  # bugs/0358: the dedicated E/E button forces edge picks
+        "_measure_resolve_snap",  # bugs/0367: point fallback when no edge is under the cursor
     ):
         if needle not in press_src:
             failures.append(f"_on_left_button_press lost its {needle} wiring")
+    # bugs/0367: the second click must always be able to complete (edge->point), never strand.
+    if press_src.count("_record_measure_point") < 1 or "closest_point_on_polyline" not in press_src:
+        failures.append("the E/E click handler lost its edge->point completion fallback (bugs/0367)")
+    pick_src = inspect.getsource(Kraken3DInspector._on_measure_edge_pick)
+    before_reduce = pick_src.split("closest_points_between_polylines(pending")[0]
+    if "closest_points_between_polylines(pending" not in pick_src or "_clear_measure_pending_edge()" not in before_reduce:
+        failures.append("the pending edge must be cleared BEFORE the reduce (strand-proof, bugs/0367)")
     entity_src = inspect.getsource(Kraken3DInspector.start_measure_entity_pick)
     if "start_measure_pick" not in entity_src or "_measure_entity_mode" not in entity_src:
         failures.append("start_measure_entity_pick must arm entity mode over the plain flow")
