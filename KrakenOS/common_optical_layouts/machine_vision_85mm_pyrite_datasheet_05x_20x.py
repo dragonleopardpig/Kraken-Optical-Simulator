@@ -19,7 +19,7 @@ TITLE = "Machine Vision 85 mm Pyrite (Datasheet 0.5X-2.0X)"
 # first-order values while placing the STEP glass surfaces on the same front and
 # rear optical vertex datums.
 
-STEP_PATH = "attachment/Lens/1072517_00165969_001.stp"
+STEP_PATH = "attachment/Lens/PYRITE_45_85_05x-20x_V38_1072517/1072517_00165969_001.stp"
 STEP_FRONT_GLASS_FACE_ID = "S001/F1030"
 STEP_REAR_GLASS_FACE_ID = "S001/F1032"
 STEP_FRONT_GLASS_VERTEX_Z_MM = 21.70546265503834
@@ -128,7 +128,7 @@ SETTINGS = {
     "nonseq_ns_limit": "200",
     "nonseq_energy_probability": False,
     "camera_model": "Allied Vision hr25MCX",
-    "camera_step_path": "attachment/Cameras/3D_CAD_HR25xCXP.STEP",
+    "camera_step_path": "attachment/Cameras/hr25MCX/3D_CAD_HR25xCXP.STEP",
     "camera_step_rotation_x_deg": 0.0,
     "camera_step_rotation_y_deg": 0.0,
     "camera_step_rotation_z_deg": 270.0,

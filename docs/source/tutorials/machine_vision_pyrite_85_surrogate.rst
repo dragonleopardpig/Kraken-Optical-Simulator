@@ -80,7 +80,7 @@ The preset also records the local vendor STEP file:
 
 .. code-block:: text
 
-   attachment/Lens/1072517_00165969_001.stp
+   attachment/Lens/PYRITE_45_85_05x-20x_V38_1072517/1072517_00165969_001.stp
 
 The STEP is used as a mechanical overlay, while the KrakenOS table remains the
 paraxial blackbox optical surrogate.  OpenCascade extraction finds the two
@@ -116,7 +116,7 @@ The preset intentionally follows the same working defaults as
 Open 3D.  It inherits the same ray display, source, detector, non-sequential,
 tolerance, atmosphere, optimization, and CAD overlay defaults.  In particular,
 it opens with the same Allied Vision ``hr25MCX`` camera model and
-``attachment/Cameras/3D_CAD_HR25xCXP.STEP`` camera overlay.
+``attachment/Cameras/hr25MCX/3D_CAD_HR25xCXP.STEP`` camera overlay.
 
 Only lens-specific defaults differ from the 150 mm measured layout:
 
@@ -124,7 +124,7 @@ Only lens-specific defaults differ from the 150 mm measured layout:
 * The real-image field default is ``11.52 mm`` so the initial field sampling
   matches the shared camera workflow rather than the full 62.5 mm image-circle
   capability.
-* The lens STEP overlay uses ``attachment/Lens/1072517_00165969_001.stp`` and
+* The lens STEP overlay uses ``attachment/Lens/PYRITE_45_85_05x-20x_V38_1072517/1072517_00165969_001.stp`` and
   the glass-vertex alignment offset described above.
 * The auxiliary Open 3D optical STEP overlay is left empty; this avoids loading
   an unrelated extra CAD component from the 150 mm development layout.

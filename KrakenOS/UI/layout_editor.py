@@ -603,8 +603,8 @@ ATTACHMENT_LENS_DIR = _preferred_existing_dir(
 )
 ATTACHMENT_LED_DIR = _preferred_existing_dir(ATTACHMENT_DIR / "LED", ATTACHMENT_DIR / "led")
 DEFAULT_CAMERA_STEP_PATH = _preferred_existing_path(
-    ATTACHMENT_CAMERA_DIR / "3D_CAD_HR25xCXP.STEP",
-    ATTACHMENT_CAMERA_DIR / "3D_CAD_shr661MCX.STEP",
+    ATTACHMENT_CAMERA_DIR / "hr25MCX" / "3D_CAD_HR25xCXP.STEP",
+    ATTACHMENT_CAMERA_DIR / "shr661MCX12" / "3D_CAD_shr661MCX.STEP",
     Path.home() / "cameras" / "3D_CAD_HR25xCXP.STEP",
 )
 DEFAULT_LENS_STEP_PATH = _preferred_existing_path(

@@ -37,7 +37,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # Real imported lens STEPs are vendor fixtures under the gitignored attachment/
 # tree, so the OCC section is skip-if-absent for other checkouts.
 _REAL_LENS_CANDIDATES = (
-    PROJECT_ROOT / "attachment" / "Lens" / "1072517_00165969_001.stp",
+    PROJECT_ROOT / "attachment" / "Lens" / "PYRITE_45_85_05x-20x_V38_1072517" / "1072517_00165969_001.stp",
     PROJECT_ROOT / "attachment" / "1072517_00165969_001.stp",
     PROJECT_ROOT / "attachment" / "Lens" / "15056" / "15056.STEP",
     # bugs/0372: the Apo-Rodagon-D -- 141 barrel cylinders along X plus 3 bogus

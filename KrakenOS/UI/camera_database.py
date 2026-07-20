@@ -44,7 +44,7 @@ CAMERA_DATABASE: dict[str, dict[str, object]] = {
         "product_series": "HR CoaXPress",
         "status": "Available",
         "datasheet": _preferred_existing_path(
-            ATTACHMENT_CAMERA_DIR / "hr25MCX_Datasheet.pdf",
+            ATTACHMENT_CAMERA_DIR / "hr25MCX" / "hr25MCX_Datasheet.pdf",
             Path.home() / "cameras" / "hr25MCX_Datasheet.pdf",
         ),
         "sensor_type": "Area scan",
@@ -79,7 +79,7 @@ CAMERA_DATABASE: dict[str, dict[str, object]] = {
         "ip_class": "IP30",
         "camera_front_to_sensor_mm": 11.48,
         "step_path": _preferred_existing_path(
-            ATTACHMENT_CAMERA_DIR / "3D_CAD_HR25xCXP.STEP",
+            ATTACHMENT_CAMERA_DIR / "hr25MCX" / "3D_CAD_HR25xCXP.STEP",
             Path.home() / "cameras" / "3D_CAD_HR25xCXP.STEP",
         ),
     },
@@ -90,7 +90,7 @@ CAMERA_DATABASE: dict[str, dict[str, object]] = {
         "product_series": "SHR CoaXPress",
         "status": "Available",
         "datasheet": _preferred_existing_path(
-            ATTACHMENT_CAMERA_DIR / "shr661MCX12_Datasheet.pdf",
+            ATTACHMENT_CAMERA_DIR / "shr661MCX12" / "shr661MCX12_Datasheet.pdf",
             Path.home() / "cameras" / "shr661MCX12_Datasheet.pdf",
         ),
         "sensor_type": "Area scan",
@@ -125,7 +125,7 @@ CAMERA_DATABASE: dict[str, dict[str, object]] = {
         "ip_class": "IP30",
         "camera_front_to_sensor_mm": 19.88,
         "step_path": _preferred_existing_path(
-            ATTACHMENT_CAMERA_DIR / "3D_CAD_shr661MCX.STEP",
+            ATTACHMENT_CAMERA_DIR / "shr661MCX12" / "3D_CAD_shr661MCX.STEP",
             Path.home() / "cameras" / "3D_CAD_shr661MCX.STEP",
         ),
     },
@@ -136,7 +136,7 @@ CAMERA_DATABASE: dict[str, dict[str, object]] = {
         "product_series": "BC-G CoaXPress",
         "status": "Available",
         "datasheet": _preferred_existing_path(
-            ATTACHMENT_CAMERA_DIR / "BC-Gx65M12X4_Spec_ver04_EN.pdf",
+            ATTACHMENT_CAMERA_DIR / "BC-GM65M12X4" / "BC-Gx65M12X4_Spec_ver04_EN.pdf",
             Path.home() / "cameras" / "BC-Gx65M12X4_Spec_ver04_EN.pdf",
         ),
         "sensor_type": "Area scan",
@@ -166,7 +166,7 @@ CAMERA_DATABASE: dict[str, dict[str, object]] = {
         "weight_g": 735.0,
         "camera_front_to_sensor_mm": 11.5,
         "step_path": _preferred_existing_path(
-            ATTACHMENT_CAMERA_DIR / "BC-GMC65M12X4-M42.STEP",
+            ATTACHMENT_CAMERA_DIR / "BC-GM65M12X4" / "BC-GMC65M12X4-M42.STEP",
             Path.home() / "cameras" / "BC-GMC65M12X4-M42.STEP",
         ),
     },
@@ -180,7 +180,7 @@ CAMERA_DATABASE: dict[str, dict[str, object]] = {
         # spec sheet + body; this entry is the NIR variant (the 'X' in the file
         # names is the M/C/N chroma letter).
         "datasheet": _preferred_existing_path(
-            ATTACHMENT_CAMERA_DIR / "BC-Gx25M12X4_Spec_EN_ver02_bopixel.pdf",
+            ATTACHMENT_CAMERA_DIR / "BC-GM25M12X4" / "BC-Gx25M12X4_Spec_EN_ver02_bopixel.pdf",
             Path.home() / "cameras" / "BC-Gx25M12X4_Spec_EN_ver02_bopixel.pdf",
         ),
         "sensor_type": "Area scan",
@@ -214,7 +214,7 @@ CAMERA_DATABASE: dict[str, dict[str, object]] = {
         # C-mount reference flange.
         "camera_front_to_sensor_mm": 17.526,
         "step_path": _preferred_existing_path(
-            ATTACHMENT_CAMERA_DIR / "BC-GM(C)25M12X4.STEP",
+            ATTACHMENT_CAMERA_DIR / "BC-GM25M12X4" / "BC-GM(C)25M12X4.STEP",
             Path.home() / "cameras" / "BC-GM(C)25M12X4.STEP",
         ),
     },

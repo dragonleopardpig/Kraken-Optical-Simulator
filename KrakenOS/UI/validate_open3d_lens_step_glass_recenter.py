@@ -112,7 +112,7 @@ def run_checks() -> tuple[bool, list[str]]:
         failures.append("the rear datum z is not in the lens overlay cache signature")
 
     # --- REAL STEP (optional): detector matches the datasheet Sigma d --------------
-    step = Path("attachment/Lens/1072517_00165969_001.stp")
+    step = Path("attachment/Lens/PYRITE_45_85_05x-20x_V38_1072517/1072517_00165969_001.stp")
     if step.exists():
         try:
             probe = object.__new__(LayoutPolylineDisplayMixin)

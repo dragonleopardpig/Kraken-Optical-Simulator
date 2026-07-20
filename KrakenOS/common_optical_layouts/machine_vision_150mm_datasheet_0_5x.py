@@ -13,7 +13,7 @@ SETTINGS = {
     # Bundled vendor STEPs (same physical 15056 lens + HR25 camera as the measured preset) so the
     # camera-glue / lens-datum glue / defocus / detector-handle features work out of the box.
     "camera_model": "Allied Vision hr25MCX",
-    "camera_step_path": "attachment/Cameras/3D_CAD_HR25xCXP.STEP",
+    "camera_step_path": "attachment/Cameras/hr25MCX/3D_CAD_HR25xCXP.STEP",
     "camera_step_rotation_x_deg": 0.0,
     "camera_step_rotation_y_deg": 0.0,
     "camera_step_rotation_z_deg": 270.0,

@@ -2,7 +2,7 @@ TITLE = "Machine Vision 85 mm Azure (Datasheet 0.5X-2.0X)"
 
 # AZURE Photonics ELS-85/4.5V16K (material code 3.A01.018545V16K-A): a large-format
 # 16K/12K line-scan machine-vision lens.  Source document used for this surrogate:
-#   attachment/Lens/ELS-85 4.5V16K_specification.pdf
+#   attachment/Lens/ELS-85-4.5V16K/ELS-85 4.5V16K_specification.pdf
 #
 # This is NOT the vendor prescription.  It is a paraxial blackbox equivalent built
 # from the public datasheet first-order data:
@@ -31,7 +31,7 @@ TITLE = "Machine Vision 85 mm Azure (Datasheet 0.5X-2.0X)"
 # 0.1 mm rounding of TTL -- so the model keeps the datasheet first-order values while
 # placing the STEP glass surfaces on the same front and rear optical vertex datums.
 
-STEP_PATH = "attachment/Lens/ELS-85-4.5V16K.STEP"
+STEP_PATH = "attachment/Lens/ELS-85-4.5V16K/ELS-85-4.5V16K.STEP"
 STEP_FRONT_GLASS_FACE_ID = "F062"
 STEP_REAR_GLASS_FACE_ID = "F064"
 STEP_FRONT_GLASS_VERTEX_Z_MM = 13.283194712382372
@@ -149,7 +149,7 @@ SETTINGS = {
     "nonseq_ns_limit": "200",
     "nonseq_energy_probability": False,
     "camera_model": "Allied Vision hr25MCX",
-    "camera_step_path": "attachment/Cameras/3D_CAD_HR25xCXP.STEP",
+    "camera_step_path": "attachment/Cameras/hr25MCX/3D_CAD_HR25xCXP.STEP",
     "camera_step_rotation_x_deg": 0.0,
     "camera_step_rotation_y_deg": 0.0,
     "camera_step_rotation_z_deg": 270.0,

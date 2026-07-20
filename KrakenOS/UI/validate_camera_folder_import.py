@@ -48,7 +48,7 @@ MENU_PATH = UI_DIR / "panels" / "main_context_menu.py"
 TOP_CONTROLS_PATH = UI_DIR / "panels" / "open3d_top_controls.py"
 
 # Real vendor asset (Filen-synced; may be absent on a bare checkout).
-REAL_PDF = PROJECT_ROOT / "attachment" / "Cameras" / "hr25MCX_Datasheet.pdf"
+REAL_PDF = PROJECT_ROOT / "attachment" / "Cameras" / "hr25MCX" / "hr25MCX_Datasheet.pdf"
 # bugs/0307: a CID-font datasheet with NO ToUnicode maps and no explicit "Sensor
 # size" row (only Active Pixel + Pixel Size). The pure-stdlib literal-harvest
 # fallback + resolution*pixel computation must still land the same PYTHON 25K sensor.

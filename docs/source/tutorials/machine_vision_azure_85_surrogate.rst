@@ -7,7 +7,7 @@ datasheet:
 
 .. code-block:: text
 
-   attachment/Lens/ELS-85 4.5V16K_specification.pdf
+   attachment/Lens/ELS-85-4.5V16K/ELS-85 4.5V16K_specification.pdf
 
 The AZURE Photonics ELS-85/4.5V16K is a large-format 16K/12K line-scan
 machine-vision lens.  It is built the same way as the PYRITE 85 mm surrogate
@@ -80,7 +80,7 @@ The preset records the local vendor STEP file:
 
 .. code-block:: text
 
-   attachment/Lens/ELS-85-4.5V16K.STEP
+   attachment/Lens/ELS-85-4.5V16K/ELS-85-4.5V16K.STEP
 
 The STEP is used as a mechanical overlay, while the KrakenOS table remains the
 paraxial blackbox optical surrogate.  OpenCascade extraction finds the two usable
@@ -116,7 +116,7 @@ The preset follows the same working defaults as ``Machine Vision 150Mm Measured`
 so the layouts can be used the same way in Open 3D.  It inherits the same ray
 display, source, detector, non-sequential, tolerance, atmosphere, optimization,
 and CAD overlay defaults, including the Allied Vision ``hr25MCX`` camera model and
-``attachment/Cameras/3D_CAD_HR25xCXP.STEP`` camera overlay.  The image format is
+``attachment/Cameras/hr25MCX/3D_CAD_HR25xCXP.STEP`` camera overlay.  The image format is
 camera- and FOV-driven at runtime; the 68 mm image-circle row diameter only sets
 the maximum the lens can cover.
 
@@ -126,7 +126,7 @@ Only lens-specific defaults differ from the 150 mm measured layout:
 * The real-image field default is ``11.52 mm`` so the initial field sampling
   matches the shared camera workflow rather than the full 68 mm image-circle
   capability.
-* The lens STEP overlay uses ``attachment/Lens/ELS-85-4.5V16K.STEP`` and the
+* The lens STEP overlay uses ``attachment/Lens/ELS-85-4.5V16K/ELS-85-4.5V16K.STEP`` and the
   glass-vertex alignment offset described above.
 * The auxiliary Open 3D optical STEP overlay is left empty.
 

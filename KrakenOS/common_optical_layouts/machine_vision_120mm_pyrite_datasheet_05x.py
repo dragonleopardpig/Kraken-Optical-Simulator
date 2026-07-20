@@ -2,7 +2,7 @@ TITLE = "Machine Vision 120 mm Pyrite (Datasheet 0.5X)"
 
 # Schneider-Kreuznach PYRITE 5.6/120/0.5x V38, ID 1097787.
 # Source document used for this surrogate:
-# attachment/Lens/PYRITE_56_120_05x_V38_1097787_datasheet.pdf
+# attachment/Lens/PYRITE_56_120_05x_V38_1097787/PYRITE_56_120_05x_V38_1097787_datasheet.pdf
 #
 # This is not the vendor prescription. It is a paraxial blackbox equivalent
 # built from the public first-order data:
@@ -25,7 +25,7 @@ TITLE = "Machine Vision 120 mm Pyrite (Datasheet 0.5X)"
 # the datasheet entrance pupil (SEP = 24.33 mm behind the front vertex); the
 # group-2 image of that stop lands the exit pupil at S'AP, consistent to ~0.1 mm.
 
-STEP_PATH = "attachment/Lens/1097787_00155144_002.stp"
+STEP_PATH = "attachment/Lens/PYRITE_56_120_05x_V38_1097787/1097787_00155144_002.stp"
 STEP_FRONT_GLASS_FACE_ID = "S001/F189"
 STEP_REAR_GLASS_FACE_ID = "S001/F188"
 STEP_FRONT_GLASS_VERTEX_Z_MM = 10.45735917625069
@@ -136,7 +136,7 @@ SETTINGS = {
     "nonseq_ns_limit": "200",
     "nonseq_energy_probability": False,
     "camera_model": "Allied Vision hr25MCX",
-    "camera_step_path": "attachment/Cameras/3D_CAD_HR25xCXP.STEP",
+    "camera_step_path": "attachment/Cameras/hr25MCX/3D_CAD_HR25xCXP.STEP",
     "camera_step_rotation_x_deg": 0.0,
     "camera_step_rotation_y_deg": 0.0,
     "camera_step_rotation_z_deg": 270.0,
