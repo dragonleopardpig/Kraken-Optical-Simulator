@@ -459,6 +459,7 @@ class LayoutTableWorkbenchMixin:
             SurfaceRow(surface="Image", name="Image", thickness=0.0, diameter=25.0, glass="AIR"),
         ]
         self.current_layout_file = None
+        self._layout_is_unsaved_import = False  # bugs/0375: a fresh blank layout is not an import
         self._sync_table()
         self.layout_var.set("Common Optical Layout")
         self.machine_vision_var.set("Machine Vision Lens")
@@ -479,6 +480,9 @@ class LayoutTableWorkbenchMixin:
         if self.rows:
             self._begin_history_capture()
         self.current_layout_file = path
+        # bugs/0375: a normal menu/Open load ties the layout to this file; the lens
+        # importer re-marks it transient AFTER this call (it loads then imports).
+        self._layout_is_unsaved_import = False
         had_existing_rows = bool(self.rows)
         info: dict[str, object] = {"surfaces": [], "settings": {}}
         try:
@@ -689,6 +693,11 @@ class LayoutTableWorkbenchMixin:
             return None
         self.load_layouts()
         self.load_layout_by_name(model.title)
+        # bugs/0375: the working scene is now a FRESH import -- a library surrogate,
+        # not the user's own saved layout. Mark it transient so (a) its stale session
+        # sidecar is NOT restored on the rebuild and (b) Save prompts the user to
+        # create their own .py rather than overwriting the auto-generated one.
+        self._layout_is_unsaved_import = True
         message = (
             f"Imported {model.title} (EFL {model.effl:.4g} mm) from "
             f"{Path(folder).name}; surrogate saved as {model.filename}."

@@ -75,7 +75,12 @@ def run_checks():
     else:
         set_flag = handler.find(f"{_KEEP_FLAG} = True")
         editor_import = handler.find("import_machine_vision_lens_from_folder(dialog_parent=self)")
-        refresh = handler.find("refresh_from_editor(force_retrace=True)")
+        # bugs/0298 moved the in-place refresh to the canonical _apply_model_change()
+        # (the "any 3D model change MUST use _apply_model_change" invariant); accept it
+        # as the refresh call, falling back to the older explicit force_retrace form.
+        refresh = handler.find("_apply_model_change()")
+        if refresh < 0:
+            refresh = handler.find("refresh_from_editor(force_retrace=True)")
         guard = handler.find("winfo_exists()")
         restore = handler.find(f'pop("{_KEEP_FLAG}"')
 

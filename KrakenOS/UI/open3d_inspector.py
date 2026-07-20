@@ -13059,6 +13059,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         key = str(layout_path) if layout_path else None
         if key is None or key == getattr(self, "_session_restored_for_path", None):
             return
+        # bugs/0375: a FRESH lens/camera import is a transient library surrogate, not
+        # the user's saved layout, so do NOT restore its stale session sidecar (the
+        # previous camera pose / coupling / overlay toggles) -- a direct import must
+        # show a clean scene. Mark attempted so we do not retry; File>Open of a real
+        # user layout (which clears the flag) still restores its session.
+        if getattr(self.editor, "_layout_is_unsaved_import", False):
+            self._session_restored_for_path = key
+            return
         # Mark attempted up-front (even when no sidecar exists) so we do not retry
         # every refresh -- a missing sidecar simply leaves the current state.
         self._session_restored_for_path = key

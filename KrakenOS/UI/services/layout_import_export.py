@@ -509,6 +509,9 @@ class LayoutImportExportMixin:
         if not path:
             return
         self.current_layout_file = Path(path)
+        # bugs/0375: opening a real file ties the layout to it (clears any prior
+        # transient-import marker), so Save writes here and its session restores.
+        self._layout_is_unsaved_import = False
         info: dict[str, object] = {"surfaces": [], "settings": {}}
         try:
             info = _load_python_data(Path(path))
@@ -653,7 +656,11 @@ class LayoutImportExportMixin:
 
     def save_layout(self) -> bool:
         self._commit_pending_table_edit()
-        if self.current_layout_file is None:
+        # bugs/0375: a fresh lens/camera import is a transient library surrogate,
+        # NOT the user's own layout file -- so Save must prompt for a real file to
+        # create rather than silently overwrite the auto-generated machine_vision_*.py
+        # (and re-tie the session to it). Treat it like an unsaved layout.
+        if self.current_layout_file is None or getattr(self, "_layout_is_unsaved_import", False):
             return self.save_layout_as()
         self._write_layout_file(self.current_layout_file)
         return True
@@ -673,6 +680,9 @@ class LayoutImportExportMixin:
         if not path:
             return False
         self.current_layout_file = Path(path)
+        # bugs/0375: the user has now committed the layout to their own file, so it
+        # is no longer a transient import -- Save targets this file from here on.
+        self._layout_is_unsaved_import = False
         self._write_layout_file(self.current_layout_file)
         self.load_layouts()
         return True

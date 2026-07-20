@@ -315,7 +315,8 @@
     "312": "pass",
     "313": "pass",
     "314": "pass",
-    "315": "pass"
+    "315": "pass",
+    "316": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -631,6 +632,7 @@
     "312": "scene source edits in place + seats on a picked face",
     "313": "analytic STEP document is disk-cached (no per-launch cold load)",
     "314": "imported lens STEP has a persistent front/rear flip",
-    "315": "imported lens STEP overlay is re-centred on its glass block"
+    "315": "imported lens STEP overlay is re-centred on its glass block",
+    "316": "a fresh import is a transient unsaved layout (Save prompts; no stale-session restore)"
   }
 }

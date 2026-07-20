@@ -14332,6 +14332,32 @@ def phase_315_lens_step_glass_recenter(
     return result
 
 
+def phase_316_import_unsaved_layout(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0375 -- a fresh lens/camera import is a transient library surrogate, not the
+    user's own saved layout. Save prompts for a real file to create (not the generated
+    machine_vision_*.py), and the import surrogate's stale session sidecar is NOT
+    restored on a direct import; opening / Save-As a real file ties the layout to it."""
+    result = PhaseResult(
+        name="Phase 316: a fresh import is a transient unsaved layout (Save prompts; no stale-session restore)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_import_unsaved_layout import run_checks
+
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"import-unsaved-layout guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("import-unsaved-layout phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14692,6 +14718,7 @@ def main() -> int:
             phase_313_analytic_document_disk_cache,
             phase_314_lens_step_flip_direction,
             phase_315_lens_step_glass_recenter,
+            phase_316_import_unsaved_layout,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
