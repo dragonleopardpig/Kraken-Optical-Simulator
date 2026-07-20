@@ -11357,7 +11357,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         aperture = max(float(marker.aperture_mm), 1.0)
         return float(np.clip(aperture, lower, upper))
 
-    def _add_virtual_plane_marker_actor(self, marker: OpticalSolidVirtualPlaneMarker, *, scene_radius: float) -> bool:
+    def _add_virtual_plane_marker_actor(
+        self, marker: OpticalSolidVirtualPlaneMarker, *, scene_radius: float, track_row_index=None
+    ) -> bool:
         if pv is None:
             return False
         try:
@@ -11371,11 +11373,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             normal = normal[:3] / norm
             size = self._virtual_plane_marker_scale(marker, scene_radius)
             plane = pv.Plane(center=tuple(center[:3]), direction=tuple(normal), i_size=size, j_size=size, i_resolution=1, j_resolution=1)
-            self._add_mesh_actor(plane, color=marker.color, opacity=0.16, flat_shading=True)
+            # bugs/0365 hardening: key every marker actor to its owning row so the
+            # browser Hide covers virtual planes too (they were fully unkeyed).
+            self._add_mesh_actor(plane, color=marker.color, opacity=0.16, flat_shading=True, track_row_index=track_row_index)
             try:
                 edges = plane.extract_feature_edges(boundary_edges=True, feature_edges=False, manifold_edges=False)
                 if int(getattr(edges, "n_points", 0)) > 0:
-                    self._add_mesh_actor(edges, color=marker.color, opacity=0.95, line_width=2.0)
+                    self._add_mesh_actor(edges, color=marker.color, opacity=0.95, line_width=2.0, track_row_index=track_row_index)
             except Exception:
                 pass
             self._add_mesh_actor(
@@ -11383,6 +11387,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 color=marker.color,
                 opacity=0.94,
                 flat_shading=True,
+                track_row_index=track_row_index,
             )
             return True
         except Exception as exc:
@@ -11406,7 +11411,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 else optical_solid_virtual_plane_world_markers(row, z_station, assigned_only=True)
             )
             for marker in markers:
-                if self._add_virtual_plane_marker_actor(marker, scene_radius=scene_radius):
+                if self._add_virtual_plane_marker_actor(
+                    marker, scene_radius=scene_radius, track_row_index=int(row_index)
+                ):
                     count += 1
         return count
 

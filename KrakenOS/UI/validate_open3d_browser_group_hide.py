@@ -133,6 +133,52 @@ def run_checks() -> tuple[bool, list[str]]:
     if router_leaf.menu_iids != ["row:3"]:
         failures.append("leaf routing regressed")
 
+    # bugs/0364: the MV surrogate's stop row belongs to Imaging Lens, so the category
+    # Hide covers the whole imaging system; a Standard row that merely mentions
+    # "aperture" (the teaching scene's BS-exit stop) stays under Layout.
+    class _CatPanel:
+        _scene_row_category = Open3DStepAdminPanel._scene_row_category
+
+        def __init__(self):
+            self.editor = SimpleNamespace(_file_backed_stl_row_at=lambda _i: None)
+
+    cat = _CatPanel()
+    stop_row = SimpleNamespace(surface="Aperture", name="Aperture Stop", element="Aperture Stop", glass="AIR")
+    if cat._scene_row_category(5, stop_row) != "lens":
+        failures.append("the Aperture Stop row must categorize under Imaging Lens (bugs/0364)")
+    bs_stop = SimpleNamespace(
+        surface="Standard",
+        name="Beam-splitter exit aperture (55x55x78 cube, fold clear-aperture 30x78)",
+        element="",
+        glass="AIR",
+    )
+    if cat._scene_row_category(1, bs_stop) != "layout":
+        failures.append("a Standard row mentioning 'aperture' must stay under Layout")
+
+    # bugs/0366: the FIRST ACTIVE ENTRY of the Scene Sources group menu must be
+    # Hide/Show (cascade), never the creator.
+    sources_src = inspect.getsource(Open3DStepAdminPanel._show_scene_sources_context_menu)
+    if "_set_element_hidden_cascade" not in sources_src:
+        failures.append("the Scene Sources group menu lost its Hide/Show cascade (bugs/0366)")
+    hide_at = sources_src.find('label="Hide"')
+    add_at = sources_src.find("command=self._add_illumination_led_source")
+    if hide_at < 0 or add_at < 0 or hide_at > add_at:
+        failures.append("Hide must come BEFORE Add in the Scene Sources menu (bugs/0366)")
+
+    # bugs/0365: analytic-row outline actors must be row-keyed so hides cover them.
+    import KrakenOS.UI.services.open3d_scene_refresh as refresh_module
+
+    refresh_src = inspect.getsource(refresh_module)
+    if "track_row_index=row_index if row_index in file_backed_rows else None" in refresh_src:
+        failures.append("the outline actors regressed to file-backed-only row keying (bugs/0365)")
+    if "row_index if row_index in file_backed_rows else None" in refresh_src:
+        failures.append("the rays-on outline twins regressed to unkeyed rows (bugs/0365)")
+    from KrakenOS.UI.open3d_inspector import Kraken3DInspector
+
+    vp_src = inspect.getsource(Kraken3DInspector._add_virtual_plane_marker_actor)
+    if vp_src.count("track_row_index") < 4:
+        failures.append("virtual-plane marker actors must all carry their row key (bugs/0365)")
+
     return (not failures), failures
 
 

@@ -727,14 +727,18 @@ class Open3DSceneRefreshService:
                         edge_width = 3.2 if row_index in file_backed_rows else 1.0
                         if row_index in file_backed_rows:
                             self._add_mesh_actor(edges, color=file_backed_silhouette_color, opacity=1.0, line_width=5.0, track_row_index=row_index, follow_step_label=transient_step_label)
-                        self._add_mesh_actor(edges, color=edge_color, opacity=1.0, line_width=edge_width, track_row_index=row_index if row_index in file_backed_rows else None, follow_step_label=transient_step_label)
+                        # bugs/0365: key the outline to its row UNCONDITIONALLY -- the
+                        # analytic rows' boundary rings (the Aperture Stop's outer ellipse
+                        # + inner-hole dot) were added with track_row_index=None, so they
+                        # survived every row hide as "residual aperture" ghosts.
+                        self._add_mesh_actor(edges, color=edge_color, opacity=1.0, line_width=edge_width, track_row_index=row_index if row_index >= 0 else None, follow_step_label=transient_step_label)
                         if ray_visibility_requested and row_index >= 0:
                             ray_surface_edge_overlays.append(
                                 (
                                     edges,
                                     file_backed_silhouette_color if row_index in file_backed_rows else (0.02, 0.03, 0.05),
                                     5.4 if row_index in file_backed_rows else 1.6,
-                                    row_index if row_index in file_backed_rows else None,
+                                    row_index if row_index >= 0 else None,
                                 )
                             )
                             if row_index in file_backed_rows:

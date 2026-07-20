@@ -357,6 +357,13 @@ class Open3DStepAdminPanel:
         ).strip().lower()
         if any(token in text for token in ("camera", "detector", "sensor", "image")):
             return "camera_detector"
+        # bugs/0364: the MV surrogate's stop row ("Aperture Stop", surface "Aperture")
+        # sits BETWEEN the two Thin-Lens groups -- it belongs to the Imaging Lens, so
+        # hiding that category hides the whole imaging system (the flagged "residual
+        # plane"). A row that merely mentions "aperture" (the teaching scene's BS-exit
+        # stop, a Standard row) keeps its Layout bucket.
+        if "aperture stop" in text or str(getattr(row, "surface", "") or "").strip().lower() == "aperture":
+            return "lens"
         if any(token in text for token in ("lens", "objective", "doublet", "gauss", "achromat")):
             return "lens"
         return "layout"
@@ -856,6 +863,32 @@ class Open3DStepAdminPanel:
         menu = tk.Menu(tree, tearoff=False)
         menu.add_command(label="Scene Sources", state="disabled")
         menu.add_separator()
+        # bugs/0366: the FIRST ACTIVE ENTRY of a group menu must be Hide/Show, NEVER a
+        # creator. The old menu put "Add Illumination Source (LED)" exactly where every
+        # other group shows "Hide", so a group-hide spree silently CREATED a source --
+        # the flagged "it is not hidden plus another illumination created".
+        try:
+            source_children = [
+                child
+                for child in tree.get_children("category:sources")
+                if str(child).startswith("source:")
+            ]
+        except Exception:
+            source_children = []
+        if source_children:
+            menu.add_command(
+                label="Hide",
+                command=lambda: self._set_element_hidden_cascade(
+                    "category:sources", [], None, True, None, None
+                ),
+            )
+            menu.add_command(
+                label="Show",
+                command=lambda: self._set_element_hidden_cascade(
+                    "category:sources", [], None, False, None, None
+                ),
+            )
+            menu.add_separator()
         menu.add_command(
             label="Add Illumination Source (LED)", command=self._add_illumination_led_source
         )
