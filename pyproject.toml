@@ -34,6 +34,13 @@ dependencies = [
 dev = [
   "pytest"
 ]
+datasheet = [
+  # Vendor datasheet performance-curve extraction (bugs/0374 follow-up): MIT,
+  # pure-Python (pdfminer.six), no external binary; exposes raster page images +
+  # vector line/rect primitives for digitising MTF / rel-illumination / distortion
+  # plots. The core cardinal scrape stays stdlib-only, so this is optional.
+  "pdfplumber"
+]
 optimization = [
   "cloudpickle",
   "pybind11",
