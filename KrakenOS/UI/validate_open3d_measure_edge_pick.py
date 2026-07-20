@@ -226,9 +226,26 @@ def run_checks() -> tuple[bool, list[str]]:
             failures.append(f"_measure_resolve_edge lost its {needle} wiring")
 
     hover_entity_src = inspect.getsource(Kraken3DInspector._update_measure_hover_highlight)
-    for needle in ("_measure_entity_mode", "_measure_resolve_edge", "_clear_measure_snap_marker"):
+    for needle in ("_measure_entity_mode", "_set_measure_snap_cursor"):
         if needle not in hover_entity_src:
-            failures.append(f"the entity-mode hover lost its {needle} wiring (bugs/0359)")
+            failures.append(f"the entity-mode hover lost its {needle} wiring")
+    # bugs/0369: the E/E hover must be CHEAP -- it must NOT resolve the edge on every
+    # move (merge + project the whole drawn-edge set), which lagged the app so clicks
+    # registered as drags. The edge is resolved on CLICK only.
+    entity_hover = hover_entity_src.split("_measure_entity_mode", 1)[-1].split("if pickable", 1)[0]
+    if "_measure_resolve_edge" in entity_hover:
+        failures.append("the E/E hover must NOT resolve edges per move (perf, bugs/0369)")
+
+    # bugs/0369: the click POINT fallback must run even when the edge resolve THREW --
+    # it lives in its own try, separate from the _measure_resolve_edge call.
+    edge_call = press_src.find("_measure_resolve_edge(int(ex")
+    fallback_call = press_src.find("_measure_resolve_snap(int(ex")
+    if edge_call < 0 or fallback_call < 0:
+        failures.append("the E/E click lost its edge-then-point resolution (bugs/0369)")
+    else:
+        between = press_src[edge_call:fallback_call]
+        if between.count("try:") < 1 or "except" not in between:
+            failures.append("the point fallback must be in its OWN try, after the edge resolve's (bugs/0369)")
 
     for owner, method in (
         ("start_measure_pick", Kraken3DInspector.start_measure_pick),
