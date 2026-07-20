@@ -161,6 +161,101 @@ def collinear_edge_run(points, pairs, seed_pair, *, angle_cos_min: float = 0.999
     return pts[np.asarray(ordered, dtype=int)]
 
 
+def outline_pairs_to_segments(points, pairs):
+    """(K,2,3) world segments from outline vertices + index pairs (bugs/0370).
+
+    A FACE entity is its boundary outline -- a set of independent segments (possibly
+    several loops), NOT one chain -- so entity reduction operates on segment sets and
+    never invents phantom chain links between loops.
+    """
+    pts = np.asarray(points, dtype=float).reshape(-1, 3)
+    segments = []
+    for a, b in pairs:
+        a, b = int(a), int(b)
+        if 0 <= a < pts.shape[0] and 0 <= b < pts.shape[0] and a != b:
+            segments.append((pts[a], pts[b]))
+    if not segments:
+        raise ValueError("no valid outline segments")
+    return np.asarray(segments, dtype=float)
+
+
+def polyline_to_segments(polyline):
+    """(K,2,3) consecutive segments of an ordered polyline chain (bugs/0370)."""
+    pts = _as_polyline(polyline)
+    if pts.shape[0] == 1:
+        return np.asarray([(pts[0], pts[0])], dtype=float)
+    return np.stack([pts[:-1], pts[1:]], axis=1)
+
+
+def closest_point_on_segments(segments, point):
+    """(q, dist): closest point on a segment set ((K,2,3)) to ``point``."""
+    segs = np.asarray(segments, dtype=float).reshape(-1, 2, 3)
+    p = np.asarray(point, dtype=float).reshape(3)
+    best_q, best_d = None, np.inf
+    for a, b in segs:
+        d = b - a
+        length_sq = float(np.dot(d, d))
+        t = 0.0 if length_sq <= _EPS else float(np.clip(np.dot(p - a, d) / length_sq, 0.0, 1.0))
+        q = a + t * d
+        dist = float(np.linalg.norm(p - q))
+        if dist < best_d:
+            best_q, best_d = q, dist
+    if best_q is None:
+        raise ValueError("no valid segments")
+    return best_q, best_d
+
+
+def closest_points_between_segment_sets(segments_a, segments_b):
+    """(pa, pb, dist): closest pair between two segment sets ((K,2,3) each).
+
+    For the parallel boundary edges of two faces (or an opening's opposite edges)
+    this is the clear gap; clamped pairwise sweep, exact for the perpendicular case.
+    """
+    a = np.asarray(segments_a, dtype=float).reshape(-1, 2, 3)
+    b = np.asarray(segments_b, dtype=float).reshape(-1, 2, 3)
+    best = (None, None, np.inf)
+    for pa0, pa1 in a:
+        for pb0, pb1 in b:
+            qa, qb = _segment_segment_closest(pa0, pa1, pb0, pb1)
+            dist = float(np.linalg.norm(qa - qb))
+            if dist < best[2]:
+                best = (qa, qb, dist)
+    if best[0] is None:
+        raise ValueError("no valid segments")
+    return best
+
+
+def reduce_measure_entities(first: dict, second: dict):
+    """Reduce two CAD-style entities to ``(point_a, point_b, dist)`` (bugs/0370).
+
+    An entity is ``{"kind": "edge"|"face"|"point", "segments": (K,2,3)|None,
+    "world": (3,)}``. Edges and faces carry boundary segments; a point carries only
+    its world position. Every combination reduces to the closest pair, so the
+    downstream two-point measure pipeline stays untouched.
+    """
+
+    def _segs(entity):
+        segments = entity.get("segments")
+        return None if segments is None else np.asarray(segments, dtype=float).reshape(-1, 2, 3)
+
+    def _world(entity):
+        return np.asarray(entity.get("world"), dtype=float).reshape(3)
+
+    sa, sb = _segs(first), _segs(second)
+    if sa is None and sb is None:
+        pa, pb = _world(first), _world(second)
+        return pa, pb, float(np.linalg.norm(pa - pb))
+    if sa is None:
+        pa = _world(first)
+        pb, dist = closest_point_on_segments(sb, pa)
+        return pa, pb, dist
+    if sb is None:
+        pb = _world(second)
+        pa, dist = closest_point_on_segments(sa, pb)
+        return pa, pb, dist
+    return closest_points_between_segment_sets(sa, sb)
+
+
 def measure_point_pick(world) -> dict:
     return {"kind": MEASURE_PICK_POINT, "world": tuple(float(v) for v in np.asarray(world, dtype=float).reshape(3))}
 

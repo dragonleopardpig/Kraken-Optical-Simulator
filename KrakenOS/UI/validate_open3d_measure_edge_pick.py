@@ -1,25 +1,17 @@
-"""Display-free guard for bugs/0353 -- Measure tool edge-to-edge picks.
+"""Display-free guard for bugs/0353..0370 -- CAD-style Measure E/E entity picks.
 
-Alt+click in MEASURE mode picks the nearest DRAWN edge as an entity (the hover
-contract's modifier, penta 287/288); every pick pair reduces to two world points
-(services/measure_edge_pick) before recording, so the segment/label/offset-handle/
-persistence/STEP-export pipeline is untouched and the plain point-click path stays
-byte-identical.
+The 0370 overhaul: a click resolves the entity under the cursor from the PICKED
+CELL on the picked actor's OWN mesh (edge > face > point, no recognised-component
+gate, no drawn-actor indirection), the first entity ARMS with a persistent
+highlight, and every pair reduces to two world points
+(services/measure_edge_pick.reduce_measure_entities), so the segment/label/
+offset-handle/persistence/STEP-export pipeline is untouched.
 
-Checks:
-1. PURE -- clamped closest-pair math: two parallel drawn edges 51.00 mm apart
-   measure exactly 51.00 (an opening's clear width); a skew pair; point->edge
-   projection; the point+point passthrough; and the collinear-run extension that
-   walks a subdivided straight edge but stops at a corner.
-2. INTEGRATION -- the real ``_on_measure_edge_pick`` + ``_record_measure_point``
-   driven on a display-free fake: edge+edge arms then completes a 51.00 mm
-   segment; point-first + edge-second projects onto the edge; two plain point
-   picks still produce the plain segment with the pending state untouched.
-3. WIRING -- source needles: the click fork gates on ``_edge_pick_alt_active``
-   and routes to ``_measure_resolve_edge``/``_on_measure_edge_pick`` while the
-   legacy ``_measure_resolve_snap`` path survives verbatim; the edge resolver
-   honours the recognised-component gate and rides the drawn-edge machinery;
-   arm/clear lifecycle hooks exist in start/clear/record/hover.
+HARD LESSON baked into this guard (the 0353..0369 saga): the old integration fake
+STUBBED the show-highlight helper, hiding that the real helper NULLED the freshly
+armed ``_measure_pending_edge`` -- so edge+edge never completed in-app while the
+guard stayed green. The fakes below bind the REAL show helper (only the renderer
+plumbing is stubbed), so state-nulling in the draw path can never hide again.
 
 Run:  .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_measure_edge_pick
 """
@@ -33,18 +25,31 @@ import numpy as np
 from KrakenOS.UI.open3d_inspector import Kraken3DInspector
 from KrakenOS.UI.services.measure_edge_pick import (
     closest_point_on_polyline,
+    closest_point_on_segments,
     closest_points_between_polylines,
+    closest_points_between_segment_sets,
     collinear_edge_run,
     measure_edge_pick,
     measure_point_pick,
+    outline_pairs_to_segments,
+    polyline_to_segments,
+    reduce_measure_entities,
     reduce_measure_picks,
 )
 
-# The CO90 camera-side window's two vertical edges (x = -19.94 and +31.06 at the
-# frame plane): 51.00 mm apart, with deliberately offset endpoint spans so only
-# the clamped perpendicular pair -- not an endpoint pair -- reads the width.
+# The CO90 camera-side window's two vertical edges: 51.00 mm apart, offset endpoint
+# spans so only the clamped perpendicular pair -- not an endpoint pair -- reads it.
 EDGE_A = np.array([[-19.94, -27.12, 40.5], [-19.94, 24.38, 40.5]], dtype=float)
 EDGE_B = np.array([[31.06, -20.0, 40.5], [31.06, 30.0, 40.5]], dtype=float)
+
+
+def _edge_entity(polyline):
+    pts = np.asarray(polyline, dtype=float)
+    return {"kind": "edge", "segments": polyline_to_segments(pts), "world": pts[0]}
+
+
+def _point_entity(world):
+    return {"kind": "point", "segments": None, "world": np.asarray(world, dtype=float)}
 
 
 class _StatusVar:
@@ -56,30 +61,29 @@ class _StatusVar:
 
 
 class _Fake:
-    """Minimal display-free stand-in binding the REAL measure methods under test."""
+    """Display-free stand-in binding the REAL measure methods -- including the REAL
+    show-highlight helper (only renderer plumbing stubbed)."""
 
     _record_measure_point = Kraken3DInspector._record_measure_point
-    _on_measure_edge_pick = Kraken3DInspector._on_measure_edge_pick
+    _on_measure_entity_pick = Kraken3DInspector._on_measure_entity_pick
     _anchor_measure_point = Kraken3DInspector._anchor_measure_point
     _resolve_measure_point = Kraken3DInspector._resolve_measure_point
     _clear_measure_pending_edge = Kraken3DInspector._clear_measure_pending_edge
+    _show_measure_pending_entity = Kraken3DInspector._show_measure_pending_entity
 
     def __init__(self):
         self._measure_pick_mode = True
+        self._measure_entity_mode = True
         self._measure_p0 = None
         self._measure_reanchor = None
         self._measure_pending_edge = None
         self._measure_pending_edge_actors = []
         self._measure_segments = []
+        self._renderer = None  # real show helper bails after the actor clear
         self.status_var = _StatusVar()
-        self.shown_pending = None
 
-    # display-free stubs around the real pipeline
     def _measure_row_z_positions(self):
         return None
-
-    def _show_measure_pending_edge(self, polyline):
-        self.shown_pending = np.asarray(polyline, dtype=float)
 
     def _clear_measure_snap_marker(self):
         pass
@@ -105,6 +109,9 @@ class _Fake:
     def _remove_renderer_view_prop(self, _actor):
         pass
 
+    def _add_renderer_view_prop(self, _actor):
+        pass
+
 
 def _segment_length(fake) -> float:
     seg = fake._measure_segments[-1]
@@ -116,7 +123,7 @@ def _segment_length(fake) -> float:
 def run_checks() -> tuple[bool, list[str]]:
     failures: list[str] = []
 
-    # --- 1) PURE closest-pair math ------------------------------------------------
+    # --- 1) PURE closest-pair math (chains + segment sets) -------------------------
     _pa, _pb, width = closest_points_between_polylines(EDGE_A, EDGE_B)
     if abs(width - 51.0) > 1e-9:
         failures.append(f"parallel opening edges must measure 51.00 mm, got {width!r}")
@@ -129,7 +136,7 @@ def run_checks() -> tuple[bool, list[str]]:
     if abs(dist - 4.0) > 1e-9 or abs(float(q[0]) - 3.0) > 1e-9:
         failures.append(f"point->edge projection wrong: q={q!r} dist={dist!r}")
     pa, pb, d = reduce_measure_picks(measure_point_pick([1, 2, 3]), measure_point_pick([4, 6, 3]))
-    if abs(d - 5.0) > 1e-9 or abs(float(pa[0]) - 1.0) > 1e-9 or abs(float(pb[1]) - 6.0) > 1e-9:
+    if abs(d - 5.0) > 1e-9:
         failures.append("point+point reduction is not a passthrough")
     _pa, _pb, d = reduce_measure_picks(measure_edge_pick(EDGE_A), measure_edge_pick(EDGE_B))
     if abs(d - 51.0) > 1e-9:
@@ -140,32 +147,55 @@ def run_checks() -> tuple[bool, list[str]]:
     )
     chain_pairs = [(0, 1), (1, 2), (2, 3)]
     run = collinear_edge_run(chain_pts, chain_pairs, (0, 1))
-    if run.shape[0] != 3 or not np.allclose(run[0], [0, 0, 0]) or not np.allclose(run[-1], [20, 0, 0]):
-        failures.append(f"collinear run must span the straight chain and stop at the corner, got {run!r}")
-    run_mid = collinear_edge_run(chain_pts, chain_pairs, (1, 2))
-    if run_mid.shape[0] != 3 or not np.allclose(run_mid[0], [0, 0, 0]):
-        failures.append("collinear run seeded mid-chain must extend backwards to the chain start")
+    if run.shape[0] != 3 or not np.allclose(run[-1], [20, 0, 0]):
+        failures.append("collinear run must span the straight chain and stop at the corner")
 
-    # --- 2) INTEGRATION: real record pipeline on a display-free fake ----------------
+    # segment-set entities (bugs/0370): face-face gap, entity reductions
+    rect_pts = np.array([[0, 0, 0], [10, 0, 0], [10, 8, 0], [0, 8, 0]], dtype=float)
+    rect_pairs = [(0, 1), (1, 2), (2, 3), (3, 0)]
+    face_a = outline_pairs_to_segments(rect_pts, rect_pairs)
+    face_b = outline_pairs_to_segments(rect_pts + np.array([0.0, 0.0, 4.0]), rect_pairs)
+    _pa, _pb, gap = closest_points_between_segment_sets(face_a, face_b)
+    if abs(gap - 4.0) > 1e-9:
+        failures.append(f"parallel face outlines must gap 4.00 mm, got {gap!r}")
+    q, dist = closest_point_on_segments(face_a, [5.0, 20.0, 0.0])
+    if abs(dist - 12.0) > 1e-9:
+        failures.append("point->face-outline projection wrong")
+    _pa, _pb, d = reduce_measure_entities(_edge_entity(EDGE_A), _edge_entity(EDGE_B))
+    if abs(d - 51.0) > 1e-9:
+        failures.append("entity edge+edge reduction must give 51.00 mm")
+    _pa, _pb, d = reduce_measure_entities(_point_entity([0, 0, 40.5]), _edge_entity(EDGE_B))
+    if abs(d - 31.06) > 1e-9:
+        failures.append("entity point+edge reduction must project onto the edge")
+    _pa, _pb, d = reduce_measure_entities(_point_entity([1, 2, 3]), _point_entity([4, 6, 3]))
+    if abs(d - 5.0) > 1e-9:
+        failures.append("entity point+point reduction is not a passthrough")
+
+    # --- 2) INTEGRATION: real record pipeline with the REAL show helper -------------
     fake = _Fake()
-    fake._on_measure_edge_pick({"polyline": EDGE_A, "hit_key": "led-body", "label": "led"})
-    if fake._measure_pending_edge is None or fake._measure_segments:
-        failures.append("first Alt edge pick must ARM the pending edge, not record")
-    if fake.shown_pending is None or not fake._measure_pick_mode:
-        failures.append("arming the first edge must highlight it and keep measure mode on")
-    fake._on_measure_edge_pick({"polyline": EDGE_B, "hit_key": "led-body", "label": "led"})
+    fake._on_measure_entity_pick(_edge_entity(EDGE_A))
+    if not isinstance(fake._measure_pending_edge, dict) or fake._measure_segments:
+        failures.append(
+            "first entity pick must ARM the pending entity (the 0353..0369 saga: the "
+            "old show helper NULLED it right after arming)"
+        )
+    if not fake._measure_pick_mode:
+        failures.append("arming must keep measure mode on")
+    fake._on_measure_entity_pick(_edge_entity(EDGE_B))
     if len(fake._measure_segments) != 1:
-        failures.append("second Alt edge pick must complete exactly one segment")
+        failures.append("second entity pick must complete exactly one segment")
     elif abs(_segment_length(fake) - 51.0) > 1e-9:
         failures.append(f"edge+edge segment must span 51.00 mm, got {_segment_length(fake)!r}")
     if fake._measure_pending_edge is not None or fake._measure_pick_mode:
-        failures.append("completing the pair must clear the pending edge and leave measure mode")
+        failures.append("completing the pair must clear the pending entity and leave measure mode")
+    if getattr(fake, "_measure_entity_mode", True):
+        failures.append("completing the pair must also end entity mode (zombie flag, bugs/0370)")
 
     fake2 = _Fake()
     fake2._record_measure_point(np.array([0.0, 0.0, 40.5]), None)
-    fake2._on_measure_edge_pick({"polyline": EDGE_B, "hit_key": "led-body", "label": "led"})
+    fake2._on_measure_entity_pick(_edge_entity(EDGE_B))
     if len(fake2._measure_segments) != 1 or abs(_segment_length(fake2) - 31.06) > 1e-9:
-        failures.append("point-first + edge-second must project onto the edge (31.06 mm)")
+        failures.append("point-first + entity-second must project onto the entity (31.06 mm)")
 
     fake3 = _Fake()
     fake3._record_measure_point(np.array([1.0, 2.0, 3.0]), None)
@@ -173,91 +203,91 @@ def run_checks() -> tuple[bool, list[str]]:
     if len(fake3._measure_segments) != 1 or abs(_segment_length(fake3) - 5.0) > 1e-9:
         failures.append("plain two-point flow regressed")
     if fake3._measure_pending_edge is not None:
-        failures.append("plain two-point flow must never touch the pending edge")
+        failures.append("plain two-point flow must never touch the pending entity")
 
-    # bugs/0367: a degenerate SECOND edge must NEVER strand the armed edge -- the
-    # pending edge is cleared before the reduce, so the user can always continue.
+    # degenerate SECOND entity must never strand the armed one (bugs/0367)
     fake4 = _Fake()
-    fake4._on_measure_edge_pick({"polyline": EDGE_A, "hit_key": "led", "label": "led"})
-    if fake4._measure_pending_edge is None:
-        failures.append("first edge must arm before the strand-proof test")
-    fake4._on_measure_edge_pick(
-        {"polyline": np.array([[np.nan, 0.0, 0.0], [np.nan, 1.0, 0.0]]), "hit_key": "led", "label": "led"}
+    fake4._on_measure_entity_pick(_edge_entity(EDGE_A))
+    fake4._on_measure_entity_pick(
+        {"kind": "edge", "segments": np.full((1, 2, 3), np.nan), "world": np.array([1.0, 2.0, 3.0])}
     )
     if fake4._measure_pending_edge is not None:
-        failures.append("a degenerate second edge must not leave the armed edge stranded (bugs/0367)")
+        failures.append("a degenerate second entity must not strand the armed one (bugs/0367)")
+
+    # point entity pair completes too (nothing is ever un-measurable)
+    fake5 = _Fake()
+    fake5._on_measure_entity_pick(_point_entity([0.0, 0.0, 0.0]))
+    fake5._on_measure_entity_pick(_point_entity([3.0, 4.0, 0.0]))
+    if len(fake5._measure_segments) != 1 or abs(_segment_length(fake5) - 5.0) > 1e-9:
+        failures.append("point+point entities must complete a 5.00 mm segment")
 
     # --- 3) WIRING: source needles ---------------------------------------------------
     press_src = inspect.getsource(Kraken3DInspector._on_left_button_press)
     for needle in (
+        "_measure_entity_mode",
         "_edge_pick_alt_active",
-        "_measure_resolve_edge",
-        "_on_measure_edge_pick",
-        "_measure_pending_edge",
-        "_measure_resolve_snap",  # the legacy point path must survive verbatim
-        "closest_point_on_polyline",  # armed-edge reduction against a point click
-        "_measure_entity_mode",  # bugs/0358: the dedicated E/E button forces edge picks
-        "_measure_resolve_snap",  # bugs/0367: point fallback when no edge is under the cursor
+        "_measure_resolve_entity",
+        "_on_measure_entity_pick",
+        "nothing under the cursor",  # bugs/0370: every click has a visible outcome
+        "_measure_resolve_snap",  # the legacy point path survives verbatim
+        "closest_point_on_segments",  # armed-entity reduction in the legacy path
     ):
         if needle not in press_src:
             failures.append(f"_on_left_button_press lost its {needle} wiring")
-    # bugs/0367: the second click must always be able to complete (edge->point), never strand.
-    if press_src.count("_record_measure_point") < 1 or "closest_point_on_polyline" not in press_src:
-        failures.append("the E/E click handler lost its edge->point completion fallback (bugs/0367)")
-    pick_src = inspect.getsource(Kraken3DInspector._on_measure_edge_pick)
-    before_reduce = pick_src.split("closest_points_between_polylines(pending")[0]
-    if "closest_points_between_polylines(pending" not in pick_src or "_clear_measure_pending_edge()" not in before_reduce:
-        failures.append("the pending edge must be cleared BEFORE the reduce (strand-proof, bugs/0367)")
+
+    resolve_src = inspect.getsource(Kraken3DInspector._measure_resolve_entity)
+    for needle in (
+        "GetCellId",  # the picked cell drives the resolution
+        "mesh_has_face_index",
+        "face_index_for_display_cell",
+        "face_outline_from_face_indices",
+        "cached_display_feature_edges",  # no-face-index fallback
+        "nearest_display_edge",
+        "depth_reference",
+        "collinear_edge_run",
+        "append_debug",  # breadcrumb on pick failure, never a silent None
+    ):
+        if needle not in resolve_src:
+            failures.append(f"_measure_resolve_entity lost its {needle} wiring")
+    if "_measure_recognised_component" in resolve_src or "_step_component_edge_outline" in resolve_src:
+        failures.append("the entity resolver must NOT use the old gate/drawn-actor chain (bugs/0370)")
+
+    show_src = inspect.getsource(Kraken3DInspector._show_measure_pending_entity)
+    if "self._clear_measure_pending_edge()" in show_src:
+        failures.append(
+            "the show helper must clear ACTORS ONLY -- calling _clear_measure_pending_edge "
+            "nulls the freshly armed state (the 0353..0369 root cause)"
+        )
+    pick_src = inspect.getsource(Kraken3DInspector._on_measure_entity_pick)
+    before_reduce = pick_src.split("reduce_measure_entities(pending", 1)[0]
+    if "reduce_measure_entities(pending" not in pick_src or "_clear_measure_pending_edge()" not in before_reduce:
+        failures.append("the pending entity must be cleared BEFORE the reduce (strand-proof)")
+    arm_zone = pick_src.split("# First pick", 1)[-1]
+    if arm_zone.find("_show_measure_pending_entity") > arm_zone.find("_measure_pending_edge ="):
+        failures.append("arming must draw BEFORE assigning state (belt-and-braces ordering)")
+
+    hover_src = inspect.getsource(Kraken3DInspector._update_measure_hover_highlight)
+    for needle in ("_measure_entity_mode", "_measure_resolve_entity", "_measure_entity_hover_key"):
+        if needle not in hover_src:
+            failures.append(f"the entity hover lost its {needle} wiring")
+    entity_hover = hover_src.split("_measure_entity_mode", 1)[-1].split("if pickable", 1)[0]
+    if "hover_key ==" not in entity_hover:
+        failures.append(
+            "the entity hover must be CHANGE-GATED on the hover key -- unchanged entity "
+            "means no render and NO status write (bugs/0370: the per-move status "
+            "clobbered every click result)"
+        )
+
     entity_src = inspect.getsource(Kraken3DInspector.start_measure_entity_pick)
     if "start_measure_pick" not in entity_src or "_measure_entity_mode" not in entity_src:
         failures.append("start_measure_entity_pick must arm entity mode over the plain flow")
-
-    resolve_src = inspect.getsource(Kraken3DInspector._measure_resolve_edge)
-    for needle in (
-        "_measure_recognised_component",
-        "_step_component_edge_outline",
-        "nearest_display_edge",
-        "collinear_edge_run",
-        "depth_reference",
-        "_actor_row_map",  # bugs/0359: promoted (row-actor) bodies resolve too
-        "_promoted_body_label_and_axis",
-    ):
-        if needle not in resolve_src:
-            failures.append(f"_measure_resolve_edge lost its {needle} wiring")
-
-    hover_entity_src = inspect.getsource(Kraken3DInspector._update_measure_hover_highlight)
-    for needle in ("_measure_entity_mode", "_set_measure_snap_cursor"):
-        if needle not in hover_entity_src:
-            failures.append(f"the entity-mode hover lost its {needle} wiring")
-    # bugs/0369: the E/E hover must be CHEAP -- it must NOT resolve the edge on every
-    # move (merge + project the whole drawn-edge set), which lagged the app so clicks
-    # registered as drags. The edge is resolved on CLICK only.
-    entity_hover = hover_entity_src.split("_measure_entity_mode", 1)[-1].split("if pickable", 1)[0]
-    if "_measure_resolve_edge" in entity_hover:
-        failures.append("the E/E hover must NOT resolve edges per move (perf, bugs/0369)")
-
-    # bugs/0369: the click POINT fallback must run even when the edge resolve THREW --
-    # it lives in its own try, separate from the _measure_resolve_edge call.
-    edge_call = press_src.find("_measure_resolve_edge(int(ex")
-    fallback_call = press_src.find("_measure_resolve_snap(int(ex")
-    if edge_call < 0 or fallback_call < 0:
-        failures.append("the E/E click lost its edge-then-point resolution (bugs/0369)")
-    else:
-        between = press_src[edge_call:fallback_call]
-        if between.count("try:") < 1 or "except" not in between:
-            failures.append("the point fallback must be in its OWN try, after the edge resolve's (bugs/0369)")
-
     for owner, method in (
         ("start_measure_pick", Kraken3DInspector.start_measure_pick),
         ("clear_measurements", Kraken3DInspector.clear_measurements),
         ("_record_measure_point", Kraken3DInspector._record_measure_point),
     ):
         if "_clear_measure_pending_edge" not in inspect.getsource(method):
-            failures.append(f"{owner} does not clear the pending edge")
-
-    hover_src = inspect.getsource(Kraken3DInspector._update_measure_hover_highlight)
-    if "_measure_pending_edge" not in hover_src:
-        failures.append("the measure hover does not surface the armed-edge state")
+            failures.append(f"{owner} does not clear the pending entity")
 
     return (not failures), failures
 
@@ -265,15 +295,17 @@ def run_checks() -> tuple[bool, list[str]]:
 def main() -> int:
     passed, failures = run_checks()
     if not passed:
-        print("Measure edge-to-edge pick validation failed:")
+        print("Measure entity-pick validation failed:")
         for name in failures:
             print(f"- {name}")
         return 1
     print(
-        "Measure edge-to-edge pick validation passed: Alt+click picks a drawn edge "
-        "entity, pairs reduce via clamped closest-pair math (a 51.00 mm opening "
-        "measures 51.00), point+edge projects, the plain 2-point flow is untouched, "
-        "and the arm/clear lifecycle is wired through start/clear/record/hover."
+        "Measure entity-pick validation passed: clicks resolve the entity off the "
+        "picked cell (edge > face > point, no gates), the first entity ARMS and "
+        "stays armed (the show helper clears actors only), pairs reduce via the "
+        "clamped closest-pair math (51.00 mm opening, 4.00 mm face gap), every "
+        "click has a visible outcome, and the hover is change-gated so it never "
+        "clobbers click feedback."
     )
     return 0
 

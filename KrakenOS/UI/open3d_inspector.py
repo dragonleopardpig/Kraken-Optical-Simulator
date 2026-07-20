@@ -15494,15 +15494,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._update_mode_badge()
 
     def start_measure_entity_pick(self) -> None:
-        """bugs/0358: the dedicated CAD-style ENTITY measure -- every click picks an
-        edge (or falls back to the face outline), no Alt needed, NO axis snap; two
-        picks give the closest edge-to-edge / face-to-face distance. The plain
-        Measure button is untouched (user: "Don't change the current Measure
+        """bugs/0358/0370: the dedicated CAD-style ENTITY measure -- every click picks
+        the entity under the cursor (edge > face > point, resolved off the picked
+        cell), no Alt needed, NO axis snap; two picks give the closest distance. The
+        plain Measure button is untouched (user: "Don't change the current Measure
         button")."""
         self.start_measure_pick()
         self._measure_entity_mode = True
+        self._measure_entity_hover_key = "__unset__"
         self.status_var.set(
-            "Measure E/E: click the FIRST edge or face (entity pick, no axis snap)."
+            "Measure E/E: click any edge or face -- CAD entity pick, no axis snap."
         )
 
     def start_measure_pick(self) -> None:
@@ -15650,25 +15651,48 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 pass
         self._measure_pending_edge_actors = []
 
-    def _show_measure_pending_edge(self, polyline) -> None:
-        """bugs/0353: persistent highlight of the armed first-EDGE pick (measure
-        orange, thicker than the hover outline) so the entity stays visibly selected
-        while the user aims the second Alt+click."""
-        self._clear_measure_pending_edge()
+    def _show_measure_pending_entity(self, entity) -> None:
+        """bugs/0370: persistent orange highlight of the armed first ENTITY (edge/face
+        segment set, or a point marker) so the pick stays visibly selected while the
+        user aims the second click.
+
+        Clears the highlight ACTORS ONLY. The old show helper called
+        ``_clear_measure_pending_edge()`` -- which ALSO nulls ``_measure_pending_edge``
+        -- right after the caller armed that state, so edge+edge NEVER completed
+        in-app (the entire 0353..0369 saga) while the guard's stubbed show helper
+        masked it. State lifecycle belongs to the callers, never to the drawing."""
+        for _actor in getattr(self, "_measure_pending_edge_actors", []) or []:
+            try:
+                self._remove_renderer_view_prop(_actor)
+            except Exception:
+                pass
+        self._measure_pending_edge_actors = []
         if self._renderer is None or vtkActor is None or vtkDataSetMapper is None:
             return
         try:
-            pts = np.asarray(polyline, dtype=float).reshape(-1, 3)
-        except Exception:
-            return
-        if pts.shape[0] < 2 or not np.all(np.isfinite(pts)):
-            return
-        try:
+            segments = entity.get("segments") if isinstance(entity, dict) else None
+            if segments is not None:
+                segs = np.asarray(segments, dtype=float).reshape(-1, 2, 3)
+                pts = segs.reshape(-1, 3)
+                lines = np.empty(segs.shape[0] * 3, dtype=np.int64)
+                lines[0::3] = 2
+                lines[1::3] = np.arange(0, pts.shape[0], 2, dtype=np.int64)
+                lines[2::3] = np.arange(1, pts.shape[0], 2, dtype=np.int64)
+            else:
+                world = np.asarray(entity.get("world"), dtype=float).reshape(3)
+                # a point entity: a short view-invariant tripod so it reads at any zoom
+                r = 1.5
+                pts = np.asarray(
+                    [world - (r, 0, 0), world + (r, 0, 0), world - (0, r, 0), world + (0, r, 0), world - (0, 0, r), world + (0, 0, r)],
+                    dtype=float,
+                )
+                lines = np.asarray([2, 0, 1, 2, 2, 3, 2, 4, 5], dtype=np.int64)
+            if pts.shape[0] < 2 or not np.all(np.isfinite(pts)):
+                return
             import pyvista as pv
 
-            n = int(pts.shape[0])
             poly = pv.PolyData(pts)
-            poly.lines = np.concatenate(([n], np.arange(n, dtype=np.int64)))
+            poly.lines = lines
             mapper = vtkDataSetMapper()
             mapper.SetInputData(poly)
             try:
@@ -15692,91 +15716,167 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             self._measure_pending_edge_actors = []
 
-    def _measure_resolve_edge(self, x: int, y: int):
-        """bugs/0353: resolve the nearest DRAWN edge under the cursor for a measure
-        Alt+click. Rides the same snap magnetism + recognised-component gate as the
-        point pick, then hit-tests the label's literally-drawn edge/rim polylines
-        (``_step_component_edge_outline``, the bugs/0304 machinery) with the shared
-        front-depth-ranked ``nearest_display_edge``, and extends the hit segment to
-        its full collinear run so a subdivided straight edge measures as ONE edge.
-        Returns ``{"polyline": (M,3), "hit_key": str, "label": str}`` or None."""
-        resolved = self._measure_resolve_snap(int(x), int(y))
-        if resolved is None:
-            return None
-        hit_key, world = resolved[0], resolved[1]
-        sx, sy = resolved[3], resolved[4]
-        if not self._measure_recognised_component(hit_key):
-            return None
-        label = (getattr(self, "_actor_step_map", None) or {}).get(hit_key)
-        if not label:
-            # bugs/0359: promoted optical solids are ROW actors -- recover the promote
-            # provenance step-label from the row's advanced metadata so their drawn
-            # edges are measurable too (the flagged BS cube case).
-            row_index = (getattr(self, "_actor_row_map", None) or {}).get(hit_key)
-            if row_index is not None:
-                try:
-                    from KrakenOS.UI.services.layout_import_export import (
-                        _promoted_body_label_and_axis,
-                    )
-
-                    row = (getattr(self.editor, "rows", None) or [])[int(row_index)]
-                    label, _axis = _promoted_body_label_and_axis(dict(getattr(row, "advanced", {}) or {}))
-                except Exception:
-                    label = None
-        if not label:
-            return None
-        try:
-            outline = self._step_component_edge_outline(str(label))
-        except Exception:
-            outline = None
-        if outline is None:
-            return None
-        from KrakenOS.UI.services.measure_edge_pick import collinear_edge_run
+    def _measure_resolve_entity(self, x: int, y: int):
+        """bugs/0370: CAD-style entity pick for Measure E/E. Resolve the entity under
+        the cursor from the PICKED CELL on the picked actor's OWN mesh -- the cell id
+        is aligned with the mapper input by definition -- with edge > face > point
+        priority. No recognised-component gate, no step-label indirection, no DRAWN
+        edge actors (the sparse set that kept resolving to nothing on big bodies):
+        what you can see, you can measure. Face outlines come from the analytic
+        face-index cell data when present (cached topology, ~ms per face after the
+        first walk) else the cached display feature edges. Returns
+        ``{"kind": "edge"|"face"|"point", "segments": (K,2,3)|None, "world": (3,),
+        "hover_key": tuple}`` or None when NOTHING pickable is under the cursor."""
+        from KrakenOS.UI.services.measure_edge_pick import (
+            collinear_edge_run,
+            outline_pairs_to_segments,
+            polyline_to_segments,
+        )
         from KrakenOS.UI.services.open3d_face_index_edges import (
+            cached_display_feature_edges,
+            face_index_for_display_cell,
+            face_outline_from_face_indices,
             line_segment_pairs,
+            mesh_has_face_index,
             nearest_display_edge,
         )
 
+        if self._picker is None or self._renderer is None:
+            return None
+        actor = None
+        world = None
+        cell_id = -1
+        try:
+            self._picker.Pick(float(x), float(y), 0.0, self._renderer)
+            actor = self._picker.GetActor()
+            if actor is None:
+                get_view_prop = getattr(self._picker, "GetViewProp", None)
+                if callable(get_view_prop):
+                    actor = get_view_prop()
+            world = np.asarray(self._picker.GetPickPosition(), dtype=float).reshape(-1)[:3]
+            cell_id = int(self._picker.GetCellId())
+        except Exception as exc:
+            # bugs/0370: breadcrumb -- a repeatable in-app pick failure must be
+            # diagnosable from the debug log, never a silent None.
+            try:
+                self.editor.append_debug(f"Measure entity pick failed: {exc}")
+            except Exception:
+                pass
+            return None
+        if actor is None or world is None or world.size < 3 or not np.all(np.isfinite(world)):
+            return None
+        actor_key = str(self._actor_key(actor) or "")
+        point_entity = {
+            "kind": "point",
+            "segments": None,
+            "world": np.asarray(world, dtype=float).reshape(3),
+            "hover_key": ("measure_entity", "point", actor_key),
+        }
+        if cell_id < 0:
+            return point_entity
+        mesh = None
+        try:
+            mesh = actor.GetMapper().GetInput()
+            if mesh is not None and not hasattr(mesh, "cell_data"):
+                # Rare bare-vtk input: wrap ONCE per actor and reuse the same object so
+                # the id-keyed outline caches stay warm (bugs/0148 class).
+                cache = self.__dict__.setdefault("_measure_entity_mesh_cache", {})
+                if len(cache) > 64:
+                    cache.clear()
+                wrapped = cache.get(actor_key)
+                if wrapped is None:
+                    wrapped = pv.wrap(mesh)
+                    cache[actor_key] = wrapped
+                mesh = wrapped
+        except Exception:
+            mesh = None
+        if mesh is None or int(getattr(mesh, "n_cells", 0)) <= 0:
+            return point_entity
+        outline = None
+        face_token = None
+        try:
+            if mesh_has_face_index(mesh):
+                face_index = face_index_for_display_cell(mesh, int(cell_id))
+                if face_index is not None and int(face_index) >= 0:
+                    outline = face_outline_from_face_indices(mesh, [int(face_index)])
+                    face_token = int(face_index)
+            if outline is None:
+                outline = cached_display_feature_edges(mesh)
+        except Exception as exc:
+            try:
+                self.editor.append_debug(f"Measure entity outline failed: {exc}")
+            except Exception:
+                pass
+            outline = None
+        if outline is None or int(getattr(outline, "n_points", 0)) < 2:
+            return point_entity
         try:
             pts = np.asarray(outline.points, dtype=float).reshape(-1, 3)
+            pairs = line_segment_pairs(outline)
         except Exception:
-            return None
-        pairs = line_segment_pairs(outline)
-        if pts.shape[0] < 2 or not pairs:
-            return None
-        hit = nearest_display_edge(
-            pts,
-            pairs,
-            (int(sx), int(sy)),
-            self._world_to_display_2d,
-            tolerance_px=14.0,
-            depth_reference=world,
-        )
-        if hit is None:
-            return None
-        _ordinal, i0, i1, _mid, _dist = hit
-        polyline = collinear_edge_run(pts, pairs, (int(i0), int(i1)))
-        return {"polyline": polyline, "hit_key": hit_key, "label": str(label)}
+            return point_entity
+        if not pairs:
+            return point_entity
+        hit = None
+        try:
+            hit = nearest_display_edge(
+                pts,
+                pairs,
+                (int(x), int(y)),
+                self._world_to_display_2d,
+                tolerance_px=18.0,
+                depth_reference=world,
+            )
+        except Exception:
+            hit = None
+        if hit is not None:
+            _ordinal, i0, i1, _mid, _dist = hit
+            try:
+                run = collinear_edge_run(pts, pairs, (int(i0), int(i1)))
+                segments = polyline_to_segments(run)
+            except Exception:
+                segments = np.asarray([(pts[int(i0)], pts[int(i1)])], dtype=float)
+            return {
+                "kind": "edge",
+                "segments": segments,
+                "world": np.asarray(world, dtype=float).reshape(3),
+                "hover_key": ("measure_entity", "edge", actor_key, face_token, int(i0), int(i1)),
+            }
+        # No boundary edge within tolerance: the FACE itself is the entity (its
+        # boundary segment set), so face-to-face gap measurements work like CAD.
+        try:
+            segments = outline_pairs_to_segments(pts, pairs)
+        except Exception:
+            return point_entity
+        return {
+            "kind": "face",
+            "segments": segments,
+            "world": np.asarray(world, dtype=float).reshape(3),
+            "hover_key": ("measure_entity", "face", actor_key, face_token),
+        }
 
-    def _on_measure_edge_pick(self, edge) -> None:
-        """bugs/0353: fold an Alt+click EDGE pick into the 2-point measure flow.
-        Every pair reduces to two world points (services/measure_edge_pick), so the
-        segment/label/offset-handle/persistence/STEP-export pipeline is untouched:
-        edge+edge -> closest pair (an opening's clear width); point+edge -> the
-        closest point on the edge; a re-anchor pick reduces against the segment's
+    def _on_measure_entity_pick(self, entity) -> None:
+        """bugs/0370: fold a CAD entity pick (edge / face / point) into the 2-point
+        measure flow. Every pair reduces to two world points
+        (services/measure_edge_pick.reduce_measure_entities), so the segment/label/
+        offset-handle/persistence/STEP-export pipeline is untouched: edge+edge and
+        face+face -> closest pair (an opening's clear width, a plate gap);
+        anything+point -> projection; a re-anchor pick reduces against the segment's
         LIVE other endpoint."""
         from KrakenOS.UI.services.measure_edge_pick import (
-            closest_point_on_polyline,
-            closest_points_between_polylines,
+            closest_point_on_segments,
+            reduce_measure_entities,
         )
 
-        polyline = np.asarray(edge.get("polyline"), dtype=float).reshape(-1, 3)
+        world = np.asarray(entity.get("world"), dtype=float).reshape(3)
+        segments = entity.get("segments")
+        kind = str(entity.get("kind", "point"))
         reanchor = getattr(self, "_measure_reanchor", None)
         if isinstance(reanchor, dict):
             fixed = None
             try:
-                segs = list(getattr(self, "_measure_segments", []))
-                seg = segs[int(reanchor.get("seg", -1))]
+                seg_list = list(getattr(self, "_measure_segments", []))
+                seg = seg_list[int(reanchor.get("seg", -1))]
                 other = 1 - int(reanchor.get("end", 0))
                 fixed = self._resolve_measure_point(
                     seg[f"p{other}"], seg.get(f"r{other}"), float(seg.get(f"dz{other}", 0.0))
@@ -15786,42 +15886,48 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             if fixed is None:
                 self.status_var.set("Measure: edge re-anchor could not resolve the fixed endpoint.")
                 return
-            q, _dist = closest_point_on_polyline(polyline, fixed)
+            if segments is None:
+                q = world
+            else:
+                q = np.asarray(closest_point_on_segments(segments, fixed)[0], dtype=float)
             self._clear_measure_snap_marker()
-            self._record_measure_point(np.asarray(q, dtype=float), None)
+            self._record_measure_point(q, None)
             return
         p0 = getattr(self, "_measure_p0", None)
         if p0 is not None:
-            # Point-first, edge-second: project the LIVE first point onto the edge.
+            # Point-first (plain-measure interop): project the LIVE first point.
             first = self._resolve_measure_point(p0.get("p"), p0.get("r"), float(p0.get("dz", 0.0)))
-            q, _dist = closest_point_on_polyline(polyline, first)
+            if segments is None:
+                q = world
+            else:
+                q = np.asarray(closest_point_on_segments(segments, first)[0], dtype=float)
             self._clear_measure_snap_marker()
-            self._record_measure_point(np.asarray(q, dtype=float), None)
+            self._record_measure_point(q, None)
             return
         pending = getattr(self, "_measure_pending_edge", None)
-        if pending is not None:
-            # bugs/0367: clear the armed edge FIRST so a throw in the reduce can never
-            # strand it (the user was left with a stuck orange edge and no dimension).
-            pending_polyline = np.asarray(pending["polyline"], dtype=float)
+        if isinstance(pending, dict):
+            # bugs/0367: clear the armed entity FIRST so a throw in the reduce can
+            # never strand it.
             self._clear_measure_pending_edge()
             self._clear_measure_snap_marker()
             try:
-                pa, pb, _dist = closest_points_between_polylines(pending_polyline, polyline)
+                pa, pb, _dist = reduce_measure_entities(pending, entity)
             except Exception:
-                # Degenerate second edge: fall back to the new edge's own endpoints.
-                pa, pb = polyline[0], polyline[-1]
+                pa = np.asarray(pending.get("world", world), dtype=float).reshape(3)
+                pb = world
             self._record_measure_point(np.asarray(pa, dtype=float), None)
             self._record_measure_point(np.asarray(pb, dtype=float), None)
             return
-        # First pick is an EDGE: arm it and wait for the opposite edge / a point.
-        self._measure_pending_edge = {
-            "polyline": polyline,
-            "hit_key": edge.get("hit_key"),
-            "label": edge.get("label"),
+        # First pick: ARM the entity, highlight it persistently, say so.
+        armed = {
+            "kind": kind,
+            "segments": None if segments is None else np.asarray(segments, dtype=float),
+            "world": world,
         }
-        self._show_measure_pending_edge(polyline)
+        self._show_measure_pending_entity(armed)
+        self._measure_pending_edge = armed
         self.status_var.set(
-            "Measure: first EDGE armed -- Alt+click the opposite edge (or click a point)."
+            f"Measure E/E: {kind} 1 picked -- click the second edge / face / point."
         )
 
     def _record_measure_point(self, world, normal=None) -> None:
@@ -15859,6 +15965,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._measure_segments = segs
         self._measure_p0 = None
         self._measure_pick_mode = False
+        # bugs/0370: entity mode ends with the measurement too (it survived
+        # completion as a zombie flag before -- masked only by the outer gate).
+        self._measure_entity_mode = False
+        self._measure_entity_hover_key = "__unset__"
         self._clear_measure_pending_edge()
         try:
             self._set_axis_pick_cursor(False)
@@ -16210,20 +16320,57 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         sy = resolved[4] if resolved else None
         pickable = self._measure_recognised_component(hit_key)
         if getattr(self, "_measure_entity_mode", False):
-            # bugs/0369: keep the E/E hover CHEAP. The 0359 hover resolved the edge on
-            # EVERY mouse move -- merging the whole drawn-edge set + projecting every
-            # segment + a full render per move -- which on a big STEP body (the 591k-tri
-            # camera) lagged the app so badly that click press/release spanned >8 px and
-            # registered as a camera DRAG, so no pick ever fired ("both edges clicked are
-            # not working"). The edge is resolved once, on CLICK; the armed first edge
-            # stays highlighted by its own persistent actor. The hover only sets the snap
-            # cursor -- a widget property, no scene work, no render.
-            self._set_step_hover_outline(None, None, render=False)
-            self._set_measure_snap_cursor(True)
-            if getattr(self, "_measure_pending_edge", None) is not None:
-                self.status_var.set("Measure E/E: click the SECOND edge or surface.")
+            # bugs/0370: REAL hover highlight, cheap by construction -- ONE cell pick
+            # + the CACHED face outline (per-mesh topology walks once, per-face masks
+            # are ~ms), then the whole update is CHANGE-GATED on the hover entity key:
+            # unchanged entity = no actor work, no render, and -- critically -- NO
+            # status write, so a click result is never clobbered by the next mouse
+            # move (the 0369 hover rewrote the status every move, hiding every click
+            # outcome; the 0359 hover did heavy per-move work that turned clicks into
+            # camera drags -- this does neither).
+            entity = None
+            if x is not None and y is not None:
+                try:
+                    entity = self._measure_resolve_entity(int(x), int(y))
+                except Exception:
+                    entity = None
+            hover_key = entity.get("hover_key") if isinstance(entity, dict) else None
+            if hover_key == getattr(self, "_measure_entity_hover_key", "__unset__"):
+                return
+            self._measure_entity_hover_key = hover_key
+            self._clear_measure_snap_marker()
+            self._clear_measure_preview()
+            outline = None
+            if isinstance(entity, dict) and entity.get("segments") is not None:
+                try:
+                    segs = np.asarray(entity["segments"], dtype=float).reshape(-1, 2, 3)
+                    pts = segs.reshape(-1, 3)
+                    lines = np.empty(segs.shape[0] * 3, dtype=np.int64)
+                    lines[0::3] = 2
+                    lines[1::3] = np.arange(0, pts.shape[0], 2, dtype=np.int64)
+                    lines[2::3] = np.arange(1, pts.shape[0], 2, dtype=np.int64)
+                    poly = pv.PolyData(pts)
+                    poly.lines = lines
+                    outline = self._hover_overlay_for_feature(pts[0], poly)
+                except Exception:
+                    outline = None
+            self._set_step_hover_outline(outline, hover_key, render=False)
+            self._set_measure_snap_cursor(entity is not None)
+            if isinstance(entity, dict):
+                ordinal = (
+                    "second"
+                    if getattr(self, "_measure_pending_edge", None) is not None
+                    else "first"
+                )
+                self.status_var.set(
+                    f"Measure E/E: click to pick this {entity.get('kind', 'point')} ({ordinal})."
+                )
             else:
-                self.status_var.set("Measure E/E: click the FIRST edge or surface.")
+                self.status_var.set("Measure E/E: hover geometry -- click to pick an edge or face.")
+            try:
+                self.render()
+            except Exception:
+                pass
             return
         if pickable and sx is not None:
             self._set_dimension_anchor_snap_highlight(hit_key, int(sx), int(sy))
@@ -19747,58 +19894,23 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             if getattr(self, "_measure_entity_mode", False) or getattr(
                 self, "_edge_pick_alt_active", False
             ):
-                entity_mode = bool(getattr(self, "_measure_entity_mode", False))
-                edge = None
-                world = None
-                ex = ey = None
+                # bugs/0370: ONE resolver -- the CAD entity pick off the picked cell.
+                # Every click ends in a VISIBLE outcome: arm / complete / explicit miss.
+                entity = None
                 try:
                     ex, ey = self._vtk_interactor.GetEventPosition()
-                except Exception:
-                    ex = ey = None
-                if ex is not None:
+                    entity = self._measure_resolve_entity(int(ex), int(ey))
+                except Exception as exc:
                     try:
-                        edge = self._measure_resolve_edge(int(ex), int(ey))
+                        self.editor.append_debug(f"Measure entity click failed: {exc}")
                     except Exception:
-                        edge = None
-                    # bugs/0369: the POINT fallback is in its OWN try so it runs even when
-                    # the edge resolve THREW (not just returned None) -- otherwise a throw
-                    # in _measure_resolve_edge stranded the armed edge with no dimension
-                    # (the 0367 fix only handled the returns-None case). CAD measures
-                    # edge->face too; the second click must ALWAYS complete. NO axis snap.
-                    if edge is None:
-                        try:
-                            snap = self._measure_resolve_snap(int(ex), int(ey))
-                            if snap is not None and snap[1] is not None:
-                                candidate = np.asarray(snap[1], dtype=float).reshape(-1)[:3]
-                                if candidate.size == 3 and np.all(np.isfinite(candidate)):
-                                    world = candidate
-                        except Exception:
-                            world = None
-                if edge is not None:
-                    self._on_measure_edge_pick(edge)
-                    return
-                pending = getattr(self, "_measure_pending_edge", None)
-                has_p0 = getattr(self, "_measure_p0", None) is not None
-                if world is not None and (pending is not None or has_p0 or entity_mode):
-                    from KrakenOS.UI.services.measure_edge_pick import (
-                        closest_point_on_polyline,
-                    )
-
-                    if pending is not None:
-                        # edge (armed) -> point: reduce the armed edge against the point.
-                        anchor, _dist = closest_point_on_polyline(pending["polyline"], world)
-                        self._clear_measure_pending_edge()
-                        self._clear_measure_snap_marker()
-                        self._record_measure_point(np.asarray(anchor, dtype=float), None)
-                    self._clear_measure_snap_marker()
-                    self._record_measure_point(np.asarray(world, dtype=float), None)
-                elif entity_mode:
-                    self.status_var.set(
-                        "Measure E/E: click on an edge or a surface to measure."
-                    )
+                        pass
+                    entity = None
+                if entity is not None:
+                    self._on_measure_entity_pick(entity)
                 else:
                     self.status_var.set(
-                        "Measure: no drawn edge under the cursor -- Alt+click aims at a drawn edge."
+                        "Measure E/E: nothing under the cursor -- click ON visible geometry."
                     )
                 return
             hit_key = None
@@ -19828,21 +19940,25 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     world = snapped
                     normal = None  # on-axis points span point-to-point along the axis
                 self._clear_measure_snap_marker()
-                # bugs/0353: an armed first-EDGE pick reduces against this point --
-                # record the edge's closest point first, the clicked point completes.
+                # bugs/0353/0370: an armed first-ENTITY pick reduces against this
+                # point -- record the entity's closest point first, the clicked
+                # point completes.
                 pending = getattr(self, "_measure_pending_edge", None)
                 if (
-                    pending is not None
+                    isinstance(pending, dict)
                     and getattr(self, "_measure_p0", None) is None
                     and not isinstance(getattr(self, "_measure_reanchor", None), dict)
                 ):
-                    from KrakenOS.UI.services.measure_edge_pick import closest_point_on_polyline
+                    from KrakenOS.UI.services.measure_edge_pick import closest_point_on_segments
 
-                    anchor, _d = closest_point_on_polyline(
-                        pending["polyline"], np.asarray(world, dtype=float).reshape(-1)[:3]
-                    )
+                    point = np.asarray(world, dtype=float).reshape(-1)[:3]
+                    segments = pending.get("segments")
+                    if segments is None:
+                        anchor = np.asarray(pending.get("world", point), dtype=float).reshape(3)
+                    else:
+                        anchor = np.asarray(closest_point_on_segments(segments, point)[0], dtype=float)
                     self._clear_measure_pending_edge()
-                    self._record_measure_point(np.asarray(anchor, dtype=float), None)
+                    self._record_measure_point(anchor, None)
                 self._record_measure_point(world, normal)
             else:
                 self.status_var.set("Measure: click ON an edge/surface (the pick missed).")

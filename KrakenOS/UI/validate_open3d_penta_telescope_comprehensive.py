@@ -14084,7 +14084,7 @@ def phase_306_measure_edge_pick(
     exactly 51.00), point+edge projects onto the edge, and the plain point-click
     path stays byte-identical so every existing measure guard holds."""
     result = PhaseResult(
-        name="Phase 306: Measure Alt+click picks drawn edges (edge-to-edge distance)"
+        name="Phase 306: Measure E/E resolves CAD entities off the picked cell (0370)"
     )
     try:
         from KrakenOS.UI.validate_open3d_measure_edge_pick import run_checks
