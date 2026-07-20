@@ -227,6 +227,26 @@ class Open3DFaceAssignmentService:
                     face_id=picked_face_id,
                 ),
             )
+            # bugs/0363: one-shot glue -- seat an EXISTING free scene source's emitting
+            # panel ON this face (origin = the picked face centroid, aim INTO the solid),
+            # so the LED source snaps onto the BS cube / LED STEP without re-authoring.
+            try:
+                seat_sources = self.editor._drawable_scene_source_descriptors() or []
+            except Exception:
+                seat_sources = []
+            for seat_source in seat_sources:
+                seat_sid = str(getattr(seat_source, "source_id", "") or "")
+                if not seat_sid:
+                    continue
+                seat_name = str(
+                    (getattr(seat_source, "settings", {}) or {}).get("name", seat_sid) or seat_sid
+                )
+                menu.add_command(
+                    label=f"Seat {seat_name} on This Face",
+                    command=lambda source=seat_sid, picked_point=point[:3].copy(), picked_normal=normal: self.editor.seat_scene_source_on_face(
+                        source, picked_point, picked_normal
+                    ),
+                )
             menu.add_separator()
             self.append_element_context_actions(menu, row_index=int(row_index))
         elif row_index is not None and self.editor._is_any_promoted_optical_solid_row(self.editor.rows[int(row_index)]):

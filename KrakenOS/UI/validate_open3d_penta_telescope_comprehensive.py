@@ -14227,6 +14227,32 @@ def phase_311_browser_group_hide(
     return result
 
 
+def phase_312_scene_source_edit(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0363 -- the scene source as a general 3D element: Edit Source... dialog
+    (dims/aim/position/cone/rays/power via update_scene_source_spec, both spec key
+    forms, editable-key filter) and the one-shot Seat-on-face glue (origin = picked
+    face centroid, aim INTO the solid)."""
+    result = PhaseResult(
+        name="Phase 312: scene source edits in place + seats on a picked face"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_scene_source_edit import run_checks
+
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"scene-source-edit guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("scene-source-edit phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14583,6 +14609,7 @@ def main() -> int:
             phase_309_led_ray_hard_stop,
             phase_310_illumination_source_face_block,
             phase_311_browser_group_hide,
+            phase_312_scene_source_edit,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

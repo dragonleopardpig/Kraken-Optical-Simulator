@@ -311,7 +311,8 @@
     "308": "pass",
     "309": "pass",
     "310": "pass",
-    "311": "pass"
+    "311": "pass",
+    "312": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -623,6 +624,7 @@
     "308": "LED illumination volume overlay (folded, congruent footprint)",
     "309": "drawn rays hard-stop at the opaque flat LED plate",
     "310": "illumination source covering a face blocks the imaging arm",
-    "311": "browser parent Hide/Show cascades to all children"
+    "311": "browser parent Hide/Show cascades to all children",
+    "312": "scene source edits in place + seats on a picked face"
   }
 }

@@ -1092,6 +1092,94 @@ class SourceModelingMixin:
             "coaxial_fold_axis": fold_axis,
         }
 
+    # bugs/0363: the keys a user may edit on a scene source after creation -- name,
+    # position, aim, emitting size, cone, ray budget, power, enablement. Both the
+    # vector ("origin"/"direction") and component ("source_x".."source_n") forms are
+    # accepted so whichever form the authored spec carries gets overridden.
+    SCENE_SOURCE_EDITABLE_KEYS = (
+        "name",
+        "origin", "direction",
+        "source_x", "source_y", "source_z", "source_l", "source_m", "source_n",
+        "radius_x", "radius_y", "radius",
+        "cone_deg", "ray_count", "power", "enabled",
+    )
+
+    def update_scene_source_spec(
+        self, source_id: str, updates: dict, *, status: str | None = None, record_history: bool = True
+    ) -> bool:
+        """bugs/0363: edit a scene source in place (dimension / orientation / position /
+        cone / rays / power) -- the "general 3D source element" ask. Only
+        ``SCENE_SOURCE_EDITABLE_KEYS`` pass through; ``radius`` is refreshed to
+        ``max(radius_x, radius_y)`` whenever a half-size changes so legacy single-radius
+        consumers stay consistent. Returns True when the source was found and the specs
+        re-applied through the standard row-action path (rebuild + history + status)."""
+        target = str(source_id or "").strip()
+        if not target:
+            return False
+        specs = [
+            dict(spec)
+            for spec in self._normalize_scene_source_specs(
+                getattr(self, "layout_scene_source_specs", []) or []
+            )
+        ]
+        hit = False
+        for spec in specs:
+            if str(spec.get("source_id", "") or "") != target:
+                continue
+            for key, value in dict(updates or {}).items():
+                if key not in self.SCENE_SOURCE_EDITABLE_KEYS:
+                    continue
+                spec[key] = value
+            try:
+                rx = float(spec.get("radius_x", spec.get("radius", 0.0)) or 0.0)
+                ry = float(spec.get("radius_y", spec.get("radius", 0.0)) or 0.0)
+                if rx > 0.0 or ry > 0.0:
+                    spec["radius"] = float(max(rx, ry))
+            except Exception:
+                pass
+            hit = True
+            break
+        if not hit:
+            return False
+        self._apply_scene_source_row_action_specs(
+            specs,
+            record_history=record_history,
+            status=str(status or f"Updated scene source {target}."),
+        )
+        return True
+
+    def seat_scene_source_on_face(
+        self, source_id: str, centroid_world, normal_world, *, aim_inward: bool = True
+    ) -> bool:
+        """bugs/0363: one-shot "glue" -- seat a scene source's emitting panel ON a picked
+        face: origin at the face centroid, direction along the face normal (INTO the
+        solid by default -- the coaxial LED-on-the-BS-side case). Size stays as
+        authored (Edit Source... adjusts it); the seat is a pose copy, it does not
+        auto-follow later element moves."""
+        try:
+            centroid = np.asarray(centroid_world, dtype=float).reshape(3)
+            normal = np.asarray(normal_world, dtype=float).reshape(3)
+            norm = float(np.linalg.norm(normal))
+        except Exception:
+            return False
+        if norm <= 1e-9 or not np.all(np.isfinite(centroid)):
+            return False
+        direction = -(normal / norm) if aim_inward else (normal / norm)
+        return self.update_scene_source_spec(
+            source_id,
+            {
+                "origin": [float(centroid[0]), float(centroid[1]), float(centroid[2])],
+                "direction": [float(direction[0]), float(direction[1]), float(direction[2])],
+                "source_x": float(centroid[0]),
+                "source_y": float(centroid[1]),
+                "source_z": float(centroid[2]),
+                "source_l": float(direction[0]),
+                "source_m": float(direction[1]),
+                "source_n": float(direction[2]),
+            },
+            status=f"Seated scene source {source_id} on the picked face.",
+        )
+
     def add_illumination_led_source(self, *, record_history: bool = True) -> str:
         """Add a new physical area-LED illumination source as a first-class scene source (bugs/0284) --
         the "Add Illumination Source (LED)" entry point behind the browser's Scene Sources group. The

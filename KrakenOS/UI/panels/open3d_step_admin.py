@@ -833,6 +833,20 @@ class Open3DStepAdminPanel:
         self._show_element_context_menu(event, iid)
         return "break"
 
+    def _edit_scene_source(self, source_id: str) -> None:
+        """bugs/0363: open the scene-source edit dialog for a browser source row."""
+        try:
+            from KrakenOS.UI.panels.open3d_source_edit_dialog import (
+                open_scene_source_edit_dialog,
+            )
+
+            open_scene_source_edit_dialog(self.editor, self.inspector, str(source_id))
+        except Exception as exc:
+            try:
+                self.inspector.status_var.set(f"Edit Source failed: {exc}")
+            except Exception:
+                pass
+
     def _show_scene_sources_context_menu(self, event) -> None:
         """bugs/0284: the Scene Sources group's right-click menu. "Add Illumination Source (LED)" creates
         a first-class emitting-LED scene source; its 0283 glyph + browser row appear on the refresh."""
@@ -1030,6 +1044,13 @@ class Open3DStepAdminPanel:
             except Exception:
                 pass
         if added_actions:
+            menu.add_separator()
+        if source_id is not None:
+            # bugs/0363: the general 3D source element -- edit dims/aim/position in place.
+            menu.add_command(
+                label="Edit Source…",
+                command=lambda sid=source_id: self._edit_scene_source(sid),
+            )
             menu.add_separator()
         show_word = "Show" if display_key is not None else "Unhide"
         if has_children:
