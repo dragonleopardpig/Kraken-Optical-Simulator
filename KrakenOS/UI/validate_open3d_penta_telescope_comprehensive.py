@@ -14305,6 +14305,33 @@ def phase_314_lens_step_flip_direction(
     return result
 
 
+def phase_315_lens_step_glass_recenter(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0374 -- lens STEP overlay glass-block re-centre. Pinning the mechanical
+    body face at the front datum leaves the glass off by delta, and delta swaps sign
+    on the 0373 flip, so the overlay jumps ~2*delta. The fix pins the optical
+    glass-block CENTRE on the surrogate datum-span centre: flip-invariant, and (datum
+    span == STEP glass vertex span) front/rear vertices land on their datums."""
+    result = PhaseResult(
+        name="Phase 315: imported lens STEP overlay is re-centred on its glass block"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_lens_step_glass_recenter import run_checks
+
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"lens-step-glass-recentre guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("lens-step-glass-recentre phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14664,6 +14691,7 @@ def main() -> int:
             phase_312_scene_source_edit,
             phase_313_analytic_document_disk_cache,
             phase_314_lens_step_flip_direction,
+            phase_315_lens_step_glass_recenter,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

@@ -164,6 +164,16 @@ def _cached_step_axis_path(path: Path) -> Path:
     return base_path.with_name(f"{base_path.stem}.axis.v2.json")
 
 
+def _cached_step_glass_path(path: Path) -> Path:
+    # bugs/0374: the optical glass block's axial span (from on-axis spherical
+    # surface vertices), used to centre the lens overlay on the surrogate's
+    # optical vertices instead of on the mechanical body face.
+    base_path = _cached_cad_mesh_path(path)
+    # v2: per-cap face-bbox vertex disambiguation (v1's body-bbox test dropped an
+    # optical surface whose 2*radius ~ body length -- bugs/0374).
+    return base_path.with_name(f"{base_path.stem}.glass.v2.json")
+
+
 def _cached_outer_cad_mesh_path(path: Path, solid_indices: tuple[int, ...]) -> Path:
     return _layout_module()._cached_outer_cad_mesh_path(path, solid_indices)
 
@@ -457,6 +467,23 @@ class LayoutPolylineDisplayMixin:
             if row.surface not in {"Object", "Image", "Aperture"}:
                 return index
         return None
+
+    def _lens_rear_datum_z(self) -> float:
+        """Axial position of the surrogate's Rear Optical Vertex Datum (world z).
+
+        Mirror of :meth:`_lens_front_datum_z` from the far end -- the last named
+        rear datum/edge row, else the last real (non Object/Image/Aperture) row.
+        Together they bracket the surrogate's optical span, whose CENTRE the lens
+        STEP overlay is re-registered onto (bugs/0374)."""
+        z_positions = self._row_z_positions()
+        for index in range(len(self.rows) - 1, -1, -1):
+            name = (self.rows[index].name or "").strip().lower()
+            if "rear" in name and ("datum" in name or "edge" in name):
+                return float(z_positions[index])
+        for index in range(len(self.rows) - 1, -1, -1):
+            if self.rows[index].surface not in {"Object", "Image", "Aperture"}:
+                return float(z_positions[index])
+        return self._lens_front_datum_z()
 
     def _image_plane_row_index(self) -> int | None:
         last_image = None
@@ -1201,6 +1228,204 @@ class LayoutPolylineDisplayMixin:
             self.append_debug(f"STEP cylinder-axis extraction failed: {exc}")
             return None
 
+    def _step_optical_glass_axial_metrics(self, source_path) -> dict | None:
+        """Axial span of the OPTICAL GLASS block inside a lens STEP.
+
+        A mechanical lens STEP does not tag which faces are glass, so the auto
+        overlay pins the *mechanical body* front face at the Front Optical Vertex
+        Datum. But the glass is usually not centred in the barrel, so a body-face
+        pin leaves the glass a few mm off the datum -- and that error SWAPS SIGN
+        when the barrel is flipped (front_face max<->min), so a reversed lens
+        visibly jumps ~3 mm off its surrogate (bugs/0374).
+
+        The glass block is bracketed by its spherical optical surfaces.  An
+        optical surface is a spherical FACE whose curvature centre lies ON the
+        barrel axis (a mount fillet's sphere centre is off-axis by ~the body
+        radius, cleanly rejecting non-optical spheres).  Its surface VERTEX
+        (pole) is the axis crossing ``centre +/- radius`` that falls INSIDE the
+        body -- the antipode is outside the glass.  (Using the curvature CENTRE
+        instead of the vertex is the classic error; see
+        reference_machine_vision_surrogate_recipe.)
+
+        Returns ``{glass_lo, glass_hi, body_lo, body_hi, surfaces}`` with the four
+        axial coordinates as ``dot(point, axis)`` in the STEP-native frame (a
+        shared origin, so only DIFFERENCES are meaningful and any frame offset
+        cancels through the alignment), or ``None`` when fewer than two on-axis
+        optical spheres are found (cannot bracket a block).  General: keyed only
+        on geometry, so it works for any future lens import.
+        """
+        source_path = Path(source_path).expanduser()
+        cache_key = f"step-glass-axial:{source_path.resolve()}"
+        cached = self._external_cad_mesh_cache.get(cache_key)
+        if cached is not None:
+            return cached or None  # {} is a negative (no-glass) marker
+        frame = self._step_primary_cylinder_axis_frame(source_path)
+        if frame is None:
+            return None
+        axis = np.asarray(frame["axis"], dtype=float).reshape(3)
+        axis_point = np.asarray(frame["point"], dtype=float).reshape(3)
+
+        glass_cache_path = _cached_step_glass_path(source_path)
+        if glass_cache_path.exists() and glass_cache_path.stat().st_size > 0:
+            try:
+                payload = json.loads(glass_cache_path.read_text(encoding="utf-8"))
+                metrics = {k: float(payload[k]) for k in ("glass_lo", "glass_hi", "body_lo", "body_hi")}
+                metrics["surfaces"] = int(payload.get("surfaces", 0))
+                if all(np.isfinite(v) for v in metrics.values()) and metrics["glass_hi"] > metrics["glass_lo"]:
+                    self._external_cad_mesh_cache[cache_key] = metrics
+                    return metrics
+            except Exception:
+                try:
+                    glass_cache_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+        try:
+            from OCC.Core.Bnd import Bnd_Box
+            from OCC.Core.BRepAdaptor import BRepAdaptor_Surface
+            from OCC.Core.GeomAbs import GeomAbs_Sphere
+            from OCC.Core.STEPControl import STEPControl_Reader
+            from OCC.Core.TopAbs import TopAbs_FACE
+            from OCC.Core.TopExp import TopExp_Explorer
+
+            try:
+                from OCC.Core.BRepBndLib import brepbndlib
+
+                _bbox_add = brepbndlib.Add
+            except Exception:
+                from OCC.Core.BRepBndLib import brepbndlib_Add as _bbox_add
+        except Exception as exc:
+            self.append_debug(f"STEP glass-axial extraction unavailable: {exc}")
+            return None
+        try:
+            reader = STEPControl_Reader()
+            if reader.ReadFile(str(source_path)) != 1:
+                return None
+            reader.TransferRoots()
+            shape = reader.OneShape()
+            box = Bnd_Box()
+            _bbox_add(shape, box)
+            bx0, by0, bz0, bx1, by1, bz1 = box.Get()
+            corners = np.array(
+                [[x, y, z] for x in (bx0, bx1) for y in (by0, by1) for z in (bz0, bz1)],
+                dtype=float,
+            )
+            body_u = corners @ axis
+            body_lo = float(np.min(body_u))
+            body_hi = float(np.max(body_u))
+            body_len = max(body_hi - body_lo, 1e-6)
+            body_diag = float(np.linalg.norm([bx1 - bx0, by1 - by0, bz1 - bz0]))
+            # An optical surface's curvature centre sits ON the axis; a mount
+            # fillet's is off by ~the body radius.  Generous but discriminating.
+            perp_tol = max(2.0, 0.05 * body_diag)
+            explorer = TopExp_Explorer(shape, TopAbs_FACE)
+            vertices: list[float] = []
+            while explorer.More():
+                face = explorer.Current()
+                surface = BRepAdaptor_Surface(face)
+                if surface.GetType() == GeomAbs_Sphere:
+                    sphere = surface.Sphere()
+                    loc = sphere.Location()
+                    center = np.array([loc.X(), loc.Y(), loc.Z()], dtype=float)
+                    radius = float(sphere.Radius())
+                    if np.isfinite(radius) and 1.0 < radius < 1.0e6 and np.all(np.isfinite(center)):
+                        delta = center - axis_point
+                        perp = float(np.linalg.norm(delta - float(np.dot(delta, axis)) * axis))
+                        if perp <= perp_tol:
+                            # The optical vertex (pole) is the axis crossing
+                            # ``centre +/- radius`` lying within THIS cap's own axial
+                            # extent; the antipode is on the far side of the centre,
+                            # outside the face.  (The body bbox cannot disambiguate
+                            # when 2*radius ~ body length -- both poles then fall
+                            # inside the body -- bugs/0374.)
+                            fbox = Bnd_Box()
+                            _bbox_add(face, fbox)
+                            fx0, fy0, fz0, fx1, fy1, fz1 = fbox.Get()
+                            fcorners = np.array(
+                                [[x, y, z] for x in (fx0, fx1) for y in (fy0, fy1) for z in (fz0, fz1)],
+                                dtype=float,
+                            )
+                            fu = fcorners @ axis
+                            f_lo, f_hi = float(np.min(fu)), float(np.max(fu))
+                            u_c = float(np.dot(center, axis))
+                            cap_eps = max(0.25, 0.02 * radius)
+                            poles = [
+                                u for u in (u_c + radius, u_c - radius)
+                                if f_lo - cap_eps <= u <= f_hi + cap_eps
+                            ]
+                            if len(poles) == 1:
+                                vertices.append(float(poles[0]))
+                explorer.Next()
+            if len(vertices) < 2:
+                self._external_cad_mesh_cache[cache_key] = {}
+                return None
+            glass_lo = float(min(vertices))
+            glass_hi = float(max(vertices))
+            if not (0.2 * body_len <= (glass_hi - glass_lo) <= 1.2 * body_len):
+                # Implausible block extent -- decline rather than mis-centre.
+                self._external_cad_mesh_cache[cache_key] = {}
+                return None
+            metrics = {
+                "glass_lo": glass_lo,
+                "glass_hi": glass_hi,
+                "body_lo": body_lo,
+                "body_hi": body_hi,
+                "surfaces": int(len(vertices)),
+            }
+            self._external_cad_mesh_cache[cache_key] = metrics
+            try:
+                glass_cache_path.parent.mkdir(parents=True, exist_ok=True)
+                glass_cache_path.write_text(
+                    json.dumps({**metrics, "source_path": str(source_path)}, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+            except Exception as exc:
+                self.append_debug(f"STEP glass-axial cache write skipped for {source_path.name}: {exc}")
+            self.append_debug(
+                "STEP CAD glass block | {name} | glass=[{gl:.3f},{gh:.3f}] | body=[{bl:.3f},{bh:.3f}] | "
+                "glass_span={span:.3f} | body_span={blen:.3f} | surfaces={n}".format(
+                    name=source_path.name, gl=glass_lo, gh=glass_hi, bl=body_lo, bh=body_hi,
+                    span=glass_hi - glass_lo, blen=body_len, n=len(vertices),
+                )
+            )
+            return metrics
+        except Exception as exc:
+            self.append_debug(f"STEP glass-axial extraction failed: {exc}")
+            return None
+
+    def _lens_step_display_front_z(self, front_face: str) -> float:
+        """Axial pin (world z, pre placement-offset) for the lens STEP overlay.
+
+        Default -- the Front Optical Vertex Datum, which pins the mechanical body
+        front face there.  When the STEP's optical glass block can be located AND
+        the overlay is untilted, pin the GLASS-BLOCK CENTRE on the surrogate's
+        datum-span centre instead, so the physical glass sits on the surrogate's
+        optical vertices and does not jump when the barrel is flipped (bugs/0374).
+
+        Display-only: the surrogate rows / trace are untouched.  The alignment
+        maps a native axial coord ``u`` to ``world_z = target_front_z + delta``
+        where ``delta`` is the glass centre's distance from whichever body end is
+        the front -- so pinning the glass centre is ``target = datum_centre -
+        delta``.  Any tilt rotates z out of the barrel axis and breaks that
+        relation, so tilt falls back to the plain datum pin.
+        """
+        front_datum_z = self._lens_front_datum_z()
+        if abs(float(getattr(self, "lens_step_rotation_x_deg", 0.0))) > 0.5:
+            return front_datum_z
+        if abs(float(getattr(self, "lens_step_rotation_y_deg", 0.0))) > 0.5:
+            return front_datum_z
+        if self.imported_lens_step_path is None:
+            return front_datum_z
+        metrics = self._step_optical_glass_axial_metrics(self.imported_lens_step_path)
+        if not metrics:
+            return front_datum_z
+        glass_center_u = 0.5 * (float(metrics["glass_lo"]) + float(metrics["glass_hi"]))
+        if str(front_face).strip().lower() == "min":
+            delta = glass_center_u - float(metrics["body_lo"])
+        else:
+            delta = float(metrics["body_hi"]) - glass_center_u
+        datum_center_z = 0.5 * (front_datum_z + self._lens_rear_datum_z())
+        return float(datum_center_z - delta)
+
     def _cad_mesh_aligned_to_optical_axis(
         self,
         mesh,
@@ -1515,6 +1740,9 @@ class LayoutPolylineDisplayMixin:
             largest,
             reverse,
             round(float(self._lens_front_datum_z()), 6),
+            # bugs/0374: the overlay is re-registered onto the datum-span CENTRE,
+            # so the rear datum joins the front in the cache signature.
+            round(float(self._lens_rear_datum_z()), 6),
             round(float(getattr(self, "lens_step_rotation_z_deg", 0.0)), 6),
             round(float(getattr(self, "lens_step_rotation_x_deg", 0.0)), 6),
             round(float(getattr(self, "lens_step_rotation_y_deg", 0.0)), 6),
@@ -1548,7 +1776,10 @@ class LayoutPolylineDisplayMixin:
                 mesh,
                 source_axis=cylinder_axis if cylinder_axis is not None else "pca0",
                 front_face=front_face,
-                target_front_z=self._lens_front_datum_z(),
+                # bugs/0374: pin the optical GLASS-BLOCK centre on the surrogate
+                # datum-span centre (not the mechanical body face), so a flipped
+                # barrel does not jump off the surrogate. Display-only.
+                target_front_z=self._lens_step_display_front_z(front_face),
                 label="Lens STEP",
                 roll_deg=float(getattr(self, "lens_step_rotation_z_deg", 0.0)),
                 x_rotation_deg=float(getattr(self, "lens_step_rotation_x_deg", 0.0)),
