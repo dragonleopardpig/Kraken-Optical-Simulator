@@ -14253,6 +14253,32 @@ def phase_312_scene_source_edit(
     return result
 
 
+def phase_313_analytic_document_disk_cache(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0368 -- disk-cache the analytic STEP document (pickle) so a heavy body's
+    34-36 s cold OCC read is paid once ever, not on the first hover of every launch;
+    versioned + mtime-stamped path, validated before trust, atomic write, read
+    before the cold load with graceful fall-through on a corrupt cache."""
+    result = PhaseResult(
+        name="Phase 313: analytic STEP document is disk-cached (no per-launch cold load)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_analytic_document_disk_cache import run_checks
+
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"analytic-document-disk-cache guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("analytic-document-disk-cache phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14610,6 +14636,7 @@ def main() -> int:
             phase_310_illumination_source_face_block,
             phase_311_browser_group_hide,
             phase_312_scene_source_edit,
+            phase_313_analytic_document_disk_cache,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

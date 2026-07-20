@@ -114,6 +114,48 @@ def _cached_analytic_cad_mesh_path(path: Path, *, largest_component: bool = Fals
     return base_path.with_name(f"{base_path.stem}{suffix}")
 
 
+# bugs/0368: the analytic B-rep DOCUMENT (face descriptors + face-tagged tessellation) was cached
+# only in memory, so its cold OCC read -- 34-36 s for the 591k-triangle HR25xCXP camera -- was paid
+# on the FIRST hover of every fresh app launch (blocking the UI thread). Pickle it to disk keyed by
+# the same mtime+size-stamped base path as the mesh cache (so an edited STEP auto-invalidates);
+# reload is ~0.1 s (355x). Bump the version when StepAnalyticFace/StepAnalyticDocument change so a
+# stale pickle layout is regenerated rather than mis-loaded.
+_ANALYTIC_DOCUMENT_CACHE_VERSION = "v1"
+
+
+def _cached_analytic_document_path(path: Path) -> Path:
+    base_path = _cached_cad_mesh_path(path)
+    return base_path.with_name(f"{base_path.stem}.analytic_doc.{_ANALYTIC_DOCUMENT_CACHE_VERSION}.pkl")
+
+
+def _is_valid_cached_analytic_document(document: object) -> bool:
+    """Guard an unpickled document before trusting it: right type, a plausible
+    (N, 3, 3) triangle array, and at least one outer face."""
+    if not isinstance(document, StepAnalyticDocument):
+        return False
+    try:
+        triangles = np.asarray(document.triangles)
+        if triangles.ndim != 3 or tuple(triangles.shape[1:]) != (3, 3):
+            return False
+        if len(document.outer_faces) <= 0:
+            return False
+    except Exception:
+        return False
+    return True
+
+
+def _write_analytic_document_cache(cache_path: Path, document: StepAnalyticDocument) -> None:
+    """Atomically pickle ``document`` to ``cache_path`` (temp file + rename) so a
+    crash mid-write can never leave a half-written cache for the next launch."""
+    import pickle
+
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = cache_path.with_name(cache_path.name + ".tmp")
+    with open(tmp_path, "wb") as handle:
+        pickle.dump(document, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    tmp_path.replace(cache_path)
+
+
 def _cached_step_axis_path(path: Path) -> Path:
     base_path = _cached_cad_mesh_path(path)
     return base_path.with_name(f"{base_path.stem}.axis.json")
@@ -556,6 +598,47 @@ class LayoutPolylineDisplayMixin:
             is_missing_cached = False
         if is_missing_cached:
             raise FileNotFoundError(f"STEP file not found: {source_path}")
+        # bugs/0368: try the on-disk pickle before the cold OCC read. The path encodes the source
+        # mtime+size (via _cached_cad_mesh_path), so an edited STEP misses cleanly and re-bakes; a
+        # corrupt/incompatible pickle is unlinked and falls through to the OCC load. ~0.1 s vs 34-36 s.
+        doc_cache_path = None
+        try:
+            doc_cache_path = _cached_analytic_document_path(source_path)
+        except Exception:
+            doc_cache_path = None
+        if doc_cache_path is not None and doc_cache_path.exists() and doc_cache_path.stat().st_size > 0:
+            try:
+                import dataclasses
+                import pickle
+
+                with open3d_timing_span(
+                    "read_step_analytic_document_cache",
+                    source_path=str(source_path),
+                    cache_path=str(doc_cache_path),
+                ):
+                    with open(doc_cache_path, "rb") as handle:
+                        disk_document = pickle.load(handle)
+                if not _is_valid_cached_analytic_document(disk_document):
+                    raise RuntimeError("cached analytic document failed validation")
+                # Re-stamp the source path in case an identical file was cached under another path.
+                disk_document = dataclasses.replace(disk_document, source_path=source_path)
+                self._external_cad_mesh_cache[cache_key] = disk_document
+                open3d_timing_event(
+                    "load_step_analytic_document_disk_cache_hit",
+                    source_path=str(source_path),
+                    cache_path=str(doc_cache_path),
+                    outer_faces=int(len(disk_document.outer_faces)),
+                    triangles=int(disk_document.triangles.shape[0]),
+                )
+                return disk_document
+            except Exception as exc:
+                try:
+                    doc_cache_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                self.append_debug(
+                    f"Analytic STEP document cache ignored for {source_path.name}: {exc}"
+                )
         with open3d_timing_span("load_step_analytic_document", source_path=str(source_path)):
             try:
                 document = load_step_analytic_document(source_path)
@@ -566,6 +649,20 @@ class LayoutPolylineDisplayMixin:
                     pass
                 raise
         self._external_cad_mesh_cache[cache_key] = document
+        # Persist the pickle so the next session skips the cold OCC read entirely.
+        if doc_cache_path is not None:
+            try:
+                _write_analytic_document_cache(doc_cache_path, document)
+                open3d_timing_event(
+                    "write_step_analytic_document_cache",
+                    source_path=str(source_path),
+                    cache_path=str(doc_cache_path),
+                    triangles=int(document.triangles.shape[0]),
+                )
+            except Exception as exc:
+                self.append_debug(
+                    f"Analytic STEP document cache write failed for {source_path.name}: {exc}"
+                )
         open3d_timing_event(
             "load_step_analytic_document_cached",
             source_path=str(source_path),
