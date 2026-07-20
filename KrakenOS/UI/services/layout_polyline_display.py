@@ -1502,12 +1502,18 @@ class LayoutPolylineDisplayMixin:
         if self.imported_lens_step_path is None:
             return None
         largest = bool(getattr(self, "lens_step_largest_component_only", True))
+        # bugs/0373: the persisted flip re-pins the opposite barrel end at the front
+        # datum. A mechanical lens STEP does not encode the optical front, so when the
+        # auto guess (front = axial max) is wrong the user flips it once and it sticks.
+        reverse = bool(getattr(self, "lens_step_reverse_direction", False))
+        front_face = "min" if reverse else "max"
         fold_transform = self._optical_axis_fold_world_transform_for_row(
             self._lens_front_datum_row_index()
         )
         signature = (
             self._step_overlay_stat_key(self.imported_lens_step_path),
             largest,
+            reverse,
             round(float(self._lens_front_datum_z()), 6),
             round(float(getattr(self, "lens_step_rotation_z_deg", 0.0)), 6),
             round(float(getattr(self, "lens_step_rotation_x_deg", 0.0)), 6),
@@ -1541,7 +1547,7 @@ class LayoutPolylineDisplayMixin:
             aligned = self._cad_mesh_aligned_to_optical_axis(
                 mesh,
                 source_axis=cylinder_axis if cylinder_axis is not None else "pca0",
-                front_face="max",
+                front_face=front_face,
                 target_front_z=self._lens_front_datum_z(),
                 label="Lens STEP",
                 roll_deg=float(getattr(self, "lens_step_rotation_z_deg", 0.0)),

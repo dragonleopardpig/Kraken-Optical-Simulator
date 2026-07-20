@@ -689,6 +689,15 @@ class Open3DFaceAssignmentService:
                 label="Resize Solid...",
                 command=lambda picked_label=step_label: self._open_step_overlay_resize_popup(picked_label),
             )
+            # bugs/0373: a one-click, persisted lens front/rear flip -- a mechanical
+            # STEP carries no optical direction, so the import can land reversed; this
+            # re-pins the opposite barrel end at the front datum and sticks with the
+            # layout. Direct command (no cascade) per the bugs/0320 VTK-menu lesson.
+            if step_label == "lens":
+                menu.add_command(
+                    label="Flip Lens Direction (front/rear)",
+                    command=lambda: self._flip_lens_step_direction_from_context(),
+                )
             # bugs/0319: one-click "Add Beam Splitter to LED". Only on the LED overlay --
             # it generates a parametric BS, centres it on the LED clear-aperture opening,
             # glues, promotes, and auto-flags the 45-degree diagonal coating.
@@ -1002,6 +1011,17 @@ class Open3DFaceAssignmentService:
         self.editor.select_step_component(label)
         self._debug_trace("glue_step_to_surrogate_from_context", label=label)
         self.glue_selected_step_to_surrogate()
+
+    def _flip_lens_step_direction_from_context(self) -> None:
+        """bugs/0373: toggle the imported lens STEP front/rear and re-render. A pure
+        display flip -- the surrogate optics are unchanged -- so no retrace."""
+        if not self.editor.toggle_imported_lens_step_direction():
+            return
+        self._debug_trace("flip_lens_step_direction_from_context")
+        try:
+            self.refresh_from_editor()
+        except Exception:
+            pass
 
     def _optical_led_glue_available(self) -> bool:
         """Item 3: the LED overlay plus a beam-splitter BODY (the 'optical' overlay OR a

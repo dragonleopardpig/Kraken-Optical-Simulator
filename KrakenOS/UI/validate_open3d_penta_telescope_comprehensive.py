@@ -14279,6 +14279,32 @@ def phase_313_analytic_document_disk_cache(
     return result
 
 
+def phase_314_lens_step_flip_direction(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0373 -- persistent lens-STEP front/rear flip. A mechanical lens STEP does
+    not encode the optical front, so the auto placement can land reversed;
+    lens_step_reverse_direction re-pins the opposite barrel end at the front datum
+    (front_face max<->min), one-click and remembered with the layout."""
+    result = PhaseResult(
+        name="Phase 314: imported lens STEP has a persistent front/rear flip"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_lens_step_flip_direction import run_checks
+
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"lens-step-flip guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("lens-step-flip phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14637,6 +14663,7 @@ def main() -> int:
             phase_311_browser_group_hide,
             phase_312_scene_source_edit,
             phase_313_analytic_document_disk_cache,
+            phase_314_lens_step_flip_direction,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

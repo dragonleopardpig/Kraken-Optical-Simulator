@@ -3206,6 +3206,20 @@ class ScenePlacementMixin:
         if refresh:
             self._refresh_open_3d_views(step_label=label)
 
+    def toggle_imported_lens_step_direction(self) -> bool:
+        """bugs/0373: flip the imported lens STEP front/rear. A mechanical lens STEP
+        does not encode which end is the optical FRONT, so the auto placement (front =
+        axial max) is a guess; this toggles the persisted ``lens_step_reverse_direction``
+        which re-pins the OPPOSITE barrel end at the front datum. Sticks with the
+        layout. Returns False (with a status line) when no lens STEP is imported."""
+        if getattr(self, "imported_lens_step_path", None) is None:
+            self.status_var.set("Flip Lens Direction: no imported lens STEP overlay.")
+            return False
+        self.lens_step_reverse_direction = not bool(getattr(self, "lens_step_reverse_direction", False))
+        facing = "rear element faces the object" if self.lens_step_reverse_direction else "front element faces the object"
+        self.status_var.set(f"Lens direction flipped -- {facing}.")
+        return True
+
     def _transformed_imported_step_mesh_for_label(self, label: str):
         label = str(label).strip().lower()
         builders = {

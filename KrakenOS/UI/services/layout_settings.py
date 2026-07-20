@@ -262,6 +262,7 @@ class LayoutSettingsService:
             "camera_step_placement_offset_xyz": list(self._step_placement_offset_xyz("camera")),
             "lens_step_path": _portable_step_path_text(self.imported_lens_step_path),
             "lens_step_largest_component_only": bool(getattr(self, "lens_step_largest_component_only", True)),
+            "lens_step_reverse_direction": bool(getattr(self, "lens_step_reverse_direction", False)),
             "lens_step_rotation_x_deg": float(getattr(self, "lens_step_rotation_x_deg", 0.0)),
             "lens_step_rotation_y_deg": float(getattr(self, "lens_step_rotation_y_deg", 0.0)),
             "lens_step_rotation_z_deg": float(getattr(self, "lens_step_rotation_z_deg", 0.0)),
@@ -632,6 +633,9 @@ class LayoutSettingsService:
         self.imported_optical_step_path = _path_setting("optical_step_path")
         self.imported_led_step_path = _path_setting("led_step_path")
         self.lens_step_largest_component_only = _parse_bool(settings.get("lens_step_largest_component_only", True))
+        # bugs/0373: persisted lens front/rear flip (mechanical STEPs carry no optical
+        # direction), re-pinning the opposite barrel end at the front datum.
+        self.lens_step_reverse_direction = _parse_bool(settings.get("lens_step_reverse_direction", False))
         self.camera_step_axis_offset_xy = _offset_setting("camera_step_axis_offset_xy")
         self.lens_step_axis_offset_xy = _offset_setting("lens_step_axis_offset_xy")
         self.optical_step_axis_offset_xy = _offset_setting("optical_step_axis_offset_xy")

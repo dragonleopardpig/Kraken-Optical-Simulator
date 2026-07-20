@@ -2859,6 +2859,11 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         self.lens_step_rotation_z_deg = 0.0
         self.optical_step_rotation_z_deg = 0.0
         self.led_step_rotation_z_deg = 0.0
+        # bugs/0373: a mechanical lens STEP does not encode which end is the optical
+        # FRONT (object side); when the auto front-face guess is wrong the barrel
+        # imports reversed. This persisted flip re-pins the opposite end at the front
+        # datum -- one click, remembered with the layout.
+        self.lens_step_reverse_direction = False
         self.led_object_edge_distance_mm = 0.0
         self.led_step_object_edge_local_z: float | None = None
         # bugs/0053: per-row thickness-dimension measurement re-anchor overrides.
