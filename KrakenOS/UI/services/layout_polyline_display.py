@@ -158,7 +158,10 @@ def _write_analytic_document_cache(cache_path: Path, document: StepAnalyticDocum
 
 def _cached_step_axis_path(path: Path) -> Path:
     base_path = _cached_cad_mesh_path(path)
-    return base_path.with_name(f"{base_path.stem}.axis.json")
+    # bugs/0372: v2 -- the cylinder-axis aggregation now clusters by collinear axis
+    # line and anchors the point on the body, so any v1 cache holding a corrupt
+    # (mount-cylinder-averaged) axis is regenerated instead of silently reused.
+    return base_path.with_name(f"{base_path.stem}.axis.v2.json")
 
 
 def _cached_outer_cad_mesh_path(path: Path, solid_indices: tuple[int, ...]) -> Path:
@@ -1070,6 +1073,25 @@ class LayoutPolylineDisplayMixin:
                 return None
             reader.TransferRoots()
             shape = reader.OneShape()
+            # bugs/0372: the body centre is the geometry reference. Each cylinder's
+            # axis point is the point on ITS axis line NEAREST this centre -- NOT the
+            # raw OCC Axis().Location(), an arbitrary placement origin some CAD authors
+            # millions of mm away (the Apo-Rodagon lens: (-160993, 5093644, -3013762)),
+            # which flung the barrel off-axis and blanked the 3D scene.
+            from OCC.Core.Bnd import Bnd_Box
+
+            try:
+                from OCC.Core.BRepBndLib import brepbndlib
+
+                _bbox_add = brepbndlib.Add
+            except Exception:
+                from OCC.Core.BRepBndLib import brepbndlib_Add as _bbox_add
+
+            _box = Bnd_Box()
+            _bbox_add(shape, _box)
+            bx0, by0, bz0, bx1, by1, bz1 = _box.Get()
+            body_center = np.array([(bx0 + bx1) * 0.5, (by0 + by1) * 0.5, (bz0 + bz1) * 0.5], dtype=float)
+            body_diag = float(np.linalg.norm([bx1 - bx0, by1 - by0, bz1 - bz0]))
             explorer = TopExp_Explorer(shape, TopAbs_FACE)
             axes: list[tuple[float, np.ndarray, np.ndarray]] = []
             while explorer.More():
@@ -1080,39 +1102,68 @@ class LayoutPolylineDisplayMixin:
                     direction = cylinder.Axis().Direction()
                     vector = np.array([direction.X(), direction.Y(), direction.Z()], dtype=float)
                     location = cylinder.Axis().Location()
-                    point = np.array([location.X(), location.Y(), location.Z()], dtype=float)
+                    raw_point = np.array([location.X(), location.Y(), location.Z()], dtype=float)
                     norm = float(np.linalg.norm(vector))
                     radius = float(cylinder.Radius())
                     if (
                         norm > 1e-12
                         and np.isfinite(radius)
                         and radius > 1.0
-                        and np.all(np.isfinite(point))
+                        # bugs/0372: reject ABSURD-radius "cylinders" -- a near-planar
+                        # face or a huge blend fillet gets misclassified as a cylinder
+                        # of radius >> the body (the Apo-Rodagon lens: 3 faces of radius
+                        # ~77000 mm in an 89 mm body, whose radius weight buried the 141
+                        # real barrel cylinders). A physical cylinder inside the body
+                        # cannot exceed its size.
+                        and radius <= max(1.5 * body_diag, 10.0)
+                        and np.all(np.isfinite(raw_point))
                     ):
-                        axes.append((radius, vector / norm, point))
+                        unit = vector / norm
+                        near_point = raw_point + float(np.dot(body_center - raw_point, unit)) * unit
+                        axes.append((radius, unit, near_point))
                 explorer.Next()
             if not axes:
                 return None
-            reference = axes[0][1]
-            weighted = np.zeros(3, dtype=float)
-            weighted_point = np.zeros(3, dtype=float)
-            weight_sum = 0.0
-            for radius, vector, point in axes:
-                if float(np.dot(reference, vector)) < 0.0:
-                    vector = -vector
-                weight = max(radius, 1.0)
-                weighted += weight * vector
-                # Collinear cylinders (barrel inner/outer, etc.) share one axis
-                # line, so their Location points all project to the same
-                # transverse centre; the radius weighting lets the big barrel
-                # dominate any small off-axis bore (a screw hole, a mount pin).
-                weighted_point += weight * point
-                weight_sum += weight
-            norm = float(np.linalg.norm(weighted))
-            if norm <= 1e-12 or weight_sum <= 0.0:
+            # Cluster cylinders by COLLINEAR axis line (parallel + coincident through
+            # the near-body points) and pick the dominant cluster.  The optical barrel
+            # is many concentric cylindrical surfaces (inner/outer diameters, ring
+            # grooves, retaining threads) so it dominates by total radius, while a
+            # tilted mount/flange bore is a lone outlier -- the old radius-weighted
+            # mean over ALL cylinders let such an outlier corrupt BOTH the axis
+            # direction (tilted ~60 deg) and its point (bugs/0372).
+            groups: list[dict] = []
+            for radius, unit, near_point in axes:
+                placed = False
+                for group in groups:
+                    group_dir = group["dir"]
+                    oriented = unit if float(np.dot(group_dir, unit)) >= 0.0 else -unit
+                    if abs(float(np.dot(group_dir, oriented))) < 0.985:
+                        continue
+                    delta = near_point - group["point"]
+                    perp = float(np.linalg.norm(delta - float(np.dot(delta, group_dir)) * group_dir))
+                    if perp > max(2.0, 0.15 * body_diag):
+                        continue
+                    group["weight"] += radius
+                    group["dir_sum"] += radius * oriented
+                    group["point_sum"] += radius * near_point
+                    placed = True
+                    break
+                if not placed:
+                    groups.append(
+                        {
+                            "dir": unit,
+                            "point": near_point,
+                            "weight": radius,
+                            "dir_sum": radius * unit,
+                            "point_sum": radius * near_point,
+                        }
+                    )
+            best = max(groups, key=lambda group: group["weight"])
+            norm = float(np.linalg.norm(best["dir_sum"]))
+            if norm <= 1e-12 or best["weight"] <= 0.0:
                 return None
-            axis = weighted / norm
-            point = weighted_point / weight_sum
+            axis = best["dir_sum"] / norm
+            point = best["point_sum"] / best["weight"]
             frame = {"axis": axis.copy(), "point": point.copy()}
             self._external_cad_mesh_cache[cache_key] = frame
             try:
@@ -1237,12 +1288,30 @@ class LayoutPolylineDisplayMixin:
         src_max = np.max(pts, axis=0)
         work_min = np.min(working_pts, axis=0)
         work_max = np.max(working_pts, axis=0)
+        body_mid = 0.5 * (work_min[transverse_axes] + work_max[transverse_axes])
         if optical_axis_transverse is not None:
             # vector branch -> axis_index == 2, transverse_axes == [0, 1], so the
             # projected (u, v) maps straight onto the two transverse columns.
-            transverse_center = optical_axis_transverse
+            # bugs/0372 guard (cache-independent belt-and-braces): the optical axis
+            # MUST pass through the body. If the cylinder-derived centre lands outside
+            # the body's transverse footprint (generous 1.5x half-extent), the axis
+            # detection is bogus -- centre on the bbox midpoint instead of flinging
+            # the body hundreds of metres off-axis (the blank-scene symptom).
+            half_extent = 0.5 * (work_max[transverse_axes] - work_min[transverse_axes])
+            if np.all(np.abs(optical_axis_transverse - body_mid) <= 1.5 * half_extent + 1.0):
+                transverse_center = optical_axis_transverse
+            else:
+                transverse_center = body_mid
+                try:
+                    self.append_debug(
+                        f"{label}: CAD cylinder-axis centre "
+                        f"{tuple(round(float(v), 1) for v in optical_axis_transverse)} is off the "
+                        f"body; centred on its midpoint instead (bugs/0372)."
+                    )
+                except Exception:
+                    pass
         else:
-            transverse_center = 0.5 * (work_min[transverse_axes] + work_max[transverse_axes])
+            transverse_center = body_mid
         optical_values = working_pts[:, axis_index]
         face = str(front_face).strip().lower()
         front_value = float(np.min(optical_values) if face == "min" else np.max(optical_values))

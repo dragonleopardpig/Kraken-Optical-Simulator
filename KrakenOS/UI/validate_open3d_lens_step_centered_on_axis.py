@@ -40,6 +40,10 @@ _REAL_LENS_CANDIDATES = (
     PROJECT_ROOT / "attachment" / "Lens" / "1072517_00165969_001.stp",
     PROJECT_ROOT / "attachment" / "1072517_00165969_001.stp",
     PROJECT_ROOT / "attachment" / "Lens" / "15056" / "15056.STEP",
+    # bugs/0372: the Apo-Rodagon-D -- 141 barrel cylinders along X plus 3 bogus
+    # radius-77000mm faces along a tilted axis whose radius weight buried the
+    # barrel, flinging the overlay ~243 m off-axis (blank 3D scene after import).
+    PROJECT_ROOT / "attachment" / "Lens" / "0703-005-000-40-EXC" / "0703-005-000-40_PA_a_STEP.stp",
 )
 
 
@@ -129,10 +133,12 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
            f"A4: front optical surface still lands on target_front_z (min z={front_z:.6f} ~ 0)")
 
     # --- B. real OCC cylinder-axis extraction (skip-if-absent) ----------------
-    real_lens = next((p for p in _REAL_LENS_CANDIDATES if p.exists()), None)
-    if real_lens is None:
+    # bugs/0372: check EVERY present fixture, not just the first, so the Apo-Rodagon
+    # regression file (barrel buried by giant-radius mount faces) is actually covered.
+    real_lenses = [p for p in _REAL_LENS_CANDIDATES if p.exists()]
+    if not real_lenses:
         notes.append("SKIP: no imported lens STEP fixture present for OCC extraction check")
-    else:
+    for real_lens in real_lenses:
         try:
             axis = insp._step_primary_cylinder_axis(real_lens)
             point = insp._step_primary_cylinder_axis_point(real_lens)
@@ -147,6 +153,29 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
                    f"(point={np.round(point, 3).tolist()})")
                 ok(abs(float(np.linalg.norm(np.asarray(axis, dtype=float))) - 1.0) < 1e-6,
                    "B2: the returned cylinder axis is a unit direction")
+                # bugs/0372: the axis point MUST lie on/near the body -- a point far
+                # outside it means the aggregation picked a bogus (mount / giant-radius)
+                # cylinder, which flings the aligned overlay off-axis and blanks the scene.
+                real_mesh = insp._load_step_mesh(real_lens, largest_component=False, allow_slow_import=True)
+                if real_mesh is not None and int(getattr(real_mesh, "n_points", 0)) > 0:
+                    mb = np.asarray(real_mesh.bounds, dtype=float).reshape(3, 2)
+                    center = mb.mean(axis=1)
+                    diag = float(np.linalg.norm(mb[:, 1] - mb[:, 0]))
+                    off = float(np.linalg.norm(np.asarray(point, dtype=float) - center))
+                    ok(off <= 2.0 * diag,
+                       f"B3 (bugs/0372): the on-axis point sits on the body for {real_lens.name} "
+                       f"(|point-center|={off:.1f} mm <= 2x diag {2*diag:.1f})")
+                    aligned_real = align(
+                        real_mesh, source_axis=axis, front_face="max", target_front_z=0.0,
+                        label="Lens STEP", optical_axis_point_xyz=point,
+                    )
+                    if aligned_real is not None:
+                        rb = np.asarray(aligned_real.bounds, dtype=float).reshape(3, 2)
+                        transverse = float(max(np.abs(rb[0]).max(), np.abs(rb[1]).max()))
+                        ok(transverse <= diag,
+                           f"B4 (bugs/0372): the aligned overlay stays on-axis for {real_lens.name} "
+                           f"(transverse half-extent {transverse:.1f} mm <= body diag {diag:.1f}, "
+                           f"NOT hundreds of metres)")
         except Exception as exc:
             notes.append(f"SKIP: real lens OCC extraction raised ({type(exc).__name__}: {exc})")
 
