@@ -14518,6 +14518,32 @@ def phase_322_lens_swap_block_safety(
     return result
 
 
+def phase_323_flag_layout_identity(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0382 -- a flag bundle records WHICH scene it was on. The flag payload now
+    captures the loaded layout file when set AND the STEP overlay source paths as a
+    fallback, so a flag is never anonymous about its scene (e.g. a lens STEP of ELS-85
+    pins the AZ85 RA-mirror scene even when current_layout_file was cleared)."""
+    result = PhaseResult(
+        name="Phase 323: flag bundle records the loaded layout identity (file + step paths)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_flag_layout_identity import run_checks
+
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"flag-layout-identity guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("flag-layout-identity phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14885,6 +14911,7 @@ def main() -> int:
             phase_320_clear_aperture_edge_pick,
             phase_321_effective_aperture,
             phase_322_lens_swap_block_safety,
+            phase_323_flag_layout_identity,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

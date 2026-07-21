@@ -9009,6 +9009,40 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.status_var.set(f"Recording discarded ({dropped} events dropped, no file written).")
         return True
 
+    def _flag_layout_identity(self) -> dict:
+        """The loaded working layout's identity for a flag bundle (bugs/0382).
+
+        A flag must say WHICH scene it was on. ``current_layout_file`` is the best answer,
+        but several load / insert / promote paths clear it (an inserted machine-vision
+        surrogate, an unsaved import), so a flag was landing anonymous ("the recording
+        didn't record what file I loaded"). Capture the file when set AND the STEP overlay
+        source paths as a robust fallback -- e.g. a lens STEP of ELS-85 pins the AZ85
+        RA-mirror scene even with no layout file. Best-effort; never raises."""
+        editor = self.editor
+        identity: dict[str, object] = {}
+        try:
+            layout_file = getattr(editor, "current_layout_file", None)
+            if layout_file:
+                identity["file"] = str(layout_file)
+                identity["name"] = Path(str(layout_file)).name
+        except Exception:
+            pass
+        try:
+            identity["unsaved_import"] = bool(getattr(editor, "_layout_is_unsaved_import", False))
+        except Exception:
+            pass
+        try:
+            step_paths = {}
+            for label in ("optical", "lens", "camera", "led"):
+                path = editor._step_path_for_label(label)
+                if path:
+                    step_paths[label] = str(path)
+            if step_paths:
+                identity["step_paths"] = step_paths
+        except Exception:
+            pass
+        return identity
+
     def flag_bug(self) -> Path | None:
         """One-click bug flag: screenshot + scene-state + user description.
 
@@ -9197,6 +9231,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 "screenshot_kind": "dialog" if screenshot_is_dialog else "scene_3d",
                 "cursor": cursor_block,
                 "recording": recording_info,
+                "layout": self._flag_layout_identity(),
                 "scene_state": scene_state,
             }
             if screenshot_is_dialog and scene_3d_path.exists():
