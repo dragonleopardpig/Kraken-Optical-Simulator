@@ -82,14 +82,23 @@ def _section1(failures: list[str]) -> None:
         _selected_opening_face_id="",
         _selected_opening_center=None,
         _selected_opening_normal=None,
+        # bugs/0339: _set_selected_step_opening also tears down any pinned FACE
+        # selection (single persistent selection) via _clear_selected_step_face, so
+        # the stub needs that method's state too or the set raises AttributeError.
+        _selected_face_outline_actor=None,
+        _selected_face_label="",
+        _selected_face_id="",
+        _selected_face_center=None,
+        _selected_face_normal=None,
         render=lambda *a, **k: None,
         _remove_renderer_view_prop=lambda *a, **k: None,
         _add_renderer_view_prop=lambda *a, **k: None,
     )
-    # These three inspector methods call each other via ``self`` -- bind them.
+    # These inspector methods call each other via ``self`` -- bind them.
     insp._set_selected_step_opening = types.MethodType(K._set_selected_step_opening, insp)
     insp._clear_selected_step_opening = types.MethodType(K._clear_selected_step_opening, insp)
     insp._has_selected_step_opening = types.MethodType(K._has_selected_step_opening, insp)
+    insp._clear_selected_step_face = types.MethodType(K._clear_selected_step_face, insp)
     insp._set_selected_step_opening(
         "led", "F053", np.asarray([1.0, 2.0, 3.0]), np.asarray([0.0, 0.0, 1.0]), None
     )
