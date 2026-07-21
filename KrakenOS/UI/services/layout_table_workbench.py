@@ -804,18 +804,148 @@ class LayoutTableWorkbenchMixin:
                     return reserve
         return clearance
 
+    @staticmethod
+    def _aabb_corner_projection_range(bounds, axis):
+        """(min, max) projection of an axis-aligned box's 8 corners onto ``axis`` (a 3-vector),
+        or (None, None) on bad input. ``bounds`` = (xmin, xmax, ymin, ymax, zmin, zmax)."""
+        try:
+            xmin, xmax, ymin, ymax, zmin, zmax = (float(v) for v in bounds)
+            ux, uy, uz = (float(v) for v in axis)
+        except Exception:
+            return None, None
+        lo = hi = None
+        for x in (xmin, xmax):
+            for y in (ymin, ymax):
+                for z in (zmin, zmax):
+                    p = x * ux + y * uy + z * uz
+                    lo = p if lo is None else (p if p < lo else lo)
+                    hi = p if hi is None else (p if p > hi else hi)
+        return lo, hi
+
+    @classmethod
+    def _camera_body_clearance_deficit_pure(cls, cam_bounds, obstacle_bounds, leg_axis, clearance):
+        """Extra image-gap (mm) so the camera AABB clears the obstacle AABB by ``clearance``
+        along ``leg_axis``, measured as the face-to-face separation of the two boxes projected
+        on the (normalised) leg axis. Returns 0.0 when already clear or inputs are invalid.
+        Sign-independent in the axis direction (uses |Δcentre|); pure geometry, no scene state
+        (bugs/0392)."""
+        try:
+            clr = float(clearance)
+            ax, ay, az = (float(v) for v in leg_axis)
+        except Exception:
+            return 0.0
+        n = (ax * ax + ay * ay + az * az) ** 0.5
+        if n < 1e-9:
+            return 0.0
+        u = (ax / n, ay / n, az / n)
+        cam_lo, cam_hi = cls._aabb_corner_projection_range(cam_bounds, u)
+        obs_lo, obs_hi = cls._aabb_corner_projection_range(obstacle_bounds, u)
+        if cam_lo is None or obs_lo is None:
+            return 0.0
+        cam_c, cam_h = 0.5 * (cam_lo + cam_hi), 0.5 * (cam_hi - cam_lo)
+        obs_c, obs_h = 0.5 * (obs_lo + obs_hi), 0.5 * (obs_hi - obs_lo)
+        separation = abs(cam_c - obs_c) - (cam_h + obs_h)
+        deficit = clr - separation
+        return deficit if deficit > 0.0 else 0.0
+
+    @staticmethod
+    def _promoted_solid_world_bounds(row):
+        """World AABB (xmin, xmax, ymin, ymax, zmin, zmax) of a promoted optical-solid row from
+        its stored promotion metadata (``row.advanced['StepOverlayPromotion']``
+        bounds_min/max_world), or None (bugs/0392)."""
+        advanced = getattr(row, "advanced", {}) or {}
+        if not isinstance(advanced, dict):
+            return None
+        promo = advanced.get("StepOverlayPromotion")
+        if not isinstance(promo, dict):
+            return None
+        try:
+            mn = [float(v) for v in (promo.get("bounds_min_world") or [])]
+            mx = [float(v) for v in (promo.get("bounds_max_world") or [])]
+        except Exception:
+            return None
+        if len(mn) != 3 or len(mx) != 3:
+            return None
+        return (mn[0], mx[0], mn[1], mx[1], mn[2], mx[2])
+
+    def _camera_body_world_bounds(self):
+        """Camera STEP body world AABB (xmin, xmax, ...) from the transformed camera mesh, or
+        None when no camera STEP is glued / the mesh can't be built (bugs/0392)."""
+        try:
+            mesh = self._transformed_imported_camera_step_mesh()
+        except Exception:
+            return None
+        if mesh is None:
+            return None
+        try:
+            bounds = tuple(float(v) for v in mesh.bounds)
+        except Exception:
+            return None
+        return bounds if len(bounds) == 6 else None
+
+    def _folded_leg_axis_unit(self):
+        """Unit vector of the folded optical-axis leg at the image plane (the direction the
+        sensor/camera slides when the image gap changes), or None (bugs/0392). An unfolded
+        scene returns the global +Z."""
+        try:
+            image_row = self._image_plane_row_index()
+        except Exception:
+            image_row = None
+        fold = None
+        if image_row is not None:
+            try:
+                fold = self._optical_axis_fold_world_transform_for_row(image_row)
+            except Exception:
+                fold = None
+        if fold is None:
+            return (0.0, 0.0, 1.0)
+        try:  # the transformed +Z column is the downstream leg direction
+            col = (float(fold[0][2]), float(fold[1][2]), float(fold[2][2]))
+        except Exception:
+            return None
+        n = (col[0] ** 2 + col[1] ** 2 + col[2] ** 2) ** 0.5
+        if n < 1e-9:
+            return None
+        return (col[0] / n, col[1] / n, col[2] / n)
+
+    def _swap_camera_body_clearance_deficit(self) -> float:
+        """Extra image-gap (mm) so the glued camera BODY clears the upstream promoted solid
+        (e.g. the RA fold mirror) by the clearance, from REAL mesh geometry along the folded
+        leg (bugs/0392 -- the datum-based 0391 clamp measured from the mirror centre with the
+        flange depth and still let the body crash 17.7 mm in). 0.0 when no camera / no upstream
+        promoted solid / already clear."""
+        rows = getattr(self, "rows", None) or []
+        if len(rows) < 3:
+            return 0.0
+        cam_bounds = self._camera_body_world_bounds()
+        if cam_bounds is None:
+            return 0.0
+        obstacle_bounds = self._promoted_solid_world_bounds(rows[-2])
+        if obstacle_bounds is None:
+            return 0.0
+        leg = self._folded_leg_axis_unit()
+        if leg is None:
+            return 0.0
+        return self._camera_body_clearance_deficit_pure(
+            cam_bounds, obstacle_bounds, leg, self._SWAP_REFOCUS_MIN_CLEARANCE_MM
+        )
+
     def _swap_auto_refocus_to_best_focus(self) -> None:
         """After a lens swap, move the IMAGE to the new lens's best focus (bugs/0388).
 
         A different lens images at a different plane, but bugs/0383 kept the camera/mounts at
         their absolute positions, so the image is defocused on the fixed sensor. Reuse
         snap_detector_to_image_plane -- it moves ONLY the final gap (image distance), never
-        the beam geometry, so it can't reproduce the broken/escaping rays. Then CLAMP that gap
-        to a mechanical minimum (``_swap_refocus_min_gap``: a clearance floor PLUS the glued
-        camera's flange-to-sensor depth, so the whole camera BODY -- not just the sensor plane
-        -- clears the upstream element, bugs/0391) so the camera can never be solved into the
-        RA mirror, flagging when focus is clearance-limited rather than colliding. Any
-        already-applied thickness bounds are honoured by the underlying solve."""
+        the beam geometry, so it can't reproduce the broken/escaping rays. Then keep the camera
+        clear of the upstream element in two layers:
+          1. ``_swap_refocus_min_gap`` -- a cheap FLOOR (clearance + the glued camera's
+             flange-to-sensor depth), a lower bound that also covers the no-mesh fallback.
+          2. ``_swap_camera_body_clearance_deficit`` -- the EXACT extra gap from REAL mesh
+             geometry so the whole camera BODY mesh clears the upstream promoted-solid mesh
+             along the folded leg (bugs/0392: the 0391 datum-only clamp measured from the
+             mirror centre with the flange depth and still let the body crash 17.7 mm in).
+        Flag when either limits best focus rather than colliding. Any already-applied thickness
+        bounds are honoured by the underlying solve."""
         rows = getattr(self, "rows", None) or []
         if len(rows) < 3 or str(getattr(rows[-1], "surface", "") or "") != "Image":
             return
@@ -826,19 +956,37 @@ class LayoutTableWorkbenchMixin:
             return
         if not moved:
             return
-        min_gap = self._swap_refocus_min_gap()
         try:
             gap = float(getattr(rows[gap_index], "thickness", 0.0) or 0.0)
         except Exception:
             return
-        if gap < min_gap:
+        limited = False
+        # (1) cheap floor (clearance + flange depth), applied first so the mesh deficit below
+        #     is measured at the floored position.
+        floor = self._swap_refocus_min_gap()
+        if gap < floor:
+            gap = float(floor)
             try:
-                rows[gap_index].thickness = float(min_gap)
+                rows[gap_index].thickness = gap
             except Exception:
                 return
+            limited = True
+        # (2) exact camera-body mesh clearance -- bump the gap by the real overlap + clearance.
+        try:
+            deficit = self._swap_camera_body_clearance_deficit()
+        except Exception:
+            deficit = 0.0
+        if deficit and deficit > 1e-6:
+            gap += float(deficit)
+            try:
+                rows[gap_index].thickness = gap
+            except Exception:
+                return
+            limited = True
+        if limited:
             self.status_var.set(
-                f"Swapped lens; focus limited to {min_gap:.1f} mm so the camera body clears "
-                "the upstream element (best focus would collide it with the RA mirror)."
+                f"Swapped lens; focus limited to {gap:.1f} mm so the camera body clears the "
+                "upstream element (best focus would collide it with the RA mirror)."
             )
 
     @staticmethod
