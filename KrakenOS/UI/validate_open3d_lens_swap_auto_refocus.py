@@ -162,8 +162,9 @@ def run_checks() -> tuple[bool, list[str]]:
                    mirror_row,
                    SimpleNamespace(surface="Image", thickness=0.0, name="Image")])
     ed3._current_camera_front_to_sensor_mm = lambda: STANDOFF
-    ed3._camera_body_world_bounds = lambda: CAM
+    ed3._camera_body_world_bounds = lambda: (CAM, "ok")   # (bounds, reason) per bugs/0393
     ed3._folded_leg_axis_unit = lambda: LEG
+    ed3._current_camera_record = lambda: {"camera_front_to_sensor_mm": STANDOFF}
     # best focus lands the sensor at the floor (13.48); the mesh deficit must push it to ~33.28
     ed3.snap_detector_to_image_plane = lambda: (setattr(ed3.rows[-2], "thickness", 13.48) or True)
     ed3._swap_auto_refocus_to_best_focus()

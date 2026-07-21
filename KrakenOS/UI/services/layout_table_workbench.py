@@ -869,19 +869,61 @@ class LayoutTableWorkbenchMixin:
         return (mn[0], mx[0], mn[1], mx[1], mn[2], mx[2])
 
     def _camera_body_world_bounds(self):
-        """Camera STEP body world AABB (xmin, xmax, ...) from the transformed camera mesh, or
-        None when no camera STEP is glued / the mesh can't be built (bugs/0392)."""
+        """(world AABB, reason) of the glued camera STEP body (bugs/0392/0393).
+
+        Tries the imported camera overlay mesh first; if that yields nothing but the vendor
+        camera RECORD carries a ``step_path`` (the AZ85 hr25MCX is a dropdown camera whose
+        ``imported_camera_step_path`` may be unset at swap time), it TEMPORARILY sources that
+        path through the same transform so the body is placed identically. Returns
+        ``(None, reason)`` when no mesh can be built, so the caller can surface WHY."""
+
+        def _bounds_of(mesh):
+            try:
+                bounds = tuple(float(v) for v in mesh.bounds)
+            except Exception as exc:
+                return None, f"bounds exc: {type(exc).__name__}"
+            return (bounds, "ok") if len(bounds) == 6 else (None, "bounds not 6")
+
+        had_path = getattr(self, "imported_camera_step_path", None) is not None
         try:
             mesh = self._transformed_imported_camera_step_mesh()
-        except Exception:
-            return None
-        if mesh is None:
-            return None
+        except Exception as exc:
+            mesh, reason = None, f"imported exc: {type(exc).__name__}"
+        else:
+            reason = "imported None" if mesh is None else "ok"
+        if mesh is not None:
+            b, r = _bounds_of(mesh)
+            return (b, "ok" if b else r)
+
+        # Fallback: the vendor record's step_path (temporarily set imported path, then restore).
+        record = None
         try:
-            bounds = tuple(float(v) for v in mesh.bounds)
+            record = self._current_camera_record()
         except Exception:
-            return None
-        return bounds if len(bounds) == 6 else None
+            record = None
+        step_path = None
+        if isinstance(record, dict) and record.get("step_path"):
+            try:
+                from pathlib import Path as _P
+                candidate = _P(str(record["step_path"]))
+                if candidate.exists():
+                    step_path = candidate
+            except Exception:
+                step_path = None
+        if step_path is None:
+            return None, (f"no camera mesh ({reason}); {'no record step_path' if had_path is not None else ''}").strip("; ")
+        saved = getattr(self, "imported_camera_step_path", None)
+        try:
+            self.imported_camera_step_path = step_path
+            mesh = self._transformed_imported_camera_step_mesh()
+        except Exception as exc:
+            mesh, reason = None, f"record-path exc: {type(exc).__name__}"
+        finally:
+            self.imported_camera_step_path = saved
+        if mesh is None:
+            return None, f"no camera mesh (imported: {reason}; record step_path also empty)"
+        b, r = _bounds_of(mesh)
+        return (b, "ok(record step_path)" if b else r)
 
     def _folded_leg_axis_unit(self):
         """Unit vector of the folded optical-axis leg at the image plane (the direction the
@@ -913,22 +955,43 @@ class LayoutTableWorkbenchMixin:
         (e.g. the RA fold mirror) by the clearance, from REAL mesh geometry along the folded
         leg (bugs/0392 -- the datum-based 0391 clamp measured from the mirror centre with the
         flange depth and still let the body crash 17.7 mm in). 0.0 when no camera / no upstream
-        promoted solid / already clear."""
+        promoted solid / already clear.
+
+        Populates ``self._swap_clearance_debug`` with each input + the reason it is empty
+        (bugs/0393), which the flag recorder captures -- the geometry is verified on the flag
+        AABBs, but a live input was silently coming back empty."""
+        dbg = {}
+        self._swap_clearance_debug = dbg
         rows = getattr(self, "rows", None) or []
+        dbg["n_rows"] = len(rows)
         if len(rows) < 3:
+            dbg["result"] = "skip: <3 rows"
             return 0.0
-        cam_bounds = self._camera_body_world_bounds()
-        if cam_bounds is None:
-            return 0.0
+        dbg["upstream_name"] = str(getattr(rows[-2], "name", "") or "")
+        dbg["upstream_surface"] = str(getattr(rows[-2], "surface", "") or "")
+        try:
+            dbg["camera_glued"] = self._current_camera_record() is not None
+        except Exception:
+            dbg["camera_glued"] = None
+        cam_bounds, cam_reason = self._camera_body_world_bounds()
+        dbg["cam_reason"] = cam_reason
+        dbg["cam_bounds"] = [round(v, 2) for v in cam_bounds] if cam_bounds else None
         obstacle_bounds = self._promoted_solid_world_bounds(rows[-2])
-        if obstacle_bounds is None:
-            return 0.0
+        dbg["obstacle_bounds"] = [round(v, 2) for v in obstacle_bounds] if obstacle_bounds else None
         leg = self._folded_leg_axis_unit()
-        if leg is None:
+        dbg["leg"] = [round(v, 3) for v in leg] if leg else None
+        missing = [name for name, value in
+                   (("camera", cam_bounds), ("obstacle", obstacle_bounds), ("leg", leg))
+                   if value is None]
+        if missing:
+            dbg["result"] = "0 mm: missing " + ", ".join(missing)
             return 0.0
-        return self._camera_body_clearance_deficit_pure(
+        deficit = self._camera_body_clearance_deficit_pure(
             cam_bounds, obstacle_bounds, leg, self._SWAP_REFOCUS_MIN_CLEARANCE_MM
         )
+        dbg["deficit"] = round(float(deficit), 3)
+        dbg["result"] = "ok"
+        return deficit
 
     def _swap_auto_refocus_to_best_focus(self) -> None:
         """After a lens swap, move the IMAGE to the new lens's best focus (bugs/0388).
@@ -974,8 +1037,14 @@ class LayoutTableWorkbenchMixin:
         # (2) exact camera-body mesh clearance -- bump the gap by the real overlap + clearance.
         try:
             deficit = self._swap_camera_body_clearance_deficit()
-        except Exception:
+        except Exception as exc:
             deficit = 0.0
+            dbg = getattr(self, "_swap_clearance_debug", None)
+            if isinstance(dbg, dict):
+                dbg["result"] = f"exc: {type(exc).__name__}"
+        dbg = getattr(self, "_swap_clearance_debug", None)
+        if isinstance(dbg, dict):
+            dbg["floor_mm"] = round(float(floor), 3)
         if deficit and deficit > 1e-6:
             gap += float(deficit)
             try:
@@ -983,10 +1052,19 @@ class LayoutTableWorkbenchMixin:
             except Exception:
                 return
             limited = True
+        if isinstance(dbg, dict):
+            dbg["final_gap_mm"] = round(float(gap), 3)
         if limited:
             self.status_var.set(
                 f"Swapped lens; focus limited to {gap:.1f} mm so the camera body clears the "
                 "upstream element (best focus would collide it with the RA mirror)."
+            )
+        elif isinstance(dbg, dict) and dbg.get("camera_glued") and str(dbg.get("result", "")).startswith("0 mm: missing"):
+            # A camera IS glued but the body-clearance geometry could not be resolved -- warn
+            # rather than silently leave the sensor where it may collide (bugs/0393).
+            self.status_var.set(
+                "Swapped lens; could NOT verify camera-body clearance to the upstream element "
+                f"({dbg.get('result')}) -- check the camera is clear of the RA mirror."
             )
 
     @staticmethod

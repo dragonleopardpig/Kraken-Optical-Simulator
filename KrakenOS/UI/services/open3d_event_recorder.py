@@ -87,6 +87,9 @@ class SceneSnapshot:
     # transient, cached-bundle mode, the 3D/2D mode the editor wants, and the
     # nonseq/folded/full-pupil flags that gate cone vs envelope).
     sampling_diagnostics: dict[str, Any] = field(default_factory=dict)
+    # bugs/0393: what the LAST lens-swap camera-body clearance computed (inputs + the reason
+    # any input was empty), so a flag pins why the auto-refocus did/didn't clear the camera.
+    swap_clearance_diagnostics: dict[str, Any] = field(default_factory=dict)
     # bugs/0124: what the LAST right-click resolved -- the live hover key, the
     # hovered STEP label, the flaky VTK cell-picker label, and whether the
     # bugs/0121 hovered-face override fired. Pins why a BS-inside-LED right-click
@@ -704,6 +707,13 @@ class Open3DEventRecorder:
                     return scene_bundle_launch_sampling_mode(getattr(editor, "_last_scene_bundle", None))
                 _safe("cached_bundle_mode", _bundle_mode)
             snapshot.sampling_diagnostics = diag
+        except Exception:
+            pass
+
+        try:  # bugs/0393: last lens-swap camera-body clearance diagnostics
+            swap_dbg = getattr(inspector.editor, "_swap_clearance_debug", None)
+            if isinstance(swap_dbg, dict):
+                snapshot.swap_clearance_diagnostics = dict(swap_dbg)
         except Exception:
             pass
 
