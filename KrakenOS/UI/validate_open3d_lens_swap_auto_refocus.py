@@ -60,7 +60,7 @@ def run_checks() -> tuple[bool, list[str]]:
     ed._swap_auto_refocus_to_best_focus()
     if abs(ed.rows[-2].thickness - floor) > 1e-9:
         failures.append(f"clamp: a sub-floor solve must clamp to {floor} (got {ed.rows[-2].thickness})")
-    if not any("clearance" in m for m in ed._status_messages):
+    if not any("focus limited" in m for m in ed._status_messages):
         failures.append("clamp: a clamped refocus must flag the user")
 
     # 3. snap moves to a SAFE distance -> left as solved, no flag
@@ -71,7 +71,7 @@ def run_checks() -> tuple[bool, list[str]]:
     ed._swap_auto_refocus_to_best_focus()
     if abs(ed.rows[-2].thickness - 47.0) > 1e-9:
         failures.append("safe: a safe solve must be left exactly as computed")
-    if any("clearance" in m for m in ed._status_messages):
+    if any("focus limited" in m for m in ed._status_messages):
         failures.append("safe: a safe refocus must NOT flag the user")
 
     # 4. thin fold-mirror reserve below the floor -> min-gap follows the reserve
@@ -98,6 +98,39 @@ def run_checks() -> tuple[bool, list[str]]:
     except AssertionError as exc:
         failures.append(f"guard: {exc}")
 
+    # 6. bugs/0391: a GLUED CAMERA reserves its whole body -- min-gap = clearance + the
+    # flange-to-sensor depth, so the body (not just the sensor plane) clears the upstream
+    # element. The camera-body depth must WIN over a thin fold-mirror reserve (the 0388 bug).
+    STANDOFF = 11.48  # hr25MCX flange-to-sensor
+    clearance = float(_editor(_lens_image_rows(100.0))._SWAP_REFOCUS_MIN_CLEARANCE_MM)
+    cam_rows = [
+        SimpleNamespace(surface="Object", thickness=10.0, name="Object"),
+        SimpleNamespace(surface="Standard", thickness=120.0, name="Front Datum"),
+        SimpleNamespace(surface="Standard", thickness=0.8, name="Promoted RA Mirror"),
+        SimpleNamespace(surface="Image", thickness=0.0, name="Image"),
+    ]
+    ed = _editor(cam_rows)
+    ed._current_camera_front_to_sensor_mm = lambda: STANDOFF
+    want = clearance + STANDOFF
+    got = ed._swap_refocus_min_gap()
+    if abs(got - want) > 1e-9:
+        failures.append(
+            f"camera-body: min-gap must reserve the flange depth ({want} = {clearance}+{STANDOFF}); "
+            f"got {got} (thin-mirror reserve wrongly capped the camera body)"
+        )
+    # the clamp must actually pull a too-close best-focus back to the body-clearance gap
+    ed2 = _editor(_lens_image_rows(100.0))
+    ed2._current_camera_front_to_sensor_mm = lambda: STANDOFF
+    ed2.snap_detector_to_image_plane = lambda: (setattr(ed2.rows[-2], "thickness", 3.0) or True)
+    ed2._swap_auto_refocus_to_best_focus()
+    if abs(ed2.rows[-2].thickness - want) > 1e-9:
+        failures.append(
+            f"camera-body: a 3mm best-focus (sensor-safe but body-colliding) must clamp to {want}; "
+            f"got {ed2.rows[-2].thickness}"
+        )
+    if not any("camera body" in m for m in ed2._status_messages):
+        failures.append("camera-body: the clamp must flag that the camera body limited focus")
+
     return (not failures), failures
 
 
@@ -111,7 +144,8 @@ def main() -> int:
     print(
         "Lens-swap auto-refocus validation passed: snap-can't-compute no-ops, a sub-floor "
         "solve clamps + flags, a safe solve is untouched, a thin fold-mirror reserve caps the "
-        "min-gap, and an Image-less layout is refused."
+        "min-gap, an Image-less layout is refused, and a glued camera reserves its whole body "
+        "depth (bugs/0391)."
     )
     return 0
 

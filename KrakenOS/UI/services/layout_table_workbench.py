@@ -771,12 +771,25 @@ class LayoutTableWorkbenchMixin:
     _SWAP_REFOCUS_MIN_CLEARANCE_MM = 2.0
 
     def _swap_refocus_min_gap(self) -> float:
-        """Minimum gap (mm) the auto-refocus leaves ahead of the sensor so it can't move into
-        the upstream element (e.g. the RA mirror). Uses the upstream element's own axial
-        reserve as the reference when it is a promoted solid whose reserve is already smaller
-        than the plain clearance floor (a thin fold mirror), so the clamp never demands MORE
-        room than the element itself occupies; otherwise the conservative floor (bugs/0388)."""
-        floor = float(self._SWAP_REFOCUS_MIN_CLEARANCE_MM)
+        """Minimum gap (mm) the auto-refocus leaves ahead of the sensor so the CAMERA can't be
+        solved into the upstream element (e.g. the RA mirror).
+
+        A glued camera's sensor sits ``camera_front_to_sensor_mm`` BEHIND the body's front
+        (flange) face, so the body reaches that far toward the upstream element. The clamp must
+        reserve room for the whole body, not just the sensor plane -- otherwise best focus
+        pulls the sensor to a safe 2 mm yet the body (e.g. the hr25MCX's 11.48 mm flange depth)
+        still crashes into the mirror (bugs/0391, follow-up to 0388's sensor-plane-only clamp).
+        With no camera glued, fall back to the conservative sensor floor, capped by a thin fold
+        mirror's own reserve so it never demands more room than the mirror occupies."""
+        clearance = float(self._SWAP_REFOCUS_MIN_CLEARANCE_MM)
+        standoff = 0.0
+        try:
+            standoff = float(self._current_camera_front_to_sensor_mm() or 0.0)
+        except Exception:
+            standoff = 0.0
+        if 0.0 < standoff < 1.0e6:  # bounds also reject NaN/inf without numpy
+            # Reserve the whole camera body: sensor floor + the flange-to-sensor depth.
+            return clearance + standoff
         rows = getattr(self, "rows", None) or []
         if len(rows) >= 3:
             upstream = rows[-2]
@@ -787,9 +800,9 @@ class LayoutTableWorkbenchMixin:
                     reserve = float(getattr(upstream, "thickness", 0.0) or 0.0)
                 except Exception:
                     reserve = 0.0
-                if 0.0 < reserve < floor:
+                if 0.0 < reserve < clearance:
                     return reserve
-        return floor
+        return clearance
 
     def _swap_auto_refocus_to_best_focus(self) -> None:
         """After a lens swap, move the IMAGE to the new lens's best focus (bugs/0388).
@@ -797,9 +810,11 @@ class LayoutTableWorkbenchMixin:
         A different lens images at a different plane, but bugs/0383 kept the camera/mounts at
         their absolute positions, so the image is defocused on the fixed sensor. Reuse
         snap_detector_to_image_plane -- it moves ONLY the final gap (image distance), never
-        the beam geometry, so it can't reproduce the broken/escaping rays. Then CLAMP that
-        gap to a mechanical minimum so the sensor can never move into the upstream element
-        (the RA mirror), flagging when focus is clearance-limited rather than colliding. Any
+        the beam geometry, so it can't reproduce the broken/escaping rays. Then CLAMP that gap
+        to a mechanical minimum (``_swap_refocus_min_gap``: a clearance floor PLUS the glued
+        camera's flange-to-sensor depth, so the whole camera BODY -- not just the sensor plane
+        -- clears the upstream element, bugs/0391) so the camera can never be solved into the
+        RA mirror, flagging when focus is clearance-limited rather than colliding. Any
         already-applied thickness bounds are honoured by the underlying solve."""
         rows = getattr(self, "rows", None) or []
         if len(rows) < 3 or str(getattr(rows[-1], "surface", "") or "") != "Image":
@@ -822,8 +837,8 @@ class LayoutTableWorkbenchMixin:
             except Exception:
                 return
             self.status_var.set(
-                f"Swapped lens; focus limited by {min_gap:.1f} mm clearance to the upstream "
-                "element (the sensor could not reach best focus without a collision)."
+                f"Swapped lens; focus limited to {min_gap:.1f} mm so the camera body clears "
+                "the upstream element (best focus would collide it with the RA mirror)."
             )
 
     @staticmethod

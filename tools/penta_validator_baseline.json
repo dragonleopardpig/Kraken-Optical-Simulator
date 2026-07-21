@@ -654,7 +654,7 @@
     "323": "flag bundle records the loaded layout identity (file + step paths)",
     "324": "lens overlay fold anchor (datum finder aligned; never the fold source)",
     "325": "paraxial-ref system-build cache (key + bounded store)",
-    "326": "lens-swap auto-refocus (best focus, clamped to clearance)",
+    "326": "lens-swap auto-refocus (best focus, clamped to camera-body clearance)",
     "327": "folded-then-failed rays (stopped/missed) hide with clipping OFF"
   }
 }
