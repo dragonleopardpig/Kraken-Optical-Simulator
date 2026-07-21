@@ -198,6 +198,10 @@ class Open3DTopControlsPanel:
                     self.inspector.import_machine_vision_lens_from_folder,
                 ),
                 MenuCommand(
+                    "Swap Imaging Lens from Folder...",
+                    self.inspector.swap_imaging_lens_from_folder,
+                ),
+                MenuCommand(
                     "Import Camera from Folder...",
                     self.inspector.import_vendor_camera_from_folder,
                 ),

@@ -199,6 +199,10 @@ class MainContextMenu:
             label="Import Lens from Folder...",
             command=self.import_machine_vision_lens_from_folder,
         )
+        machine_vision_menu.add_command(
+            label="Swap Imaging Lens from Folder...",  # bugs/0378: replace the lens in place
+            command=self.swap_imaging_lens_from_folder,
+        )
         if machine_vision_names:
             machine_vision_menu.add_separator()
             for machine_vision_name in machine_vision_names:

@@ -706,6 +706,130 @@ class LayoutTableWorkbenchMixin:
         self.append_progress(message)
         return model
 
+    def _imaging_lens_block_indices(self, rows=None):
+        """``(front, rear)`` row indices of the imaging-lens surrogate block -- the
+        vertex/lens datum PAIR that brackets the ideal Blackbox groups + aperture stop
+        (bugs/0378, the "Swap Imaging Lens" flow). ``(None, None)`` when the scene has
+        no such block. This is the block a swap replaces; a beam splitter, fold mirror
+        or other component between Object and Image is deliberately NOT part of it."""
+        rows = self.rows if rows is None else rows
+        front = rear = None
+        for index, row in enumerate(rows):
+            name = (getattr(row, "name", "") or "").strip().lower()
+            is_datum = "datum" in name or "vertex" in name
+            if is_datum and "front" in name and front is None:
+                front = index
+            if is_datum and "rear" in name:
+                rear = index
+        if front is None or rear is None or rear < front:
+            return None, None
+        return front, rear
+
+    def _apply_swapped_lens_step_settings(self, settings) -> None:
+        """Rewire ONLY the lens-STEP overlay to the swapped-in lens (bugs/0378): its
+        path, flip, largest-component flag, offsets and rotations. The scene's own
+        camera / LED / optical STEP overlays and source/field/pupil settings are left
+        untouched -- a swap changes the lens, not the rest of the assembly."""
+        settings = settings if isinstance(settings, dict) else {}
+        path = settings.get("lens_step_path")
+        self.imported_lens_step_path = Path(str(path)).expanduser() if path else None
+        self.lens_step_largest_component_only = bool(settings.get("lens_step_largest_component_only", True))
+        self.lens_step_reverse_direction = bool(settings.get("lens_step_reverse_direction", False))
+
+        def _pair(key, n):
+            value = settings.get(key, [0.0] * n)
+            try:
+                return [float(value[i]) for i in range(n)]
+            except Exception:
+                return [0.0] * n
+
+        self.lens_step_axis_offset_xy = _pair("lens_step_axis_offset_xy", 2)
+        self.lens_step_placement_offset_xyz = _pair("lens_step_placement_offset_xyz", 3)
+        for axis in ("x", "y", "z"):
+            try:
+                setattr(self, f"lens_step_rotation_{axis}_deg",
+                        float(settings.get(f"lens_step_rotation_{axis}_deg", 0.0)) % 360.0)
+            except Exception:
+                setattr(self, f"lens_step_rotation_{axis}_deg", 0.0)
+
+    def swap_imaging_lens_from_folder(self, folder: str | None = None, *, dialog_parent=None):
+        """SWAP the scene's imaging-lens surrogate (rows + STEP overlay) for a newly
+        imported lens, IN PLACE (bugs/0378).
+
+        The new lens's optical body (its Front..Rear vertex-datum block) replaces the
+        old one at the SAME front-datum position, so it sits on-axis where the old lens
+        was; Object, beam splitter, LED, camera, FOV and all source/field/pupil settings
+        are preserved. The image side follows the new lens's back focal distance (a
+        different lens genuinely images at a different plane; the glued camera tracks it).
+
+        This is distinct from **Add Imaging Lens** (a SECOND lens on another/the same
+        axis). Returns the built :class:`SurrogateModel`, or ``None`` on cancel / no
+        lens to swap / build failure.
+        """
+        parent = dialog_parent if dialog_parent is not None else self
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception:
+            pass
+        front, rear = self._imaging_lens_block_indices()
+        if front is None:
+            messagebox.showerror(
+                "Swap Imaging Lens",
+                "This scene has no imaging-lens surrogate (Front/Rear Vertex Datum) to swap.\n\n"
+                "Use Add Imaging Lens to add one first.",
+                parent=parent,
+            )
+            return None
+        if folder is None:
+            folder = filedialog.askdirectory(
+                title="Swap Imaging Lens -- choose the replacement lens folder", parent=parent
+            )
+        if not folder:
+            return None
+        try:
+            model = import_lens_folder(folder)
+            source = render_surrogate_layout_source(model)
+            destination = LAYOUTS_DIR / model.filename
+            destination.write_text(source, encoding="utf-8")
+            new_info = _load_python_data(destination)
+            new_rows = self._normalized_rows_copy(
+                [self._row_from_layout_item(item) for item in new_info["surfaces"]]
+            )
+        except Exception as exc:
+            messagebox.showerror(
+                "Swap Imaging Lens",
+                f"Could not build a surrogate from this folder:\n\n{folder}\n\n{exc}",
+                parent=parent,
+            )
+            return None
+        new_front, new_rear = self._imaging_lens_block_indices(new_rows)
+        if new_front is None:
+            messagebox.showerror(
+                "Swap Imaging Lens",
+                "The imported lens has no Front/Rear Vertex Datum block to swap in.",
+                parent=parent,
+            )
+            return None
+        new_block = self._normalized_rows_copy(new_rows[new_front:new_rear + 1])
+        self._begin_history_capture()
+        self.rows = list(self.rows[:front]) + list(new_block) + list(self.rows[rear + 1:])
+        self._apply_swapped_lens_step_settings(new_info.get("settings", {}))
+        self._auto_assign_missing_elements(self.rows)
+        self._normalize_special_rows()
+        self._sync_table()
+        self.load_layouts()  # discover the new library surrogate (also insertable later)
+        self._commit_history_capture()
+        message = (
+            f"Swapped imaging lens -> {model.title} (EFL {model.effl:.4g} mm) in place; "
+            "Object / beam splitter / LED / camera / FOV preserved."
+        )
+        self.status_var.set(message)
+        self.append_progress(message)
+        if hasattr(self, "refresh_plot"):
+            self.refresh_plot(suppress_analysis=True)
+        return model
+
     def import_vendor_camera_from_folder(
         self, folder: str | None = None, *, dialog_parent=None, refresh_open_3d: bool = True
     ):

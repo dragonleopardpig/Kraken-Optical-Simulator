@@ -14385,6 +14385,32 @@ def phase_317_spot_map_field_cache(
     return result
 
 
+def phase_318_swap_imaging_lens(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0378 -- the Swap Imaging Lens flow. Import Lens from Folder replaces the whole
+    layout (dropping the new lens alone off-axis on a full assembly); Swap replaces ONLY
+    the imaging-lens vertex-datum block + STEP overlay in place, keeping Object/BS/LED/
+    camera/FOV, the new lens on-axis at the same datum."""
+    result = PhaseResult(
+        name="Phase 318: Swap Imaging Lens replaces the lens block in place (scene preserved)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_swap_imaging_lens import run_checks
+
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"swap-imaging-lens guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("swap-imaging-lens phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14747,6 +14773,7 @@ def main() -> int:
             phase_315_lens_step_glass_recenter,
             phase_316_import_unsaved_layout,
             phase_317_spot_map_field_cache,
+            phase_318_swap_imaging_lens,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

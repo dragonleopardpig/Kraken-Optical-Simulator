@@ -6669,6 +6669,40 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         finally:
             editor.__dict__.pop("_keep_scene_viewers_across_layout_replacement", None)
 
+    def swap_imaging_lens_from_folder(self) -> None:
+        """3D CAD menu: SWAP the scene's imaging lens for a newly imported one, IN PLACE
+        (bugs/0378).
+
+        Unlike "Import Lens from Folder" (which loads a fresh single-lens layout and
+        replaces the whole scene), this keeps the entire assembly -- Object, beam
+        splitter, LED, camera, FOV, source/field/pupil settings -- and only replaces the
+        imaging-lens surrogate rows + STEP overlay, on-axis at the same datum. It does
+        NOT replace the working layout, so the inspector is never torn down (no 0294
+        use-after-free path). Distinct from Add Imaging Lens (a second lens)."""
+        token = self._timing_start("swap_imaging_lens_from_folder")
+        try:
+            model = self.editor.swap_imaging_lens_from_folder(dialog_parent=self)
+            if model is None:
+                if self.winfo_exists():
+                    self.status_var.set(self.editor.status_var.get())
+                self._timing_finish(token, status="cancelled")
+                return
+            # A new lens body + STEP replaced the old; clear transient carry/selection
+            # so no stale handles survive the rebuild, then rebuild the scene in place.
+            self._close_step_rotation_handler()
+            self._step_rotation_active_label = None
+            self._step_carry_active_label = None
+            self._step_carry_follow_state = None
+            self._selected_step_feature = None
+            self._selected_step_feature_label = None
+            self._apply_model_change()
+            self.status_var.set(self.editor.status_var.get())
+        except Exception as exc:
+            self._timing_finish(token, status="error", error=_short_error_message(exc))
+            raise
+        else:
+            self._timing_finish(token, status="ok", title=str(model.title))
+
     def import_vendor_camera_from_folder(self) -> None:
         """3D CAD menu: ingest a whole vendor *camera* folder -- register its
         sensor and place its mechanical STEP as the camera body here.
