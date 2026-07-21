@@ -4391,6 +4391,16 @@ class ThreeDSceneToolsMixin:
                 int(getattr(target, "row_index", -1)),
                 None if override is None else round(float(override), 4),
                 self._wavefront_map_signature(),  # invalidate when a wavefront map is (re)attached
+                # bugs/0376: the FIELD SIZE drives which of the 25 hexapolar fields vignette
+                # and hence whether the map is legitimately None. A fresh import first sizes
+                # the field to the datasheet MAX image height (e.g. 41 mm, where every
+                # off-axis field vignettes past the ~16 mm image circle -> < 2 survive ->
+                # None); importing the camera then shrinks it to the sensor (16.29 mm, valid).
+                # That shrink MUST invalidate the cached None -- otherwise the spot diagram
+                # stays blank for the whole session (only a save + restart + reload cleared
+                # it), while the fan-based distortion/astigmatism overlays, which survive the
+                # oversized field, keep working. Distortion/astigmatism don't need this.
+                self._spot_map_field_signature_component(),
                 "spotmap",
             )
         except Exception:
@@ -4399,9 +4409,21 @@ class ThreeDSceneToolsMixin:
         if signature is not None and isinstance(cache, tuple) and len(cache) == 2 and cache[0] == signature:
             return cache[1]
         spec = self._compute_spot_field_map_spec(system, target, float(wavelength), override)
-        if signature is not None:
+        # bugs/0376: never persist a falsy (None/empty) spec -- belt-and-suspenders so a
+        # transient oversized-field None can never stick even if the signature somehow
+        # matches; the next refresh after the field settles then recomputes a real map.
+        if signature is not None and spec:
             self._spot_field_map_cache = (signature, spec)
         return spec
+
+    def _spot_map_field_signature_component(self):
+        """The field size the spot map traces at (mode, rounded value), so a change --
+        notably the datasheet-max -> sensor shrink on camera coupling (bugs/0376) --
+        invalidates a cached spot-map spec (including a legitimately-None oversized-field
+        one). Returns None on any read failure (the caller degrades to no caching)."""
+        mode = "angle" if self._current_object_mode() == "Infinity" else "height"
+        value = float(self._current_field_angle_deg() if mode == "angle" else self._current_field_height())
+        return (mode, round(value, 4))
 
     def _compute_spot_field_map_spec(self, system, target, wavelength: float, exaggeration=None):
         from contextlib import redirect_stderr, redirect_stdout

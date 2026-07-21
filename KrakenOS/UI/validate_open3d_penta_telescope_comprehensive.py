@@ -14358,6 +14358,33 @@ def phase_316_import_unsaved_layout(
     return result
 
 
+def phase_317_spot_map_field_cache(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0376 -- the 3D spot diagram stayed blank after a fresh import until save +
+    restart + reload. A fresh import sizes the field to the datasheet-max image height
+    (every off-axis field vignettes -> spot map None), the camera coupling shrinks it to
+    the sensor (valid), but the cached None did not invalidate on the shrink. Fold the
+    field size into the spot cache signature + never cache a falsy spec."""
+    result = PhaseResult(
+        name="Phase 317: spot diagram recovers after the field shrinks to the sensor (no cached None)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_spot_map_field_cache import run_checks
+
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"spot-map-field-cache guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("spot-map-field-cache phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14719,6 +14746,7 @@ def main() -> int:
             phase_314_lens_step_flip_direction,
             phase_315_lens_step_glass_recenter,
             phase_316_import_unsaved_layout,
+            phase_317_spot_map_field_cache,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
