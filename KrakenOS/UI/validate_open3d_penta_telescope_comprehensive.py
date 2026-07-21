@@ -14491,6 +14491,33 @@ def phase_321_effective_aperture(
     return result
 
 
+def phase_322_lens_swap_block_safety(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0381 -- Swap/Import lens block safety. The block detector returns the TIGHT
+    single lens block (first front -> its first rear), refusing one that contains a foreign
+    element (a promoted solid), so a swap can't splice the scene away; and Import warns
+    before it would discard a real assembly (overlay / promoted solid) -- distinct from Swap
+    which keeps the scene."""
+    result = PhaseResult(
+        name="Phase 322: lens swap/import block safety (tight block + Import discard guard)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_lens_swap_block_safety import run_checks
+
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"lens-swap-block-safety guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("lens-swap-block-safety phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14857,6 +14884,7 @@ def main() -> int:
             phase_319_clear_aperture_stops,
             phase_320_clear_aperture_edge_pick,
             phase_321_effective_aperture,
+            phase_322_lens_swap_block_safety,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

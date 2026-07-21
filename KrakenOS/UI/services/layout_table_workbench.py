@@ -672,6 +672,28 @@ class LayoutTableWorkbenchMixin:
         chooser was cancelled or the surrogate could not be built.
         """
         parent = dialog_parent if dialog_parent is not None else self
+        # bugs/0381: Import REPLACES the whole scene (it loads a fresh single-lens layout).
+        # When the working scene is a real assembly (beam splitter / camera / LED / promoted
+        # solid), that wipes content the user likely meant to keep -- and "Swap Imaging Lens"
+        # sits right next to this in the menu. Confirm, and point at Swap, before destroying
+        # it. Skipped for a programmatic call (folder passed) -- the caller opted in.
+        if folder is None and self._import_would_discard_scene():
+            front, _rear = self._imaging_lens_block_indices()
+            swap_hint = (
+                '\n\nTo KEEP this assembly and only change the lens, cancel and use '
+                '"Swap Imaging Lens from Folder" instead.'
+                if front is not None else ""
+            )
+            if not messagebox.askyesno(
+                "Import Lens from Folder — this replaces the whole scene",
+                "Importing a lens from a folder REPLACES the entire working scene: the beam "
+                "splitter, camera, LED and any promoted solids are removed and a fresh "
+                "single-lens layout is loaded." + swap_hint + "\n\nReplace the scene now?",
+                parent=parent,
+                default=messagebox.NO,
+            ):
+                self.status_var.set("Import Lens from Folder cancelled; scene kept.")
+                return None
         if folder is None:
             folder = filedialog.askdirectory(
                 title="Import Machine Vision Lens from Folder", parent=parent
@@ -713,17 +735,53 @@ class LayoutTableWorkbenchMixin:
         no such block. This is the block a swap replaces; a beam splitter, fold mirror
         or other component between Object and Image is deliberately NOT part of it."""
         rows = self.rows if rows is None else rows
-        front = rear = None
+
+        def _is_datum(name, side):
+            n = (name or "").strip().lower()
+            return ("datum" in n or "vertex" in n) and side in n
+
+        front = None
         for index, row in enumerate(rows):
-            name = (getattr(row, "name", "") or "").strip().lower()
-            is_datum = "datum" in name or "vertex" in name
-            if is_datum and "front" in name and front is None:
+            if _is_datum(getattr(row, "name", ""), "front"):
                 front = index
-            if is_datum and "rear" in name:
-                rear = index
-        if front is None or rear is None or rear < front:
+                break  # the FIRST front datum
+        if front is None:
             return None, None
+        # bugs/0381: the rear datum must be the FIRST one AFTER this front datum -- a TIGHT
+        # single-lens block -- not the LAST rear datum in the whole scene. The old
+        # first-front/last-rear span swallowed everything between two lens blocks (or up to
+        # a later camera/mount "rear vertex"), so a swap spliced them away. Only the lens's
+        # own Blackbox/Aperture rows may sit inside the block; anything else (a promoted
+        # solid, another element) means this is NOT a clean lens block to swap.
+        rear = None
+        for index in range(front + 1, len(rows)):
+            if _is_datum(getattr(rows[index], "name", ""), "rear"):
+                rear = index
+                break
+        if rear is None or rear <= front:
+            return None, None
+        for index in range(front + 1, rear):
+            name = (getattr(rows[index], "name", "") or "").strip().lower()
+            if "promoted" in name or "optical step solid" in name or name in ("object", "image"):
+                return None, None
         return front, rear
+
+    def _import_would_discard_scene(self) -> bool:
+        """True when replacing the working layout would throw away user-built assembly
+        content -- a beam splitter / camera / LED overlay or a promoted solid (bugs/0381).
+
+        "Import Lens from Folder" loads a FRESH single-lens layout and wipes the scene;
+        "Swap Imaging Lens" keeps it. The two commands sit next to each other, so this
+        drives a confirmation that steers the user to Swap when Import would destroy an
+        assembly they likely meant to keep."""
+        for attr in ("imported_camera_step_path", "imported_led_step_path", "imported_optical_step_path"):
+            if getattr(self, attr, None):
+                return True
+        for row in (getattr(self, "rows", None) or []):
+            name = (getattr(row, "name", "") or "").lower()
+            if "promoted" in name or "optical step solid" in name:
+                return True
+        return False
 
     def _apply_swapped_lens_step_settings(self, settings) -> None:
         """Rewire ONLY the lens-STEP overlay to the swapped-in lens (bugs/0378): its

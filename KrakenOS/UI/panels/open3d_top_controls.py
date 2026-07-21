@@ -194,11 +194,11 @@ class Open3DTopControlsPanel:
             cad_target_menu,
             (
                 MenuCommand(
-                    "Import Lens from Folder...",
+                    "Import Lens from Folder (replaces scene)...",  # bugs/0381: distinct from Swap
                     self.inspector.import_machine_vision_lens_from_folder,
                 ),
                 MenuCommand(
-                    "Swap Imaging Lens from Folder...",
+                    "Swap Imaging Lens from Folder (keeps scene)...",
                     self.inspector.swap_imaging_lens_from_folder,
                 ),
                 MenuCommand(

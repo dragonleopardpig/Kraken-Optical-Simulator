@@ -196,11 +196,11 @@ class MainContextMenu:
         machine_vision_names = list(getattr(self, "machine_vision_names", []) or [])
         machine_vision_menu = tk.Menu(insert_menu, tearoff=0)
         machine_vision_menu.add_command(
-            label="Import Lens from Folder...",
+            label="Import Lens from Folder (replaces scene)...",  # bugs/0381: distinct from Swap
             command=self.import_machine_vision_lens_from_folder,
         )
         machine_vision_menu.add_command(
-            label="Swap Imaging Lens from Folder...",  # bugs/0378: replace the lens in place
+            label="Swap Imaging Lens from Folder (keeps scene)...",  # bugs/0378: replace the lens in place
             command=self.swap_imaging_lens_from_folder,
         )
         if machine_vision_names:
