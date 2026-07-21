@@ -14570,6 +14570,29 @@ def phase_324_lens_overlay_datum_anchor(
     return result
 
 
+def phase_325_paraxial_ref_system_cache(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0387 -- the read-only pupil-reference system-build cache (swap-freeze pass 2).
+    The pupil first-order reference rebuilds the same full-scene system with 3D solids
+    several times per folded trace; caching it (collision-free content key, bounded) removed
+    ~1.1s with a byte-identical traced payload."""
+    result = PhaseResult(name="Phase 325: paraxial-ref system-build cache (key + bounded store)")
+    try:
+        from KrakenOS.UI.validate_open3d_paraxial_ref_system_cache import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"paraxial-ref-cache guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("paraxial-ref-cache phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14939,6 +14962,7 @@ def main() -> int:
             phase_322_lens_swap_block_safety,
             phase_323_flag_layout_identity,
             phase_324_lens_overlay_datum_anchor,
+            phase_325_paraxial_ref_system_cache,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

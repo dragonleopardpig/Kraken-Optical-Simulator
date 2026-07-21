@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import hashlib
 import ast
 import atexit
 import csv
@@ -2000,6 +2001,36 @@ def _shared_setup(metal_catalogs=None):
     return setup
 
 
+# bugs/0387: the pupil first-order reference (bugs/0094 per-branch) rebuilds the SAME
+# full-scene system WITH 3D solids (build=1) several times per folded trace -- ~3.3s of
+# the swap freeze (3x Prerequisites3DSolids). That reference is READ-ONLY: it only runs
+# PupilCalc, never NS-traces the meshes (bugs/0166 comment below), and passes
+# apply_optical_solid_output_ports=False. So a build keyed by its EXACT specs content is
+# reusable. Scoped to the read-only (apply_ports=False) path ONLY -- the main NS-traced
+# system is never cached. Content-keyed, so any model change mints a new key; bounded.
+_PARAXIAL_REF_SYSTEM_CACHE: dict = {}
+_PARAXIAL_REF_SYSTEM_CACHE_ORDER: list = []
+_PARAXIAL_REF_SYSTEM_CACHE_MAX = 6
+
+
+def _paraxial_ref_system_cache_key(row_specs, build):
+    """A collision-free key for the read-only reference system, or None when the specs are
+    not cleanly JSON-serialisable (never risk a wrong system on a hash collision)."""
+    try:
+        blob = json.dumps(row_specs, sort_keys=True)  # NO default -- clean or nothing
+    except (TypeError, ValueError):
+        return None
+    return (hashlib.sha1(blob.encode("utf-8")).hexdigest(), int(build))
+
+
+def _paraxial_ref_system_cache_store(key, system) -> None:
+    _PARAXIAL_REF_SYSTEM_CACHE[key] = system
+    _PARAXIAL_REF_SYSTEM_CACHE_ORDER.append(key)
+    while len(_PARAXIAL_REF_SYSTEM_CACHE_ORDER) > _PARAXIAL_REF_SYSTEM_CACHE_MAX:
+        old = _PARAXIAL_REF_SYSTEM_CACHE_ORDER.pop(0)
+        _PARAXIAL_REF_SYSTEM_CACHE.pop(old, None)
+
+
 def _build_system_from_specs(
     row_specs: list[dict],
     *,
@@ -2017,6 +2048,13 @@ def _build_system_from_specs(
     # The 3-D body still draws -- the inspector keys on the row overlay, not on
     # these transient build specs (cf. the bugs/0021 missing-mesh neutralisation).
     row_specs = neutralize_offbeam_inert_solids(row_specs)
+    ref_cache_key = None
+    if setup is None and not apply_optical_solid_output_ports:
+        ref_cache_key = _paraxial_ref_system_cache_key(row_specs, build)
+        if ref_cache_key is not None:
+            cached_system = _PARAXIAL_REF_SYSTEM_CACHE.get(ref_cache_key)
+            if cached_system is not None:
+                return cached_system  # bugs/0387: reuse the read-only reference build
     surfaces = []
     clear_aperture = max(
         [max(float(spec["diameter"]), 1.0) for spec in row_specs if spec["surface"] not in {"Object", "Image"}] or [100.0]
@@ -2173,6 +2211,8 @@ def _build_system_from_specs(
     # callers pass ``apply_optical_solid_output_ports=False`` to skip the force build.
     if apply_optical_solid_output_ports:
         apply_optical_solid_output_port_system_overrides(system, row_specs)
+    elif ref_cache_key is not None:
+        _paraxial_ref_system_cache_store(ref_cache_key, system)  # bugs/0387
     return system
 
 
