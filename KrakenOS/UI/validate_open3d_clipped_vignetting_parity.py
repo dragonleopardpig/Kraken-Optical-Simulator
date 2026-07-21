@@ -85,14 +85,18 @@ def _synthetic_paths():
         ("stopped_nofold", _path(1, [_terminal("aperture_stop")]), False),
         ("missed_nofold", _path(2, [_terminal("missed_detector")]), False),
         ("escaped_nofold", _path(3, [_terminal("no_hit")]), False),
-        # A folded ray that is then VIGNETTED at an aperture (``stopped``) is a blocked
-        # stray, NOT an authored branch, so it hides with clipping OFF (bugs/0389). The
-        # folded RA-mirror scene proved it: field-edge rays fold at the mirror then clip the
-        # F/4.5 aperture stop (correct physics -- the beam is wider than the stop), and were
-        # drawn as "broken" stubs terminating mid-air at the stop. A real beam-splitter 2nd
-        # path never lands here -- it hits its detector (``hit_detector``), is ``absorbed``,
-        # or escapes (``escaped_folded`` below), all still kept visible.
+        # A folded ray that then FAILED at a real downstream element -- ``stopped`` (vignetted
+        # at an aperture, bugs/0389) or ``missed_detector`` (missed an existing detector's
+        # clear aperture, bugs/0390) -- is a blocked/missed stray, NOT an authored branch, so
+        # it hides with clipping OFF. Two folded RA-mirror cases proved it: field-edge rays
+        # fold at the mirror then clip the F/4.5 aperture stop (drawn as "broken" stubs at the
+        # stop), and illumination rays that fold at mirror 1, skip the wider-than-aperture
+        # mirror 2, and spray past it (folded display scores them ``missed_detector``). A real
+        # beam-splitter 2nd path never lands here -- it hits its detector (``hit_detector``),
+        # is ``absorbed``, or escapes with no detector to land on (``escaped_folded``), all
+        # still kept visible.
         ("stopped_folded", _path(4, [_fold(), _terminal("aperture_stop")]), False),
+        ("missed_folded", _path(6, [_fold(), _terminal("missed_detector")]), False),
         ("escaped_folded", _path(5, [_fold(), _terminal("no_hit")]), True),
     ]
 

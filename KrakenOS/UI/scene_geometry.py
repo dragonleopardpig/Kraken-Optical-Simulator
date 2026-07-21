@@ -640,17 +640,21 @@ def ray_path_visible_without_clipping_from_events(path: Any) -> bool:
         return True
     if ray_path_has_non_refractive_steering(path):
         # A deliberately-folded branch (beam-splitter 2nd path, mirror leg, TIR, grating)
-        # stays visible even with no detector to land on -- EXCEPT when a downstream
-        # aperture then *vignetted* it (status ``stopped``). A folded ray that a stop
-        # blocks is a vignetted stray, not an authored branch, and must hide with clipping
-        # OFF like any other vignetted ray. Without this, the folded RA-mirror scene drew
-        # every ray that folds at the mirror then vignettes at the F/4.5 aperture stop as a
-        # "broken" stub terminating mid-air at the stop (the beam is wider than the stop, so
-        # the field edges clip -- correct physics, wrong display). ``missed_detector`` and
-        # escapes still survive the fold so a splitter branch with no detector shows.
-        if status != "stopped":
-            return True
-        return False
+        # stays visible even with no detector to land on -- EXCEPT when it then FAILED at a
+        # real downstream element: vignetted at an aperture (``stopped``) or it missed an
+        # existing detector's clear aperture (``missed_detector``). Such a folded ray is a
+        # blocked/missed stray, not an authored branch, and must hide with clipping OFF just
+        # like any non-folded detector miss (North Star: "detector misses ... are hidden").
+        # Two folded-scene cases motivated this: (1) rays that fold at the RA mirror then
+        # vignette at the F/4.5 aperture stop, drawn as "broken" stubs terminating mid-air
+        # at the stop; (2) illumination/source rays that fold at the first mirror, SKIP the
+        # second mirror (the beam is wider than its aperture), and spray past it -- the
+        # folded display scores them ``missed_detector`` (bugs/0390). A genuine branch with
+        # NO detector to land on (escaped/``no_hit``) or one absorbed on a surface (a beam
+        # dump) is authored and stays visible.
+        if status in ("stopped", "missed_detector"):
+            return False
+        return True
     if status:
         return False
     return bool(getattr(path, "reaches_image", False))

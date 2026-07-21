@@ -14620,11 +14620,12 @@ def phase_326_lens_swap_auto_refocus(
 def phase_327_folded_vignette_hidden(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
-    """bugs/0389 -- on the real folded RA-mirror scene, rays that fold at the mirror then
-    vignette at the F/4.5 aperture stop must HIDE with clipping OFF (they were drawn as
-    "broken" stubs terminating mid-air at the stop -- correct physics, wrong display). The
-    image-forming folded beam (hit_detector) stays visible."""
-    result = PhaseResult(name="Phase 327: folded-then-vignetted rays hide with clipping OFF (not 'broken' stubs)")
+    """bugs/0389 + 0390 -- on the real folded RA-mirror scene, rays that fold at the mirror
+    then FAIL at a real downstream element (vignette at the F/4.5 stop = stopped [0389], or
+    miss the detector = missed_detector [0390], e.g. spraying past the wider-than-aperture
+    second mirror) must HIDE with clipping OFF (they were drawn as "broken" stubs -- correct
+    physics, wrong display). The image-forming folded beam (hit_detector) stays visible."""
+    result = PhaseResult(name="Phase 327: folded-then-failed rays (stopped/missed) hide with clipping OFF")
     try:
         from KrakenOS.UI.validate_open3d_folded_vignette_hidden import run_checks
         passed, notes = run_checks()
