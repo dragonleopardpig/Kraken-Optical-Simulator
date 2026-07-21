@@ -447,43 +447,49 @@ class LayoutPolylineDisplayMixin:
             z_positions.append(z_pos)
         return z_positions
 
+    def _lens_datum_row_index(self, side: str) -> int | None:
+        """Row index of the surrogate's Front/Rear optical-vertex datum (bugs/0384).
+
+        Matches the SAME names the swap block detector uses -- ``side`` +
+        (``datum`` | ``vertex`` | ``edge``) -- so the overlay anchor and the swap can never
+        disagree. A disagreement dropped the anchor to the fallback below, which grabbed
+        the first non-Object/Image/Aperture row = the FOLD-SOURCE promoted solid (an RA
+        mirror / beam splitter). That row carries no follower fold override, so
+        ``_optical_axis_fold_world_transform_for_row`` returned None and the lens STEP
+        overlay rendered UNFOLDED (the "lens misplaced / vertical after swap" symptom). The
+        fallback now also SKIPS promoted solids / optical-step solids, so it can never
+        anchor to the fold source."""
+        side = side.strip().lower()
+        indices = range(len(self.rows)) if side == "front" else range(len(self.rows) - 1, -1, -1)
+        for index in indices:
+            name = (getattr(self.rows[index], "name", "") or "").strip().lower()
+            if side in name and ("datum" in name or "vertex" in name or "edge" in name):
+                return index
+        for index in indices:
+            row = self.rows[index]
+            if getattr(row, "surface", None) in {"Object", "Image", "Aperture"}:
+                continue
+            name = (getattr(row, "name", "") or "").strip().lower()
+            if "promoted" in name or "optical step solid" in name:
+                continue  # never anchor the lens overlay to the fold source
+            return index
+        return None
+
     def _lens_front_datum_z(self) -> float:
-        z_positions = self._row_z_positions()
-        for index, row in enumerate(self.rows):
-            name = (row.name or "").strip().lower()
-            if "front" in name and ("datum" in name or "edge" in name):
-                return float(z_positions[index])
-        for index, row in enumerate(self.rows):
-            if row.surface not in {"Object", "Image", "Aperture"}:
-                return float(z_positions[index])
-        return 0.0
+        index = self._lens_datum_row_index("front")
+        return float(self._row_z_positions()[index]) if index is not None else 0.0
 
     def _lens_front_datum_row_index(self) -> int | None:
-        for index, row in enumerate(self.rows):
-            name = (row.name or "").strip().lower()
-            if "front" in name and ("datum" in name or "edge" in name):
-                return index
-        for index, row in enumerate(self.rows):
-            if row.surface not in {"Object", "Image", "Aperture"}:
-                return index
-        return None
+        return self._lens_datum_row_index("front")
 
     def _lens_rear_datum_z(self) -> float:
         """Axial position of the surrogate's Rear Optical Vertex Datum (world z).
 
-        Mirror of :meth:`_lens_front_datum_z` from the far end -- the last named
-        rear datum/edge row, else the last real (non Object/Image/Aperture) row.
-        Together they bracket the surrogate's optical span, whose CENTRE the lens
-        STEP overlay is re-registered onto (bugs/0374)."""
-        z_positions = self._row_z_positions()
-        for index in range(len(self.rows) - 1, -1, -1):
-            name = (self.rows[index].name or "").strip().lower()
-            if "rear" in name and ("datum" in name or "edge" in name):
-                return float(z_positions[index])
-        for index in range(len(self.rows) - 1, -1, -1):
-            if self.rows[index].surface not in {"Object", "Image", "Aperture"}:
-                return float(z_positions[index])
-        return self._lens_front_datum_z()
+        Mirror of :meth:`_lens_front_datum_z` from the far end. Together they bracket the
+        surrogate's optical span, whose CENTRE the lens STEP overlay is re-registered onto
+        (bugs/0374)."""
+        index = self._lens_datum_row_index("rear")
+        return float(self._row_z_positions()[index]) if index is not None else self._lens_front_datum_z()
 
     def _image_plane_row_index(self) -> int | None:
         last_image = None

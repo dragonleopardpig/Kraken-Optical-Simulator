@@ -14544,6 +14544,32 @@ def phase_323_flag_layout_identity(
     return result
 
 
+def phase_324_lens_overlay_datum_anchor(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0384 -- the lens STEP overlay's fold anchor. The front/rear datum finder now
+    matches the same names as the swap block detector (side + datum|vertex|edge) and never
+    falls back onto the FOLD-SOURCE promoted solid (an RA mirror / splitter), so a swapped
+    lens keeps its leg fold instead of rendering unfolded."""
+    result = PhaseResult(
+        name="Phase 324: lens overlay fold anchor (datum finder aligned; never the fold source)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_lens_overlay_datum_anchor import run_checks
+
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"lens-overlay-datum-anchor guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("lens-overlay-datum-anchor phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14912,6 +14938,7 @@ def main() -> int:
             phase_321_effective_aperture,
             phase_322_lens_swap_block_safety,
             phase_323_flag_layout_identity,
+            phase_324_lens_overlay_datum_anchor,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

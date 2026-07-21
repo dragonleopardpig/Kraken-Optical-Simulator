@@ -323,7 +323,8 @@
     "320": "pass",
     "321": "pass",
     "322": "pass",
-    "323": "pass"
+    "323": "pass",
+    "324": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -647,6 +648,7 @@
     "320": "clear-aperture EDGE pick (arm -> collect -> finish -> store, cancel, draw)",
     "321": "effective-aperture engine (inventory -> project -> intersect -> attribute)",
     "322": "lens swap/import block safety (tight block + Import discard guard)",
-    "323": "flag bundle records the loaded layout identity (file + step paths)"
+    "323": "flag bundle records the loaded layout identity (file + step paths)",
+    "324": "lens overlay fold anchor (datum finder aligned; never the fold source)"
   }
 }
