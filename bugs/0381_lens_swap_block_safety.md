@@ -30,6 +30,25 @@ behaviour (replace vs keep) — a footgun.
    rear) and refuses a block that contains a foreign element (promoted solid / Object / Image), so a
    swap can never wipe non-lens content.
 
+## Follow-up flag — "multiple misplacement after swap" (`flag_20260721_122714_082`)
+
+After the label fix the user correctly used **Swap** (scene kept: camera/LED/prism all present), but
+the new lens landed **off the fold leg** — vertical, at the bottom of the housing, instead of on-axis
+where the old lens was. Root cause (reproduced headlessly): `_apply_swapped_lens_step_settings` RESET the
+lens STEP overlay's whole scene pose to the fresh single-lens FOLDER's defaults — `rot (0,90,45) →
+(0,0,0)`, `offset [1,2,-3.849] → [0,0,0]`. In a folded assembly the user has rotated + offset the lens
+onto the fold leg; the folder default is on-axis for a bare layout, so the reset snapped the swapped lens
+to a default (vertical) orientation.
+
+**Fix:** the swap now PRESERVES the lens overlay's pose (rotation, axis offset, placement offset, flip)
+and changes only the STEP path + largest-component flag. A different lens *length* is a small along-axis
+nudge the user makes, not a re-orientation. (The camera moving with the new back-focal distance is
+expected physics and separate.)
+
+**Still open:** "it takes super long time for the swapping process." On MV-150 the swap is ~1.5 s, so the
+slowness is specific to the flag's lens folder (a heavy STEP re-mesh / datasheet parse) or the folded
+scene's `_apply_model_change` retrace — needs that exact folder to profile.
+
 ## Verification
 
 - `_imaging_lens_block_indices`: lens-datum + optical-vertex naming resolve tight; two blocks → first

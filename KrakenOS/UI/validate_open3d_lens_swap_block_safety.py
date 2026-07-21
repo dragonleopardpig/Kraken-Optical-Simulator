@@ -21,7 +21,15 @@ class _Row:
 
 
 def _editor(rows, **paths):
+    from KrakenOS.UI.services import layout_table_workbench as _ltw
     from KrakenOS.UI.services.layout_table_workbench import LayoutTableWorkbenchMixin
+
+    # ``Path`` is late-bound into this module by ``_sync_layout_globals`` at editor init;
+    # a __new__ fake never ran it, so inject it here exactly as init would.
+    if getattr(_ltw, "Path", None) is None:
+        import pathlib
+
+        _ltw.Path = pathlib.Path
 
     ed = LayoutTableWorkbenchMixin.__new__(LayoutTableWorkbenchMixin)
     ed.rows = [_Row(n) for n in rows]
@@ -76,6 +84,36 @@ def run_checks() -> tuple[bool, list[str]]:
     promoted = _editor(["Object", "Promoted OPTICAL STEP optical solid", "Lens Front Datum", "Lens Rear Datum", "Image"])
     if not promoted._import_would_discard_scene():
         failures.append("discard(promoted solid): a promoted solid must trigger the Import warning")
+
+    # --- swap PRESERVES the lens overlay scene pose (bugs/0381 misplacement) --------
+    ed = _editor(["Object", "Lens Front Datum", "Lens Rear Datum", "Image"])
+    ed.imported_lens_step_path = "old.step"
+    ed.lens_step_largest_component_only = True
+    ed.lens_step_rotation_x_deg = 0.0
+    ed.lens_step_rotation_y_deg = 90.0   # user aligned the lens onto the fold leg
+    ed.lens_step_rotation_z_deg = 45.0
+    ed.lens_step_axis_offset_xy = [0.5, 0.5]
+    ed.lens_step_placement_offset_xyz = [1.0, 2.0, -3.849]
+    ed.lens_step_reverse_direction = True
+    # The fresh single-lens folder's settings carry a DEFAULT (on-axis) pose -- the swap
+    # must NOT apply it over the user's fold-leg alignment.
+    ed._apply_swapped_lens_step_settings({
+        "lens_step_path": "new.step",
+        "lens_step_largest_component_only": False,
+        "lens_step_rotation_x_deg": 0.0, "lens_step_rotation_y_deg": 0.0, "lens_step_rotation_z_deg": 0.0,
+        "lens_step_axis_offset_xy": [0.0, 0.0], "lens_step_placement_offset_xyz": [0.0, 0.0, 0.0],
+        "lens_step_reverse_direction": False,
+    })
+    if str(getattr(ed, "imported_lens_step_path", "")) != "new.step":
+        failures.append("pose: the STEP path must switch to the new lens")
+    if getattr(ed, "lens_step_largest_component_only", None) is not False:
+        failures.append("pose: largest-component flag must follow the new lens folder")
+    if (getattr(ed, "lens_step_rotation_y_deg", 0.0), getattr(ed, "lens_step_rotation_z_deg", 0.0)) != (90.0, 45.0):
+        failures.append("pose: the lens rotation must be PRESERVED across a swap (not reset to the folder default)")
+    if getattr(ed, "lens_step_placement_offset_xyz", None) != [1.0, 2.0, -3.849]:
+        failures.append("pose: the placement offset must be PRESERVED across a swap")
+    if getattr(ed, "lens_step_axis_offset_xy", None) != [0.5, 0.5]:
+        failures.append("pose: the axis offset must be PRESERVED across a swap")
 
     return (not failures), failures
 

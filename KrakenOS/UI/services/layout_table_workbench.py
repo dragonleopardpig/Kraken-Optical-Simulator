@@ -784,31 +784,24 @@ class LayoutTableWorkbenchMixin:
         return False
 
     def _apply_swapped_lens_step_settings(self, settings) -> None:
-        """Rewire ONLY the lens-STEP overlay to the swapped-in lens (bugs/0378): its
-        path, flip, largest-component flag, offsets and rotations. The scene's own
-        camera / LED / optical STEP overlays and source/field/pupil settings are left
-        untouched -- a swap changes the lens, not the rest of the assembly."""
+        """Rewire the lens-STEP overlay GEOMETRY to the swapped-in lens: its STEP path +
+        largest-component flag ONLY. The overlay's SCENE POSE -- rotation, axis offset,
+        placement offset, flip -- is PRESERVED from the lens it replaces (bugs/0381).
+
+        bugs/0378 originally reset the pose to the fresh single-lens FOLDER's defaults.
+        In a folded assembly the user has aligned the old lens onto the fold leg (a real
+        rotation + offset), and the fresh folder's default pose is on-axis for a bare
+        single-lens layout -- so the reset snapped the swapped lens OFF the fold leg to a
+        default (vertical) orientation: the "multiple misplacement after swap" flag. A
+        swap changes the lens, not where the user put it; a different lens LENGTH is a
+        small along-axis nudge the user makes, not a re-orientation. The camera / LED /
+        optical overlays and source/field/pupil settings are likewise left untouched."""
         settings = settings if isinstance(settings, dict) else {}
         path = settings.get("lens_step_path")
         self.imported_lens_step_path = Path(str(path)).expanduser() if path else None
         self.lens_step_largest_component_only = bool(settings.get("lens_step_largest_component_only", True))
-        self.lens_step_reverse_direction = bool(settings.get("lens_step_reverse_direction", False))
-
-        def _pair(key, n):
-            value = settings.get(key, [0.0] * n)
-            try:
-                return [float(value[i]) for i in range(n)]
-            except Exception:
-                return [0.0] * n
-
-        self.lens_step_axis_offset_xy = _pair("lens_step_axis_offset_xy", 2)
-        self.lens_step_placement_offset_xyz = _pair("lens_step_placement_offset_xyz", 3)
-        for axis in ("x", "y", "z"):
-            try:
-                setattr(self, f"lens_step_rotation_{axis}_deg",
-                        float(settings.get(f"lens_step_rotation_{axis}_deg", 0.0)) % 360.0)
-            except Exception:
-                setattr(self, f"lens_step_rotation_{axis}_deg", 0.0)
+        # rotation_{x,y,z}_deg / axis_offset_xy / placement_offset_xyz / reverse_direction:
+        # PRESERVED (untouched) so the swapped lens keeps the pose the user aligned it to.
 
     def swap_imaging_lens_from_folder(self, folder: str | None = None, *, dialog_parent=None):
         """SWAP the scene's imaging-lens surrogate (rows + STEP overlay) for a newly
