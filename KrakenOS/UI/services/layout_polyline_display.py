@@ -1418,6 +1418,18 @@ class LayoutPolylineDisplayMixin:
         metrics = self._step_optical_glass_axial_metrics(self.imported_lens_step_path)
         if not metrics:
             return front_datum_z
+        # bugs/0377: 0374 assumed the STEP is a CLOSE barrel wrapping its glass -- the
+        # machine-vision surrogate case (PYRITE/ELS-85: body only ~1.1-1.2x the glass
+        # block, so re-centring the glass onto the datum barely moves the barrel). A REAL
+        # lens barrel (Edmund 15056: a 112mm mount around a 53mm glass block, 49mm datum
+        # span) has its mechanical front ~35mm AHEAD of the glass, so pinning the glass to
+        # the datum shifts the whole barrel ~37mm off the surrogate ("lens STEP detached").
+        # For such a barrel the AUTHORED body-face pin (front datum) is the intended
+        # registration; only re-centre when the body closely tracks the glass extent.
+        glass_span = float(metrics["glass_hi"]) - float(metrics["glass_lo"])
+        body_span = float(metrics["body_hi"]) - float(metrics["body_lo"])
+        if glass_span <= 1e-6 or body_span > 1.6 * glass_span:
+            return front_datum_z
         glass_center_u = 0.5 * (float(metrics["glass_lo"]) + float(metrics["glass_hi"]))
         if str(front_face).strip().lower() == "min":
             delta = glass_center_u - float(metrics["body_lo"])

@@ -104,6 +104,20 @@ def run_checks() -> tuple[bool, list[str]]:
     if abs(none_stub._lens_step_display_front_z("max") - none_stub._lens_front_datum_z()) > 1e-6:
         failures.append("no-glass fallback failed: must return the plain front datum")
 
+    # --- bugs/0377: a BIG mechanical barrel keeps the authored body-face pin --------
+    # A real lens barrel (Edmund 15056: a 112mm mount around a 53mm glass block) must NOT
+    # be re-centred onto the datum -- that shifts the whole barrel ~37mm off the surrogate
+    # ("lens STEP detached"). Only a CLOSE barrel (body ~ glass, the MV surrogate case)
+    # gets the 0374 re-centre; a body >> glass falls back to the plain front-datum pin.
+    big_barrel = {"glass_lo": 30.0, "glass_hi": 60.0, "body_lo": 0.0, "body_hi": 100.0, "surfaces": 14}
+    bb = _stub(big_barrel)
+    if abs(bb._lens_step_display_front_z("max") - bb._lens_front_datum_z()) > 1e-6:
+        failures.append("bugs/0377: a big barrel (body >> glass) must keep the body-face pin, not re-centre")
+    close_barrel = {"glass_lo": 4.0, "glass_hi": 43.0, "body_lo": 0.0, "body_hi": 48.0, "surfaces": 2}
+    cb = _stub(close_barrel)
+    if abs(cb._lens_step_display_front_z("max") - cb._lens_front_datum_z()) < 1e-6:
+        failures.append("bugs/0377 gate too tight: a close barrel (body ~ glass) must still be re-centred (0374)")
+
     # --- WIRING -------------------------------------------------------------------
     build_src = inspect.getsource(LayoutPolylineDisplayMixin._transformed_imported_lens_step_mesh)
     if "target_front_z=self._lens_step_display_front_z(front_face)" not in build_src:
