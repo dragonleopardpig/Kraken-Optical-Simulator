@@ -12,6 +12,31 @@ def _layout_module():
     return layout_editor_module
 
 
+def _portable_clear_aperture_rect(rect: Any) -> dict | None:
+    """JSON-safe copy of one bugs/0379 CA rectangle spec, or None if malformed.
+
+    A rect is ``{center, normal, u_axis, v_axis (each a 3-vector), half_u, half_v}``.
+    Round-trips through save/load; anything missing a field or a non-finite value is
+    dropped rather than corrupting the layout file."""
+    if not isinstance(rect, dict):
+        return None
+    out: dict[str, Any] = {}
+    try:
+        for key in ("center", "normal", "u_axis", "v_axis"):
+            vec = [float(c) for c in rect[key]]
+            if len(vec) != 3 or not all(v == v and abs(v) != float("inf") for v in vec):
+                return None
+            out[key] = vec
+        for key in ("half_u", "half_v"):
+            val = float(rect[key])
+            if not (val == val) or val <= 0.0:
+                return None
+            out[key] = val
+    except (KeyError, TypeError, ValueError):
+        return None
+    return out
+
+
 def _json_safe_dim_endpoint_anchor(anchor: Any) -> dict | None:
     """bugs/0149: sanitise one re-anchored ENDPOINT anchor for JSON persistence."""
     if not isinstance(anchor, dict):
@@ -251,6 +276,14 @@ class LayoutSettingsService:
                 str(k): {"face_index": int(v.get("face_index", -1)), "area_mm2": float(v.get("area_mm2", 0.0))}
                 for k, v in (getattr(self, "_step_clear_aperture_by_label", {}) or {}).items()
                 if isinstance(v, dict) and int(v.get("face_index", -1)) >= 0
+            },
+            # bugs/0379: edge-picked physical clear-aperture STOP rectangles, {label: [rect,...]}.
+            # A rect built from picked edges (closed loop / 3 sides / 2 opposite) is a REAL ray
+            # stop at its true plane; persisted so specified openings survive save/reload.
+            "clear_aperture_edge_rects_by_label": {
+                str(k): [_portable_clear_aperture_rect(r) for r in (v or []) if _portable_clear_aperture_rect(r)]
+                for k, v in (getattr(self, "_clear_aperture_rects_by_label", {}) or {}).items()
+                if isinstance(v, (list, tuple)) and v
             },
             # Item 3: BS<->LED two-body glue flag (the optical + led overlays move together).
             "optical_led_glued": bool(getattr(self, "_optical_led_glued", False)),
@@ -627,6 +660,17 @@ class LayoutSettingsService:
                     pass
                 restored_ca[str(k).strip().lower()] = record
         self._step_clear_aperture_by_label = restored_ca
+        # bugs/0379: restore edge-picked physical clear-aperture STOP rectangles.
+        edge_rects = settings.get("clear_aperture_edge_rects_by_label", None)
+        restored_edge_rects: dict[str, list] = {}
+        if isinstance(edge_rects, dict):
+            for k, v in edge_rects.items():
+                if not isinstance(v, (list, tuple)):
+                    continue
+                kept = [r for r in (_portable_clear_aperture_rect(item) for item in v) if r]
+                if kept:
+                    restored_edge_rects[str(k).strip().lower()] = kept
+        self._clear_aperture_rects_by_label = restored_edge_rects
         self._optical_led_glued = bool(settings.get("optical_led_glued", False))  # item 3 BS<->LED glue
         self.imported_camera_step_path = _path_setting("camera_step_path")
         self.imported_lens_step_path = _path_setting("lens_step_path")

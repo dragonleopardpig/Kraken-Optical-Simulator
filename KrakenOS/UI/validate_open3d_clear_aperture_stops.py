@@ -75,8 +75,47 @@ def run_checks() -> tuple[bool, list[str]]:
         failures.append("no CAs -> the records must pass through unchanged")
 
     _check_face_store_ray_stop(failures)
+    _check_persistence_round_trip(failures)
 
     return (not failures), failures
+
+
+def _check_persistence_round_trip(failures: list[str]) -> None:
+    """A stored edge-picked CA rectangle must survive save/reload (bugs/0379). Exercises
+    the exact serialize helper + restore filter the layout snapshot/restore blocks use,
+    so a rect round-trips and a malformed entry is dropped rather than corrupting the
+    layout file. (The full GUI _collect/_apply need Tk vars; this pins the data path.)"""
+    try:
+        from KrakenOS.UI.services.clear_aperture_stops import rect_from_edges
+        from KrakenOS.UI.services.layout_settings import _portable_clear_aperture_rect
+    except Exception as exc:
+        failures.append(f"persistence: import failed ({exc!r})")
+        return
+
+    cx, cy, cz, hu, hv = 10.0, -5.0, 100.0, 25.5, 25.75
+    corners = {
+        "TL": (cx - hu, cy + hv, cz), "TR": (cx + hu, cy + hv, cz),
+        "BR": (cx + hu, cy - hv, cz), "BL": (cx - hu, cy - hv, cz),
+    }
+
+    def edge(a, b):
+        return np.linspace(np.array(corners[a]), np.array(corners[b]), 8)
+
+    rect = rect_from_edges([edge("TL", "TR"), edge("TR", "BR"), edge("BR", "BL")])
+    # Serialize as _collect_layout_settings does; restore as _apply_layout_settings does.
+    saved = {"led": [_portable_clear_aperture_rect(rect), _portable_clear_aperture_rect({"bad": 1})]}
+    restored: dict = {}
+    for k, v in saved.items():
+        kept = [r for r in (_portable_clear_aperture_rect(item) for item in v) if r]
+        if kept:
+            restored[str(k).strip().lower()] = kept
+    if list(restored.keys()) != ["led"] or len(restored["led"]) != 1:
+        failures.append(f"persistence: round-trip kept {restored!r}, expected one 'led' rect (malformed dropped)")
+        return
+    got = restored["led"][0]
+    halves = sorted([got["half_u"], got["half_v"]])
+    if abs(halves[0] - 25.5) > 0.05 or abs(halves[1] - 25.75) > 0.05:
+        failures.append(f"persistence: restored extent {halves} (expected ~25.5 x 25.75)")
 
 
 def _check_face_store_ray_stop(failures: list[str]) -> None:

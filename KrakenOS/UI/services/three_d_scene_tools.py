@@ -3860,6 +3860,64 @@ class ThreeDSceneToolsMixin:
                         rects.append(spec)
         return rects
 
+    def _clear_aperture_edge_rect_store(self) -> dict:
+        store = self.__dict__.get("_clear_aperture_rects_by_label")
+        if not isinstance(store, dict):
+            store = {}
+            self._clear_aperture_rects_by_label = store
+        return store
+
+    def add_clear_aperture_rect_from_edges(self, label: str, edge_point_arrays) -> dict | None:
+        """Build a rectangular CA ray stop from picked edges and store it (bugs/0379).
+
+        ``edge_point_arrays``: an iterable of (N, 3) picked edge polylines -- a closed
+        window loop, three sides of an open opening, or two opposite mount edges. A STEP
+        overlay can carry several openings, so this APPENDS to the label's list rather
+        than replacing. Returns the stored rectangle spec, or None on degenerate input."""
+        label = str(label or "").strip().lower()
+        if not label:
+            return None
+        from KrakenOS.UI.services.clear_aperture_stops import rect_from_edges
+
+        rect = rect_from_edges(edge_point_arrays)
+        if rect is None:
+            return None
+        store = self._clear_aperture_edge_rect_store()
+        rects = store.get(label)
+        if not isinstance(rects, list):
+            rects = []
+            store[label] = rects
+        rects.append(rect)
+        try:
+            self._mark_plot_update_pending()
+        except Exception:
+            pass
+        return rect
+
+    def clear_aperture_edge_rects(self, label: str) -> list:
+        """The stored edge-picked CA rectangles for a label (bugs/0379), newest last."""
+        store = self.__dict__.get("_clear_aperture_rects_by_label")
+        if not isinstance(store, dict):
+            return []
+        rects = store.get(str(label or "").strip().lower())
+        return [dict(r) for r in rects if isinstance(r, dict)] if isinstance(rects, list) else []
+
+    def remove_clear_aperture_edge_rects(self, label: str) -> int:
+        """Drop all edge-picked CA rectangles for a label (bugs/0379). Returns the count
+        removed, so the caller can refresh only when something actually changed."""
+        store = self.__dict__.get("_clear_aperture_rects_by_label")
+        label = str(label or "").strip().lower()
+        if not isinstance(store, dict) or label not in store:
+            return 0
+        removed = len(store.get(label) or [])
+        store.pop(label, None)
+        if removed:
+            try:
+                self._mark_plot_update_pending()
+            except Exception:
+                pass
+        return removed
+
     def _clear_aperture_rect_from_face_record(self, label: str, record: dict):
         """World rectangle for a face-based CA record (bugs/0134 -> 0379 ray stop).
 
