@@ -4075,6 +4075,89 @@ class ThreeDSceneToolsMixin:
                 return descriptor
         return None
 
+    def _illumination_effective_aperture(self, descriptor):
+        """bugs/0380 L2/L3: the WHOLE-SYSTEM effective illumination aperture in the object
+        plane's (fold, perp) frame, from the general engine -- NOT the LED alone.
+
+        Inventory the illumination-path apertures as co-centred shapes at the object plane
+        (u = fold axis, v = perp), intersect them, and return the effective half-extents +
+        which aperture limits each edge. v1 inventory = the LED source (from the descriptor,
+        tilted so the engine foreshortens the fold axis) + every user-picked/recorded clear
+        aperture (bugs/0134 + 0379), projected onto the object plane and co-centred on the
+        beam. When the LED is in fact the limiter this reproduces the old 55->38.9 answer;
+        when a picked CA (or, later, the BS / lens stop) is tighter, THAT drives the dark
+        edges and is named. Returns ``{half_fold, half_perp, limiting_labels}`` or None."""
+        try:
+            from math import cos, radians, sin
+
+            from KrakenOS.UI.services.effective_aperture import (
+                effective_footprint,
+                project_onto_plane_2d,
+                rect_boundary,
+            )
+        except Exception:
+            return None
+        try:
+            af = float(descriptor.get("aperture_fold_mm", 0.0))
+            ap = float(descriptor.get("aperture_perp_mm", 0.0))
+            ang = radians(float(descriptor.get("fold_angle_deg", 45.0)))
+        except Exception:
+            return None
+        if af <= 0.0 or ap <= 0.0:
+            return None
+        Z = np.array([0.0, 0.0, 1.0])
+        fold_name = str(descriptor.get("fold_axis", "x")).strip().lower()
+        if fold_name == "y":
+            u_axis, v_axis = np.array([0.0, 1.0, 0.0]), np.array([1.0, 0.0, 0.0])
+            fold_dir = np.array([0.0, cos(ang), sin(ang)])   # tilted -> engine foreshortens
+            perp_dir = np.array([1.0, 0.0, 0.0])
+        else:
+            u_axis, v_axis = np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0])
+            fold_dir = np.array([cos(ang), 0.0, sin(ang)])
+            perp_dir = np.array([0.0, 1.0, 0.0])
+        # The LED source, tilted at the fold angle so orthographic projection foreshortens it.
+        apertures = [{
+            "label": "led source",
+            "boundary": rect_boundary(np.zeros(3), fold_dir, perp_dir, 0.5 * af, 0.5 * ap),
+            "normal": Z,
+        }]
+        # Every recorded / picked clear aperture, projected onto the object plane and
+        # co-centred on the beam (v1: apertures are nominally centred on the illumination
+        # axis, so we compare EXTENTS; off-axis placement is a documented refinement).
+        try:
+            ca_rects = self._clear_aperture_stop_rects()
+        except Exception:
+            ca_rects = []
+        for i, ca in enumerate(ca_rects):
+            try:
+                boundary = rect_boundary(
+                    ca["center"], ca["u_axis"], ca["v_axis"], float(ca["half_u"]), float(ca["half_v"])
+                )
+                uv = project_onto_plane_2d(boundary, np.zeros(3), Z, u_axis, v_axis)
+                uv = uv - uv.mean(axis=0)  # co-centre on the beam
+                world = np.zeros((uv.shape[0], 3))
+                world[:, :3] = uv[:, 0:1] * u_axis + uv[:, 1:2] * v_axis
+                apertures.append({
+                    "label": f"clear aperture {i + 1}",
+                    "boundary": world,
+                    "normal": Z,
+                })
+            except Exception:
+                continue
+        res = effective_footprint(apertures, (np.zeros(3), Z, u_axis, v_axis))
+        if res is None or res.get("empty") or res.get("bbox_uv") is None:
+            return None
+        bbox = res["bbox_uv"]
+        half_fold = 0.5 * float(bbox[1, 0] - bbox[0, 0])
+        half_perp = 0.5 * float(bbox[1, 1] - bbox[0, 1])
+        if half_fold <= 1e-6 or half_perp <= 1e-6:
+            return None
+        return {
+            "half_fold": half_fold,
+            "half_perp": half_perp,
+            "limiting_labels": list(res.get("limiting_labels", [])),
+        }
+
     def _coaxial_illuminator_overlay_spec(self, system, target, descriptor):
         """bugs/0292: draw the folded coaxial illuminator's EFFECTIVE illumination area on the sensor.
 
@@ -4098,13 +4181,38 @@ class ThreeDSceneToolsMixin:
         half_w, half_h = self._detector_target_half_extent(target)
         if not (half_w > 0.0 and half_h > 0.0):
             return None
-        map_data = coaxial_illuminator_footprint_map(
-            float(descriptor.get("aperture_fold_mm", 0.0)),
-            float(descriptor.get("aperture_perp_mm", 0.0)),
-            float(descriptor.get("fold_angle_deg", 45.0)),
-            fold_axis=str(descriptor.get("fold_axis", "x")),
-            penumbra_mm=descriptor.get("penumbra_mm", None),
-        )
+        # bugs/0380: the effective illumination aperture is the INTERSECTION of every
+        # aperture on the path (general engine), not the LED alone. When it yields a
+        # footprint (LED reduced/limited by a picked CA etc.) draw THAT -- already
+        # projected, so fold_angle=0 avoids re-foreshortening; else fall back to the
+        # LED-only synthetic (unchanged behaviour when the LED is the sole limiter).
+        effective = self._illumination_effective_aperture(descriptor)
+        if effective is not None:
+            map_data = coaxial_illuminator_footprint_map(
+                2.0 * float(effective["half_fold"]),
+                2.0 * float(effective["half_perp"]),
+                0.0,  # already projected by the engine -- do NOT foreshorten again
+                fold_axis=str(descriptor.get("fold_axis", "x")),
+                penumbra_mm=descriptor.get("penumbra_mm", None),
+            )
+            try:
+                labels = effective.get("limiting_labels") or []
+                if labels:
+                    self.append_debug(
+                        "0380 effective illumination aperture "
+                        f"{2*effective['half_fold']:.1f} x {2*effective['half_perp']:.1f} mm; "
+                        f"limited by: {', '.join(labels)}"
+                    )
+            except Exception:
+                pass
+        else:
+            map_data = coaxial_illuminator_footprint_map(
+                float(descriptor.get("aperture_fold_mm", 0.0)),
+                float(descriptor.get("aperture_perp_mm", 0.0)),
+                float(descriptor.get("fold_angle_deg", 45.0)),
+                fold_axis=str(descriptor.get("fold_axis", "x")),
+                penumbra_mm=descriptor.get("penumbra_mm", None),
+            )
         if map_data is None:
             return None
         projected = project_footprint_onto_sensor(map_data, magnification, half_w, half_h)

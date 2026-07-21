@@ -14464,6 +14464,33 @@ def phase_320_clear_aperture_edge_pick(
     return result
 
 
+def phase_321_effective_aperture(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0380 -- the general effective-aperture engine. The whole-system clipped aperture
+    is the INTERSECTION of all apertures on the path (projected onto the object plane,
+    folds unfolded), with each edge attributed to the aperture that limits it -- NOT the
+    hard-coded LED synthetic. Pure engine + the coaxial inventory/wiring: no CA reproduces
+    38.9x74, a tight CA takes over, a fold-only CA gives a mixed per-edge attribution."""
+    result = PhaseResult(
+        name="Phase 321: effective-aperture engine (inventory -> project -> intersect -> attribute)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_effective_aperture import run_checks
+
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"effective-aperture guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("effective-aperture phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14829,6 +14856,7 @@ def main() -> int:
             phase_318_swap_imaging_lens,
             phase_319_clear_aperture_stops,
             phase_320_clear_aperture_edge_pick,
+            phase_321_effective_aperture,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

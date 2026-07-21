@@ -112,7 +112,67 @@ def run_checks() -> tuple[bool, list[str]]:
         if "stop" not in res5["limiting_labels"]:
             failures.append("circle: the round stop must limit")
 
+    _check_inventory_wiring(failures)
+
     return (not failures), failures
+
+
+def _check_inventory_wiring(failures: list[str]) -> None:
+    """bugs/0380 L2/L3: `_illumination_effective_aperture` inventories the LED (from the
+    descriptor, tilted -> foreshortened) + every recorded/picked clear aperture, intersects
+    them, and reports the limiting aperture PER EDGE. No CA -> the LED answer (38.9x74);
+    a tight CA takes over; a fold-only CA gives a mixed attribution; a huge CA never limits."""
+    from KrakenOS.UI.services.three_d_scene_tools import ThreeDSceneToolsMixin
+
+    class _Ed(ThreeDSceneToolsMixin):
+        def __init__(self):
+            self._ca = []
+            self.debug = []
+
+        def _clear_aperture_stop_rects(self):
+            return self._ca
+
+        def append_debug(self, *a, **k):
+            self.debug.append(a)
+
+    d = {"aperture_fold_mm": 55.0, "aperture_perp_mm": 74.0, "fold_angle_deg": 45.0, "fold_axis": "x"}
+    ed = _Ed()
+
+    def _ca(hu, hv):
+        return {"center": [0, 0, 0], "normal": [0, 0, 1], "u_axis": [1, 0, 0], "v_axis": [0, 1, 0],
+                "half_u": hu, "half_v": hv}
+
+    # No CA -> the LED alone, foreshortened: 55*cos45 = 38.9 x 74.
+    e = ed._illumination_effective_aperture(d)
+    if e is None:
+        failures.append("inventory: no-CA case returned None")
+        return
+    if abs(2 * e["half_fold"] - 38.89) > 0.2 or abs(2 * e["half_perp"] - 74.0) > 0.2:
+        failures.append(f"inventory(no CA): {2*e['half_fold']:.1f} x {2*e['half_perp']:.1f} (expected 38.9 x 74)")
+    if e["limiting_labels"] != ["led source"]:
+        failures.append(f"inventory(no CA): limited by {e['limiting_labels']} (expected ['led source'])")
+
+    # A tight 30x30 CA takes over both edges.
+    ed._ca = [_ca(15.0, 15.0)]
+    e = ed._illumination_effective_aperture(d)
+    if abs(2 * e["half_fold"] - 30.0) > 0.2 or abs(2 * e["half_perp"] - 30.0) > 0.2:
+        failures.append(f"inventory(30x30 CA): {2*e['half_fold']:.1f} x {2*e['half_perp']:.1f} (expected 30 x 30)")
+    if "clear aperture 1" not in e["limiting_labels"] or "led source" in e["limiting_labels"]:
+        failures.append(f"inventory(30x30 CA): limited by {e['limiting_labels']} (expected the CA only)")
+
+    # A fold-only 20x100 CA -> fold from the CA, perp from the LED (mixed attribution).
+    ed._ca = [_ca(10.0, 50.0)]
+    e = ed._illumination_effective_aperture(d)
+    if abs(2 * e["half_fold"] - 20.0) > 0.2 or abs(2 * e["half_perp"] - 74.0) > 0.2:
+        failures.append(f"inventory(20x100 CA): {2*e['half_fold']:.1f} x {2*e['half_perp']:.1f} (expected 20 x 74)")
+    if set(e["limiting_labels"]) != {"clear aperture 1", "led source"}:
+        failures.append(f"inventory(20x100 CA): mixed attribution {e['limiting_labels']} (expected CA + LED)")
+
+    # A huge 200x200 CA never limits -> the LED answer, unchanged (no false clip).
+    ed._ca = [_ca(100.0, 100.0)]
+    e = ed._illumination_effective_aperture(d)
+    if abs(2 * e["half_fold"] - 38.89) > 0.2 or e["limiting_labels"] != ["led source"]:
+        failures.append(f"inventory(huge CA): {2*e['half_fold']:.1f}, {e['limiting_labels']} (expected 38.9, led source)")
 
 
 def main() -> int:
