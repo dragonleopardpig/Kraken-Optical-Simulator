@@ -8082,15 +8082,44 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             "each of 3 sides (or 2 opposite edges); then Finish Clear Aperture Edges."
         )
 
+    def _clear_aperture_edge_resolve(self, label, display_xy, actor=None, actor_key=None, cell_id=-1):
+        """Resolve the pick for CA edge collection (bugs/0379).
+
+        A detected closed opening LOOP is returned as-is (one click grabs the whole
+        opening); otherwise the nearest DRAWN EDGE -- not the whole face -- so a 3-sided
+        opening with no closed loop is pickable edge-by-edge. This fixes the flagged
+        "surface highlighted, not edge": in edge-pick mode the boundary EDGE is always
+        the target, so the nearest-edge refinement (the Alt path) runs whether or not Alt
+        is held. Returns the resolver's feature-pick dict, or None."""
+        label = str(label or "").strip().lower()
+        try:
+            plain = self._step_feature_pick_for_display_xy(
+                label, tuple(display_xy), actor=actor, actor_key=actor_key, cell_id=int(cell_id)
+            )
+        except Exception:
+            return None
+        if isinstance(plain, dict) and plain.get("opening"):
+            return plain
+        prev = getattr(self, "_edge_pick_alt_active", False)
+        try:
+            self._edge_pick_alt_active = True
+            refined = self._step_feature_pick_for_display_xy(
+                label, tuple(display_xy), actor=actor, actor_key=actor_key, cell_id=int(cell_id)
+            )
+        except Exception:
+            refined = None
+        finally:
+            self._edge_pick_alt_active = prev
+        return refined if isinstance(refined, dict) else plain
+
     def _collect_step_clear_aperture_edge(
         self, step_label: str, display_xy, actor=None, actor_key=None, cell_id: int = -1
     ) -> None:
         """Add the edge/loop under the cursor to the CA edge buffer (bugs/0379).
 
-        Resolves the picked feature through the SAME resolver the hover uses
-        (``_step_feature_pick_for_display_xy``), so what highlights is what gets
-        collected -- plain hover gives the whole opening loop, Alt gives the nearest
-        drawn edge (the hover-pick contract). The feature's overlay points are the
+        Resolves through the SAME ``_clear_aperture_edge_resolve`` the hover uses, so what
+        highlights is what gets collected: a closed opening loop in one click, else the
+        nearest boundary EDGE (the 3-sided opening). The feature's overlay points are the
         picked geometry."""
         label = str(step_label or "").strip().lower()
         wanted = str(self._step_clear_aperture_pick_label or "").strip().lower()
@@ -8099,13 +8128,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 f"Set Clear Aperture (edges): click an edge on the {(wanted or 'STEP').upper()} body."
             )
             return
-        try:
-            feature_pick = self._step_feature_pick_for_display_xy(
-                label, tuple(display_xy), actor=actor, actor_key=actor_key, cell_id=int(cell_id)
-            )
-        except Exception as exc:
-            self.status_var.set(f"Set Clear Aperture (edges) failed: {_short_error_message(exc)}")
-            return
+        feature_pick = self._clear_aperture_edge_resolve(
+            label, display_xy, actor=actor, actor_key=actor_key, cell_id=int(cell_id)
+        )
         feature = feature_pick.get("feature") if isinstance(feature_pick, dict) else None
         overlay = feature[1] if isinstance(feature, (tuple, list)) and len(feature) > 1 else None
         pts = None
@@ -16675,12 +16700,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             cell_id = -1
         outline = None
         if hit_label is not None and str(hit_label).strip().lower() == wanted:
-            try:
-                feature_pick = self._step_feature_pick_for_display_xy(
-                    wanted, (x, y), actor=actor, actor_key=self._actor_key(actor), cell_id=cell_id
-                )
-            except Exception:
-                feature_pick = None
+            feature_pick = self._clear_aperture_edge_resolve(
+                wanted, (x, y), actor=actor, actor_key=self._actor_key(actor), cell_id=cell_id
+            )
             feature = feature_pick.get("feature") if isinstance(feature_pick, dict) else None
             if isinstance(feature, (tuple, list)) and len(feature) > 1:
                 outline = feature[1]

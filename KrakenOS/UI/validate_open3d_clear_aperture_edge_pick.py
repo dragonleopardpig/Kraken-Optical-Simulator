@@ -124,8 +124,51 @@ def _corners_3_edges():
     return [edge("TL", "TR"), edge("TR", "BR"), edge("BR", "BL")]
 
 
+def _check_edge_resolve(failures: list[str]) -> None:
+    """bugs/0379 follow-up: _clear_aperture_edge_resolve returns a closed opening LOOP
+    as-is (one click), but for a FACE hit (a 3-sided opening with no loop) it forces the
+    nearest-EDGE refinement -- fixing 'surface highlighted, not edge' with no Alt held."""
+    insp = _fake_inspector()
+
+    # Case 1: the plain resolve already yields an opening loop -> returned unchanged, and
+    # the resolver must NOT need to toggle Alt.
+    seen_alt = []
+
+    def _loop_resolver(label, xy, **k):
+        seen_alt.append(bool(getattr(insp, "_edge_pick_alt_active", False)))
+        return {"opening": True, "feature": (None, _FakeOverlay([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 0, 0]]), None)}
+
+    insp._step_feature_pick_for_display_xy = _loop_resolver
+    out = insp._clear_aperture_edge_resolve("led", (5, 5))
+    if not (isinstance(out, dict) and out.get("opening")):
+        failures.append("resolve(loop): a detected opening loop must be returned as-is")
+    if any(seen_alt) and len(seen_alt) > 1:
+        failures.append("resolve(loop): must not re-resolve with Alt once a loop is found")
+
+    # Case 2: a FACE hit when Alt is off, an EDGE hit when Alt is on. The resolver must
+    # force Alt and return the EDGE (not the whole face) -- and restore Alt afterwards.
+    face_pts = _FakeOverlay([[0, 0, 0], [10, 0, 0], [10, 10, 0], [0, 10, 0], [0, 0, 0]])  # whole face
+    edge_pts = _FakeOverlay([[0, 0, 0], [10, 0, 0]])  # single boundary edge
+
+    def _face_or_edge(label, xy, **k):
+        if bool(getattr(insp, "_edge_pick_alt_active", False)):
+            return {"feature": (None, edge_pts, None), "face_id": "F001e0"}
+        return {"feature": (None, face_pts, None), "face_id": "F001"}
+
+    insp._edge_pick_alt_active = False
+    insp._step_feature_pick_for_display_xy = _face_or_edge
+    out = insp._clear_aperture_edge_resolve("led", (5, 5))
+    got = out.get("feature")[1] if isinstance(out, dict) and out.get("feature") else None
+    if got is not edge_pts:
+        failures.append("resolve(face): must force the nearest-EDGE refinement, not return the whole face")
+    if bool(getattr(insp, "_edge_pick_alt_active", False)):
+        failures.append("resolve(face): must restore _edge_pick_alt_active after forcing it")
+
+
 def run_checks() -> tuple[bool, list[str]]:
     failures: list[str] = []
+
+    _check_edge_resolve(failures)
 
     # --- ARM --------------------------------------------------------------------
     insp = _fake_inspector()
