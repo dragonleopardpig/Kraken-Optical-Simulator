@@ -115,7 +115,64 @@ def run_checks() -> tuple[bool, list[str]]:
     if getattr(ed, "lens_step_axis_offset_xy", None) != [0.5, 0.5]:
         failures.append("pose: the axis offset must be PRESERVED across a swap")
 
+    _check_downstream_anchor(failures)
+
     return (not failures), failures
+
+
+class _TRow:
+    def __init__(self, name, thickness=0.0):
+        self.name = name
+        self.thickness = thickness
+
+
+def _check_downstream_anchor(failures: list[str]) -> None:
+    """bugs/0383: a swap must keep the DOWNSTREAM elements (a fold mirror / camera / image
+    the user placed) at their absolute axial position -- the old Rear Datum thickness is
+    the scene gap to them, not part of the lens. A bare lens (image right after) instead
+    lets the image follow the new back focal distance."""
+    from KrakenOS.UI.services.layout_table_workbench import LayoutTableWorkbenchMixin as M
+
+    # Folded scene: a physical mount (mirror) follows the lens -> preserve.
+    folded = [
+        _TRow("Object", 40.0), _TRow("Mirror 1", 40.0), _TRow("gap", 50.0),
+        _TRow("Front Optical Vertex Datum", 18.0), _TRow("Blackbox Group 1", 10.0),
+        _TRow("Aperture Stop", 10.0), _TRow("Blackbox Group 2", 18.0),
+        _TRow("Rear Optical Vertex Datum", 103.0),  # rear index 7; gap-to-mirror2
+        _TRow("Mirror 2", 51.0), _TRow("Image", 0.0),
+    ]
+    if not M._swap_preserves_downstream(folded, 7):
+        failures.append("downstream: a physical element after the lens must trigger preservation")
+    # first downstream row (Mirror 2, index 8) absolute start z:
+    downstream_start = sum(r.thickness for r in folded[:8])  # 40+40+50+18+10+10+18+103 = 289
+    if abs(downstream_start - 289.0) > 1e-6:
+        failures.append(f"downstream: start z math wrong ({downstream_start})")
+    # after swapping in a SHORTER lens (optical rows 18/10/10/18 -> 2/24/24/2 = same span? make it shorter):
+    swapped = [
+        _TRow("Object", 40.0), _TRow("Mirror 1", 40.0), _TRow("gap", 50.0),
+        _TRow("Front Optical Vertex Datum", 2.0), _TRow("Blackbox Group 1", 24.0),
+        _TRow("Aperture Stop", 24.0), _TRow("Blackbox Group 2", 2.0),
+        _TRow("Rear Optical Vertex Datum", 0.0),  # bare rear thickness -> would collapse
+        _TRow("Mirror 2", 51.0), _TRow("Image", 0.0),
+    ]
+    gap = M._swap_downstream_gap(swapped, 7, downstream_start)
+    # new rear start = 40+40+50+2+24+24+2 = 182 ; gap should be 289-182 = 107 to keep Mirror2 at 289
+    if gap is None or abs(gap - 107.0) > 1e-6:
+        failures.append(f"downstream: gap {gap} (expected 107 to hold Mirror 2 at z=289)")
+    else:
+        swapped[7].thickness = gap
+        if abs(sum(r.thickness for r in swapped[:8]) - 289.0) > 1e-6:
+            failures.append("downstream: applying the gap did not restore Mirror 2's absolute z")
+
+    # Bare lens: the next row is the Image -> do NOT preserve (image follows the new BFD).
+    bare = [_TRow("Object", 40.0), _TRow("Front Datum", 18.0), _TRow("Blackbox Group 1", 10.0),
+            _TRow("Rear Datum", 90.0), _TRow("Image", 0.0)]
+    if M._swap_preserves_downstream(bare, 3):
+        failures.append("downstream: a bare lens (image right after) must NOT preserve (BFD follows)")
+
+    # A replacement lens LONGER than the space to the mount -> negative gap -> None (no clobber).
+    if M._swap_downstream_gap(swapped, 7, 100.0) is not None:
+        failures.append("downstream: a negative gap must return None (do not force a bad thickness)")
 
 
 def main() -> int:

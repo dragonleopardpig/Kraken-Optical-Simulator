@@ -766,6 +766,29 @@ class LayoutTableWorkbenchMixin:
                 return None, None
         return front, rear
 
+    @staticmethod
+    def _swap_preserves_downstream(rows, rear_index) -> bool:
+        """Should a lens swap keep the first row AFTER the lens block at its absolute axial
+        position? (bugs/0383) Yes when a PHYSICAL element (a fold mirror / camera / mount)
+        follows the lens; No for a bare lens whose next row is the terminal image (there the
+        image follows the new back focal distance)."""
+        downstream_index = int(rear_index) + 1
+        if downstream_index >= len(rows):
+            return False
+        name = (getattr(rows[downstream_index], "name", "") or "").lower()
+        return "image" not in name
+
+    @staticmethod
+    def _swap_downstream_gap(rows, rear_index, downstream_start_z):
+        """The new Rear Datum thickness that lands the first downstream row back at
+        ``downstream_start_z`` (its pre-swap absolute z), or None if that would be negative
+        (the replacement lens is longer than the space to the downstream mount)."""
+        new_rear_start = sum(
+            float(getattr(r, "thickness", 0.0) or 0.0) for r in rows[: int(rear_index)]
+        )
+        gap = float(downstream_start_z) - new_rear_start
+        return gap if gap >= 0.0 else None
+
     def _import_would_discard_scene(self) -> bool:
         """True when replacing the working layout would throw away user-built assembly
         content -- a beam splitter / camera / LED overlay or a promoted solid (bugs/0381).
@@ -863,11 +886,38 @@ class LayoutTableWorkbenchMixin:
             )
             return None
         new_block = self._normalized_rows_copy(new_rows[new_front:new_rear + 1])
+        # bugs/0383: preserve the DOWNSTREAM elements' axial positions across the swap.
+        # The old lens block's Rear Datum thickness is the SCENE gap to whatever follows
+        # the lens -- a fold mirror, camera or image the user placed -- NOT part of the
+        # lens. The fresh lens folder carries its own bare rear thickness (often ~0), so a
+        # naive splice collapses that downstream arm onto the lens (the "misplaced after
+        # swap" flag: an RA mirror + camera + image jumped ~100 mm toward the lens). When a
+        # PHYSICAL element (a mount / promoted solid, not the terminal image) follows the
+        # lens, keep the first downstream row at its ABSOLUTE axial position by absorbing
+        # the lens-length change into the new Rear Datum thickness. A bare lens (image
+        # immediately after) keeps letting the image follow the new back focal distance.
+        downstream_start_z = (
+            sum(float(getattr(r, "thickness", 0.0) or 0.0) for r in self.rows[:rear + 1])
+            if self._swap_preserves_downstream(self.rows, rear) else None
+        )
         self._begin_history_capture()
         self.rows = list(self.rows[:front]) + list(new_block) + list(self.rows[rear + 1:])
         self._apply_swapped_lens_step_settings(new_info.get("settings", {}))
         self._auto_assign_missing_elements(self.rows)
         self._normalize_special_rows()
+        # bugs/0383: restore the downstream anchor AFTER normalisation (which recomputes the
+        # datum thicknesses from the new lens and would otherwise re-collapse the arm). The
+        # new Rear Datum's thickness is set so the first downstream row keeps its absolute
+        # axial position -- fold mirror / camera / image stay put.
+        if downstream_start_z is not None:
+            _swap_front, swap_rear = self._imaging_lens_block_indices()
+            if swap_rear is not None and 0 <= swap_rear < len(self.rows):
+                gap = self._swap_downstream_gap(self.rows, swap_rear, downstream_start_z)
+                if gap is not None:
+                    try:
+                        self.rows[swap_rear].thickness = float(gap)
+                    except Exception:
+                        pass
         self._sync_table()
         self.load_layouts()  # discover the new library surrogate (also insertable later)
         self._commit_history_capture()
