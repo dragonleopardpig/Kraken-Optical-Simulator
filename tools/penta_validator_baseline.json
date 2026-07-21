@@ -326,7 +326,8 @@
     "323": "pass",
     "324": "pass",
     "325": "pass",
-    "326": "pass"
+    "326": "pass",
+    "327": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -653,6 +654,7 @@
     "323": "flag bundle records the loaded layout identity (file + step paths)",
     "324": "lens overlay fold anchor (datum finder aligned; never the fold source)",
     "325": "paraxial-ref system-build cache (key + bounded store)",
-    "326": "lens-swap auto-refocus (best focus, clamped to clearance)"
+    "326": "lens-swap auto-refocus (best focus, clamped to clearance)",
+    "327": "folded-then-vignetted rays hide with clipping OFF (not 'broken' stubs)"
   }
 }

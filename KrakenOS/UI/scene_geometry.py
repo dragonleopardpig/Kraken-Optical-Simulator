@@ -639,7 +639,18 @@ def ray_path_visible_without_clipping_from_events(path: Any) -> bool:
     if status == "hit_detector":
         return True
     if ray_path_has_non_refractive_steering(path):
-        return True
+        # A deliberately-folded branch (beam-splitter 2nd path, mirror leg, TIR, grating)
+        # stays visible even with no detector to land on -- EXCEPT when a downstream
+        # aperture then *vignetted* it (status ``stopped``). A folded ray that a stop
+        # blocks is a vignetted stray, not an authored branch, and must hide with clipping
+        # OFF like any other vignetted ray. Without this, the folded RA-mirror scene drew
+        # every ray that folds at the mirror then vignettes at the F/4.5 aperture stop as a
+        # "broken" stub terminating mid-air at the stop (the beam is wider than the stop, so
+        # the field edges clip -- correct physics, wrong display). ``missed_detector`` and
+        # escapes still survive the fold so a splitter branch with no detector shows.
+        if status != "stopped":
+            return True
+        return False
     if status:
         return False
     return bool(getattr(path, "reaches_image", False))

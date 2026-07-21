@@ -17,16 +17,22 @@ on the aperture. Turning clipping OFF cleared them in 2D but left them in 3D
 ("disable clipped rays still show up"). Bug 0062 tightened the 3D predicate to
 the 2D rule: visible-when-OFF iff the ray hit the detector **or** underwent a
 deliberate fold (reflect / mirror / TIR / split / grating, per bugs/0018). A
-fold is a real authored branch, not vignetting, so it survives regardless of
-terminus; everything else non-folded is hidden. The 2D filter has no fold
-exception, but real fold-bearing scenes are beam-splitter layouts where the 3D
-inspector must show the 2nd path the user explicitly asked for.
+fold is a real authored branch the user asked for (a beam-splitter 2nd path),
+so it survives even with no detector to land on — **except** when a downstream
+aperture then *vignetted* it (``stopped``): bugs/0389 found that folded field-
+edge rays on the RA-mirror scene fold at the mirror then clip the F/4.5 aperture
+stop, and were drawn as "broken" stubs terminating mid-air at the stop. A
+vignetted folded ray is a blocked stray, not an authored branch, and hides with
+clipping OFF; ``absorbed`` / ``missed`` / escaped folds still survive (a real
+beam-splitter 2nd path is ``hit_detector`` / ``absorbed`` / escaped, never
+``stopped``, as the MV-150 scene confirms). The 2D filter has no fold exception.
 
 Checks
 ------
 1. Predicate semantics (synthetic ``RayPath3D``): clipped-OFF keeps the detector
-   hit and every *folded* branch (folded stop / folded escape); it hides the
-   non-folded stop, non-folded miss, and non-folded escape.
+   hit and folded branches that were NOT vignetted (folded escape); it hides the
+   non-folded stop/miss/escape AND the folded-then-``stopped`` vignetted stray
+   (bugs/0389).
 2. Real-layout parity (``machine_vision_150mm_datasheet_1x.py`` — a fold-free
    LED -> lens -> camera scene with genuine aperture vignetting):
    - the 3D ray filter renders every traced path with clipping ON;
@@ -79,7 +85,14 @@ def _synthetic_paths():
         ("stopped_nofold", _path(1, [_terminal("aperture_stop")]), False),
         ("missed_nofold", _path(2, [_terminal("missed_detector")]), False),
         ("escaped_nofold", _path(3, [_terminal("no_hit")]), False),
-        ("stopped_folded", _path(4, [_fold(), _terminal("aperture_stop")]), True),
+        # A folded ray that is then VIGNETTED at an aperture (``stopped``) is a blocked
+        # stray, NOT an authored branch, so it hides with clipping OFF (bugs/0389). The
+        # folded RA-mirror scene proved it: field-edge rays fold at the mirror then clip the
+        # F/4.5 aperture stop (correct physics -- the beam is wider than the stop), and were
+        # drawn as "broken" stubs terminating mid-air at the stop. A real beam-splitter 2nd
+        # path never lands here -- it hits its detector (``hit_detector``), is ``absorbed``,
+        # or escapes (``escaped_folded`` below), all still kept visible.
+        ("stopped_folded", _path(4, [_fold(), _terminal("aperture_stop")]), False),
         ("escaped_folded", _path(5, [_fold(), _terminal("no_hit")]), True),
     ]
 
