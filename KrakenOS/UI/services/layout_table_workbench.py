@@ -885,7 +885,19 @@ class LayoutTableWorkbenchMixin:
                 parent=parent,
             )
             return None
-        new_block = self._normalized_rows_copy(new_rows[new_front:new_rear + 1])
+        raw_block = new_rows[new_front:new_rear + 1]
+        new_block = self._normalized_rows_copy(raw_block)
+        # bugs/0385: _normalized_rows_copy treats the slice as a STANDALONE layout and
+        # forces its FIRST row -> "Object" and LAST row -> "Image". This block is spliced
+        # into the MIDDLE of the scene, where its ends are the lens Front/Rear Vertex
+        # DATUMS (surface "Standard"). An Object-surfaced front datum is SKIPPED by the
+        # fold-override follower walk (nonseq_output_ports), so on a folded scene the
+        # swapped lens overlay anchors to a row that no longer folds and renders UNFOLDED
+        # off the mirror leg (the "lens misplaced/vertical after swap" flag). Restore the
+        # datum ends' real surface so the block stays a proper mid-scene lens block.
+        if new_block and raw_block:
+            new_block[0].surface = raw_block[0].surface
+            new_block[-1].surface = raw_block[-1].surface
         # bugs/0383: preserve the DOWNSTREAM elements' axial positions across the swap.
         # The old lens block's Rear Datum thickness is the SCENE gap to whatever follows
         # the lens -- a fold mirror, camera or image the user placed -- NOT part of the

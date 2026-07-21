@@ -116,8 +116,51 @@ def run_checks() -> tuple[bool, list[str]]:
         failures.append("pose: the axis offset must be PRESERVED across a swap")
 
     _check_downstream_anchor(failures)
+    _check_block_surface_preserved(failures)
 
     return (not failures), failures
+
+
+def _check_block_surface_preserved(failures: list[str]) -> None:
+    """bugs/0385: the swapped-in lens block is a MID-SCENE segment bracketed by Front/Rear
+    Vertex DATUMS (surface 'Standard'). `_normalized_rows_copy` treats any row list as a
+    standalone layout and forces its first row -> 'Object' and last -> 'Image'; spliced
+    into a folded scene an 'Object'-surfaced front datum is skipped by the fold-override
+    follower walk, so the lens overlay renders UNFOLDED. The swap must restore the datum
+    ends' surface after the copy."""
+    from KrakenOS.UI.services.layout_table_workbench import LayoutTableWorkbenchMixin as M
+
+    try:
+        from KrakenOS.UI.layout_editor import SurfaceRow
+    except Exception:
+        try:
+            from KrakenOS.UI.services.layout_table_workbench import SurfaceRow
+        except Exception as exc:
+            failures.append(f"surface-preserve: could not import SurfaceRow ({exc!r})")
+            return
+
+    def _row(surface, name):
+        return SurfaceRow(surface=surface, name=name, thickness=1.0, diameter=25.0, glass="AIR")
+
+    raw = [_row("Standard", "Front Optical Vertex Datum"), _row("Thin Lens", "Blackbox Group 1"),
+           _row("Aperture", "Aperture Stop"), _row("Thin Lens", "Blackbox Group 2"),
+           _row("Standard", "Rear Optical Vertex Datum")]
+    norm = M._normalized_rows_copy(raw)
+    # Document WHY the fix is needed: the copy corrupts the datum ends.
+    if not (norm[0].surface == "Object" and norm[-1].surface == "Image"):
+        # If _normalized_rows_copy ever stops forcing Object/Image the fix is harmless, but
+        # the guard's premise changed -- flag it so the swap fix can be revisited.
+        failures.append(
+            f"surface-preserve: premise changed -- _normalized_rows_copy ends = "
+            f"{norm[0].surface!r}/{norm[-1].surface!r} (was Object/Image); revisit the swap restore"
+        )
+    # The swap's restore (new_block[0].surface = raw_block[0].surface, likewise [-1]).
+    norm[0].surface = raw[0].surface
+    norm[-1].surface = raw[-1].surface
+    if norm[0].surface != "Standard" or norm[-1].surface != "Standard":
+        failures.append("surface-preserve: restoring the datum ends must yield 'Standard' front + rear")
+    if [r.surface for r in norm] != [r.surface for r in raw]:
+        failures.append(f"surface-preserve: block surfaces after restore {[r.surface for r in norm]} != raw {[r.surface for r in raw]}")
 
 
 class _TRow:
