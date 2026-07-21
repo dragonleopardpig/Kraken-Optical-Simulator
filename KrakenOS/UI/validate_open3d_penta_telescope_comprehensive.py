@@ -14411,6 +14411,32 @@ def phase_318_swap_imaging_lens(
     return result
 
 
+def phase_319_clear_aperture_stops(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0379 -- user-specified physical clear-aperture STOPS from picked edges. A CA
+    rectangle built from a closed loop, 3 edges, or 2 opposite edges is the same opening at
+    its true plane; illumination rays missing the opening are vignetted (a decoration
+    LED/camera/mount window becomes a real stop). Geometry + filter core."""
+    result = PhaseResult(
+        name="Phase 319: physical clear-aperture stops (edges -> rectangle -> ray vignetting)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_clear_aperture_stops import run_checks
+
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"clear-aperture-stops guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("clear-aperture-stops phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14774,6 +14800,7 @@ def main() -> int:
             phase_316_import_unsaved_layout,
             phase_317_spot_map_field_cache,
             phase_318_swap_imaging_lens,
+            phase_319_clear_aperture_stops,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

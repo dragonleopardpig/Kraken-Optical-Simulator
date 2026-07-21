@@ -3824,7 +3824,31 @@ class ThreeDSceneToolsMixin:
                 records.extend(self._isolated_illumination_marker_records(system, float(wavelength)))
             except Exception:
                 pass
-        return records
+        return self._apply_clear_aperture_stops(records)
+
+    def _clear_aperture_stop_rects(self) -> list:
+        """User-specified physical clear-aperture STOP rectangles (bugs/0379), as a list
+        of ``{center, normal, u_axis, v_axis, half_u, half_v}`` specs. Populated by the
+        Set Clear Aperture (pick edges) flow on decoration STEP overlays; empty (no clip)
+        otherwise, so scenes with no specified CA are unchanged."""
+        store = self.__dict__.get("_clear_aperture_rects_by_label")
+        if not isinstance(store, dict):
+            return []
+        return [spec for spec in store.values() if isinstance(spec, dict) and "half_u" in spec]
+
+    def _apply_clear_aperture_stops(self, records):
+        """Vignette illumination ray records that miss a user-specified physical CA
+        opening (bugs/0379) -- the decoration LED/camera/mount window becomes a REAL stop
+        at its picked plane. A no-op when no CA has been specified."""
+        cas = self._clear_aperture_stop_rects()
+        if not cas:
+            return records
+        try:
+            from KrakenOS.UI.services.clear_aperture_stops import filter_illumination_records
+
+            return filter_illumination_records(records, cas)
+        except Exception:
+            return records
 
     def _isolated_scene_source_records(self, system, wavelength: float) -> list:
         """bugs/0289: trace the LAUNCHED scene sources into an ISOLATED keeper (same rays -- identical

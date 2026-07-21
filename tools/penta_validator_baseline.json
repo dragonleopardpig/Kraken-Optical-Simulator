@@ -318,7 +318,8 @@
     "315": "pass",
     "316": "pass",
     "317": "pass",
-    "318": "pass"
+    "318": "pass",
+    "319": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -637,6 +638,7 @@
     "315": "imported lens STEP overlay is re-centred on its glass block",
     "316": "a fresh import is a transient unsaved layout (Save prompts; no stale-session restore)",
     "317": "spot diagram recovers after the field shrinks to the sensor (no cached None)",
-    "318": "Swap Imaging Lens replaces the lens block in place (scene preserved)"
+    "318": "Swap Imaging Lens replaces the lens block in place (scene preserved)",
+    "319": "physical clear-aperture stops (edges -> rectangle -> ray vignetting)"
   }
 }
