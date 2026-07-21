@@ -3828,13 +3828,73 @@ class ThreeDSceneToolsMixin:
 
     def _clear_aperture_stop_rects(self) -> list:
         """User-specified physical clear-aperture STOP rectangles (bugs/0379), as a list
-        of ``{center, normal, u_axis, v_axis, half_u, half_v}`` specs. Populated by the
-        Set Clear Aperture (pick edges) flow on decoration STEP overlays; empty (no clip)
-        otherwise, so scenes with no specified CA are unchanged."""
+        of ``{center, normal, u_axis, v_axis, half_u, half_v}`` world specs.
+
+        Two sources, unified into ray stops so a decoration STEP window becomes REAL:
+        (1) the existing face-based CA store (``set_step_clear_aperture`` / bugs/0134 --
+        the user picks a closed WINDOW FACE; its world outline is the opening); and
+        (2) explicit edge-picked rectangles (``_clear_aperture_rects_by_label`` -- the
+        3-edge / 2-opposite-edge path for openings with no closed face). A STEP overlay
+        can carry SEVERAL openings (the CO90 LED has a front output AND a back window),
+        so the edge store maps each label to a LIST of rects. Empty when nothing is
+        specified, so scenes with no CA are unchanged."""
+        rects: list = []
+        # (1) recorded window FACES -> world outline -> rectangle.
+        try:
+            face_store = self._clear_aperture_store()
+        except Exception:
+            face_store = None
+        if isinstance(face_store, dict):
+            for label, record in face_store.items():
+                if not isinstance(record, dict):
+                    continue
+                spec = self._clear_aperture_rect_from_face_record(str(label), record)
+                if spec is not None:
+                    rects.append(spec)
+        # (2) explicit edge-picked rectangles (one or many per label).
         store = self.__dict__.get("_clear_aperture_rects_by_label")
-        if not isinstance(store, dict):
-            return []
-        return [spec for spec in store.values() if isinstance(spec, dict) and "half_u" in spec]
+        if isinstance(store, dict):
+            for value in store.values():
+                for spec in value if isinstance(value, (list, tuple)) else [value]:
+                    if isinstance(spec, dict) and "half_u" in spec:
+                        rects.append(spec)
+        return rects
+
+    def _clear_aperture_rect_from_face_record(self, label: str, record: dict):
+        """World rectangle for a face-based CA record (bugs/0134 -> 0379 ray stop).
+
+        The recorded ``face_index`` names the picked window face on the *transformed*
+        (world-frame) overlay mesh; its boundary outline is the aperture, so the in-plane
+        bounding box of that loop is the stop rectangle. Read-only on the shared memoised
+        mesh (never mutate it -- reference_shared_step_mesh_no_mutate)."""
+        try:
+            fid = int(record.get("face_index", -1))
+        except Exception:
+            fid = -1
+        if fid < 0:
+            return None
+        label = str(label or "").strip().lower()
+        if not label:
+            return None
+        try:
+            mesh = self._transformed_imported_step_mesh_for_label(label)
+            if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
+                return None
+            from KrakenOS.UI.services.open3d_face_index_edges import (
+                face_outline_from_face_indices,
+            )
+            from KrakenOS.UI.services.clear_aperture_stops import rect_from_edges
+
+            outline = face_outline_from_face_indices(mesh, (fid,))
+            pts = getattr(outline, "points", None) if outline is not None else None
+            if pts is None:
+                return None
+            arr = np.asarray(pts, dtype=float)
+            if arr.ndim != 2 or arr.shape[0] < 3:
+                return None
+            return rect_from_edges([arr])
+        except Exception:
+            return None
 
     def _apply_clear_aperture_stops(self, records):
         """Vignette illumination ray records that miss a user-specified physical CA
