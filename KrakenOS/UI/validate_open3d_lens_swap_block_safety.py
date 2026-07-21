@@ -117,8 +117,30 @@ def run_checks() -> tuple[bool, list[str]]:
 
     _check_downstream_anchor(failures)
     _check_block_surface_preserved(failures)
+    _check_swap_refresh_skip(failures)
 
     return (not failures), failures
+
+
+def _check_swap_refresh_skip(failures: list[str]) -> None:
+    """bugs/0386: swapping from the Open 3D inspector must NOT run the editor-side 2D
+    build+trace -- the inspector's _apply_model_change retraces the 3D and marks the 2D
+    stale, so the editor refresh would be a redundant full trace that doubles the freeze.
+    The editor swap gates refresh_plot on a `refresh` flag; the inspector passes False."""
+    import inspect as _inspect
+
+    from KrakenOS.UI.open3d_inspector import Kraken3DInspector
+    from KrakenOS.UI.services.layout_table_workbench import LayoutTableWorkbenchMixin
+
+    editor_src = _inspect.getsource(LayoutTableWorkbenchMixin.swap_imaging_lens_from_folder)
+    if "refresh: bool" not in editor_src:
+        failures.append("swap-refresh: editor swap must accept a `refresh` flag")
+    if "if refresh and hasattr(self, \"refresh_plot\")" not in editor_src.replace("'", '"'):
+        failures.append("swap-refresh: editor swap must gate refresh_plot on `refresh`")
+
+    insp_src = _inspect.getsource(Kraken3DInspector.swap_imaging_lens_from_folder)
+    if "refresh=False" not in insp_src:
+        failures.append("swap-refresh: the inspector wrapper must pass refresh=False (skip the redundant 2D trace)")
 
 
 def _check_block_surface_preserved(failures: list[str]) -> None:

@@ -6688,7 +6688,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         use-after-free path). Distinct from Add Imaging Lens (a second lens)."""
         token = self._timing_start("swap_imaging_lens_from_folder")
         try:
-            model = self.editor.swap_imaging_lens_from_folder(dialog_parent=self)
+            # bugs/0386: skip the editor-side 2D build+trace -- _apply_model_change below
+            # retraces the 3D and marks the 2D stale, so the editor's refresh would be a
+            # redundant full trace that doubles the freeze on a folded multi-STEP scene.
+            model = self.editor.swap_imaging_lens_from_folder(dialog_parent=self, refresh=False)
             if model is None:
                 if self.winfo_exists():
                     self.status_var.set(self.editor.status_var.get())

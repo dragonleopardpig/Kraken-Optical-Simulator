@@ -826,7 +826,7 @@ class LayoutTableWorkbenchMixin:
         # rotation_{x,y,z}_deg / axis_offset_xy / placement_offset_xyz / reverse_direction:
         # PRESERVED (untouched) so the swapped lens keeps the pose the user aligned it to.
 
-    def swap_imaging_lens_from_folder(self, folder: str | None = None, *, dialog_parent=None):
+    def swap_imaging_lens_from_folder(self, folder: str | None = None, *, dialog_parent=None, refresh: bool = True):
         """SWAP the scene's imaging-lens surrogate (rows + STEP overlay) for a newly
         imported lens, IN PLACE (bugs/0378).
 
@@ -939,7 +939,12 @@ class LayoutTableWorkbenchMixin:
         )
         self.status_var.set(message)
         self.append_progress(message)
-        if hasattr(self, "refresh_plot"):
+        # bugs/0386: the 2D refresh here is a FULL system build + trace (~5s on a folded
+        # multi-STEP scene). When the swap is driven from the Open 3D inspector, the wrapper
+        # immediately calls _apply_model_change() -- which retraces the 3D AND marks the 2D
+        # stale for a later redraw -- so this 2D trace is pure redundant work that DOUBLES
+        # the freeze. The inspector passes refresh=False; the 2D UI keeps refresh=True.
+        if refresh and hasattr(self, "refresh_plot"):
             self.refresh_plot(suppress_analysis=True)
         return model
 
