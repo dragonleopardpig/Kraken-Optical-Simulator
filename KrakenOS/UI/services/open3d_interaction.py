@@ -487,6 +487,15 @@ class Open3DInteractionService:
             # mirrors the Center-Row->Optical-Axis precedent above. A click that
             # lands on the WRONG body still just nudges, because they are aiming
             # at the scene rather than bailing out of the pick.
+            # bugs/0379: but in the multi-edge variant a stray empty click must NOT
+            # discard edges already collected -- warn and keep them (Esc still cancels).
+            if actor_key is None and self._step_clear_aperture_pick_edges and self._step_clear_aperture_edge_buffer:
+                self.status_var.set(
+                    f"Clicked empty space -- {len(self._step_clear_aperture_edge_buffer)} edge(s) kept. "
+                    "Pick another edge, or Finish Clear Aperture Edges (Esc cancels)."
+                )
+                self.render()
+                return
             if actor_key is None and self.cancel_active_3d_operation():
                 return
             self.status_var.set(
@@ -501,7 +510,12 @@ class Open3DInteractionService:
             except Exception:
                 step_cell_id = -1
             if self._step_clear_aperture_pick_mode:
-                self._apply_step_clear_aperture_pick(str(step_label), step_cell_id)
+                if self._step_clear_aperture_pick_edges:
+                    self._collect_step_clear_aperture_edge(
+                        str(step_label), (x, y), actor=actor, actor_key=actor_key, cell_id=step_cell_id
+                    )
+                else:
+                    self._apply_step_clear_aperture_pick(str(step_label), step_cell_id)
                 self.render()
                 return
             if self.editor._cad_led_object_edge_pick:

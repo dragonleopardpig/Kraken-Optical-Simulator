@@ -414,6 +414,7 @@ class Open3DFaceAssignmentService:
                 label="Set Clear Aperture (pick window face)...",
                 command=lambda picked_label=step_label: self.start_step_clear_aperture_pick(picked_label),
             )
+            self._add_clear_aperture_edge_menu_items(menu, step_label)  # bugs/0379
             # bugs/0342: a DEFINED clear aperture is snappable from its own centre +
             # normal -- offer the snap here, not just when the cursor sits on the
             # see-through opening (opening_feature) or while the rim is pinned. After
@@ -493,6 +494,7 @@ class Open3DFaceAssignmentService:
             label="Set Clear Aperture (pick window face)...",
             command=lambda picked_label=step_label: self.start_step_clear_aperture_pick(picked_label),
         )
+        self._add_clear_aperture_edge_menu_items(menu, step_label)  # bugs/0379
         # bugs/0342: keep the snap reachable even when the pinned rim carries no usable
         # normal -- a clear aperture is snappable from its resolved centre + normal.
         # bugs/0344: resolve from the OPENING (manual record OR auto-detect), not gated
@@ -1308,6 +1310,53 @@ class Open3DFaceAssignmentService:
             self.status_var.set(f"{label.upper()} clear aperture forgotten.")
         else:
             self.status_var.set(f"No clear aperture was set for the {label.upper()} STEP.")
+
+    def _forget_clear_aperture_edges_from_context(self, label: str) -> None:
+        """Right-click "Forget Clear Aperture Edges": drop all edge-picked CA rectangles
+        for a STEP overlay (bugs/0379) and refresh so illumination stops vignetting."""
+        label = str(label).strip().lower()
+        removed = 0
+        try:
+            removed = int(self.editor.remove_clear_aperture_edge_rects(label))
+        except Exception as exc:
+            self.editor.append_debug(f"Open 3D clear-aperture edge forget failed: {exc}")
+        try:
+            self.refresh_from_editor()
+        except Exception:
+            pass
+        if removed:
+            self.status_var.set(f"{label.upper()} clear-aperture edges forgotten ({removed} removed).")
+        else:
+            self.status_var.set(f"No edge-picked clear aperture was set for the {label.upper()} STEP.")
+
+    def _add_clear_aperture_edge_menu_items(self, menu, step_label: str) -> None:
+        """bugs/0379: the edge-pick CA menu items -- start the multi-edge pick, Finish it
+        while armed on this label, and Forget any edge-picked rectangles. Shared by both
+        STEP right-click menus (whole-body + pinned-opening). This is how the 3-sided
+        opening (no closed face for the window-face pick) becomes a real ray stop."""
+        step_label = str(step_label or "").strip().lower()
+        menu.add_command(
+            label="Set Clear Aperture (pick EDGES: loop / 3 sides)...",
+            command=lambda picked_label=step_label: self.start_step_clear_aperture_edge_pick(picked_label),
+        )
+        armed = bool(getattr(self, "_step_clear_aperture_pick_edges", False)) and str(
+            getattr(self, "_step_clear_aperture_pick_label", "") or ""
+        ).strip().lower() == step_label
+        if armed:
+            count = len(getattr(self, "_step_clear_aperture_edge_buffer", []) or [])
+            menu.add_command(
+                label=f"Finish Clear Aperture Edges ({count})",
+                command=lambda: self.finish_step_clear_aperture_edge_pick(),
+            )
+        try:
+            has_edges = bool(self.editor.clear_aperture_edge_rects(step_label))
+        except Exception:
+            has_edges = False
+        if has_edges:
+            menu.add_command(
+                label="Forget Clear Aperture Edges",
+                command=lambda picked_label=step_label: self._forget_clear_aperture_edges_from_context(picked_label),
+            )
 
     def _promote_step_and_assign_face_function(
         self,

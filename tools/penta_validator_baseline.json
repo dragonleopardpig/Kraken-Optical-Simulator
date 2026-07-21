@@ -319,7 +319,8 @@
     "316": "pass",
     "317": "pass",
     "318": "pass",
-    "319": "pass"
+    "319": "pass",
+    "320": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -639,6 +640,7 @@
     "316": "a fresh import is a transient unsaved layout (Save prompts; no stale-session restore)",
     "317": "spot diagram recovers after the field shrinks to the sensor (no cached None)",
     "318": "Swap Imaging Lens replaces the lens block in place (scene preserved)",
-    "319": "physical clear-aperture stops (edges -> rectangle -> ray vignetting)"
+    "319": "physical clear-aperture stops (edges -> rectangle -> ray vignetting)",
+    "320": "clear-aperture EDGE pick (arm -> collect -> finish -> store, cancel, draw)"
   }
 }

@@ -643,6 +643,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._step_surface_center_axis_pick_mode = False
         self._step_clear_aperture_pick_mode = False
         self._step_clear_aperture_pick_label = ""
+        # bugs/0379: the multi-EDGE variant of the CA pick. When armed, left clicks
+        # COLLECT picked edges (a closed loop / 3 sides / 2 opposite) into the buffer;
+        # Finish builds a rectangular ray stop from them. Reuses the pick mode above so
+        # cancel/badge/empty-space-bail all still apply -- this sub-flag only changes
+        # what a click DOES (collect an edge vs. record a face).
+        self._step_clear_aperture_pick_edges = False
+        self._step_clear_aperture_edge_buffer: list = []
         # bugs/0326: the auto-detected clear-aperture opening face index per STEP
         # source path (geometry-stable), so plain hover can snap to the opening's
         # rim edge without re-scoring every mouse move.
@@ -8034,6 +8041,175 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         )
         return True
 
+    def start_step_clear_aperture_edge_pick(self, label: str | None = None) -> None:
+        """Arm the multi-EDGE clear-aperture pick (bugs/0379).
+
+        Unlike the single-click window-FACE pick, this collects one or more picked
+        edges -- a closed window loop (one plain click), the three sides of an open
+        opening, or two opposite mount edges (Alt-click each) -- then Finish builds a
+        rectangular ray stop from them at the picked plane. The opening's LOCATION comes
+        from the geometry the user clicks, which is the whole point (a typed size loses
+        it). Reuses the single-pick machinery via the ``_step_clear_aperture_pick_edges``
+        sub-flag so cancel / empty-space-bail / mode badge all still apply."""
+        service = self.editor._open3d_step_state_service()
+        label = service.selected_import_label(
+            (label, self._selected_step_feature_label, getattr(self.editor, "_selected_step_label", None))
+        )
+        if not label:
+            self.status_var.set("Set Clear Aperture (edges): select or import a STEP component first.")
+            return
+        self._step_clear_aperture_pick_mode = True
+        self._step_clear_aperture_pick_label = label
+        self._step_clear_aperture_pick_edges = True
+        self._step_clear_aperture_edge_buffer = []
+        self._step_normal_axis_pick_mode = False
+        self._step_surface_center_axis_pick_mode = False
+        self._step_carry_follow_state = None
+        self._step_carry_drag_state = None
+        self._step_carry_snap_ray_mode = False
+        self._step_carry_snap_target_mode = False
+        self._source_target_pick_mode = False
+        self._center_row_to_ray_mode = False
+        self._center_row_to_ray_face_id = ""
+        self._placement_target_pick_mode = False
+        self._placement_orient_pick_mode = False
+        self._placement_orient_ray_mode = False
+        self._set_step_carry_cursor(False)
+        self._set_axis_pick_cursor(True)
+        self._update_mode_badge()
+        self.status_var.set(
+            f"Set {label.upper()} clear aperture: click the opening's closed loop, or Alt-click "
+            "each of 3 sides (or 2 opposite edges); then Finish Clear Aperture Edges."
+        )
+
+    def _collect_step_clear_aperture_edge(
+        self, step_label: str, display_xy, actor=None, actor_key=None, cell_id: int = -1
+    ) -> None:
+        """Add the edge/loop under the cursor to the CA edge buffer (bugs/0379).
+
+        Resolves the picked feature through the SAME resolver the hover uses
+        (``_step_feature_pick_for_display_xy``), so what highlights is what gets
+        collected -- plain hover gives the whole opening loop, Alt gives the nearest
+        drawn edge (the hover-pick contract). The feature's overlay points are the
+        picked geometry."""
+        label = str(step_label or "").strip().lower()
+        wanted = str(self._step_clear_aperture_pick_label or "").strip().lower()
+        if not label or (wanted and label != wanted):
+            self.status_var.set(
+                f"Set Clear Aperture (edges): click an edge on the {(wanted or 'STEP').upper()} body."
+            )
+            return
+        try:
+            feature_pick = self._step_feature_pick_for_display_xy(
+                label, tuple(display_xy), actor=actor, actor_key=actor_key, cell_id=int(cell_id)
+            )
+        except Exception as exc:
+            self.status_var.set(f"Set Clear Aperture (edges) failed: {_short_error_message(exc)}")
+            return
+        feature = feature_pick.get("feature") if isinstance(feature_pick, dict) else None
+        overlay = feature[1] if isinstance(feature, (tuple, list)) and len(feature) > 1 else None
+        pts = None
+        if overlay is not None:
+            try:
+                pts = np.asarray(overlay.points, dtype=float).reshape((-1, 3))
+            except Exception:
+                pts = None
+        if pts is None or pts.shape[0] < 2:
+            self.status_var.set(
+                "Set Clear Aperture (edges): hover an edge until it highlights, then click."
+            )
+            return
+        self._step_clear_aperture_edge_buffer.append(pts)
+        count = len(self._step_clear_aperture_edge_buffer)
+        total_pts = int(sum(int(p.shape[0]) for p in self._step_clear_aperture_edge_buffer))
+        ready = total_pts >= 3
+        tail = (
+            "right-click -> Finish Clear Aperture Edges to build the stop."
+            if ready
+            else "pick more edges."
+        )
+        self.status_var.set(f"{label.upper()} clear aperture: {count} edge(s) picked -- {tail}")
+        self._update_mode_badge()
+
+    def finish_step_clear_aperture_edge_pick(self) -> bool:
+        """Build a rectangular CA ray stop from the picked edges and store it (bugs/0379)."""
+        if not self._step_clear_aperture_pick_edges:
+            return False
+        label = str(self._step_clear_aperture_pick_label or "").strip().lower()
+        buffer = list(self._step_clear_aperture_edge_buffer or [])
+        if not label or not buffer:
+            self.status_var.set("Finish Clear Aperture: pick at least one closed loop or three edges first.")
+            return False
+        try:
+            rect = self.editor.add_clear_aperture_rect_from_edges(label, buffer)
+        except Exception as exc:
+            self.status_var.set(f"Finish Clear Aperture failed: {_short_error_message(exc)}")
+            return False
+        if rect is None:
+            self.status_var.set(
+                "Finish Clear Aperture: the picked edges do not span a rectangle "
+                "(need a closed loop, 3 sides, or 2 opposite edges)."
+            )
+            return False
+        self._step_clear_aperture_pick_mode = False
+        self._step_clear_aperture_pick_edges = False
+        self._step_clear_aperture_pick_label = ""
+        self._step_clear_aperture_edge_buffer = []
+        self._set_axis_pick_cursor(False)
+        self._set_step_hover_outline(None, None)
+        self._update_mode_badge()
+        try:
+            self.refresh_from_editor()
+        except Exception as exc:
+            self.editor.append_debug(f"3D clear-aperture edge refresh failed: {exc}")
+        w = 2.0 * float(rect.get("half_u", 0.0))
+        h = 2.0 * float(rect.get("half_v", 0.0))
+        self.status_var.set(
+            f"{label.upper()} clear aperture set from picked edges "
+            f"({w:.1f} x {h:.1f} mm). It now vignettes illumination that misses the opening."
+        )
+        return True
+
+    def _add_clear_aperture_edge_rect_actors(self, label: str) -> None:
+        """Draw each edge-picked CA rectangle (bugs/0379) so the user SEES the stop's
+        location. Green closed loop, distinct from the cyan recorded-face outline and
+        the gold hover. Follows the overlay so it tracks a subsequent move."""
+        label = str(label or "").strip().lower()
+        try:
+            rects = self.editor.clear_aperture_edge_rects(label)
+        except Exception:
+            rects = []
+        for rect in rects:
+            try:
+                center = np.asarray(rect["center"], dtype=float).reshape(3)
+                u = np.asarray(rect["u_axis"], dtype=float).reshape(3)
+                v = np.asarray(rect["v_axis"], dtype=float).reshape(3)
+                hu = float(rect["half_u"])
+                hv = float(rect["half_v"])
+            except Exception:
+                continue
+            corners = np.array(
+                [
+                    center + hu * u + hv * v,
+                    center - hu * u + hv * v,
+                    center - hu * u - hv * v,
+                    center + hu * u - hv * v,
+                    center + hu * u + hv * v,
+                ],
+                dtype=float,
+            )
+            try:
+                self._add_mesh_actor(
+                    pv.lines_from_points(corners),
+                    color=(0.20, 0.92, 0.45),
+                    opacity=0.96,
+                    line_width=5.0,
+                    follow_step_label=label,
+                    backface_culling=False,
+                )
+            except Exception:
+                pass
+
     def _clear_aperture_outline(self, label: str, face_index):
         """Edge polyline of a STEP overlay's clear-aperture face in world frame."""
         try:
@@ -8182,11 +8358,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             "opening": True,
         }
 
-    def _add_clear_aperture_highlight_actor(self, label: str) -> None:
+    def _add_clear_aperture_face_highlight_actor(self, label: str) -> None:
         """Persistently outline a STEP overlay's recorded clear aperture so the user
         always sees which window is the component's CA (bugs/0134). Cyan so it reads
         apart from the gold hover and pink selection. Shared by the partial overlay
-        refresh and the full scene rebuild."""
+        refresh and the full scene rebuild. (bugs/0379 wraps this via
+        ``_add_clear_aperture_highlight_actor`` to also draw edge-picked rectangles.)"""
         label = str(label or "").strip().lower()
         try:
             record = self.editor.step_clear_aperture(label)
@@ -8214,6 +8391,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             )
         except Exception:
             pass
+
+    def _add_clear_aperture_highlight_actor(self, label: str) -> None:
+        """Draw a STEP overlay's clear-aperture markers during refresh (the entry point
+        both refresh call sites already invoke): the recorded-FACE outline (bugs/0134,
+        cyan) AND any edge-picked rectangles (bugs/0379, green). Kept as the single
+        public name so neither refresh site needed changing."""
+        self._add_clear_aperture_face_highlight_actor(label)
+        self._add_clear_aperture_edge_rect_actors(label)
 
     def _center_row_axis_pick_message(self) -> str:
         if self._center_row_to_ray_index is None:
@@ -9384,6 +9569,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._step_surface_center_axis_pick_mode = False
         self._step_clear_aperture_pick_mode = False
         self._step_clear_aperture_pick_label = ""
+        self._step_clear_aperture_pick_edges = False  # bugs/0379: drop any half-picked edge buffer
+        self._step_clear_aperture_edge_buffer = []
         if self._dimension_anchor_pick_mode:
             self._exit_dimension_anchor_pick_mode(render=False)
         self._step_carry_grid_label = None
@@ -13242,6 +13429,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return f"RE-ANCHOR {label} DIMENSION\nMove onto a surface/edge, click to set. Esc cancels."
         if self._step_clear_aperture_pick_mode:
             label = str(self._step_clear_aperture_pick_label or "STEP").upper()
+            if self._step_clear_aperture_pick_edges:
+                count = len(self._step_clear_aperture_edge_buffer or [])
+                return (
+                    f"SET {label} CLEAR APERTURE (EDGES)\n"
+                    f"{count} edge(s) picked. Click a loop / Alt-click 3 sides; "
+                    "then Finish Clear Aperture Edges. Esc cancels."
+                )
             return f"SET {label} CLEAR APERTURE\nClick the clear-aperture window face on the body."
         if self._step_normal_axis_pick_mode:
             label = str(self._selected_step_feature_label or self.editor._selected_step_label or "STEP").upper()
@@ -16450,12 +16644,57 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             pass
 
+    def _update_clear_aperture_edge_hover_highlight(self) -> None:
+        """Edge-pick hover (bugs/0379): highlight exactly what the next click would
+        COLLECT -- resolved through the same ``_step_feature_pick_for_display_xy`` the
+        collect uses, so hover and click can never disagree (the bugs/0324 two-stream
+        trap). Plain hover lights the whole opening loop; Alt lights the nearest drawn
+        edge."""
+        if self._picker is None or self._renderer is None or self._vtk_interactor is None:
+            return
+        wanted = str(self._step_clear_aperture_pick_label or "").strip().lower()
+        hit_label = None
+        actor = None
+        cell_id = -1
+        try:
+            x, y = self._vtk_interactor.GetEventPosition()
+            self._picker.Pick(x, y, 0.0, self._renderer)
+            actor = self._picker.GetActor()
+            if actor is None:
+                get_view_prop = getattr(self._picker, "GetViewProp", None)
+                if callable(get_view_prop):
+                    actor = get_view_prop()
+            hit_key = self._actor_key(actor)
+            hit_label = self._actor_step_map.get(hit_key) if hit_key is not None else None
+            try:
+                cell_id = int(self._picker.GetCellId())
+            except Exception:
+                cell_id = -1
+        except Exception:
+            hit_label = None
+            cell_id = -1
+        outline = None
+        if hit_label is not None and str(hit_label).strip().lower() == wanted:
+            try:
+                feature_pick = self._step_feature_pick_for_display_xy(
+                    wanted, (x, y), actor=actor, actor_key=self._actor_key(actor), cell_id=cell_id
+                )
+            except Exception:
+                feature_pick = None
+            feature = feature_pick.get("feature") if isinstance(feature_pick, dict) else None
+            if isinstance(feature, (tuple, list)) and len(feature) > 1:
+                outline = feature[1]
+        self._set_step_hover_outline(outline, ("clear_aperture_edge", wanted, id(outline) if outline is not None else None))
+
     def _update_clear_aperture_hover_highlight(self) -> None:
         """While Set-Clear-Aperture is armed, hover-highlight the fine analytic
         face under the cursor so the user sees exactly which window the next click
         records (bugs/0134). Mirrors the Measure hover-pick but resolves the
         picker-aligned face index instead of an edge."""
         if self._picker is None or self._renderer is None or self._vtk_interactor is None:
+            return
+        if self._step_clear_aperture_pick_edges:
+            self._update_clear_aperture_edge_hover_highlight()
             return
         wanted = str(self._step_clear_aperture_pick_label or "").strip().lower()
         hit_label = None

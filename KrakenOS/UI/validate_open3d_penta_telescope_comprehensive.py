@@ -14437,6 +14437,33 @@ def phase_319_clear_aperture_stops(
     return result
 
 
+def phase_320_clear_aperture_edge_pick(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0379 -- the interactive multi-EDGE clear-aperture pick STATE MACHINE. Arm ->
+    collect (hover resolved through the same picker the click uses, so they can't
+    disagree) -> Finish stores a rectangle ray stop; empty Finish is a no-op; the draw
+    outlines the opening; cancel drops a half-collected buffer. Wires the phase-319
+    geometry into the UI."""
+    result = PhaseResult(
+        name="Phase 320: clear-aperture EDGE pick (arm -> collect -> finish -> store, cancel, draw)"
+    )
+    try:
+        from KrakenOS.UI.validate_open3d_clear_aperture_edge_pick import run_checks
+
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"clear-aperture-edge-pick guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("clear-aperture-edge-pick phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14801,6 +14828,7 @@ def main() -> int:
             phase_317_spot_map_field_cache,
             phase_318_swap_imaging_lens,
             phase_319_clear_aperture_stops,
+            phase_320_clear_aperture_edge_pick,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
