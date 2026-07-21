@@ -766,6 +766,66 @@ class LayoutTableWorkbenchMixin:
                 return None, None
         return front, rear
 
+    # Minimum mechanical clearance (mm) the auto-refocus keeps between the last optical
+    # element and the sensor, so the sensor/camera can't be solved INTO it (bugs/0388).
+    _SWAP_REFOCUS_MIN_CLEARANCE_MM = 2.0
+
+    def _swap_refocus_min_gap(self) -> float:
+        """Minimum gap (mm) the auto-refocus leaves ahead of the sensor so it can't move into
+        the upstream element (e.g. the RA mirror). Uses the upstream element's own axial
+        reserve as the reference when it is a promoted solid whose reserve is already smaller
+        than the plain clearance floor (a thin fold mirror), so the clamp never demands MORE
+        room than the element itself occupies; otherwise the conservative floor (bugs/0388)."""
+        floor = float(self._SWAP_REFOCUS_MIN_CLEARANCE_MM)
+        rows = getattr(self, "rows", None) or []
+        if len(rows) >= 3:
+            upstream = rows[-2]
+            name = str(getattr(upstream, "name", "") or "").lower()
+            if "promoted" in name or "optical step solid" in name or "mirror" in name:
+                # A fold mirror's reserve IS the sensor's headroom past it; don't over-demand.
+                try:
+                    reserve = float(getattr(upstream, "thickness", 0.0) or 0.0)
+                except Exception:
+                    reserve = 0.0
+                if 0.0 < reserve < floor:
+                    return reserve
+        return floor
+
+    def _swap_auto_refocus_to_best_focus(self) -> None:
+        """After a lens swap, move the IMAGE to the new lens's best focus (bugs/0388).
+
+        A different lens images at a different plane, but bugs/0383 kept the camera/mounts at
+        their absolute positions, so the image is defocused on the fixed sensor. Reuse
+        snap_detector_to_image_plane -- it moves ONLY the final gap (image distance), never
+        the beam geometry, so it can't reproduce the broken/escaping rays. Then CLAMP that
+        gap to a mechanical minimum so the sensor can never move into the upstream element
+        (the RA mirror), flagging when focus is clearance-limited rather than colliding. Any
+        already-applied thickness bounds are honoured by the underlying solve."""
+        rows = getattr(self, "rows", None) or []
+        if len(rows) < 3 or str(getattr(rows[-1], "surface", "") or "") != "Image":
+            return
+        gap_index = len(rows) - 2
+        try:
+            moved = self.snap_detector_to_image_plane()
+        except Exception:
+            return
+        if not moved:
+            return
+        min_gap = self._swap_refocus_min_gap()
+        try:
+            gap = float(getattr(rows[gap_index], "thickness", 0.0) or 0.0)
+        except Exception:
+            return
+        if gap < min_gap:
+            try:
+                rows[gap_index].thickness = float(min_gap)
+            except Exception:
+                return
+            self.status_var.set(
+                f"Swapped lens; focus limited by {min_gap:.1f} mm clearance to the upstream "
+                "element (the sensor could not reach best focus without a collision)."
+            )
+
     @staticmethod
     def _swap_preserves_downstream(rows, rear_index) -> bool:
         """Should a lens swap keep the first row AFTER the lens block at its absolute axial
@@ -933,6 +993,13 @@ class LayoutTableWorkbenchMixin:
         self._sync_table()
         self.load_layouts()  # discover the new library surrogate (also insertable later)
         self._commit_history_capture()
+        # bugs/0388: the swapped lens focuses at a different plane; 0383 kept the camera/mounts
+        # at their absolute positions, so the image is defocused on the sensor. Auto re-solve
+        # by moving the image to best focus, clamped so it never collides with the RA mirror.
+        try:
+            self._swap_auto_refocus_to_best_focus()
+        except Exception as exc:
+            self.append_debug(f"swap auto-refocus skipped: {exc}")
         message = (
             f"Swapped imaging lens -> {model.title} (EFL {model.effl:.4g} mm) in place; "
             "Object / beam splitter / LED / camera / FOV preserved."

@@ -14593,6 +14593,30 @@ def phase_325_paraxial_ref_system_cache(
     return result
 
 
+def phase_326_lens_swap_auto_refocus(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0388 -- constraint-aware auto-refocus after a lens swap. The swapped lens focuses
+    at a new plane, but bugs/0383 keeps the camera/mounts absolute, so the image defocuses on
+    the fixed sensor. The swap re-solves best focus by moving ONLY the final gap (image
+    distance) then CLAMPS it to a mechanical minimum so the sensor can't be solved into the
+    upstream RA mirror -- clamp + flag rather than collide."""
+    result = PhaseResult(name="Phase 326: lens-swap auto-refocus (best focus, clamped to clearance)")
+    try:
+        from KrakenOS.UI.validate_open3d_lens_swap_auto_refocus import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"auto-refocus guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len(notes)
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("auto-refocus phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -14963,6 +14987,7 @@ def main() -> int:
             phase_323_flag_layout_identity,
             phase_324_lens_overlay_datum_anchor,
             phase_325_paraxial_ref_system_cache,
+            phase_326_lens_swap_auto_refocus,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

@@ -325,7 +325,8 @@
     "322": "pass",
     "323": "pass",
     "324": "pass",
-    "325": "pass"
+    "325": "pass",
+    "326": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -651,6 +652,7 @@
     "322": "lens swap/import block safety (tight block + Import discard guard)",
     "323": "flag bundle records the loaded layout identity (file + step paths)",
     "324": "lens overlay fold anchor (datum finder aligned; never the fold source)",
-    "325": "paraxial-ref system-build cache (key + bounded store)"
+    "325": "paraxial-ref system-build cache (key + bounded store)",
+    "326": "lens-swap auto-refocus (best focus, clamped to clearance)"
   }
 }
