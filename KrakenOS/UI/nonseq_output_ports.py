@@ -401,6 +401,27 @@ def _solid_has_full_mirror_interaction_face(world_faces: list[dict[str, object]]
     return _optical_solid_face_function(face) == "Mirror"
 
 
+def _solid_has_beam_splitter_interaction_face(world_faces: list[dict[str, object]]) -> bool:
+    """True when the solid's primary interaction face is a Beam Splitter.
+
+    A beam splitter's PRIMARY (imaging) path is a straight-through TRANSMIT -- it
+    peels a SECOND branch off by reflection, handled separately (branch detectors /
+    two-arm fold). So a BS's inferred exit must NEVER reposition or re-aim the
+    downstream imaging chain (camera / image): the beam keeps travelling the
+    incoming direction. A BS CUBE already lands a +Z (axial) output face that reads
+    as non-folding, so bugs/0084-0091 skip its followers; a BS PLATE (tilted 45 deg)
+    has no axial face, so the picked output-face normal is ~45 deg off-axis and the
+    non-folding guard misses it -- dragging the camera onto the tilted plate normal
+    (bugs/0396: "when I add a BS, the camera responds to it"). This predicate lets
+    the follower builder recognise the plate as the same straight-through transmit
+    the cube gets, so the camera does not respond to the BS at all.
+    """
+    face = select_optical_solid_interaction_face(world_faces)
+    if face is None:
+        return False
+    return _optical_solid_face_function(face) == "Beam Splitter"
+
+
 def _unit_vector(values, fallback=(0.0, 0.0, 1.0)) -> np.ndarray:
     try:
         vector = np.asarray(values, dtype=float).reshape(3)
@@ -1386,9 +1407,20 @@ def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict
         # cube moved sideways must not drag the focus onto its displaced face).
         # Folded inferred exits, explicit output ports, and physics-traced exits
         # still drive the follower-row workflow normally.
-        if str(frame_source or "").startswith("inferred_output") and _exit_frame_is_non_folding(
-            frame_rotation,
-            np.asarray((0.0, 0.0, 1.0), dtype=float),
+        #
+        # bugs/0396: a BEAM SPLITTER's primary path is ALWAYS a straight-through
+        # transmit (the reflected 2nd branch is handled separately), so its inferred
+        # exit must not reposition the downstream imaging chain either -- but a BS
+        # PLATE (tilted 45 deg) has no axial output face, so its picked face normal
+        # is ~45 deg off-axis and _exit_frame_is_non_folding misses it. Recognising a
+        # BS interaction face here treats the tilted plate like the axial cube, so
+        # the camera does not respond to the BS (the user's report).
+        if str(frame_source or "").startswith("inferred_output") and (
+            _exit_frame_is_non_folding(
+                frame_rotation,
+                np.asarray((0.0, 0.0, 1.0), dtype=float),
+            )
+            or _solid_has_beam_splitter_interaction_face(world_faces)
         ):
             # bugs/0185: a promoted right-angle MIRROR cube reads all six outer
             # faces as inferred Transmit/Port outputs, so the +Z face is picked as

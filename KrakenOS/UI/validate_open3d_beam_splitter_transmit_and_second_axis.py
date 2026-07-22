@@ -135,6 +135,30 @@ def _full_beam_splitter_cube_row() -> dict[str, object]:
     }
 
 
+def _tilted_plate_row(coating_function: str) -> dict[str, object]:
+    """A BS/mirror PLATE tilted 45 deg (bugs/0396): both large faces have ~45-deg
+    normals, so the picked output face is NOT axial -- unlike the cube's +Z face."""
+    n = 0.7071
+    faces = [
+        _face("FRONT", side="Front", function=OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT, normal=(-n, 0.0, -n), centroid=(0.0, 0.0, -1.0), triangle_start=0),
+        _face("BACK",  side="Back",  function=OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT, normal=(n, 0.0, n),   centroid=(0.0, 0.0, 1.0),  triangle_start=2),
+        _face("COAT",  side="Up",    function=coating_function,                     normal=(n, 0.0, n),   centroid=(0.0, 0.0, 0.0),  triangle_start=4),
+    ]
+    meta = normalize_optical_solid_face_metadata({"faces": faces})
+    return {
+        "surface": "Standard", "name": f"Promoted {coating_function} plate", "glass": "BK7",
+        "thickness": 6.0, "diameter": 50.0,
+        "advanced": {OPTICAL_SOLID_FACES_ADVANCED_ATTR: meta, "Solid_3d_stl": "plate.stl"},
+    }
+
+
+def _plate_override_keys(coating_function: str) -> list[int]:
+    obj = {"surface": "Object", "name": "Object", "thickness": 100.0, "diameter": 20.0, "advanced": {}}
+    lens = {"surface": "Standard", "name": "Lens", "glass": "BK7", "thickness": 10.0, "diameter": 30.0, "advanced": {}}
+    img = {"surface": "Image", "name": "Image", "thickness": 0.0, "diameter": 30.0, "advanced": {}}
+    return _override_keys([obj, _tilted_plate_row(coating_function), lens, img])
+
+
 def _cube_output_side() -> str:
     # World-record style faces (normal_world set) -- the selection only differs
     # from the old side-priority pick when world normals are present.
@@ -362,6 +386,22 @@ def run_checks() -> tuple[bool, list[str]]:
     _check(
         not cube_overrides,
         f"straight-through cube does not reposition the downstream chain (override_keys={sorted(cube_overrides)})",
+    )
+
+    # 2d. bugs/0396 — a BS PLATE (tilted 45 deg) has no axial output face, so the
+    #     picked face normal is ~45 deg off-axis. It must STILL be recognised as the
+    #     straight-through transmit a beam splitter always is, so the camera / image
+    #     chain is NOT repositioned onto the tilted plate face ("when I add a BS, the
+    #     camera responds to it"). The fix is surgical: a MIRROR plate still folds.
+    bs_plate_keys = _plate_override_keys("Beam Splitter")
+    _check(
+        bs_plate_keys == [],
+        f"tilted BS PLATE does not reposition the downstream camera/image chain (override_keys={bs_plate_keys})",
+    )
+    mirror_plate_keys = _plate_override_keys("Mirror")
+    _check(
+        mirror_plate_keys != [],
+        f"a tilted MIRROR plate STILL folds the chain, proving the BS skip is surgical (override_keys={mirror_plate_keys})",
     )
 
     # 3. Optional: the user's real saved beam-splitter-cube scene.
