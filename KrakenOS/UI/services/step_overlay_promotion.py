@@ -1624,9 +1624,12 @@ class StepOverlayPromotionService:
             pass
         self._invalidate_preview_scene_trace()
 
-        # 4) re-promote the replacement at the same pose.
+        # 4) re-promote the replacement at the same pose. clear_overlay=True consumes the source
+        #    overlay (bugs/0409) -- an original promoted solid has NO leftover overlay (AZ85's
+        #    optical_step_path is empty); leaving it made the overlay's face the thing that hovered,
+        #    so the gold hover outline floated offset from the promoted body (flag_20260722_153216).
         result = self.promote_imported_step_to_optical_solid_row(
-            label, open_face_editor=False, refresh_open_3d=False
+            label, open_face_editor=False, refresh_open_3d=False, clear_overlay=True
         )
         if not isinstance(result, dict) or "row_index" not in result:
             self.status_var.set("Replace STEP: re-promotion of the replacement failed.")
@@ -1651,11 +1654,17 @@ class StepOverlayPromotionService:
         # bugs/0405: pin the replacement's transverse decenter to the old solid's so a resized mirror
         # keeps the optical-axis alignment the user set (its center stays where the aligned old one was)
         # instead of drifting off-axis by the intrinsic mesh-center difference.
+        # bugs/0409: apply it through the SANCTIONED drag path (translate_scene_row_pose_vector), not a
+        # raw desp_x/desp_y set -- the drag path syncs the scene-placement metadata + marks the plot so
+        # the promoted solid's hover outline follows the moved body (a raw set left it desynced).
         try:
             new_row = self.rows[new_row_index]
-            new_row.desp_x = float(old_desp_xy[0])
-            new_row.desp_y = float(old_desp_xy[1])
-            self._sync_table()
+            dx = float(old_desp_xy[0]) - float(getattr(new_row, "desp_x", 0.0) or 0.0)
+            dy = float(old_desp_xy[1]) - float(getattr(new_row, "desp_y", 0.0) or 0.0)
+            if abs(dx) > 1e-9 or abs(dy) > 1e-9:
+                self.translate_scene_row_pose_vector(
+                    new_row_index, (dx, dy, 0.0), record_history=False, sync_table=True
+                )
         except Exception:
             pass
 

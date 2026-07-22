@@ -14741,10 +14741,11 @@ def phase_331_replace_promoted_solid(
 def phase_332_replace_axis_and_defocus_menu(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
-    """bugs/0405 -- two usability refinements after 0404 (both flagged as works-but-inconvenient):
-    Replace now pins the resized replacement's transverse decenter to the old solid's so it stays on
-    the optical axis (no manual re-align), and the detector (final Image row) offers "remove defocus"
-    in the browser menu so the user need not hide the occluding camera to right-click it in 3D."""
+    """bugs/0405 + 0409 -- refinements after 0404: Replace pins the resized replacement's transverse
+    decenter to the old solid's (stays on the optical axis) -- applied via the sanctioned drag path +
+    clearing the source overlay so the hover outline doesn't ghost offset from the body (0409); the
+    detector (final Image row) offers "remove defocus" in the browser menu (no camera-hide); and the
+    CAMERA menu also offers "remove defocus" since "Reset Camera to Image Plane" doesn't close the gap."""
     result = PhaseResult(name="Phase 332: Replace axis-align + browser defocus snap")
     try:
         from KrakenOS.UI.validate_open3d_replace_axis_and_defocus_menu import run_checks

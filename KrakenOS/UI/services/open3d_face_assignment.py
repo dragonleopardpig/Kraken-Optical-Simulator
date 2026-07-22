@@ -689,6 +689,15 @@ class Open3DFaceAssignmentService:
                 label=self._step_surrogate_reset_label(step_label),
                 command=lambda picked_label=step_label: self._glue_step_to_surrogate_from_context(picked_label),
             )
+            # bugs/0409: the camera is glued to the detector, so removing DEFOCUS (snapping the detector
+            # to best focus) belongs on the camera menu -- "Reset Camera to Image Plane" only moves the
+            # camera body to the CURRENT image plane, it does NOT close the detector's defocus gap
+            # (flag_20260722_153216 "reset camera to image plane not removing defocus").
+            if step_label == "camera":
+                menu.add_command(
+                    label="Snap detector to image plane (remove defocus)",
+                    command=lambda: self._inspector._snap_detector_to_image_plane(),
+                )
             # Item 3: BS<->LED two-body glue. The UNGLUE control must stay reachable
             # whenever a glue is ACTIVE -- including after the beam splitter ("optical")
             # overlay was promoted away, which used to hide it and leave the glue stuck

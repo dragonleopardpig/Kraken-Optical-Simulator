@@ -40,15 +40,21 @@ def _check_replace_axis(failures, notes):
     cap = src.find("old_desp_xy")
     unp = src.find("unpromote_optical_solid_to_overlay")
     prom = src.find("promote_imported_step_to_optical_solid_row")
-    apply_x = src.find("desp_x = float(old_desp_xy")
+    move = src.find("translate_scene_row_pose_vector")
     if not (0 <= cap < unp):
         failures.append("REPLACE-AXIS: old_desp_xy must be captured BEFORE unpromote (which deletes the row)")
-    if apply_x < 0 or not (prom < apply_x):
-        failures.append("REPLACE-AXIS: the captured decenter must be re-applied to the replacement AFTER re-promote")
-    if "desp_y = float(old_desp_xy" not in src:
-        failures.append("REPLACE-AXIS: desp_y is not re-applied (both transverse axes must be pinned)")
+    # bugs/0409: the decenter is re-applied via the SANCTIONED drag path (not a raw desp set) so the
+    # hover outline follows the moved body.
+    if move < 0 or not (prom < move):
+        failures.append("REPLACE-AXIS: the decenter must be re-applied via translate_scene_row_pose_vector AFTER re-promote")
+    if "old_desp_xy[0]" not in src or "old_desp_xy[1]" not in src:
+        failures.append("REPLACE-AXIS: both transverse axes (x/y) must be pinned from the old pose")
+    # bugs/0409: the re-promote must CLEAR the source overlay, else the leftover overlay's face hovers
+    # offset from the promoted body (the ghost-highlight flag).
+    if "clear_overlay=True" not in src:
+        failures.append("REPLACE-AXIS/GHOST: re-promote must clear_overlay=True (leftover overlay hover ghosts)")
     if not [f for f in failures if f.startswith("REPLACE-AXIS")]:
-        notes.append("replace-axis = old transverse desp captured pre-unpromote, re-applied post-promote (resized mirror stays on axis)")
+        notes.append("replace-axis = transverse desp re-applied via drag path post-promote; overlay cleared (no ghost)")
 
 
 def _check_defocus_menu(failures, notes):
@@ -70,10 +76,24 @@ def _check_defocus_menu(failures, notes):
         notes.append("defocus-menu = detector (Image) browser row offers 'remove defocus'; no camera-hide needed")
 
 
+def _check_camera_defocus_menu(failures, notes):
+    # bugs/0409: the CAMERA element menu also offers 'remove defocus' -- the user right-clicks the
+    # camera (glued to the detector) to remove defocus, and "Reset Camera to Image Plane" doesn't.
+    from KrakenOS.UI.services.open3d_face_assignment import Open3DFaceAssignmentService
+
+    menu = inspect.getsource(Open3DFaceAssignmentService.append_element_context_actions)
+    if "Snap detector to image plane (remove defocus)" not in menu:
+        failures.append("CAMERA-DEFOCUS: the camera menu has no 'remove defocus' entry")
+    if 'step_label == "camera"' not in menu or "_snap_detector_to_image_plane" not in menu:
+        failures.append("CAMERA-DEFOCUS: the entry must be gated on the camera + wired to _snap_detector_to_image_plane")
+    if not [f for f in failures if f.startswith("CAMERA-DEFOCUS")]:
+        notes.append("camera-defocus = the camera menu offers 'remove defocus' (Reset-to-Image-Plane doesn't close the gap)")
+
+
 def run_checks() -> "tuple[bool, list[str]]":
     failures: list[str] = []
     notes: list[str] = []
-    for check in (_check_replace_axis, _check_defocus_menu):
+    for check in (_check_replace_axis, _check_defocus_menu, _check_camera_defocus_menu):
         try:
             check(failures, notes)
         except Exception as exc:
