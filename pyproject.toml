@@ -26,6 +26,7 @@ dependencies = [
   "numpy",
   "scipy",
   "matplotlib",
+  "Pillow",
   "csv342",
   "pandas"
 ]

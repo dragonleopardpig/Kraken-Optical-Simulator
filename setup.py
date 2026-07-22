@@ -17,7 +17,7 @@ setup(
         'KrakenOS.common_optical_layouts',
     ],
 
-    install_requires=['pyvista','PyVTK','vtk','numpy','scipy','matplotlib', 'csv342', 'pandas' ],
+    install_requires=['pyvista','PyVTK','vtk','numpy','scipy','matplotlib', 'Pillow', 'csv342', 'pandas' ],
     extras_require={
         'optimization': ['cloudpickle', 'pybind11', 'pygmo>=2.19.8'],
         'ui': ['cloudpickle', 'ipykernel', 'ipython', 'packaging', 'pybind11', 'pygmo>=2.19.8', 'pyzmq'],

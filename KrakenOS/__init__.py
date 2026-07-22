@@ -291,6 +291,7 @@ from .BranchField import *
 from .KrakenSys import *
 from .gpu_backend import HAS_GPU
 from .PSFCalc import *
+from .USAFMTF import *
 from .LensCat import *
 from .SurfBlockClass import *
 
