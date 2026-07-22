@@ -338,13 +338,10 @@ class MainWindowBuilder:
         for column in range(2):
             field_panel.columnconfigure(column, weight=1, uniform="field_cols")
 
-        # bugs/0402: the "Source" panel is retired from the visible left stack -- its controls now
-        # live in the Scene Source Manager (one right-click away on the Open 3D "Scene Sources" group).
-        # It is still BUILT into a hidden frame (same pattern as atmosphere_hidden_panel below) so its
-        # Tk vars keep backing the imaging source-0 that the trace + Pupil/field sync read. Row 0 of the
-        # control stack is reclaimed; the Display panel becomes the top of the column.
-        source_panel = ttk.Frame(control_stack)  # never gridded -> hidden
-        self.source_hidden_panel = source_panel
+        # bugs/0403: the 2D editor's Source panel STAYS (0402 hid the wrong one). The redundant
+        # source editor to retire is the Open 3D inspector's Live-Controls "Source" section, not this.
+        source_panel = ttk.LabelFrame(control_stack, text="Source", padding=8)
+        source_panel.grid(row=0, column=0, sticky="ew")
         for column in range(2):
             source_panel.columnconfigure(column, weight=1, uniform="source_cols")
 

@@ -171,6 +171,13 @@ def open_scene_source_edit_dialog(editor, inspector, source_id: str) -> None:
     buttons.grid(row=next_row + 1, column=0, columnspan=2, sticky="e", pady=(10, 0))
     ttk.Button(buttons, text="Apply", command=_apply).grid(row=0, column=0, padx=(0, 6))
     ttk.Button(buttons, text="Cancel", command=dialog.destroy).grid(row=0, column=1)
+    # bugs/0403: center on the usable screen so the dialog doesn't spawn at the monitor's top-left
+    # corner tucked under the top panel bar (the AGS bar). _show_centered_dialog caps to the usable
+    # screen and keeps the title clear of a top bar.
+    try:
+        editor._show_centered_dialog(dialog)
+    except Exception:
+        pass
     try:
         dialog.grab_set()
     except Exception:

@@ -75,9 +75,18 @@ class Open3DLiveControlsPanel:
         canvas.bind("<Configure>", lambda event: canvas.itemconfigure(window_id, width=max(int(event.width), 1)))
         bind_mousewheel_scroll(canvas, stack)  # wheel works over the panel body, not just the scrollbar
 
-        source = ttk.LabelFrame(stack, text="Source", padding=8)
+        # bugs/0403: the long "Source" field section is retired from the inspector's Live-Controls
+        # panel -- it made this left panel long, and source parameters are more intuitively set by
+        # right-clicking the components in the right-hand Scene Components browser (Scene Sources
+        # group -> "Scene Source Manager..."; a source row -> "Edit Source..."). The full source
+        # editor also still lives in the 2D editor's Source panel. A compact shortcut stays here for
+        # discoverability. (build_source_controls is kept for the guard + the dead inspector wrapper.)
+        source = ttk.Frame(stack)
         source.grid(row=0, column=0, sticky="ew")
-        self.build_source_controls(source)
+        source.columnconfigure(0, weight=1)
+        ttk.Button(
+            source, text="Scene Source Manager...", command=self.editor.open_scene_source_manager
+        ).grid(row=0, column=0, sticky="ew")
 
         field = ttk.LabelFrame(stack, text="Field", padding=8)
         field.grid(row=1, column=0, sticky="ew", pady=(8, 0))

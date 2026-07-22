@@ -14692,12 +14692,12 @@ def phase_329_coaxial_edge_profile(
 def phase_330_source_panel_into_manager(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
-    """bugs/0402 -- the left Source panel folds into the Scene Source Manager. The Manager now
-    exposes the imaging-only controls the panel uniquely held (pupil sampling + full Gaussian
-    inputs); the panel is built into a hidden frame so its vars keep backing imaging source-0
-    (the trace + Pupil/field sync read them); the Open 3D Scene Sources group + per-source rows
-    gain a "Scene Source Manager..." shortcut while rows keep "Edit Source...". Guards the folded
-    controls persist through form_spec (the 0397-class drop trap) and the panel-still-built rule."""
+    """bugs/0402 + 0403 -- source editing consolidates into the Scene Source Manager, which now
+    exposes the imaging-only controls (pupil sampling + full Gaussian inputs) that persist through
+    form_spec (the 0397-class drop trap). 0403 CORRECTS the panel direction: the 2D editor's Source
+    panel STAYS; the inspector's Live-Controls "Source" field section is retired (the left inspector
+    panel was long -- set params by right-clicking the right-hand components). Also guards the Edit
+    Source dialog centers and browser menus use the robust dismiss popup (plain tk_popup sticks)."""
     result = PhaseResult(name="Phase 330: Source panel folds into the Scene Source Manager")
     try:
         from KrakenOS.UI.validate_open3d_source_panel_into_manager import run_checks

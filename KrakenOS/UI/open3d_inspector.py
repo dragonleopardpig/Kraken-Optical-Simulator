@@ -1914,6 +1914,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._face_assignment_service_instance = service
         return service
 
+    def _popup_scene_component_menu(self, menu, event) -> None:
+        """bugs/0403: post a Scene Components browser right-click menu so it dismisses on
+        click-elsewhere. A plain ``menu.tk_popup`` + ``grab_release`` STICKS in the inspector
+        because the heavyweight VTK render window swallows the pointer grab (bugs/0336) -- reuse
+        the face-assignment service's proven robust popup (deferred <Unmap>/<FocusOut> dismiss,
+        identity-guarded so a clicked entry still delivers before teardown, bugs/0348)."""
+        self._face_assignment_service()._popup_context_menu(menu, event)
+
     def _show_surface_function_context_menu(self, event) -> str:
         return self._face_assignment_service()._show_surface_function_context_menu(event)
 

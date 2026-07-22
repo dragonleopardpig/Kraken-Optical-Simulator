@@ -1,18 +1,21 @@
-"""Guard: the left Source panel folds into the Scene Source Manager (bugs/0402).
+"""Guard: source editing consolidates into the Scene Source Manager (bugs/0402 + 0403).
 
-The 2D editor's left "Source" panel is retired from the visible layout. Its role moves to the Scene
-Source Manager, which now exposes the imaging-only controls the panel uniquely held -- pupil sampling
-(pattern / radial / angular) and the full Gaussian-beam inputs (input mode, beam diameter, full
-divergence, waist side). The Manager is reachable one right-click away on the Open 3D "Scene Sources"
-group (and per-source rows keep "Edit Source..." plus a "Scene Source Manager..." jump).
+The Scene Source Manager becomes the single rich source editor, exposing the imaging-only controls it
+previously lacked -- pupil sampling (pattern / radial / angular) and the full Gaussian-beam inputs
+(input mode, beam diameter, full divergence, waist side) -- reachable one right-click away on the Open
+3D "Scene Sources" group (per-source rows keep "Edit Source..." plus a "Scene Source Manager..." jump).
 
-The two traps this guards:
-  1. The panel's Tk vars back the imaging source-0 that the trace + Pupil/field sync read. So the
-     panel must still be BUILT (into a hidden frame) -- if the build call is dropped the vars vanish
-     and every fallback imaging trace silently reads origin 0 / +Z. WIRING-PANEL asserts main_window
-     still builds it, into a hidden (never-gridded) frame, not a visible "Source" LabelFrame.
-  2. The Manager's ``form_spec`` rebuilds a spec from scratch, so a folded-in field not written there
+bugs/0403 CORRECTS the panel direction of 0402: the **2D editor's** Source panel STAYS visible; the
+redundant editor retired is the Open 3D **inspector's Live-Controls "Source" FIELD section** (the left
+inspector panel was getting long, and source params are set more intuitively by right-clicking the
+right-hand components). 0403 also centers the Edit Source dialog and makes the browser right-click
+menus dismiss on click-elsewhere.
+
+Traps guarded:
+  1. The Manager's ``form_spec`` rebuilds a spec from scratch, so a folded-in field not written there
      is DROPPED on every save (bugs/0397-class). FORM-PERSIST asserts form_spec writes all seven keys.
+  2. A plain ``menu.tk_popup`` STICKS in the inspector (the VTK window swallows the grab, bugs/0336),
+     so browser menus must route through the robust ``_popup_scene_component_menu``.
 
 Display-free (no renderer / no Tk / no llvmpipe segfault): getsource wiring assertions + pure-logic
 checks on the default spec + normalization.
@@ -25,10 +28,11 @@ Checks
 * FORM-PERSIST  -- ``form_spec`` writes all 7 keys (no silent drop on save).
 * CONSTRUCTOR   -- the Manager ``__init__`` accepts the 6 new config kwargs and the factory passes
   the real PUPIL_/GAUSSIAN_ constants.
-* WIRING-PANEL  -- main_window builds the Source controls into a hidden frame (``source_hidden_panel``,
-  ``_build_source_panel`` still called) and no longer grids a visible ``text="Source"`` LabelFrame.
+* WIRING-2D/3D  -- the 2D editor Source panel stays VISIBLE (LabelFrame + gridded + built); the
+  inspector Live-Controls Source FIELD section is retired to a "Scene Source Manager..." shortcut.
 * SHORTCUT      -- the Open 3D "Scene Sources" group menu AND per-source rows offer "Scene Source
-  Manager...", and per-source rows still offer "Edit Source..." (unchanged requirement).
+  Manager...", rows keep "Edit Source...", browser menus use the robust dismiss popup, and the Edit
+  Source dialog centers (no top-bar overlap).
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_source_panel_into_manager
@@ -114,24 +118,35 @@ def _check_factory(failures, notes):
         notes.append("factory = passes real PUPIL_/GAUSSIAN_ value tuples to the Manager")
 
 
-def _check_panel_hidden(failures, notes):
-    from KrakenOS.UI.panels import main_window as mod
+def _check_panel_placement(failures, notes):
+    # bugs/0403 CORRECTS 0402: the 2D editor's Source panel STAYS visible; the redundant editor to
+    # retire is the Open 3D inspector's Live-Controls "Source" FIELD section (the left inspector panel
+    # was getting long; source params are set by right-clicking the right-hand components instead).
+    from KrakenOS.UI.panels import main_window as mw
+    from KrakenOS.UI.panels import open3d_live_controls as live
 
-    src = inspect.getsource(mod)
-    # panel must still be BUILT (vars) but into a hidden frame, not a visible "Source" LabelFrame
-    if "self._build_source_panel(source_panel)" not in src:
-        failures.append("WIRING-PANEL: main_window no longer builds the source panel (vars would vanish)")
-    if "source_hidden_panel" not in src:
-        failures.append("WIRING-PANEL: no hidden source frame (source_hidden_panel) -- panel not retired via the hidden-frame pattern")
-    if 'ttk.LabelFrame(control_stack, text="Source"' in src:
-        failures.append('WIRING-PANEL: a visible text="Source" LabelFrame is still gridded')
-    if "source_panel.grid(" in src:
-        failures.append("WIRING-PANEL: the source frame is still gridded (should be hidden)")
-    if not [f for f in failures if f.startswith("WIRING-PANEL")]:
-        notes.append("wiring-panel = Source controls built into a hidden frame; no visible Source LabelFrame")
+    mw_src = inspect.getsource(mw)
+    if 'ttk.LabelFrame(control_stack, text="Source"' not in mw_src:
+        failures.append('WIRING-2D: the 2D editor Source LabelFrame is gone (it must STAY visible)')
+    if "source_panel.grid(" not in mw_src:
+        failures.append("WIRING-2D: the 2D Source panel is not gridded (must be visible)")
+    if "self._build_source_panel(source_panel)" not in mw_src:
+        failures.append("WIRING-2D: main_window no longer builds the 2D Source panel")
+    if "source_hidden_panel" in mw_src:
+        failures.append("WIRING-2D: the 2D Source panel is still hidden (0402 hide must be reverted)")
+
+    build_src = inspect.getsource(live.Open3DLiveControlsPanel.build)
+    if "self.build_source_controls(source)" in build_src:
+        failures.append("WIRING-3D: the inspector Live-Controls Source FIELD section is still built (must be retired)")
+    if "open_scene_source_manager" not in build_src:
+        failures.append("WIRING-3D: the Live-Controls panel lost its Scene Source Manager shortcut")
+    if not [f for f in failures if f.startswith(("WIRING-2D", "WIRING-3D"))]:
+        notes.append("placement = 2D Source panel stays visible; inspector Live-Controls Source fields retired to a Manager shortcut")
 
 
 def _check_shortcut(failures, notes):
+    from KrakenOS.UI import open3d_inspector as insp
+    from KrakenOS.UI.panels import open3d_source_edit_dialog as dlg
     from KrakenOS.UI.panels import open3d_step_admin as mod
 
     src = inspect.getsource(mod.Open3DStepAdminPanel)
@@ -140,13 +155,22 @@ def _check_shortcut(failures, notes):
         failures.append("SHORTCUT: the Scene Sources GROUP menu has no 'Scene Source Manager...' entry")
     if "_open_scene_source_manager" not in src or "open_scene_source_manager" not in src:
         failures.append("SHORTCUT: no _open_scene_source_manager handler wired to the editor")
-    # per-source row: keeps Edit Source... AND gains the Manager jump
     if "Edit Source" not in src:
         failures.append("SHORTCUT: per-source rows lost 'Edit Source...' (must stay)")
     if src.count("Scene Source Manager...") < 2:
         failures.append("SHORTCUT: per-source rows have no 'Scene Source Manager...' jump")
+    # bugs/0403: browser menus must use the robust popup (plain tk_popup sticks under the VTK window)
+    if "_popup_scene_component_menu" not in src:
+        failures.append("SHORTCUT: browser menus still use plain tk_popup (won't dismiss on click-elsewhere)")
+    if "menu.tk_popup(" in src:
+        failures.append("SHORTCUT: a browser menu still calls menu.tk_popup directly (must route via _popup_scene_component_menu)")
+    if "def _popup_scene_component_menu" not in inspect.getsource(insp.Kraken3DInspector):
+        failures.append("SHORTCUT: the inspector has no _popup_scene_component_menu robust-popup helper")
+    # bugs/0403: the Edit Source dialog must center (no top-left / AGS-bar overlap)
+    if "_show_centered_dialog" not in inspect.getsource(dlg.open_scene_source_edit_dialog):
+        failures.append("SHORTCUT: the Edit Source dialog does not center (would spawn under the top bar)")
     if not [f for f in failures if f.startswith("SHORTCUT")]:
-        notes.append("shortcut = group + per-source 'Scene Source Manager...'; per-source keeps 'Edit Source...'")
+        notes.append("shortcut = group + per-source 'Scene Source Manager...'; robust dismiss; Edit Source centers")
 
 
 def run_checks() -> "tuple[bool, list[str]]":
@@ -156,7 +180,7 @@ def run_checks() -> "tuple[bool, list[str]]":
         _check_default_spec,
         _check_manager,
         _check_factory,
-        _check_panel_hidden,
+        _check_panel_placement,
         _check_shortcut,
     ):
         try:

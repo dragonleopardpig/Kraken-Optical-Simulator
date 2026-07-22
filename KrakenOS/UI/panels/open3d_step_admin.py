@@ -896,10 +896,8 @@ class Open3DStepAdminPanel:
         # Scene Sources group is now the home for the full multi-source editor -- one right-click away.
         menu.add_separator()
         menu.add_command(label="Scene Source Manager...", command=self._open_scene_source_manager)
-        try:
-            menu.tk_popup(event.x_root, event.y_root)
-        finally:
-            menu.grab_release()
+        # bugs/0403: robust dismiss-on-click-elsewhere (plain tk_popup sticks -- the VTK window eats the grab).
+        self.inspector._popup_scene_component_menu(menu, event)
 
     def _add_illumination_led_source(self) -> None:
         self.inspector.add_illumination_led_source()
@@ -1052,13 +1050,7 @@ class Open3DStepAdminPanel:
                 label="Show",
                 command=lambda: self._set_element_hidden_cascade(iid, [], None, False, None, None),
             )
-            try:
-                menu.tk_popup(int(event.x_root), int(event.y_root))
-            finally:
-                try:
-                    menu.grab_release()
-                except Exception:
-                    pass
+            self.inspector._popup_scene_component_menu(menu, event)  # bugs/0403: robust dismiss
             return
         hidden = self._element_is_hidden(rows, label, display_key, source_id)
         tree = self._tree
@@ -1123,13 +1115,7 @@ class Open3DStepAdminPanel:
         if display_key is None and source_id is None:  # rays / overlays / sources can't be deleted here
             menu.add_separator()
             menu.add_command(label="Delete", command=self._delete_selected)
-        try:
-            menu.tk_popup(int(event.x_root), int(event.y_root))
-        finally:
-            try:
-                menu.grab_release()
-            except Exception:
-                pass
+        self.inspector._popup_scene_component_menu(menu, event)  # bugs/0403: robust dismiss
 
     def _current_kind_value(self) -> tuple[str, str]:
         iid = str(self._selected_item_id or "")
