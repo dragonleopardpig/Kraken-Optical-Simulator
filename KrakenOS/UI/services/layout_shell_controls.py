@@ -1336,6 +1336,13 @@ class LayoutShellControlsMixin:
                 source_row_order_before_object=SOURCE_ROW_ORDER_BEFORE_OBJECT,
                 source_row_order_after_object=SOURCE_ROW_ORDER_AFTER_OBJECT,
                 normalize_source_row_order=normalize_source_row_order,
+                # bugs/0402: the retired left Source panel's imaging controls live here now.
+                pupil_pattern_default=PUPIL_PATTERN_DEFAULT,
+                pupil_pattern_values=PUPIL_PATTERN_VALUES,
+                gaussian_input_mode_default=GAUSSIAN_INPUT_MODE_DEFAULT,
+                gaussian_input_mode_values=GAUSSIAN_INPUT_MODE_VALUES,
+                gaussian_waist_side_default=GAUSSIAN_WAIST_SIDE_DEFAULT,
+                gaussian_waist_side_values=GAUSSIAN_WAIST_SIDE_VALUES,
             )
             self._main_scene_source_manager_dialog_instance = dialog
         return dialog

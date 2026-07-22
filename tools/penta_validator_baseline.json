@@ -329,7 +329,8 @@
     "326": "pass",
     "327": "pass",
     "328": "pass",
-    "329": "pass"
+    "329": "pass",
+    "330": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -659,6 +660,7 @@
     "326": "lens-swap auto-refocus (best focus, clamped to camera-body clearance)",
     "327": "folded-then-failed rays (stopped/missed) hide with clipping OFF",
     "328": "Show Rays OFF builds bodies only (no ray trace)",
-    "329": "coaxial illuminator edge-profile selector persists"
+    "329": "coaxial illuminator edge-profile selector persists",
+    "330": "Source panel folds into the Scene Source Manager"
   }
 }

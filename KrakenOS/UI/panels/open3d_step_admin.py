@@ -892,6 +892,10 @@ class Open3DStepAdminPanel:
         menu.add_command(
             label="Add Illumination Source (LED)", command=self._add_illumination_led_source
         )
+        # bugs/0402: the left Source panel was retired into the Scene Source Manager, so the
+        # Scene Sources group is now the home for the full multi-source editor -- one right-click away.
+        menu.add_separator()
+        menu.add_command(label="Scene Source Manager...", command=self._open_scene_source_manager)
         try:
             menu.tk_popup(event.x_root, event.y_root)
         finally:
@@ -900,6 +904,14 @@ class Open3DStepAdminPanel:
     def _add_illumination_led_source(self) -> None:
         self.inspector.add_illumination_led_source()
         self.refresh()  # re-list the tree so the new Scene Sources row appears
+
+    def _open_scene_source_manager(self, source_id: str | None = None) -> None:
+        """bugs/0402: open the full Scene Source Manager (the retired Source panel's new home).
+        Optionally preselect a source_id when invoked from a specific source row."""
+        try:
+            self.editor.open_scene_source_manager(selected_source_id=source_id)
+        except Exception as exc:  # keep the browser responsive if the dialog fails to open
+            self.editor.append_debug(f"Open Scene Source Manager failed: {exc}")
 
     def _selection_rows_and_label(self, iid: str) -> tuple[list[int], str | None]:
         rows, label, _display, _source = self._resolve_iid_target(iid)
@@ -1083,6 +1095,12 @@ class Open3DStepAdminPanel:
             menu.add_command(
                 label="Edit Source…",
                 command=lambda sid=source_id: self._edit_scene_source(sid),
+            )
+            # bugs/0402: jump to the full Scene Source Manager (retired Source panel's home),
+            # preselecting this source, for the fields Edit Source doesn't expose.
+            menu.add_command(
+                label="Scene Source Manager...",
+                command=lambda sid=source_id: self._open_scene_source_manager(sid),
             )
             menu.add_separator()
         show_word = "Show" if display_key is not None else "Unhide"

@@ -467,6 +467,15 @@ class SourceModelingMixin:
             "waist_radius": 0.5,
             "waist_offset": 0.0,
             "m2": 1.0,
+            # bugs/0402: imaging-only controls folded in from the retired Source panel so the
+            # Scene Source Manager form seeds them sensibly on a new source.
+            "pupil_pattern": PUPIL_PATTERN_DEFAULT,
+            "pupil_rad": 3,
+            "pupil_theta": 6,
+            "gaussian_input_mode": GAUSSIAN_INPUT_MODE_DEFAULT,
+            "gaussian_beam_diameter": 1.0,
+            "gaussian_full_divergence": 0.0,
+            "gaussian_waist_side": GAUSSIAN_WAIST_SIDE_DEFAULT,
         }
 
     def _scene_source_spec_from_current_panel(

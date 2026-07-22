@@ -14689,6 +14689,31 @@ def phase_329_coaxial_edge_profile(
     return result
 
 
+def phase_330_source_panel_into_manager(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0402 -- the left Source panel folds into the Scene Source Manager. The Manager now
+    exposes the imaging-only controls the panel uniquely held (pupil sampling + full Gaussian
+    inputs); the panel is built into a hidden frame so its vars keep backing imaging source-0
+    (the trace + Pupil/field sync read them); the Open 3D Scene Sources group + per-source rows
+    gain a "Scene Source Manager..." shortcut while rows keep "Edit Source...". Guards the folded
+    controls persist through form_spec (the 0397-class drop trap) and the panel-still-built rule."""
+    result = PhaseResult(name="Phase 330: Source panel folds into the Scene Source Manager")
+    try:
+        from KrakenOS.UI.validate_open3d_source_panel_into_manager import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"source-panel-into-manager guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("source-panel-into-manager phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15063,6 +15088,7 @@ def main() -> int:
             phase_327_folded_vignette_hidden,
             phase_328_rays_off_bodies_only,
             phase_329_coaxial_edge_profile,
+            phase_330_source_panel_into_manager,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

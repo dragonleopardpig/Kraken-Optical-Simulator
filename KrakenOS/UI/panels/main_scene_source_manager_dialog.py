@@ -35,6 +35,14 @@ class MainSceneSourceManagerDialog:
         source_row_order_before_object: str,
         source_row_order_after_object: str,
         normalize_source_row_order: Callable[[object], str],
+        # bugs/0402: the left Source panel folds into this Manager, so the Manager must expose the
+        # imaging-only controls the panel uniquely held -- pupil sampling + the full Gaussian inputs.
+        pupil_pattern_default: str = "Meridional fan",
+        pupil_pattern_values: tuple[str, ...] = (),
+        gaussian_input_mode_default: str = "Waist + offset",
+        gaussian_input_mode_values: tuple[str, ...] = (),
+        gaussian_waist_side_default: str = "Waist before source",
+        gaussian_waist_side_values: tuple[str, ...] = (),
     ) -> None:
         object.__setattr__(self, "editor", editor)
         object.__setattr__(self, "source_model_values", tuple(source_model_values))
@@ -46,6 +54,12 @@ class MainSceneSourceManagerDialog:
         object.__setattr__(self, "source_row_order_before_object", source_row_order_before_object)
         object.__setattr__(self, "source_row_order_after_object", source_row_order_after_object)
         object.__setattr__(self, "normalize_source_row_order", normalize_source_row_order)
+        object.__setattr__(self, "pupil_pattern_default", pupil_pattern_default)
+        object.__setattr__(self, "pupil_pattern_values", tuple(pupil_pattern_values))
+        object.__setattr__(self, "gaussian_input_mode_default", gaussian_input_mode_default)
+        object.__setattr__(self, "gaussian_input_mode_values", tuple(gaussian_input_mode_values))
+        object.__setattr__(self, "gaussian_waist_side_default", gaussian_waist_side_default)
+        object.__setattr__(self, "gaussian_waist_side_values", tuple(gaussian_waist_side_values))
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.editor, name)
@@ -62,6 +76,12 @@ class MainSceneSourceManagerDialog:
             "source_row_order_before_object",
             "source_row_order_after_object",
             "normalize_source_row_order",
+            "pupil_pattern_default",
+            "pupil_pattern_values",
+            "gaussian_input_mode_default",
+            "gaussian_input_mode_values",
+            "gaussian_waist_side_default",
+            "gaussian_waist_side_values",
         }:
             object.__setattr__(self, name, value)
             return
@@ -185,6 +205,14 @@ class MainSceneSourceManagerDialog:
             "waist_radius": tk.StringVar(master=window, value="0.5"),
             "waist_offset": tk.StringVar(master=window, value="0.0"),
             "m2": tk.StringVar(master=window, value="1.0"),
+            # bugs/0402: imaging-only controls folded in from the retired left Source panel.
+            "pupil_pattern": tk.StringVar(master=window, value=self.pupil_pattern_default),
+            "pupil_rad": tk.StringVar(master=window, value="3"),
+            "pupil_theta": tk.StringVar(master=window, value="6"),
+            "gaussian_input_mode": tk.StringVar(master=window, value=self.gaussian_input_mode_default),
+            "gaussian_beam_diameter": tk.StringVar(master=window, value="1.0"),
+            "gaussian_full_divergence": tk.StringVar(master=window, value="0.0"),
+            "gaussian_waist_side": tk.StringVar(master=window, value=self.gaussian_waist_side_default),
         }
         direction_preset_var = tk.StringVar(master=window, value="Horizontal +Z (right)")
         aim_target_choices = self._scene_source_aim_target_choices()
@@ -289,9 +317,32 @@ class MainSceneSourceManagerDialog:
         label_entry(16, 1, "waist_offset", "GB waist offset [mm]")
         label_entry(16, 2, "m2", "GB M2")
 
+        # bugs/0402: Gaussian-beam inputs folded in from the retired Source panel.
+        ttk.Label(form, text="GB input mode").grid(row=16, column=3, sticky="w", pady=(0, 2), padx=(8, 0))
+        ttk.Combobox(
+            form, textvariable=vars["gaussian_input_mode"], values=self.gaussian_input_mode_values,
+            state="readonly", width=18,
+        ).grid(row=17, column=3, sticky="ew", pady=(0, 8), padx=(8, 0))
+        label_entry(18, 0, "gaussian_beam_diameter", "GB beam dia [mm]")
+        label_entry(18, 1, "gaussian_full_divergence", "GB full div [mrad]")
+        ttk.Label(form, text="GB waist side").grid(row=18, column=2, sticky="w", pady=(0, 2), padx=(8, 0))
+        ttk.Combobox(
+            form, textvariable=vars["gaussian_waist_side"], values=self.gaussian_waist_side_values,
+            state="readonly", width=18,
+        ).grid(row=19, column=2, columnspan=2, sticky="ew", pady=(0, 8), padx=(8, 0))
+
+        # bugs/0402: pupil-sampling controls folded in (drive the Pupil / field imaging reference).
+        ttk.Label(form, text="Pupil pattern").grid(row=20, column=0, sticky="w", pady=(0, 2))
+        ttk.Combobox(
+            form, textvariable=vars["pupil_pattern"], values=self.pupil_pattern_values,
+            state="readonly", width=18,
+        ).grid(row=21, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        label_entry(20, 2, "pupil_rad", "Pupil radial samples")
+        label_entry(20, 3, "pupil_theta", "Pupil angular samples")
+
         validation_var = tk.StringVar(master=window, value="")
         ttk.Label(form, textvariable=validation_var, foreground="#475569", wraplength=420).grid(
-            row=18,
+            row=22,
             column=0,
             columnspan=4,
             sticky="ew",
@@ -394,6 +445,13 @@ class MainSceneSourceManagerDialog:
             angular = str(vars["angular_weight"].get()).strip()
             if angular not in self.source_angular_weight_values:
                 vars["angular_weight"].set(self.source_angular_weight_default)
+            # bugs/0402: snap the folded-in readonly comboboxes to a valid value on load.
+            if self.pupil_pattern_values and str(vars["pupil_pattern"].get()).strip() not in self.pupil_pattern_values:
+                vars["pupil_pattern"].set(self.pupil_pattern_default)
+            if self.gaussian_input_mode_values and str(vars["gaussian_input_mode"].get()).strip() not in self.gaussian_input_mode_values:
+                vars["gaussian_input_mode"].set(self.gaussian_input_mode_default)
+            if self.gaussian_waist_side_values and str(vars["gaussian_waist_side"].get()).strip() not in self.gaussian_waist_side_values:
+                vars["gaussian_waist_side"].set(self.gaussian_waist_side_default)
             direction_preset_var.set(
                 self._source_direction_preset_label(
                     (
@@ -596,6 +654,29 @@ class MainSceneSourceManagerDialog:
             }
             if spec["angular_weight"] not in self.source_angular_weight_values:
                 spec["angular_weight"] = self.source_angular_weight_default
+
+            # bugs/0402: carry the folded-in imaging controls so a Manager edit never drops them.
+            # Parsed tolerantly -- a blank Gaussian/pupil field on an unrelated model must not raise.
+            def _opt_float(key: str, default: float) -> float:
+                try:
+                    value = float(str(vars[key].get()).strip())
+                    return float(value) if np.isfinite(value) else float(default)
+                except Exception:
+                    return float(default)
+
+            def _opt_int(key: str, default: int) -> int:
+                try:
+                    return max(0, int(round(float(str(vars[key].get()).strip()))))
+                except Exception:
+                    return int(default)
+
+            spec["pupil_pattern"] = str(vars["pupil_pattern"].get()).strip() or self.pupil_pattern_default
+            spec["pupil_rad"] = _opt_int("pupil_rad", 3)
+            spec["pupil_theta"] = _opt_int("pupil_theta", 6)
+            spec["gaussian_input_mode"] = str(vars["gaussian_input_mode"].get()).strip() or self.gaussian_input_mode_default
+            spec["gaussian_beam_diameter"] = _opt_float("gaussian_beam_diameter", 0.0)
+            spec["gaussian_full_divergence"] = _opt_float("gaussian_full_divergence", 0.0)
+            spec["gaussian_waist_side"] = str(vars["gaussian_waist_side"].get()).strip() or self.gaussian_waist_side_default
             return {str(key): self._scene_source_setting_value(value) for key, value in spec.items()}
 
         def save_current_source() -> bool:
