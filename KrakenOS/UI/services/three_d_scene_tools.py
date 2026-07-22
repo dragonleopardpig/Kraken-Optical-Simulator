@@ -494,7 +494,12 @@ class ThreeDSceneToolsMixin:
         sampling_mode: str | None = None,
         update_state: bool = True,
         include_live_step_overlays: bool = False,
+        trace_rays: bool = True,
     ):
+        # bugs/0400: ``trace_rays=False`` builds the 3D BODIES but SKIPS the expensive ray
+        # trace -- for a model change (add/move a solid) while Show Rays is OFF, the scene
+        # shows CAD geometry the user can manipulate without paying for the ~45s folded trace
+        # nobody is looking at; the trace runs when rays are turned on.
         preview_start = time.perf_counter()
         wavelength = self._current_wavelength()
         capture = io.StringIO()
@@ -555,22 +560,29 @@ class ThreeDSceneToolsMixin:
                     # flag can state it outright (the resolve_trace_intent diagnostic still
                     # reports non-seq for a folded Mirror, so it cannot reveal the fix).
                     self._last_preview_folded_sequential = bool(folded_trace_rows is not None)
-                    with open3d_timing_span(
-                        "preview_trace_rays",
-                        sampling_mode=str(mode or ""),
-                        row_count=len(self.rows),
-                        wavelength_um=float(wavelength),
-                        folded_sequential=bool(folded_trace_rows is not None),
-                    ):
-                        rays, straight_equivalent_fold_transform = (
-                            self._trace_preview_rays_folded_aware(
-                                system,
-                                wavelength,
-                                max_radius,
-                                sampling_mode=mode,
-                                folded_trace_rows=folded_trace_rows,
+                    if trace_rays:
+                        with open3d_timing_span(
+                            "preview_trace_rays",
+                            sampling_mode=str(mode or ""),
+                            row_count=len(self.rows),
+                            wavelength_um=float(wavelength),
+                            folded_sequential=bool(folded_trace_rows is not None),
+                        ):
+                            rays, straight_equivalent_fold_transform = (
+                                self._trace_preview_rays_folded_aware(
+                                    system,
+                                    wavelength,
+                                    max_radius,
+                                    sampling_mode=mode,
+                                    folded_trace_rows=folded_trace_rows,
+                                )
                             )
-                        )
+                    else:
+                        # bugs/0400: rays OFF -- skip the ray trace entirely, keep an EMPTY
+                        # raykeeper so the scene bundle assembles the bodies with no ray
+                        # polylines. Turning Show Rays on retraces (a full refresh).
+                        rays = Kos.raykeeper(system)
+                        straight_equivalent_fold_transform = None
             if isinstance(getattr(self, "_preview_trace_bundle_capture", None), list):
                 # bugs/0223 (off-thread trace): capture run -- the launch bundles were
                 # recorded by _trace_preview_bundles and NOTHING was traced (rays is
@@ -628,7 +640,11 @@ class ThreeDSceneToolsMixin:
             self._last_preview_trace_signature = self._preview_trace_signature()
             self._last_scene_bundle = scene_bundle
             self._last_scene_trace_sampling_mode = mode
-            self._preview_scene_trace_dirty = False
+            # bugs/0400: a bodies-only build (trace_rays=False) leaves the rays UNTRACED, so it
+            # must read as trace-DIRTY -- otherwise can_reuse_current_scene_for_show_rays would
+            # let a Show-Rays-ON toggle reuse the empty-ray cache and show no rays. Marking it
+            # dirty forces the toggle to a full rebuild that actually traces.
+            self._preview_scene_trace_dirty = not trace_rays
         return system, rays, scene_bundle
 
     def _trace_preview_rays_folded_aware(

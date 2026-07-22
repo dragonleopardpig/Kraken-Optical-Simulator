@@ -297,10 +297,21 @@ class Open3DTraceRefreshService:
                 if open3d_sampling_mode is None:
                     open3d_sampling_mode = self._open3d_sampling_mode()
                 resolved_sampling_mode = open3d_sampling_mode
+            # bugs/0400: with Show Rays OFF and no live physics, build the bodies but SKIP the
+            # ray trace -- a model change (add/move a solid) shows CAD geometry the user can
+            # manipulate without paying for the folded ray trace nobody is looking at. Turning
+            # Show Rays on retraces via _on_show_rays_changed.
+            trace_rays = self.inspector_physics_requested(inspector)
+            if not trace_rays:
+                try:
+                    trace_rays = bool(inspector.show_rays_var.get())
+                except Exception:
+                    trace_rays = True  # unknown ray state -> trace (safe default)
             system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
                 sampling_mode=resolved_sampling_mode,
                 update_state=bool(update_state),
                 include_live_step_overlays=include_live_step_overlays,
+                trace_rays=trace_rays,
             )
         self.remember_inspector_sampling_mode(inspector, resolved_sampling_mode)
         row_names = self.editor._preview_render_row_names(scene_bundle)

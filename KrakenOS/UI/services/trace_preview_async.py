@@ -294,6 +294,16 @@ def maybe_begin_inspector_async_trace(
         return _record(False, "fallback_latched")
     if force_retrace:
         return _record(False, "force_retrace")
+    # bugs/0400: Show Rays OFF (and no live physics) -> don't kick the expensive background
+    # trace nobody is looking at. Fall to the SYNC refresh, which builds the bodies only
+    # (trace_rays=False). Turning Show Rays on retraces via _on_show_rays_changed.
+    try:
+        service = editor._open3d_trace_refresh_service()
+        rays_wanted = service.inspector_physics_requested(inspector) or bool(inspector.show_rays_var.get())
+    except Exception:
+        rays_wanted = True  # unknown ray state -> trace (safe default)
+    if not rays_wanted:
+        return _record(False, "rays_off_bodies_only")
     if getattr(inspector, "_placement_drag_state", None) is not None:
         return _record(False, "placement_drag")
     if getattr(inspector, "_async_trace_state", None) is not None:

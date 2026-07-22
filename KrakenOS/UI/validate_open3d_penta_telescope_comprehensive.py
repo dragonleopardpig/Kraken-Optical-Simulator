@@ -14642,6 +14642,29 @@ def phase_327_folded_vignette_hidden(
     return result
 
 
+def phase_328_rays_off_bodies_only(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0400 -- with Show Rays OFF a model change builds the 3D bodies but SKIPS the
+    expensive ray trace (adding/moving a solid on a folded scene forced a full ~45s trace
+    nobody was looking at). Bodies-only build -> no ray paths + trace-dirty (so rays-on
+    retraces); the async trace is skipped when rays are off."""
+    result = PhaseResult(name="Phase 328: Show Rays OFF builds bodies only (no ray trace)")
+    try:
+        from KrakenOS.UI.validate_open3d_rays_off_bodies_only_refresh import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"rays-off bodies-only guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("rays-off bodies-only phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15014,6 +15037,7 @@ def main() -> int:
             phase_325_paraxial_ref_system_cache,
             phase_326_lens_swap_auto_refocus,
             phase_327_folded_vignette_hidden,
+            phase_328_rays_off_bodies_only,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
