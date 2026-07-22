@@ -30,9 +30,13 @@ still win). So:
 user who already set a low count. Tunable for the eyeball via `KRAKEN_FOLDED_PREVIEW_RAY_CAP` (higher =
 denser + slower).
 
-**Default calibrated in-app (`flag_20260722_162155`):** cap 15 gave **2475 rays / ~20 s** on the AZ85
-folded scene (down from ~6K rays / ~60 s at full density). The fan scales ~quadratically with the cap,
-so the user picked ~9 s → **default cap = 10** (~1100 rays).
+**Default calibrated in-app (measured, not modelled):** at full density the AZ85 folded scene was ~6K
+rays / ~60 s. cap 15 → **2475 rays / ~20 s** (`flag_162155`); default **cap 10 → 1827 rays / 17.9 s**
+(`flag_163101`, user closed it there). **KEY: the ray count is fairly INSENSITIVE to the cap in this
+range** (15→10 only dropped 2475→1827 rays, 20→17.9 s) — my "~quadratic, ~9 s" estimate was wrong. So
+~18 s is near a STRUCTURAL floor for this folded scene (the 9-bundle cascade + per-bundle mesh setup),
+which ray-count reduction alone can't break; the remaining levers (NS bbox cull, cut the 9-bundle
+cascade, defer-retrace) are what would push it lower.
 
 ## Verification (`validate_open3d_folded_preview_ray_cap`, penta phase 334)
 
@@ -52,10 +56,10 @@ so the user picked ~9 s → **default cap = 10** (~1100 rays).
 
 ## In-app eyeball still owed
 
-On the AZ85 folded scene with Ray On: the 3D preview traces a **sparse** ray fan in ~9 s instead of
-~60 s (confirmed 20 s at cap 15; ~9 s at the calibrated default cap 10). The fan is visibly thinner — if
-you want it denser, raise `KRAKEN_FOLDED_PREVIEW_RAY_CAP` (default 10). Spot / heatmap / MTF analyses are
-unchanged (full density).
+CONFIRMED + CLOSED in-app: on the AZ85 folded scene with Ray On the 3D preview traces a **sparse** fan
+in **17.9 s** (default cap 10, 1827 rays) — down from ~60 s / ~6K rays at full density. The user accepted
+this. The fan is visibly thinner; raise `KRAKEN_FOLDED_PREVIEW_RAY_CAP` (default 10) for a denser fan.
+Spot / heatmap / MTF analyses are unchanged (full density).
 
 ## Scope / next
 
