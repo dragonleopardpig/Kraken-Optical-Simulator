@@ -37,7 +37,19 @@ from pathlib import Path
 # The real ELS-85 glass metrics (from the STEP; also on disk in attachment/cad_cache).
 _ELS85 = {"body_hi": 28.32542379414665, "body_lo": -30.866049717850444,
           "glass_hi": 24.476299125547822, "glass_lo": -30.523700874452214}
-_AZ85_LAYOUT = Path(__file__).resolve().parents[1] / "common_optical_layouts" / "machine_vision_AZ85_RA_Mirror.py"
+_LAYOUTS_DIR = Path(__file__).resolve().parents[1] / "common_optical_layouts"
+_AZ85_LAYOUT = _LAYOUTS_DIR / "machine_vision_AZ85_RA_Mirror.py"
+# Every COMMITTED layout whose imaging lens is a NARROW barrel (glass-centre pin active), so its stored
+# lens_step_placement_offset_xyz z must be 0 -- a stale glass-alignment nudge double-counts the pin and
+# detaches the STEP (bugs/0412). Barrel ratios (body_span/glass_span) all < 1.6: ELS-85 1.076, Pyrite-85
+# 1.211, 120mm-05x 1.101, 120mm-1x 1.075. (attachment/ working copies are gitignored -> not guarded here.)
+_NARROW_BARREL_LAYOUTS = (
+    "machine_vision_AZ85_RA_Mirror.py",
+    "machine_vision_85mm_azure_datasheet_05x_20x.py",
+    "machine_vision_85mm_pyrite_datasheet_05x_20x.py",
+    "machine_vision_120mm_pyrite_datasheet_05x.py",
+    "machine_vision_120mm_pyrite_datasheet_1x.py",
+)
 
 
 def _pin_front_glass_vertex_world(m, front_datum, rear_datum, offset_z, front_face="max"):
@@ -56,23 +68,35 @@ def _pin_front_glass_vertex_world(m, front_datum, rear_datum, offset_z, front_fa
 
 
 def _check_layout_clean(failures, notes):
-    if not _AZ85_LAYOUT.exists():
-        failures.append(f"LAYOUT-CLEAN: {_AZ85_LAYOUT.name} not found")
-        return
-    text = _AZ85_LAYOUT.read_text(encoding="utf-8")
-    match = re.search(r"lens_step_placement_offset_xyz'\s*:\s*\[([^\]]*)\]", text)
-    if not match:
-        failures.append("LAYOUT-CLEAN: no lens_step_placement_offset_xyz in the AZ85 layout")
-        return
-    try:
-        z = float(match.group(1).split(",")[2])
-    except (IndexError, ValueError):
-        failures.append(f"LAYOUT-CLEAN: could not parse the offset ({match.group(1)!r})")
-        return
-    if abs(z) > 1e-6:
-        failures.append(f"LAYOUT-CLEAN: AZ85 carries a stale lens offset z={z:g} (double-counts the 0374 glass-centre pin -> detach)")
+    checked = 0
+    for name in _NARROW_BARREL_LAYOUTS:
+        path = _LAYOUTS_DIR / name
+        if not path.exists():
+            failures.append(f"LAYOUT-CLEAN: {name} not found")
+            continue
+        text = path.read_text(encoding="utf-8")
+        # accept single- or double-quoted key
+        match = re.search(r"lens_step_placement_offset_xyz[\"']\s*:\s*\[([^\]]*)\]", text)
+        if not match:
+            failures.append(f"LAYOUT-CLEAN: no lens_step_placement_offset_xyz in {name}")
+            continue
+        parts = [p.strip() for p in match.group(1).split(",")]
+        if len(parts) < 3:
+            failures.append(f"LAYOUT-CLEAN: malformed offset in {name} ({match.group(1)!r})")
+            continue
+        z_token = parts[2]
+        # a bare 0/0.0 is clean; anything else (a nonzero literal OR the STEP_GLASS_ALIGNMENT_Z_OFFSET_MM
+        # name reintroduced) detaches this narrow-barrel lens by double-counting the 0374 pin.
+        try:
+            is_zero = abs(float(z_token)) <= 1e-6
+        except ValueError:
+            is_zero = False
+        if not is_zero:
+            failures.append(f"LAYOUT-CLEAN: {name} carries a stale lens offset z={z_token} (double-counts the 0374 glass-centre pin -> detach)")
+            continue
+        checked += 1
     if not [f for f in failures if f.startswith("LAYOUT-CLEAN")]:
-        notes.append("layout-clean = AZ85 lens_step_placement_offset z is 0 (no stale glass-alignment nudge)")
+        notes.append(f"layout-clean = {checked} committed narrow-barrel layouts pin lens_step offset z at 0")
 
 
 def _check_pin_geometry(failures, notes):

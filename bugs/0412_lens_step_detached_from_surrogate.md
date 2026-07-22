@@ -50,17 +50,17 @@ Display-free (no VTK / no app):
 
 3/3 pass. Baseline records phase 336 = pass.
 
-## Scope / not touched
+## Scope
 
-- **AZ85 (ELS-85)** is the clean, provable case: glass span = datum span = 55.0, offset = `body_hi−glass_hi`
-  exactly → the fix is arithmetic, not tuning.
-- **Pyrite85** (`machine_vision_Pyrite85_RA_Mirror.py`, attachment) is a *related but different* case —
-  narrow barrel (glass-centre pin also active), but its offset (−3.5472) does **not** equal
-  `body_hi−glass_hi` (3.27) and I have not confirmed its datum span equals its glass span, so I left it
-  rather than risk clobbering a possibly-intentional value. Flagged for the user to confirm.
-- **Datasheet layouts** using `STEP_GLASS_ALIGNMENT_Z_OFFSET_MM` on **wide** barrels (body-face pin,
-  not glass-centre pin) legitimately keep their offset — those are not affected by 0374 and were not
-  touched.
+- **AZ85 (ELS-85)** is the clean, provable case fixed here: glass span = datum span = 55.0, offset =
+  `body_hi−glass_hi` exactly → the fix is arithmetic, not tuning.
+- **All other narrow-barrel layouts** (the datasheet 85 mm/120 mm scenes + the Pyrite85/120mm_65M
+  attachment copies) carry the same stale offset and were swept in **bugs/0414** — the user's follow-up
+  "fix all other possible detach files." Every one measured narrow-barrel (glass-centre pin active), so
+  every offset was zeroed; the 0412 guard now checks all five committed layouts.
+- **Wide** barrels (`body_span > 1.6*glass_span`, e.g. the Edmund 15056 the 0377 comment cites) use the
+  body-face pin, so their glass-alignment offset is legitimate and is NOT touched. No layout in the sweep
+  was wide.
 
 ## Files
 

@@ -142,7 +142,11 @@ SETTINGS = {
     "lens_step_rotation_y_deg": 180.0,
     "lens_step_rotation_z_deg": 0.0,
     "lens_step_axis_offset_xy": [0.0, 0.0],
-    "lens_step_placement_offset_xyz": [0.0, 0.0, STEP_GLASS_ALIGNMENT_Z_OFFSET_MM],
+    # bugs/0412: this is a NARROW barrel (body_span 47.9 <= 1.6*glass_span 39.5), so the bugs/0374
+    # glass-centre pin already lands the glass on the datum span. Adding STEP_GLASS_ALIGNMENT_Z_OFFSET_MM
+    # on top double-counts and DETACHES the STEP by its magnitude -> offset 0. (Constant kept as geometry
+    # documentation; only a WIDE barrel, body_span > 1.6*glass_span, still needs the body-face nudge.)
+    "lens_step_placement_offset_xyz": [0.0, 0.0, 0.0],
     "optical_step_path": "",
     "optical_step_rotation_x_deg": 0.0,
     "optical_step_rotation_y_deg": 0.0,
