@@ -374,13 +374,15 @@ class Open3DFaceAssignmentService:
                             face_id=picked_face_id,
                         ),
                     )
-            # bugs/0406: replace an imported STEP OVERLAY (camera / BS / LED / optical) in place --
-            # swap its geometry for a new STEP file, keeping the pose (the camera/BS half of the
-            # "delete/import on the spot" ask; the promoted-solid half is the row menu's "Replace STEP...").
-            menu.add_command(
-                label=f"Replace {display} STEP...",
-                command=lambda picked_label=step_label: self._replace_step_overlay_from_context(picked_label),
-            )
+            # bugs/0406/0407: replace an imported STEP OVERLAY in place (camera / BS / LED / optical) --
+            # the camera/BS half of "delete/import on the spot" (the promoted-solid half is the row
+            # menu's "Replace STEP..."). A LENS is EXCLUDED: it needs its optical surrogate rebuilt via
+            # "Swap Imaging Lens from Folder" (a lens FOLDER), not a raw single-STEP path swap.
+            if step_label != "lens":
+                menu.add_command(
+                    label=f"Replace {display} STEP...",
+                    command=lambda picked_label=step_label: self._replace_step_overlay_from_context(picked_label),
+                )
             menu.add_separator()
             menu.add_command(
                 label="Center Picked Face -> Optical Axis",

@@ -305,13 +305,20 @@ class StepOverlayImportService:
     def replace_imported_step_overlay(
         self, label: str, new_step_path, *, refresh_open_3d: bool = True
     ) -> Path | None:
-        """bugs/0406: REPLACE an imported STEP OVERLAY's geometry IN PLACE with a new STEP file,
-        PRESERVING its pose (rotation / axis offset / placement offset) and glue -- the pose-keeping
-        counterpart to a fresh import (which RESETS the pose). This is the camera / BS / LED half of
-        the user's "delete/import on the spot" ask (the promoted-solid half is bugs/0404). A camera
-        replacement additionally re-couples the surrogate sensor if the new STEP is a recognised
-        vendor camera (that's the point of swapping a vendor camera). No-op when no STEP of that
-        label is imported."""
+        """bugs/0406 + 0407: REPLACE an imported STEP OVERLAY's geometry in place with a new STEP file.
+        The camera / BS / LED half of "delete/import on the spot" (the promoted-solid half is bugs/0404).
+        No-op when no STEP of that label is imported. Behaviour is PER LABEL because the placement
+        semantics differ (bugs/0407, user's catch):
+
+        - **LED / BS (optical)**: a POSE-PRESERVING path swap -- keep the pose the user aligned (these
+          have no sensor-location dependency), like Swap Imaging Lens keeps a lens's pose.
+        - **camera**: a raw pose swap would MISLOCATE the sensor -- the sensor sits
+          ``camera_front_to_sensor_mm`` behind the body front and the camera<->detector glue places the
+          body so the sensor lands on the image plane; a different camera has a different front_to_sensor.
+          So it runs the full Camera Import flow (re-establishes the sensor location) then restores the
+          old TRANSVERSE position (the axial position is auto-driven by image_plane_z - front_to_sensor).
+        - **lens**: rejected -- an imaging lens needs its optical SURROGATE rebuilt via
+          "Swap Imaging Lens from Folder" (a lens FOLDER), not a single-STEP path swap."""
         label = str(label).strip().lower()
         if label not in STEP_OVERLAY_LABEL_SET:
             return None
@@ -325,29 +332,55 @@ class StepOverlayImportService:
         if not new_path.exists():
             self.status_var.set(f"Replace STEP: file not found -- {new_path}")
             return None
+
+        # bugs/0407: an imaging LENS needs its optical SURROGATE rebuilt, not a raw path swap -- that
+        # is exactly "Swap Imaging Lens from Folder" (which takes a lens FOLDER + rebuilds the
+        # surrogate). A single-STEP path swap would leave the surrogate prescription stale.
+        if label == "lens":
+            self.status_var.set(
+                "Replace: an imaging lens is swapped via 'Swap Imaging Lens from Folder' (it rebuilds "
+                "the optical surrogate) -- not a raw STEP path swap."
+            )
+            return None
+
+        # bugs/0407: a CAMERA's SENSOR sits camera_front_to_sensor_mm BEHIND its front, and the
+        # camera<->detector glue places the body so the sensor lands on the image plane. A different
+        # camera has a different front_to_sensor, so a raw pose-preserving swap MISLOCATES the new
+        # sensor (user's catch). TWO STEPS: (1) run the full Camera Import flow so the sensor location
+        # is re-established correctly (front_to_sensor + coupling + the image-plane glue), then (2)
+        # restore the old TRANSVERSE position as a minor adjustment -- the axial position is auto-
+        # driven by (image_plane_z - front_to_sensor), so only x/y carry the user's placement.
+        if label == "camera":
+            old_x, old_y, _old_z = self._step_placement_offset_xyz("camera")
+            result = self.import_camera_step(path=new_path, refresh_open_3d=False)
+            if result is None:
+                return None
+            _new_x, _new_y, new_z = self._step_placement_offset_xyz("camera")
+            self.camera_step_placement_offset_xyz = (float(old_x), float(old_y), float(new_z))
+            self._live_step_overlay_trace_plan_cache = {}
+            self._invalidate_preview_scene_trace()
+            self.status_var.set(
+                f"Replaced CAMERA with {new_path.name} via the import flow (sensor re-located); "
+                "transverse position kept."
+            )
+            if refresh_open_3d:
+                self._refresh_open_3d_views(camera_only=True)
+            return result
+
+        # LED / BS (optical): a pose-preserving path swap is correct -- these have no sensor-location
+        # dependency, so keep the pose the user aligned (like Swap Imaging Lens keeps a lens's pose).
         self._begin_history_capture()
         setattr(self, f"imported_{label}_step_path", new_path)
-        # pose (rotation / axis offset / placement offset) + glue are PRESERVED -- NOT reset (this is
-        # exactly how Swap Imaging Lens keeps a swapped lens where the user aligned it, vs a fresh
-        # import that zeroes the pose).
         self._selected_step_label = label
-        coupled_model = None
-        if label == "camera" and hasattr(self, "_couple_camera_model_from_step"):
-            coupled_model = self._couple_camera_model_from_step(new_path)
         self._open3d_trace_refresh_service().clear_step_overlay_physics_preview(label)
         self._commit_history_capture()
         self._live_step_overlay_trace_plan_cache = {}
         self._invalidate_preview_scene_trace()
-        sensor_note = f"; recognised {coupled_model}, sensor synced" if coupled_model else ""
         self.status_var.set(
-            f"Replaced {self._step_overlay_display_label(label).upper()} STEP with {new_path.name} "
-            f"(pose kept){sensor_note}."
+            f"Replaced {self._step_overlay_display_label(label).upper()} STEP with {new_path.name} (pose kept)."
         )
         if refresh_open_3d:
-            if label == "camera":
-                self._refresh_open_3d_views(camera_only=True)
-            else:
-                self._refresh_open_3d_views(step_label=label)
+            self._refresh_open_3d_views(step_label=label)
         return new_path
 
     @staticmethod
