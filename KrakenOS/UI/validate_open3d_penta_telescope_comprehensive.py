@@ -14906,6 +14906,29 @@ def phase_338_mtf_from_image_dialog_controls(
     return result
 
 
+def phase_339_accept_cone_fold_aware(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0416 -- the imaging lens's Accept-cone overlay (receiving cone) must ride the folded imaging
+    arm, not float on the unfolded axis. Built on the straight object-space axis, it now folds onto the
+    lens leg with the SAME rigid transform the lens STEP overlay uses; None on an unfolded scene leaves it
+    put. Guards the fold mechanism + the transform math on a real cone mesh."""
+    result = PhaseResult(name="Phase 339: Accept-cone overlay follows the display fold")
+    try:
+        from KrakenOS.UI.validate_open3d_accept_cone_fold_aware import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"accept-cone-fold-aware guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("accept-cone-fold-aware phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15289,6 +15312,7 @@ def main() -> int:
             phase_336_lens_step_datum_attached,
             phase_337_context_menu_no_flash,
             phase_338_mtf_from_image_dialog_controls,
+            phase_339_accept_cone_fold_aware,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

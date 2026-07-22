@@ -14539,6 +14539,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             if points.ndim != 2 or points.shape[0] < 6 or faces.size < 4:
                 return 0
             mesh = pv.PolyData(points[:, :3], faces=faces)
+            # bugs/0416: the cone is built on the STRAIGHT sequential object-space axis. On a folded
+            # scene (RA-mirror / beam-splitter) it must ride the imaging arm, not float on the unfolded
+            # axis -- the same rigid fold the lens STEP overlay applies, anchored on the SAME lens row so
+            # the two stay coherent. None on an unfolded layout -> mesh unchanged (no regression).
+            try:
+                fold_transform = self.editor._optical_axis_fold_world_transform_for_row(
+                    self.editor._lens_front_datum_row_index()
+                )
+                mesh = self.editor._mesh_with_world_transform(mesh, fold_transform)
+            except Exception as exc:
+                self.editor.append_debug(f"Receiving-cone fold skipped: {exc}")
             actor = self._add_mesh_actor(
                 mesh,
                 color=tuple(spec.get("color", (0.25, 0.62, 0.88))),
