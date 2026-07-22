@@ -331,7 +331,8 @@
     "328": "pass",
     "329": "pass",
     "330": "pass",
-    "331": "pass"
+    "331": "pass",
+    "332": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -663,6 +664,7 @@
     "328": "Show Rays OFF builds bodies only (no ray trace)",
     "329": "coaxial illuminator edge-profile selector persists",
     "330": "Source panel folds into the Scene Source Manager",
-    "331": "Replace promoted optical solid in place"
+    "331": "Replace promoted optical solid in place",
+    "332": "Replace axis-align + browser defocus snap"
   }
 }

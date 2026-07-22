@@ -1095,6 +1095,24 @@ class Open3DStepAdminPanel:
                 command=lambda sid=source_id: self._open_scene_source_manager(sid),
             )
             menu.add_separator()
+        # bugs/0405: the detector is the final "Image" row. Offer "remove defocus" from the browser
+        # so the user does NOT have to HIDE the camera to right-click the detector occluded behind it
+        # in the 3D view (flag_20260722_143106 "I need to hide the camera -> right click the detector").
+        try:
+            editor_rows = list(getattr(self.editor, "rows", []) or [])
+            is_detector_row = any(
+                0 <= int(r) < len(editor_rows)
+                and str(getattr(editor_rows[int(r)], "surface", "") or "") == "Image"
+                for r in (rows or [])
+            )
+        except Exception:
+            is_detector_row = False
+        if is_detector_row:
+            menu.add_command(
+                label="Snap detector to image plane (remove defocus)",
+                command=self.inspector._snap_detector_to_image_plane,
+            )
+            menu.add_separator()
         show_word = "Show" if display_key is not None else "Unhide"
         if has_children:
             # bugs/0360: a PARENT element -- Hide/Show applies to it AND every child.

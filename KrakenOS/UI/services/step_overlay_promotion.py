@@ -1596,6 +1596,17 @@ class StepOverlayPromotionService:
             advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {})
         )
         old_faces = list(old_meta.get("faces", []) or [])
+        # bugs/0405: remember the old solid's TRANSVERSE decenter so a resized replacement lands on
+        # the SAME optical-axis position the user aligned it to. A bigger/smaller mirror has a
+        # different intrinsic mesh center, so preserving only the overlay placement offset left it
+        # off-axis (flag_20260722_142908 "need to manually align it to the optical axis").
+        try:
+            old_desp_xy = (
+                float(getattr(row, "desp_x", 0.0) or 0.0),
+                float(getattr(row, "desp_y", 0.0) or 0.0),
+            )
+        except Exception:
+            old_desp_xy = (0.0, 0.0)
 
         # 2) unpromote -> the overlay is restored at the solid's CURRENT (possibly slid) pose.
         if self.unpromote_optical_solid_to_overlay(idx, refresh_open_3d=False) is None:
@@ -1636,6 +1647,17 @@ class StepOverlayPromotionService:
                 applied += 1
             except Exception:
                 unmatched.append(function_ui)
+
+        # bugs/0405: pin the replacement's transverse decenter to the old solid's so a resized mirror
+        # keeps the optical-axis alignment the user set (its center stays where the aligned old one was)
+        # instead of drifting off-axis by the intrinsic mesh-center difference.
+        try:
+            new_row = self.rows[new_row_index]
+            new_row.desp_x = float(old_desp_xy[0])
+            new_row.desp_y = float(old_desp_xy[1])
+            self._sync_table()
+        except Exception:
+            pass
 
         if unmatched:
             self.status_var.set(

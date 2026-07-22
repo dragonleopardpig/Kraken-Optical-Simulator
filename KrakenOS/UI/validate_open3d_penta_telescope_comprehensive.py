@@ -14738,6 +14738,29 @@ def phase_331_replace_promoted_solid(
     return result
 
 
+def phase_332_replace_axis_and_defocus_menu(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0405 -- two usability refinements after 0404 (both flagged as works-but-inconvenient):
+    Replace now pins the resized replacement's transverse decenter to the old solid's so it stays on
+    the optical axis (no manual re-align), and the detector (final Image row) offers "remove defocus"
+    in the browser menu so the user need not hide the occluding camera to right-click it in 3D."""
+    result = PhaseResult(name="Phase 332: Replace axis-align + browser defocus snap")
+    try:
+        from KrakenOS.UI.validate_open3d_replace_axis_and_defocus_menu import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"replace-axis/defocus-menu guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("replace-axis/defocus-menu phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15114,6 +15137,7 @@ def main() -> int:
             phase_329_coaxial_edge_profile,
             phase_330_source_panel_into_manager,
             phase_331_replace_promoted_solid,
+            phase_332_replace_axis_and_defocus_menu,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
