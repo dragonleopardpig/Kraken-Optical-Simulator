@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import inspect
 
+from KrakenOS.UI.services.layout_table_workbench import LayoutTableWorkbenchMixin
 from KrakenOS.UI.services.step_overlay_import import StepOverlayImportService
 
 
@@ -102,6 +103,39 @@ class _StubImportSvc:
         return path
 
 
+class _ImportedCameraStub:
+    name = "BC-OM25M"
+
+
+class _StubFolderSvc:
+    """Drive the REAL replace_camera_from_folder (the vendor FOLDER flow) display-free."""
+
+    replace_camera_from_folder = LayoutTableWorkbenchMixin.replace_camera_from_folder
+
+    def __init__(self):
+        self.status_var = _Var()
+        self._live_step_overlay_trace_plan_cache = {"stale": 1}
+        self.invalidated = False
+        self.refreshed = False
+        self.folder_import_called = False
+        self.camera_step_placement_offset_xyz = (7.0, 8.0, 9.0)  # the OLD transverse position
+
+    def _step_placement_offset_xyz(self, label):
+        return tuple(self.camera_step_placement_offset_xyz)
+
+    def import_vendor_camera_from_folder(self, folder, *, dialog_parent=None, refresh_open_3d=True):
+        # the folder flow prompts for the flange distance + resets the placement (axial from the glue)
+        self.folder_import_called = True
+        self.camera_step_placement_offset_xyz = (0.0, 0.0, 5.0)
+        return _ImportedCameraStub()
+
+    def _invalidate_preview_scene_trace(self):
+        self.invalidated = True
+
+    def _refresh_open_3d_views(self, **kwargs):
+        self.refreshed = True
+
+
 def _check_preserve(failures, notes):
     svc = _StubImportSvc("led", has_path=True)
     result = svc.replace_imported_step_overlay("led", __file__, refresh_open_3d=True)
@@ -118,22 +152,35 @@ def _check_preserve(failures, notes):
         notes.append("preserve = LED/BS replace swaps path, keeps pose, invalidates/refreshes")
 
 
-def _check_camera(failures, notes):
+def _check_camera_rejected(failures, notes):
+    # a STEP-path camera replace must be REJECTED (bugs/0408: the camera goes through the FOLDER flow,
+    # which prompts for the flange distance -- a single STEP swap can't set front_to_sensor).
     svc = _StubImportSvc("camera", has_path=True)
-    result = svc.replace_imported_step_overlay("camera", __file__, refresh_open_3d=True)
+    result = svc.replace_imported_step_overlay("camera", __file__)
+    if result is not None:
+        failures.append("CAMERA-REJECT: a STEP-path camera replace must be rejected (route to the folder flow)")
+    if "Folder" not in svc.status_var.get():
+        failures.append("CAMERA-REJECT: the rejection status must point at Replace Camera from Folder")
+    if not [f for f in failures if f.startswith("CAMERA-REJECT")]:
+        notes.append("camera-reject = a STEP-path camera swap is rejected -> Replace Camera from Folder")
+
+
+def _check_camera_folder(failures, notes):
+    svc = _StubFolderSvc()
+    result = svc.replace_camera_from_folder(folder="dummy", refresh_open_3d=True)
     if result is None:
-        failures.append("CAMERA: camera replace returned None")
+        failures.append("CAMERA-FOLDER: replace_camera_from_folder returned None on a successful import")
         return
-    if not svc.import_camera_called:
-        failures.append("CAMERA: replace did NOT run the Camera Import flow (sensor would be mislocated)")
+    if not svc.folder_import_called:
+        failures.append("CAMERA-FOLDER: did NOT run the vendor FOLDER import (flange prompt + front_to_sensor)")
     off = tuple(svc.camera_step_placement_offset_xyz)
-    # transverse (x,y) restored from the OLD pose (7,8); axial (z) from the import (5)
-    if not (abs(off[0] - 7.0) < 1e-9 and abs(off[1] - 8.0) < 1e-9):
-        failures.append(f"CAMERA: transverse position not restored from the old pose (got {off})")
-    if abs(off[2] - 5.0) > 1e-9:
-        failures.append(f"CAMERA: axial z must come from the import glue, not the old pose (got {off})")
-    if not [f for f in failures if f.startswith("CAMERA")]:
-        notes.append("camera = import flow re-locates sensor, old transverse x/y restored, axial from glue")
+    # old transverse x/y (7,8) restored; axial z (5) from the import glue
+    if not (abs(off[0] - 7.0) < 1e-9 and abs(off[1] - 8.0) < 1e-9 and abs(off[2] - 5.0) < 1e-9):
+        failures.append(f"CAMERA-FOLDER: transverse x/y must be restored + axial z from import (got {off})")
+    if not svc.invalidated or not svc.refreshed:
+        failures.append("CAMERA-FOLDER: did not invalidate/refresh after the folder import")
+    if not [f for f in failures if f.startswith("CAMERA-FOLDER")]:
+        notes.append("camera-folder = folder import (flange + front_to_sensor) then old transverse x/y restored")
 
 
 def _check_lens(failures, notes):
@@ -175,19 +222,24 @@ def _check_menu(failures, notes):
     menu = inspect.getsource(Open3DFaceAssignmentService._show_surface_function_context_menu)
     if "Replace {display} STEP..." not in menu:
         failures.append("MENU: the overlay right-click has no 'Replace ... STEP...' entry")
+    if "Replace Camera from Folder..." not in menu:
+        failures.append("MENU: a camera must read 'Replace Camera from Folder...' (bugs/0408)")
     if 'step_label != "lens"' not in menu:
         failures.append("MENU: the Replace entry must EXCLUDE a lens (it needs Swap Imaging Lens)")
     handler = inspect.getsource(Open3DFaceAssignmentService._replace_step_overlay_from_context)
-    if "replace_imported_step_overlay" not in handler:
-        failures.append("MENU: the handler does not call the editor's replace method")
+    if "replace_imported_step_overlay" not in handler or "replace_camera_from_folder" not in handler:
+        failures.append("MENU: the handler must route camera->folder flow and others->step swap")
     if not [f for f in failures if f.startswith("MENU")]:
-        notes.append("menu = 'Replace ... STEP...' (lens excluded) -> editor.replace_imported_step_overlay")
+        notes.append("menu = camera->'from Folder', LED/BS->STEP swap, lens excluded")
 
 
 def run_checks() -> "tuple[bool, list[str]]":
     failures: list[str] = []
     notes: list[str] = []
-    for check in (_check_preserve, _check_camera, _check_lens, _check_noop, _check_wrapper, _check_menu):
+    for check in (
+        _check_preserve, _check_camera_rejected, _check_camera_folder,
+        _check_lens, _check_noop, _check_wrapper, _check_menu,
+    ):
         try:
             check(failures, notes)
         except Exception as exc:

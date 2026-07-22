@@ -1381,6 +1381,41 @@ class LayoutTableWorkbenchMixin:
         self.append_progress(message)
         return imported
 
+    def replace_camera_from_folder(
+        self, folder: str | None = None, *, dialog_parent=None, refresh_open_3d: bool = True
+    ):
+        """bugs/0408: REPLACE the camera via the vendor-FOLDER import flow -- the user's actual "Camera
+        Import" (bugs/0406/0407 wrongly used the single-STEP import, which never prompts for the flange
+        distance, so the sensor was mislocated). Prompts for a camera FOLDER, scrapes the sensor, PROMPTS
+        for the flange-to-sensor optical distance when the datasheet lacks it (bugs/0309, e.g. BC-OM25M =
+        12 mm), and reverse-resolves ``camera_front_to_sensor_mm`` so the sensor lands at the true image-
+        plane location -- then restores the old TRANSVERSE position as a minor adjustment (the axial
+        position is auto-driven by ``image_plane_z - front_to_sensor``). The camera analogue of Swap
+        Imaging Lens from Folder. Returns the built ImportedCamera, or None on cancel."""
+        try:
+            old_x, old_y, _old_z = self._step_placement_offset_xyz("camera")
+        except Exception:
+            old_x, old_y = 0.0, 0.0
+        imported = self.import_vendor_camera_from_folder(
+            folder, dialog_parent=dialog_parent, refresh_open_3d=False
+        )
+        if imported is None:
+            return None
+        try:
+            _new_x, _new_y, new_z = self._step_placement_offset_xyz("camera")
+            self.camera_step_placement_offset_xyz = (float(old_x), float(old_y), float(new_z))
+        except Exception:
+            pass
+        self._live_step_overlay_trace_plan_cache = {}
+        self._invalidate_preview_scene_trace()
+        self.status_var.set(
+            f"Replaced camera with {getattr(imported, 'name', 'vendor camera')} via the folder import "
+            "(sensor re-located); transverse position kept."
+        )
+        if refresh_open_3d:
+            self._refresh_open_3d_views(camera_only=True)
+        return imported
+
     def _apply_camera_flange_distance(self, imported, value_provider):
         """Stamp the flange-to-sensor (optical) distance onto a freshly imported
         camera record when the folder import could not recover it (bugs/0309).

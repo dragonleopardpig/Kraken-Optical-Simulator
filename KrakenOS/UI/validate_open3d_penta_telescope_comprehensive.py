@@ -14764,12 +14764,13 @@ def phase_332_replace_axis_and_defocus_menu(
 def phase_333_replace_step_overlay(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
-    """bugs/0406 + 0407 -- Replace an imported STEP OVERLAY (camera / BS / LED) in place. Behaviour is
-    PER LABEL (0407, user's catch): LED/BS = pose-preserving path swap; CAMERA = full Camera Import flow
-    (so the sensor re-locates via front_to_sensor + the image-plane glue) then restore the old transverse
-    position; LENS = rejected (needs its surrogate rebuilt via Swap Imaging Lens from Folder). The
-    camera/BS half of replace-in-place (the promoted-solid half is 0404). Guards all four behaviours via
-    behavioural stubs + the editor mixin wrapper + the (lens-excluded) menu."""
+    """bugs/0406-0408 -- Replace an imported STEP OVERLAY (camera / BS / LED) in place. Behaviour is PER
+    LABEL (user's catches): LED/BS = pose-preserving path swap; CAMERA = the vendor FOLDER import flow
+    (replace_camera_from_folder -- prompts for the flange distance + sets front_to_sensor so the sensor
+    lands correctly, 0408) then restore the old transverse position; LENS = rejected (Swap Imaging Lens
+    from Folder rebuilds its surrogate). The camera/BS half of replace-in-place (the promoted-solid half
+    is 0404). Guards every branch via behavioural stubs + the editor wrapper + the menu (camera reads
+    'from Folder', lens excluded)."""
     result = PhaseResult(name="Phase 333: Replace imported STEP overlay in place")
     try:
         from KrakenOS.UI.validate_open3d_replace_step_overlay import run_checks

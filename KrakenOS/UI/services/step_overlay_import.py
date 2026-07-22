@@ -312,11 +312,9 @@ class StepOverlayImportService:
 
         - **LED / BS (optical)**: a POSE-PRESERVING path swap -- keep the pose the user aligned (these
           have no sensor-location dependency), like Swap Imaging Lens keeps a lens's pose.
-        - **camera**: a raw pose swap would MISLOCATE the sensor -- the sensor sits
-          ``camera_front_to_sensor_mm`` behind the body front and the camera<->detector glue places the
-          body so the sensor lands on the image plane; a different camera has a different front_to_sensor.
-          So it runs the full Camera Import flow (re-establishes the sensor location) then restores the
-          old TRANSVERSE position (the axial position is auto-driven by image_plane_z - front_to_sensor).
+        - **camera**: NOT handled here -- routed to ``replace_camera_from_folder`` (bugs/0408), the
+          vendor FOLDER import flow that prompts for the flange-to-sensor distance + reverse-resolves
+          ``camera_front_to_sensor_mm`` so the sensor lands correctly. A single-STEP swap can't do that.
         - **lens**: rejected -- an imaging lens needs its optical SURROGATE rebuilt via
           "Swap Imaging Lens from Folder" (a lens FOLDER), not a single-STEP path swap."""
         label = str(label).strip().lower()
@@ -343,29 +341,18 @@ class StepOverlayImportService:
             )
             return None
 
-        # bugs/0407: a CAMERA's SENSOR sits camera_front_to_sensor_mm BEHIND its front, and the
-        # camera<->detector glue places the body so the sensor lands on the image plane. A different
-        # camera has a different front_to_sensor, so a raw pose-preserving swap MISLOCATES the new
-        # sensor (user's catch). TWO STEPS: (1) run the full Camera Import flow so the sensor location
-        # is re-established correctly (front_to_sensor + coupling + the image-plane glue), then (2)
-        # restore the old TRANSVERSE position as a minor adjustment -- the axial position is auto-
-        # driven by (image_plane_z - front_to_sensor), so only x/y carry the user's placement.
+        # bugs/0407/0408: a CAMERA's SENSOR sits camera_front_to_sensor_mm BEHIND its front, and the
+        # camera<->detector glue lands the sensor on the image plane; a different camera has a different
+        # front_to_sensor. The user's actual "Camera Import" is the vendor-FOLDER flow (it prompts for
+        # the flange distance + reverse-resolves front_to_sensor); a single-STEP swap can't do that and
+        # would mislocate the sensor. So a camera is replaced via ``replace_camera_from_folder`` (the
+        # menu routes there) -- reject a stray STEP-path camera call here.
         if label == "camera":
-            old_x, old_y, _old_z = self._step_placement_offset_xyz("camera")
-            result = self.import_camera_step(path=new_path, refresh_open_3d=False)
-            if result is None:
-                return None
-            _new_x, _new_y, new_z = self._step_placement_offset_xyz("camera")
-            self.camera_step_placement_offset_xyz = (float(old_x), float(old_y), float(new_z))
-            self._live_step_overlay_trace_plan_cache = {}
-            self._invalidate_preview_scene_trace()
             self.status_var.set(
-                f"Replaced CAMERA with {new_path.name} via the import flow (sensor re-located); "
-                "transverse position kept."
+                "Replace: a camera is replaced via the vendor FOLDER import (Replace Camera from Folder) "
+                "so its sensor size + flange distance are set correctly -- not a single STEP swap."
             )
-            if refresh_open_3d:
-                self._refresh_open_3d_views(camera_only=True)
-            return result
+            return None
 
         # LED / BS (optical): a pose-preserving path swap is correct -- these have no sensor-location
         # dependency, so keep the pose the user aligned (like Swap Imaging Lens keeps a lens's pose).

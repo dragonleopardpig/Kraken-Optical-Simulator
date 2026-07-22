@@ -374,13 +374,18 @@ class Open3DFaceAssignmentService:
                             face_id=picked_face_id,
                         ),
                     )
-            # bugs/0406/0407: replace an imported STEP OVERLAY in place (camera / BS / LED / optical) --
-            # the camera/BS half of "delete/import on the spot" (the promoted-solid half is the row
-            # menu's "Replace STEP..."). A LENS is EXCLUDED: it needs its optical surrogate rebuilt via
-            # "Swap Imaging Lens from Folder" (a lens FOLDER), not a raw single-STEP path swap.
+            # bugs/0406-0408: replace an imported STEP OVERLAY in place -- the camera/BS half of
+            # "delete/import on the spot" (the promoted-solid half is the row menu's "Replace STEP...").
+            # A CAMERA is replaced via its vendor FOLDER (flange prompt + front_to_sensor, bugs/0408),
+            # so its label reads "from Folder"; LED/BS/optical swap a single STEP keeping the pose. A
+            # LENS is EXCLUDED (Swap Imaging Lens from Folder rebuilds its optical surrogate).
             if step_label != "lens":
+                replace_label = (
+                    "Replace Camera from Folder..." if step_label == "camera"
+                    else f"Replace {display} STEP..."
+                )
                 menu.add_command(
-                    label=f"Replace {display} STEP...",
+                    label=replace_label,
                     command=lambda picked_label=step_label: self._replace_step_overlay_from_context(picked_label),
                 )
             menu.add_separator()
@@ -930,10 +935,15 @@ class Open3DFaceAssignmentService:
         self.status_var.set(f"Hid {display} STEP. Re-show it from the Scene Components panel.")
 
     def _replace_step_overlay_from_context(self, step_label: str) -> None:
-        """Right-click "Replace {label} STEP...": swap an imported STEP overlay's geometry for a
-        newly chosen STEP file AT THE SAME pose (bugs/0406 -- the camera/BS/LED half of replace-in-
-        place; the promoted-solid half is the row menu's "Replace STEP...")."""
+        """Right-click "Replace ...": replace an imported STEP overlay in place (bugs/0406-0408; the
+        promoted-solid half is the row menu's "Replace STEP..."). A CAMERA routes to the vendor FOLDER
+        import (Replace Camera from Folder -- it prompts for the flange distance + sets front_to_sensor
+        so the sensor lands correctly, bugs/0408); LED / BS / optical swap a single STEP file keeping
+        the pose."""
         try:
+            if step_label == "camera":
+                self.editor.replace_camera_from_folder(dialog_parent=self._inspector)
+                return
             le = _layout_module()
             display = self.editor._step_overlay_display_label(step_label)
             path = self.editor._ask_step_file(
