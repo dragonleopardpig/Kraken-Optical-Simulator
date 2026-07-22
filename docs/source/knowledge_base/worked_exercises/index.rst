@@ -14,6 +14,26 @@ worked solutions are:
 * :doc:`understanding_lasers_ch01_quiz` -- conceptual laser questions and two
   efficiency calculations.
 
+*Understanding Lasers* quiz solutions:
+
+.. toctree::
+   :maxdepth: 1
+
+   understanding_lasers_ch01_quiz
+   understanding_lasers_ch02_quiz
+   understanding_lasers_ch03_quiz
+   understanding_lasers_ch04_quiz
+   understanding_lasers_ch05_quiz
+   understanding_lasers_ch06_quiz
+   understanding_lasers_ch07_quiz
+   understanding_lasers_ch08_quiz
+   understanding_lasers_ch09_quiz
+   understanding_lasers_ch10_quiz
+   understanding_lasers_ch11_quiz
+   understanding_lasers_ch12_quiz
+   understanding_lasers_ch13_quiz
+   understanding_lasers_ch14_quiz
+
 .. note::
 
    Record the book title, edition, chapter, and exercise number, but write the
@@ -25,4 +45,3 @@ worked solutions are:
 
    writing_a_solution
    thin_lens_image_distance
-   understanding_lasers_ch01_quiz
