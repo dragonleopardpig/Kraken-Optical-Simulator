@@ -14811,6 +14811,29 @@ def phase_334_folded_preview_ray_cap(
     return result
 
 
+def phase_335_mtf_from_image(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """Measure MTF from Image (USAF-1951): the File-menu "Measure MTF from Image..." dialog wraps
+    KrakenOS.USAFMTF -- load a captured raster, DRAW a rectangle over each three-bar element, Compute
+    to fit + plot the MTF curve, Save CSV. Guards the end-to-end analysis through the dialog's exact
+    ROI-dict API (MTF ~1 unblurred, lower blurred) + the menu wiring + the ROI-drawing contract."""
+    result = PhaseResult(name="Phase 335: Measure MTF from a captured USAF-1951 image")
+    try:
+        from KrakenOS.UI.validate_open3d_mtf_from_image import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"MTF-from-image guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("MTF-from-image phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15190,6 +15213,7 @@ def main() -> int:
             phase_332_replace_axis_and_defocus_menu,
             phase_333_replace_step_overlay,
             phase_334_folded_preview_ray_cap,
+            phase_335_mtf_from_image,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

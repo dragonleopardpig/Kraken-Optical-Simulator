@@ -48,6 +48,7 @@ class MainWindowBuilder:
         file_menu.add_command(label="Import Zemax Wavefront Map...", command=self.import_zemax_wavefront_map)
         file_menu.add_command(label="Import Stock Lens...", command=self.open_stock_lens_importer)
         file_menu.add_command(label="Import Optical CAD/STL Solid...", command=self.import_optical_stl_solid)
+        file_menu.add_command(label="Measure MTF from Image...", command=self.open_mtf_from_image_dialog)
         file_menu.add_command(label="Glass Catalog Browser...", command=self.open_glass_catalog_browser)
         file_menu.add_command(label="Save", command=self.save_layout)
         file_menu.add_command(label="Save As", command=self.save_layout_as)

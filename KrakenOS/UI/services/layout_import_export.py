@@ -176,6 +176,13 @@ class LayoutImportExportMixin:
     def open_glass_catalog_browser(self) -> None:
         self._main_glass_catalog_browser_dialog().open_glass_catalog_browser()
 
+    def open_mtf_from_image_dialog(self) -> None:
+        """Measure MTF from a captured USAF-1951 image (KrakenOS.USAFMTF) -- the interactive
+        "draw ROIs on the image" dialog: load a raster capture, drag a rectangle over each three-bar
+        element, Compute to fit + plot the MTF curve, Save CSV."""
+        from KrakenOS.UI.panels.mtf_from_image_dialog import open_mtf_from_image_dialog
+        open_mtf_from_image_dialog(self)
+
     @staticmethod
     def _available_zemax_rayfile_path(path: Path) -> Path:
         path = Path(path).expanduser()
