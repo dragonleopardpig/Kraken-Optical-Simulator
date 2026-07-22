@@ -4418,6 +4418,40 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             pass
 
+    def _row_display_world_bounds(self, row_index) -> tuple | None:
+        """Combined world AABB (xmin, xmax, ymin, ymax, zmin, zmax) of the DISPLAYED actors for
+        an editable-row index, from the live rendered scene, or None (bugs/0395). Feeds the
+        lens-swap camera-body clearance the mirror's REAL displayed position -- the promotion
+        metadata (stale on move) and the scene-bundle placement (unfolded/system frame) both
+        misplace it, so the camera never appeared to overlap."""
+        try:
+            target = int(row_index)
+        except Exception:
+            return None
+        keys = [key for key, ri in (self._actor_row_map or {}).items() if ri == target]
+        if not keys:
+            return None
+        mn = [float("inf")] * 3
+        mx = [float("-inf")] * 3
+        found = False
+        for key in keys:
+            actor = self._actor_by_key.get(key)
+            if actor is None:
+                continue
+            try:
+                b = [float(v) for v in actor.GetBounds()]
+            except Exception:
+                continue
+            if len(b) != 6 or b[0] > b[1]:
+                continue
+            for axis, lo, hi in ((0, b[0], b[1]), (1, b[2], b[3]), (2, b[4], b[5])):
+                mn[axis] = min(mn[axis], lo)
+                mx[axis] = max(mx[axis], hi)
+            found = True
+        if not found or not all(np.isfinite(v) for v in (*mn, *mx)):
+            return None
+        return (mn[0], mx[0], mn[1], mx[1], mn[2], mx[2])
+
     def _axial_extent_from_actor_keys(self, actor_keys, axis_unit) -> dict[str, object] | None:
         axis = np.asarray(axis_unit, dtype=float).reshape(-1)[:3]
         norm = float(np.linalg.norm(axis))
@@ -6687,6 +6721,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         NOT replace the working layout, so the inspector is never torn down (no 0294
         use-after-free path). Distinct from Add Imaging Lens (a second lens)."""
         token = self._timing_start("swap_imaging_lens_from_folder")
+        # bugs/0395: capture the upstream element's REAL displayed bounds from the live scene
+        # BEFORE the swap, so the editor's camera-body clearance uses the mirror's true rendered
+        # position (it does not move during a swap). The editor-side promotion metadata / bundle
+        # placement are in stale/unfolded frames.
+        try:
+            rows = getattr(self.editor, "rows", None) or []
+            self.editor._swap_upstream_display_bounds = (
+                self._row_display_world_bounds(len(rows) - 2) if len(rows) >= 3 else None
+            )
+        except Exception:
+            self.editor._swap_upstream_display_bounds = None
         try:
             # bugs/0386: skip the editor-side 2D build+trace -- _apply_model_change below
             # retraces the 3D and marks the 2D stale, so the editor's refresh would be a
@@ -6712,6 +6757,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             raise
         else:
             self._timing_finish(token, status="ok", title=str(model.title))
+        finally:
+            self.editor.__dict__.pop("_swap_upstream_display_bounds", None)
 
     def import_vendor_camera_from_folder(self) -> None:
         """3D CAD menu: ingest a whole vendor *camera* folder -- register its

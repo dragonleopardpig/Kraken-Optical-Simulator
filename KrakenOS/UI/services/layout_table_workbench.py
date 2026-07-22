@@ -1013,9 +1013,26 @@ class LayoutTableWorkbenchMixin:
         dbg["cam_reason"] = cam_reason
         dbg["cam_bounds"] = [round(v, 2) for v in cam_bounds] if cam_bounds else None
         upstream_index = len(rows) - 2
-        live_center = self._promoted_solid_current_center(upstream_index)
-        dbg["obstacle_center_source"] = "live_bundle" if live_center is not None else "stale_promotion"
-        obstacle_bounds = self._promoted_solid_world_bounds(rows[-2], row_index=upstream_index)
+        # Prefer the REAL displayed AABB the inspector captured from the live rendered actor
+        # (bugs/0395): the promotion metadata (stale once moved) and the scene-bundle
+        # placement (an unfolded/system frame) both put the mirror in the WRONG place, so the
+        # camera never appeared to overlap. The mirror does not move during a swap, so the
+        # pre-swap actor bounds are its live displayed position.
+        injected = getattr(self, "_swap_upstream_display_bounds", None)
+        obstacle_bounds = None
+        if injected is not None:
+            try:
+                candidate = tuple(float(v) for v in injected)
+                if len(candidate) == 6 and candidate[0] <= candidate[1]:
+                    obstacle_bounds = candidate
+            except Exception:
+                obstacle_bounds = None
+        if obstacle_bounds is not None:
+            dbg["obstacle_center_source"] = "inspector_actor"
+        else:
+            live_center = self._promoted_solid_current_center(upstream_index)
+            dbg["obstacle_center_source"] = "live_bundle" if live_center is not None else "stale_promotion"
+            obstacle_bounds = self._promoted_solid_world_bounds(rows[-2], row_index=upstream_index)
         dbg["obstacle_bounds"] = [round(v, 2) for v in obstacle_bounds] if obstacle_bounds else None
         leg = self._folded_leg_axis_unit()
         dbg["leg"] = [round(v, 3) for v in leg] if leg else None

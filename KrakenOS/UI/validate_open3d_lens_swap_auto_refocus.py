@@ -214,6 +214,28 @@ def run_checks() -> tuple[bool, list[str]]:
     if not (ob and abs(ob[0] - 223.5) < 0.6 and abs(ob[5] - 65.5) < 0.6):
         failures.append(f"live-centre: re-centred obstacle bounds must match the real mirror; got {ob}")
 
+    # 9. bugs/0395: the inspector injects the mirror's REAL DISPLAYED actor bounds, which
+    # OVERRIDE the promotion metadata AND the scene-bundle placement (both in stale/unfolded
+    # frames on the live flag). This is the actual position the camera crashes into.
+    ed_inj = _editor(list(rows8))
+    ed_inj._camera_body_world_bounds = lambda: (CAM_CUR, "ok")
+    ed_inj._folded_leg_axis_unit = lambda: LEG_Z
+    ed_inj._current_camera_record = lambda: {"x": 1}
+    # even with a (wrong) live-bundle placement present, the injected displayed bounds win
+    ed_inj._last_scene_bundle = SimpleNamespace(placements=[
+        SimpleNamespace(source_kind="optical_solid", row_index=len(ed_inj.rows) - 2,
+                        center_world=[471.0, 0.0, -183.0])])  # the wrong unfolded-frame centre
+    ed_inj._swap_upstream_display_bounds = (223.3, 248.6, -12.7, 12.7, 40.4, 65.7)  # real actor
+    d_inj = ed_inj._swap_camera_body_clearance_deficit()
+    dbg_inj = getattr(ed_inj, "_swap_clearance_debug", {}) or {}
+    if dbg_inj.get("obstacle_center_source") != "inspector_actor":
+        failures.append(f"inject: injected displayed bounds must win; source={dbg_inj.get('obstacle_center_source')}")
+    if not (12.0 < d_inj < 13.5):
+        failures.append(f"inject: real displayed mirror bounds must give ~12.6mm; got {d_inj}")
+    ob_inj = dbg_inj.get("obstacle_bounds") or []
+    if not (ob_inj and abs(ob_inj[0] - 223.3) < 0.2 and abs(ob_inj[5] - 65.7) < 0.2):
+        failures.append(f"inject: obstacle must equal the injected displayed bounds; got {ob_inj}")
+
     return (not failures), failures
 
 
