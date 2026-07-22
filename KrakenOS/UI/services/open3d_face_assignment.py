@@ -374,6 +374,13 @@ class Open3DFaceAssignmentService:
                             face_id=picked_face_id,
                         ),
                     )
+            # bugs/0406: replace an imported STEP OVERLAY (camera / BS / LED / optical) in place --
+            # swap its geometry for a new STEP file, keeping the pose (the camera/BS half of the
+            # "delete/import on the spot" ask; the promoted-solid half is the row menu's "Replace STEP...").
+            menu.add_command(
+                label=f"Replace {display} STEP...",
+                command=lambda picked_label=step_label: self._replace_step_overlay_from_context(picked_label),
+            )
             menu.add_separator()
             menu.add_command(
                 label="Center Picked Face -> Optical Axis",
@@ -919,6 +926,26 @@ class Open3DFaceAssignmentService:
             return
         self._debug_trace("hide_step_overlay_from_context", label=label)
         self.status_var.set(f"Hid {display} STEP. Re-show it from the Scene Components panel.")
+
+    def _replace_step_overlay_from_context(self, step_label: str) -> None:
+        """Right-click "Replace {label} STEP...": swap an imported STEP overlay's geometry for a
+        newly chosen STEP file AT THE SAME pose (bugs/0406 -- the camera/BS/LED half of replace-in-
+        place; the promoted-solid half is the row menu's "Replace STEP...")."""
+        try:
+            le = _layout_module()
+            display = self.editor._step_overlay_display_label(step_label)
+            path = self.editor._ask_step_file(
+                f"Replace {display} STEP", le.ATTACHMENT_DIR, parent=self._inspector
+            )
+            if path is None:
+                return
+            self.editor.replace_imported_step_overlay(step_label, path)
+        except Exception as exc:
+            self.editor.append_debug(f"Replace {step_label} STEP failed: {exc}")
+            try:
+                self.editor.status_var.set(f"Replace STEP failed: {exc}")
+            except Exception:
+                pass
 
     def _promote_step_from_context(self, label: str) -> None:
         le = _layout_module()

@@ -1720,6 +1720,16 @@ class ScenePlacementMixin:
             refresh_open_3d=refresh_open_3d,
         )
 
+    def replace_imported_step_overlay(
+        self, label: str, new_step_path, *, refresh_open_3d: bool = True
+    ) -> Path | None:
+        # bugs/0406: "Replace {Camera/BS/LED} STEP..." on an imported OVERLAY invokes this on the
+        # editor -- it MUST have an explicit wrapper delegating to the service or the right-click
+        # falls through tkinter __getattr__ and no-ops (reference_editor_mixin_service_wrappers).
+        return self._step_overlay_import_service().replace_imported_step_overlay(
+            label, new_step_path, refresh_open_3d=refresh_open_3d
+        )
+
     def _default_led_object_edge_distance(self) -> float:
         lens_front_z = max(float(self._lens_front_datum_z()), 0.0)
         if lens_front_z <= 1e-9:

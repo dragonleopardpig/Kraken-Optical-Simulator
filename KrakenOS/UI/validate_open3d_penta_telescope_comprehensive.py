@@ -14761,6 +14761,30 @@ def phase_332_replace_axis_and_defocus_menu(
     return result
 
 
+def phase_333_replace_step_overlay(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0406 -- Replace an imported STEP OVERLAY (camera / BS / LED / optical) in place: right-click
+    -> "Replace ... STEP..." swaps its geometry for a new STEP file while PRESERVING the pose + glue
+    (the pose-keeping counterpart to a fresh import, which resets the pose). The camera/BS half of
+    replace-in-place (the promoted-solid half is 0404). Guards pose preservation (behavioural stub),
+    the no-op guard, the editor mixin wrapper, and the menu."""
+    result = PhaseResult(name="Phase 333: Replace imported STEP overlay in place")
+    try:
+        from KrakenOS.UI.validate_open3d_replace_step_overlay import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"replace-step-overlay guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("replace-step-overlay phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15138,6 +15162,7 @@ def main() -> int:
             phase_330_source_panel_into_manager,
             phase_331_replace_promoted_solid,
             phase_332_replace_axis_and_defocus_menu,
+            phase_333_replace_step_overlay,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

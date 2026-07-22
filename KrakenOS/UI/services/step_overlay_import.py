@@ -302,6 +302,54 @@ class StepOverlayImportService:
             self._refresh_open_3d_views(step_label="led")
         return path
 
+    def replace_imported_step_overlay(
+        self, label: str, new_step_path, *, refresh_open_3d: bool = True
+    ) -> Path | None:
+        """bugs/0406: REPLACE an imported STEP OVERLAY's geometry IN PLACE with a new STEP file,
+        PRESERVING its pose (rotation / axis offset / placement offset) and glue -- the pose-keeping
+        counterpart to a fresh import (which RESETS the pose). This is the camera / BS / LED half of
+        the user's "delete/import on the spot" ask (the promoted-solid half is bugs/0404). A camera
+        replacement additionally re-couples the surrogate sensor if the new STEP is a recognised
+        vendor camera (that's the point of swapping a vendor camera). No-op when no STEP of that
+        label is imported."""
+        label = str(label).strip().lower()
+        if label not in STEP_OVERLAY_LABEL_SET:
+            return None
+        if not getattr(self, f"imported_{label}_step_path", None):
+            self.status_var.set(f"Replace STEP: no {label} STEP is imported to replace.")
+            return None
+        try:
+            new_path = Path(str(new_step_path)).expanduser()
+        except Exception:
+            return None
+        if not new_path.exists():
+            self.status_var.set(f"Replace STEP: file not found -- {new_path}")
+            return None
+        self._begin_history_capture()
+        setattr(self, f"imported_{label}_step_path", new_path)
+        # pose (rotation / axis offset / placement offset) + glue are PRESERVED -- NOT reset (this is
+        # exactly how Swap Imaging Lens keeps a swapped lens where the user aligned it, vs a fresh
+        # import that zeroes the pose).
+        self._selected_step_label = label
+        coupled_model = None
+        if label == "camera" and hasattr(self, "_couple_camera_model_from_step"):
+            coupled_model = self._couple_camera_model_from_step(new_path)
+        self._open3d_trace_refresh_service().clear_step_overlay_physics_preview(label)
+        self._commit_history_capture()
+        self._live_step_overlay_trace_plan_cache = {}
+        self._invalidate_preview_scene_trace()
+        sensor_note = f"; recognised {coupled_model}, sensor synced" if coupled_model else ""
+        self.status_var.set(
+            f"Replaced {self._step_overlay_display_label(label).upper()} STEP with {new_path.name} "
+            f"(pose kept){sensor_note}."
+        )
+        if refresh_open_3d:
+            if label == "camera":
+                self._refresh_open_3d_views(camera_only=True)
+            else:
+                self._refresh_open_3d_views(step_label=label)
+        return new_path
+
     @staticmethod
     def _step_overlay_display_label(label: str) -> str:
         label = str(label).strip().lower()
