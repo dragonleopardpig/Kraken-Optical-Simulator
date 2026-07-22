@@ -193,6 +193,69 @@ def coaxial_illuminator_descriptor(spec: object) -> dict[str, object] | None:
     }
 
 
+# bugs/0401: user-selectable illumination edge profile for a coaxial LED illuminator.
+# The kernel (source_object_coupling._aperture_soft_edge) already does a raised-cosine roll-off
+# over a ``penumbra_mm`` band; this maps a named profile + edge-width text onto that penumbra so
+# the user can pick "flat top with a slow rising edge" and dial the softness (e.g. the ~2 mm
+# dark edge on MV-150), all through the existing ``coaxial_penumbra_mm`` spec key.
+COAXIAL_EDGE_PROFILE_SOFT = "Flat-top, soft edge"
+COAXIAL_EDGE_PROFILE_SHARP = "Uniform, sharp edge"
+COAXIAL_EDGE_PROFILES = (COAXIAL_EDGE_PROFILE_SOFT, COAXIAL_EDGE_PROFILE_SHARP)
+_COAXIAL_SHARP_PENUMBRA_MM = 0.01  # a sub-bin band -> effectively a hard step
+
+
+def coaxial_edge_penumbra_mm(profile: object, edge_width_text: object) -> float:
+    """Map a UI (profile, edge-width text) onto ``coaxial_penumbra_mm`` (bugs/0401).
+
+    - a SHARP/uniform profile -> a sub-bin penumbra (a hard flat-top step);
+    - a SOFT profile with "Auto"/blank width -> 0.0, which the descriptor reads as None so the
+      kernel falls back to its automatic ~6%-of-aperture soft edge;
+    - a SOFT profile with a positive number -> that width in mm (e.g. 2.0 to calibrate MV-150).
+
+    Returns the value to store as ``coaxial_penumbra_mm`` (0.0 == "auto"; the descriptor's
+    ``> 0`` test then decides used-vs-auto). Invalid width text falls back to auto (0.0).
+    """
+    name = str(profile or "").strip().lower()
+    if name.startswith(("uniform", "sharp", "hard")):
+        return float(_COAXIAL_SHARP_PENUMBRA_MM)
+    text = str(edge_width_text or "").strip().lower()
+    if text in ("", "auto"):
+        return 0.0
+    try:
+        width = float(text)
+    except (TypeError, ValueError):
+        return 0.0
+    return width if (width > 0.0 and width < 1.0e6) else 0.0
+
+
+def coaxial_edge_profile_and_width(spec: object) -> "tuple[str, str]":
+    """Recover the (profile label, edge-width text) to seed the edit dialog from a source spec.
+
+    Inverse of ``coaxial_edge_penumbra_mm``: an explicit stored ``coaxial_edge_profile`` wins;
+    otherwise infer from the stored ``coaxial_penumbra_mm`` (sub-bin -> Sharp; a real width ->
+    Soft with that width; 0/unset -> Soft/Auto)."""
+    settings = spec if isinstance(spec, dict) else getattr(spec, "settings", None)
+    if not isinstance(settings, dict):
+        return COAXIAL_EDGE_PROFILE_SOFT, "Auto"
+    stored_profile = str(settings.get("coaxial_edge_profile", "") or "").strip()
+    raw = settings.get("coaxial_penumbra_mm", settings.get("penumbra_mm", None))
+    try:
+        penumbra = float(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        penumbra = None
+    if stored_profile in COAXIAL_EDGE_PROFILES:
+        if stored_profile == COAXIAL_EDGE_PROFILE_SHARP:
+            return COAXIAL_EDGE_PROFILE_SHARP, "Auto"
+        width = "Auto" if (penumbra is None or penumbra <= _COAXIAL_SHARP_PENUMBRA_MM) else f"{penumbra:.4g}"
+        return COAXIAL_EDGE_PROFILE_SOFT, width
+    # infer
+    if penumbra is not None and 0.0 < penumbra <= _COAXIAL_SHARP_PENUMBRA_MM:
+        return COAXIAL_EDGE_PROFILE_SHARP, "Auto"
+    if penumbra is not None and penumbra > _COAXIAL_SHARP_PENUMBRA_MM:
+        return COAXIAL_EDGE_PROFILE_SOFT, f"{penumbra:.4g}"
+    return COAXIAL_EDGE_PROFILE_SOFT, "Auto"
+
+
 def scene_source_spec_couples_to_imaging_launch(spec: object) -> bool:
     """Return whether an illumination source bounds the object-driven imaging launch.
 

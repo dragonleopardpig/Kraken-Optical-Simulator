@@ -1102,6 +1102,8 @@ class SourceModelingMixin:
         "source_x", "source_y", "source_z", "source_l", "source_m", "source_n",
         "radius_x", "radius_y", "radius",
         "cone_deg", "ray_count", "power", "enabled",
+        # bugs/0401: coaxial-illuminator edge profile (drives the object-plane footprint soft edge).
+        "coaxial_edge_profile", "coaxial_penumbra_mm",
     )
 
     def update_scene_source_spec(

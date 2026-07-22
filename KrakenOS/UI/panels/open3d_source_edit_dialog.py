@@ -63,6 +63,18 @@ def open_scene_source_edit_dialog(editor, inspector, source_id: str) -> None:
     width = 2.0 * _flt("radius_x", _flt("radius", 5.0))
     height = 2.0 * _flt("radius_y", _flt("radius", 5.0))
 
+    # bugs/0401: a coaxial-LED illuminator gets an extra illumination-edge PROFILE control
+    # (flat-top soft edge vs uniform sharp edge, with a calibratable edge width) that drives
+    # the object-plane footprint's soft edge. Only shown for a coaxial source; harmless else.
+    from KrakenOS.UI.scene_source_analysis import (
+        COAXIAL_EDGE_PROFILES,
+        COAXIAL_ILLUMINATOR_KEY,
+        coaxial_edge_penumbra_mm,
+        coaxial_edge_profile_and_width,
+    )
+    is_coaxial = bool(spec.get(COAXIAL_ILLUMINATOR_KEY, False))
+    seed_profile, seed_edge = coaxial_edge_profile_and_width(spec)
+
     dialog = tk.Toplevel(inspector)
     dialog.title(f"Edit Source — {spec.get('name', source_id)}")
     dialog.transient(inspector)
@@ -90,9 +102,25 @@ def open_scene_source_edit_dialog(editor, inspector, source_id: str) -> None:
         entries[key] = var
         ttk.Entry(frame, textvariable=var, width=18).grid(row=i, column=1, sticky="ew", pady=1, padx=(8, 0))
 
+    next_row = len(rows)
+    profile_var: tk.StringVar | None = None
+    edge_var: tk.StringVar | None = None
+    if is_coaxial:
+        ttk.Label(frame, text="Illumination edge").grid(row=next_row, column=0, sticky="w", pady=(7, 1))
+        profile_var = tk.StringVar(value=seed_profile)
+        ttk.Combobox(
+            frame, textvariable=profile_var, values=list(COAXIAL_EDGE_PROFILES),
+            state="readonly", width=16,
+        ).grid(row=next_row, column=1, sticky="ew", pady=(7, 1), padx=(8, 0))
+        next_row += 1
+        ttk.Label(frame, text="Edge width (mm)").grid(row=next_row, column=0, sticky="w", pady=1)
+        edge_var = tk.StringVar(value=seed_edge)
+        ttk.Entry(frame, textvariable=edge_var, width=18).grid(row=next_row, column=1, sticky="ew", pady=1, padx=(8, 0))
+        next_row += 1
+
     status = tk.StringVar(value="")
     ttk.Label(frame, textvariable=status, foreground="#b45309").grid(
-        row=len(rows), column=0, columnspan=2, sticky="w", pady=(6, 0)
+        row=next_row, column=0, columnspan=2, sticky="w", pady=(6, 0)
     )
 
     def _apply() -> None:
@@ -115,18 +143,24 @@ def open_scene_source_edit_dialog(editor, inspector, source_id: str) -> None:
             status.set("Width and height must be positive.")
             return
         dl, dm, dn = dl / norm, dm / norm, dn / norm
+        update = {
+            "name": entries["name"].get().strip() or str(source_id),
+            "origin": [ox, oy, oz],
+            "direction": [dl, dm, dn],
+            "source_x": ox, "source_y": oy, "source_z": oz,
+            "source_l": dl, "source_m": dm, "source_n": dn,
+            "radius_x": 0.5 * w, "radius_y": 0.5 * h,
+            "cone_deg": cone, "ray_count": rays, "power": power,
+        }
+        edge_note = ""
+        if is_coaxial and profile_var is not None and edge_var is not None:
+            update["coaxial_edge_profile"] = profile_var.get()
+            update["coaxial_penumbra_mm"] = coaxial_edge_penumbra_mm(profile_var.get(), edge_var.get())
+            edge_note = f"; edge {profile_var.get()}"
         ok = editor.update_scene_source_spec(
             str(source_id),
-            {
-                "name": entries["name"].get().strip() or str(source_id),
-                "origin": [ox, oy, oz],
-                "direction": [dl, dm, dn],
-                "source_x": ox, "source_y": oy, "source_z": oz,
-                "source_l": dl, "source_m": dm, "source_n": dn,
-                "radius_x": 0.5 * w, "radius_y": 0.5 * h,
-                "cone_deg": cone, "ray_count": rays, "power": power,
-            },
-            status=f"Updated scene source {source_id} ({w:.4g} x {h:.4g} mm).",
+            update,
+            status=f"Updated scene source {source_id} ({w:.4g} x {h:.4g} mm{edge_note}).",
         )
         if ok:
             dialog.destroy()
@@ -134,7 +168,7 @@ def open_scene_source_edit_dialog(editor, inspector, source_id: str) -> None:
             status.set("Source not found any more -- was it deleted?")
 
     buttons = ttk.Frame(frame)
-    buttons.grid(row=len(rows) + 1, column=0, columnspan=2, sticky="e", pady=(10, 0))
+    buttons.grid(row=next_row + 1, column=0, columnspan=2, sticky="e", pady=(10, 0))
     ttk.Button(buttons, text="Apply", command=_apply).grid(row=0, column=0, padx=(0, 6))
     ttk.Button(buttons, text="Cancel", command=dialog.destroy).grid(row=0, column=1)
     try:

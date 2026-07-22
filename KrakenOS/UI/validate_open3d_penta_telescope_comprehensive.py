@@ -14665,6 +14665,30 @@ def phase_328_rays_off_bodies_only(
     return result
 
 
+def phase_329_coaxial_edge_profile(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0401 -- the coaxial-illuminator edge-profile selector. The Edit Source dialog on a
+    coaxial LED maps a named profile (flat-top soft edge vs uniform sharp edge) + a calibratable
+    edge width onto the ``coaxial_penumbra_mm`` spec key that the kernel's raised-cosine roll-off
+    already consumes. Guards the forward/inverse mapping, the descriptor coupling, and (the
+    0397-class trap) that the two new keys survive ``update_scene_source_spec``'s whitelist."""
+    result = PhaseResult(name="Phase 329: coaxial illuminator edge-profile selector persists")
+    try:
+        from KrakenOS.UI.validate_open3d_coaxial_edge_profile import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"coaxial edge-profile guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("coaxial edge-profile phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15038,6 +15062,7 @@ def main() -> int:
             phase_326_lens_swap_auto_refocus,
             phase_327_folded_vignette_hidden,
             phase_328_rays_off_bodies_only,
+            phase_329_coaxial_edge_profile,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
