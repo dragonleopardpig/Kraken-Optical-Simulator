@@ -26,9 +26,13 @@ still win). So:
   method returns, so it **never leaks**. The analysis modes (spot / heatmap / MTF), which call
   `_current_ray_count` through their **own** sampling paths at other times, keep the user's full density.
 
-`_folded_preview_ray_count_cap()` returns `min(user_ray_count, 15)` — it **only lowers**, never raises a
+`_folded_preview_ray_count_cap()` returns `min(user_ray_count, 10)` — it **only lowers**, never raises a
 user who already set a low count. Tunable for the eyeball via `KRAKEN_FOLDED_PREVIEW_RAY_CAP` (higher =
 denser + slower).
+
+**Default calibrated in-app (`flag_20260722_162155`):** cap 15 gave **2475 rays / ~20 s** on the AZ85
+folded scene (down from ~6K rays / ~60 s at full density). The fan scales ~quadratically with the cap,
+so the user picked ~9 s → **default cap = 10** (~1100 rays).
 
 ## Verification (`validate_open3d_folded_preview_ray_cap`, penta phase 334)
 
@@ -48,9 +52,10 @@ denser + slower).
 
 ## In-app eyeball still owed
 
-On the AZ85 folded scene with Ray On: the 3D preview traces a **sparse** ray fan in a few seconds
-instead of ~30 s. The fan is visibly thinner — if you want it denser, raise
-`KRAKEN_FOLDED_PREVIEW_RAY_CAP` (default 15). Spot / heatmap / MTF analyses are unchanged (full density).
+On the AZ85 folded scene with Ray On: the 3D preview traces a **sparse** ray fan in ~9 s instead of
+~60 s (confirmed 20 s at cap 15; ~9 s at the calibrated default cap 10). The fan is visibly thinner — if
+you want it denser, raise `KRAKEN_FOLDED_PREVIEW_RAY_CAP` (default 10). Spot / heatmap / MTF analyses are
+unchanged (full density).
 
 ## Scope / next
 

@@ -713,7 +713,9 @@ class ThreeDSceneToolsMixin:
         user's real ray count."""
         import os
 
-        cap = 15
+        # bugs/0410: default calibrated in-app -- cap 15 gave 2475 rays / ~20 s on the AZ85 folded
+        # scene; the user picked ~9 s, so cap 10 (~1100 rays, rays scale ~quadratically with the cap).
+        cap = 10
         env = os.environ.get("KRAKEN_FOLDED_PREVIEW_RAY_CAP")
         if env:
             try:

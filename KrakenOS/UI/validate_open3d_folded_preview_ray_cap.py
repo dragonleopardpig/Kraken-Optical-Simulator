@@ -48,8 +48,8 @@ class _Stub:
 
 
 def _check_cap_logic(failures, notes):
-    if _Stub(45)._folded_preview_ray_count_cap() != 15:
-        failures.append("CAP-LOGIC: a high user ray count must cap to the sparse preview count (15)")
+    if _Stub(45)._folded_preview_ray_count_cap() != 10:
+        failures.append("CAP-LOGIC: a high user ray count must cap to the sparse preview count (10, ~9s)")
     if _Stub(8)._folded_preview_ray_count_cap() != 8:
         failures.append("CAP-LOGIC: a low user ray count must NOT be raised (cap only lowers)")
     if _Stub(45)._current_ray_count() != 45:
