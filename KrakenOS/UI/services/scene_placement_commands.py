@@ -3301,6 +3301,17 @@ class ScenePlacementMixin:
             int(row_index), refresh_open_3d=refresh_open_3d
         )
 
+    def replace_promoted_optical_solid_step(
+        self, row_index: int, new_step_path, *, refresh_open_3d: bool = True
+    ) -> dict[str, object] | None:
+        # bugs/0404: "Replace STEP..." on a promoted optical solid (the RA-mirror replace-in-place)
+        # invokes this on the EDITOR. Like promote_/unpromote_ above it MUST have an explicit wrapper
+        # that delegates to the service, or the call falls through tkinter's __getattr__ and
+        # AttributeErrors so the right-click silently no-ops (reference_editor_mixin_service_wrappers).
+        return self._step_overlay_promotion_service().replace_promoted_optical_solid_step(
+            int(row_index), new_step_path, refresh_open_3d=refresh_open_3d
+        )
+
     def promote_imported_step_to_native_surface_rows(
         self,
         label: str,

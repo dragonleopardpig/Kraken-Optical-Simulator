@@ -14714,6 +14714,30 @@ def phase_330_source_panel_into_manager(
     return result
 
 
+def phase_331_replace_promoted_solid(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0404 -- Replace a promoted optical solid (e.g. an RA fold mirror) IN PLACE with a new
+    STEP file: right-click -> "Replace STEP...". The replacement lands at the SAME pose and the old
+    solid's authored face functions (Mirror, ...) are re-applied by face id / normal+area geometry;
+    an unmatched function is reported for manual re-flag, never mis-assigned. Guards the pure
+    face-rematcher, the capture-before-unpromote ordering, the editor mixin wrapper, and the menu."""
+    result = PhaseResult(name="Phase 331: Replace promoted optical solid in place")
+    try:
+        from KrakenOS.UI.validate_open3d_replace_promoted_solid import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"replace-promoted-solid guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("replace-promoted-solid phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15089,6 +15113,7 @@ def main() -> int:
             phase_328_rays_off_bodies_only,
             phase_329_coaxial_edge_profile,
             phase_330_source_panel_into_manager,
+            phase_331_replace_promoted_solid,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

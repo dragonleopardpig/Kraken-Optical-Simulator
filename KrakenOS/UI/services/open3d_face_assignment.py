@@ -737,6 +737,10 @@ class Open3DFaceAssignmentService:
                 )
                 if self._row_has_step_overlay_promotion(row_index):
                     menu.add_command(
+                        label="Replace STEP...",
+                        command=lambda idx=row_index: self._replace_step_solid_from_context(idx),
+                    )
+                    menu.add_command(
                         label="Unpromote to STEP overlay",
                         command=lambda idx=row_index: self._unpromote_step_solid_from_context(idx),
                     )
@@ -749,6 +753,10 @@ class Open3DFaceAssignmentService:
                 return True
             if self.editor._is_any_promoted_optical_solid_row(rows[row_index]):
                 if self._row_has_step_overlay_promotion(row_index):
+                    menu.add_command(
+                        label="Replace STEP...",
+                        command=lambda idx=row_index: self._replace_step_solid_from_context(idx),
+                    )
                     menu.add_command(
                         label="Unpromote to STEP overlay",
                         command=lambda idx=row_index: self._unpromote_step_solid_from_context(idx),
@@ -992,6 +1000,25 @@ class Open3DFaceAssignmentService:
             self.editor.append_debug(f"Unpromote of S{row_index} failed: {exc}")
             try:
                 self.editor.status_var.set(f"Unpromote failed: {exc}")
+            except Exception:
+                pass
+
+    def _replace_step_solid_from_context(self, row_index: int) -> None:
+        """Right-click "Replace STEP...": swap a promoted optical solid's geometry for a
+        newly chosen STEP file AT THE SAME pose, re-applying the authored face functions
+        (bugs/0404 -- the "delete/import the RA mirror on the spot" ask)."""
+        try:
+            le = _layout_module()
+            path = self.editor._ask_step_file(
+                "Replace optical solid STEP", le.ATTACHMENT_DIR, parent=self._inspector
+            )
+            if path is None:
+                return
+            self.editor.replace_promoted_optical_solid_step(int(row_index), path)
+        except Exception as exc:
+            self.editor.append_debug(f"Replace STEP of S{row_index} failed: {exc}")
+            try:
+                self.editor.status_var.set(f"Replace STEP failed: {exc}")
             except Exception:
                 pass
 

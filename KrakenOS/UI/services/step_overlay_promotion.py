@@ -9,8 +9,10 @@ import hashlib
 import numpy as np
 
 from KrakenOS.UI.optical_solid_metadata import (
+    OPTICAL_SOLID_FACE_FUNCTION_DEFAULT,
     OPTICAL_SOLID_FACES_ADVANCED_ATTR,
     normalize_optical_solid_face_metadata,
+    optical_solid_face_function_display,
 )
 from KrakenOS.UI.scene_placement import SCENE_PLACEMENT_ADVANCED_ATTR, normalize_scene_placement_settings
 from KrakenOS.UI.services import cad_cache_paths
@@ -189,6 +191,87 @@ def _refine_face_normals_from_mesh(
         if "normal_metadata" not in f:
             f["normal_metadata"] = list(f.get("normal") or [])
         f["normal"] = [float(outward[0]), float(outward[1]), float(outward[2])]
+
+
+def plan_face_reassignments_for_replace(
+    old_faces: list[dict[str, Any]],
+    new_faces: list[dict[str, Any]],
+) -> tuple[list[tuple[str, str]], list[str]]:
+    """bugs/0404: plan how to re-apply an old promoted solid's AUTHORED face functions onto a
+    replacement solid's faces (Replace-in-place). Pure + display-free.
+
+    Returns ``(plan, unmatched)`` where ``plan`` is a list of ``(new_face_id, function_ui_label)``
+    to feed ``assign_optical_solid_face_function``, and ``unmatched`` is a list of UI-label functions
+    that had no confident target on the replacement (the caller reports these for a manual re-flag).
+
+    Only faces whose function differs from the promote default (i.e. the user authored them -- a
+    Mirror, TIR, Beam Splitter, ...) are carried; plain default faces are left to the fresh promote.
+    Each authored old face is matched to a new face by, in order:
+      1. exact ``face_id`` (the SAME part, re-imported) with an area cross-check;
+      2. geometry -- the unclaimed new face whose outward normal best aligns (dot >= 0.7) and whose
+         area is closest in ratio; a same-signed dominant-axis normal + comparable area is the RA
+         mirror's reflecting hypotenuse. A face already claimed by an earlier function is skipped so
+         two authored faces never collapse onto one.
+    No confident match -> the function is reported unmatched, never mis-assigned onto a wrong face."""
+    authored = [
+        f for f in (old_faces or [])
+        if str(f.get("function", "") or "") not in ("", OPTICAL_SOLID_FACE_FUNCTION_DEFAULT)
+    ]
+    new_list = [f for f in (new_faces or []) if str(f.get("face_id", "") or "").strip()]
+    plan: list[tuple[str, str]] = []
+    unmatched: list[str] = []
+    claimed: set[str] = set()
+
+    def _area(face: dict[str, Any]) -> float:
+        try:
+            return max(float(face.get("area_mm2", 0.0) or 0.0), 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _normal(face: dict[str, Any]) -> np.ndarray:
+        try:
+            vec = np.asarray(face.get("normal", (0.0, 0.0, 1.0)), dtype=float).reshape(-1)[:3]
+        except Exception:
+            return np.asarray((0.0, 0.0, 1.0))
+        norm = float(np.linalg.norm(vec))
+        return vec / norm if norm > 1e-9 else np.asarray((0.0, 0.0, 1.0))
+
+    new_by_id = {str(f.get("face_id", "") or "").strip(): f for f in new_list}
+    for old in authored:
+        function_ui = optical_solid_face_function_display(old.get("function"))
+        old_id = str(old.get("face_id", "") or "").strip()
+        old_area = _area(old)
+        # 1) exact id (same re-imported part) with an area cross-check
+        target = new_by_id.get(old_id)
+        if (
+            target is not None
+            and old_id not in claimed
+            and (old_area <= 0.0 or abs(old_area - _area(target)) <= max(1.0, 0.05 * old_area))
+        ):
+            plan.append((old_id, function_ui))
+            claimed.add(old_id)
+            continue
+        # 2) geometry: best unclaimed new face by normal alignment, tie-broken by area closeness
+        old_n = _normal(old)
+        best_id, best_score = None, -1.0
+        for new in new_list:
+            nid = str(new.get("face_id", "") or "").strip()
+            if not nid or nid in claimed:
+                continue
+            align = float(abs(np.dot(old_n, _normal(new))))  # abs: normals may flip on re-import
+            if align < 0.7:
+                continue
+            na = _area(new)
+            area_close = 1.0 - min(abs(old_area - na) / max(old_area, na, 1.0), 1.0)
+            score = align + 0.5 * area_close
+            if score > best_score:
+                best_id, best_score = nid, score
+        if best_id is not None:
+            plan.append((best_id, function_ui))
+            claimed.add(best_id)
+        else:
+            unmatched.append(function_ui)
+    return plan, unmatched
 
 
 def _auto_assign_lens_face_functions(faces: list[dict[str, Any]]) -> int:
@@ -1471,6 +1554,108 @@ class StepOverlayPromotionService:
         if refresh_open_3d:
             self._refresh_open_3d_views(step_label=label)
         return {"label": label, "removed_row_index": idx, "placement_offset_xyz": new_place}
+
+    def replace_promoted_optical_solid_step(
+        self, row_index: int, new_step_path, *, refresh_open_3d: bool = True
+    ) -> dict | None:
+        """bugs/0404: REPLACE a promoted optical solid's geometry IN PLACE with a new STEP file
+        (the user's "delete/import the RA mirror on the spot" ask). Right-click a promoted solid
+        -> "Replace STEP...". The replacement lands at the SAME scene pose (the overlay pose is
+        PRESERVED, exactly like Swap Imaging Lens keeps a swapped lens where the user aligned it),
+        and the old solid's AUTHORED face functions (Mirror, TIR, ...) are re-applied to the
+        matching faces of the replacement -- by face id when it's the same part re-imported, else
+        by normal+area geometry. A function with no confident target is reported for a manual
+        re-flag, never mis-assigned. No-op for a row that was not promoted from a STEP overlay.
+
+        Composed from the tested unpromote + promote ops, so each is a separate history step
+        (undo unwinds the replace in stages). Returns a summary dict, or None on failure/cancel."""
+        try:
+            idx = int(row_index)
+            row = self.rows[idx]
+        except Exception:
+            return None
+        advanced = getattr(row, "advanced", {}) or {}
+        promo = advanced.get("StepOverlayPromotion") if isinstance(advanced, dict) else None
+        if not isinstance(promo, dict):
+            self.status_var.set("Replace STEP: this row was not promoted from a STEP overlay.")
+            return None
+        label = str(promo.get("step_label", "optical") or "optical").strip().lower()
+        if label not in STEP_OVERLAY_LABEL_SET:
+            self.status_var.set("Replace STEP: unsupported promoted-solid label.")
+            return None
+        try:
+            new_path = Path(str(new_step_path)).expanduser()
+        except Exception:
+            return None
+        if not new_path.exists():
+            self.status_var.set(f"Replace STEP: file not found -- {new_path}")
+            return None
+
+        # 1) capture the old solid's authored face functions BEFORE unpromote deletes the row.
+        old_meta = normalize_optical_solid_face_metadata(
+            advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {})
+        )
+        old_faces = list(old_meta.get("faces", []) or [])
+
+        # 2) unpromote -> the overlay is restored at the solid's CURRENT (possibly slid) pose.
+        if self.unpromote_optical_solid_to_overlay(idx, refresh_open_3d=False) is None:
+            self.status_var.set("Replace STEP: could not unpromote the current solid.")
+            return None
+
+        # 3) swap the overlay's STEP path to the replacement, PRESERVING the pose the unpromote
+        #    just restored (rotation / axis offset / placement offset are left untouched) + mirror
+        #    the import-time cache invalidation so the new geometry actually loads.
+        setattr(self, f"imported_{label}_step_path", new_path)
+        self._live_step_overlay_trace_plan_cache = {}
+        try:
+            self._open3d_trace_refresh_service().clear_step_overlay_physics_preview(label)
+        except Exception:
+            pass
+        self._invalidate_preview_scene_trace()
+
+        # 4) re-promote the replacement at the same pose.
+        result = self.promote_imported_step_to_optical_solid_row(
+            label, open_face_editor=False, refresh_open_3d=False
+        )
+        if not isinstance(result, dict) or "row_index" not in result:
+            self.status_var.set("Replace STEP: re-promotion of the replacement failed.")
+            return None
+        new_row_index = int(result["row_index"])
+
+        # 5) re-apply the captured authored face functions onto the replacement's faces.
+        new_adv = getattr(self.rows[new_row_index], "advanced", {}) or {}
+        new_meta = normalize_optical_solid_face_metadata(
+            new_adv.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {})
+        )
+        new_faces = list(new_meta.get("faces", []) or [])
+        plan, unmatched = plan_face_reassignments_for_replace(old_faces, new_faces)
+        applied = 0
+        for face_id, function_ui in plan:
+            try:
+                self.assign_optical_solid_face_function(new_row_index, face_id, function_ui)
+                applied += 1
+            except Exception:
+                unmatched.append(function_ui)
+
+        if unmatched:
+            self.status_var.set(
+                f"Replaced {label.upper()} solid at S{new_row_index} with {new_path.name}; "
+                f"re-applied {applied} face function(s). Assign manually in the Face Editor: "
+                f"{', '.join(sorted(set(unmatched)))}."
+            )
+        else:
+            self.status_var.set(
+                f"Replaced {label.upper()} solid at S{new_row_index} with {new_path.name}; "
+                f"re-applied {applied} authored face function(s)."
+            )
+        if refresh_open_3d:
+            self._refresh_open_3d_views(step_label=label)
+        return {
+            "label": label,
+            "row_index": new_row_index,
+            "applied": applied,
+            "unmatched": unmatched,
+        }
 
     def _cache_promoted_step_body_mesh(
         self,
