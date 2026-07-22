@@ -14859,6 +14859,30 @@ def phase_336_lens_step_datum_attached(
     return result
 
 
+def phase_337_context_menu_no_flash(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0413 -- a 3D right-click context menu must not flash-and-disappear on post. tk_popup grabs
+    pointer+focus; releasing the grab synchronously lets focus bounce off the just-posted menu on a
+    focus-follows-mouse WM, and Tk's built-in Menu <FocusOut> auto-unposts it. Fix = hold the grab a
+    short settle window (focus stays pinned) + ignore a <FocusOut> inside that window; <Unmap> (entry
+    invoke, bugs/0348) stays unguarded. Guards the deferred release + the focus-out grace."""
+    result = PhaseResult(name="Phase 337: 3D right-click menu does not flash-and-disappear on post")
+    try:
+        from KrakenOS.UI.validate_open3d_context_menu_no_flash import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"context-menu-no-flash guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("context-menu-no-flash phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15240,6 +15264,7 @@ def main() -> int:
             phase_334_folded_preview_ray_cap,
             phase_335_mtf_from_image,
             phase_336_lens_step_datum_attached,
+            phase_337_context_menu_no_flash,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

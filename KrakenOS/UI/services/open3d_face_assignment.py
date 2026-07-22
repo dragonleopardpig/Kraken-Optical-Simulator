@@ -2,11 +2,29 @@
 
 from __future__ import annotations
 
+import os
+import time
 from typing import Any
 
 import tkinter as tk
 
 import numpy as np
+
+
+# bugs/0413: hold the tk_popup grab this long (ms) before releasing it. tk_popup
+# grabs pointer+focus; releasing it in the same breath lets focus bounce off the
+# just-posted right-click menu on focus-follows-mouse WMs, and Tk's built-in Menu
+# <FocusOut> then auto-unposts it -> the menu "flashes and disappears" the instant
+# it opens. Holding the grab briefly keeps focus on the menu through that post-time
+# churn; afterwards we release it so the bugs/0336 click-on-VTK dismiss still works
+# (a permanently-held grab sticks because VTK swallows the dismiss click). Short
+# enough to be imperceptible. Tunable/zeroable via the env for debugging.
+try:
+    _CONTEXT_MENU_GRAB_SETTLE_MS = max(
+        0, int(os.environ.get("KRAKEN_CONTEXT_MENU_GRAB_SETTLE_MS", "150"))
+    )
+except (TypeError, ValueError):
+    _CONTEXT_MENU_GRAB_SETTLE_MS = 150
 
 
 def _layout_module():
@@ -602,6 +620,21 @@ class Open3DFaceAssignmentService:
                 _dismiss_if_current()
             return None
 
+        # bugs/0413: <FocusOut> is the click-elsewhere-to-another-window dismiss, but
+        # it ALSO fires as pure churn the instant the menu posts (grab_release lets
+        # focus bounce off it on focus-follows-mouse WMs). Ignore a focus-out that
+        # lands within the grab-settle window of posting -- that one is the spurious
+        # post-time bounce, not the user leaving the menu; a genuine later click-away
+        # still dismisses. <Unmap> (a real unpost / an entry-click invoke, bugs/0348)
+        # is deliberately NOT guarded, so menu-entry delivery is untouched.
+        post_ts = time.monotonic()
+        settle_s = _CONTEXT_MENU_GRAB_SETTLE_MS / 1000.0
+
+        def _deferred_dismiss_focus(_event=None):
+            if (time.monotonic() - post_ts) < settle_s:
+                return None
+            return _deferred_dismiss(_event)
+
         if widget is not None:
             try:
                 for sequence in ("<Button-1>", "<Button-2>", "<Button-3>"):
@@ -612,16 +645,29 @@ class Open3DFaceAssignmentService:
         object.__setattr__(self._inspector, "_active_context_menu_binds", bind_ids)
         try:
             menu.bind("<Unmap>", _deferred_dismiss, add="+")
-            menu.bind("<FocusOut>", _deferred_dismiss, add="+")
+            menu.bind("<FocusOut>", _deferred_dismiss_focus, add="+")
         except Exception:
             pass
         try:
             menu.tk_popup(int(event.x_root), int(event.y_root))
         finally:
+            # bugs/0413: defer the grab release by the settle window instead of
+            # dropping it synchronously. Holding tk_popup's grab briefly keeps focus
+            # pinned on the menu through the WM's post-time focus churn, so it stops
+            # "flashing and disappearing"; afterwards the release restores the
+            # bugs/0336 click-on-VTK dismiss. Existence-guarded -- an entry-click
+            # teardown (bugs/0348) may already have destroyed the menu by then.
+            def _release_menu_grab(target=menu):
+                try:
+                    if target.winfo_exists():
+                        target.grab_release()
+                except Exception:
+                    pass
+
             try:
-                menu.grab_release()
+                menu.after(_CONTEXT_MENU_GRAB_SETTLE_MS, _release_menu_grab)
             except Exception:
-                pass
+                _release_menu_grab()
 
     def _dismiss_active_context_menu(self) -> None:
         """Unpost + unbind the currently-live right-click menu, if any (bugs/0336).
