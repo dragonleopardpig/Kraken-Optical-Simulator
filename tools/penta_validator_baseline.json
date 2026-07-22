@@ -335,7 +335,8 @@
     "332": "pass",
     "333": "pass",
     "334": "pass",
-    "335": "pass"
+    "335": "pass",
+    "336": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -671,6 +672,7 @@
     "332": "Replace axis-align + browser defocus snap",
     "333": "Replace imported STEP overlay in place",
     "334": "sparse 3D-preview ray fan on folded/prism scenes",
-    "335": "Measure MTF from a captured USAF-1951 image"
+    "335": "Measure MTF from a captured USAF-1951 image",
+    "336": "lens STEP overlay stays attached to its surrogate (AZ85)"
   }
 }

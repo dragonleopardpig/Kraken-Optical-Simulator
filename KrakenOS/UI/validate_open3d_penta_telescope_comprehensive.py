@@ -14834,6 +14834,31 @@ def phase_335_mtf_from_image(
     return result
 
 
+def phase_336_lens_step_datum_attached(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0412 -- the lens STEP overlay stays ATTACHED to its surrogate on the AZ85 folded scene.
+    The 0374 glass-centre pin aligns the STEP display-only; a layout SAVED pre-0374 carries the old
+    glass-alignment nudge (placement offset = mechanical_front - front_glass_vertex), which the aligner
+    stacks ON TOP of the pin -> double-count -> the STEP detaches by ~its magnitude (ELS-85: 3.849mm).
+    Fix = drop the stale offset (AZ85 glass span == datum span, so the pin lands it exactly). Guards the
+    clean layout + the pin geometry + the additive mechanism."""
+    result = PhaseResult(name="Phase 336: lens STEP overlay stays attached to its surrogate (AZ85)")
+    try:
+        from KrakenOS.UI.validate_open3d_lens_step_datum_attached import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"lens-STEP-datum-attached guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("lens-STEP-datum-attached phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15214,6 +15239,7 @@ def main() -> int:
             phase_333_replace_step_overlay,
             phase_334_folded_preview_ray_cap,
             phase_335_mtf_from_image,
+            phase_336_lens_step_datum_attached,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
