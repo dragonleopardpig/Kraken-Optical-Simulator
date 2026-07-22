@@ -404,6 +404,28 @@ def run_checks() -> tuple[bool, list[str]]:
         f"a tilted MIRROR plate STILL folds the chain, proving the BS skip is surgical (override_keys={mirror_plate_keys})",
     )
 
+    # 2e. bugs/0397 — the real "Add Beam Splitter to LED (plate)" can't rely on the coating
+    #     auto-flag (a plate's LED-matching rotation is baked into the promoted mesh, moving
+    #     the coating off the ~45-deg test). An EXPLICIT StepOverlayPromotion.beam_splitter mark
+    #     (coating-agnostic, and preserved through save/reload) must skip the followers too. A
+    #     plate with NO Beam Splitter coating but the mark must NOT fold; without it, it folds.
+    def _marked_plate_keys(marked: bool) -> list[int]:
+        plate = _tilted_plate_row(OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT)  # no BS coating
+        if marked:
+            plate["advanced"]["StepOverlayPromotion"] = {"beam_splitter": True}
+        obj = {"surface": "Object", "name": "Object", "thickness": 100.0, "diameter": 20.0, "advanced": {}}
+        lens = {"surface": "Standard", "name": "Lens", "glass": "BK7", "thickness": 10.0, "diameter": 30.0, "advanced": {}}
+        img = {"surface": "Image", "name": "Image", "thickness": 0.0, "diameter": 30.0, "advanced": {}}
+        return _override_keys([obj, plate, lens, img])
+    _check(
+        _marked_plate_keys(False) != [],
+        f"an unflagged tilted plate WITHOUT the BS mark folds the chain (the bug) (keys={_marked_plate_keys(False)})",
+    )
+    _check(
+        _marked_plate_keys(True) == [],
+        f"an explicit StepOverlayPromotion.beam_splitter mark skips the followers even with no coating (keys={_marked_plate_keys(True)})",
+    )
+
     # 3. Optional: the user's real saved beam-splitter-cube scene.
     real = _real_prescription_summary()
     if real is None:

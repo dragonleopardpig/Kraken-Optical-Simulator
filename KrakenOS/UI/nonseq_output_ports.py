@@ -422,6 +422,30 @@ def _solid_has_beam_splitter_interaction_face(world_faces: list[dict[str, object
     return _optical_solid_face_function(face) == "Beam Splitter"
 
 
+def _row_is_marked_beam_splitter(row) -> bool:
+    """True when a row is EXPLICITLY marked a beam splitter (bugs/0397).
+
+    "Add Beam Splitter to LED" stamps this on the promoted row, so the follower builder
+    recognises it as the straight-through transmit a beam splitter always is even when the
+    geometric coating-face check (`_solid_has_beam_splitter_interaction_face`) fails -- e.g. a
+    PLATE whose LED-matching rotation is baked into the promoted mesh moves the coating normal
+    off the ~45-deg-from-axis test, so the auto-flag never lands and the solid has no "Beam
+    Splitter" face for the geometric check to find. The explicit mark is authoritative: a solid
+    the user added *as a beam splitter* must never fold the downstream camera/image chain onto
+    it. (Cube/plate, any tilt; the geometric check still covers a manually-flagged coating.)
+
+    Stored inside ``StepOverlayPromotion`` -- an advanced dict that IS preserved through
+    save/reload (a bare top-level ``advanced`` key is whitelisted away by
+    ``_advanced_surface_attrs_from_spec``), so the mark survives a round-trip. A top-level key is
+    also honoured as a fallback for a live (unsaved) row.
+    """
+    advanced = _row_advanced(row)
+    if bool(advanced.get("OpticalSolidBeamSplitter")):
+        return True
+    promotion = advanced.get("StepOverlayPromotion")
+    return bool(isinstance(promotion, dict) and promotion.get("beam_splitter"))
+
+
 def _unit_vector(values, fallback=(0.0, 0.0, 1.0)) -> np.ndarray:
     try:
         vector = np.asarray(values, dtype=float).reshape(3)
@@ -1421,6 +1445,7 @@ def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict
                 np.asarray((0.0, 0.0, 1.0), dtype=float),
             )
             or _solid_has_beam_splitter_interaction_face(world_faces)
+            or _row_is_marked_beam_splitter(current)  # bugs/0397: explicit BS mark (coating-agnostic)
         ):
             # bugs/0185: a promoted right-angle MIRROR cube reads all six outer
             # faces as inferred Transmit/Port outputs, so the +Z face is picked as

@@ -5244,6 +5244,24 @@ class ScenePlacementMixin:
         # 7) Auto-flag the 45-degree diagonal as the BS coating (decision 1).
         coating = self._flag_beam_splitter_coating_face(row_index)
 
+        # 7b) bugs/0397: mark the promoted row EXPLICITLY as a beam splitter so the output-port
+        # follower builder never folds the camera/image chain onto it -- the geometric coating
+        # check is unreliable for a PLATE (its LED-matching rotation is baked into the promoted
+        # mesh, moving the coating off the ~45-deg auto-flag test). A solid the user added as a
+        # beam splitter must not re-aim the camera ("the camera should not follow the BS").
+        try:
+            bs_row = self.rows[row_index]
+            bs_advanced = getattr(bs_row, "advanced", None)
+            if isinstance(bs_advanced, dict):
+                # Stored inside StepOverlayPromotion so it survives save/reload (a bare
+                # top-level advanced key is whitelisted away on load).
+                promotion = bs_advanced.get("StepOverlayPromotion")
+                if isinstance(promotion, dict):
+                    promotion["beam_splitter"] = True
+                bs_advanced["OpticalSolidBeamSplitter"] = True  # live-session fallback
+        except Exception:
+            pass
+
         self._refresh_open_3d_views()
         coating_note = (
             f"; coating on {coating.get('face_id')}"
