@@ -690,13 +690,40 @@ class ThreeDSceneToolsMixin:
         # launch the area-filling pupil disk (not the flat meridional fan). Keep the
         # decision explicit rather than trusting the pupil heuristics on folded rows.
         self._force_folded_cone_preview_trace = True
+        # bugs/0410: the folded scene traces the REAL system through the BK7 fold prisms (~10 ms/ray),
+        # so a full-density 3D preview is ~30 s. Cap the SHOWN 3D preview to a sparse fan on this
+        # expensive path -- a TRANSIENT override (cleared in the finally) so ONLY this preview trace is
+        # sparse. The analysis modes (spot / heatmap / MTF) sample through their OWN paths, which run at
+        # other times and therefore keep the user's full ray density.
+        self._folded_preview_ray_count_override = self._folded_preview_ray_count_cap()
         try:
             self._trace_preview_rays(
                 system, rays, wavelength, max_radius, sampling_mode=sampling_mode
             )
         finally:
             self._force_folded_cone_preview_trace = False
+            self.__dict__.pop("_folded_preview_ray_count_override", None)
         return rays, None
+
+    def _folded_preview_ray_count_cap(self) -> int:
+        """bugs/0410: the sparse ray count for an expensive folded/prism 3D preview. CAPS the user's
+        ray count (never raises it) so the folded preview trace stays snappy; the analysis modes keep
+        the full count via their own sampling. Tunable via ``KRAKEN_FOLDED_PREVIEW_RAY_CAP`` for the
+        in-app eyeball (higher = denser + slower). Read BEFORE the override is set, so it sees the
+        user's real ray count."""
+        import os
+
+        cap = 15
+        env = os.environ.get("KRAKEN_FOLDED_PREVIEW_RAY_CAP")
+        if env:
+            try:
+                cap = max(3, int(env))
+            except (TypeError, ValueError):
+                pass
+        try:
+            return max(3, min(int(self._current_ray_count()), cap))
+        except Exception:
+            return cap
 
     def _apply_folded_display_bend(self, scene_bundle, fold_transform) -> None:
         """bugs/0197/0187 (#6): bend a folded scene's display rays after the scene bundle

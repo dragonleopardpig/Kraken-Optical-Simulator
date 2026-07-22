@@ -1712,6 +1712,11 @@ class TracePreviewSamplingMixin:
         override = self.__dict__.get("_promote_preview_ray_count_override")
         if override is None:
             override = self.__dict__.get("_drag_preview_ray_count_override")
+        if override is None:
+            # bugs/0410: sparse 3D-preview fan on an expensive folded/prism scene. Set transiently
+            # ONLY around _trace_preview_rays_folded_aware's preview trace + cleared in its finally,
+            # so the analysis modes (which call _current_ray_count at other times) keep full density.
+            override = self.__dict__.get("_folded_preview_ray_count_override")
         if override is not None:
             try:
                 return max(1, int(override))

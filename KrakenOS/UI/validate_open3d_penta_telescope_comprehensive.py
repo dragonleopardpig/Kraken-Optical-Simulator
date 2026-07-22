@@ -14788,6 +14788,29 @@ def phase_333_replace_step_overlay(
     return result
 
 
+def phase_334_folded_preview_ray_cap(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0410 -- a folded RA-mirror scene traces the REAL system through the BK7 fold prisms
+    (~10ms/ray), so a full-density 3D preview is ~30s. Cap the SHOWN 3D preview to a sparse fan on
+    the expensive folded path -- a transient override set only around the folded preview trace and
+    popped in its finally, so the analysis modes (spot/heatmap/MTF) keep the user's full density."""
+    result = PhaseResult(name="Phase 334: sparse 3D-preview ray fan on folded/prism scenes")
+    try:
+        from KrakenOS.UI.validate_open3d_folded_preview_ray_cap import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"folded-preview ray-cap guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("folded-preview ray-cap phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15166,6 +15189,7 @@ def main() -> int:
             phase_331_replace_promoted_solid,
             phase_332_replace_axis_and_defocus_menu,
             phase_333_replace_step_overlay,
+            phase_334_folded_preview_ray_cap,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
