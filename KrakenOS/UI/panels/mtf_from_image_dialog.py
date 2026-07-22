@@ -126,6 +126,7 @@ def open_mtf_from_image_dialog(editor) -> None:
     action.grid(row=4, column=0, sticky="ew", pady=(8, 4))
     ttk.Button(action, text="Compute MTF", command=lambda: _compute()).grid(row=0, column=0)
     ttk.Button(action, text="Save CSV...", command=lambda: _save_csv()).grid(row=0, column=1, padx=(6, 0))
+    ttk.Button(action, text="Close", command=lambda: _close()).grid(row=0, column=2, padx=(6, 0))
     status = tk.StringVar(value="Import a captured image to begin.")
     ttk.Label(right, textvariable=status, foreground="#475569", wraplength=320, justify="left").grid(row=5, column=0, sticky="ew", pady=(2, 6))
 
@@ -135,7 +136,14 @@ def open_mtf_from_image_dialog(editor) -> None:
     _style_mtf_axes(ax)
     ax.grid(True, alpha=0.25)
     plot_canvas = FigureCanvasTkAgg(figure, master=right)
-    plot_canvas.get_tk_widget().grid(row=6, column=0, sticky="nsew")
+    plot_widget = plot_canvas.get_tk_widget()
+    plot_widget.grid(row=6, column=0, sticky="nsew")
+    # bugs/0415: click the curve to enlarge it, matching the main-window Analysis curves (render a
+    # high-res PNG + open in the system image viewer). The hand cursor signals it is clickable.
+    plot_widget.configure(cursor="hand2")
+    plot_widget.bind("<Button-1>", lambda _e: _enlarge_plot())
+    ttk.Label(right, text="Click the plot to enlarge (opens in the image viewer).",
+              foreground="#64748b", font=("TkDefaultFont", 8)).grid(row=7, column=0, sticky="w", pady=(1, 0))
     right.rowconfigure(6, weight=1)
 
     # ------------------------------------------------------------------ helpers
@@ -335,6 +343,42 @@ def open_mtf_from_image_dialog(editor) -> None:
         plot_canvas.draw()
         status.set(f"Computed {len(result.measurements)} point(s). MTF = image contrast / target contrast ({contrast:g}).")
 
+    def _enlarge_plot() -> None:
+        # bugs/0415: match the main-window Analysis curves -- render the current figure to a high-res PNG
+        # and open it in the system image viewer (zoom / pan / save there). Works before Compute too
+        # (opens the empty axes), but is most useful once a curve is drawn.
+        try:
+            from KrakenOS.UI.services.layout_import_export import SCREENSHOT_DIR as out_dir
+        except Exception:
+            out_dir = Path(".")
+        try:
+            Path(out_dir).mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        stem = state["path"].stem if state["path"] else "capture"
+        image_path = Path(out_dir) / f"kraken_mtf_from_image_{stem}.png"
+        try:
+            figure.savefig(image_path, dpi=300, bbox_inches="tight")
+        except Exception as exc:
+            status.set(f"Could not render the enlarged plot: {exc}")
+            return
+        try:
+            editor._open_image_with_system_viewer(image_path)
+            status.set(f"Opened enlarged MTF plot in the image viewer: {image_path.name}")
+        except Exception as exc:
+            status.set(f"Saved {image_path.name}, but the system viewer failed: {exc}")
+
+    def _close() -> None:
+        # bugs/0415: explicit teardown -- clear the standalone Figure and destroy the Toplevel.
+        try:
+            figure.clf()
+        except Exception:
+            pass
+        try:
+            window.destroy()
+        except Exception:
+            pass
+
     def _save_csv() -> None:
         if state["result"] is None:
             status.set("Compute the MTF before saving.")
@@ -351,6 +395,10 @@ def open_mtf_from_image_dialog(editor) -> None:
 
     root.columnconfigure(1, weight=1)
     root.rowconfigure(3, weight=1)
+    # bugs/0415: an explicit close path -- the window-manager close button (some tiling WMs / the
+    # centered-dialog helper give no title-bar X) AND Escape both tear the dialog down cleanly.
+    window.protocol("WM_DELETE_WINDOW", _close)
+    window.bind("<Escape>", lambda _e: _close())
     _on_mode()  # initialise instruction + field enable-state for the default (edge) mode
     try:
         editor._show_centered_dialog(window)

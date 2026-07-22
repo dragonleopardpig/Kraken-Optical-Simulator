@@ -14883,6 +14883,29 @@ def phase_337_context_menu_no_flash(
     return result
 
 
+def phase_338_mtf_from_image_dialog_controls(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0415 -- the Measure-MTF-from-Image dialog needs a close path (Close button + WM_DELETE +
+    Escape) and a click-to-enlarge plot (render a high-res PNG + open in the system viewer, matching the
+    main-window Analysis curves). Guards the wiring by inspection (the dialog needs Tk+matplotlib+editor
+    to instantiate)."""
+    result = PhaseResult(name="Phase 338: Measure-MTF-from-Image dialog close + click-to-enlarge")
+    try:
+        from KrakenOS.UI.validate_open3d_mtf_from_image_dialog_controls import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"mtf-from-image-dialog-controls guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("mtf-from-image-dialog-controls phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15265,6 +15288,7 @@ def main() -> int:
             phase_335_mtf_from_image,
             phase_336_lens_step_datum_attached,
             phase_337_context_menu_no_flash,
+            phase_338_mtf_from_image_dialog_controls,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
