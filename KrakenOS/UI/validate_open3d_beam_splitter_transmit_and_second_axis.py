@@ -447,6 +447,37 @@ def run_checks() -> tuple[bool, list[str]]:
         f"(keys={_override_keys([_obj, _marked_explicit, dict(_img)])})",
     )
 
+    # 2g. bugs/0398b -- THE real-scene gap: an upstream MIRROR's follower WALK reaches the BS
+    #     (a promoted solid with an output face) and RE-SOURCES the running fold onto it,
+    #     sweeping the camera onto the BS. The top-of-loop skip only covered a top-LEVEL BS
+    #     source. A marked BS reached inside a follower walk must NOT re-source: later followers
+    #     (the image/camera) keep the upstream mirror's frame.
+    _mn = 0.7071
+    def _mirror_row(tstart):
+        faces = [
+            _face("IN", side="Front", function=OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT, normal=(0.0, 0.0, -1.0), centroid=(0.0, 0.0, -25.0), triangle_start=tstart),
+            _face("M", side="Up", function="Mirror", normal=(-_mn, 0.0, -_mn), centroid=(0.0, 0.0, 0.0), triangle_start=tstart + 2),
+        ]
+        return {"surface": "Standard", "name": "mirror", "glass": "BK7", "thickness": 50.0, "diameter": 50.0,
+                "advanced": {OPTICAL_SOLID_FACES_ADVANCED_ATTR: normalize_optical_solid_face_metadata({"faces": faces}), "Solid_3d_stl": "m.stl"}}
+    def _image_fold_source(marked: bool) -> int | None:
+        bs = _cube_row(_synthetic_port_metadata(output_side="Right", output_normal=(1.0, 0.0, 0.0), output_centroid=(8.0, 0.0, 6.0)),
+                       "mf_bs.stl")
+        if marked:
+            bs["advanced"]["StepOverlayPromotion"] = {"beam_splitter": True}
+        rows = [_obj, _mirror_row(0), bs, dict(_img)]
+        ov = build_optical_solid_output_port_pose_overrides(rows) or {}
+        img_ov = ov.get(len(rows) - 1)
+        return int(img_ov.get("source_index")) if isinstance(img_ov, dict) and img_ov.get("source_index") is not None else None
+    _check(
+        _image_fold_source(False) == 2,
+        f"precondition: an UNMARKED BS after a mirror re-sources the image fold onto the BS (source_row={_image_fold_source(False)}, expected 2)",
+    )
+    _check(
+        _image_fold_source(True) == 1,
+        f"a MARKED BS after a mirror does NOT re-source: the image stays folded by the MIRROR (source_row={_image_fold_source(True)}, expected 1)",
+    )
+
     # 3. Optional: the user's real saved beam-splitter-cube scene.
     real = _real_prescription_summary()
     if real is None:

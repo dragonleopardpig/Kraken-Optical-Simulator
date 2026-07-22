@@ -1533,6 +1533,16 @@ def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict
                 follower_output_face = select_optical_solid_output_face(follower_faces)
                 explicit_follower_output = select_optical_solid_explicit_output_face(follower_faces)
                 explicit_follower_input = select_optical_solid_explicit_input_face(follower_faces)
+                # bugs/0398b: a BEAM SPLITTER reached inside a follower walk never RE-SOURCES the
+                # running fold -- its primary path is straight-through transmit, so later
+                # followers (the camera/image) keep the upstream frame. The top-of-loop skip only
+                # covered a top-LEVEL BS source; here an upstream MIRROR's follower walk was
+                # re-anchoring onto the BS's output face and sweeping the camera onto the BS (the
+                # user's "add a BS re-orientates the camera"). Recognised by an explicit BS mark
+                # or a "Beam Splitter" interaction face. (A full mirror still re-sources below.)
+                if _row_is_marked_beam_splitter(follower) or _solid_has_beam_splitter_interaction_face(follower_faces):
+                    follower_index += 1
+                    continue
                 # bugs/0224: a FREE-PLACED full-mirror the running beam MISSES is optically
                 # INERT -- it stays pinned at its drop pose (stored above) and contributes
                 # NOTHING to the chain: no fold, and no re-sourcing of the frame from its
