@@ -90,6 +90,10 @@ class SceneSnapshot:
     # bugs/0393: what the LAST lens-swap camera-body clearance computed (inputs + the reason
     # any input was empty), so a flag pins why the auto-refocus did/didn't clear the camera.
     swap_clearance_diagnostics: dict[str, Any] = field(default_factory=dict)
+    # bugs/0398: per promoted optical-solid row -- is it marked a beam splitter, and is it a
+    # fold-override key (i.e. does it re-aim the downstream camera)? Pins why an added BS still
+    # re-orients the camera despite the 0397 mark.
+    bs_follower_diagnostics: dict[str, Any] = field(default_factory=dict)
     # bugs/0124: what the LAST right-click resolved -- the live hover key, the
     # hovered STEP label, the flaky VTK cell-picker label, and whether the
     # bugs/0121 hovered-face override fired. Pins why a BS-inside-LED right-click
@@ -716,6 +720,37 @@ class Open3DEventRecorder:
                 snapshot.swap_clearance_diagnostics = dict(swap_dbg)
         except Exception:
             pass
+
+        try:  # bugs/0398: BS-follower diagnostics -- why an added BS still re-aims the camera
+            from KrakenOS.UI.nonseq_output_ports import (
+                build_optical_solid_output_port_pose_overrides,
+                _row_is_marked_beam_splitter,
+                _row_advanced,
+            )
+            editor_rows = list(getattr(inspector.editor, "rows", []) or [])
+            overrides = build_optical_solid_output_port_pose_overrides(editor_rows) or {}
+            override_keys = sorted(int(k) for k in overrides)
+            promoted = []
+            for idx, row in enumerate(editor_rows):
+                advanced = _row_advanced(row)
+                if str(advanced.get("Solid_3d_stl") or "").strip() in {"", "None"}:
+                    continue
+                promotion = advanced.get("StepOverlayPromotion")
+                promoted.append({
+                    "row": idx,
+                    "name": str(getattr(row, "name", "") or "")[:36],
+                    "top_marker": bool(advanced.get("OpticalSolidBeamSplitter")),
+                    "promo_marker": bool(isinstance(promotion, dict) and promotion.get("beam_splitter")),
+                    "is_marked": bool(_row_is_marked_beam_splitter(row)),
+                    "is_fold_override": idx in overrides,
+                })
+            snapshot.bs_follower_diagnostics = {
+                "n_rows": len(editor_rows),
+                "override_keys": override_keys,
+                "promoted": promoted,
+            }
+        except Exception as exc:
+            snapshot.bs_follower_diagnostics = {"error": repr(exc)[:160]}
 
         # Camera: detects orbit / view changes between events.
         try:

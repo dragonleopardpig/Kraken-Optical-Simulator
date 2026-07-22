@@ -426,6 +426,27 @@ def run_checks() -> tuple[bool, list[str]]:
         f"an explicit StepOverlayPromotion.beam_splitter mark skips the followers even with no coating (keys={_marked_plate_keys(True)})",
     )
 
+    # 2f. bugs/0398: the BS skip must be FRAME-SOURCE INDEPENDENT. 0396/0397 lived inside the
+    #     non-folding guard, which only runs when the exit resolves as `inferred_output`. A
+    #     promoted plate's output resolves via a DIFFERENT source (explicit/reflected), so the
+    #     guard-level BS checks never fired and the real camera still folded. The skip is now at
+    #     the TOP of the loop, before the frame is computed. Prove it with an EXPLICIT (folding)
+    #     output port: it folds normally, but folds NO MORE once the BS mark is present.
+    _obj = {"surface": "Object", "name": "Object", "thickness": 100.0, "diameter": 20.0, "advanced": {}}
+    _img = {"surface": "Image", "name": "Image", "thickness": 0.0, "diameter": 20.0, "advanced": {}}
+    _explicit_fold = _synthetic_port_metadata(output_side="Right", output_normal=(1.0, 0.0, 0.0), output_centroid=(8.0, 0.0, 6.0))
+    _check(
+        _override_keys([_obj, _cube_row(_explicit_fold, "explicit_fold.stl"), dict(_img)]) == [2],
+        "an EXPLICIT folding output port repositions the Image (precondition, so 2f is not vacuous)",
+    )
+    _marked_explicit = _cube_row(_explicit_fold, "explicit_fold_marked.stl")
+    _marked_explicit["advanced"]["StepOverlayPromotion"] = {"beam_splitter": True}
+    _check(
+        _override_keys([_obj, _marked_explicit, dict(_img)]) == [],
+        f"a BS mark skips the follower even with an EXPLICIT (folding) output port -- frame-source independent "
+        f"(keys={_override_keys([_obj, _marked_explicit, dict(_img)])})",
+    )
+
     # 3. Optional: the user's real saved beam-splitter-cube scene.
     real = _real_prescription_summary()
     if real is None:
