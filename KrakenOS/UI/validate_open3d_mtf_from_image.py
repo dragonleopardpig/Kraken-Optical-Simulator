@@ -122,10 +122,36 @@ def _check_contract(failures, notes):
         notes.append("contract = edge + USAF modes; draw ROI in image px; analyze; plot; save CSV")
 
 
+def _check_axes(failures, notes):
+    from KrakenOS.UI.panels import mtf_from_image_dialog as mod
+
+    styler = inspect.getsource(mod._style_mtf_axes)
+    if "set_xlim(left=0.0)" not in styler or "set_ylim(0.0" not in styler:
+        failures.append("AXES: both axis origins must be pinned to 0.0")
+    if "arange(0.0, 1.001, 0.2)" not in styler:
+        failures.append("AXES: the Y ticks must be 0.0, 0.2, ..., 1.0")
+    if "_style_mtf_axes(ax)" not in inspect.getsource(mod.open_mtf_from_image_dialog):
+        failures.append("AXES: the dialog does not apply _style_mtf_axes to the plot")
+    # behavioural: styling an axes yields origin 0.0 + the 0.2-step ticks
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots()
+    ax.plot([0, 0.25, 0.5], [1.0, 0.5, 0.1])
+    mod._style_mtf_axes(ax)
+    if ax.get_xlim()[0] != 0.0 or ax.get_ylim()[0] != 0.0:
+        failures.append("AXES: styled axes do not start at 0.0")
+    if [round(t, 2) for t in ax.get_yticks()] != [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]:
+        failures.append(f"AXES: Y ticks wrong ({[round(t, 2) for t in ax.get_yticks()]})")
+    plt.close(fig)
+    if not [f for f in failures if f.startswith("AXES")]:
+        notes.append("axes = both origins at 0.0; Y ticks 0.0,0.2,...,1.0")
+
+
 def run_checks() -> "tuple[bool, list[str]]":
     failures: list[str] = []
     notes: list[str] = []
-    for check in (_check_analyze, _check_edge_analyze, _check_wiring, _check_contract):
+    for check in (_check_analyze, _check_edge_analyze, _check_axes, _check_wiring, _check_contract):
         try:
             check(failures, notes)
         except Exception as exc:

@@ -20,6 +20,15 @@ _MAX_W, _MAX_H = 660, 560
 _ORIENTATIONS = ("vertical", "horizontal")
 
 
+def _style_mtf_axes(ax) -> None:
+    """Pin both axes to a common 0.0 origin (no matplotlib margin) and put the Y ticks at
+    0.0, 0.2, ..., 1.0 (user request, bugs/0411)."""
+    ax.set_xlim(left=0.0)
+    ax.set_ylim(0.0, 1.05)
+    ax.set_yticks(np.arange(0.0, 1.001, 0.2))
+    ax.margins(x=0.0)
+
+
 def open_mtf_from_image_dialog(editor) -> None:
     """Open the interactive "Measure MTF from Image" dialog on ``editor``."""
     try:
@@ -123,7 +132,7 @@ def open_mtf_from_image_dialog(editor) -> None:
     figure = Figure(figsize=(3.6, 2.6), dpi=100)
     ax = figure.add_subplot(111)
     ax.set_title("MTF")
-    ax.set_ylim(0.0, 1.05)
+    _style_mtf_axes(ax)
     ax.grid(True, alpha=0.25)
     plot_canvas = FigureCanvasTkAgg(figure, master=right)
     plot_canvas.get_tk_widget().grid(row=6, column=0, sticky="nsew")
@@ -288,7 +297,7 @@ def open_mtf_from_image_dialog(editor) -> None:
             except Exception as exc:
                 status.set(f"Plot failed: {exc}")
                 return
-            ax.set_ylim(0.0, 1.05)
+            _style_mtf_axes(ax)
             figure.tight_layout()
             plot_canvas.draw()
             mtf50 = result.mtf50_cycles_per_px()
@@ -321,7 +330,7 @@ def open_mtf_from_image_dialog(editor) -> None:
             result.plot(frequency_space=space, ax=ax)
         except Exception as exc:
             status.set(f"Plotted 0 points: {exc}")
-        ax.set_ylim(0.0, 1.05)
+        _style_mtf_axes(ax)
         figure.tight_layout()
         plot_canvas.draw()
         status.set(f"Computed {len(result.measurements)} point(s). MTF = image contrast / target contrast ({contrast:g}).")
