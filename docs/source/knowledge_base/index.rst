@@ -16,3 +16,4 @@ real sensor.
    ir_subpixel_detection
    step_overlay_promotion
    coaxial_led_dark_edges
+   worked_exercises/index
