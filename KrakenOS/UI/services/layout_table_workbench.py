@@ -848,11 +848,37 @@ class LayoutTableWorkbenchMixin:
         deficit = clr - separation
         return deficit if deficit > 0.0 else 0.0
 
-    @staticmethod
-    def _promoted_solid_world_bounds(row):
-        """World AABB (xmin, xmax, ymin, ymax, zmin, zmax) of a promoted optical-solid row from
-        its stored promotion metadata (``row.advanced['StepOverlayPromotion']``
-        bounds_min/max_world), or None (bugs/0392)."""
+    def _promoted_solid_current_center(self, row_index):
+        """Current world CENTRE of a promoted optical-solid row, read from the last scene
+        bundle's ``optical_solid`` placement (bugs/0393b). The promotion metadata's centre is
+        STALE once the solid is moved, but the mirror does not move during a lens swap, so the
+        last-refresh placement centre is its live position. Returns None when unavailable."""
+        import math
+        bundle = getattr(self, "_last_scene_bundle", None)
+        placements = list(getattr(bundle, "placements", None) or []) if bundle is not None else []
+        for placement in placements:
+            if str(getattr(placement, "source_kind", "") or "") != "optical_solid":
+                continue
+            try:
+                if int(getattr(placement, "row_index", -1)) != int(row_index):
+                    continue
+                center = [float(v) for v in list(getattr(placement, "center_world"))[:3]]
+            except Exception:
+                continue
+            if len(center) == 3 and all(math.isfinite(v) for v in center):
+                return center
+        return None
+
+    def _promoted_solid_world_bounds(self, row, row_index=None):
+        """World AABB (xmin, xmax, ymin, ymax, zmin, zmax) of a promoted optical-solid row.
+
+        The extent (SIZE) is taken from the stored promotion metadata
+        (``row.advanced['StepOverlayPromotion']`` bounds), which is invariant under a move; but
+        the CENTRE is re-read from the live scene-bundle placement when available, because the
+        promotion metadata's centre goes STALE once the solid is dragged/re-placed (bugs/0393b
+        -- a moved RA mirror's stale centre put the obstacle 30 mm from its real position, so the
+        camera-clearance check found no overlap and never fired). Falls back to the (possibly
+        stale) promotion centre when no live placement is found. Returns None on bad metadata."""
         advanced = getattr(row, "advanced", {}) or {}
         if not isinstance(advanced, dict):
             return None
@@ -866,7 +892,17 @@ class LayoutTableWorkbenchMixin:
             return None
         if len(mn) != 3 or len(mx) != 3:
             return None
-        return (mn[0], mx[0], mn[1], mx[1], mn[2], mx[2])
+        half = [(mx[i] - mn[i]) / 2.0 for i in range(3)]  # size is move-invariant
+        center = None
+        if row_index is not None:
+            center = self._promoted_solid_current_center(row_index)
+        if center is None:
+            center = [(mn[i] + mx[i]) / 2.0 for i in range(3)]  # stale fallback
+        return (
+            center[0] - half[0], center[0] + half[0],
+            center[1] - half[1], center[1] + half[1],
+            center[2] - half[2], center[2] + half[2],
+        )
 
     def _camera_body_world_bounds(self):
         """(world AABB, reason) of the glued camera STEP body (bugs/0392/0393).
@@ -976,7 +1012,10 @@ class LayoutTableWorkbenchMixin:
         cam_bounds, cam_reason = self._camera_body_world_bounds()
         dbg["cam_reason"] = cam_reason
         dbg["cam_bounds"] = [round(v, 2) for v in cam_bounds] if cam_bounds else None
-        obstacle_bounds = self._promoted_solid_world_bounds(rows[-2])
+        upstream_index = len(rows) - 2
+        live_center = self._promoted_solid_current_center(upstream_index)
+        dbg["obstacle_center_source"] = "live_bundle" if live_center is not None else "stale_promotion"
+        obstacle_bounds = self._promoted_solid_world_bounds(rows[-2], row_index=upstream_index)
         dbg["obstacle_bounds"] = [round(v, 2) for v in obstacle_bounds] if obstacle_bounds else None
         leg = self._folded_leg_axis_unit()
         dbg["leg"] = [round(v, 3) for v in leg] if leg else None

@@ -177,6 +177,43 @@ def run_checks() -> tuple[bool, list[str]]:
     if not any("camera body" in m for m in ed3._status_messages):
         failures.append("mesh-clearance: the mesh-deficit bump must flag the camera-body limit")
 
+    # 8. bugs/0393b: the mirror obstacle centre must come from the LIVE scene-bundle placement,
+    # not the STALE promotion metadata. The real flag: a moved RA mirror's stored centre put the
+    # obstacle 30 mm off (Z-separated from the camera) -> deficit 0 -> camera stayed crashed.
+    STALE = {"bounds_min_world": [193.65, -12.5, 59.4], "bounds_max_world": [218.65, 12.5, 84.4]}
+    mrow = SimpleNamespace(name="Promoted OPTICAL STEP optical solid", surface="Standard",
+                           thickness=13.48, advanced={"StepOverlayPromotion": STALE})
+    rows8 = ([SimpleNamespace(surface="Object", thickness=10.0, name="Object")]
+             + [SimpleNamespace(surface="Standard", thickness=1.0, name=f"r{i}") for i in range(5)]
+             + [mrow, SimpleNamespace(surface="Image", thickness=0.0, name="Image")])
+    CAM_CUR = (200.9, 270.9, -35.0, 35.0, -22.6, 51.0)
+    LEG_Z = (0.0, 0.0, -1.0)
+    # (a) STALE centre (no bundle) -> the obstacle is Z-separated from the camera -> deficit 0
+    ed_stale = _editor(list(rows8))
+    ed_stale._camera_body_world_bounds = lambda: (CAM_CUR, "ok")
+    ed_stale._folded_leg_axis_unit = lambda: LEG_Z
+    ed_stale._current_camera_record = lambda: {"x": 1}
+    if ed_stale._swap_camera_body_clearance_deficit() != 0.0:
+        failures.append("live-centre: with stale (Z-separated) bounds the deficit must be 0 (the bug)")
+    # (b) LIVE bundle centre at the mirror's REAL position -> deficit ~12.5, camera clears
+    ed_live = _editor(list(rows8))
+    ed_live._camera_body_world_bounds = lambda: (CAM_CUR, "ok")
+    ed_live._folded_leg_axis_unit = lambda: LEG_Z
+    ed_live._current_camera_record = lambda: {"x": 1}
+    ed_live._last_scene_bundle = SimpleNamespace(placements=[
+        SimpleNamespace(source_kind="optical_solid", row_index=len(ed_live.rows) - 2,
+                        center_world=[236.0, 0.0, 53.0])])
+    d_live = ed_live._swap_camera_body_clearance_deficit()
+    if not (12.0 < d_live < 13.0):
+        failures.append(f"live-centre: the LIVE placement centre must give ~12.5mm; got {d_live}")
+    dbg = getattr(ed_live, "_swap_clearance_debug", {}) or {}
+    if dbg.get("obstacle_center_source") != "live_bundle":
+        failures.append(f"live-centre: must report obstacle_center_source=live_bundle; got {dbg.get('obstacle_center_source')}")
+    # the re-centred obstacle must match the REAL actor bounds (x[223.3,248.6] z[40.4,65.7])
+    ob = dbg.get("obstacle_bounds") or []
+    if not (ob and abs(ob[0] - 223.5) < 0.6 and abs(ob[5] - 65.5) < 0.6):
+        failures.append(f"live-centre: re-centred obstacle bounds must match the real mirror; got {ob}")
+
     return (not failures), failures
 
 
