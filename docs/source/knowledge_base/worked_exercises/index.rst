@@ -6,33 +6,9 @@ small step at a time.  The aim is not only to obtain an answer, but to make
 each mathematical decision visible: what is known, which equation applies,
 how it is rearranged, how units are handled, and how the result is checked.
 
-Start with :doc:`writing_a_solution` when adding an exercise.  The available
-worked solutions are:
-
-* :doc:`thin_lens_image_distance` -- a self-contained introduction to the
-  solution format;
-* :doc:`understanding_lasers_ch01_quiz` -- conceptual laser questions and two
-  efficiency calculations.
-
-*Understanding Lasers* quiz solutions:
-
-.. toctree::
-   :maxdepth: 1
-
-   understanding_lasers_ch01_quiz
-   understanding_lasers_ch02_quiz
-   understanding_lasers_ch03_quiz
-   understanding_lasers_ch04_quiz
-   understanding_lasers_ch05_quiz
-   understanding_lasers_ch06_quiz
-   understanding_lasers_ch07_quiz
-   understanding_lasers_ch08_quiz
-   understanding_lasers_ch09_quiz
-   understanding_lasers_ch10_quiz
-   understanding_lasers_ch11_quiz
-   understanding_lasers_ch12_quiz
-   understanding_lasers_ch13_quiz
-   understanding_lasers_ch14_quiz
+Start with :doc:`writing_a_solution` when adding an exercise.  The thin-lens
+example introduces the solution format; book-specific collections have their
+own parent pages.
 
 .. note::
 
@@ -45,3 +21,4 @@ worked solutions are:
 
    writing_a_solution
    thin_lens_image_distance
+   understanding_lasers
