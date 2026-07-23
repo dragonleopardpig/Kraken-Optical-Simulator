@@ -14520,12 +14520,20 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         return d, u, v
 
     def _crease_overlay_mesh_at_fold(self, mesh, fold_transform):
-        """bugs/0418: fold ONLY the points DOWNSTREAM of the fold hinge onto the reflected leg, so an
-        axis-spanning overlay (the acceptance cone) CREASES at the mirror instead of rigidly swinging the
-        whole thing onto the lens leg (bugs/0416 folded every point -> the object end lay flat along the
-        lens leg, "not folding"). The hinge is the fold transform's fixed point on the straight axis
-        ((I-R)a = t, i.e. F(a)=a); points with straight-z past it get the rigid fold R@p+t, the rest stay
-        in the base object-leg frame. ``fold_transform`` None (unfolded scene) -> mesh unchanged."""
+        """bugs/0418+0419: CREASE an axis-spanning overlay (the acceptance cone) at the fold by
+        REFLECTING its downstream part about the mirror PLANE -- a continuous isometry (identity on the
+        plane), the same trick ``two_arm_display_fold.fold_points`` uses for the beam splitter. So the
+        cone runs up the object leg then bends smoothly onto the lens leg, cross-section preserved.
+
+        bugs/0416 rigidly folded the WHOLE mesh (object end swung onto the lens leg -> flat); bugs/0418
+        split at a HORIZONTAL plane and applied the rigid ROTATION, which is discontinuous at the split
+        and reoriented the ring abruptly -> a twisted surface ("goes haywire"). A reflection about the
+        tilted mirror plane fixes both.
+
+        The mirror plane is derived from the fold transform: it maps the incoming straight axis (+Z) to
+        the outgoing folded direction R@+Z, so the plane bisects them (normal = incoming - outgoing)
+        through the fold's fixed point ((I-R)a = t). Points on the downstream side (dot > 0) reflect
+        about it; the rest stay. ``fold_transform`` None / identity (unfolded) -> mesh unchanged."""
         if mesh is None or fold_transform is None:
             return mesh
         try:
@@ -14536,16 +14544,23 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return mesh
         rotation, translation = transform[:3, :3], transform[:3, 3]
         try:
+            incoming = np.array([0.0, 0.0, 1.0])
+            outgoing = rotation @ incoming
+            normal = incoming - outgoing
+            norm = float(np.linalg.norm(normal))
+            if norm <= 1e-9:  # pure translation / no rotation -> nothing to crease about
+                return mesh
+            normal = normal / norm
             hinge = np.linalg.lstsq(np.eye(3) - rotation, translation, rcond=None)[0]
-            hinge_z = float(hinge[2])
-            if not np.isfinite(hinge_z):
+            if not np.all(np.isfinite(hinge)):
                 return mesh
             points = np.asarray(mesh.points, dtype=float)
-            downstream = points[:, 2] > hinge_z
+            signed = (points - hinge) @ normal  # > 0 on the downstream (past-mirror) side
+            downstream = signed > 1e-9
             if not bool(downstream.any()):
                 return mesh
             folded = points.copy()
-            folded[downstream] = points[downstream] @ rotation.T + translation
+            folded[downstream] = points[downstream] - 2.0 * signed[downstream][:, None] * normal
             out = mesh.copy(deep=True)
             out.points = folded
             return out
