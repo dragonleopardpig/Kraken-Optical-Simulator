@@ -69,13 +69,26 @@ BS + mirror-1 removed) is an in-app operation (gizmo) → owe an eyeball.
   left intact, so every non-BS scene keeps the existing walk. Guard `validate_open3d_bs_trace_driven_placement`
   (penta phase 347): NO-BS-EMPTY + REFACTOR-SAFE + BRANCH-COVERAGE, verified on the real AZ85 scene (no BS →
   `{}`; +BS → 10 imaging-chain rows covered via the traced branch). Neighbouring BS/multifold phases still pass.
-- **2b — next.** Wire `_branch_traced_row_frames` into `build_optical_solid_output_port_pose_overrides`, gated
-  on branches: at a BS whose REFLECT branch carries followers, fold them onto the reflect frame (reuse the
-  existing mirror machinery for the pose; the trace makes only the fold-vs-skip DECISION). Parity check: the
-  transmit-leg placement must match the current fold-walk on AZ85+BS (invisible there → safe).
-- **2c — after 2b.** Convergence across mirror removal / re-aim (seed the settle-loop from the last-applied
-  folded positions so the reflect branch keeps carrying the chain) → retain placement. In-app eyeball
-  (folded VTK, headless-untestable).
+- **2b — attempt 1 (walk-based) REJECTED.** Wiring the fold into the walk's follower loop was tried and
+  **reverted**: the walk places followers by `row_index + 1`, but `add_beam_splitter_to_led` appends the BS
+  at the END of the row list (row 9) while the imaging chain is rows 1-8, i.e. BEFORE it. Proven headlessly:
+  the reflect branch reflects at the BS but its `SURFACE` has **no follower with index > the BS row**, so a
+  walk-based fold structurally cannot reach the earlier chain. The transmit case stayed byte-identical (safe),
+  but the feature can't work this way. **Placement for a BS scene must be row-order-INDEPENDENT.**
+- **2b — corrected plan.** A trace-driven **post-pass** (gated on branches): override each NON-solid row
+  (datums / thin-lens / aperture / image) to the world point where its branch actually crosses it (from that
+  branch's `XYZ`), with the incoming-direction frame; leave SOLID rows (mirrors / BS) to the geometric walk
+  (they are free-placed / pinned, so the trace face-hit isn't their body centre). Row-order-independent: each
+  row follows whichever branch reaches it. Parity net: on AZ85+BS (transmit) it must reproduce the current
+  fold-walk non-solid centres (a no-op there → safe). Headless-testable via the override map.
+- **2c — the crux (seeding / convergence).** The retain-on-swap is circular: the trace only carries the chain
+  on the reflect leg if the elements are already positioned there; after removing the mirror the geometric
+  walk collapses them to the straight axis. Resolution: the post-pass traces the system as currently placed
+  (base + the PERSISTED previous override map, which is still folded right after removal) → the reflect branch
+  keeps hitting the chain → placement stays folded → self-consistent. The post-pass's reflect-leg placements
+  override the geometric collapse. **Both the reflect visual and the convergence are headless-untestable
+  (folded VTK)** → must be built + verified against a REAL captured in-app swap (add BS → orient → remove
+  mirror), then iterated on flags.
 
 ## Files
 
