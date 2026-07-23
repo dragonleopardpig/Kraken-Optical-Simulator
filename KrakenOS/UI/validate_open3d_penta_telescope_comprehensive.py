@@ -14930,6 +14930,28 @@ def phase_339_accept_cone_fold_aware(
     return result
 
 
+def phase_340_bs_plate_thickness(
+    app: KrakenLayoutEditor, inspector: Kraken3DInspector
+) -> PhaseResult:
+    """bugs/0422 -- the one-click "Add Beam Splitter to LED -> Plate" default thickness was side_mm*0.12
+    (12% of the LED opening -> ~11 mm slab on a 90 mm opening, "ridiculously thick"). A plate BS is a THIN
+    substrate; fixed to min(max(side*0.04, 1), 5) mm. Guards the thin formula + values across apertures."""
+    result = PhaseResult(name="Phase 340: one-click BS plate default is a thin substrate")
+    try:
+        from KrakenOS.UI.validate_open3d_bs_plate_thickness import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"bs-plate-thickness guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("bs-plate-thickness phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15314,6 +15336,7 @@ def main() -> int:
             phase_337_context_menu_no_flash,
             phase_338_mtf_from_image_dialog_controls,
             phase_339_accept_cone_fold_aware,
+            phase_340_bs_plate_thickness,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

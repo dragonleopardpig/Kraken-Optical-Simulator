@@ -5171,7 +5171,10 @@ class ScenePlacementMixin:
                     "plate",
                     width_mm=side_mm,
                     height_mm=side_mm,
-                    thickness_mm=float(min(max(side_mm * 0.12, 2.0), side_mm * 0.5)),
+                    # bugs/0422: a plate beam splitter is a THIN substrate (~1-5 mm), NOT a fraction of
+                    # the aperture -- side_mm*0.12 made a ~11 mm slab on a 90 mm opening ("ridiculously
+                    # thick"). Use a thin default (~4% clamped to 1-5 mm); the user resizes from there.
+                    thickness_mm=float(min(max(side_mm * 0.04, 1.0), 5.0)),
                     tilt_deg=45.0,
                 )
         except Exception as exc:

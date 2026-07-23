@@ -339,7 +339,8 @@
     "336": "pass",
     "337": "pass",
     "338": "pass",
-    "339": "pass"
+    "339": "pass",
+    "340": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -679,6 +680,7 @@
     "336": "lens STEP overlay stays attached to its surrogate (AZ85)",
     "337": "3D right-click menu does not flash-and-disappear on post",
     "338": "Measure-MTF-from-Image dialog close + click-to-enlarge",
-    "339": "Accept-cone overlay creases at the display fold"
+    "339": "Accept-cone overlay creases at the display fold",
+    "340": "one-click BS plate default is a thin substrate"
   }
 }
