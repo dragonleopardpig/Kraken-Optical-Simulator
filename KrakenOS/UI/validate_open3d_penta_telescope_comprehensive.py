@@ -15014,6 +15014,26 @@ def phase_343_carry_gated_on_mode(app: KrakenLayoutEditor, inspector: Kraken3DIn
     return result
 
 
+def phase_344_source_move_gizmo(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> PhaseResult:
+    """bugs/0426 -- a scene source (LED) gets an interactive MOVE gizmo: select it in the browser -> XYZ
+    translate arrows at its origin; drag to slide the source (cheap actor-translate during drag, committed
+    to the origin on release). Guards the handle/tag/drag/select/commit wiring + the origin math."""
+    result = PhaseResult(name="Phase 344: scene-source interactive move gizmo")
+    try:
+        from KrakenOS.UI.validate_open3d_source_move_gizmo import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"source-move-gizmo guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("source-move-gizmo phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15402,6 +15422,7 @@ def main() -> int:
             phase_341_bs_resize,
             phase_342_browser_select_gizmo,
             phase_343_carry_gated_on_mode,
+            phase_344_source_move_gizmo,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

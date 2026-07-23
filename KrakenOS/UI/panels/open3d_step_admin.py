@@ -763,9 +763,14 @@ class Open3DStepAdminPanel:
             self._update_properties("")
             return
         if iid.startswith("source:"):
-            # bugs/0283: a scene source is a hide/unhide target in the browser. A 3D
-            # selection / move gizmo is a later increment; for now it carries no properties.
+            # bugs/0283: a scene source is a hide/unhide target in the browser.
+            # bugs/0426: it is ALSO now selectable -> raise its interactive MOVE gizmo (XYZ arrows) so
+            # the LED can be dragged/placed like an optical element.
             self._selected_item_id = iid
+            try:
+                self.inspector.select_scene_source_from_admin(iid.split(":", 1)[1])
+            except Exception as exc:
+                self.inspector.status_var.set(f"Select source failed: {exc}")
             self._update_properties("")
             return
         if iid == self._selected_item_id and iid == self._current_browser_selection_iid():

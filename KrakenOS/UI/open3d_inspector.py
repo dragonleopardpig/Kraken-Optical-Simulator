@@ -522,6 +522,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._actor_placement_rotate_map: dict[str, tuple[int, str, float]] = {}
         self._actor_placement_rotate_visual_keys: set[str] = set()
         self._actor_placement_move_visual_keys: set[str] = set()
+        # bugs/0426: interactive MOVE gizmo for a scene source (LED). A selected source draws XYZ
+        # translate arrows tagged here (actor_key -> (source_id, axis, step_mm)); dragging one slides the
+        # source origin (cheap actor-translate during drag, committed via update_scene_source_spec on
+        # release), so the LED is placed by dragging like an optical element.
+        self._actor_source_move_map: dict[str, tuple[str, str, float]] = {}
+        self._selected_source_id: str | None = None
         self._placement_handle_selected_row_index: int | None = None
         self._actor_thickness_dimension_map: dict[str, int] = {}
         self._thickness_dimension_actor_map: dict[int, list[str]] = {}
@@ -2002,7 +2008,26 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             actor = self._pick_actor_with_gizmo_overlay(x, y)
         except Exception:
             return None
-        info = self._placement_handle_info_for_actor_key(self._actor_key(actor))
+        actor_key = self._actor_key(actor)
+        # bugs/0426: a scene-source MOVE-gizmo arrow -> slide the source origin (not a row).
+        source_move = self._actor_source_move_map.get(actor_key)
+        if source_move is not None:
+            source_id, axis, signed_step = source_move
+            direction = self._placement_drag_display_direction("translate", str(axis), float(signed_step), actor)
+            self.status_var.set(
+                f"Drag source {str(axis).upper()} to place the LED; a live 'Snap mm' quantizes it."
+            )
+            return {
+                "kind": "translate",
+                "source_id": str(source_id),
+                "axis": str(axis).strip().lower(),
+                "signed_step": float(signed_step),
+                "display_direction": direction,
+                "pixel_accumulator": 0.0,
+                "applied_steps": 0,
+                "pending_translate_mm": 0.0,
+            }
+        info = self._placement_handle_info_for_actor_key(actor_key)
         if info is None:
             return None
         kind, row_index, axis, signed_step = info
@@ -2746,6 +2771,38 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 moved += 1
             except Exception as exc:
                 self.editor.append_debug(f"3D row carry actor move failed for S{int(row_index)}: {exc}")
+        if moved:
+            try:
+                self._reset_camera_clipping_range_for_scene()
+            except Exception:
+                pass
+            if render:
+                self.render()
+        return moved
+
+    def _translate_source_actors(self, source_id: str, delta_xyz, *, render: bool = True) -> int:
+        """bugs/0426: cheap ``AddPosition`` on a scene source's glyph actors AND its move-gizmo handle
+        arrows during a live source-move drag, so the LED + its arrows track the cursor with no
+        rebuild/retrace (committed to the source origin on release, like the row placement slide)."""
+        try:
+            delta = np.asarray(delta_xyz, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return 0
+        if delta.size < 3 or not np.all(np.isfinite(delta[:3])):
+            return 0
+        sid = str(source_id)
+        keys = list(self._source_actor_map.get(sid, []) or [])
+        keys += [k for k, (msid, _a, _s) in self._actor_source_move_map.items() if str(msid) == sid]
+        moved = 0
+        for actor_key in dict.fromkeys(keys):
+            actor = self._actor_by_key.get(actor_key)
+            if actor is None:
+                continue
+            try:
+                actor.AddPosition(float(delta[0]), float(delta[1]), float(delta[2]))
+                moved += 1
+            except Exception:
+                pass
         if moved:
             try:
                 self._reset_camera_clipping_range_for_scene()
@@ -3741,6 +3798,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 return
             delta = signed_pixels * signed_step / pixels_per_step
             state["applied_steps"] = int(state.get("applied_steps", 0)) + 1
+        source_id = state.get("source_id")
+        if source_id is not None:
+            # bugs/0426: source MOVE gizmo -- cheap-translate the LED glyph + its arrows during the drag
+            # (same deferred-commit trick as the row slide); the origin is committed on release.
+            axis_unit = self._placement_axis_vector(axis)
+            self._translate_source_actors(str(source_id), axis_unit * float(delta))
+            state["pending_translate_mm"] = float(state.get("pending_translate_mm", 0.0)) + float(delta)
+            return
         if is_rotate:
             self._apply_scene_placement_rotate_handle(row_index, axis, delta)
         else:
@@ -3780,6 +3845,21 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor._drag_preview_ray_count_override = None
         except Exception:
             pass
+        # bugs/0426: source MOVE gizmo -- commit the accumulated slide onto the source ORIGIN once here
+        # (the drag only cheap-translated its actors), then a rebuild re-seats glyph + gizmo at the new
+        # origin. A live "Snap mm" already quantized the slide during the drag.
+        source_id = state.get("source_id")
+        if source_id is not None:
+            pending = float(state.get("pending_translate_mm", 0.0))
+            axis = str(state.get("axis", "")).strip().lower()
+            if abs(pending) > 1.0e-9:
+                try:
+                    self._commit_source_move(str(source_id), axis, pending)
+                except Exception as exc:
+                    self.editor.append_debug(f"Source move commit failed for {source_id}: {exc}")
+            else:
+                self.status_var.set(f"Source {axis.upper()} drag: no movement.")
+            return
         try:
             applied_steps = int(state.get("applied_steps", 0))
             row_index = int(state.get("row_index", -1))
@@ -5706,6 +5786,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         pick_step_translate: tuple[str, str, float] | None = None,
         pick_placement_move: tuple[int, str, float] | None = None,
         pick_placement_rotate: tuple[int, str, float] | None = None,
+        pick_source_move: tuple[str, str, float] | None = None,
         pick_thickness_dimension: int | None = None,
         follow_step_label: str | None = None,
         track_row_index: int | None = None,
@@ -5818,6 +5899,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             and pick_step_translate is None
             and pick_placement_move is None
             and pick_placement_rotate is None
+            and pick_source_move is None
             and pick_thickness_dimension is None
         ):
             actor.PickableOff()
@@ -5846,6 +5928,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             if actor_key is not None and pick_placement_rotate is not None:
                 row_index, axis, delta_deg = pick_placement_rotate
                 self._actor_placement_rotate_map[actor_key] = (int(row_index), str(axis), float(delta_deg))
+            if actor_key is not None and pick_source_move is not None:  # bugs/0426
+                source_id, axis, delta_mm = pick_source_move
+                self._actor_source_move_map[actor_key] = (str(source_id), str(axis), float(delta_mm))
             if actor_key is not None and pick_thickness_dimension is not None:
                 self._register_thickness_dimension_actor(actor, int(pick_thickness_dimension))
         # bugs/0112: gizmo handles go to the always-on-top overlay layer so they
@@ -6204,10 +6289,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         placement_keys.update(self._actor_placement_move_map)
         placement_keys.update(self._actor_placement_rotate_visual_keys)
         placement_keys.update(self._actor_placement_move_visual_keys)
+        placement_keys.update(self._actor_source_move_map)  # bugs/0426: source move gizmo
         for actor_key in list(placement_keys):
             actor = self._actor_by_key.pop(actor_key, None)
             self._actor_placement_rotate_map.pop(actor_key, None)
             self._actor_placement_move_map.pop(actor_key, None)
+            self._actor_source_move_map.pop(actor_key, None)
             self._actor_placement_rotate_visual_keys.discard(actor_key)
             self._actor_placement_move_visual_keys.discard(actor_key)
             if actor is None:
@@ -6351,6 +6438,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             if self._placement_handle_selected_row_index is not None:
                 self._placement_handle_selected_row_index = None
                 changed = True
+            if self._selected_source_id is not None:  # bugs/0426: drop the source move gizmo
+                self._selected_source_id = None
+                changed = True
             if self._picked_ray_index is not None:
                 self._set_ray_highlight(None)
                 changed = True
@@ -6477,6 +6567,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # scene rebuild; a 3D pick set both, the browser path set neither. Selecting a body FROM the
         # browser is an explicit "I want to manipulate this", so enable the handle mode + rebuild.
         self._placement_handle_selected_row_index = row_index
+        self._selected_source_id = None  # bugs/0426: a row gizmo clears any source move gizmo
         try:
             if not self._show_rotation_handles():
                 self.show_rotation_handles_var.set(True)
@@ -14786,7 +14877,103 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 drawn = True
         except Exception:
             pass
+        # bugs/0426: draw the interactive MOVE gizmo when THIS source is selected and whole-body
+        # handle mode is on -- XYZ translate arrows at the origin; dragging one slides the source.
+        if str(self._selected_source_id or "") == source_id and self._show_rotation_handles():
+            try:
+                self._add_scene_source_translate_handles(source_id, origin, max(rx, ry, 1.0))
+            except Exception as exc:  # pragma: no cover - defensive
+                self.editor.append_debug(f"Source move gizmo failed for {source_id}: {exc}")
         return drawn
+
+    def _source_move_snap_step_mm(self) -> float:
+        """bugs/0426: mm the source-move gizmo slides per snap step -- the live drag-snap override if the
+        user set one, else a 1 mm nominal (continuous slide uses it as the mm/pixel-step scale)."""
+        override = self._drag_snap_override_mm()
+        return float(override) if (override is not None and override > 1e-9) else 1.0
+
+    def _add_scene_source_translate_handles(self, source_id: str, center, base_extent: float) -> int:
+        """bugs/0426: XYZ translate arrows for the scene-source MOVE gizmo -- the same 6-arrow layout as
+        the row placement handles, each tagged ``pick_source_move=(source_id, axis, signed_step_mm)`` so a
+        drag slides the source origin along that axis."""
+        if pv is None:
+            return 0
+        length = max(float(base_extent) * 1.6, 3.0)
+        radius = max(length * 0.035, 0.08)
+        step = float(self._source_move_snap_step_mm())
+        axes = (
+            ("x", np.asarray((1.0, 0.0, 0.0), dtype=float), (0.88, 0.18, 0.18)),
+            ("y", np.asarray((0.0, 1.0, 0.0), dtype=float), (0.12, 0.62, 0.24)),
+            ("z", np.asarray((0.0, 0.0, 1.0), dtype=float), (0.18, 0.35, 0.88)),
+        )
+        count = 0
+        for axis, direction, color in axes:
+            for sign in (-1.0, 1.0):
+                try:
+                    start = np.asarray(center, dtype=float).reshape(3) + direction * sign * radius * 2.0
+                    arrow = pv.Arrow(
+                        start=tuple(float(v) for v in start),
+                        direction=tuple(float(v) for v in direction * sign),
+                        scale=float(length),
+                    )
+                except Exception:
+                    continue
+                if self._add_mesh_actor(
+                    arrow,
+                    color=color,
+                    opacity=0.82 if sign > 0 else 0.55,
+                    pick_source_move=(source_id, axis, float(sign * step)),
+                    flat_shading=True,
+                    overlay_on_top=True,
+                ) is not None:
+                    count += 1
+        return count
+
+    def _commit_source_move(self, source_id: str, axis: str, delta_mm: float) -> None:
+        """bugs/0426: apply the gizmo slide onto the source ORIGIN (origin += delta * axis) via the
+        standard ``update_scene_source_spec``; the rebuild re-seats the glyph + gizmo at the new origin."""
+        sid = str(source_id)
+        origin = None
+        try:
+            for descriptor in (self.editor._drawable_scene_source_descriptors() or []):
+                if str(getattr(descriptor, "source_id", "")) == sid:
+                    origin = np.asarray(getattr(descriptor, "origin", (0.0, 0.0, 0.0)), dtype=float).reshape(-1)[:3]
+                    break
+        except Exception:
+            origin = None
+        if origin is None or origin.size < 3 or not np.all(np.isfinite(origin[:3])):
+            self.status_var.set("Source move: could not resolve the source origin.")
+            return
+        axis_unit = np.asarray(self._placement_axis_vector(str(axis)), dtype=float).reshape(-1)[:3]
+        new_origin = origin[:3] + axis_unit * float(delta_mm)
+        self.editor.update_scene_source_spec(
+            sid,
+            {
+                "origin": [float(new_origin[0]), float(new_origin[1]), float(new_origin[2])],
+                "source_x": float(new_origin[0]),
+                "source_y": float(new_origin[1]),
+                "source_z": float(new_origin[2]),
+            },
+            status=f"Moved source {str(axis).upper()} {delta_mm:+.3g} mm.",
+        )
+
+    def select_scene_source_from_admin(self, source_id: str) -> bool:
+        """bugs/0426: select a scene source FROM THE BROWSER and raise its interactive MOVE gizmo (XYZ
+        arrows at the source origin). Enables whole-body handle mode + rebuilds so the arrows appear;
+        drag an arrow to slide the LED."""
+        sid = str(source_id or "").strip()
+        if not sid:
+            return False
+        self._selected_source_id = sid
+        self._placement_handle_selected_row_index = None  # a source gizmo and a row gizmo never coexist
+        try:
+            if not self._show_rotation_handles():
+                self.show_rotation_handles_var.set(True)
+        except Exception:
+            pass
+        self.refresh_from_editor()
+        self.status_var.set(f"Selected source {sid} -- drag the XYZ arrows to move it.")
+        return True
 
     def _add_source_illumination_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
         """Drape the on-detector relative-illumination heatmap (3D viz idea #3) as a smooth textured
