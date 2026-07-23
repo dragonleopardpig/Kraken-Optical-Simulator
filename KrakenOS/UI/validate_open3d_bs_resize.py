@@ -77,12 +77,16 @@ def _check_resize_wiring(failures, notes):
         "regenerate": "generate_beam_splitter(kind, **params)",
         "replace in place": "replace_promoted_optical_solid_step(",
         "re-mark the BS": 'promo["beam_splitter"] = True',
+        # bugs/0427: retain the user's gizmo orientation + placement across the resize
+        "capture the pose": "old_pose",
+        "capture the tilt": '"tilt_x": float(getattr(old_row, "tilt_x"',
+        "re-apply the pose": "setattr(new_row, attr, float(value))",
     }
     missing = [label for label, token in need.items() if token not in src]
     if missing:
         failures.append("RESIZE-WIRING: resize_beam_splitter is missing " + ", ".join(missing))
     else:
-        notes.append("resize-wiring = regenerate + replace-in-place + re-mark the beam splitter")
+        notes.append("resize-wiring = regenerate + replace-in-place + re-mark BS + retain gizmo pose (tilt/desp)")
 
 
 def _check_menu(failures, notes):

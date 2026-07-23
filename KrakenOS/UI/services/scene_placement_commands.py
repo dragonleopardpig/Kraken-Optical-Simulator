@@ -5334,9 +5334,10 @@ class ScenePlacementMixin:
 
     def resize_beam_splitter(self, row_index, *, refresh_open_3d: bool = True, **new_dimensions):
         """bugs/0423: regenerate a promoted parametric beam splitter at NEW dimensions and replace it
-        IN PLACE (the pose -- rotation + placement -- is preserved by replace_promoted_optical_solid_step;
-        the parametric solid is origin-centred, so the same placement offset re-centres it). Right-click
-        a BS solid -> "Resize Beam Splitter...". Returns a summary, or None on a graceful stop."""
+        IN PLACE. bugs/0427: the user's gizmo orientation + placement (row tilt / desp) are captured
+        before the replace and re-applied after -- the replace's unpromote restores only the
+        promotion-time rotation, so a manual re-orientation would otherwise be lost. Right-click a BS
+        solid -> "Resize Beam Splitter...". Returns a summary, or None on a graceful stop."""
         info = self.beam_splitter_resize_info(row_index)
         if info is None:
             self.status_var.set("Resize Beam Splitter: this row is not a parametric beam splitter.")
@@ -5345,6 +5346,22 @@ class ScenePlacementMixin:
         for key, value in new_dimensions.items():
             if value is not None:
                 params[str(key)] = float(value)
+        # bugs/0427: RETAIN the user's gizmo orientation + placement across the resize. The parametric
+        # solid regenerates in TEMPLATE orientation, and replace_promoted_optical_solid_step ->
+        # unpromote_optical_solid_to_overlay restores the rotation from the PROMOTION-TIME
+        # step_rotation_deg (NOT the row's current tilt), so a manual gizmo re-orientation was lost
+        # ("my placement and orientation back to its original"). Capture the current pose and re-apply it.
+        try:
+            old_row = self.rows[int(row_index)]
+            old_pose = {
+                "tilt_x": float(getattr(old_row, "tilt_x", 0.0) or 0.0),
+                "tilt_y": float(getattr(old_row, "tilt_y", 0.0) or 0.0),
+                "tilt_z": float(getattr(old_row, "tilt_z", 0.0) or 0.0),
+                "desp_x": float(getattr(old_row, "desp_x", 0.0) or 0.0),
+                "desp_y": float(getattr(old_row, "desp_y", 0.0) or 0.0),
+            }
+        except Exception:
+            old_pose = None
         try:
             solid = generate_beam_splitter(kind, **params)
         except Exception as exc:
@@ -5356,6 +5373,15 @@ class ScenePlacementMixin:
         if not isinstance(result, dict):
             return None  # replace_promoted_optical_solid_step already set a status line
         new_row_index = int(result.get("row_index", row_index))
+        # bugs/0427: re-apply the captured pose so the resized BS keeps the user's orientation + placement.
+        if old_pose is not None:
+            try:
+                new_row = self.rows[new_row_index]
+                for attr, value in old_pose.items():
+                    setattr(new_row, attr, float(value))
+                self._sync_table()
+            except Exception as exc:
+                self.append_debug(f"Resize BS pose re-apply failed: {exc}")
         # replace_promoted_optical_solid_step preserves the pose + re-applies the authored coating face,
         # but NOT the non-face beam-splitter mark/recipe -- restore them on the new row.
         try:
