@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 430" role="img"
+     aria-labelledby="title desc">
+  <title id="title">Photon energy and wavelength conversion chart</title>
+  <desc id="desc">A wavelength-linear axis from 200 to 2000 nanometres with a
+  matched nonlinear photon-energy axis, visible colour bands, and the 1550
+  nanometre telecommunications region.</desc>
+  <rect width="1000" height="430" fill="#fbfaf6"/>
+  <text x="500" y="34" text-anchor="middle" font-family="sans-serif"
+        font-size="24" font-weight="700" fill="#18222b">
+    Photon energy and wavelength
+  </text>
+  <text x="500" y="65" text-anchor="middle" font-family="sans-serif"
+        font-size="15" fill="#4d5a63">
+    E(eV) = 1240 / wavelength(nm)
+  </text>
+
+  <line x1="90" y1="112" x2="930" y2="112" stroke="#18222b" stroke-width="2"/>
+  <text x="90" y="88" font-family="sans-serif" font-size="14" fill="#18222b">
+    Photon energy (eV)
+  </text>
+
+  <g font-family="sans-serif" font-size="13" fill="#18222b"
+     text-anchor="middle">
+    <g><line x1="90" y1="105" x2="90" y2="119" stroke="#18222b"/><text x="90" y="100">6.20</text></g>
+    <g><line x1="183.3" y1="105" x2="183.3" y2="119" stroke="#18222b"/><text x="183.3" y="100">3.10</text></g>
+    <g><line x1="276.7" y1="105" x2="276.7" y2="119" stroke="#18222b"/><text x="276.7" y="100">2.07</text></g>
+    <g><line x1="463.3" y1="105" x2="463.3" y2="119" stroke="#18222b"/><text x="463.3" y="100">1.24</text></g>
+    <g><line x1="720" y1="105" x2="720" y2="119" stroke="#18222b"/><text x="720" y="100">0.800</text></g>
+    <g><line x1="930" y1="105" x2="930" y2="119" stroke="#18222b"/><text x="930" y="100">0.620</text></g>
+  </g>
+
+  <rect x="90" y="145" width="840" height="142" rx="8"
+        fill="#e8ecee" stroke="#9aa7ad"/>
+  <rect x="206.7" y="145" width="21" height="142" fill="#2469d8" opacity="0.88"/>
+  <rect x="227.7" y="145" width="35" height="142" fill="#2ca45a" opacity="0.88"/>
+  <rect x="286" y="145" width="37.3" height="142" fill="#d84737" opacity="0.88"/>
+
+  <g font-family="sans-serif" font-size="14" font-weight="700"
+     text-anchor="middle" fill="#ffffff">
+    <text x="217.2" y="220" transform="rotate(-90 217.2 220)">BLUE</text>
+    <text x="245.2" y="220" transform="rotate(-90 245.2 220)">GREEN</text>
+    <text x="304.7" y="220" transform="rotate(-90 304.7 220)">RED</text>
+  </g>
+
+  <line x1="720" y1="132" x2="720" y2="304" stroke="#006d77"
+        stroke-width="3" stroke-dasharray="7 5"/>
+  <circle cx="720" cy="216" r="7" fill="#006d77"/>
+  <text x="736" y="180" font-family="sans-serif" font-size="15"
+        font-weight="700" fill="#006d77">1550 nm fibre window</text>
+  <text x="736" y="202" font-family="sans-serif" font-size="14"
+        fill="#006d77">0.800 eV</text>
+
+  <text x="130" y="175" font-family="sans-serif" font-size="14"
+        fill="#58656d">ultraviolet</text>
+  <text x="495" y="175" font-family="sans-serif" font-size="14"
+        fill="#58656d">near infrared</text>
+
+  <line x1="90" y1="312" x2="930" y2="312" stroke="#18222b" stroke-width="2"/>
+  <text x="90" y="390" font-family="sans-serif" font-size="14" fill="#18222b">
+    Wavelength (nm)
+  </text>
+
+  <g font-family="sans-serif" font-size="13" fill="#18222b"
+     text-anchor="middle">
+    <g><line x1="90" y1="305" x2="90" y2="320" stroke="#18222b"/><text x="90" y="340">200</text></g>
+    <g><line x1="183.3" y1="305" x2="183.3" y2="320" stroke="#18222b"/><text x="183.3" y="340">400</text></g>
+    <g><line x1="276.7" y1="305" x2="276.7" y2="320" stroke="#18222b"/><text x="276.7" y="340">600</text></g>
+    <g><line x1="370" y1="305" x2="370" y2="320" stroke="#18222b"/><text x="370" y="340">800</text></g>
+    <g><line x1="463.3" y1="305" x2="463.3" y2="320" stroke="#18222b"/><text x="463.3" y="340">1000</text></g>
+    <g><line x1="556.7" y1="305" x2="556.7" y2="320" stroke="#18222b"/><text x="556.7" y="340">1200</text></g>
+    <g><line x1="650" y1="305" x2="650" y2="320" stroke="#18222b"/><text x="650" y="340">1400</text></g>
+    <g><line x1="720" y1="305" x2="720" y2="326" stroke="#006d77" stroke-width="2"/><text x="720" y="360" fill="#006d77">1550</text></g>
+    <g><line x1="836.7" y1="305" x2="836.7" y2="320" stroke="#18222b"/><text x="836.7" y="340">1800</text></g>
+    <g><line x1="930" y1="305" x2="930" y2="320" stroke="#18222b"/><text x="930" y="340">2000</text></g>
+  </g>
+
+  <text x="500" y="410" text-anchor="middle" font-family="sans-serif"
+        font-size="13" fill="#58656d">
+    Increasing wavelength corresponds to decreasing photon energy.
+  </text>
+</svg>
