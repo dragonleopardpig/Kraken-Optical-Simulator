@@ -1359,6 +1359,58 @@ def _exit_frame_is_non_folding(
     return float(np.dot(forward, incoming)) >= 1.0 - float(direction_tol)
 
 
+def beam_splitter_reflect_axis_frames(rows) -> list[tuple[np.ndarray, np.ndarray]]:
+    """bugs/0428 (Phase 1): each promoted BEAM SPLITTER's REFLECT-branch axis as (fold_point,
+    reflect_direction) in world coords -- the beam transmits straight (axis:global) AND reflects at the
+    BS coating, so the reflect branch is the "2nd optical axis". The follower builder skips a BS as a fold
+    source (it must NOT re-aim the camera, bugs/0396-0399); this is DISPLAY-ONLY geometry for drawing the
+    guide, using the same specular reflection a mirror fold uses, applied to the BS interaction face
+    (which ``_is_specular_fold_interaction_face`` rejects because a BS splits rather than fully folds).
+
+    The incoming axis is the global +Z at x=y=0. The fold point is where that axis crosses the coating
+    plane; the reflect direction is ``d - 2(d.n)n``. Returns ``[]`` when there is no promoted BS.
+    """
+    prepared = [_row_like(row) for row in list(rows or [])]
+    if not prepared:
+        return []
+    z_positions = row_z_positions(prepared)
+    incoming = np.asarray((0.0, 0.0, 1.0), dtype=float)
+    frames: list[tuple[np.ndarray, np.ndarray]] = []
+    for row_index, current in enumerate(prepared):
+        if not _row_has_optical_solid(current):
+            continue
+        try:
+            world_faces = optical_solid_face_world_records(
+                current,
+                float(z_positions[row_index]) if row_index < len(z_positions) else 0.0,
+                assigned_only=True,
+            )
+        except Exception:
+            continue
+        if not (_row_is_marked_beam_splitter(current) or _solid_has_beam_splitter_interaction_face(world_faces)):
+            continue
+        face = select_optical_solid_interaction_face(world_faces)
+        if face is None:
+            continue
+        point = np.asarray(face.get("centroid_world", (0.0, 0.0, 0.0)), dtype=float).reshape(3)
+        raw_normal = np.asarray(face.get("normal_world", (0.0, 0.0, 1.0)), dtype=float).reshape(3)
+        norm = float(np.linalg.norm(raw_normal))
+        if norm < 1e-9 or not (np.all(np.isfinite(point)) and np.all(np.isfinite(raw_normal))):
+            continue
+        normal = raw_normal / norm
+        nz = float(normal[2])
+        if abs(nz) < 1e-9:  # coating parallel to the axis -> no crossing
+            continue
+        # where the x=y=0 +Z axis crosses the coating plane: (A(t) - point).n = 0 -> t = (point.n)/nz
+        fold_point = np.asarray((0.0, 0.0, float(np.dot(point, normal)) / nz), dtype=float)
+        reflected = incoming - 2.0 * float(np.dot(incoming, normal)) * normal
+        reflected_norm = float(np.linalg.norm(reflected))
+        if reflected_norm < 1e-9 or not np.all(np.isfinite(fold_point)):
+            continue
+        frames.append((fold_point, reflected / reflected_norm))
+    return frames
+
+
 def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict[int, dict[str, object]]:
     prepared = [_row_like(row) for row in list(rows or [])]
     if len(prepared) < 2:

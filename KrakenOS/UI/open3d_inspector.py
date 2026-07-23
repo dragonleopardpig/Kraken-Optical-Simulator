@@ -10770,6 +10770,56 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             "points": np.asarray((fold_point, far), dtype=float),
         }
 
+    def _bs_reflect_axis_guide_records(self, bounds) -> list[dict[str, object]]:
+        """bugs/0428 (Phase 1): dotted REFLECT-branch axis guide(s) for promoted BEAM SPLITTER(s). A BS
+        transmits straight (``axis:global``) AND reflects at its coating -> a 2nd optical axis. Draws from
+        each BS fold point along the reflect direction out to the scene extent, like the mirror fold guide
+        (``_folded_reflected_axis_guide_record``), so the 2nd axis is visible even with rays off. Display
+        only -- the follower placement still skips the BS (bugs/0396-0399)."""
+        try:
+            from KrakenOS.UI.nonseq_output_ports import beam_splitter_reflect_axis_frames
+
+            frames = beam_splitter_reflect_axis_frames(self.editor.rows)
+        except Exception:
+            return []
+        if not frames:
+            return []
+        try:
+            bounds_arr = np.asarray(bounds, dtype=float).reshape(6)
+            corners = np.asarray(
+                [
+                    (bounds_arr[a], bounds_arr[2 + b], bounds_arr[4 + c])
+                    for a in (0, 1)
+                    for b in (0, 1)
+                    for c in (0, 1)
+                ],
+                dtype=float,
+            )
+        except Exception:
+            return []
+        records: list[dict[str, object]] = []
+        for i, (fold_point, reflect_dir) in enumerate(frames):
+            fp = np.asarray(fold_point, dtype=float).reshape(3)
+            rd = np.asarray(reflect_dir, dtype=float).reshape(3)
+            if not (np.all(np.isfinite(fp)) and np.all(np.isfinite(rd))):
+                continue
+            reach = float(np.max((corners - fp) @ rd))
+            if not (reach > 1e-6):
+                continue
+            far = fp + rd * reach
+            records.append(
+                {
+                    "axis_id": "axis:global:split" if len(frames) == 1 else f"axis:global:split:{i}",
+                    "axis_label": "Optical Axis (BS reflect)",
+                    "axis_kind": "dotted_global_guide",
+                    "branch_path": "",
+                    "source_id": "",
+                    "ray_index": -1,
+                    "points": np.asarray((fp, far), dtype=float),
+                }
+            )
+        return records
+
     def _folded_axis_row_anchor_direction(self, row_index, z_positions):
         """World axis anchor + unit direction for a row (bugs/0216): its folded pose if the
         row sits on a reflected branch, else the straight +Z station. ``(None, None)`` on
@@ -10992,6 +11042,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             )
             if reflected_guide is not None:
                 records.append(reflected_guide)
+        # bugs/0428 (Phase 1): a BEAM SPLITTER transmits straight (axis:global, above) AND reflects -->
+        # draw the reflect-branch guide(s) as the 2nd optical axis. Independent of the mirror fold above
+        # (a BS is not a mirror fold source), so it also works on a BS-only scene with rays off.
+        records.extend(self._bs_reflect_axis_guide_records(bounds))
         try:
             show_rays = bool(self.show_rays_var.get())
         except Exception:

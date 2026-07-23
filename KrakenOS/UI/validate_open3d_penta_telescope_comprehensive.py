@@ -15034,6 +15034,27 @@ def phase_344_source_move_gizmo(app: KrakenLayoutEditor, inspector: Kraken3DInsp
     return result
 
 
+def phase_345_bs_reflect_axis(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> PhaseResult:
+    """bugs/0428 Phase 1 -- a beam splitter transmits straight (axis:global) AND draws its REFLECT-branch
+    optical axis (axis:global:split), so 'BS creates 2 optical axes' holds even with rays off. Display
+    only -- the follower placement still skips the BS (Phase 2 is the predecessor-chain placement).
+    Guards the reflect geometry + the guide wiring + that placement is unchanged."""
+    result = PhaseResult(name="Phase 345: beam splitter reflect-branch optical axis (Phase 1)")
+    try:
+        from KrakenOS.UI.validate_open3d_bs_reflect_axis import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"bs-reflect-axis guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("bs-reflect-axis phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15423,6 +15444,7 @@ def main() -> int:
             phase_342_browser_select_gizmo,
             phase_343_carry_gated_on_mode,
             phase_344_source_move_gizmo,
+            phase_345_bs_reflect_axis,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
