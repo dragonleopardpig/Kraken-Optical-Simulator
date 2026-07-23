@@ -342,7 +342,8 @@
     "339": "pass",
     "340": "pass",
     "341": "pass",
-    "342": "pass"
+    "342": "pass",
+    "343": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -685,6 +686,7 @@
     "339": "Accept-cone overlay creases at the display fold",
     "340": "one-click BS plate default is a thin substrate",
     "341": "parametric beam splitter numerical resize",
-    "342": "browser-select raises the move/rotate gizmo"
+    "342": "browser-select raises the move/rotate gizmo",
+    "343": "long-press carry gated on Move/Rotate-whole-body mode"
   }
 }

@@ -14994,6 +14994,26 @@ def phase_342_browser_select_gizmo(app: KrakenLayoutEditor, inspector: Kraken3DI
     return result
 
 
+def phase_343_carry_gated_on_mode(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> PhaseResult:
+    """bugs/0425 -- a long-press whole-body CARRY (grab-and-drag) must only arm when "Move/Rotate whole
+    body" is ON; in face/edge-select mode it moved the body by accident. Guards that the left-press carry
+    arming is gated on _show_rotation_handles()."""
+    result = PhaseResult(name="Phase 343: long-press carry gated on Move/Rotate-whole-body mode")
+    try:
+        from KrakenOS.UI.validate_open3d_carry_gated_on_mode import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"carry-gated-on-mode guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("carry-gated-on-mode phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15381,6 +15401,7 @@ def main() -> int:
             phase_340_bs_plate_thickness,
             phase_341_bs_resize,
             phase_342_browser_select_gizmo,
+            phase_343_carry_gated_on_mode,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

@@ -190,7 +190,16 @@ class Open3DMouseBindingsService:
                         self._row_carry_drag_state = None
                         if self._placement_drag_state is None:
                             self._thickness_drag_state = self._thickness_drag_state_from_current_pick()
-                        if self._placement_drag_state is None and self._thickness_drag_state is None:
+                        # bugs/0425: a long-press "carry" (grab-and-drag the WHOLE body) is a whole-body
+                        # edit, so only arm it when "Move/Rotate whole body" is ON. In face/edge-select
+                        # mode a long press + drag used to grab and move the body by accident ("easy to
+                        # move the body by mistake"). Placement-handle / thickness / axis-slide drags on
+                        # explicit gizmo widgets are unaffected (resolved above).
+                        if (
+                            self._placement_drag_state is None
+                            and self._thickness_drag_state is None
+                            and self._show_rotation_handles()
+                        ):
                             step_label = self._step_carry_label_from_current_pick()
                             if step_label is not None:
                                 self._arm_step_carry_hold(step_label, (int(event.x), int(event.y)))
