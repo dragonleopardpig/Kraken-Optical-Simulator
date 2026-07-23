@@ -67,9 +67,16 @@ Neighbouring phases still pass: `validate_open3d_beam_splitter_transmit_and_seco
 - `KrakenOS/UI/validate_open3d_bs_reflect_axis.py` — updated guard (phase 345).
 - `bugs/probe_0428_folded_bs_reflect_axis.py` — end-to-end folded-scene probe.
 
-## In-app eyeball still owed
+## In-app eyeball — CONFIRMED by the user
 
-On `machine_vision_AZ85_RA_Mirror` with 2 RA mirrors: **add a BS plate** → a dotted `axis:global:split`
-line must now appear from the BS coating along its reflect direction, while the 90° mirror fold is unchanged.
-The visual *direction* of the split line on the folded scene is headless-untestable (VTK) — confirm it points
-the physically correct way.
+3-flag recording `flag_20260723_161519` / `_161555` / `_161647` on build `143dd2d7`
+(`machine_vision_AZ85_RA_Mirror.py`):
+
+- `161519` "Before BS plate added" → 3 mirror segments (`axis:global` + `reflected:1` + `reflected`).
+- `161555` **"after BS plate added, can see optical axis generated from BS"** → 4 segments incl.
+  `axis:global:split`, drawn from the BS coating along its reflect direction; the 90° mirror fold unchanged.
+- `161647` "after resize and rotate, clearer view" → the split axis **persists and tracks** the BS's new pose
+  (row 9 `tilt [0,0,-90]`, resized Ø50 × 40), confirming it is computed live from the coating geometry.
+
+The reflect line follows the live BS orientation — exactly the aiming guide needed to orient the BS plate so
+its reflect path becomes the imaging path (the AZ85 requirement). Eyeball closed.
