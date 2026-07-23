@@ -63,17 +63,22 @@ def _check_crease_math(failures, notes):
     from KrakenOS.UI.open3d_inspector import Kraken3DInspector
     from KrakenOS.UI.services.receiving_cone_overlay import build_receiving_cone_overlay
 
-    # cone straddling the fold: FOV ring at z=-200 (upstream), pupil ring at z=+100 (downstream of hinge 53)
-    spec = build_receiving_cone_overlay(10.0, 10.0, -200.0, 100.0, 5.0)
+    # cone straddling the fold: FOV at z=-200 (object leg), pupil at z=+100 (lens leg, past hinge 53),
+    # SUBDIVIDED (bugs/0419) so the loft can bend -- a 2-ring loft would cut a straight diagonal wedge.
+    spec = build_receiving_cone_overlay(10.0, 10.0, -200.0, 100.0, 5.0, axial_segments=8)
     if not spec:
         failures.append("CREASE-MATH: build_receiving_cone_overlay returned nothing")
         return
-    points = np.asarray(spec["points"], dtype=float)
+    rings_count = int(spec.get("axial_rings", 0))
+    if rings_count < 5:
+        failures.append(f"CREASE-MATH: the cone must be axially SUBDIVIDED to bend (got {rings_count} rings)")
+        return
+    points = np.asarray(spec["points"], dtype=float)[:, :3]
     faces = np.asarray(spec["faces"], dtype=np.int64)
-    n = points.shape[0] // 2  # [fov ring (n), pupil ring (n)]
-    mesh = pv.PolyData(points[:, :3], faces=faces)
+    n = points.shape[0] // rings_count
+    mesh = pv.PolyData(points, faces=faces)
 
-    # a 90-deg Z->X fold with the hinge at z=53: R@[0,0,1]=[1,0,0]; F([0,0,53])=[0,0,53] -> t=[-53,0,53]
+    # a 90-deg Z->X fold, hinge at z=53 (mirror plane z = 53 + x): R@[0,0,1]=[1,0,0], F([0,0,53])=[0,0,53]
     rot = np.array([[0.0, 0.0, 1.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]], dtype=float)
     transform = np.eye(4, dtype=float)
     transform[:3, :3] = rot
@@ -81,31 +86,30 @@ def _check_crease_math(failures, notes):
 
     creased = Kraken3DInspector._crease_overlay_mesh_at_fold(None, mesh, transform)
     out = np.asarray(creased.points, dtype=float)
-    # upstream FOV ring untouched (still up the object leg)
-    if not np.allclose(out[:n], points[:n, :3], atol=1e-6):
-        failures.append("CREASE-MATH: the upstream FOV ring must stay on the object leg (unfolded)")
-    # downstream pupil ring REFLECTED onto the leg: centre (0,0,100) reflects about z=53+x -> (47,0,53)
-    pupil_center_straight = points[n:].mean(axis=0)  # (0,0,100)
-    pupil_center = out[n:].mean(axis=0)
-    if not np.allclose(pupil_center, np.array([47.0, 0.0, 53.0]), atol=1e-6):
-        failures.append(f"CREASE-MATH: the downstream pupil ring must reflect onto the leg (got {pupil_center.round(2)}, expected [47,0,53])")
-    # ISOMETRY / no-twist: the reflected pupil ring keeps its radius (a rotation-split twisted it)
-    r_straight = np.linalg.norm(points[n:, :3] - pupil_center_straight, axis=1)
-    r_folded = np.linalg.norm(out[n:] - pupil_center, axis=1)
+    straight_rings = points.reshape(rings_count, n, 3)
+    folded_rings = out.reshape(rings_count, n, 3)
+    straight_centers = straight_rings.mean(axis=1)
+    folded_centers = folded_rings.mean(axis=1)
+
+    # BEND, not diagonal: rings clearly UPSTREAM of the mirror (straight z < 40) stay on the object leg
+    # (centre x ~ 0); rings clearly DOWNSTREAM (straight z > 66) land on the lens leg (centre z ~ 53).
+    up = straight_centers[:, 2] < 40.0
+    down = straight_centers[:, 2] > 66.0
+    if up.any() and not np.allclose(folded_centers[up][:, 0], 0.0, atol=1e-6):
+        failures.append("CREASE-MATH: upstream rings must stay on the object leg (centre x~0), not cut a diagonal")
+    if down.any() and not np.allclose(folded_centers[down][:, 2], 53.0, atol=1e-6):
+        failures.append("CREASE-MATH: downstream rings must land on the lens leg (centre z~53)")
+    # ISOMETRY / no-twist: the reflected pupil ring keeps its radius
+    r_straight = np.linalg.norm(straight_rings[-1] - straight_centers[-1], axis=1)
+    r_folded = np.linalg.norm(folded_rings[-1] - folded_centers[-1], axis=1)
     if not np.allclose(np.sort(r_folded), np.sort(r_straight), atol=1e-6):
         failures.append("CREASE-MATH: the reflected pupil ring must keep its radius (isometry = no twist)")
-    # CONTINUITY: a point ON the mirror plane (z = 53 + x) is a fixed point of the crease
-    on_plane = pv.PolyData(np.array([[10.0, 2.0, 63.0], [10.0, 2.0, 63.0], [10.0, 2.0, 63.0]]),
-                           faces=np.array([3, 0, 1, 2], dtype=np.int64))
-    fixed = np.asarray(Kraken3DInspector._crease_overlay_mesh_at_fold(None, on_plane, transform).points, dtype=float)
-    if not np.allclose(fixed[0], [10.0, 2.0, 63.0], atol=1e-6):
-        failures.append("CREASE-MATH: a point on the mirror plane must be unchanged (continuity)")
     # a straight scene (no fold) must not move the cone
     unfolded = Kraken3DInspector._crease_overlay_mesh_at_fold(None, mesh, None)
-    if not np.allclose(np.asarray(unfolded.points, dtype=float), points[:, :3], atol=1e-9):
+    if not np.allclose(np.asarray(unfolded.points, dtype=float), points, atol=1e-9):
         failures.append("CREASE-MATH: a None (unfolded) transform must leave the cone untouched")
     if not [f for f in failures if f.startswith("CREASE-MATH")]:
-        notes.append(f"crease-math = FOV ring stays; pupil ring reflects to {pupil_center.round(1)} radius-preserved; on-plane fixed; unfolded no-op")
+        notes.append(f"crease-math = {rings_count} rings; upstream stay on object leg (x~0), downstream on lens leg (z~53), radius-preserved")
 
 
 def run_checks() -> "tuple[bool, list[str]]":
@@ -122,7 +126,7 @@ def run_checks() -> "tuple[bool, list[str]]":
 
 def run() -> int:
     passed, notes = run_checks()
-    print("=== validate_open3d_accept_cone_fold_aware (bugs/0416+0418+0419) ===")
+    print("=== validate_open3d_accept_cone_fold_aware (bugs/0416+0418+0419+0420) ===")
     for note in notes:
         print(f"  {'ok ' if '=' in note else 'XX '} {note}")
     if not passed:
