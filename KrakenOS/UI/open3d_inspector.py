@@ -6471,9 +6471,24 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.editor._select_table_indices([row_index], focus_index=row_index)
         self.editor._sync_surface_selection(row_index)
         self._stl_placement_row_index = row_index
+        # bugs/0424: also RAISE the move/rotate gizmo, not just the highlight -- browser-select used to
+        # only highlight ("click the right browser only highlight it, no gizmo"). The in-canvas handles
+        # target `_placement_handle_selected_row_index` and only build in whole-body handle mode during a
+        # scene rebuild; a 3D pick set both, the browser path set neither. Selecting a body FROM the
+        # browser is an explicit "I want to manipulate this", so enable the handle mode + rebuild.
+        self._placement_handle_selected_row_index = row_index
+        try:
+            if not self._show_rotation_handles():
+                self.show_rotation_handles_var.set(True)
+        except Exception:
+            pass
+        self.refresh_from_editor()
         self.highlight_row(row_index)
         self.refresh_step_admin_panel()
-        self.status_var.set(f"Selected promoted STEP row S{row_index}: {getattr(row, 'name', '') or 'optical solid'}.")
+        self.status_var.set(
+            f"Selected promoted STEP row S{row_index}: {getattr(row, 'name', '') or 'optical solid'} "
+            "(move/rotate handles shown)."
+        )
         return True
 
     def select_scene_row_from_admin(self, row_index: int) -> bool:

@@ -14973,6 +14973,27 @@ def phase_341_bs_resize(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -
     return result
 
 
+def phase_342_browser_select_gizmo(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> PhaseResult:
+    """bugs/0424 -- selecting a promoted solid from the Scene Components browser must raise its move/rotate
+    GIZMO, not just highlight it (the occluded-BS "only highlight, no gizmo" report). Guards that
+    select_promoted_step_row_from_admin sets the gizmo target row + handle mode + rebuilds, and that the
+    gizmo gate honours that row."""
+    result = PhaseResult(name="Phase 342: browser-select raises the move/rotate gizmo")
+    try:
+        from KrakenOS.UI.validate_open3d_browser_select_gizmo import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"browser-select-gizmo guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("browser-select-gizmo phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15359,6 +15380,7 @@ def main() -> int:
             phase_339_accept_cone_fold_aware,
             phase_340_bs_plate_thickness,
             phase_341_bs_resize,
+            phase_342_browser_select_gizmo,
         ]
         for phase in phases:
             phase_start = time.perf_counter()
