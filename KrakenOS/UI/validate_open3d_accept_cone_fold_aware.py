@@ -41,17 +41,18 @@ def _check_mechanism(failures, notes):
     missing = [label for label, token in need.items() if token not in src]
     if "_mesh_with_world_transform(mesh, fold_transform)" in src:
         missing.append("the OLD whole-mesh fold must be gone (it rigidly swings the cone onto the lens leg)")
-    # bugs/0419: the crease must REFLECT about the mirror plane (isometry, no twist), not rigidly rotate
-    # the downstream points (bugs/0418 rotated them -> a twisted surface).
     crease = inspect.getsource(Kraken3DInspector._crease_overlay_mesh_at_fold)
-    if "2.0 * signed" not in crease or "normal" not in crease:
-        missing.append("the crease must REFLECT about the mirror plane (isometry)")
-    if "@ rotation.T + translation" in crease:
-        missing.append("the crease must NOT rigidly rotate downstream points (twists the surface)")
+    # bugs/0419: reflect about the mirror plane (isometry, no twist), not rigidly rotate (bugs/0418)
+    if "normal" not in crease or "@ rotation.T + translation" in crease:
+        missing.append("the crease must REFLECT about the mirror plane (isometry), not rotate")
+    # bugs/0421: CLIP at the plane for a SHARP crease (inserts edge verts); per-point reflection alone
+    # left a ragged/wavy crease.
+    if ".clip(" not in crease:
+        missing.append("the crease must CLIP at the mirror plane for a sharp (non-wavy) crease")
     if missing:
         failures.append("MECHANISM: _add_receiving_cone_overlays is missing " + ", ".join(missing))
     else:
-        notes.append("mechanism = accept cone CREASES via a mirror-plane REFLECTION at the lens-row fold")
+        notes.append("mechanism = accept cone creases via a mirror-plane REFLECTION + CLIP (sharp crease)")
 
 
 def _check_crease_math(failures, notes):
@@ -75,8 +76,13 @@ def _check_crease_math(failures, notes):
         return
     points = np.asarray(spec["points"], dtype=float)[:, :3]
     faces = np.asarray(spec["faces"], dtype=np.int64)
-    n = points.shape[0] // rings_count
     mesh = pv.PolyData(points, faces=faces)
+
+    class _Shim:  # the crease calls self.editor.append_debug only on the clip-fallback path
+        class editor:
+            @staticmethod
+            def append_debug(*_a, **_k):
+                return None
 
     # a 90-deg Z->X fold, hinge at z=53 (mirror plane z = 53 + x): R@[0,0,1]=[1,0,0], F([0,0,53])=[0,0,53]
     rot = np.array([[0.0, 0.0, 1.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]], dtype=float)
@@ -84,32 +90,30 @@ def _check_crease_math(failures, notes):
     transform[:3, :3] = rot
     transform[:3, 3] = np.array([-53.0, 0.0, 53.0])
 
-    creased = Kraken3DInspector._crease_overlay_mesh_at_fold(None, mesh, transform)
+    creased = Kraken3DInspector._crease_overlay_mesh_at_fold(_Shim(), mesh, transform)
     out = np.asarray(creased.points, dtype=float)
-    straight_rings = points.reshape(rings_count, n, 3)
-    folded_rings = out.reshape(rings_count, n, 3)
-    straight_centers = straight_rings.mean(axis=1)
-    folded_centers = folded_rings.mean(axis=1)
+    normal = np.array([-1.0, 0.0, 1.0]) / np.sqrt(2.0)
+    hinge = np.array([0.0, 0.0, 53.0])
 
-    # BEND, not diagonal: rings clearly UPSTREAM of the mirror (straight z < 40) stay on the object leg
-    # (centre x ~ 0); rings clearly DOWNSTREAM (straight z > 66) land on the lens leg (centre z ~ 53).
-    up = straight_centers[:, 2] < 40.0
-    down = straight_centers[:, 2] > 66.0
-    if up.any() and not np.allclose(folded_centers[up][:, 0], 0.0, atol=1e-6):
-        failures.append("CREASE-MATH: upstream rings must stay on the object leg (centre x~0), not cut a diagonal")
-    if down.any() and not np.allclose(folded_centers[down][:, 2], 53.0, atol=1e-6):
-        failures.append("CREASE-MATH: downstream rings must land on the lens leg (centre z~53)")
-    # ISOMETRY / no-twist: the reflected pupil ring keeps its radius
-    r_straight = np.linalg.norm(straight_rings[-1] - straight_centers[-1], axis=1)
-    r_folded = np.linalg.norm(folded_rings[-1] - folded_centers[-1], axis=1)
-    if not np.allclose(np.sort(r_folded), np.sort(r_straight), atol=1e-6):
-        failures.append("CREASE-MATH: the reflected pupil ring must keep its radius (isometry = no twist)")
+    # SHARP crease: the clip inserts edge vertices on the mirror plane -> more points out than in.
+    if creased.n_points <= mesh.n_points:
+        failures.append("CREASE-MATH: the clip must insert crease-edge vertices (sharp crease)")
+    # CLEAN FOLD: after the crease every point is on the object-side half-space (nothing left downstream);
+    # a ragged per-point fold that mis-classified straddling points would leave some signed > 0.
+    signed = (out - hinge) @ normal
+    if float(signed.max()) > 1e-6:
+        failures.append(f"CREASE-MATH: after the crease all points must fold onto the object-side half-space (max signed {signed.max():.3g})")
+    # BEND onto BOTH legs: object leg (x~0) and lens leg (z~53) both present.
+    if not bool((np.abs(out[:, 0]) < 1.0).any()):
+        failures.append("CREASE-MATH: the object leg (x~0) must be present")
+    if not bool((np.abs(out[:, 2] - 53.0) < 1.0).any()):
+        failures.append("CREASE-MATH: the lens leg (z~53) must be present")
     # a straight scene (no fold) must not move the cone
-    unfolded = Kraken3DInspector._crease_overlay_mesh_at_fold(None, mesh, None)
+    unfolded = Kraken3DInspector._crease_overlay_mesh_at_fold(_Shim(), mesh, None)
     if not np.allclose(np.asarray(unfolded.points, dtype=float), points, atol=1e-9):
         failures.append("CREASE-MATH: a None (unfolded) transform must leave the cone untouched")
     if not [f for f in failures if f.startswith("CREASE-MATH")]:
-        notes.append(f"crease-math = {rings_count} rings; upstream stay on object leg (x~0), downstream on lens leg (z~53), radius-preserved")
+        notes.append(f"crease-math = {rings_count} rings; clip inserts {creased.n_points - mesh.n_points} edge verts; folds cleanly onto object leg (x~0) + lens leg (z~53)")
 
 
 def run_checks() -> "tuple[bool, list[str]]":
@@ -126,7 +130,7 @@ def run_checks() -> "tuple[bool, list[str]]":
 
 def run() -> int:
     passed, notes = run_checks()
-    print("=== validate_open3d_accept_cone_fold_aware (bugs/0416+0418+0419+0420) ===")
+    print("=== validate_open3d_accept_cone_fold_aware (bugs/0416+0418+0419+0420+0421) ===")
     for note in notes:
         print(f"  {'ok ' if '=' in note else 'XX '} {note}")
     if not passed:

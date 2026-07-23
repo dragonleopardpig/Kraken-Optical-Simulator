@@ -14909,12 +14909,11 @@ def phase_338_mtf_from_image_dialog_controls(
 def phase_339_accept_cone_fold_aware(
     app: KrakenLayoutEditor, inspector: Kraken3DInspector
 ) -> PhaseResult:
-    """bugs/0416+0418+0419+0420 -- the imaging lens's Accept-cone overlay (receiving cone), built on the
-    straight object-space axis, must CREASE at the fold. 0416 rigidly folded the whole mesh (flat on the
-    lens leg); 0418 split+rotated -> twisted; 0419 REFLECTS the downstream part about the mirror plane
-    (isometry, no twist); 0420 SUBDIVIDES the cone axially so the loft can actually BEND (a 2-ring loft is
-    a straight ruled surface -> a diagonal wedge). Now upstream rings stay on the object leg, downstream
-    rings land on the lens leg. Guards the reflection + the axial bend (object leg x~0, lens leg z~53)."""
+    """bugs/0416..0421 -- the imaging lens's Accept-cone overlay (receiving cone), built on the straight
+    object-space axis, must CREASE cleanly at the fold. 0416 rigid-flat; 0418 rotate-twist; 0419 reflect
+    about the mirror plane (isometry); 0420 axial SUBDIVISION so it can bend; 0421 CLIP at the plane
+    (inserts edge verts) for a SHARP crease (per-point reflection left a ragged/wavy crease). Guards the
+    reflection+clip mechanism + a clean fold (all points on the object-side half-space, both legs present)."""
     result = PhaseResult(name="Phase 339: Accept-cone overlay creases at the display fold")
     try:
         from KrakenOS.UI.validate_open3d_accept_cone_fold_aware import run_checks

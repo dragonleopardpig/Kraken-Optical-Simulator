@@ -14555,10 +14555,33 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             if not np.all(np.isfinite(hinge)):
                 return mesh
             points = np.asarray(mesh.points, dtype=float)
-            signed = (points - hinge) @ normal  # > 0 on the downstream (past-mirror) side
+            if not bool(((points - hinge) @ normal > 1e-9).any()):
+                return mesh  # nothing downstream of the mirror -> no crease
+
+            # bugs/0421: CLIP at the mirror plane (inserts exact edge vertices), reflect the downstream
+            # half, merge -> a SHARP crease. The bugs/0419+0420 per-point reflection left triangles
+            # STRADDLING the tilted plane, so the crease was ragged ("wavy at reflection surface"). Fall
+            # back to the per-point reflection if clip is unavailable so it still folds (just less crisp).
+            try:
+                up = mesh.clip(normal=normal, origin=hinge, invert=True)   # object-leg side (signed < 0)
+                down = mesh.clip(normal=normal, origin=hinge, invert=False)  # lens-leg side (signed > 0)
+                if getattr(down, "n_points", 0) and getattr(up, "n_points", 0):
+                    dpts = np.asarray(down.points, dtype=float)
+                    dsigned = (dpts - hinge) @ normal
+                    down.points = dpts - 2.0 * dsigned[:, None] * normal  # reflect (plane edge is fixed)
+                    merged = up.merge(down, merge_points=False)
+                    surface = (
+                        merged.extract_surface(algorithm="dataset_surface")
+                        if hasattr(merged, "extract_surface")
+                        else merged
+                    )
+                    if getattr(surface, "n_points", 0):
+                        return surface
+            except Exception as exc:
+                self.editor.append_debug(f"Crease clip fell back to per-point reflect: {exc}")
+
+            signed = (points - hinge) @ normal
             downstream = signed > 1e-9
-            if not bool(downstream.any()):
-                return mesh
             folded = points.copy()
             folded[downstream] = points[downstream] - 2.0 * signed[downstream][:, None] * normal
             out = mesh.copy(deep=True)
