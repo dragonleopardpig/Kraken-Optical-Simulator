@@ -20,10 +20,21 @@ misplacement) is Phase 2.
 - **`Kraken3DInspector._bs_reflect_axis_guide_records(bounds)`** — turns those into
   `axis:global:split` dotted guides reaching to the scene extent, exactly like the mirror fold guide
   (`_folded_reflected_axis_guide_record`).
-- **`_optical_axis_records_for_3d`** appends them, independent of the mirror-fold path, so it also works
-  on a BS-only scene (RA mirror removed) with rays off.
+- **`_optical_axis_records_for_3d`** appends them **only when the scene is NOT mirror-folded** (the BS
+  incoming is the straight `+Z`).
 
 `axis:global` (the transmit leg) is unchanged — it already continues straight through a BS.
+
+### Unfolded-only gate (flag_20260723_151839 follow-up)
+
+`beam_splitter_reflect_axis_frames` assumes the incoming axis is the global `+Z` at x=y=0. That holds when
+the BS sits directly on the object axis — but on a scene with an **RA mirror folding the beam *before* the
+BS**, the incoming to the BS is the *folded* leg, so the `+Z` assumption drew the reflect line from a wrong
+point/direction — a stray dotted line crossing the mirror's reflected axis ("RA mirror optical axis goes
+haywire"). Since the whole point of this scene is to **remove** the RA mirror (after which the BS *is* on
+`+Z` and the axis draws correctly), Phase 1 gates the BS reflect guide on `not scene_is_folded`. The
+folded-incoming case (each leg's true frame) is resolved by **Phase 2's predecessor chain**, not a
+geometric guess here.
 
 ## Display only — placement is Phase 2
 

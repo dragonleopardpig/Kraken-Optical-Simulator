@@ -66,8 +66,13 @@ def _check_mechanism(failures, notes):
     assembler = inspect.getsource(Kraken3DInspector._optical_axis_records_for_3d)
     if "self._bs_reflect_axis_guide_records(bounds)" not in assembler:
         failures.append("MECHANISM: _optical_axis_records_for_3d must append the BS reflect guides")
+    # bugs/0428: gate on the UNFOLDED case -- a mirror-folded incoming would draw the +Z-assumption axis
+    # wrong (flag_20260723_151839 "RA mirror axis goes haywire"). The BS axis draws once the RA mirror is
+    # removed (incoming becomes +Z); folded incoming is Phase 2.
+    if "if not scene_is_folded:" not in assembler:
+        failures.append("MECHANISM: the BS reflect guides must be gated on the unfolded (+Z incoming) case")
     if not [f for f in failures if f.startswith("MECHANISM")]:
-        notes.append("mechanism = the axis-record assembler appends the BS reflect-branch guide(s)")
+        notes.append("mechanism = the assembler appends the BS reflect guide(s) only when incoming is straight +Z")
 
 
 def _check_placement_unchanged(failures, notes):

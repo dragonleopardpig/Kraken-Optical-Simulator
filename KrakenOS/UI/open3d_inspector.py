@@ -11043,9 +11043,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             if reflected_guide is not None:
                 records.append(reflected_guide)
         # bugs/0428 (Phase 1): a BEAM SPLITTER transmits straight (axis:global, above) AND reflects -->
-        # draw the reflect-branch guide(s) as the 2nd optical axis. Independent of the mirror fold above
-        # (a BS is not a mirror fold source), so it also works on a BS-only scene with rays off.
-        records.extend(self._bs_reflect_axis_guide_records(bounds))
+        # draw the reflect-branch guide(s) as the 2nd optical axis. ONLY when the incoming to the BS is the
+        # straight +Z (scene NOT mirror-folded): on a mirror fold the incoming is the folded leg, which the
+        # geometric +Z assumption in beam_splitter_reflect_axis_frames gets wrong -> a stray line crossing
+        # the mirror axis (flag_20260723_151839 "RA mirror optical axis goes haywire"). The user's goal is
+        # to REMOVE the RA mirror; then the BS is on +Z and this draws correctly. The folded-incoming case
+        # is Phase 2 (predecessor chain resolves each leg's frame).
+        if not scene_is_folded:
+            records.extend(self._bs_reflect_axis_guide_records(bounds))
         try:
             show_rays = bool(self.show_rays_var.get())
         except Exception:
