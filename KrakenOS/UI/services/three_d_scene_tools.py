@@ -1264,6 +1264,39 @@ class ThreeDSceneToolsMixin:
             {int(index) for index, spec in enumerate(specs) if _is_promoted_mirror_fold(spec)}
         )
 
+    def _promoted_beam_splitter_row_indices(self) -> list[int]:
+        """bugs/0428 (Phase 1 fix): row indices of every promoted BEAM SPLITTER, ascending.
+
+        A BS is NOT a mirror fold -- it transmits straight (the primary axis) and peels a separate
+        reflect branch. So it must be EXCLUDED from the folded reflected-axis BRANCH grouping in
+        ``_folded_multifold_axis_guide_records``: the BS row is skipped from the fold override, so it
+        reads as straight +Z while the surrounding folded rows read the leg direction (+X), which spawns a
+        spurious extra fold vertex that DEVIATES the mirror axis the moment a BS is added
+        (flag_20260723_154034 "RA mirror optical axis deviates from 90 deg right after BS added ...
+        doesn't restore")."""
+        try:
+            specs = self._serializable_specs_for_rows(list(self.rows))
+        except Exception:
+            return []
+        from KrakenOS.UI.trace_intent import _optical_solid_faces_have_beam_splitter
+
+        indices: set[int] = set()
+        for index, spec in enumerate(specs):
+            if str(spec.get("surface", "")) in {"Object", "Image"}:
+                continue
+            advanced = spec.get("advanced")
+            if not isinstance(advanced, dict):
+                continue
+            if _optical_solid_faces_have_beam_splitter(advanced.get("OpticalSolidFaces")):
+                indices.add(int(index))
+                continue
+            promo = advanced.get("StepOverlayPromotion")  # explicit mark (add_beam_splitter_to_led)
+            if isinstance(promo, dict) and promo.get("beam_splitter"):
+                indices.add(int(index))
+            elif advanced.get("OpticalSolidBeamSplitter"):
+                indices.add(int(index))
+        return sorted(indices)
+
     def _fold_straight_equivalent_display_rays(self, scene_bundle, fold_transform) -> None:
         """bugs/0197: bend the flat-plate-equivalent display rays at the promoted mirror.
 

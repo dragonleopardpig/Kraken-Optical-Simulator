@@ -15055,6 +15055,27 @@ def phase_345_bs_reflect_axis(app: KrakenLayoutEditor, inspector: Kraken3DInspec
     return result
 
 
+def phase_346_bs_not_axis_fold(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> PhaseResult:
+    """bugs/0429 -- adding a beam splitter must NOT deviate the mirror optical axis. A BS is not a mirror
+    fold, but the multifold axis walk grouped its row into a straight branch (skipped from the fold
+    override -> reads +Z vs the folded +X), spawning a spurious fold vertex. Fix: exclude BS rows from the
+    branch grouping. Guards the classification + the helper + the exclusion wiring."""
+    result = PhaseResult(name="Phase 346: a beam splitter does not deviate the mirror axis")
+    try:
+        from KrakenOS.UI.validate_open3d_bs_not_axis_fold import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"bs-not-axis-fold guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("bs-not-axis-fold phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15445,6 +15466,7 @@ def main() -> int:
             phase_343_carry_gated_on_mode,
             phase_344_source_move_gizmo,
             phase_345_bs_reflect_axis,
+            phase_346_bs_not_axis_fold,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

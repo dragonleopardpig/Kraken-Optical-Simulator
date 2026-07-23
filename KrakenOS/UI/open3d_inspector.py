@@ -10905,6 +10905,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return []
         if len(mirror_rows) < 2:
             return []
+        # bugs/0428: a BEAM SPLITTER is NOT a fold vertex NOR a clean straight-branch member (it transmits
+        # straight; its reflect is a separate branch). Exclude it from the branch grouping below -- else the
+        # BS row (skipped from the fold override -> straight +Z while the folded rows read +X) spawns a
+        # spurious extra fold that DEVIATES the mirror axis when a BS is added (flag_20260723_154034).
+        try:
+            bs_rows = set(self.editor._promoted_beam_splitter_row_indices())
+        except Exception:
+            bs_rows = set()
         try:
             z_positions = self.editor._row_z_positions()
             bounds_arr = np.asarray(bounds, dtype=float).reshape(6)
@@ -10917,7 +10925,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # Straight branches from the NON-mirror rows (the mirror rows are the fold vertices).
         branches = []  # each: [centroid_point, direction, [anchors]]
         for row_index in range(len(rows)):
-            if row_index in mirror_rows or not (0 <= row_index < len(z_positions)):
+            if row_index in mirror_rows or row_index in bs_rows or not (0 <= row_index < len(z_positions)):
                 continue
             anchor, direction = self._folded_axis_row_anchor_direction(row_index, z_positions)
             if direction is None:
