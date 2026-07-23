@@ -521,7 +521,15 @@ def _step_optical_axis_extent(step_path: Path | str) -> float | None:
 
 def _surrogate_span_from_assets(effl: float, step_path: Path | None) -> tuple[float, str]:
     """Pick the optical span for a Black-Box surrogate: the bundled STEP body's
-    optical-axis extent (capped to a sane fraction of EFL), else EFL/3."""
+    optical-axis extent (capped to a sane fraction of EFL), else EFL/3.
+
+    NB (bugs/0417): using the STEP GLASS extent instead of the body extent was tried and REVERTED --
+    for a lens whose ideal two-group surrogate is geometrically wider than its physical glass (the
+    cardinals demand it, e.g. the Excellitas Apo 75 / 0703), ``solve_two_thin_groups`` cannot keep the
+    groups inside the glass span and returns NEGATIVE datum margins, so the optical GROUPS overhang by
+    MORE than the datum reference planes did. The body extent is the sensible tradeoff (groups stay
+    inside; only the reference datum planes stick out ~1.5 mm). Any "surrogate doesn't fit" that
+    remains is inherent to a wider-than-glass surrogate, not a span-choice bug."""
     if step_path is not None:
         extent = _step_optical_axis_extent(step_path)
         if extent is not None:
