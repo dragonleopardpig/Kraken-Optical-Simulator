@@ -14952,6 +14952,27 @@ def phase_340_bs_plate_thickness(
     return result
 
 
+def phase_341_bs_resize(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> PhaseResult:
+    """bugs/0423 -- a parametric beam splitter can be RESIZED numerically in place: "Resize Beam
+    Splitter..." regenerates the solid at new dimensions and replaces it via
+    replace_promoted_optical_solid_step (pose preserved). Guards recipe persistence + resize-info gating
+    + the regenerate/replace wiring + the menu."""
+    result = PhaseResult(name="Phase 341: parametric beam splitter numerical resize")
+    try:
+        from KrakenOS.UI.validate_open3d_bs_resize import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"bs-resize guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("bs-resize phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15337,6 +15358,7 @@ def main() -> int:
             phase_338_mtf_from_image_dialog_controls,
             phase_339_accept_cone_fold_aware,
             phase_340_bs_plate_thickness,
+            phase_341_bs_resize,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

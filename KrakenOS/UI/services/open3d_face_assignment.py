@@ -809,6 +809,11 @@ class Open3DFaceAssignmentService:
                         label="Replace STEP...",
                         command=lambda idx=row_index: self._replace_step_solid_from_context(idx),
                     )
+                    if self.editor.beam_splitter_resize_info(row_index) is not None:  # bugs/0423
+                        menu.add_command(
+                            label="Resize Beam Splitter...",
+                            command=lambda idx=row_index: self.editor.open_resize_beam_splitter_dialog(idx),
+                        )
                     menu.add_command(
                         label="Unpromote to STEP overlay",
                         command=lambda idx=row_index: self._unpromote_step_solid_from_context(idx),
@@ -826,6 +831,13 @@ class Open3DFaceAssignmentService:
                         label="Replace STEP...",
                         command=lambda idx=row_index: self._replace_step_solid_from_context(idx),
                     )
+                    # bugs/0423: a PARAMETRIC beam splitter (added via "Add Beam Splitter to LED")
+                    # can be resized numerically in place -- regenerate at new dimensions, keep the pose.
+                    if self.editor.beam_splitter_resize_info(row_index) is not None:
+                        menu.add_command(
+                            label="Resize Beam Splitter...",
+                            command=lambda idx=row_index: self.editor.open_resize_beam_splitter_dialog(idx),
+                        )
                     menu.add_command(
                         label="Unpromote to STEP overlay",
                         command=lambda idx=row_index: self._unpromote_step_solid_from_context(idx),

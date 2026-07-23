@@ -5163,20 +5163,20 @@ class ScenePlacementMixin:
         side_mm = float(min(max(side_mm, 8.0), 90.0))
 
         # 1) Generate the parametric BS, sized to the opening (regen if cache missing).
+        if kind == "cube":
+            bs_params = {"side_mm": float(side_mm)}
+        else:
+            bs_params = {
+                "width_mm": float(side_mm),
+                "height_mm": float(side_mm),
+                # bugs/0422: a plate beam splitter is a THIN substrate (~1-5 mm), NOT a fraction of the
+                # aperture -- side_mm*0.12 made a ~11 mm slab on a 90 mm opening ("ridiculously thick").
+                # Use a thin default (~4% clamped to 1-5 mm); the user resizes from there (bugs/0423).
+                "thickness_mm": float(min(max(side_mm * 0.04, 1.0), 5.0)),
+                "tilt_deg": 45.0,
+            }
         try:
-            if kind == "cube":
-                solid = generate_beam_splitter("cube", side_mm=side_mm)
-            else:
-                solid = generate_beam_splitter(
-                    "plate",
-                    width_mm=side_mm,
-                    height_mm=side_mm,
-                    # bugs/0422: a plate beam splitter is a THIN substrate (~1-5 mm), NOT a fraction of
-                    # the aperture -- side_mm*0.12 made a ~11 mm slab on a 90 mm opening ("ridiculously
-                    # thick"). Use a thin default (~4% clamped to 1-5 mm); the user resizes from there.
-                    thickness_mm=float(min(max(side_mm * 0.04, 1.0), 5.0)),
-                    tilt_deg=45.0,
-                )
+            solid = generate_beam_splitter(kind, **bs_params)
         except Exception as exc:
             self.status_var.set(f"Add Beam Splitter to LED: BS generation failed ({exc}).")
             return None
@@ -5282,6 +5282,12 @@ class ScenePlacementMixin:
                 promotion = bs_advanced.get("StepOverlayPromotion")
                 if isinstance(promotion, dict):
                     promotion["beam_splitter"] = True
+                    # bugs/0423: remember the parametric recipe so "Resize Beam Splitter..." can
+                    # regenerate the solid at new dimensions and replace it IN PLACE (the pose is
+                    # preserved by replace_promoted_optical_solid_step). Stored inside the promotion
+                    # dict so it survives save/reload.
+                    promotion["beam_splitter_kind"] = kind
+                    promotion["beam_splitter_params"] = dict(bs_params)
                 bs_advanced["OpticalSolidBeamSplitter"] = True  # live-session fallback
         except Exception:
             pass
@@ -5308,6 +5314,126 @@ class ScenePlacementMixin:
             "coating_tilt_deg": float(solid.coating_tilt_deg),
             "coating_face": (coating.get("face_id") if isinstance(coating, dict) else None),
         }
+
+    def beam_splitter_resize_info(self, row_index) -> "tuple[str, dict] | None":
+        """bugs/0423: the parametric recipe (kind, dimensions) for a promoted beam-splitter row, or
+        None if the row is not a RESIZABLE parametric BS. Used to gate + pre-fill the resize dialog."""
+        try:
+            row = self.rows[int(row_index)]
+        except Exception:
+            return None
+        advanced = getattr(row, "advanced", {}) or {}
+        promo = advanced.get("StepOverlayPromotion") if isinstance(advanced, dict) else None
+        if not isinstance(promo, dict) or not promo.get("beam_splitter"):
+            return None
+        kind = str(promo.get("beam_splitter_kind") or "").strip().lower()
+        params = promo.get("beam_splitter_params")
+        if kind not in ("cube", "plate") or not isinstance(params, dict) or not params:
+            return None
+        return kind, {str(k): float(v) for k, v in params.items()}
+
+    def resize_beam_splitter(self, row_index, *, refresh_open_3d: bool = True, **new_dimensions):
+        """bugs/0423: regenerate a promoted parametric beam splitter at NEW dimensions and replace it
+        IN PLACE (the pose -- rotation + placement -- is preserved by replace_promoted_optical_solid_step;
+        the parametric solid is origin-centred, so the same placement offset re-centres it). Right-click
+        a BS solid -> "Resize Beam Splitter...". Returns a summary, or None on a graceful stop."""
+        info = self.beam_splitter_resize_info(row_index)
+        if info is None:
+            self.status_var.set("Resize Beam Splitter: this row is not a parametric beam splitter.")
+            return None
+        kind, params = info
+        for key, value in new_dimensions.items():
+            if value is not None:
+                params[str(key)] = float(value)
+        try:
+            solid = generate_beam_splitter(kind, **params)
+        except Exception as exc:
+            self.status_var.set(f"Resize Beam Splitter: invalid dimensions ({exc}).")
+            return None
+        result = self.replace_promoted_optical_solid_step(
+            int(row_index), solid.path, refresh_open_3d=False
+        )
+        if not isinstance(result, dict):
+            return None  # replace_promoted_optical_solid_step already set a status line
+        new_row_index = int(result.get("row_index", row_index))
+        # replace_promoted_optical_solid_step preserves the pose + re-applies the authored coating face,
+        # but NOT the non-face beam-splitter mark/recipe -- restore them on the new row.
+        try:
+            adv = getattr(self.rows[new_row_index], "advanced", {}) or {}
+            promo = adv.get("StepOverlayPromotion")
+            if isinstance(promo, dict):
+                promo["beam_splitter"] = True
+                promo["beam_splitter_kind"] = kind
+                promo["beam_splitter_params"] = dict(params)
+            adv["OpticalSolidBeamSplitter"] = True
+        except Exception:
+            pass
+        try:  # belt-and-suspenders coating re-flag (idempotent on the ~tilt-deg face)
+            self._flag_beam_splitter_coating_face(new_row_index, tilt_deg=float(params.get("tilt_deg", 45.0)))
+        except Exception:
+            pass
+        if refresh_open_3d:
+            self._refresh_open_3d_views()
+        dims = ", ".join(f"{k.replace('_mm', '').replace('_deg', '')}={v:g}" for k, v in params.items())
+        self.status_var.set(f"Resized {kind} beam splitter (S{new_row_index}): {dims}.")
+        return {"kind": kind, "row_index": new_row_index, "params": dict(params)}
+
+    def open_resize_beam_splitter_dialog(self, row_index) -> None:
+        """bugs/0423: numerical "Resize Beam Splitter..." dialog -- type new dimensions (cube: side;
+        plate: width / height / thickness / tilt), then regenerate + replace in place."""
+        import tkinter as tk
+        from tkinter import ttk
+
+        info = self.beam_splitter_resize_info(row_index)
+        if info is None:
+            self.status_var.set("Resize Beam Splitter: this row is not a parametric beam splitter.")
+            return
+        kind, params = info
+        fields = (
+            [("side_mm", "Side (mm)")]
+            if kind == "cube"
+            else [("width_mm", "Width (mm)"), ("height_mm", "Height (mm)"),
+                  ("thickness_mm", "Thickness (mm)"), ("tilt_deg", "Tilt (deg)")]
+        )
+        win = tk.Toplevel(self)
+        win.title(f"Resize {kind.title()} Beam Splitter")
+        win.transient(self)
+        frame = ttk.Frame(win, padding=10)
+        frame.grid(row=0, column=0, sticky="nsew")
+        entry_vars: dict[str, tk.StringVar] = {}
+        for i, (key, label) in enumerate(fields):
+            ttk.Label(frame, text=label).grid(row=i, column=0, sticky="w", pady=2)
+            var = tk.StringVar(value=f"{float(params.get(key, 0.0)):g}")
+            ttk.Entry(frame, textvariable=var, width=12).grid(row=i, column=1, sticky="e", padx=(8, 0))
+            entry_vars[key] = var
+        status = tk.StringVar(value="")
+        ttk.Label(frame, textvariable=status, foreground="#b91c1c", wraplength=220).grid(
+            row=len(fields), column=0, columnspan=2, sticky="w", pady=(4, 0)
+        )
+
+        def _apply() -> None:
+            new_dimensions: dict[str, float] = {}
+            for key, _label in fields:
+                try:
+                    new_dimensions[key] = float(entry_vars[key].get())
+                except (TypeError, ValueError):
+                    status.set(f"{key.replace('_mm', '').replace('_deg', '')}: enter a number.")
+                    return
+            if self.resize_beam_splitter(row_index, **new_dimensions) is not None:
+                win.destroy()
+            else:
+                status.set(self.status_var.get())
+
+        buttons = ttk.Frame(frame)
+        buttons.grid(row=len(fields) + 1, column=0, columnspan=2, pady=(8, 0))
+        ttk.Button(buttons, text="Resize", command=_apply).grid(row=0, column=0)
+        ttk.Button(buttons, text="Cancel", command=win.destroy).grid(row=0, column=1, padx=(6, 0))
+        win.bind("<Escape>", lambda _event: win.destroy())
+        win.protocol("WM_DELETE_WINDOW", win.destroy)
+        try:
+            self._show_centered_dialog(win)
+        except Exception:
+            pass
 
     @staticmethod
     def _step_orientation_direction_vector(direction_label: object) -> np.ndarray | None:
