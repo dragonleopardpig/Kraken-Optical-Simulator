@@ -10770,19 +10770,52 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             "points": np.asarray((fold_point, far), dtype=float),
         }
 
-    def _bs_reflect_axis_guide_records(self, bounds) -> list[dict[str, object]]:
-        """bugs/0428 (Phase 1): dotted REFLECT-branch axis guide(s) for promoted BEAM SPLITTER(s). A BS
-        transmits straight (``axis:global``) AND reflects at its coating -> a 2nd optical axis. Draws from
-        each BS fold point along the reflect direction out to the scene extent, like the mirror fold guide
-        (``_folded_reflected_axis_guide_record``), so the 2nd axis is visible even with rays off. Display
-        only -- the follower placement still skips the BS (bugs/0396-0399)."""
-        try:
-            from KrakenOS.UI.nonseq_output_ports import beam_splitter_reflect_axis_frames
+    @staticmethod
+    def _incoming_axis_leg_for_point(centroid, axis_records):
+        """bugs/0428 (Phase 2 seed): the incoming optical-axis leg a BS coating SITS ON, as
+        ``(origin, unit_dir)`` in propagation order. Scans the already-assembled axis guide
+        records (object leg ``axis:global`` + mirror folds ``reflected:*``) and returns the
+        segment whose infinite line passes CLOSEST to ``centroid``. This is what makes the BS
+        reflect axis fold-aware: a BS on the straight object leg yields the incoming ``+Z``; a
+        BS downstream of an RA mirror yields the folded leg direction -- no scene-wide flag.
+        ``(None, None)`` when there is no usable segment."""
+        cp = np.asarray(centroid, dtype=float).reshape(3)
+        best = (None, None)
+        best_dist = float("inf")
+        for rec in axis_records or []:
+            pts = np.asarray(rec.get("points"), dtype=float)
+            if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] != 3:
+                continue
+            for a, b in zip(pts[:-1], pts[1:]):
+                ab = b - a
+                seg_len_sq = float(np.dot(ab, ab))
+                if seg_len_sq < 1e-12:
+                    continue
+                t = float(np.dot(cp - a, ab)) / seg_len_sq
+                closest = a + max(0.0, min(1.0, t)) * ab  # nearest point ON the segment
+                dist = float(np.linalg.norm(cp - closest))
+                if dist < best_dist:
+                    best_dist = dist
+                    best = (np.asarray(a, dtype=float), ab / np.sqrt(seg_len_sq))
+        return best
 
-            frames = beam_splitter_reflect_axis_frames(self.editor.rows)
+    def _bs_reflect_axis_guide_records(self, bounds, axis_records) -> list[dict[str, object]]:
+        """bugs/0428 (Phase 1 + fold-aware follow-up): dotted REFLECT-branch axis guide(s) for promoted
+        BEAM SPLITTER(s). A BS transmits straight (``axis:global``) AND reflects at its coating -> a 2nd
+        optical axis. For each BS the INCOMING leg is the axis segment the coating sits on (found by
+        ``_incoming_axis_leg_for_point`` over ``axis_records`` -- the object leg for a BS before any fold,
+        the folded leg for a BS downstream of an RA mirror), so the reflect axis is correct on a folded
+        scene too (replaces the earlier ``not scene_is_folded`` gate + the +Z-only assumption). Draws from
+        the fold point (incoming line crossing the coating) along the reflect direction out to the scene
+        extent, like the mirror fold guide. Display only -- follower placement still skips the BS
+        (bugs/0396-0399)."""
+        try:
+            from KrakenOS.UI.nonseq_output_ports import beam_splitter_coating_world_frames
+
+            coatings = beam_splitter_coating_world_frames(self.editor.rows)
         except Exception:
             return []
-        if not frames:
+        if not coatings:
             return []
         try:
             bounds_arr = np.asarray(bounds, dtype=float).reshape(6)
@@ -10798,18 +10831,32 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             return []
         records: list[dict[str, object]] = []
-        for i, (fold_point, reflect_dir) in enumerate(frames):
-            fp = np.asarray(fold_point, dtype=float).reshape(3)
-            rd = np.asarray(reflect_dir, dtype=float).reshape(3)
-            if not (np.all(np.isfinite(fp)) and np.all(np.isfinite(rd))):
+        for i, (centroid, normal) in enumerate(coatings):
+            point = np.asarray(centroid, dtype=float).reshape(3)
+            n = np.asarray(normal, dtype=float).reshape(3)
+            if not (np.all(np.isfinite(point)) and np.all(np.isfinite(n))):
                 continue
+            origin, in_dir = self._incoming_axis_leg_for_point(point, axis_records)
+            if origin is None or in_dir is None:
+                continue
+            denom = float(np.dot(in_dir, n))
+            if abs(denom) < 1e-9:  # incoming parallel to the coating -> no crossing
+                continue
+            # fold point = where the incoming line (origin + s*in_dir) crosses the coating plane
+            s = float(np.dot(point - origin, n)) / denom
+            fp = origin + in_dir * s
+            reflect_dir = in_dir - 2.0 * float(np.dot(in_dir, n)) * n
+            rd_norm = float(np.linalg.norm(reflect_dir))
+            if rd_norm < 1e-9 or not (np.all(np.isfinite(fp)) and np.all(np.isfinite(reflect_dir))):
+                continue
+            rd = reflect_dir / rd_norm
             reach = float(np.max((corners - fp) @ rd))
             if not (reach > 1e-6):
                 continue
             far = fp + rd * reach
             records.append(
                 {
-                    "axis_id": "axis:global:split" if len(frames) == 1 else f"axis:global:split:{i}",
+                    "axis_id": "axis:global:split" if len(coatings) == 1 else f"axis:global:split:{i}",
                     "axis_label": "Optical Axis (BS reflect)",
                     "axis_kind": "dotted_global_guide",
                     "branch_path": "",
@@ -11050,15 +11097,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             )
             if reflected_guide is not None:
                 records.append(reflected_guide)
-        # bugs/0428 (Phase 1): a BEAM SPLITTER transmits straight (axis:global, above) AND reflects -->
-        # draw the reflect-branch guide(s) as the 2nd optical axis. ONLY when the incoming to the BS is the
-        # straight +Z (scene NOT mirror-folded): on a mirror fold the incoming is the folded leg, which the
-        # geometric +Z assumption in beam_splitter_reflect_axis_frames gets wrong -> a stray line crossing
-        # the mirror axis (flag_20260723_151839 "RA mirror optical axis goes haywire"). The user's goal is
-        # to REMOVE the RA mirror; then the BS is on +Z and this draws correctly. The folded-incoming case
-        # is Phase 2 (predecessor chain resolves each leg's frame).
-        if not scene_is_folded:
-            records.extend(self._bs_reflect_axis_guide_records(bounds))
+        # bugs/0428 (Phase 1 + fold-aware follow-up): a BEAM SPLITTER transmits straight (axis:global,
+        # above) AND reflects --> draw the reflect-branch guide(s) as the 2nd optical axis. The incoming to
+        # each BS is the axis segment its coating SITS ON (object leg for a BS before any fold; the folded
+        # leg for a BS downstream of an RA mirror), derived from the axis records assembled so far -- so
+        # this is fold-aware and draws correctly on a mirror-folded scene too (replaces the earlier
+        # scene-wide "not scene_is_folded" gate that suppressed the axis whenever any mirror was present,
+        # flag_20260723_155614 "no optical axis generated from BS plate").
+        records.extend(self._bs_reflect_axis_guide_records(bounds, list(records)))
         try:
             show_rays = bool(self.show_rays_var.get())
         except Exception:
