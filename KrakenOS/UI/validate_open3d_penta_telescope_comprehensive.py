@@ -15076,6 +15076,29 @@ def phase_346_bs_not_axis_fold(app: KrakenLayoutEditor, inspector: Kraken3DInspe
     return result
 
 
+def phase_347_bs_trace_driven_placement(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> PhaseResult:
+    """bugs/0431 Phase 2 slice 2a -- placement is driven by the branched ray trace ('display follows
+    physics'): a row's leg is the branch that reaches it. Additive building block:
+    _exit_frame_from_trace_arrays (factored single-path read) + _branch_traced_row_frames (per-branch
+    SURFACE/XYZ/R_LMN -> traced row frames), leaving _trace_row_exit_frame's branch-bail intact so every
+    non-BS scene keeps the existing walk. Guards: no-BS -> no branch frames; refactor-safe single-path
+    read; a BS scene's imaging chain is covered by the traced branch(es)."""
+    result = PhaseResult(name="Phase 347: BS trace-driven placement building block (Phase 2 slice 2a)")
+    try:
+        from KrakenOS.UI.validate_open3d_bs_trace_driven_placement import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"bs-trace-driven-placement guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n and not n.startswith("SKIP")])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("bs-trace-driven-placement phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15467,6 +15490,7 @@ def main() -> int:
             phase_344_source_move_gizmo,
             phase_345_bs_reflect_axis,
             phase_346_bs_not_axis_fold,
+            phase_347_bs_trace_driven_placement,
         ]
         for phase in phases:
             phase_start = time.perf_counter()

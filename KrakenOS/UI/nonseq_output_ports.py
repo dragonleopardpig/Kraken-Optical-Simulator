@@ -956,6 +956,60 @@ def _canonical_left_input_solution(row) -> dict[str, object] | None:
         return None
 
 
+def _exit_frame_from_trace_arrays(
+    surface_ids,
+    xyz,
+    ray,
+    directions,
+    row_index: int,
+    thickness: float,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """Core of the single-path exit-frame read, factored so it can run on EITHER the system's
+    live trace arrays (``_trace_row_exit_frame``) OR a single branch snapshot from
+    ``NS_BRANCH_RESULTS`` (``_branch_traced_row_frames``). Given the ray-path arrays and a row,
+    return the exit frame ``(center, rotation)`` where the beam LEAVES that row's last hit,
+    advanced by ``thickness`` along the outgoing direction. ``None`` when the row is not hit or
+    the geometry is degenerate. Pure -- no trace, no side effects."""
+    try:
+        surface_ids = np.asarray(surface_ids, dtype=int).ravel()
+    except Exception:
+        return None
+    if surface_ids.size == 0:
+        return None
+    hit_positions = np.flatnonzero(surface_ids == int(row_index))
+    if hit_positions.size == 0:
+        return None
+    last_hit = int(hit_positions[-1])
+    hit_points = xyz
+    if hit_points is None or len(hit_points) <= last_hit + 1:
+        hit_points = ray
+    if hit_points is None or len(hit_points) <= last_hit + 1:
+        return None
+    try:
+        exit_point = np.asarray(hit_points[last_hit + 1], dtype=float).reshape(3)
+    except Exception:
+        return None
+    if not np.all(np.isfinite(exit_point)):
+        return None
+    outgoing = None
+    try:
+        if directions is not None and len(directions) > last_hit:
+            outgoing = np.asarray(directions[last_hit], dtype=float).reshape(3)
+    except Exception:
+        outgoing = None
+    if outgoing is None or not np.all(np.isfinite(outgoing)) or float(np.linalg.norm(outgoing)) <= 1e-12:
+        try:
+            if len(hit_points) > last_hit + 2:
+                outgoing = np.asarray(hit_points[last_hit + 2], dtype=float).reshape(3) - exit_point
+        except Exception:
+            outgoing = None
+    if outgoing is None or not np.all(np.isfinite(outgoing)):
+        return None
+    outgoing = _unit_vector(outgoing)
+    center = exit_point + outgoing * float(thickness or 0.0)
+    return center, _frame_rotation_from_normal(outgoing)
+
+
 def _trace_row_exit_frame(
     system,
     row_index: int,
@@ -978,47 +1032,84 @@ def _trace_row_exit_frame(
                 setattr(system, "energy_probability", energy_probability)
             except Exception:
                 pass
+    # A branched (beam-splitter) trace has no single exit path -- defer to the branch-aware
+    # _branch_traced_row_frames instead of guessing from branch 0's restored arrays.
     if list(getattr(system, "NS_BRANCH_RESULTS", []) or []):
         return None
+    return _exit_frame_from_trace_arrays(
+        getattr(system, "SURFACE", ()),
+        getattr(system, "XYZ", None),
+        getattr(system, "RAY", None),
+        getattr(system, "R_LMN", None),
+        int(row_index),
+        float(thickness or 0.0),
+    )
+
+
+def _branch_traced_row_frames(system, rows, *, wavelength_um: float = 0.55) -> dict[int, dict[str, object]]:
+    """bugs/0431 (BS Phase 2, trace-driven): for each row a traced BRANCH leaves, the exit frame on
+    that branch, as ``{row_index: {branch_id, branch_path, branch_power, center, rotation}}``.
+
+    Runs ONE branched ``NsTrace`` and walks every entry of ``NS_BRANCH_RESULTS`` (each a full ray
+    snapshot with per-branch ``SURFACE``/``XYZ``/``R_LMN``). This is the physics-native leg map the
+    override builder consumes: a row's placement leg is the branch that actually reaches it, and the
+    world frame comes straight from that branch's traced geometry (``display follows physics``). A row
+    reached by several branches keeps the highest-``branch_power`` one. Returns ``{}`` when there is no
+    branched trace (no beam splitter) -- callers then keep the existing single-path / geometric walk,
+    so every non-BS scene is untouched. Pure w.r.t. the row list; traces the system once."""
+    if system is None:
+        return {}
+    energy_probability = getattr(system, "energy_probability", None)
     try:
-        surface_ids = np.asarray(getattr(system, "SURFACE", ()), dtype=int).ravel()
+        if energy_probability is not None:
+            setattr(system, "energy_probability", 0)
+        system.NsTrace([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], float(wavelength_um))
     except Exception:
-        return None
-    if surface_ids.size == 0:
-        return None
-    hit_positions = np.flatnonzero(surface_ids == int(row_index))
-    if hit_positions.size == 0:
-        return None
-    last_hit = int(hit_positions[-1])
-    hit_points = getattr(system, "XYZ", None)
-    if hit_points is None or len(hit_points) <= last_hit + 1:
-        hit_points = getattr(system, "RAY", None)
-    if hit_points is None or len(hit_points) <= last_hit + 1:
-        return None
-    try:
-        exit_point = np.asarray(hit_points[last_hit + 1], dtype=float).reshape(3)
-    except Exception:
-        return None
-    if not np.all(np.isfinite(exit_point)):
-        return None
-    outgoing = None
-    try:
-        directions = getattr(system, "R_LMN", None)
-        if directions is not None and len(directions) > last_hit:
-            outgoing = np.asarray(directions[last_hit], dtype=float).reshape(3)
-    except Exception:
-        outgoing = None
-    if outgoing is None or not np.all(np.isfinite(outgoing)) or float(np.linalg.norm(outgoing)) <= 1e-12:
-        try:
-            if len(hit_points) > last_hit + 2:
-                outgoing = np.asarray(hit_points[last_hit + 2], dtype=float).reshape(3) - exit_point
-        except Exception:
-            outgoing = None
-    if outgoing is None or not np.all(np.isfinite(outgoing)):
-        return None
-    outgoing = _unit_vector(outgoing)
-    center = exit_point + outgoing * float(thickness or 0.0)
-    return center, _frame_rotation_from_normal(outgoing)
+        return {}
+    finally:
+        if energy_probability is not None:
+            try:
+                setattr(system, "energy_probability", energy_probability)
+            except Exception:
+                pass
+    results = list(getattr(system, "NS_BRANCH_RESULTS", []) or [])
+    if not results:
+        return {}
+    prepared = [_row_like(row) for row in list(rows or [])]
+    frames: dict[int, dict[str, object]] = {}
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        power = float(result.get("branch_power", 0.0) or 0.0)
+        branch_path = str(result.get("branch_path", "") or "")
+        branch_id = int(result.get("branch_id", 0) or 0)
+        surface_ids = result.get("SURFACE")
+        xyz = result.get("XYZ")
+        ray = result.get("RAY")
+        directions = result.get("R_LMN")
+        for row_index, row in enumerate(prepared):
+            frame = _exit_frame_from_trace_arrays(
+                surface_ids,
+                xyz,
+                ray,
+                directions,
+                row_index,
+                float(getattr(row, "thickness", 0.0) or 0.0),
+            )
+            if frame is None:
+                continue
+            prior = frames.get(row_index)
+            if prior is not None and float(prior.get("branch_power", 0.0)) >= power:
+                continue
+            center, rotation = frame
+            frames[row_index] = {
+                "branch_id": branch_id,
+                "branch_path": branch_path,
+                "branch_power": power,
+                "center": np.asarray(center, dtype=float),
+                "rotation": np.asarray(rotation, dtype=float),
+            }
+    return frames
 
 
 def _interaction_fold_pose_from_frame(

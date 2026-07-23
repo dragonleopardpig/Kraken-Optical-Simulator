@@ -346,7 +346,8 @@
     "343": "pass",
     "344": "pass",
     "345": "pass",
-    "346": "pass"
+    "346": "pass",
+    "347": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -693,6 +694,7 @@
     "343": "long-press carry gated on Move/Rotate-whole-body mode",
     "344": "scene-source interactive move gizmo",
     "345": "beam splitter reflect-branch optical axis (Phase 1)",
-    "346": "a beam splitter does not deviate the mirror axis"
+    "346": "a beam splitter does not deviate the mirror axis",
+    "347": "BS trace-driven placement building block (Phase 2 slice 2a)"
   }
 }
