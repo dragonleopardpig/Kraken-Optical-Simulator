@@ -14519,6 +14519,39 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         v = v / vn if vn > 1e-9 else np.asarray((0.0, 1.0, 0.0))
         return d, u, v
 
+    def _crease_overlay_mesh_at_fold(self, mesh, fold_transform):
+        """bugs/0418: fold ONLY the points DOWNSTREAM of the fold hinge onto the reflected leg, so an
+        axis-spanning overlay (the acceptance cone) CREASES at the mirror instead of rigidly swinging the
+        whole thing onto the lens leg (bugs/0416 folded every point -> the object end lay flat along the
+        lens leg, "not folding"). The hinge is the fold transform's fixed point on the straight axis
+        ((I-R)a = t, i.e. F(a)=a); points with straight-z past it get the rigid fold R@p+t, the rest stay
+        in the base object-leg frame. ``fold_transform`` None (unfolded scene) -> mesh unchanged."""
+        if mesh is None or fold_transform is None:
+            return mesh
+        try:
+            transform = np.asarray(fold_transform, dtype=float).reshape(4, 4)
+        except Exception:
+            return mesh
+        if not np.all(np.isfinite(transform)) or np.allclose(transform, np.eye(4)):
+            return mesh
+        rotation, translation = transform[:3, :3], transform[:3, 3]
+        try:
+            hinge = np.linalg.lstsq(np.eye(3) - rotation, translation, rcond=None)[0]
+            hinge_z = float(hinge[2])
+            if not np.isfinite(hinge_z):
+                return mesh
+            points = np.asarray(mesh.points, dtype=float)
+            downstream = points[:, 2] > hinge_z
+            if not bool(downstream.any()):
+                return mesh
+            folded = points.copy()
+            folded[downstream] = points[downstream] @ rotation.T + translation
+            out = mesh.copy(deep=True)
+            out.points = folded
+            return out
+        except Exception:
+            return mesh
+
     def _add_receiving_cone_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
         """bugs/0354: draw the imaging lens's receiving-angle cone as one faint
         translucent skin (imaged FOV -> entrance pupil). Render-only; the anchors
@@ -14539,15 +14572,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             if points.ndim != 2 or points.shape[0] < 6 or faces.size < 4:
                 return 0
             mesh = pv.PolyData(points[:, :3], faces=faces)
-            # bugs/0416: the cone is built on the STRAIGHT sequential object-space axis. On a folded
-            # scene (RA-mirror / beam-splitter) it must ride the imaging arm, not float on the unfolded
-            # axis -- the same rigid fold the lens STEP overlay applies, anchored on the SAME lens row so
-            # the two stay coherent. None on an unfolded layout -> mesh unchanged (no regression).
+            # bugs/0416 + bugs/0418: the cone is built on the STRAIGHT sequential object-space axis. On a
+            # folded scene it must ride the imaging arm. bugs/0416 rigidly folded the WHOLE cone onto the
+            # lens leg (both rings) -> the object end swung onto the lens leg too, so the cone lay flat
+            # along it ("Acceptance Cone is not folding"). It must CREASE at the fold instead: the FOV ring
+            # stays up the object leg (base frame, upstream of the fold hinge); only the points DOWNSTREAM
+            # of the hinge fold onto the lens leg. The hinge is the fold transform's fixed point
+            # ((I-R)a = t); points with straight-z past it get the rigid fold, the rest stay put. None on
+            # an unfolded layout -> mesh unchanged (no regression).
             try:
                 fold_transform = self.editor._optical_axis_fold_world_transform_for_row(
                     self.editor._lens_front_datum_row_index()
                 )
-                mesh = self.editor._mesh_with_world_transform(mesh, fold_transform)
+                mesh = self._crease_overlay_mesh_at_fold(mesh, fold_transform)
             except Exception as exc:
                 self.editor.append_debug(f"Receiving-cone fold skipped: {exc}")
             actor = self._add_mesh_actor(

@@ -679,6 +679,6 @@
     "336": "lens STEP overlay stays attached to its surrogate (AZ85)",
     "337": "3D right-click menu does not flash-and-disappear on post",
     "338": "Measure-MTF-from-Image dialog close + click-to-enlarge",
-    "339": "Accept-cone overlay follows the display fold"
+    "339": "Accept-cone overlay creases at the display fold"
   }
 }
