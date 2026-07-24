@@ -82,6 +82,22 @@ def _optical_solid_has_assigned_faces(row) -> bool:
     return bool(records)
 
 
+def _row_explicitly_axis_snapped(row) -> bool:
+    """bugs/0433 slice C: a row the user explicitly axis-snapped/moved (the
+    ``last_axis_to_axis_move`` ScenePlacement breadcrumb) is ABSOLUTELY placed --
+    its baked desp/tilt IS its world pose. The fold walk must not re-sweep it:
+    after a rubber-band snap of a chain that CONTAINS a fold mirror, the walk's
+    exit-face inference on the mirror's baked free-form orientation is
+    unreliable (it picked the wrong output face and threw the Image row 295 mm
+    off its snapped position -- probe_0433_snap_fold_in_selection). No penta
+    scene carries the breadcrumb, so every encoded fold behavior is unchanged."""
+    try:
+        placement = _row_advanced(row).get("ScenePlacement")
+        return bool(isinstance(placement, dict) and placement.get("last_axis_to_axis_move"))
+    except Exception:
+        return False
+
+
 def _free_placed_solid_pinned_pose(row, z_station: float) -> tuple[np.ndarray, np.ndarray] | None:
     """The world pose a *free-placed* promoted optical solid must keep, or None.
 
@@ -1608,6 +1624,11 @@ def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict
         while follower_index < len(prepared):
             follower = prepared[follower_index]
             if _row_surface(follower) == "Object":
+                follower_index += 1
+                continue
+            # bugs/0433 slice C: an explicitly axis-snapped follower keeps its
+            # absolute baked pose -- emit no override (see helper docstring).
+            if _row_explicitly_axis_snapped(follower):
                 follower_index += 1
                 continue
             # bugs/0212 + 0213: a FREE-PLACED promoted optical solid (one the

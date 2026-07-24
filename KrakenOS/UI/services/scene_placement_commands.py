@@ -4779,6 +4779,24 @@ class ScenePlacementMixin:
             c for i, c in zip(rows, centers)
             if not (hasattr(self, "_is_any_promoted_optical_solid_row") and self._is_any_promoted_optical_solid_row(self.rows[i]))
         ]
+        # bugs/0433 slice C: a selection SPANNING a fold (lens leg + mirror-2 + the Image row on the
+        # mirror's exit leg -- the rubber-band set) must fit the ENTRY leg only: second-leg followers
+        # are ordinary rows and skewed the first->last fit into a diagonal, landing the rigid move
+        # misrotated. Row order = optical order, so cut the fit at the first selected fold solid.
+        try:
+            from KrakenOS.UI.services.paraxial_tools import _row_is_promoted_mirror_fold
+
+            first_fold = next((i for i in rows if _row_is_promoted_mirror_fold(self.rows[i])), None)
+        except Exception:
+            first_fold = None
+        if first_fold is not None:
+            entry_centers = [
+                c for i, c in zip(rows, centers)
+                if i < first_fold
+                and not (hasattr(self, "_is_any_promoted_optical_solid_row") and self._is_any_promoted_optical_solid_row(self.rows[i]))
+            ]
+            if len(entry_centers) >= 2:
+                ref_centers = entry_centers
         if len(ref_centers) < 2:
             ref_centers = centers
         old_origin = ref_centers[0]
@@ -4826,6 +4844,29 @@ class ScenePlacementMixin:
         nonmoved_gap = 0.0
         started = False
         row_gap: dict[int, float] = {}  # per-moved-row re-pack shift, so the STEP-follow matches
+        # bugs/0433 slice C: ONE pivot for rows AND the STEP carry. The standard move pivots on the
+        # branch point (on the old axis); an explicit multi-select snap infers the old axis from the
+        # selection, so everything pivots on that selection's own origin. The STEP carry previously
+        # pivoted on the branch point unconditionally -- in the explicit path the carried body landed
+        # offset by R@(origin - branch) relative to its rows (probe_0433_snap_fold_in_selection).
+        pivot = old_origin if explicit_rows is not None else branch_point
+        # bugs/0433 slice C: the STEP carry below needs the sensor's PRE-move world position (the row
+        # loop rewrites desp in place) -- capture it before anything mutates.
+        pre_move_image_row = next(
+            (i for i in range(len(self.rows) - 1, -1, -1) if getattr(self.rows[i], "surface", None) == "Image"),
+            None,
+        )
+        pre_move_image_center = None
+        if pre_move_image_row is not None and pre_move_image_row < len(z_positions):
+            _img = self.rows[pre_move_image_row]
+            pre_move_image_center = np.asarray(
+                (
+                    float(_img.desp_x),
+                    float(_img.desp_y),
+                    float(z_positions[pre_move_image_row]) + float(_img.desp_z),
+                ),
+                dtype=float,
+            )
         self._begin_history_capture()
         for index, row in enumerate(self.rows):
             # Never relocate the object/source or an aperture datum that anchors the launch.
@@ -4851,9 +4892,6 @@ class ScenePlacementMixin:
                     nonmoved_gap += float(getattr(row, "thickness", 0.0) or 0.0)
                 continue
             started = True
-            # standard move pivots on the branch (which lies on the old axis); an explicit multi-select
-            # snap infers the old axis from the selection, so pivot on that selection's own origin instead.
-            pivot = old_origin if explicit_rows is not None else branch_point
             new_center = branch_point + rotation @ (center - pivot)
             row_gap[index] = nonmoved_gap
             if nonmoved_gap > 1e-9:
@@ -4865,7 +4903,12 @@ class ScenePlacementMixin:
             desp = new_center - station
             row.desp_x, row.desp_y, row.desp_z = float(desp[0]), float(desp[1]), float(desp[2])
             row.tilt_x, row.tilt_y, row.tilt_z = float(tilt_x), float(tilt_y), float(tilt_z)
-            row.AxisMove = 1.0
+            # bugs/0433 slice C: the former `row.AxisMove = 1.0` stamped a PHANTOM attribute -- the
+            # editor row field is `axis_move` (the builder maps spec["axis_move"] -> surf.AxisMove,
+            # layout_editor.py:2148), so the stamp never reached the engine and was not persisted.
+            # It must NOT become `axis_move = 1` either: the engine PA term (Prerequisites3D
+            # GeometricRotatAndTran / KrakenSys:551) would then compound this row's now-ABSOLUTE
+            # desp/tilt onto every follower. Absolutely placed rows keep axis_move = 0.
             row.advanced = dict(row.advanced or {})
             settings = normalize_scene_placement_settings(row.advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {}))
             settings["last_axis_to_axis_move"] = {
@@ -4900,13 +4943,15 @@ class ScenePlacementMixin:
                     continue
                 b = np.asarray(mesh.bounds, dtype=float).reshape(6)
                 old_center = np.asarray(((b[0] + b[1]) / 2.0, (b[2] + b[3]) / 2.0, (b[4] + b[5]) / 2.0), dtype=float)
-                if label == "camera" and image_row is not None and image_row < len(z_positions):
+                if label == "camera" and pre_move_image_center is not None:
                     # flag_20260724_090954 "camera before lens": the camera STEP body centre can sit BEFORE
                     # the lens in z (so the rigid follow keeps it there). Its SENSOR (the Image row) is always
-                    # correctly ordered after the lens -- anchor the camera to the sensor's axial station on
-                    # the old axis so it lands after the lens (distances re-solved by the user afterward).
-                    old_center = np.asarray((0.0, 0.0, float(z_positions[image_row])), dtype=float)
-                target_center = branch_point + rotation @ (old_center - branch_point)
+                    # correctly ordered after the lens -- anchor the camera to the sensor so it lands after
+                    # the lens (distances re-solved by the user afterward). bugs/0433: the sensor is the
+                    # Image ROW's PRE-move world position (station + desp) -- a frozen/baked chain sits off
+                    # the straight axis, where the old bare-station anchor (0,0,z) pointed into empty space.
+                    old_center = pre_move_image_center
+                target_center = branch_point + rotation @ (old_center - pivot)
                 # flag_20260724_120837 "Lens surrogate and Lens STEP detached": the surrogate rows were
                 # re-packed (fold-element gap removed); shift the STEP by the SAME gap as its pinned row
                 # (lens<->front datum, camera<->Image) so the barrel/camera stay attached to the surrogate.

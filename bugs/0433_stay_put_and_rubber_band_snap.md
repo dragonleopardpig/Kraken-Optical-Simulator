@@ -103,6 +103,23 @@ order); fallback to current behavior when fewer than 2 such members. Also verify
 STEP-follow pivot mismatch in the explicit-rows path: rows pivot on the selection origin (`:4856`) but
 the STEP carry pivots on the branch point (`:4909`) — if real, carry with the same pivot as rows.
 
+**As-built findings (slice C):**
+- **Pivot mismatch: REAL** — lens STEP landed 74.7 mm and camera 324.7 mm off their rows on an
+  explicit snap; fixed with ONE hoisted pivot (selection origin in the explicit path, branch point in
+  the classic path) shared by rows and the STEP carry; classic path byte-identical.
+- **`row.AxisMove = 1.0` was a PHANTOM** — the editor field is `axis_move` (mapped to `surf.AxisMove`
+  at `layout_editor.py:2148`); the stamp reached nothing and is removed. Real `axis_move=1` WOULD
+  compound absolute desp/tilt onto followers (engine PA term) — absolutely placed rows keep 0.
+- **NEW defect, fixed: post-snap fold-walk re-sweep** — after snapping a chain containing mirror-2,
+  the walk re-activated on the snapped mirror with a mis-inferred output face and threw the Image row
+  295 mm off (built/display vs row-frame split-brain). Guard: a follower carrying the
+  `last_axis_to_axis_move` breadcrumb is never re-swept (`_row_explicitly_axis_snapped`,
+  `nonseq_output_ports.py`). Trade-off: a breadcrumbed row won't follow a later mirror re-aim until
+  re-snapped. No penta scene carries the breadcrumb → encoded fold behavior untouched.
+- Camera STEP anchor generalized to the Image row's **pre-move** world center (station+desp captured
+  before the row loop mutates desp) — the bare-station `(0,0,z)` anchor pointed into empty space for a
+  frozen off-axis chain.
+
 ## Verification
 
 - `bugs/probe_0433_stay_put_removal.py` — load AZ85, record built-system world poses (rows + STEP fold
