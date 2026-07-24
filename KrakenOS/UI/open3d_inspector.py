@@ -7934,6 +7934,50 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.render()
         return len(rows)
 
+    def start_snap_selected_to_axis(self) -> None:
+        """Multi-select snap (user request): capture the current row selection, then click ONE optical axis
+        to snap the selected elements onto it -- re-align the imaging chain after a BS shift, choosing which
+        elements. Uses `_picked_row_indices` (the multi-selection)."""
+        selection = sorted(int(i) for i in (self._picked_row_indices or set()))
+        if not selection:
+            self.status_var.set("Snap Selected to Optical Axis: select one or more elements (rows) first.")
+            return
+        self._snap_rows_selection = selection
+        self._snap_rows_to_axis_pick_mode = True
+        self._axis_to_axis_move_pick_mode = False
+        self._step_normal_axis_pick_mode = False
+        self._center_row_to_ray_mode = False
+        self._set_ray_highlight(None)
+        self._set_optical_axis_highlight(None)
+        self._clear_open3d_selection(render=False)
+        self._set_row_highlights(selection)
+        self._set_axis_pick_cursor(True)
+        self._update_mode_badge()
+        self._hide_regular_rays_for_center_axis_pick()
+        self.render()
+        self.status_var.set(
+            f"Snap {len(selection)} selected element(s) to Optical Axis: click the target dotted axis guide."
+        )
+
+    def _apply_snap_rows_to_axis(self, axis_info: dict[str, object]) -> None:
+        selection = list(getattr(self, "_snap_rows_selection", []) or [])
+        try:
+            self.editor.snap_rows_to_axis(selection, dict(axis_info))
+            self.status_var.set(self.editor.status_var.get())
+        except Exception as exc:
+            self.status_var.set(f"Snap to Optical Axis failed: {_short_error_message(exc)}")
+        self._snap_rows_to_axis_pick_mode = False
+        self._snap_rows_selection = []
+        self._set_axis_pick_cursor(False)
+        self._set_optical_axis_highlight(None)
+        self._set_row_highlights([])
+        self._update_mode_badge()
+        try:
+            self.editor._selected_step_label = None
+        except Exception:
+            pass
+        self.refresh_from_editor()
+
     def _apply_axis_to_axis_move_pick(self, axis_info: dict[str, object]) -> None:
         old = getattr(self, "_axis_to_axis_old_axis", None)
         if old is None:

@@ -233,6 +233,7 @@ class Open3DInteractionService:
             or self._step_normal_axis_pick_mode
             or self._step_surface_center_axis_pick_mode
             or bool(getattr(self, "_axis_to_axis_move_pick_mode", False))
+            or bool(getattr(self, "_snap_rows_to_axis_pick_mode", False))
             or bool(getattr(self.editor, "_cad_axis_pick_any", False))
         )
         pick_start = self._timing_start("left_click_vtk_pick", x=int(x), y=int(y))
@@ -417,6 +418,16 @@ class Open3DInteractionService:
                 self.status_var.set("Center Row->Optical Axis: click the surface/CAD row to move before choosing an Optical Axis.")
                 self.render()
                 return
+        if getattr(self, "_snap_rows_to_axis_pick_mode", False):
+            axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=AXIS_PICK_TOLERANCE_PX)
+            if axis_info is not None:
+                self._set_optical_axis_highlight(str(axis_info.get("axis_id", "") or "").strip())
+                self._apply_snap_rows_to_axis(axis_info)
+                self.render()
+                return
+            self.status_var.set("Snap Selected to Optical Axis: click a dotted Optical Axis guide.")
+            self.render()
+            return
         if getattr(self, "_axis_to_axis_move_pick_mode", False):
             axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=AXIS_PICK_TOLERANCE_PX)
             if axis_info is not None:
@@ -917,6 +928,7 @@ class Open3DInteractionService:
             or self._step_surface_center_axis_pick_mode
             or self._step_clear_aperture_pick_mode
             or getattr(self, "_axis_to_axis_move_pick_mode", False)
+            or getattr(self, "_snap_rows_to_axis_pick_mode", False)
             or getattr(self, "_measure_pick_mode", False)
         )
         if (

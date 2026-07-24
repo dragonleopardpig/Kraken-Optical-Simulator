@@ -240,6 +240,7 @@ class Open3DTopControlsPanel:
                 MenuCommand("Snap Row->Target", self.inspector.start_placement_target_pick),
                 None,
                 MenuCommand("Move Elements to Optical Axis", self.inspector.start_axis_to_axis_move),
+                MenuCommand("Snap Selected to Optical Axis", self.inspector.start_snap_selected_to_axis),
             ),
         )
         pack_menubutton(scene_toolbar, "Place", placement_menu, padx=(8, 0))
