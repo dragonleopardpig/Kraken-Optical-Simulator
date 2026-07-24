@@ -37,6 +37,12 @@ class InteractionMode(str, Enum):
     AXIS_SLIDE = "axis_slide"
     CAD_AXIS_PICK = "cad_axis_pick"
     MEASURE = "measure"  # CAD-style 2-point measure tool (pick two edges/surfaces -> draggable dimension)
+    # bugs/0433: the 0432 two-axis move + snap-selected picks were missing from the
+    # central mode model (Esc couldn't cancel them, no badge); registered here with
+    # the new rubber-band box select.
+    AXIS_TO_AXIS_MOVE = "axis_to_axis_move"
+    SNAP_ROWS_TO_AXIS = "snap_rows_to_axis"
+    RUBBER_BAND_SELECT = "rubber_band_select"
 
 
 ModeObserver = Callable[["InteractionModeState"], None]
@@ -84,6 +90,12 @@ def derive_interaction_mode(inspector: Any) -> InteractionMode:
     """
     if bool(getattr(inspector, "_measure_pick_mode", False)):
         return InteractionMode.MEASURE
+    if bool(getattr(inspector, "_rubber_band_select_mode", False)):
+        return InteractionMode.RUBBER_BAND_SELECT
+    if bool(getattr(inspector, "_snap_rows_to_axis_pick_mode", False)):
+        return InteractionMode.SNAP_ROWS_TO_AXIS
+    if bool(getattr(inspector, "_axis_to_axis_move_pick_mode", False)):
+        return InteractionMode.AXIS_TO_AXIS_MOVE
     if bool(getattr(inspector, "_step_normal_axis_pick_mode", False)):
         return InteractionMode.STEP_NORMAL_AXIS_PICK
     if bool(getattr(inspector, "_step_surface_center_axis_pick_mode", False)):

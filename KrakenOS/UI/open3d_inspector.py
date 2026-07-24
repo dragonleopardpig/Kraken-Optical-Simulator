@@ -285,6 +285,50 @@ def _short_error_message(exc: Exception, limit: int = 220) -> str:
     return text
 
 
+def rubber_band_candidate_row_indices(rows) -> list[int]:
+    """bugs/0433: rows a rubber-band box select may pick. The Object/source is never
+    movable (0432 convention) and promote-time trailing AIR spacers have no visual
+    presence, so both are excluded; fold solids (mirrors / BS) ARE included -- selecting
+    the second RA mirror with its folded followers is the point of the box select."""
+    out: list[int] = []
+    for index, row in enumerate(rows):
+        if getattr(row, "surface", None) == "Object":
+            continue
+        advanced = getattr(row, "advanced", None)
+        if isinstance(advanced, dict) and bool(advanced.get("InPathTrailingSpacer")):
+            continue
+        out.append(index)
+    return out
+
+
+def rubber_band_rows_in_rect(display_points, corner_a, corner_b) -> list[int]:
+    """bugs/0433: pure containment core -- ``display_points`` maps row index to that
+    row's projected (x, y) in ONE display coordinate space (or ``None`` when the row
+    doesn't project); the two corners span an axis-aligned rectangle in the SAME
+    space. Returns the sorted row indices whose point lies inside (inclusive)."""
+    try:
+        ax, ay = float(corner_a[0]), float(corner_a[1])
+        bx, by = float(corner_b[0]), float(corner_b[1])
+    except Exception:
+        return []
+    x0, x1 = (ax, bx) if ax <= bx else (bx, ax)
+    y0, y1 = (ay, by) if ay <= by else (by, ay)
+    out: list[int] = []
+    for index in sorted(display_points):
+        point = display_points[index]
+        if point is None:
+            continue
+        try:
+            x, y = float(point[0]), float(point[1])
+        except Exception:
+            continue
+        if not (np.isfinite(x) and np.isfinite(y)):
+            continue
+        if x0 <= x <= x1 and y0 <= y <= y1:
+            out.append(int(index))
+    return out
+
+
 class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     # Pick state lives on a SelectionModel that survives RemoveAllViewProps().
     # These five properties are compatibility shims so existing call sites
@@ -680,6 +724,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._measure_offset_drag_state: dict[str, object] | None = None
         self._actor_measure_handle_map: dict[str, int] = {}
         self._measure_preview_actors: list[Any] = []
+        # bugs/0433: rubber-band box select -- armed mode flag, chained-snap intent,
+        # the Tk press anchor of the live drag, and the on-screen rectangle actors.
+        self._rubber_band_select_mode: bool = False
+        self._rubber_band_chain_snap: bool = False
+        self._rubber_band_press_xy: tuple[int, int] | None = None
+        self._rubber_band_preview_actors: list[Any] = []
         # bugs/0303: object-snap feedback -- a live 3-D "X" marker at the resolved
         # snap point + an "X" cursor while the Measure cursor is over a snappable
         # surface, so the user sees exactly where the next click lands.
@@ -8013,6 +8063,198 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return
         self._arm_snap_to_axis(selection, "assembly")
 
+    def start_rubber_band_select(self, chain_snap: bool = False) -> None:
+        """bugs/0433: arm the rubber-band box select -- left-drag a rectangle in the 3D
+        view and every imaging element whose center lands inside joins the multi-selection
+        (feeds Snap Selected / Assembly). The 0432 Shift-click accumulate never fired from
+        real mouse input (Shift+B1 is the touchpad pan), so this is the working bulk
+        multi-select. With ``chain_snap`` the axis pick arms right after the drag, so the
+        user's gesture is: drag box -> click the target optical axis."""
+        self._rubber_band_select_mode = True
+        self._rubber_band_chain_snap = bool(chain_snap)
+        self._rubber_band_press_xy = None
+        # clear competing pick modes (0432 template)
+        self._axis_to_axis_move_pick_mode = False
+        self._snap_rows_to_axis_pick_mode = False
+        self._step_normal_axis_pick_mode = False
+        self._step_surface_center_axis_pick_mode = False
+        self._center_row_to_ray_mode = False
+        self._placement_target_pick_mode = False
+        self._set_ray_highlight(None)
+        self._set_optical_axis_highlight(None)
+        self._clear_open3d_selection(render=False)
+        try:
+            self.editor._selected_step_label = None
+        except Exception:
+            pass
+        self._set_axis_pick_cursor(True)
+        self._update_mode_badge()
+        self.render()
+        self.status_var.set(
+            "Rubber-Band Select: left-drag a box around the elements"
+            + (" -- release, then click the target optical axis." if chain_snap else ". Esc cancels.")
+        )
+
+    def start_rubber_band_select_and_snap(self) -> None:
+        """bugs/0433: the chained variant -- drag the box, then click the target axis."""
+        self.start_rubber_band_select(chain_snap=True)
+
+    def _clear_rubber_band_preview(self) -> None:
+        for actor in getattr(self, "_rubber_band_preview_actors", []) or []:
+            try:
+                self._remove_renderer_view_prop(actor)
+            except Exception:
+                pass
+        self._rubber_band_preview_actors = []
+
+    def _update_rubber_band_rectangle(self, start_xy, current_xy) -> None:
+        """Live selection rectangle (measure-preview lifecycle: clear-then-recreate per
+        motion). Drawn as a display-space vtkActor2D outline -- the camera cannot move
+        while the rubber-band drag owns B1, so screen coordinates stay valid."""
+        self._clear_rubber_band_preview()
+        if self._renderer is None:
+            return
+        corner_a = self._tk_xy_to_vtk_display_xy(start_xy)
+        corner_b = self._tk_xy_to_vtk_display_xy(current_xy)
+        if corner_a is None or corner_b is None:
+            return
+        try:
+            from vtkmodules.vtkCommonCore import vtkPoints
+            from vtkmodules.vtkCommonDataModel import vtkCellArray, vtkPolyData
+            from vtkmodules.vtkRenderingCore import vtkActor2D, vtkPolyDataMapper2D
+        except Exception:
+            return
+        try:
+            x0, y0 = float(corner_a[0]), float(corner_a[1])
+            x1, y1 = float(corner_b[0]), float(corner_b[1])
+            points = vtkPoints()
+            for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):
+                points.InsertNextPoint(float(x), float(y), 0.0)
+            lines = vtkCellArray()
+            for start, end in ((0, 1), (1, 2), (2, 3), (3, 0)):
+                lines.InsertNextCell(2)
+                lines.InsertCellPoint(start)
+                lines.InsertCellPoint(end)
+            poly = vtkPolyData()
+            poly.SetPoints(points)
+            poly.SetLines(lines)
+            mapper = vtkPolyDataMapper2D()
+            mapper.SetInputData(poly)
+            actor = vtkActor2D()
+            actor.SetMapper(mapper)
+            actor.PickableOff()
+            prop = actor.GetProperty()
+            prop.SetColor(0.4, 0.85, 0.95)
+            prop.SetLineWidth(1.5)
+            try:
+                prop.SetLineStipplePattern(0xF0F0)
+            except Exception:
+                pass
+            self._add_renderer_view_prop(actor)
+            self._rubber_band_preview_actors.append(actor)
+        except Exception:
+            return
+        self.render()
+
+    def _rubber_band_display_points(self) -> dict[int, tuple[float, float] | None]:
+        """Candidate rows' world centers projected to display space. FOLD-AWARE: a row on
+        a reflected leg lives at its fold-transform pose, not at station+desp (bare
+        station+desp would put the folded lens chain back on the straight axis and the
+        box would select nothing the user sees)."""
+        editor = self.editor
+        try:
+            z_positions = editor._row_z_positions()
+        except Exception:
+            return {}
+        points: dict[int, tuple[float, float] | None] = {}
+        for index in rubber_band_candidate_row_indices(editor.rows):
+            row = editor.rows[index]
+            z = float(z_positions[index]) if index < len(z_positions) else 0.0
+            center = None
+            try:
+                transform = editor._optical_axis_fold_world_transform_for_row(index)
+            except Exception:
+                transform = None
+            if transform is not None:
+                try:
+                    matrix = np.asarray(transform, dtype=float).reshape(4, 4)
+                    center = (matrix @ np.asarray((0.0, 0.0, z, 1.0), dtype=float))[:3]
+                except Exception:
+                    center = None
+            if center is None:
+                try:
+                    center = np.asarray(
+                        (float(row.desp_x), float(row.desp_y), z + float(row.desp_z)),
+                        dtype=float,
+                    )
+                except Exception:
+                    continue
+            display = self._world_to_display_2d(center)
+            points[index] = None if display is None else (float(display[0]), float(display[1]))
+        return points
+
+    def _complete_rubber_band_select(self, press_xy, release_xy) -> None:
+        chain = bool(getattr(self, "_rubber_band_chain_snap", False))
+        corner_a = self._tk_xy_to_vtk_display_xy(press_xy)
+        corner_b = self._tk_xy_to_vtk_display_xy(release_xy)
+        self._cancel_rubber_band_select(render=False)
+        if corner_a is None or corner_b is None:
+            self.render()
+            return
+        rows = rubber_band_rows_in_rect(self._rubber_band_display_points(), corner_a, corner_b)
+        if not rows:
+            self.render()
+            self.status_var.set("Rubber band: no elements inside the box. Drag again from the Place menu.")
+            return
+        self._set_row_highlights(rows)
+        try:
+            self.editor._select_table_row(int(rows[0]))
+        except Exception:
+            pass
+        # Light the visible lens barrel / camera body too (apply_row_selection skips STEP
+        # actors) when their anchor rows are inside -- mirror _highlight_axis_move_candidates.
+        selected = set(rows)
+        step_labels: list[str] = []
+        try:
+            front_datum = self.editor._lens_datum_row_index("front")
+        except Exception:
+            front_datum = None
+        image_row = next(
+            (
+                i
+                for i in range(len(self.editor.rows) - 1, -1, -1)
+                if getattr(self.editor.rows[i], "surface", None) == "Image"
+            ),
+            None,
+        )
+        if front_datum is not None and front_datum in selected and self.editor._step_path_for_label("lens") is not None:
+            step_labels.append("lens")
+        if image_row is not None and image_row in selected and self.editor._step_path_for_label("camera") is not None:
+            step_labels.append("camera")
+        try:
+            self._set_step_highlight_set(step_labels, render=False)
+        except Exception:
+            pass
+        self.render()
+        names = ", ".join(f"S{i}" for i in rows)
+        if chain:
+            self.start_snap_selected_to_axis()
+        else:
+            self.status_var.set(
+                f"Rubber band selected {len(rows)} element(s): {names}. "
+                "Snap Selected to Optical Axis / Add Selected to Assembly next."
+            )
+
+    def _cancel_rubber_band_select(self, *, render: bool = True) -> None:
+        self._clear_rubber_band_preview()
+        self._rubber_band_select_mode = False
+        self._rubber_band_chain_snap = False
+        self._rubber_band_press_xy = None
+        self._set_axis_pick_cursor(False)
+        self._update_mode_badge(render=False)
+        if render:
+            self.render()
+
     def _apply_snap_rows_to_axis(self, axis_info: dict[str, object]) -> None:
         selection = list(getattr(self, "_snap_rows_selection", []) or [])
         try:
@@ -9310,6 +9552,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             labels.append("center row to ray")
         if self._placement_target_pick_mode:
             labels.append("snap row to target")
+        # bugs/0433: 0432 modes + rubber band were missing (Esc had nothing to cancel)
+        if bool(getattr(self, "_axis_to_axis_move_pick_mode", False)):
+            labels.append("move elements to axis")
+        if bool(getattr(self, "_snap_rows_to_axis_pick_mode", False)):
+            labels.append("snap selection to axis")
+        if bool(getattr(self, "_rubber_band_select_mode", False)):
+            labels.append("rubber-band select")
         if self._placement_orient_pick_mode:
             labels.append("orient row to target")
         if self._placement_orient_ray_mode:
@@ -10038,6 +10287,28 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._step_carry_snap_target_mode = False
         self._step_normal_axis_pick_mode = False
         self._step_surface_center_axis_pick_mode = False
+        # bugs/0433: the 0432 two-axis move / snap-selected picks and the rubber-band
+        # select must also fall to Esc (they were missing here -- Esc couldn't cancel
+        # them). Their armed row highlights go with them.
+        had_selection_pick_mode = bool(
+            getattr(self, "_axis_to_axis_move_pick_mode", False)
+            or getattr(self, "_snap_rows_to_axis_pick_mode", False)
+            or getattr(self, "_rubber_band_select_mode", False)
+        )
+        self._axis_to_axis_move_pick_mode = False
+        self._axis_to_axis_old_axis = None
+        self._snap_rows_to_axis_pick_mode = False
+        self._snap_rows_selection = []
+        self._clear_rubber_band_preview()
+        self._rubber_band_select_mode = False
+        self._rubber_band_chain_snap = False
+        self._rubber_band_press_xy = None
+        if had_selection_pick_mode:
+            self._set_row_highlights([])
+            try:
+                self._set_step_highlight_set([], render=False)
+            except Exception:
+                pass
         self._step_clear_aperture_pick_mode = False
         self._step_clear_aperture_pick_label = ""
         self._step_clear_aperture_pick_edges = False  # bugs/0379: drop any half-picked edge buffer
@@ -13968,6 +14239,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             pass
 
     def _active_mode_badge_text(self) -> str:
+        # bugs/0433: rubber band + the (backfilled) 0432 axis picks come first --
+        # they are armed explicitly from the Place menu, so when set they ARE the mode.
+        if bool(getattr(self, "_rubber_band_select_mode", False)):
+            if bool(getattr(self, "_rubber_band_chain_snap", False)):
+                return "RUBBER-BAND SELECT\nDrag a box around elements; release, then click target axis. Esc cancels."
+            return "RUBBER-BAND SELECT\nDrag a box around elements to select them. Esc cancels."
+        if bool(getattr(self, "_snap_rows_to_axis_pick_mode", False)):
+            count = len(getattr(self, "_snap_rows_selection", []) or [])
+            return f"SNAP SELECTION -> AXIS\n{count} element(s) armed. Click the target dotted axis. Esc cancels."
+        if bool(getattr(self, "_axis_to_axis_move_pick_mode", False)):
+            if getattr(self, "_axis_to_axis_old_axis", None) is None:
+                return "MOVE ELEMENTS -> AXIS\nClick the OLD optical axis. Esc cancels."
+            return "MOVE ELEMENTS -> AXIS\nOld axis picked. Click the NEW axis. Esc cancels."
         if self._source_target_pick_mode:
             return "SOURCE TARGET\nClick a surface/CAD solid row."
         if self._placement_target_pick_mode:

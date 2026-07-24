@@ -234,6 +234,7 @@ class Open3DInteractionService:
             or self._step_surface_center_axis_pick_mode
             or bool(getattr(self, "_axis_to_axis_move_pick_mode", False))
             or bool(getattr(self, "_snap_rows_to_axis_pick_mode", False))
+            or bool(getattr(self, "_rubber_band_select_mode", False))  # bugs/0433
             or bool(getattr(self.editor, "_cad_axis_pick_any", False))
         )
         pick_start = self._timing_start("left_click_vtk_pick", x=int(x), y=int(y))

@@ -99,6 +99,26 @@ class Open3DMouseBindingsService:
             # cube owns the click, so skip the scene pick/drag entirely.
             if self._handle_navigation_cube_left_press():
                 return "break"
+            # bugs/0433: rubber-band select owns the whole left drag while armed --
+            # anchor the rectangle and skip every drag/carry detector below (the
+            # drag draws the selection box, never a gizmo/carry/orbit gesture).
+            if bool(getattr(self, "_rubber_band_select_mode", False)):
+                self._cancel_step_carry_hold_timer()
+                self._left_drag_active = True
+                self._left_drag_start_xy = (int(event.x), int(event.y))
+                self._left_drag_last_xy = (int(event.x), int(event.y))
+                self._left_drag_moved = False
+                self._ctrl_left_camera_active = False
+                self._rubber_band_press_xy = (int(event.x), int(event.y))
+                self._dimension_anchor_drag_state = None
+                self._measure_offset_drag_state = None
+                self._step_translate_drag_state = None
+                self._axis_slide_drag_state = None
+                self._placement_drag_state = None
+                self._thickness_drag_state = None
+                self._step_carry_drag_state = None
+                self._row_carry_drag_state = None
+                return "break"
             self._cancel_step_carry_hold_timer()
             ctrl_pressed = control_pressed(event)
             if self._step_carry_follow_state is not None and not ctrl_pressed:
@@ -230,6 +250,15 @@ class Open3DMouseBindingsService:
                 dx = current[0] - last[0]
                 dy = current[1] - last[1]
                 ctrl_pressed = control_pressed(event)
+                # bugs/0433: live rubber-band rectangle (only <B1-Motion> fires during
+                # a B1 drag, so this is the one place the box can be drawn from).
+                if (
+                    bool(getattr(self, "_rubber_band_select_mode", False))
+                    and getattr(self, "_rubber_band_press_xy", None) is not None
+                ):
+                    self._update_rubber_band_rectangle(self._rubber_band_press_xy, current)
+                    self._left_drag_last_xy = current
+                    return "break"
                 if self._dimension_anchor_pick_mode:
                     # bugs/0053: while re-anchoring, a held Ctrl-drag also live-moves
                     # the endpoint (so it works whether or not the user keeps the
@@ -342,6 +371,18 @@ class Open3DMouseBindingsService:
             self._dimension_anchor_drag_state = None
             self._measure_offset_drag_state = None
             self._ctrl_left_camera_active = False
+            # bugs/0433: finish the rubber-band select -- a real drag computes the
+            # selection (and, in chain-snap, arms the axis pick); a sub-threshold
+            # click cancels the mode and degrades to the normal scene pick.
+            if bool(getattr(self, "_rubber_band_select_mode", False)):
+                press_xy = getattr(self, "_rubber_band_press_xy", None)
+                if press_xy is not None and not should_pick:
+                    self._complete_rubber_band_select(press_xy, (int(event.x), int(event.y)))
+                else:
+                    self._cancel_rubber_band_select()
+                    if should_pick and not ctrl_active:
+                        self._on_left_button_press(None, None)
+                return "break"
             # bugs/0053: the Ctrl gesture that entered (or kept) the modal
             # re-anchor must NOT commit on release -- the endpoint keeps following
             # the bare mouse until a plain (non-Ctrl) click commits it below.

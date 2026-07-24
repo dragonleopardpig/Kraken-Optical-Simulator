@@ -240,6 +240,8 @@ class Open3DTopControlsPanel:
                 MenuCommand("Snap Row->Target", self.inspector.start_placement_target_pick),
                 None,
                 MenuCommand("Move Elements to Optical Axis", self.inspector.start_axis_to_axis_move),
+                MenuCommand("Select Elements (Rubber Band)", self.inspector.start_rubber_band_select),
+                MenuCommand("Rubber-Band Select + Snap to Axis...", self.inspector.start_rubber_band_select_and_snap),
                 MenuCommand("Snap Selected to Optical Axis", self.inspector.start_snap_selected_to_axis),
                 MenuCommand("Add Selected to Assembly", self.inspector.group_selected_as_assembly),
                 MenuCommand("Snap Assembly to Optical Axis", self.inspector.start_snap_assembly_to_axis),
