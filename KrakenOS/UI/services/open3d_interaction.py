@@ -790,6 +790,30 @@ class Open3DInteractionService:
             self._apply_step_carry_snap_target(int(row_index), face_id=face_id)
             self.render()
             return
+        # 3D Shift-click ACCUMULATES a multi-selection (flag_20260724: browser can't build one for the
+        # assembly). Shift-click each element to add it to _picked_row_indices, then Group as Assembly.
+        shift_add = False
+        try:
+            shift_add = bool(int(self._vtk_interactor.GetShiftKey()))
+        except Exception:
+            shift_add = False
+        if shift_add and row_index is not None and 0 <= int(row_index) < len(self.editor.rows):
+            current = {int(i) for i in (self._picked_row_indices or set())}
+            if int(row_index) in current:
+                current.discard(int(row_index))  # Shift-click again toggles it out
+            else:
+                current.add(int(row_index))
+            self._picked_row_indices = current
+            self._set_row_highlights(sorted(current))
+            try:
+                self.editor._select_table_row(int(row_index))
+            except Exception:
+                pass
+            self.status_var.set(
+                f"3D multi-select: {len(current)} element(s). Shift-click to add/remove; then Group as Assembly."
+            )
+            self.render()
+            return
         self._clear_open3d_selection(render=False)
         self._set_row_highlight(row_index)
         self._set_ray_highlight(None)
