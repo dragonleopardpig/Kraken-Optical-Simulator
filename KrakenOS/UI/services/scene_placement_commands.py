@@ -4754,7 +4754,36 @@ class ScenePlacementMixin:
             return None
         return origin, direction / norm
 
-    def move_axis_downstream_to_axis(self, old_axis_record, new_axis_record, *, tolerance_mm: float = 3.0) -> dict[str, object]:
+    def snap_rows_to_axis(self, row_indices, new_axis_record) -> dict[str, object]:
+        """Multi-select snap (user request 2026-07-24): reorient + place the EXPLICITLY selected rows onto
+        the picked optical axis in one go -- re-align the imaging chain after the BS is shifted, choosing
+        which elements. Infers the selection's current axis from their positions, then reuses
+        move_axis_downstream_to_axis's transform (rotate current->target, re-pack, STEP-follow), pivoting on
+        the selection origin."""
+        rows = sorted({int(i) for i in (row_indices or []) if 0 <= int(i) < len(self.rows)})
+        if not rows:
+            self.status_var.set("Snap to Optical Axis: select one or more elements first.")
+            return {"moved_rows": [], "error": "no_selection"}
+        z_positions = self._row_z_positions()
+        centers = [
+            np.asarray(
+                (float(self.rows[i].desp_x), float(self.rows[i].desp_y), float(z_positions[i]) + float(self.rows[i].desp_z)),
+                dtype=float,
+            )
+            for i in rows
+        ]
+        old_origin = centers[0]
+        old_dir = centers[-1] - centers[0]
+        norm = float(np.linalg.norm(old_dir))
+        old_dir = old_dir / norm if norm > 1e-6 else np.asarray((0.0, 0.0, 1.0), dtype=float)
+        old_record = {
+            "axis_id": "axis:selection",
+            "axis_label": "current placement",
+            "points": np.asarray([old_origin, old_origin + old_dir * 1000.0], dtype=float),
+        }
+        return self.move_axis_downstream_to_axis(old_record, new_axis_record, explicit_rows=set(rows))
+
+    def move_axis_downstream_to_axis(self, old_axis_record, new_axis_record, *, tolerance_mm: float = 3.0, explicit_rows=None) -> dict[str, object]:
         """Axis-to-axis MOVE (user request 2026-07-24): rigidly relocate every element sitting on the
         OLD optical axis PAST the point where the NEW axis branches off, onto the NEW axis -- reorient
         old_dir->new_dir about the branch point, distances PRESERVED (the user ray-traces + thickness-
@@ -4800,16 +4829,23 @@ class ScenePlacementMixin:
             # On the OLD axis line AND past the branch point?
             offset = center - old_origin
             perpendicular = offset - float(np.dot(offset, old_dir)) * old_dir
-            eligible = (
-                float(np.linalg.norm(perpendicular)) <= tol
-                and float(np.dot(center - branch_point, old_dir)) > tol
-            )
+            if explicit_rows is not None:
+                # multi-select snap: move EXACTLY the user-selected rows (no on-axis / branch inference)
+                eligible = index in explicit_rows
+            else:
+                eligible = (
+                    float(np.linalg.norm(perpendicular)) <= tol
+                    and float(np.dot(center - branch_point, old_dir)) > tol
+                )
             if not eligible:
                 if started:  # a non-moved row between moved rows (e.g. the BS) -> its gap is removed
                     nonmoved_gap += float(getattr(row, "thickness", 0.0) or 0.0)
                 continue
             started = True
-            new_center = branch_point + rotation @ (center - branch_point)
+            # standard move pivots on the branch (which lies on the old axis); an explicit multi-select
+            # snap infers the old axis from the selection, so pivot on that selection's own origin instead.
+            pivot = old_origin if explicit_rows is not None else branch_point
+            new_center = branch_point + rotation @ (center - pivot)
             row_gap[index] = nonmoved_gap
             if nonmoved_gap > 1e-9:
                 new_center = new_center - nonmoved_gap * new_dir  # close the fold-element gap
