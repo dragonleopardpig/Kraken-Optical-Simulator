@@ -4787,6 +4787,7 @@ class ScenePlacementMixin:
         # that fall between moved rows (started), so the surrogate lands together (user re-solves spacing).
         nonmoved_gap = 0.0
         started = False
+        row_gap: dict[int, float] = {}  # per-moved-row re-pack shift, so the STEP-follow matches
         self._begin_history_capture()
         for index, row in enumerate(self.rows):
             # Never relocate the object/source or an aperture datum that anchors the launch.
@@ -4809,6 +4810,7 @@ class ScenePlacementMixin:
                 continue
             started = True
             new_center = branch_point + rotation @ (center - branch_point)
+            row_gap[index] = nonmoved_gap
             if nonmoved_gap > 1e-9:
                 new_center = new_center - nonmoved_gap * new_dir  # close the fold-element gap
             current_rotation = rotation_matrix_from_kraken_tilts(
@@ -4860,6 +4862,13 @@ class ScenePlacementMixin:
                     # the old axis so it lands after the lens (distances re-solved by the user afterward).
                     old_center = np.asarray((0.0, 0.0, float(z_positions[image_row])), dtype=float)
                 target_center = branch_point + rotation @ (old_center - branch_point)
+                # flag_20260724_120837 "Lens surrogate and Lens STEP detached": the surrogate rows were
+                # re-packed (fold-element gap removed); shift the STEP by the SAME gap as its pinned row
+                # (lens<->front datum, camera<->Image) so the barrel/camera stay attached to the surrogate.
+                gap_row = front_datum if label == "lens" else image_row
+                pin_gap = float(row_gap.get(gap_row, 0.0)) if gap_row is not None else 0.0
+                if pin_gap > 1e-9:
+                    target_center = target_center - pin_gap * new_dir
                 cur_offset = np.asarray(self._step_placement_offset_xyz(label), dtype=float).reshape(3)
                 cur_angles = self._step_rotation_deg_tuple(label)
                 cur_matrix = self._step_rotation_matrix_from_angles(*cur_angles)
