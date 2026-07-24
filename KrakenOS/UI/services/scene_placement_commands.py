@@ -4841,6 +4841,12 @@ class ScenePlacementMixin:
                     continue
                 b = np.asarray(mesh.bounds, dtype=float).reshape(6)
                 old_center = np.asarray(((b[0] + b[1]) / 2.0, (b[2] + b[3]) / 2.0, (b[4] + b[5]) / 2.0), dtype=float)
+                if label == "camera" and image_row is not None and image_row < len(z_positions):
+                    # flag_20260724_090954 "camera before lens": the camera STEP body centre can sit BEFORE
+                    # the lens in z (so the rigid follow keeps it there). Its SENSOR (the Image row) is always
+                    # correctly ordered after the lens -- anchor the camera to the sensor's axial station on
+                    # the old axis so it lands after the lens (distances re-solved by the user afterward).
+                    old_center = np.asarray((0.0, 0.0, float(z_positions[image_row])), dtype=float)
                 target_center = branch_point + rotation @ (old_center - branch_point)
                 cur_offset = np.asarray(self._step_placement_offset_xyz(label), dtype=float).reshape(3)
                 cur_angles = self._step_rotation_deg_tuple(label)
