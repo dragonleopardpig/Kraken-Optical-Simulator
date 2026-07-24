@@ -7851,16 +7851,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor._selected_step_label = None
         except Exception:
             pass
-        # flag_20260724_094826: highlight the eligible imaging elements IMMEDIATELY on entry (before any
-        # axis pick) so the user sees what can move -- not the BS. The old-axis pick refines this to the
-        # elements on that specific axis.
-        candidates = self._axis_move_candidate_row_indices(None)
-        self._set_row_highlights(candidates)
         self._set_axis_pick_cursor(True)
         self._update_mode_badge()
         self._hide_regular_rays_for_center_axis_pick()
+        # flag_20260724_094826/100322: highlight the eligible imaging elements (STEP bodies + rows, RENDERED)
+        # IMMEDIATELY on entry so the user sees what can move -- not the BS. The old-axis pick refines it.
+        n_candidates = self._highlight_axis_move_candidates(None)
         self.status_var.set(
-            f"Move to Optical Axis: {len(candidates)} eligible element(s) highlighted. Click the OLD optical "
+            f"Move to Optical Axis: {n_candidates} eligible element(s) highlighted. Click the OLD optical "
             "axis (where the elements are now), then the NEW axis to move them onto."
         )
 
@@ -7902,6 +7900,24 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             out.append(i)
         return out
 
+    def _highlight_axis_move_candidates(self, old_axis_record=None) -> int:
+        """flag_20260724_100322: make the eligible elements VISIBLE. `_set_row_highlights` alone marks the
+        subtle optical rows (thin-lens glyphs / detector), not the STEP BODIES the user actually sees, and
+        it does not render. So highlight BOTH: the candidate rows AND the eligible imaging STEP overlays
+        (the lens barrel + camera body via `_set_step_highlight_set`), then render. Returns the count."""
+        rows = self._axis_move_candidate_row_indices(old_axis_record)
+        self._set_row_highlights(rows)
+        step_labels = [
+            label for label in ("lens", "camera")
+            if self.editor._step_path_for_label(label) is not None
+        ]
+        try:
+            self._set_step_highlight_set(step_labels, render=False)
+        except Exception:
+            pass
+        self.render()
+        return len(rows)
+
     def _apply_axis_to_axis_move_pick(self, axis_info: dict[str, object]) -> None:
         old = getattr(self, "_axis_to_axis_old_axis", None)
         if old is None:
@@ -7912,17 +7928,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self.editor._selected_step_label = None
             except Exception:
                 pass
-            # flag_20260724_090954 + user request: HIGHLIGHT the elements eligible to move (the imaging
-            # elements sitting ON the picked old axis -- object/source + fold solids like the BS stay), so
-            # the user sees exactly what will relocate before clicking the new axis.
-            candidates = self._axis_move_candidate_row_indices(old)
-            self._set_row_highlights(candidates)
-            n = len(candidates)
+            # flag_20260724_090954 + user request: refine the eligible-elements highlight to the imaging
+            # elements sitting ON the picked old axis (STEP bodies + rows, rendered).
+            n = self._highlight_axis_move_candidates(old)
             self.status_var.set(
                 f"Move to Optical Axis: OLD = {axis_info.get('axis_label', 'axis')}; "
                 f"{n} eligible element(s) highlighted. Click the NEW optical axis to move them onto it."
             )
-            self.render()
             return
         new = dict(axis_info)
         if str(new.get("axis_id", "")) == str(old.get("axis_id", "")):
@@ -7939,6 +7951,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._set_axis_pick_cursor(False)
         self._set_optical_axis_highlight(None)
         self._set_row_highlights([])  # drop the eligible-elements highlight now the move is done
+        try:
+            self._set_step_highlight_set([], render=False)
+        except Exception:
+            pass
         self._update_mode_badge()
         try:
             self.editor._selected_step_label = None
