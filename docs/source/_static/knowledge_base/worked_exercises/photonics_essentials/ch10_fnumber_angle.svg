@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 440" role="img" aria-labelledby="title desc">
+  <title id="title">Full aperture angle versus lens f-number</title>
+  <desc id="desc">The full cone angle decreases nonlinearly as f-number increases from one to twelve.</desc>
+  <rect width="720" height="440" fill="#fbfaf4"/>
+  <g fill="none" stroke="#d8d5c8" stroke-width="1">
+    <path d="M80 50V370H680"/>
+    <path d="M80 50H680M80 157H680M80 263H680M80 370H680"/>
+    <path d="M80 50V370M185 50V370M291 50V370M396 50V370M502 50V370M607 50V370"/>
+  </g>
+  <g fill="#292b2a" font-family="Georgia, serif" font-size="14">
+    <text x="370" y="24" text-anchor="middle" font-size="19">Lens aperture angle</text>
+    <text x="380" y="425" text-anchor="middle">F-number, N</text>
+    <text x="18" y="215" text-anchor="middle" transform="rotate(-90 18 215)">Full cone angle (degrees)</text>
+    <text x="80" y="392" text-anchor="middle">1</text>
+    <text x="185" y="392" text-anchor="middle">3</text>
+    <text x="291" y="392" text-anchor="middle">5</text>
+    <text x="396" y="392" text-anchor="middle">7</text>
+    <text x="502" y="392" text-anchor="middle">9</text>
+    <text x="607" y="392" text-anchor="middle">11</text>
+    <text x="72" y="375" text-anchor="end">0</text>
+    <text x="72" y="268" text-anchor="end">20</text>
+    <text x="72" y="162" text-anchor="end">40</text>
+    <text x="72" y="55" text-anchor="end">60</text>
+  </g>
+  <polyline points="80,86.6 132.7,220.3 185.5,269.1 238.2,294.0 290.9,309.1 343.6,319.2 396.4,326.4 449.1,331.9 501.8,336.1 554.5,339.5 607.3,342.2 660,344.5" fill="none" stroke="#b13f2e" stroke-width="4"/>
+  <g fill="#b13f2e">
+    <circle cx="132.7" cy="220.3" r="5"/>
+    <circle cx="322.5" cy="315.0" r="5"/>
+    <circle cx="449.1" cy="331.9" r="5"/>
+  </g>
+  <g fill="#292b2a" font-family="Georgia, serif" font-size="13">
+    <text x="143" y="212">f/2</text>
+    <text x="333" y="307">f/5.6</text>
+    <text x="460" y="324">f/8</text>
+  </g>
+</svg>

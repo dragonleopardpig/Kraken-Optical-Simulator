@@ -22,4 +22,4 @@ own parent pages.
    writing_a_solution
    thin_lens_image_distance
    understanding_lasers
-   photonics_essentials
+   photonics_essentials/index

@@ -329,7 +329,7 @@ The requested corresponding energy interval is therefore
 
    \boxed{0.620\ \mathrm{eV}\le E\le6.20\ \mathrm{eV}}.
 
-.. figure:: ../../_static/knowledge_base/worked_exercises/photonics_essentials/ch02_energy_wavelength.svg
+.. figure:: ../../../_static/knowledge_base/worked_exercises/photonics_essentials/ch02_energy_wavelength.svg
    :alt: Aligned wavelength and photon-energy scales from 200 to 2000 nanometres with blue, green, red, and 1550 nanometre regions marked
    :width: 100%
    :align: center
