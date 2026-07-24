@@ -4781,6 +4781,12 @@ class ScenePlacementMixin:
         tol = float(tolerance_mm)
 
         moved: list[int] = []
+        # flag_20260724_104701 "first element of the lens surrogate dis-locate": a fold element (the BS)
+        # sitting BETWEEN moved rows leaves a big along-axis gap that the faithful move preserves, splitting
+        # the surrogate. Re-pack the moved chain contiguously by subtracting the thickness of NON-moved rows
+        # that fall between moved rows (started), so the surrogate lands together (user re-solves spacing).
+        nonmoved_gap = 0.0
+        started = False
         self._begin_history_capture()
         for index, row in enumerate(self.rows):
             # Never relocate the object/source or an aperture datum that anchors the launch.
@@ -4790,15 +4796,21 @@ class ScenePlacementMixin:
             center = station + np.asarray(
                 (float(row.desp_x), float(row.desp_y), float(row.desp_z)), dtype=float
             )
-            # On the OLD axis line?
+            # On the OLD axis line AND past the branch point?
             offset = center - old_origin
             perpendicular = offset - float(np.dot(offset, old_dir)) * old_dir
-            if float(np.linalg.norm(perpendicular)) > tol:
+            eligible = (
+                float(np.linalg.norm(perpendicular)) <= tol
+                and float(np.dot(center - branch_point, old_dir)) > tol
+            )
+            if not eligible:
+                if started:  # a non-moved row between moved rows (e.g. the BS) -> its gap is removed
+                    nonmoved_gap += float(getattr(row, "thickness", 0.0) or 0.0)
                 continue
-            # PAST the branch point (downstream along the old axis)?
-            if float(np.dot(center - branch_point, old_dir)) <= tol:
-                continue
+            started = True
             new_center = branch_point + rotation @ (center - branch_point)
+            if nonmoved_gap > 1e-9:
+                new_center = new_center - nonmoved_gap * new_dir  # close the fold-element gap
             current_rotation = rotation_matrix_from_kraken_tilts(
                 float(row.tilt_x), float(row.tilt_y), float(row.tilt_z)
             )
