@@ -107,8 +107,11 @@ class ScenePlacementMixin:
         row.desp_z = float(row.desp_z) + float(delta[2])
         # BS<->LED two-body glue: a direct drag of the promoted beam-splitter row carries the
         # glued LED overlay by the same vector (guarded against carry-back from the LED side).
+        # flag_20260724_094730: an ALT-drag of the BS suspends the carry for that drag so the user can
+        # reposition the BS RELATIVE to the LED (the glue itself stays intact for normal drags).
         if (
             not getattr(self, "_optical_led_carry_active", False)
+            and not getattr(self, "_suppress_optical_led_carry", False)
             and bool(getattr(self, "_optical_led_glued", False))
             and self._promoted_optical_solid_row_index("optical") == row_index
         ):

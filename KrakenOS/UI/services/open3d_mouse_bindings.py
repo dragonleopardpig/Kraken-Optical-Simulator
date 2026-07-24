@@ -185,6 +185,11 @@ class Open3DMouseBindingsService:
                         self._row_carry_drag_state = None
                     else:
                         self._placement_drag_state = self._placement_drag_state_from_current_pick()
+                        # flag_20260724_094730: Alt-drag of the BS suspends the BS<->LED glue for this drag
+                        # so the BS moves alone (relative to the LED). Capture Alt at press-time; the commit
+                        # in _finish_placement_drag gates the carry on it.
+                        if self._placement_drag_state is not None:
+                            self._placement_drag_state["alt_suspend_glue"] = bool(self._event_alt_pressed(event))
                         self._thickness_drag_state = None
                         self._step_carry_drag_state = None
                         self._row_carry_drag_state = None

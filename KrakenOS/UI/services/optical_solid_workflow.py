@@ -965,8 +965,11 @@ class LayoutOpticalSolidWorkflowMixin:
         setattr(row, attr, before + delta)
         # BS<->LED two-body glue: a direct per-axis drag of the promoted beam-splitter row carries
         # the glued LED overlay by the same vector (guarded against carry-back from the LED side).
+        # flag_20260724_094730: an ALT-drag suspends the carry for that drag (the placement-handle commit
+        # sets _suppress_optical_led_carry) so the BS moves alone relative to the LED; the glue is intact.
         if (
             not getattr(self, "_optical_led_carry_active", False)
+            and not getattr(self, "_suppress_optical_led_carry", False)
             and bool(getattr(self, "_optical_led_glued", False))
             and self._promoted_optical_solid_row_index("optical") == row_index
         ):

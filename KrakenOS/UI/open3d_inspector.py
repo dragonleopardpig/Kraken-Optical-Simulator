@@ -3879,12 +3879,26 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # position sticks (no revert on release).
         pending = float(state.get("pending_translate_mm", 0.0))
         if str(state.get("kind")) != "rotate" and abs(pending) > 1.0e-9:
+            # flag_20260724_094730: an ALT-drag suspends the BS<->LED glue carry for this commit so the BS
+            # moves alone (glue stays intact for the next, non-Alt drag).
+            alt_suspend = bool(state.get("alt_suspend_glue", False))
+            if alt_suspend:
+                try:
+                    self.editor._suppress_optical_led_carry = True
+                except Exception:
+                    alt_suspend = False
             try:
                 self._apply_scene_placement_translate_handle(
                     row_index, str(state.get("axis", "")).strip().lower(), pending
                 )
             except Exception as exc:
                 self.editor.append_debug(f"Placement translate commit failed for S{row_index}: {exc}")
+            finally:
+                if alt_suspend:
+                    try:
+                        self.editor._suppress_optical_led_carry = False
+                    except Exception:
+                        pass
         if applied_steps <= 0:
             self.status_var.set(f"Placement {kind} drag S{row_index} {axis}: no snap step crossed.")
         else:
