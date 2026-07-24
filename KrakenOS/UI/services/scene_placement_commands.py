@@ -4772,8 +4772,17 @@ class ScenePlacementMixin:
             )
             for i in rows
         ]
-        old_origin = centers[0]
-        old_dir = centers[-1] - centers[0]
+        # flag_20260724_145932 "camera and lens misplaced, RA mirror snap to the BS": infer the reference
+        # axis from the ALONG-AXIS members (lens/camera), NOT fold solids (mirrors) which sit off-axis and
+        # skew the fit -- then the same transform still moves ALL members (mirror included, fold preserved).
+        ref_centers = [
+            c for i, c in zip(rows, centers)
+            if not (hasattr(self, "_is_any_promoted_optical_solid_row") and self._is_any_promoted_optical_solid_row(self.rows[i]))
+        ]
+        if len(ref_centers) < 2:
+            ref_centers = centers
+        old_origin = ref_centers[0]
+        old_dir = ref_centers[-1] - ref_centers[0]
         norm = float(np.linalg.norm(old_dir))
         old_dir = old_dir / norm if norm > 1e-6 else np.asarray((0.0, 0.0, 1.0), dtype=float)
         old_record = {

@@ -1120,9 +1120,9 @@ class Open3DInteractionService:
             self.render()
             self.status_var.set("Center Row->Optical Axis: click the dotted Optical Axis guide.")
             return
-        if getattr(self, "_axis_to_axis_move_pick_mode", False):
-            # flag_20260724_083253: hover feedback for the two-axis move -- highlight the axis under the
-            # cursor so the user can see which one they're about to pick (OLD, then NEW).
+        if getattr(self, "_axis_to_axis_move_pick_mode", False) or getattr(self, "_snap_rows_to_axis_pick_mode", False):
+            # flag_20260724_083253 + 145932: hover feedback for the two-axis move AND the snap/assembly pick
+            # -- highlight the axis under the cursor so the user sees which one they're about to pick.
             self._set_rotation_handle_hover(None)
             self._set_axis_pick_cursor(True)
             axis_info = None
