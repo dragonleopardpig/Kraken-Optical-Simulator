@@ -7841,6 +7841,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._step_surface_center_axis_pick_mode = False
         self._center_row_to_ray_mode = False
         self._placement_target_pick_mode = False
+        # flag_20260724_083253/083412: entering the move must DROP any current STEP/row selection +
+        # placement gizmo (else the previously-selected BS plate keeps its drag gizmo through the whole
+        # two-axis pick). Mirror start_center_row_to_ray's selection reset.
+        self._set_ray_highlight(None)
+        self._set_optical_axis_highlight(None)
+        self._clear_open3d_selection(render=False)
+        try:
+            self.editor._selected_step_label = None
+        except Exception:
+            pass
         self._set_axis_pick_cursor(True)
         self._update_mode_badge()
         self._hide_regular_rays_for_center_axis_pick()
@@ -7853,6 +7863,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         old = getattr(self, "_axis_to_axis_old_axis", None)
         if old is None:
             self._axis_to_axis_old_axis = dict(axis_info)
+            # keep the BS/STEP gizmo suppressed between the two axis clicks
+            self._clear_open3d_selection(render=False)
+            try:
+                self.editor._selected_step_label = None
+            except Exception:
+                pass
             self.status_var.set(
                 f"Move to Optical Axis: OLD = {axis_info.get('axis_label', 'axis')}. "
                 "Now click the NEW optical axis to move the downstream elements onto."
