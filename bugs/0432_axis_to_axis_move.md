@@ -41,18 +41,26 @@ On AZ85, old = `axis:global` (+Z), new = `axis:global:split` (+X @ z=96.6):
 
 PASS: moved rows on the +X reflect axis, reoriented +Z→+X, object + upstream untouched.
 
-## UI (two-axis pick)
+## UI (two-axis pick) — SHIPPED
 
-Pick the OLD axis → pick the NEW axis → the downstream chain relocates. Reuses the existing optical-axis
-pick machinery (`_optical_axis_frame_from_pick` / the axis guide records). Menu: "Move Elements to Optical
-Axis". STEP bodies follow their surrogate datums.
+**"Move Elements to Optical Axis"** (Place menu) → `start_axis_to_axis_move` arms a two-axis pick →
+click the **OLD** axis (stored) → click the **NEW** axis → `_apply_axis_to_axis_move_pick` calls
+`move_axis_downstream_to_axis(old, new)`. Reuses the existing optical-axis pick dispatch
+(`_actor_optical_axis_map` / `_optical_axis_info_near_display_xy`; the clicked `axis_info` already carries
+the axis `points`). STEP bodies follow their surrogate datums. Import + parse verified; core probe still PASS
+after wiring.
 
 ## Still owed
 
-In-app eyeball of the folded relocation (VTK, headless-untestable). Duplicate (both BS legs populated) is a
-deferred extension only if needed.
+In-app eyeball of the folded relocation (VTK, headless-untestable): on the AZ85 BS scene, **Move Elements to
+Optical Axis → click the object axis → click the BS reflect axis** → the imaging lens + camera should swing
+onto the +X reflect leg (object/BS stay); then ray-trace + thickness-solve. Duplicate (both BS legs
+populated) is a deferred extension only if needed.
 
 ## Files
 
 - `KrakenOS/UI/services/scene_placement_commands.py` — `move_axis_downstream_to_axis` + `_axis_record_endpoints`.
+- `KrakenOS/UI/open3d_inspector.py` — `start_axis_to_axis_move` + `_apply_axis_to_axis_move_pick`.
+- `KrakenOS/UI/services/open3d_interaction.py` — two-axis pick dispatch branch.
+- `KrakenOS/UI/panels/open3d_top_controls.py` — "Move Elements to Optical Axis" menu.
 - `bugs/probe_0432_axis_to_axis_move.py` — headless verification.

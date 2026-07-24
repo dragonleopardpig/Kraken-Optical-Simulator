@@ -7829,6 +7829,56 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             f"Center {label.upper()} STEP surface: click the dotted Optical Axis guide. Surface center={center_text}."
         )
 
+    def start_axis_to_axis_move(self) -> None:
+        """bugs/0432: arm the axis-to-axis MOVE -- click the OLD optical axis, then the NEW one, and
+        every element on the OLD axis PAST the NEW axis's branch point relocates rigidly onto the NEW
+        axis (object/source + upstream stay). Distances preserved (the user ray-traces + thickness-
+        solves after)."""
+        self._axis_to_axis_move_pick_mode = True
+        self._axis_to_axis_old_axis = None
+        # clear the other pick modes so they don't collide
+        self._step_normal_axis_pick_mode = False
+        self._step_surface_center_axis_pick_mode = False
+        self._center_row_to_ray_mode = False
+        self._placement_target_pick_mode = False
+        self._set_axis_pick_cursor(True)
+        self._update_mode_badge()
+        self._hide_regular_rays_for_center_axis_pick()
+        self.status_var.set(
+            "Move to Optical Axis: click the OLD optical axis (where the elements are now), "
+            "then the NEW axis to move them onto."
+        )
+
+    def _apply_axis_to_axis_move_pick(self, axis_info: dict[str, object]) -> None:
+        old = getattr(self, "_axis_to_axis_old_axis", None)
+        if old is None:
+            self._axis_to_axis_old_axis = dict(axis_info)
+            self.status_var.set(
+                f"Move to Optical Axis: OLD = {axis_info.get('axis_label', 'axis')}. "
+                "Now click the NEW optical axis to move the downstream elements onto."
+            )
+            return
+        new = dict(axis_info)
+        if str(new.get("axis_id", "")) == str(old.get("axis_id", "")):
+            self.status_var.set("Move to Optical Axis: pick a DIFFERENT axis as the new target.")
+            return
+        try:
+            result = self.editor.move_axis_downstream_to_axis(old, new)
+            self.status_var.set(self.editor.status_var.get())
+        except Exception as exc:
+            self.status_var.set(f"Axis-to-axis move failed: {_short_error_message(exc)}")
+            result = None
+        self._axis_to_axis_move_pick_mode = False
+        self._axis_to_axis_old_axis = None
+        self._set_axis_pick_cursor(False)
+        self._set_optical_axis_highlight(None)
+        self._update_mode_badge()
+        try:
+            self.editor._selected_step_label = None
+        except Exception:
+            pass
+        self.refresh_from_editor()
+
     def _apply_step_normal_axis_pick(self, axis_info: dict[str, object]) -> None:
         mode_text = str(getattr(self, "_step_normal_axis_anchor_mode", "body_center")).strip().lower()
         if mode_text == "feature_center":

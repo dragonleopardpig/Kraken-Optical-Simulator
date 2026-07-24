@@ -416,6 +416,17 @@ class Open3DInteractionService:
                 self.status_var.set("Center Row->Optical Axis: click the surface/CAD row to move before choosing an Optical Axis.")
                 self.render()
                 return
+        if getattr(self, "_axis_to_axis_move_pick_mode", False):
+            axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=AXIS_PICK_TOLERANCE_PX)
+            if axis_info is not None:
+                axis_id = str(axis_info.get("axis_id", "") or "").strip()
+                self._set_optical_axis_highlight(axis_id)
+                self._apply_axis_to_axis_move_pick(axis_info)
+                self.render()
+                return
+            self.status_var.set("Move to Optical Axis: click a dotted Optical Axis guide (OLD first, then NEW).")
+            self.render()
+            return
         if self._step_normal_axis_pick_mode:
             axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=AXIS_PICK_TOLERANCE_PX)
             if axis_info is not None:
