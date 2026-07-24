@@ -7854,12 +7854,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._set_axis_pick_cursor(True)
         self._update_mode_badge()
         self._hide_regular_rays_for_center_axis_pick()
-        # flag_20260724_094826/100322: highlight the eligible imaging elements (STEP bodies + rows, RENDERED)
-        # IMMEDIATELY on entry so the user sees what can move -- not the BS. The old-axis pick refines it.
-        n_candidates = self._highlight_axis_move_candidates(None)
+        # flag_20260724_101439 (user correction): do NOT highlight on entry -- until the OLD axis is picked
+        # we don't know which axis the user means, so an axis-agnostic highlight is misleading. The eligible
+        # elements light up on the OLD-axis click (_apply_axis_to_axis_move_pick -> _highlight_axis_move_
+        # candidates(old)), scoped to that axis.
+        self.render()
         self.status_var.set(
-            f"Move to Optical Axis: {n_candidates} eligible element(s) highlighted. Click the OLD optical "
-            "axis (where the elements are now), then the NEW axis to move them onto."
+            "Move to Optical Axis: click the OLD optical axis (the elements on it will highlight), "
+            "then click the NEW axis to move them onto it."
         )
 
     def _axis_move_candidate_row_indices(self, old_axis_record=None) -> list[int]:
