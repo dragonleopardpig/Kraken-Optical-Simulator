@@ -7971,7 +7971,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         lens + camera along-axis) -- no surprises about which elements are part of it. Members highlighted."""
         selection = sorted(int(i) for i in (self._picked_row_indices or set()))
         if not selection:
-            self.status_var.set("Group as Assembly: select an element first, then repeat to ADD more (browser is single-select).")
+            # flag_20260724_152206 (assembly empty -> snap did nothing): the right-panel browser's single
+            # select may not feed _picked_row_indices, so fall back to its current selection's rows.
+            panel = getattr(self, "_open3d_step_admin_panel_instance", None)
+            if panel is not None:
+                try:
+                    iid = panel._current_browser_selection_iid()
+                    rows, _ = panel._selection_rows_and_label(iid)
+                    selection = sorted(int(i) for i in (rows or []) if 0 <= int(i) < len(self.editor.rows))
+                except Exception:
+                    selection = []
+        if not selection:
+            self.status_var.set("Group as Assembly: select an element (browser or 3D) first, then repeat to ADD more.")
             return
         # ACCUMULATE: the browser/3D pick is single-select, so build the group one element at a time --
         # each 'Group as Assembly' ADDS the current pick to the assembly (flag_20260724: shift-select
