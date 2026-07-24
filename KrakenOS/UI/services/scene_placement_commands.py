@@ -4957,6 +4957,175 @@ class ScenePlacementMixin:
             "branch_point": tuple(float(v) for v in branch_point),
         }
 
+    # ---- Stay-put freeze on fold-element removal (bugs/0433) ----
+    # The world poses of the rows downstream of a right-angle FOLD mirror are a DERIVED
+    # override map (build_optical_solid_output_port_pose_overrides), rebuilt on every
+    # refresh -- deleting/unpromoting the fold source silently collapsed the whole
+    # imaging chain back onto the straight axis (bugs/0431 reproduction). The user's
+    # workflow replaces the temporary RA mirror with a beam splitter and re-attaches the
+    # chain manually (rubber-band select + snap), so on removal every surviving
+    # downstream row keeps its CURRENT world pose, baked into its own desp/tilt -- the
+    # 0432 axis-move recipe with R = identity. The lens/camera STEP bodies are carried
+    # through their per-label settings because their fold transform dies with the
+    # override map (they are seated straight-axis and folded per render).
+
+    def _stay_put_freeze_capture(self, removed_row_indices) -> dict | None:
+        """Pre-removal snapshot for the stay-put freeze, or None when the removal
+        dissolves no fold (plain deletions stay exact no-ops)."""
+        from KrakenOS.UI.services.paraxial_tools import _row_is_promoted_mirror_fold
+        from KrakenOS.UI.nonseq_output_ports import optical_solid_output_port_pose_overrides
+        from KrakenOS.UI.optical_solid_metadata import rotation_matrix_from_kraken_tilts
+
+        try:
+            removed = sorted({int(i) for i in (removed_row_indices or []) if 0 <= int(i) < len(self.rows)})
+        except Exception:
+            return None
+        fold_rows = [i for i in removed if _row_is_promoted_mirror_fold(self.rows[i])]
+        if not fold_rows:
+            return None
+        first_fold = fold_rows[0]
+        try:
+            overrides = optical_solid_output_port_pose_overrides(None, self.rows)
+        except Exception:
+            overrides = {}
+        removed_set = set(removed)
+        downstream = [i for i in range(first_fold + 1, len(self.rows)) if i not in removed_set]
+        if not any(i in overrides for i in downstream):
+            return None
+        z_positions = self._row_z_positions()
+        poses: list[dict[str, object]] = []
+        for index in downstream:
+            row = self.rows[index]
+            pose = overrides.get(index)
+            try:
+                if isinstance(pose, dict):
+                    center = np.asarray(pose.get("center"), dtype=float).reshape(3)
+                    rotation = np.asarray(pose.get("rotation"), dtype=float).reshape(3, 3)
+                else:
+                    station_z = float(z_positions[index]) if index < len(z_positions) else 0.0
+                    center = np.asarray(
+                        (float(row.desp_x), float(row.desp_y), station_z + float(row.desp_z)), dtype=float
+                    )
+                    rotation = rotation_matrix_from_kraken_tilts(
+                        float(row.tilt_x), float(row.tilt_y), float(row.tilt_z)
+                    )
+                if not (np.all(np.isfinite(center)) and np.all(np.isfinite(rotation))):
+                    continue
+            except Exception:
+                continue
+            poses.append({"row": row, "center": center, "rotation": rotation})
+        if not poses:
+            return None
+
+        # Lens barrel / camera body: seated straight-axis, folded via their anchor row's
+        # override -- capture the FOLDED world bounds + fold rotation while both exist.
+        steps: list[dict[str, object]] = []
+        front_datum = self._lens_datum_row_index("front")
+        image_row = next(
+            (i for i in range(len(self.rows) - 1, -1, -1) if getattr(self.rows[i], "surface", None) == "Image"),
+            None,
+        )
+        for label, anchor in (("lens", front_datum), ("camera", image_row)):
+            if anchor is None or anchor in removed_set or anchor not in overrides:
+                continue
+            if self._step_path_for_label(label) is None:
+                continue
+            try:
+                fold = self._optical_axis_fold_world_transform_for_row(anchor)
+                mesh = self._transformed_imported_step_mesh_for_label(label)
+                if fold is None or mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
+                    continue
+                b = np.asarray(mesh.bounds, dtype=float).reshape(6)
+                center = np.asarray(((b[0] + b[1]) / 2.0, (b[2] + b[3]) / 2.0, (b[4] + b[5]) / 2.0), dtype=float)
+                steps.append(
+                    {"label": label, "center": center, "fold_rotation": np.asarray(fold[:3, :3], dtype=float)}
+                )
+            except Exception:
+                continue
+        return {"poses": poses, "steps": steps}
+
+    def _stay_put_freeze_apply(self, snapshot) -> list[int]:
+        """Bake the captured world poses after the fold rows are gone. Rows are matched
+        by object identity (indices shifted; some captured rows -- e.g. the fold's
+        trailing spacer -- may themselves be gone). Stations are recomputed from the
+        ACTUAL post-mutation rows, so the removed thickness is absorbed into desp (the
+        pinned mirror-2 z-drift) whatever survived the mutation."""
+        if not isinstance(snapshot, dict):
+            return []
+        from KrakenOS.UI.optical_solid_metadata import kraken_tilts_from_rotation_matrix
+        from KrakenOS.UI.nonseq_output_ports import optical_solid_output_port_pose_overrides
+
+        # A row a SURVIVING upstream fold source still sweeps (partial removal, e.g.
+        # only the second of two mirrors deleted) must NOT be baked: the override
+        # composes the row's desp into ITS fold frame, so an absolute bake would be
+        # double-transformed -- and fold-follow is the correct behavior there anyway.
+        try:
+            post_overrides = optical_solid_output_port_pose_overrides(None, self.rows)
+        except Exception:
+            post_overrides = {}
+        z_positions = self._row_z_positions()
+        row_to_index = {id(row): i for i, row in enumerate(self.rows)}
+        frozen: list[int] = []
+        for entry in snapshot.get("poses", []):
+            index = row_to_index.get(id(entry.get("row")))
+            if index is None or index in post_overrides:
+                continue
+            row = self.rows[index]
+            center = entry["center"]
+            rotation = entry["rotation"]
+            station = np.asarray((0.0, 0.0, float(z_positions[index])), dtype=float)
+            try:
+                tilt_x, tilt_y, tilt_z = kraken_tilts_from_rotation_matrix(rotation)
+            except Exception:
+                continue
+            desp = center - station
+            row.desp_x, row.desp_y, row.desp_z = float(desp[0]), float(desp[1]), float(desp[2])
+            row.tilt_x, row.tilt_y, row.tilt_z = float(tilt_x), float(tilt_y), float(tilt_z)
+            # row.AxisMove stays untouched: the engine applies an upstream row's desp/tilt
+            # to followers only when that row has AxisMove=1 (Prerequisites3D
+            # GeometricRotatAndTran PA term) -- absolute per-row baked poses need
+            # AxisMove=0 or consecutive frozen rows would compound in the built system.
+            row.advanced = dict(row.advanced or {})
+            settings = normalize_scene_placement_settings(row.advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {}))
+            settings["stay_put_freeze"] = {"reason": "fold_removed"}
+            row.advanced[SCENE_PLACEMENT_ADVANCED_ATTR] = settings
+            frozen.append(index)
+        post_front_datum = self._lens_datum_row_index("front")
+        post_image_row = next(
+            (i for i in range(len(self.rows) - 1, -1, -1) if getattr(self.rows[i], "surface", None) == "Image"),
+            None,
+        )
+        for step in snapshot.get("steps", []):
+            label = str(step["label"])
+            anchor = post_front_datum if label == "lens" else post_image_row
+            if anchor is not None and anchor in post_overrides:
+                continue  # the body still folds via its surviving anchor override
+            target_center = step["center"]
+            fold_rotation = step["fold_rotation"]
+            try:
+                cur_offset = np.asarray(self._step_placement_offset_xyz(label), dtype=float).reshape(3)
+                cur_angles = self._step_rotation_deg_tuple(label)
+                cur_matrix = self._step_rotation_matrix_from_angles(*cur_angles)
+                next_angles = self._step_angles_from_rotation_matrix(fold_rotation @ cur_matrix)
+                self._set_step_rotation_deg_tuple(label, next_angles)
+                reseated = self._transformed_imported_step_mesh_for_label(label)
+                if reseated is None or int(getattr(reseated, "n_points", 0)) <= 0:
+                    self._set_step_rotation_deg_tuple(label, cur_angles)
+                    continue
+                rb = np.asarray(reseated.bounds, dtype=float).reshape(6)
+                reseated_center = np.asarray(
+                    ((rb[0] + rb[1]) / 2.0, (rb[2] + rb[3]) / 2.0, (rb[4] + rb[5]) / 2.0), dtype=float
+                )
+                self._set_step_placement_offset_xyz(label, cur_offset + (target_center - reseated_center))
+            except Exception:
+                continue
+        if frozen:
+            self.status_var.set(
+                f"Fold element removed: froze {len(frozen)} downstream element(s) in place "
+                f"(rows {', '.join('S' + str(i) for i in frozen)}); rubber-band select + snap to re-attach."
+            )
+        return frozen
+
     # ---- LED clear-aperture (CA) fine-face selection + persistence (bugs/0134) ----
     # The user selects the square rounded-corner CLEAR-APERTURE window on the front
     # of the LED's vendor STEP and persists it as the component's clear aperture: a

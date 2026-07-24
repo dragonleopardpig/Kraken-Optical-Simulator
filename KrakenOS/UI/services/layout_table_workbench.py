@@ -4138,8 +4138,13 @@ class LayoutTableWorkbenchMixin:
             return
         self._begin_history_capture()
         indices = self._selected_table_indices()
+        _freeze_capture = getattr(self, "_stay_put_freeze_capture", None)  # bugs/0433
+        stay_put = _freeze_capture(indices) if callable(_freeze_capture) else None
         for index in reversed(indices):
             del self.rows[index]
+        _freeze_apply = getattr(self, "_stay_put_freeze_apply", None)
+        if callable(_freeze_apply):
+            _freeze_apply(stay_put)
         self._sync_table()
         self._commit_history_capture()
         self.refresh_plot()
@@ -4164,9 +4169,17 @@ class LayoutTableWorkbenchMixin:
             return 0
         self._commit_pending_table_edit()
         self._begin_history_capture()
+        # bugs/0433: removing a FOLD element must not collapse the downstream chain --
+        # capture the derived world poses while the fold still exists, bake after.
+        # getattr-guarded for validator stub editors.
+        _freeze_capture = getattr(self, "_stay_put_freeze_capture", None)
+        stay_put = _freeze_capture(targets) if callable(_freeze_capture) else None
         for index in targets:
             del self.rows[index]
         self._normalize_special_rows()
+        _freeze_apply = getattr(self, "_stay_put_freeze_apply", None)
+        if callable(_freeze_apply):
+            _freeze_apply(stay_put)
         self._sync_table()
         self._commit_history_capture()
         self._mark_plot_update_pending()

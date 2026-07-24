@@ -1524,6 +1524,11 @@ class StepOverlayPromotionService:
         )
 
         self._begin_history_capture()
+        # bugs/0433: unpromoting a FOLD element must not collapse the downstream chain.
+        # getattr-guarded: validators drive this service with stub editors that lack
+        # the ScenePlacementMixin freeze helpers.
+        _freeze_capture = getattr(self, "_stay_put_freeze_capture", None)
+        stay_put = _freeze_capture([idx]) if callable(_freeze_capture) else None
         restored = float(getattr(row, "thickness", 0.0) or 0.0)
         spacer_idx = idx + 1
         if spacer_idx < len(self.rows) and self._is_inpath_trailing_spacer(self.rows[spacer_idx]):
@@ -1547,10 +1552,13 @@ class StepOverlayPromotionService:
         self._live_step_overlay_trace_plan_cache = {}
         self._invalidate_preview_scene_trace()
         self._normalize_special_rows()
+        _freeze_apply = getattr(self, "_stay_put_freeze_apply", None)
+        frozen = _freeze_apply(stay_put) if callable(_freeze_apply) else []
         self._sync_table()
         self._commit_history_capture()
         self._mark_plot_update_pending()
-        self.status_var.set(f"Unpromoted the {label.upper()} optical solid back to a STEP overlay (re-promotable).")
+        if not frozen:
+            self.status_var.set(f"Unpromoted the {label.upper()} optical solid back to a STEP overlay (re-promotable).")
         if refresh_open_3d:
             self._refresh_open_3d_views(step_label=label)
         return {"label": label, "removed_row_index": idx, "placement_offset_xyz": new_place}
