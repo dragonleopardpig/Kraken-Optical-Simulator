@@ -7851,26 +7851,34 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor._selected_step_label = None
         except Exception:
             pass
+        # flag_20260724_094826: highlight the eligible imaging elements IMMEDIATELY on entry (before any
+        # axis pick) so the user sees what can move -- not the BS. The old-axis pick refines this to the
+        # elements on that specific axis.
+        candidates = self._axis_move_candidate_row_indices(None)
+        self._set_row_highlights(candidates)
         self._set_axis_pick_cursor(True)
         self._update_mode_badge()
         self._hide_regular_rays_for_center_axis_pick()
         self.status_var.set(
-            "Move to Optical Axis: click the OLD optical axis (where the elements are now), "
-            "then the NEW axis to move them onto."
+            f"Move to Optical Axis: {len(candidates)} eligible element(s) highlighted. Click the OLD optical "
+            "axis (where the elements are now), then the NEW axis to move them onto."
         )
 
-    def _axis_move_candidate_row_indices(self, old_axis_record) -> list[int]:
-        """Rows eligible for the axis-to-axis move on the given OLD axis: imaging elements sitting ON the
-        axis line, EXCLUDING the object/source and fold solids (BS / mirrors, which define the axes and
-        stay). Used to highlight what will relocate before the user picks the new axis."""
+    def _axis_move_candidate_row_indices(self, old_axis_record=None) -> list[int]:
+        """Rows eligible for the axis-to-axis move: imaging elements, EXCLUDING the object/source and fold
+        solids (BS / mirrors, which define the axes and stay). When ``old_axis_record`` is given, restrict
+        to elements sitting ON that axis line; when ``None`` (the user has only entered the mode, no axis
+        picked yet), return ALL imaging candidates so they light up immediately (flag_20260724_094826 --
+        "BS highlight instead of the eligible elements" on mode entry). The old-axis pick then refines it."""
         editor = self.editor
-        try:
-            ends = editor._axis_record_endpoints(old_axis_record)
-        except Exception:
-            ends = None
-        if ends is None:
-            return []
-        origin, direction = ends
+        origin = direction = None
+        if old_axis_record is not None:
+            try:
+                ends = editor._axis_record_endpoints(old_axis_record)
+            except Exception:
+                ends = None
+            if ends is not None:
+                origin, direction = ends
         try:
             z_positions = editor._row_z_positions()
         except Exception:
@@ -7884,12 +7892,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     continue  # fold solids (BS / mirror) define the axes -> they stay
             except Exception:
                 pass
-            z = float(z_positions[i]) if i < len(z_positions) else 0.0
-            center = np.asarray((float(row.desp_x), float(row.desp_y), z + float(row.desp_z)), dtype=float)
-            offset = center - origin
-            perpendicular = offset - float(np.dot(offset, direction)) * direction
-            if float(np.linalg.norm(perpendicular)) <= 3.0:
-                out.append(i)
+            if origin is not None and direction is not None:
+                z = float(z_positions[i]) if i < len(z_positions) else 0.0
+                center = np.asarray((float(row.desp_x), float(row.desp_y), z + float(row.desp_z)), dtype=float)
+                offset = center - origin
+                perpendicular = offset - float(np.dot(offset, direction)) * direction
+                if float(np.linalg.norm(perpendicular)) > 3.0:
+                    continue
+            out.append(i)
         return out
 
     def _apply_axis_to_axis_move_pick(self, axis_info: dict[str, object]) -> None:
