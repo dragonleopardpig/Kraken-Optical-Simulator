@@ -232,6 +232,7 @@ class Open3DInteractionService:
             or self._step_carry_snap_target_mode
             or self._step_normal_axis_pick_mode
             or self._step_surface_center_axis_pick_mode
+            or bool(getattr(self, "_axis_to_axis_move_pick_mode", False))
             or bool(getattr(self.editor, "_cad_axis_pick_any", False))
         )
         pick_start = self._timing_start("left_click_vtk_pick", x=int(x), y=int(y))
@@ -915,6 +916,7 @@ class Open3DInteractionService:
             or self._step_normal_axis_pick_mode
             or self._step_surface_center_axis_pick_mode
             or self._step_clear_aperture_pick_mode
+            or getattr(self, "_axis_to_axis_move_pick_mode", False)
             or getattr(self, "_measure_pick_mode", False)
         )
         if (
@@ -1105,6 +1107,34 @@ class Open3DInteractionService:
             self._update_hover_status("", render=False)
             self.render()
             self.status_var.set("Center Row->Optical Axis: click the dotted Optical Axis guide.")
+            return
+        if getattr(self, "_axis_to_axis_move_pick_mode", False):
+            # flag_20260724_083253: hover feedback for the two-axis move -- highlight the axis under the
+            # cursor so the user can see which one they're about to pick (OLD, then NEW).
+            self._set_rotation_handle_hover(None)
+            self._set_axis_pick_cursor(True)
+            axis_info = None
+            if self._picker is not None and self._renderer is not None and self._vtk_interactor is not None:
+                try:
+                    x, y = self._vtk_interactor.GetEventPosition()
+                    _traced_pick(self._picker, x, y, 0.0, self._renderer, site="hover_axis_to_axis_move")
+                    actor_key = self._actor_key(self._picker.GetActor())
+                    axis_info = self._actor_optical_axis_map.get(actor_key) if actor_key is not None else None
+                    axis_info = axis_info or self._optical_axis_info_near_display_xy((x, y), tolerance_px=28.0)
+                except Exception:
+                    axis_info = None
+                if axis_info is not None:
+                    axis_id = str(axis_info.get("axis_id", "") or "").strip()
+                    axis_label = str(axis_info.get("axis_label", "Optical Axis") or "Optical Axis")
+                    self._set_optical_axis_highlight(axis_id)
+                    which = "NEW target" if getattr(self, "_axis_to_axis_old_axis", None) is not None else "OLD source"
+                    self._update_hover_status(f"{axis_label}\nClick as the {which} axis", display_xy=(x, y), render=True)
+                    self.status_var.set(f"Move to Optical Axis: click {axis_label} as the {which} axis.")
+                    return
+            self._set_optical_axis_highlight(None)
+            self._update_hover_status("", render=False)
+            self.render()
+            self.status_var.set("Move to Optical Axis: hover then click a dotted Optical Axis guide (OLD, then NEW).")
             return
         if self._step_normal_axis_pick_mode:
             self._set_rotation_handle_hover(None)
