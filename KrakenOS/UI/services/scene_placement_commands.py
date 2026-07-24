@@ -4733,6 +4733,111 @@ class ScenePlacementMixin:
             "branch_path": str(frame.get("branch_path", "") or ""),
         }
 
+    @staticmethod
+    def _axis_record_endpoints(axis_record) -> "tuple[np.ndarray, np.ndarray] | None":
+        """``(origin, unit_direction)`` of an optical-axis guide record, or None. The origin is the
+        record's FIRST point -- for a BS reflect axis (``axis:global:split``) that is the branch point
+        where the axis leaves the splitter."""
+        try:
+            pts = np.asarray(axis_record.get("points"), dtype=float)
+        except Exception:
+            return None
+        if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] != 3:
+            return None
+        origin = pts[0]
+        direction = pts[-1] - pts[0]
+        norm = float(np.linalg.norm(direction))
+        if norm < 1e-9 or not (np.all(np.isfinite(origin)) and np.all(np.isfinite(direction))):
+            return None
+        return origin, direction / norm
+
+    def move_axis_downstream_to_axis(self, old_axis_record, new_axis_record, *, tolerance_mm: float = 3.0) -> dict[str, object]:
+        """Axis-to-axis MOVE (user request 2026-07-24): rigidly relocate every element sitting on the
+        OLD optical axis PAST the point where the NEW axis branches off, onto the NEW axis -- reorient
+        old_dir->new_dir about the branch point, distances PRESERVED (the user ray-traces + thickness-
+        solves afterward). The object/source and the fold element that DEFINE the axes (before the
+        branch) stay put. Sets desp/tilt/AxisMove per moved row.
+
+        This is the manual, explicit counterpart of the BS Phase-2 auto-fold: designating the source +
+        target axes sidesteps the circular-dependency + row-order problems of inferring them."""
+        from KrakenOS.UI.optical_solid_metadata import (
+            rotation_matrix_aligning_vectors,
+            rotation_matrix_from_kraken_tilts,
+            kraken_tilts_from_rotation_matrix,
+        )
+
+        old_ends = self._axis_record_endpoints(old_axis_record)
+        new_ends = self._axis_record_endpoints(new_axis_record)
+        if old_ends is None or new_ends is None:
+            self.status_var.set("Axis-to-axis move: could not read the picked optical axes.")
+            return {"moved_rows": [], "error": "unreadable_axes"}
+        old_origin, old_dir = old_ends
+        branch_point, new_dir = new_ends
+        rotation = rotation_matrix_aligning_vectors(old_dir, new_dir)
+        z_positions = self._row_z_positions()
+        tol = float(tolerance_mm)
+
+        moved: list[int] = []
+        self._begin_history_capture()
+        for index, row in enumerate(self.rows):
+            # Never relocate the object/source or an aperture datum that anchors the launch.
+            if getattr(row, "surface", None) == "Object":
+                continue
+            station = np.asarray((0.0, 0.0, float(z_positions[index])), dtype=float)
+            center = station + np.asarray(
+                (float(row.desp_x), float(row.desp_y), float(row.desp_z)), dtype=float
+            )
+            # On the OLD axis line?
+            offset = center - old_origin
+            perpendicular = offset - float(np.dot(offset, old_dir)) * old_dir
+            if float(np.linalg.norm(perpendicular)) > tol:
+                continue
+            # PAST the branch point (downstream along the old axis)?
+            if float(np.dot(center - branch_point, old_dir)) <= tol:
+                continue
+            new_center = branch_point + rotation @ (center - branch_point)
+            current_rotation = rotation_matrix_from_kraken_tilts(
+                float(row.tilt_x), float(row.tilt_y), float(row.tilt_z)
+            )
+            tilt_x, tilt_y, tilt_z = kraken_tilts_from_rotation_matrix(rotation @ current_rotation)
+            desp = new_center - station
+            row.desp_x, row.desp_y, row.desp_z = float(desp[0]), float(desp[1]), float(desp[2])
+            row.tilt_x, row.tilt_y, row.tilt_z = float(tilt_x), float(tilt_y), float(tilt_z)
+            row.AxisMove = 1.0
+            row.advanced = dict(row.advanced or {})
+            settings = normalize_scene_placement_settings(row.advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {}))
+            settings["last_axis_to_axis_move"] = {
+                "old_axis": str(old_axis_record.get("axis_id", "") or ""),
+                "new_axis": str(new_axis_record.get("axis_id", "") or ""),
+            }
+            row.advanced[SCENE_PLACEMENT_ADVANCED_ATTR] = settings
+            moved.append(index)
+        self._commit_history_capture()
+
+        if moved:
+            try:
+                self._sync_table()
+            except Exception:
+                pass
+            try:
+                self._mark_plot_update_pending()
+            except Exception:
+                pass
+            old_label = str(old_axis_record.get("axis_label", "old axis"))
+            new_label = str(new_axis_record.get("axis_label", "new axis"))
+            self.status_var.set(
+                f"Moved {len(moved)} element(s) from {old_label} onto {new_label} "
+                f"(rows {', '.join('S'+str(i) for i in moved)}); ray-trace + thickness-solve to set distances."
+            )
+        else:
+            self.status_var.set("Axis-to-axis move: no elements found downstream of the new axis branch point.")
+        return {
+            "moved_rows": moved,
+            "old_axis": str(old_axis_record.get("axis_id", "") or ""),
+            "new_axis": str(new_axis_record.get("axis_id", "") or ""),
+            "branch_point": tuple(float(v) for v in branch_point),
+        }
+
     # ---- LED clear-aperture (CA) fine-face selection + persistence (bugs/0134) ----
     # The user selects the square rounded-corner CLEAR-APERTURE window on the front
     # of the LED's vendor STEP and persists it as the component's clear aperture: a
