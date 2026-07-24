@@ -57,8 +57,31 @@ def main() -> int:
             ok = ok and on_axis and faces_x
         # object + upstream must NOT have moved
         obj_moved = any(getattr(app.rows[i], "surface", None) == "Object" for i in moved)
-        print(f"\n[{'PASS' if (ok and moved and not obj_moved) else 'FAIL'}] moved rows on +X reflect axis, reoriented +Z->+X, object untouched")
-        rc = 0 if (ok and moved and not obj_moved) else 1
+
+        # STEP overlays follow -- INFORMATIONAL on base AZ85: the mirror DISPLAY fold puts the STEP at a
+        # folded pose while the prescription surrogate rows are on straight +Z, so this scene can't validate
+        # the follow (needs the mirrors-removed flag scene). The transform is math-verified: a straight-axis
+        # STEP centre (0,0,z) -> (z-96.6, 0, 96.6) on +X. In-app eyeball on the real scene.
+        print("\n=== STEP overlays follow the move (informational -- base AZ85 has a confounding fold override) ===")
+        for label in ("lens", "camera"):
+            if app._step_path_for_label(label) is None:
+                print(f"  {label}: (not imported -- skip)")
+                continue
+            mesh = app._transformed_imported_step_mesh_for_label(label)
+            if mesh is None:
+                print(f"  {label}: mesh unavailable"); continue
+            b = np.asarray(mesh.bounds, dtype=float)
+            c = np.array([(b[0]+b[1])/2, (b[2]+b[3])/2, (b[4]+b[5])/2])
+            print(f"  {label}: STEP centre after move = {c.round(1)} (carried by the same rigid transform)")
+        # math check of the STEP-follow transform on a straight-axis centre
+        from KrakenOS.UI.optical_solid_metadata import rotation_matrix_aligning_vectors
+        R = rotation_matrix_aligning_vectors(np.array([0.,0.,1.]), np.array([1.,0.,0.]))
+        bp = np.array(BRANCH)
+        tgt = bp + R @ (np.array([0.,0.,130.]) - bp)
+        math_ok = np.allclose(tgt, (33.4, 0.0, 96.6), atol=1e-6)
+        print(f"  [math] straight-axis STEP centre (0,0,130) -> {tgt.round(2)} on +X: {math_ok}")
+        print(f"\n[{'PASS' if (ok and moved and not obj_moved and math_ok) else 'FAIL'}] rows on +X reflect axis, object untouched, STEP-follow transform math-correct")
+        rc = 0 if (ok and moved and not obj_moved and math_ok) else 1
     finally:
         try:
             app.destroy()

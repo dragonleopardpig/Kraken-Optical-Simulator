@@ -4812,6 +4812,50 @@ class ScenePlacementMixin:
             }
             row.advanced[SCENE_PLACEMENT_ADVANCED_ATTR] = settings
             moved.append(index)
+
+        # Carry the associated STEP overlays (lens barrel / camera body) by the SAME rigid transform so
+        # they follow the moved surrogate/detector instead of being left behind (flag_20260724_083458
+        # "surrogate moved to new axis, leaving LENS STEP behind"). lens <-> the surrogate front datum;
+        # camera <-> the final Image row. Mirror the snap's rotate-then-place (rotate, then translate the
+        # rotated body centre onto the rigid-transform target) so the pin/pivot convention is consistent.
+        front_datum = self._lens_datum_row_index("front")
+        image_row = next(
+            (i for i in range(len(self.rows) - 1, -1, -1) if getattr(self.rows[i], "surface", None) == "Image"),
+            None,
+        )
+        step_follow: list[str] = []
+        if front_datum is not None and front_datum in moved:
+            step_follow.append("lens")
+        if image_row is not None and image_row in moved:
+            step_follow.append("camera")
+        carried_steps: list[str] = []
+        for label in step_follow:
+            if self._step_path_for_label(label) is None:
+                continue
+            try:
+                mesh = self._transformed_imported_step_mesh_for_label(label)
+                if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
+                    continue
+                b = np.asarray(mesh.bounds, dtype=float).reshape(6)
+                old_center = np.asarray(((b[0] + b[1]) / 2.0, (b[2] + b[3]) / 2.0, (b[4] + b[5]) / 2.0), dtype=float)
+                target_center = branch_point + rotation @ (old_center - branch_point)
+                cur_offset = np.asarray(self._step_placement_offset_xyz(label), dtype=float).reshape(3)
+                cur_angles = self._step_rotation_deg_tuple(label)
+                cur_matrix = self._step_rotation_matrix_from_angles(*cur_angles)
+                next_angles = self._step_angles_from_rotation_matrix(rotation @ cur_matrix)
+                # apply the rotation first, then translate the ROTATED body centre onto the target
+                self._set_step_rotation_deg_tuple(label, next_angles)
+                rotated = self._transformed_imported_step_mesh_for_label(label)
+                if rotated is None or int(getattr(rotated, "n_points", 0)) <= 0:
+                    self._set_step_rotation_deg_tuple(label, cur_angles)
+                    continue
+                rb = np.asarray(rotated.bounds, dtype=float).reshape(6)
+                rotated_center = np.asarray(((rb[0] + rb[1]) / 2.0, (rb[2] + rb[3]) / 2.0, (rb[4] + rb[5]) / 2.0), dtype=float)
+                self._set_step_placement_offset_xyz(label, cur_offset + (target_center - rotated_center))
+                carried_steps.append(label)
+            except Exception:
+                continue
+
         self._commit_history_capture()
 
         if moved:
