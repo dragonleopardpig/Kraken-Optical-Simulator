@@ -7934,14 +7934,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.render()
         return len(rows)
 
-    def start_snap_selected_to_axis(self) -> None:
-        """Multi-select snap (user request): capture the current row selection, then click ONE optical axis
-        to snap the selected elements onto it -- re-align the imaging chain after a BS shift, choosing which
-        elements. Uses `_picked_row_indices` (the multi-selection)."""
-        selection = sorted(int(i) for i in (self._picked_row_indices or set()))
-        if not selection:
-            self.status_var.set("Snap Selected to Optical Axis: select one or more elements (rows) first.")
-            return
+    def _arm_snap_to_axis(self, selection, source: str) -> None:
+        """Shared arming for the snap-to-axis pick: highlight the group, drop other selections, and wait
+        for the user to click ONE optical axis (then _apply_snap_rows_to_axis relocates them as a rigid
+        body -- R @ each element's current orientation, so a mirror keeps its fold)."""
+        selection = [int(i) for i in selection]
         self._snap_rows_selection = selection
         self._snap_rows_to_axis_pick_mode = True
         self._axis_to_axis_move_pick_mode = False
@@ -7956,8 +7953,42 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._hide_regular_rays_for_center_axis_pick()
         self.render()
         self.status_var.set(
-            f"Snap {len(selection)} selected element(s) to Optical Axis: click the target dotted axis guide."
+            f"Snap {len(selection)} {source} element(s) to Optical Axis: click the target dotted axis guide."
         )
+
+    def start_snap_selected_to_axis(self) -> None:
+        """Multi-select snap: capture the current row selection, then click ONE optical axis to snap the
+        selected elements onto it. Uses `_picked_row_indices` (the multi-selection)."""
+        selection = sorted(int(i) for i in (self._picked_row_indices or set()))
+        if not selection:
+            self.status_var.set("Snap Selected to Optical Axis: select one or more elements (rows) first.")
+            return
+        self._arm_snap_to_axis(selection, "selected")
+
+    def group_selected_as_assembly(self) -> None:
+        """Assembly/Group (user request 2026-07-24): remember the current selection as ONE rigid unit so a
+        later snap acts on the WHOLE group (mirror's 45-deg fold preserved via R @ current orientation;
+        lens + camera along-axis) -- no surprises about which elements are part of it. Members highlighted."""
+        selection = sorted(int(i) for i in (self._picked_row_indices or set()))
+        if not selection:
+            self.status_var.set("Group as Assembly: select the elements to group first (multi-select rows).")
+            return
+        self._assembly_row_indices = selection
+        self._set_row_highlights(selection)
+        self.render()
+        names = ", ".join(f"S{i}" for i in selection)
+        self.status_var.set(
+            f"Assembly = {len(selection)} element(s): {names}. Use 'Snap Assembly to Optical Axis' to relocate them as one."
+        )
+
+    def start_snap_assembly_to_axis(self) -> None:
+        """Snap the whole ASSEMBLY (the grouped elements) to a picked optical axis as a rigid body."""
+        selection = list(getattr(self, "_assembly_row_indices", []) or [])
+        selection = [i for i in selection if 0 <= int(i) < len(self.editor.rows)]
+        if not selection:
+            self.status_var.set("Snap Assembly to Optical Axis: no assembly yet -- 'Group as Assembly' first.")
+            return
+        self._arm_snap_to_axis(selection, "assembly")
 
     def _apply_snap_rows_to_axis(self, axis_info: dict[str, object]) -> None:
         selection = list(getattr(self, "_snap_rows_selection", []) or [])
