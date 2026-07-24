@@ -7859,6 +7859,39 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             "then the NEW axis to move them onto."
         )
 
+    def _axis_move_candidate_row_indices(self, old_axis_record) -> list[int]:
+        """Rows eligible for the axis-to-axis move on the given OLD axis: imaging elements sitting ON the
+        axis line, EXCLUDING the object/source and fold solids (BS / mirrors, which define the axes and
+        stay). Used to highlight what will relocate before the user picks the new axis."""
+        editor = self.editor
+        try:
+            ends = editor._axis_record_endpoints(old_axis_record)
+        except Exception:
+            ends = None
+        if ends is None:
+            return []
+        origin, direction = ends
+        try:
+            z_positions = editor._row_z_positions()
+        except Exception:
+            return []
+        out: list[int] = []
+        for i, row in enumerate(editor.rows):
+            if getattr(row, "surface", None) == "Object":
+                continue
+            try:
+                if hasattr(editor, "_is_any_promoted_optical_solid_row") and editor._is_any_promoted_optical_solid_row(row):
+                    continue  # fold solids (BS / mirror) define the axes -> they stay
+            except Exception:
+                pass
+            z = float(z_positions[i]) if i < len(z_positions) else 0.0
+            center = np.asarray((float(row.desp_x), float(row.desp_y), z + float(row.desp_z)), dtype=float)
+            offset = center - origin
+            perpendicular = offset - float(np.dot(offset, direction)) * direction
+            if float(np.linalg.norm(perpendicular)) <= 3.0:
+                out.append(i)
+        return out
+
     def _apply_axis_to_axis_move_pick(self, axis_info: dict[str, object]) -> None:
         old = getattr(self, "_axis_to_axis_old_axis", None)
         if old is None:
@@ -7869,10 +7902,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self.editor._selected_step_label = None
             except Exception:
                 pass
+            # flag_20260724_090954 + user request: HIGHLIGHT the elements eligible to move (the imaging
+            # elements sitting ON the picked old axis -- object/source + fold solids like the BS stay), so
+            # the user sees exactly what will relocate before clicking the new axis.
+            candidates = self._axis_move_candidate_row_indices(old)
+            self._set_row_highlights(candidates)
+            n = len(candidates)
             self.status_var.set(
-                f"Move to Optical Axis: OLD = {axis_info.get('axis_label', 'axis')}. "
-                "Now click the NEW optical axis to move the downstream elements onto."
+                f"Move to Optical Axis: OLD = {axis_info.get('axis_label', 'axis')}; "
+                f"{n} eligible element(s) highlighted. Click the NEW optical axis to move them onto it."
             )
+            self.render()
             return
         new = dict(axis_info)
         if str(new.get("axis_id", "")) == str(old.get("axis_id", "")):
@@ -7888,6 +7928,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._axis_to_axis_old_axis = None
         self._set_axis_pick_cursor(False)
         self._set_optical_axis_highlight(None)
+        self._set_row_highlights([])  # drop the eligible-elements highlight now the move is done
         self._update_mode_badge()
         try:
             self.editor._selected_step_label = None
