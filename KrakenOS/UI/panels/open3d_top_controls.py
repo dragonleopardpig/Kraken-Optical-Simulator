@@ -241,8 +241,9 @@ class Open3DTopControlsPanel:
                 None,
                 MenuCommand("Move Elements to Optical Axis", self.inspector.start_axis_to_axis_move),
                 MenuCommand("Snap Selected to Optical Axis", self.inspector.start_snap_selected_to_axis),
-                MenuCommand("Group Selected as Assembly", self.inspector.group_selected_as_assembly),
+                MenuCommand("Add Selected to Assembly", self.inspector.group_selected_as_assembly),
                 MenuCommand("Snap Assembly to Optical Axis", self.inspector.start_snap_assembly_to_axis),
+                MenuCommand("Clear Assembly", self.inspector.clear_assembly),
             ),
         )
         pack_menubutton(scene_toolbar, "Place", placement_menu, padx=(8, 0))

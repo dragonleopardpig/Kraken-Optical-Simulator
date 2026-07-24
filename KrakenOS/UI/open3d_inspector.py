@@ -7971,15 +7971,27 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         lens + camera along-axis) -- no surprises about which elements are part of it. Members highlighted."""
         selection = sorted(int(i) for i in (self._picked_row_indices or set()))
         if not selection:
-            self.status_var.set("Group as Assembly: select the elements to group first (multi-select rows).")
+            self.status_var.set("Group as Assembly: select an element first, then repeat to ADD more (browser is single-select).")
             return
-        self._assembly_row_indices = selection
-        self._set_row_highlights(selection)
+        # ACCUMULATE: the browser/3D pick is single-select, so build the group one element at a time --
+        # each 'Group as Assembly' ADDS the current pick to the assembly (flag_20260724: shift-select
+        # dropped the others). 'Clear Assembly' resets. Rubber-band box-select is the proper next build.
+        existing = {int(i) for i in (getattr(self, "_assembly_row_indices", []) or [])}
+        self._assembly_row_indices = sorted(existing | set(selection))
+        self._set_row_highlights(self._assembly_row_indices)
         self.render()
-        names = ", ".join(f"S{i}" for i in selection)
+        names = ", ".join(f"S{i}" for i in self._assembly_row_indices)
         self.status_var.set(
-            f"Assembly = {len(selection)} element(s): {names}. Use 'Snap Assembly to Optical Axis' to relocate them as one."
+            f"Assembly = {len(self._assembly_row_indices)} element(s): {names}. Add more (single-select + Group), "
+            "or 'Snap Assembly to Optical Axis' to relocate them as one."
         )
+
+    def clear_assembly(self) -> None:
+        """Reset the assembly group."""
+        self._assembly_row_indices = []
+        self._set_row_highlights([])
+        self.render()
+        self.status_var.set("Assembly cleared.")
 
     def start_snap_assembly_to_axis(self) -> None:
         """Snap the whole ASSEMBLY (the grouped elements) to a picked optical axis as a rigid body."""
