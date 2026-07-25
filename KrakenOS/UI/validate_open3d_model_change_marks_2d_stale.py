@@ -42,7 +42,7 @@ class Check:
 
 def _unpaired_methods() -> list[str]:
     """Inspector methods that force a retrace (the model changed) but never mark the 2D stale."""
-    src = _SOURCE.read_text()
+    src = _SOURCE.read_text(encoding="utf-8")
     tree = ast.parse(src)
     cls = next(
         n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Kraken3DInspector"

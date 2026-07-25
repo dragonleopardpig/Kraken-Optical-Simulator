@@ -57,7 +57,7 @@ def _module_source(dotted: str) -> str:
     spec = importlib.util.find_spec(dotted)
     if spec is None or not spec.origin:
         raise ImportError(f"cannot locate {dotted}")
-    return Path(spec.origin).read_text()
+    return Path(spec.origin).read_text(encoding="utf-8")
 
 
 def _unit(v):

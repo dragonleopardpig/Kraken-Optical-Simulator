@@ -197,7 +197,7 @@ def run_checks() -> tuple[bool, list[str]]:
 
     # 4) source wiring -------------------------------------------------------
     src = Path(__file__).resolve().parent / "services" / "open3d_step_overlay_refresh.py"
-    text = src.read_text()
+    text = src.read_text(encoding="utf-8")
     has_resolver = "def _step_overlay_actor_owner_label" in text
     has_filter = "self._step_overlay_actor_owner_label(actor_key) in (None, label)" in text
     record(

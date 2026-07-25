@@ -36,7 +36,7 @@ from pathlib import Path
 
 def _module_source(module) -> str:
     path = inspect.getsourcefile(module) or inspect.getfile(module)
-    return Path(path).read_text()
+    return Path(path).read_text(encoding="utf-8")
 
 
 def _idle_hover_block(interaction_src: str) -> str:

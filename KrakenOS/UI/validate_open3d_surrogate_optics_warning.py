@@ -96,7 +96,7 @@ def _check_contracts(failures: list[str]) -> None:
         failures.append("CONTRACT: the 3-D Spot-map label does not warn on surrogate optics")
 
     ui_dir = Path(__file__).resolve().parent
-    analysis_src = (ui_dir / "services" / "analysis_plot.py").read_text()
+    analysis_src = (ui_dir / "services" / "analysis_plot.py").read_text(encoding="utf-8")
     if "_scene_surrogate_optics_info" not in analysis_src or "urrogate" not in analysis_src:
         failures.append("CONTRACT: the 2-D Spot Diagram does not warn on surrogate optics")
 

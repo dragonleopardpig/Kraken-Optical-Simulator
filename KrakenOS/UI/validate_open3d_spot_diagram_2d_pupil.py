@@ -91,10 +91,10 @@ def _check_source_contracts(failures: list[str]) -> None:
         failures.append("CONTRACT: _build_geometric_image_samples_full does not honour require_2d_pupil")
 
     ui_dir = Path(__file__).resolve().parent
-    spot_diagram_src = (ui_dir / "services" / "analysis_plot.py").read_text()
+    spot_diagram_src = (ui_dir / "services" / "analysis_plot.py").read_text(encoding="utf-8")
     if "require_2d_pupil=True" not in spot_diagram_src:
         failures.append("CONTRACT: the 2-D Spot Diagram trace does not force a 2-D pupil")
-    spot_map_src = (ui_dir / "services" / "three_d_scene_tools.py").read_text()
+    spot_map_src = (ui_dir / "services" / "three_d_scene_tools.py").read_text(encoding="utf-8")
     if "require_2d_pupil=True" not in spot_map_src:
         failures.append("CONTRACT: the 3-D Spot-map trace does not force a 2-D pupil")
 

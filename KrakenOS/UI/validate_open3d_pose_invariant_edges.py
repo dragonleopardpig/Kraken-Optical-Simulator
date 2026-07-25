@@ -282,7 +282,7 @@ def run_checks() -> tuple[bool, list[str]]:
     )
 
     # --- 5) source wiring: the inspector routes to the pose-invariant entry ----
-    inspector_src = (Path(__file__).resolve().parent / "open3d_inspector.py").read_text()
+    inspector_src = (Path(__file__).resolve().parent / "open3d_inspector.py").read_text(encoding="utf-8")
     routed = (
         "pose_invariant_feature_edges as _pose_invariant_feature_edges_mesh" in inspector_src
         and "_pose_invariant_feature_edges_mesh(mesh, feature_angle=feature_angle" in inspector_src

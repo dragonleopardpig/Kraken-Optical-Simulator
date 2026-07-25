@@ -181,8 +181,8 @@ def run_checks() -> tuple[bool, list[str]]:
     )
 
     # 6) SOURCE WIRING ------------------------------------------------------------
-    wb_src = (Path(__file__).resolve().parent / "services" / "layout_table_workbench.py").read_text()
-    fa_src = (Path(__file__).resolve().parent / "services" / "open3d_face_assignment.py").read_text()
+    wb_src = (Path(__file__).resolve().parent / "services" / "layout_table_workbench.py").read_text(encoding="utf-8")
+    fa_src = (Path(__file__).resolve().parent / "services" / "open3d_face_assignment.py").read_text(encoding="utf-8")
     gate = 'getattr(self, "_suppress_3d_row_selection_sync", False)' in wb_src and "not suppress_3d_sync" in wb_src
     set_flag = "self.editor._suppress_3d_row_selection_sync = True" in fa_src
     clear_in_finally = (

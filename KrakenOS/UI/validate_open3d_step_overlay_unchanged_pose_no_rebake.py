@@ -154,7 +154,7 @@ def run_checks() -> tuple[bool, list[str]]:
         Path(__file__).resolve().parent
         / "services"
         / "scene_placement_commands.py"
-    ).read_text()
+    ).read_text(encoding="utf-8")
     guarded_sites = src.count("_invalidate_step_overlay_face_metadata_cache(label)  # bugs/0050")
     inside_guard = "def _invalidate_step_overlay_after_mutation" in src
     routed_sites = src.count("_invalidate_step_overlay_after_mutation(label, before_signature)  # bugs/0143")
