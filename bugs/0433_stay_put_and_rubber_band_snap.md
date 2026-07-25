@@ -130,8 +130,10 @@ the STEP carry pivots on the branch point (`:4909`) — if real, carry with the 
 - `bugs/probe_0433_snap_fold_in_selection.py` — freeze → synthetic `axis:global:split` record → select
   S3…S9 (incl. mirror-2) → snap → entry members on the new axis, mirror-2 fold + camera leg rigidly
   preserved, STEP bodies consistent with their rows.
-- Penta phases (348–350) via standalone `validate_open3d_0433_*.py` validators (SKIP-on-env), then
-  `python3 tools/penta_validator_gate.py --update-baseline` (kill stray Xvfb after).
+- Penta phases **348/349/350 registered and passing** (standalone `validate_open3d_0433_*.py`
+  validators, SKIP-on-env). Regenerating the baseline first required fixing the marathon itself —
+  it had started SIGSEGV-ing at `phase_39` (see `bugs/0434_penta_env_degraded_baseline.md`); all
+  three 0433 phases pass both standalone and inside the full run.
 - In-app eyeball owed: frozen visuals after delete, rubber-band rectangle, chained select+snap on the
   real BS scene.
 
