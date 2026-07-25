@@ -3825,8 +3825,18 @@ def phase_39_detector_coverage_live(
             result.notes.append("SKIP: no machine-vision layout available")
             return result
 
-        app.load_layout_by_name(target)
-        app.update_idletasks()
+        # Loading a machine-vision layout with the inspector open goes through the
+        # viewer-replacement teardown -- destroying the live vtkTkRenderWindowInteractor
+        # this harness keeps using across phases (the 0294 use-after-free anatomy).
+        # llvmpipe historically survived that; the 2026-07 mesa update made it a
+        # deterministic SIGSEGV here (bugs/0433 postmortem). Keep the viewers alive
+        # across the load, exactly like the import-from-inspector path does.
+        app._keep_scene_viewers_across_layout_replacement = True
+        try:
+            app.load_layout_by_name(target)
+            app.update_idletasks()
+        finally:
+            app.__dict__.pop("_keep_scene_viewers_across_layout_replacement", None)
 
         # (a) Layout load alone (camera restored from settings) must cover.
         half_diag = 16.291740238538054
@@ -5391,8 +5401,15 @@ def phase_61_detector_fov_plane_pickable(
             result.notes.append("SKIP: no machine-vision layout available")
             return result
 
-        app.load_layout_by_name(target)
-        app.update_idletasks()
+        # Keep the shared inspector alive across the machine-vision load — the
+        # replacement teardown + reuse is the 0294 use-after-free the 2026-07 mesa
+        # update made fatal under llvmpipe (see phase_39, bugs/0433 postmortem).
+        app._keep_scene_viewers_across_layout_replacement = True
+        try:
+            app.load_layout_by_name(target)
+            app.update_idletasks()
+        finally:
+            app.__dict__.pop("_keep_scene_viewers_across_layout_replacement", None)
 
         last_row = len(app.rows) - 1
         # The reported scene: Det ON, Refs OFF, QE OFF -- so the Object plane's only
@@ -15099,6 +15116,73 @@ def phase_347_bs_trace_driven_placement(app: KrakenLayoutEditor, inspector: Krak
     return result
 
 
+def phase_348_stay_put_fold_removal(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> PhaseResult:
+    """bugs/0433 slice A -- deleting/unpromoting a fold RA mirror freezes the downstream chain in
+    place instead of collapsing it onto the straight axis: world poses are captured from the derived
+    override map pre-mutation and baked into each surviving row's own desp/tilt against the
+    post-removal stations (AxisMove stays 0), lens/camera STEP bodies carried via per-label settings.
+    Plain deletions are exact no-ops; partial removal (a surviving upstream fold) stands down."""
+    result = PhaseResult(name="Phase 348: stay-put freeze on fold-element removal (0433 A)")
+    try:
+        from KrakenOS.UI.validate_open3d_0433_stay_put import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"stay-put-freeze guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n and not n.startswith("SKIP")])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("stay-put-freeze phase failed without detail")
+    return result
+
+
+def phase_349_rubber_band_select(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> PhaseResult:
+    """bugs/0433 slice B -- rubber-band box select in the 3D view: armed Place-menu mode owns the
+    left drag, fold-aware row world centers projected into the display rect fill the existing
+    multi-selection (Object excluded), chained variant arms the snap axis pick on release; the 0432
+    axis-to-axis/snap-selected pick modes are backfilled into the central mode model (Esc + badge)."""
+    result = PhaseResult(name="Phase 349: rubber-band box select + 0432 mode backfill (0433 B)")
+    try:
+        from KrakenOS.UI.validate_open3d_0433_rubber_band import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"rubber-band-select guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n and not n.startswith("SKIP")])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("rubber-band-select phase failed without detail")
+    return result
+
+
+def phase_350_snap_fold_in_selection(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> PhaseResult:
+    """bugs/0433 slice C -- an explicit multi-select snap whose selection CONTAINS a fold mirror
+    (the rubber-band set: lens leg + mirror-2 + the Image row on its exit leg) fits the old axis
+    from the ENTRY leg only (cut at the first selected fold solid), pivots rows and the lens/camera
+    STEP carry on the SAME origin, anchors the camera to the sensor's pre-move world position, and
+    the fold walk never re-sweeps an explicitly axis-snapped row (breadcrumb guard) -- the baked
+    desp/tilt IS the pose. Also removes the phantom `row.AxisMove` stamp (real field is axis_move,
+    which must stay 0 for absolutely placed rows or the engine PA term compounds them)."""
+    result = PhaseResult(name="Phase 350: multi-select snap with a fold inside the selection (0433 C)")
+    try:
+        from KrakenOS.UI.validate_open3d_0433_snap_fold_selection import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"snap-fold-in-selection guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n and not n.startswith("SKIP")])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("snap-fold-in-selection phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15491,8 +15575,15 @@ def main() -> int:
             phase_345_bs_reflect_axis,
             phase_346_bs_not_axis_fold,
             phase_347_bs_trace_driven_placement,
+            phase_348_stay_put_fold_removal,
+            phase_349_rubber_band_select,
+            phase_350_snap_fold_in_selection,
         ]
         for phase in phases:
+            # Streamed progress marker: the report only prints at the END, so a hard
+            # crash (VTK/llvmpipe SIGSEGV) would otherwise leave no clue WHICH phase
+            # died -- this line names it in the gate log (bugs/0433 postmortem).
+            print(f"[running] {phase.__name__}", flush=True)
             phase_start = time.perf_counter()
             try:
                 result = phase(app, inspector)
