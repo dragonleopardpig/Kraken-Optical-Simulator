@@ -4778,11 +4778,14 @@ class ScenePlacementMixin:
             return {"moved_rows": [], "error": "no_selection"}
         # bugs/0436 (belt guard below the UI's own checks): a single row cannot define
         # the selection's current axis -- the first->last inference degenerates and the
-        # rigid transform collapses to a teleport onto the branch point (the user read
-        # it as "snapped to the first optical axis", flag_20260726_095224). Refuse.
-        if len(rows) < 2:
-            self.status_var.set("Snap to Optical Axis needs at least 2 selected elements to define a direction.")
-            return {"moved_rows": [], "error": "degenerate_selection"}
+        # rigid transform used to collapse to a teleport onto the branch point (the user
+        # read it as "snapped to the first optical axis", flag_20260726_095224).
+        # bugs/0439: ONE row is instead a TRANSLATE-ONLY placement -- no rotation to
+        # infer: slide the element onto the axis at the clicked point (its orientation
+        # is kept; the user's camera-alignment gesture is exactly this -- rubber-band the
+        # Image row alone, snap it onto the frozen-fold guide of the 2nd RA mirror).
+        if len(rows) == 1:
+            return self._snap_single_row_translate_only(rows[0], new_axis_record)
         z_positions = self._row_z_positions()
         centers = [
             np.asarray(
@@ -5035,6 +5038,90 @@ class ScenePlacementMixin:
             "old_axis": str(old_axis_record.get("axis_id", "") or ""),
             "new_axis": str(new_axis_record.get("axis_id", "") or ""),
             "branch_point": tuple(float(v) for v in branch_point),
+        }
+
+    def _snap_single_row_translate_only(self, row_index: int, new_axis_record) -> dict[str, object]:
+        """bugs/0439: snap ONE element onto an axis by TRANSLATION only.
+
+        A single row cannot define its own current-axis direction, so the rigid
+        rotate-and-place is undefined (pre-0436 it degenerated to a teleport onto the
+        branch point). But the user's camera-alignment gesture is exactly a one-element
+        snap: rubber-band the Image row alone and drop it onto the frozen-fold guide of
+        the 2nd RA mirror. Orientation is KEPT (the frozen/baked pose already faces its
+        leg); the element's centre slides to the clicked point on the axis
+        (``picked_world`` projected onto the axis line) or, without a click point, to
+        the axis point nearest the element. The camera/lens STEP body follows by the
+        same pure translation."""
+        endpoints = self._axis_record_endpoints(new_axis_record)
+        if endpoints is None:
+            self.status_var.set("Snap to Optical Axis: could not resolve the target axis geometry.")
+            return {"moved_rows": [], "error": "bad_axis_record"}
+        origin, direction = endpoints
+        index = int(row_index)
+        row = self.rows[index]
+        z_positions = self._row_z_positions()
+        station = np.asarray((0.0, 0.0, float(z_positions[index]) if index < len(z_positions) else 0.0), dtype=float)
+        center = np.asarray(
+            (float(row.desp_x), float(row.desp_y), float(station[2]) + float(row.desp_z)), dtype=float
+        )
+        anchor = None
+        try:
+            picked = np.asarray(new_axis_record.get("picked_world"), dtype=float).reshape(3)
+            if np.all(np.isfinite(picked)):
+                anchor = origin + float(np.dot(picked - origin, direction)) * direction
+        except Exception:
+            anchor = None
+        if anchor is None:
+            # No click point -- slide onto the axis at the point nearest the element.
+            anchor = origin + float(np.dot(center - origin, direction)) * direction
+        delta = anchor - center
+        self._begin_history_capture()
+        row.desp_x = float(row.desp_x + delta[0])
+        row.desp_y = float(row.desp_y + delta[1])
+        row.desp_z = float(row.desp_z + delta[2])
+        row.advanced = dict(row.advanced or {})
+        settings = normalize_scene_placement_settings(row.advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {}))
+        settings["last_axis_to_axis_move"] = {
+            "old_axis": "axis:translate-only",
+            "new_axis": str(new_axis_record.get("axis_id", "") or ""),
+        }
+        row.advanced[SCENE_PLACEMENT_ADVANCED_ATTR] = settings
+        # The associated STEP body (camera <-> Image row, lens barrel <-> front datum)
+        # follows by the SAME pure translation -- no rotation to compose.
+        front_datum = self._lens_datum_row_index("front")
+        image_row = next(
+            (i for i in range(len(self.rows) - 1, -1, -1) if getattr(self.rows[i], "surface", None) == "Image"),
+            None,
+        )
+        carried: list[str] = []
+        label = "camera" if index == image_row else ("lens" if index == front_datum else None)
+        if label is not None and self._step_path_for_label(label) is not None:
+            try:
+                cur_offset = np.asarray(self._step_placement_offset_xyz(label), dtype=float).reshape(3)
+                self._set_step_placement_offset_xyz(label, cur_offset + delta)
+                carried.append(label)
+            except Exception:
+                pass
+        self._commit_history_capture()
+        try:
+            self._sync_table()
+        except Exception:
+            pass
+        try:
+            self._mark_plot_update_pending()
+        except Exception:
+            pass
+        new_label = str(new_axis_record.get("axis_label", "axis"))
+        self.status_var.set(
+            f"Placed S{index} onto {new_label} (translate-only -- single element keeps its orientation); "
+            "ray-trace + thickness-solve to set distances."
+        )
+        return {
+            "moved_rows": [index],
+            "translate_only": True,
+            "new_axis": str(new_axis_record.get("axis_id", "") or ""),
+            "anchor": tuple(float(v) for v in anchor),
+            "carried_steps": carried,
         }
 
     # ---- Stay-put freeze on fold-element removal (bugs/0433) ----

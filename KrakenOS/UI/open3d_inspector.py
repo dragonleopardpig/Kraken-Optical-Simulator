@@ -8098,13 +8098,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # onto the axis origin (flag_20260726_095224: the lens front datum landed
         # exactly on the branch point and read as 'snapped to the wrong axis').
         selection, expanded = self._expand_selection_rows_for_groups(selection)
-        if len(selection) < 2:
+        if not selection:
             self._snap_rows_to_axis_pick_mode = False
-            self.status_var.set(
-                "Snap to Optical Axis needs at least 2 selected elements (one element cannot define "
-                "the chain direction) -- rubber-band a box around the chain and retry."
-            )
+            self.status_var.set("Snap to Optical Axis: select at least one element first.")
             return
+        if len(selection) == 1:
+            # bugs/0439: ONE element arms as a TRANSLATE-ONLY snap (orientation kept,
+            # centre slides to the clicked point on the axis) -- the camera-alignment
+            # gesture: rubber-band the Image row alone, click the frozen-fold guide.
+            self.status_var.set(
+                "Snap to Optical Axis (single element): click the target axis -- the element slides "
+                "onto it at the click point, keeping its orientation."
+            )
         self._snap_rows_selection = selection
         self._snap_rows_to_axis_pick_mode = True
         self._axis_to_axis_move_pick_mode = False
@@ -8127,9 +8132,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._update_mode_badge()
         self.render()
         suffix = " (expanded to the full lens group)" if expanded else ""
-        self.status_var.set(
-            f"Snap {len(selection)} {source} element(s) to Optical Axis: click the target dotted axis guide.{suffix}"
-        )
+        if len(selection) == 1:
+            # bugs/0439: the single-element arm is TRANSLATE-ONLY.
+            self.status_var.set(
+                "Snap to Optical Axis (single element): click the target axis -- the element slides "
+                "onto it at the click point, keeping its orientation."
+            )
+        else:
+            self.status_var.set(
+                f"Snap {len(selection)} {source} element(s) to Optical Axis: click the target dotted axis guide.{suffix}"
+            )
 
     def start_snap_selected_to_axis(self) -> None:
         """Multi-select snap: capture the current row selection, then click ONE optical axis to snap the
@@ -8366,17 +8378,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def _apply_snap_rows_to_axis(self, axis_info: dict[str, object]) -> None:
         selection = list(getattr(self, "_snap_rows_selection", []) or [])
         selection = [int(i) for i in selection if 0 <= int(i) < len(self.editor.rows)]
-        if len(selection) < 2:
-            # bugs/0436 belt: rows vanished between arming and the axis click (or the
-            # arm guard was bypassed) -- refuse rather than teleport one row onto the
-            # axis origin.
+        if not selection:
+            # bugs/0436 belt: rows vanished between arming and the axis click -- refuse.
+            # (A SINGLE row is fine since bugs/0439: the service handles it as a
+            # translate-only placement, no degenerate rotation possible.)
             self._snap_rows_to_axis_pick_mode = False
             self._snap_rows_selection = []
             self._set_axis_pick_cursor(False)
             self._set_optical_axis_highlight(None)
             self._update_mode_badge()
             self.status_var.set(
-                "Snap to Optical Axis cancelled: fewer than 2 selected elements remain -- "
+                "Snap to Optical Axis cancelled: the selected elements no longer exist -- "
                 "rubber-band the chain again."
             )
             return
@@ -16935,7 +16947,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             rows = sorted(int(i) for i in (self._picked_row_indices or set()))
         except Exception:
             rows = []
-        if len(rows) < 2:
+        # bugs/0439: a SINGLE armed row (the camera-alignment translate-only snap)
+        # keeps its highlight through rebuilds too.
+        if not rows:
             return
         try:
             self._set_row_highlights(rows, force=True)

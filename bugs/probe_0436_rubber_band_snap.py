@@ -111,27 +111,46 @@ def main() -> int:
         labels = insp._selection_step_highlight_labels(all_rows)
         check("armed STEP cue lights lens + camera bodies", labels == ["lens", "camera"], str(labels))
 
-        # 2: degenerate 1-row snap refused at BOTH gates; nothing moves.
+        # 2 (semantics updated by bugs/0439): a 1-row snap is TRANSLATE-ONLY -- the arm
+        # succeeds with the single-element status, the apply slides the row onto the
+        # axis at the click point KEEPING its orientation (no branch-point teleport,
+        # which was the 0436 degenerate rotation this section originally guarded).
         insp._snap_rows_to_axis_pick_mode = False
         insp._snap_rows_selection = []
         insp._arm_snap_to_axis([8], "selected")
         check(
-            "1-row arm refused with guidance",
-            not getattr(insp, "_snap_rows_to_axis_pick_mode", False)
-            and "at least 2" in insp.status_var.get(),
+            "1-row arm accepted as translate-only with guidance",
+            bool(getattr(insp, "_snap_rows_to_axis_pick_mode", False))
+            and "single element" in insp.status_var.get(),
             insp.status_var.get()[:70],
         )
-        before = [(float(r.desp_x), float(r.desp_y), float(r.desp_z)) for r in app.rows]
-        insp._snap_rows_selection = [8]
-        insp._snap_rows_to_axis_pick_mode = True
+        row8 = app.rows[8]
+        tilts_before = (float(row8.tilt_x), float(row8.tilt_y), float(row8.tilt_z))
+        others_before = [
+            (float(r.desp_x), float(r.desp_y), float(r.desp_z)) for i, r in enumerate(app.rows) if i != 8
+        ]
         insp._apply_snap_rows_to_axis(
-            {"axis_id": "axis:global:split", "points": np.array([(0.0, 0.0, 37.3), (100.0, 0.0, 37.3)])}
+            {
+                "axis_id": "axis:global:split",
+                "points": np.array([(0.0, 0.0, 37.3), (100.0, 0.0, 37.3)]),
+                "picked_world": np.array([60.0, 0.0, 37.3]),
+            }
         )
-        after = [(float(r.desp_x), float(r.desp_y), float(r.desp_z)) for r in app.rows]
+        z_now = app._row_z_positions()
+        center8 = np.array(
+            [float(row8.desp_x), float(row8.desp_y), float(z_now[8]) + float(row8.desp_z)]
+        )
+        tilts_after = (float(row8.tilt_x), float(row8.tilt_y), float(row8.tilt_z))
+        others_after = [
+            (float(r.desp_x), float(r.desp_y), float(r.desp_z)) for i, r in enumerate(app.rows) if i != 8
+        ]
         check(
-            "1-row apply refused, no row moved (was: teleport to the branch point)",
-            before == after and not getattr(insp, "_snap_rows_to_axis_pick_mode", False),
-            insp.status_var.get()[:70],
+            "1-row apply translates onto the clicked axis point, orientation kept, others untouched",
+            bool(np.allclose(center8, (60.0, 0.0, 37.3), atol=1e-6))
+            and tilts_before == tilts_after
+            and others_before == others_after
+            and not getattr(insp, "_snap_rows_to_axis_pick_mode", False),
+            f"center={center8.round(2).tolist()} status={insp.status_var.get()[:40]}",
         )
 
         # 4: surrogate-group integrity.

@@ -64,10 +64,16 @@ def _check_wiring(notes: list[str]) -> bool:
         notes.append("WIRING completion lacks the lens-group expansion")
         ok = False
     arm_src = _inspect.getsource(mod.Kraken3DInspector._arm_snap_to_axis)
-    if "len(selection) < 2" in arm_src and "_expand_selection_rows_for_groups" in arm_src:
-        notes.append("WIRING = arm guards <2 selections and expands groups")
+    # bugs/0439 updated the guard: empty selections refused, ONE row arms translate-only,
+    # >=2 rigid; group expansion still applies before the count is judged.
+    if (
+        "len(selection) == 1" in arm_src
+        and "not selection" in arm_src
+        and "_expand_selection_rows_for_groups" in arm_src
+    ):
+        notes.append("WIRING = arm refuses empty, arms 1-row translate-only, expands groups")
     else:
-        notes.append("WIRING arm lacks the <2 guard / group expansion")
+        notes.append("WIRING arm lacks the 0439 guard shape / group expansion")
         ok = False
     if "_apply_selection_step_highlights" in arm_src:
         notes.append("WIRING = arm re-lights the lens/camera STEP cue after the clear")
@@ -75,10 +81,10 @@ def _check_wiring(notes: list[str]) -> bool:
         notes.append("WIRING arm does not re-light the STEP-body cue")
         ok = False
     apply_src = _inspect.getsource(mod.Kraken3DInspector._apply_snap_rows_to_axis)
-    if "len(selection) < 2" in apply_src:
-        notes.append("WIRING = apply has the <2 belt guard")
+    if "not selection" in apply_src and "translate-only" in apply_src:
+        notes.append("WIRING = apply refuses empty selections (1-row passes through translate-only)")
     else:
-        notes.append("WIRING apply lacks the <2 belt guard")
+        notes.append("WIRING apply lacks the 0439 empty-selection belt guard")
         ok = False
     return ok
 
@@ -147,25 +153,48 @@ def _check_real_scene(notes: list[str]) -> bool:
         else:
             notes.append(f"REAL chained arm carried {armed_sel} (want {sorted(rows)})")
             ok = False
+        # Semantics updated by bugs/0439: ONE row (outside the lens block, which would
+        # expand) arms as a TRANSLATE-ONLY snap and the apply slides it onto the axis
+        # at the click point, orientation kept, other rows untouched. A lens-block row
+        # still expands to the whole block (group integrity, asserted above).
+        lone = rows[-1]  # the mirror / trailing member -- not inside the lens block
         insp._snap_rows_to_axis_pick_mode = False
         insp._snap_rows_selection = []
-        insp._arm_snap_to_axis([rows[0]], "selected")
-        if not getattr(insp, "_snap_rows_to_axis_pick_mode", False):
-            notes.append("REAL = 1-row arm refused")
+        insp._arm_snap_to_axis([lone], "selected")
+        if getattr(insp, "_snap_rows_to_axis_pick_mode", False) and "single element" in insp.status_var.get():
+            notes.append("REAL = 1-row arm accepted as translate-only")
         else:
-            notes.append("REAL 1-row arm was accepted")
+            notes.append(f"REAL 1-row arm state unexpected: {insp.status_var.get()[:60]}")
             ok = False
-        before = [(float(r.desp_x), float(r.desp_y), float(r.desp_z)) for r in app.rows]
-        insp._snap_rows_selection = [rows[0]]
-        insp._snap_rows_to_axis_pick_mode = True
+        lone_row = app.rows[lone]
+        tilts_before = (float(lone_row.tilt_x), float(lone_row.tilt_y), float(lone_row.tilt_z))
+        others_before = [
+            (float(r.desp_x), float(r.desp_y), float(r.desp_z)) for i, r in enumerate(app.rows) if i != lone
+        ]
         insp._apply_snap_rows_to_axis(
-            {"axis_id": "axis:global:split", "points": np.array([(0.0, 0.0, 37.3), (100.0, 0.0, 37.3)])}
+            {
+                "axis_id": "axis:global:split",
+                "points": np.array([(0.0, 0.0, 37.3), (100.0, 0.0, 37.3)]),
+                "picked_world": np.array([60.0, 0.0, 37.3]),
+            }
         )
-        after = [(float(r.desp_x), float(r.desp_y), float(r.desp_z)) for r in app.rows]
-        if before == after and not getattr(insp, "_snap_rows_to_axis_pick_mode", False):
-            notes.append("REAL = 1-row apply refused; nothing moved")
+        z_now = app._row_z_positions()
+        lone_center = np.array(
+            [float(lone_row.desp_x), float(lone_row.desp_y), float(z_now[lone]) + float(lone_row.desp_z)]
+        )
+        tilts_after = (float(lone_row.tilt_x), float(lone_row.tilt_y), float(lone_row.tilt_z))
+        others_after = [
+            (float(r.desp_x), float(r.desp_y), float(r.desp_z)) for i, r in enumerate(app.rows) if i != lone
+        ]
+        if (
+            np.allclose(lone_center, (60.0, 0.0, 37.3), atol=1e-6)
+            and tilts_before == tilts_after
+            and others_before == others_after
+            and not getattr(insp, "_snap_rows_to_axis_pick_mode", False)
+        ):
+            notes.append("REAL = 1-row apply translate-only onto the clicked point; others untouched")
         else:
-            notes.append("REAL 1-row apply moved rows / stayed armed")
+            notes.append(f"REAL 1-row translate-only unexpected: center={lone_center.round(2).tolist()}")
             ok = False
         return ok
     finally:
