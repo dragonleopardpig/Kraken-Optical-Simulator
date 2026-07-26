@@ -16,6 +16,7 @@ from pathlib import Path
 
 LAYOUT_CATEGORY_ORDER = (
     "Starter Lenses",
+    "Modern Optical Engineering",
     "Imported / Camera Lenses",
     "Beam Splitters / Folds",
     "Sources / Illumination",
@@ -91,6 +92,8 @@ def load_python_title(path: Path) -> str:
 def layout_menu_category(name: str, path: Path | None = None) -> str:
     stem = path.stem if path is not None else ""
     haystack = f"{name} {stem}".lower()
+    if stem.startswith("moe_19_") or name.startswith("MOE 19."):
+        return "Modern Optical Engineering"
     if any(
         token in haystack
         for token in (
