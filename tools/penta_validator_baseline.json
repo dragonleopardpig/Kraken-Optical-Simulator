@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-07-26T04:28:59+00:00",
+  "generated_at": "2026-07-26T09:54:00+00:00",
   "phases": {
     "0": "pass",
     "1": "fail",
@@ -359,7 +359,10 @@
     "355": "pass",
     "356": "pass",
     "357": "pass",
-    "358": "pass"
+    "358": "pass",
+    "359": "pass",
+    "360": "pass",
+    "361": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -719,6 +722,9 @@
     "355": "snap lands at the clicked point on the axis (0439)",
     "356": "frozen fold mirror draws its pickable reflected-axis guide (0439)",
     "357": "object plane / first-order reference on frozen+snapped scenes (0440, 0442)",
-    "358": "baked aperture placement survives normalize + table round-trips (0441)"
+    "358": "baked aperture placement survives normalize + table round-trips (0441)",
+    "359": "the object FOV plate faces the object's own axis (0443)",
+    "360": "BS rotation re-poses single-bodied; delete claims the trailing spacer (0444, 0442)",
+    "361": "object-facing BS coating + entry-face split transmits through the glass (0445)"
   }
 }
