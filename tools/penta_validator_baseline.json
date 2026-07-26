@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-07-26T02:54:56+00:00",
+  "generated_at": "2026-07-26T04:28:59+00:00",
   "phases": {
     "0": "pass",
     "1": "fail",
@@ -92,7 +92,7 @@
     "87": "pass",
     "88": "pass",
     "89": "pass",
-    "90": "fail",
+    "90": "pass",
     "91": "pass",
     "92": "pass",
     "93": "pass",
@@ -353,7 +353,13 @@
     "349": "pass",
     "350": "pass",
     "351": "pass",
-    "352": "pass"
+    "352": "pass",
+    "353": "pass",
+    "354": "pass",
+    "355": "pass",
+    "356": "pass",
+    "357": "pass",
+    "358": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -707,6 +713,12 @@
     "349": "rubber-band box select + 0432 mode backfill (0433 B)",
     "350": "multi-select snap with a fold inside the selection (0433 C)",
     "351": "BS add is station-neutral -- nothing moves (0435)",
-    "352": "rubber-band snap selection integrity (0436)"
+    "352": "rubber-band snap selection integrity (0436)",
+    "353": "BS drag moves the BS alone; LED drag carries the glued BS (0437)",
+    "354": "armed-snap highlight persists through rebuilds (0438)",
+    "355": "snap lands at the clicked point on the axis (0439)",
+    "356": "frozen fold mirror draws its pickable reflected-axis guide (0439)",
+    "357": "object plane / first-order reference on frozen+snapped scenes (0440, 0442)",
+    "358": "baked aperture placement survives normalize + table round-trips (0441)"
   }
 }
