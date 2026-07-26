@@ -285,17 +285,35 @@ def _short_error_message(exc: Exception, limit: int = 220) -> str:
     return text
 
 
+def _row_is_marked_beam_splitter_row(row) -> bool:
+    """bugs/0446: the promoted BS marks from 0319 (promotion['beam_splitter'] or the
+    advanced OpticalSolidBeamSplitter flag), read defensively for stub rows."""
+    advanced = getattr(row, "advanced", None)
+    if not isinstance(advanced, dict):
+        return False
+    if bool(advanced.get("OpticalSolidBeamSplitter")):
+        return True
+    promotion = advanced.get("StepOverlayPromotion")
+    return bool(isinstance(promotion, dict) and promotion.get("beam_splitter"))
+
+
 def rubber_band_candidate_row_indices(rows) -> list[int]:
     """bugs/0433: rows a rubber-band box select may pick. The Object/source is never
     movable (0432 convention) and promote-time trailing AIR spacers have no visual
-    presence, so both are excluded; fold solids (mirrors / BS) ARE included -- selecting
-    the second RA mirror with its folded followers is the point of the box select."""
+    presence, so both are excluded; fold MIRRORS are included -- selecting the second
+    RA mirror with its folded followers is the point of the box select. bugs/0446:
+    the promoted BEAM SPLITTER is excluded like the Object -- it is glued to the LED
+    and positioned by its own drag/rotate flows; a chain snap must never move it
+    (flag_20260726_175348: the BS entered the snap selection although the box never
+    covered it)."""
     out: list[int] = []
     for index, row in enumerate(rows):
         if getattr(row, "surface", None) == "Object":
             continue
         advanced = getattr(row, "advanced", None)
         if isinstance(advanced, dict) and bool(advanced.get("InPathTrailingSpacer")):
+            continue
+        if _row_is_marked_beam_splitter_row(row):
             continue
         out.append(index)
     return out
@@ -329,14 +347,20 @@ def rubber_band_rows_in_rect(display_points, corner_a, corner_b) -> list[int]:
     return out
 
 
-def expand_rows_to_lens_block(row_indices, front_datum, rear_datum) -> tuple[list[int], bool]:
+def expand_rows_to_lens_block(row_indices, front_datum, rear_datum, excluded=()) -> tuple[list[int], bool]:
     """bugs/0436: never tear the lens surrogate. The imaging lens is ONE physical part
     drawn as a contiguous row block (front datum .. rear datum, with the thin-lens
     groups + aperture inside); snapping a partial slice of it moves some datums and
     not others, splitting the surrogate away from the barrel (flag_20260726_095224:
     the front datum alone teleported while rows 4-7 + the STEP barrel stayed). A
     selection touching the block is therefore expanded to the WHOLE block. Pure:
-    returns (sorted rows, expanded?)."""
+    returns (sorted rows, expanded?).
+
+    bugs/0446: ``excluded`` indices are never ADDED by the fill -- the promoted BS row
+    is INSERTED at an index between the datums although it physically sits in the LED,
+    and the index-gap fill was dragging it into every chain snap
+    (flag_20260726_175348). An excluded row the user explicitly boxed stays selected
+    at the caller's discretion; the fill itself never introduces one."""
     rows = sorted({int(i) for i in (row_indices or [])})
     try:
         front = int(front_datum)
@@ -345,7 +369,7 @@ def expand_rows_to_lens_block(row_indices, front_datum, rear_datum) -> tuple[lis
         return rows, False
     if front < 0 or rear < front:
         return rows, False
-    block = set(range(front, rear + 1))
+    block = set(range(front, rear + 1)) - {int(i) for i in (excluded or ())}
     selected = set(rows)
     if not (selected & block) or block <= selected:
         return rows, False
@@ -8008,7 +8032,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         return len(rows)
 
     def _expand_selection_rows_for_groups(self, rows) -> tuple[list[int], bool]:
-        """bugs/0436: group-integrity expansion (currently the lens surrogate block)."""
+        """bugs/0436: group-integrity expansion (currently the lens surrogate block).
+
+        bugs/0446: promoted optical solids are never ADDED by the fill -- the BS row
+        is inserted at an in-block INDEX while physically sitting in the LED, and any
+        solid the fill would introduce is one the user did not box."""
         try:
             front = self.editor._lens_datum_row_index("front")
             rear = self.editor._lens_datum_row_index("rear")
@@ -8016,7 +8044,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             front = rear = None
         if front is None or rear is None:
             return sorted({int(i) for i in (rows or [])}), False
-        return expand_rows_to_lens_block(rows, front, rear)
+        excluded: list[int] = []
+        try:
+            for index, row in enumerate(self.editor.rows):
+                if self.editor._is_any_promoted_optical_solid_row(row):
+                    excluded.append(index)
+        except Exception:
+            excluded = []
+        return expand_rows_to_lens_block(rows, front, rear, excluded=excluded)
 
     def _selection_step_highlight_labels(self, rows) -> list[str]:
         """The lens barrel / camera body labels a row selection implies (their anchor
@@ -8093,6 +8128,21 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         for the user to click ONE optical axis (then _apply_snap_rows_to_axis relocates them as a rigid
         body -- R @ each element's current orientation, so a mirror keeps its fold)."""
         selection = [int(i) for i in selection]
+        # bugs/0446 belt: the promoted BS never rides a chain snap -- it is glued to
+        # the LED and positioned by its own flows (flag_20260726_175348). Filter it
+        # here so Snap Selected / Assembly / programmatic arms are covered too.
+        bs_dropped: list[int] = []
+        try:
+            kept: list[int] = []
+            for i in selection:
+                row = self.editor.rows[i] if 0 <= i < len(self.editor.rows) else None
+                if row is not None and _row_is_marked_beam_splitter_row(row):
+                    bs_dropped.append(i)
+                else:
+                    kept.append(i)
+            selection = kept
+        except Exception:
+            pass
         # bugs/0436: group integrity + degenerate-selection guard. ONE row cannot
         # define the chain direction -- the rigid transform collapses to a teleport
         # onto the axis origin (flag_20260726_095224: the lens front datum landed
@@ -8132,6 +8182,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._update_mode_badge()
         self.render()
         suffix = " (expanded to the full lens group)" if expanded else ""
+        if bs_dropped:
+            suffix += " (beam splitter excluded -- glued to the LED)"
         if len(selection) == 1:
             # bugs/0439: the single-element arm is TRANSLATE-ONLY.
             self.status_var.set(
