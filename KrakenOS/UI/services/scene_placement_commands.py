@@ -105,10 +105,10 @@ class ScenePlacementMixin:
         row.desp_x = float(row.desp_x) + float(delta[0])
         row.desp_y = float(row.desp_y) + float(delta[1])
         row.desp_z = float(row.desp_z) + float(delta[2])
-        # BS<->LED two-body glue: a direct drag of the promoted beam-splitter row carries the
-        # glued LED overlay by the same vector (guarded against carry-back from the LED side).
-        # flag_20260724_094730: an ALT-drag of the BS suspends the carry for that drag so the user can
-        # reposition the BS RELATIVE to the LED (the glue itself stays intact for normal drags).
+        # BS<->LED glue: the carry helper decides direction -- since bugs/0437 a BS move
+        # never drags the LED (asymmetric parent/child glue), so this hook is live only
+        # for symmetry with the overlay path and future partners; the helper early-returns
+        # for moved="optical".
         if (
             not getattr(self, "_optical_led_carry_active", False)
             and not getattr(self, "_suppress_optical_led_carry", False)
@@ -2882,18 +2882,30 @@ class ScenePlacementMixin:
         return self._promoted_optical_solid_row_index("optical") is not None
 
     def _carry_glued_optical_led(self, moved_label: str, applied) -> None:
-        """Item 3 carry: when the BS<->LED rigid glue is active, move the glued PARTNER of the
-        just-moved body by the same world delta, preserving their relative pose.  The beam
-        splitter may be EITHER the 'optical' overlay OR a promoted optical solid (bugs/0127);
-        the LED is always an overlay.  Re-entrancy guarded so the partner move never carries
-        back (the LED move sets only an overlay offset; the BS move calls the row primitive
-        with the guard up, which skips its own carry hook)."""
+        """Item 3 carry, ASYMMETRIC since bugs/0437: when the BS<->LED glue is active and the
+        LED (the parent housing) moves, carry the glued BS by the same world delta so the
+        assembly moves as one.  A BS move carries NOTHING -- the BS is the child seated
+        inside the LED, and dragging it repositions it RELATIVE to the housing
+        (flag_20260726_110337: the symmetric carry "effectively cancelled the BS plate
+        move").  The beam splitter may be EITHER the 'optical' overlay OR a promoted
+        optical solid (bugs/0127); the LED is always an overlay.  Re-entrancy guarded so
+        the partner move never carries back."""
         if getattr(self, "_optical_led_carry_active", False):
             return
         if not bool(getattr(self, "_optical_led_glued", False)):
             return
         moved = str(moved_label or "").strip().lower()
         if moved not in ("optical", "led"):
+            return
+        # bugs/0437 (flag_20260726_110337 "drag it down and the LED STEP shifted as well,
+        # effectively cancelling the BS plate move. This is old bug resurface."): the glue
+        # is ASYMMETRIC, parent/child. The LED is the housing (parent) -- dragging it
+        # carries the glued BS so the assembly moves as one. The BS is the child seated
+        # INSIDE the LED -- dragging the BS repositions it RELATIVE to the LED (the whole
+        # point of the user's manual-seat workflow step), so a BS move never drags the
+        # LED along. Supersedes the 0432 Alt-only suspend (flag_20260724_094730): what Alt
+        # opted into is now the only behavior for a BS move; Alt remains harmless.
+        if moved == "optical":
             return
         try:
             delta = np.asarray(applied, dtype=float).reshape(-1)[:3]
@@ -4857,6 +4869,22 @@ class ScenePlacementMixin:
         # pivoted on the branch point unconditionally -- in the explicit path the carried body landed
         # offset by R@(origin - branch) relative to its rows (probe_0433_snap_fold_in_selection).
         pivot = old_origin if explicit_rows is not None else branch_point
+        # bugs/0439 (flag_20260726_110657 "the elements snapped correctly but shifted to the
+        # left (crashing to the LED STEP) ... let the first element ... follow the mouse click
+        # coordinate on the optical axis"): the explicit snap used to land the selection origin
+        # AT the branch point (axis record points[0]). When the pick carries the CLICKED world
+        # point (_optical_axis_info_near_display_xy adds picked_world; the actor-map pick does
+        # not), project it onto the new axis line and land the selection there instead -- the
+        # click chooses the position ALONG the axis. Rotation geometry is unchanged; the classic
+        # (non-explicit) axis-to-axis move is byte-identical.
+        landing = branch_point
+        if explicit_rows is not None:
+            try:
+                picked = np.asarray(new_axis_record.get("picked_world"), dtype=float).reshape(-1)[:3]
+                if picked.size == 3 and np.all(np.isfinite(picked)):
+                    landing = branch_point + float(np.dot(picked - branch_point, new_dir)) * new_dir
+            except Exception:
+                landing = branch_point
         # bugs/0433 slice C: the STEP carry below needs the sensor's PRE-move world position (the row
         # loop rewrites desp in place) -- capture it before anything mutates.
         pre_move_image_row = next(
@@ -4899,7 +4927,7 @@ class ScenePlacementMixin:
                     nonmoved_gap += float(getattr(row, "thickness", 0.0) or 0.0)
                 continue
             started = True
-            new_center = branch_point + rotation @ (center - pivot)
+            new_center = landing + rotation @ (center - pivot)
             row_gap[index] = nonmoved_gap
             if nonmoved_gap > 1e-9:
                 new_center = new_center - nonmoved_gap * new_dir  # close the fold-element gap
@@ -4958,7 +4986,7 @@ class ScenePlacementMixin:
                     # Image ROW's PRE-move world position (station + desp) -- a frozen/baked chain sits off
                     # the straight axis, where the old bare-station anchor (0,0,z) pointed into empty space.
                     old_center = pre_move_image_center
-                target_center = branch_point + rotation @ (old_center - pivot)
+                target_center = landing + rotation @ (old_center - pivot)
                 # flag_20260724_120837 "Lens surrogate and Lens STEP detached": the surrogate rows were
                 # re-packed (fold-element gap removed); shift the STEP by the SAME gap as its pinned row
                 # (lens<->front datum, camera<->Image) so the barrel/camera stay attached to the surrogate.
