@@ -4764,6 +4764,13 @@ class ScenePlacementMixin:
         if not rows:
             self.status_var.set("Snap to Optical Axis: select one or more elements first.")
             return {"moved_rows": [], "error": "no_selection"}
+        # bugs/0436 (belt guard below the UI's own checks): a single row cannot define
+        # the selection's current axis -- the first->last inference degenerates and the
+        # rigid transform collapses to a teleport onto the branch point (the user read
+        # it as "snapped to the first optical axis", flag_20260726_095224). Refuse.
+        if len(rows) < 2:
+            self.status_var.set("Snap to Optical Axis needs at least 2 selected elements to define a direction.")
+            return {"moved_rows": [], "error": "degenerate_selection"}
         z_positions = self._row_z_positions()
         centers = [
             np.asarray(
