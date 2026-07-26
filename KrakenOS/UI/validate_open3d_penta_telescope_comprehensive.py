@@ -15229,6 +15229,52 @@ def phase_352_rubber_band_snap_integrity(app: KrakenLayoutEditor, inspector: Kra
     return result
 
 
+def _phase_from_standalone(number: int, title: str, module_name: str, guard_label: str):
+    """bugs/0437-0442: six standalone guards registered in one stroke -- the wrapper
+    shape is identical to phases 347-352 (import run_checks lazily, SKIP-on-env
+    semantics live in the guard itself)."""
+    def _phase(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> PhaseResult:
+        result = PhaseResult(name=f"Phase {number}: {title}")
+        try:
+            module = __import__(module_name, fromlist=["run_checks"])
+            passed, notes = module.run_checks()
+        except Exception as exc:  # pragma: no cover - defensive
+            result.passed = False
+            result.notes.append(f"{guard_label} guard raised: {exc!r}")
+            return result
+        result.passed = bool(passed)
+        result.detail["guard_failures"] = 0 if passed else len(
+            [n for n in notes if "=" not in n and not n.startswith("SKIP")]
+        )
+        result.notes.extend(notes)
+        if not result.passed and not result.notes:
+            result.notes.append(f"{guard_label} phase failed without detail")
+        return result
+
+    _phase.__name__ = f"phase_{number}_{guard_label}"
+    return _phase
+
+
+phase_353_bs_drag_glue_asymmetric = _phase_from_standalone(
+    353, "BS drag moves the BS alone; LED drag carries the glued BS (0437)",
+    "KrakenOS.UI.validate_open3d_0437_bs_drag_glue", "bs_drag_glue_asymmetric")
+phase_354_armed_highlight_persists = _phase_from_standalone(
+    354, "armed-snap highlight persists through rebuilds (0438)",
+    "KrakenOS.UI.validate_open3d_0438_armed_highlight", "armed_highlight_persists")
+phase_355_snap_lands_at_click = _phase_from_standalone(
+    355, "snap lands at the clicked point on the axis (0439)",
+    "KrakenOS.UI.validate_open3d_0439_snap_anchor", "snap_lands_at_click")
+phase_356_frozen_fold_guide = _phase_from_standalone(
+    356, "frozen fold mirror draws its pickable reflected-axis guide (0439)",
+    "KrakenOS.UI.validate_open3d_0439_frozen_fold_guide", "frozen_fold_guide")
+phase_357_object_plane_frozen = _phase_from_standalone(
+    357, "object plane / first-order reference on frozen+snapped scenes (0440, 0442)",
+    "KrakenOS.UI.validate_open3d_0440_object_plane_frozen", "object_plane_frozen")
+phase_358_aperture_ring_orientation = _phase_from_standalone(
+    358, "baked aperture placement survives normalize + table round-trips (0441)",
+    "KrakenOS.UI.validate_open3d_0441_aperture_ring_orientation", "aperture_ring_orientation")
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15626,6 +15672,12 @@ def main() -> int:
             phase_350_snap_fold_in_selection,
             phase_351_bs_add_station_neutral,
             phase_352_rubber_band_snap_integrity,
+            phase_353_bs_drag_glue_asymmetric,
+            phase_354_armed_highlight_persists,
+            phase_355_snap_lands_at_click,
+            phase_356_frozen_fold_guide,
+            phase_357_object_plane_frozen,
+            phase_358_aperture_ring_orientation,
         ]
         for phase in phases:
             # Streamed progress marker: the report only prints at the END, so a hard
