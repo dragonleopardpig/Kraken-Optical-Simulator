@@ -15273,6 +15273,12 @@ phase_357_object_plane_frozen = _phase_from_standalone(
 phase_358_aperture_ring_orientation = _phase_from_standalone(
     358, "baked aperture placement survives normalize + table round-trips (0441)",
     "KrakenOS.UI.validate_open3d_0441_aperture_ring_orientation", "aperture_ring_orientation")
+phase_359_object_fov_axis = _phase_from_standalone(
+    359, "the object FOV plate faces the object's own axis (0443)",
+    "KrakenOS.UI.validate_open3d_0443_object_fov_axis", "object_fov_axis")
+phase_360_bs_rotation_ghost = _phase_from_standalone(
+    360, "BS rotation re-poses single-bodied; delete claims the trailing spacer (0444, 0442)",
+    "KrakenOS.UI.validate_open3d_0444_bs_rotation_ghost", "bs_rotation_ghost")
 
 
 # ---------------------------------------------------------------------------
@@ -15678,6 +15684,8 @@ def main() -> int:
             phase_356_frozen_fold_guide,
             phase_357_object_plane_frozen,
             phase_358_aperture_ring_orientation,
+            phase_359_object_fov_axis,
+            phase_360_bs_rotation_ghost,
         ]
         for phase in phases:
             # Streamed progress marker: the report only prints at the END, so a hard
