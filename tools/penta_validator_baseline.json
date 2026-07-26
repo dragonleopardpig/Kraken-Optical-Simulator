@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-07-25T10:16:38+00:00",
+  "generated_at": "2026-07-26T02:54:56+00:00",
   "phases": {
     "0": "pass",
     "1": "fail",
@@ -351,7 +351,9 @@
     "347": "pass",
     "348": "pass",
     "349": "pass",
-    "350": "pass"
+    "350": "pass",
+    "351": "pass",
+    "352": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -703,6 +705,8 @@
     "347": "BS trace-driven placement building block (Phase 2 slice 2a)",
     "348": "stay-put freeze on fold-element removal (0433 A)",
     "349": "rubber-band box select + 0432 mode backfill (0433 B)",
-    "350": "multi-select snap with a fold inside the selection (0433 C)"
+    "350": "multi-select snap with a fold inside the selection (0433 C)",
+    "351": "BS add is station-neutral -- nothing moves (0435)",
+    "352": "rubber-band snap selection integrity (0436)"
   }
 }

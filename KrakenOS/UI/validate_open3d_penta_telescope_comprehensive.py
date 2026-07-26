@@ -15183,6 +15183,52 @@ def phase_350_snap_fold_in_selection(app: KrakenLayoutEditor, inspector: Kraken3
     return result
 
 
+def phase_351_bs_add_station_neutral(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> PhaseResult:
+    """bugs/0435 -- adding a beam splitter to the LED is STATION-NEUTRAL: the raw promote used to
+    insert the BS row's axial reserve (~62.5 mm for a 45-deg plate) as real thickness, sliding every
+    downstream station-fed pose (pinned mirror-2, Image, lens/camera STEP bodies) and flipping the
+    Aperture's drawn orientation via the re-derived override map. The BS row now carries zero
+    thickness (span kept in promotion metadata) at add AND resize; add -> delete-mirror stays put
+    end-to-end."""
+    result = PhaseResult(name="Phase 351: BS add is station-neutral -- nothing moves (0435)")
+    try:
+        from KrakenOS.UI.validate_open3d_0435_bs_add_stay_put import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"bs-add-station-neutral guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n and not n.startswith("SKIP")])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("bs-add-station-neutral phase failed without detail")
+    return result
+
+
+def phase_352_rubber_band_snap_integrity(app: KrakenLayoutEditor, inspector: Kraken3DInspector) -> PhaseResult:
+    """bugs/0436 -- the rubber-band -> snap pipeline keeps the selection intact: the chained variant
+    arms with the FULL highlighted set (the table sync no longer collapses it to one row), the Image
+    row is selectable by world center without a row actor (camera body cue re-applied after arming),
+    sub-2-row snaps are refused at arm/apply/service level, and selections touching the lens
+    surrogate block expand to the whole block so a snap can never tear the surrogate off the
+    barrel."""
+    result = PhaseResult(name="Phase 352: rubber-band snap selection integrity (0436)")
+    try:
+        from KrakenOS.UI.validate_open3d_0436_rubber_band_snap import run_checks
+        passed, notes = run_checks()
+    except Exception as exc:  # pragma: no cover - defensive
+        result.passed = False
+        result.notes.append(f"rubber-band-snap-integrity guard raised: {exc!r}")
+        return result
+    result.passed = bool(passed)
+    result.detail["guard_failures"] = 0 if passed else len([n for n in notes if "=" not in n and not n.startswith("SKIP")])
+    result.notes.extend(notes)
+    if not result.passed and not result.notes:
+        result.notes.append("rubber-band-snap-integrity phase failed without detail")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 
@@ -15578,6 +15624,8 @@ def main() -> int:
             phase_348_stay_put_fold_removal,
             phase_349_rubber_band_select,
             phase_350_snap_fold_in_selection,
+            phase_351_bs_add_station_neutral,
+            phase_352_rubber_band_snap_integrity,
         ]
         for phase in phases:
             # Streamed progress marker: the report only prints at the END, so a hard
