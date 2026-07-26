@@ -5604,14 +5604,19 @@ class ScenePlacementMixin:
             return None
         zhat = np.asarray((0.0, 0.0, 1.0), dtype=float)
         best_face_id = ""
-        best_area = -1.0
-        # bugs/0444 NOTE (flag_20260726_153723 "the reflecting surface is at the second
-        # surface relative to the Object"): the plate's two big diagonal faces tie on
-        # |angle| and area, so this abs() pick is ARBITRARY between the object-facing
-        # and away-facing surface. Preferring the object-facing face (signed dot < 0)
-        # was tried and REVERTED: it changes the canonical branched-trace structure
-        # (phase 347's transmit branch stops covering the imaging chain), so the pick
-        # is a physics-visible design choice, not a display fix -- see bugs/0444.
+        best_key: "tuple[int, float] | None" = None
+        # bugs/0445 (user decision, closing the 0444 investigation of
+        # flag_20260726_153723 "the reflecting surface is at the second surface
+        # relative to the Object"): the plate's two big diagonal faces tie on |angle|
+        # and area, so a bare abs() pick landed the coating ARBITRARILY -- half the
+        # time on the far surface, and the user had to rotate the plate. The coating
+        # now PREFERS the OBJECT-FACING diagonal (signed normal . +Z < 0: the first
+        # surface the incoming beam meets), falling back to the away-facing one only
+        # when no object-facing candidate exists. The first-surface split this
+        # produces needed a kernel fix: the split child's row-level skip_surface_once
+        # killed the transmit child's exit through the far face
+        # (__NsTraceSplitChildSkipSurface now exempts entry-face splits, exactly like
+        # the cube's internal cemented diagonal).
         for face in list(metadata.get("faces", []) or []):
             if not isinstance(face, dict):
                 continue
@@ -5619,13 +5624,15 @@ class ScenePlacementMixin:
             norm = float(np.linalg.norm(normal))
             if norm <= 1.0e-9 or not np.isfinite(norm):
                 continue
-            cos_to_axis = float(np.clip(abs(float(np.dot(normal / norm, zhat))), 0.0, 1.0))
+            signed_dot = float(np.dot(normal / norm, zhat))
+            cos_to_axis = float(np.clip(abs(signed_dot), 0.0, 1.0))
             angle = float(np.degrees(np.arccos(cos_to_axis)))
             if abs(angle - tilt_deg) > tol_deg:
                 continue
             area = float(face.get("area_mm2", 0.0) or 0.0)
-            if area > best_area:
-                best_area = area
+            key = (1 if signed_dot < 0.0 else 0, area)  # object-facing first, then area
+            if best_key is None or key > best_key:
+                best_key = key
                 best_face_id = str(face.get("face_id", "") or "").strip()
         if not best_face_id:
             return None

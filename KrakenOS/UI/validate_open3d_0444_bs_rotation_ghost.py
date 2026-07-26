@@ -70,11 +70,19 @@ def run_checks() -> tuple[bool, list[str]]:
         except Exception as exc:
             notes.append(f"SKIP-coating: face metadata unavailable ({exc!r})")
         if signed is not None:
-            # Informational only (bugs/0444): the object-facing preference was reverted
-            # -- flipping the flagged face changes the canonical branched-trace
-            # structure (phase 347), so the pick is a recorded design question.
-            side = "faces the object" if signed < 0.0 else "faces AWAY from the object"
-            notes.append(f"COATING = flagged face {side} (dot={signed:+.3f}; informational)")
+            # bugs/0445 (user decision): the coating defaults to the OBJECT-FACING
+            # diagonal -- the first surface the incoming +Z beam meets. The kernel
+            # entry-face split fix (__NsTraceSplitChildSkipSurface) makes the
+            # first-surface split physical, so this is now a CONTRACT, not
+            # informational.
+            if signed < 0.0:
+                notes.append(f"COATING = flagged face faces the object (dot={signed:+.3f})")
+            else:
+                notes.append(
+                    f"COATING: flagged face faces AWAY from the object (dot={signed:+.3f}; "
+                    "want the object-facing diagonal, bugs/0445)"
+                )
+                ok = False
 
         # SPACER: delete claims the mirror's spacer through the station-neutral BS row.
         m1 = next(

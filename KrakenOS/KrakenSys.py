@@ -4072,8 +4072,21 @@ class system():
             transition = str(face_override.get("media_transition", "") or "").strip().lower()
             if transition == "internal":
                 return None
-            if self.__BeamSplitterSettingsFromFace(face_override) is not None and self.__OpticalSolidFaceIsInternal(surface_index, face_override):
-                return None
+            if self.__BeamSplitterSettingsFromFace(face_override) is not None:
+                if self.__OpticalSolidFaceIsInternal(surface_index, face_override):
+                    return None
+                # bugs/0445: a split at the solid's ENTRY face (a first-surface
+                # coating -- e.g. the object-facing diagonal of a plate BS) sends
+                # the TRANSMIT child INTO the glass; it must be allowed to
+                # re-interact with this same row to exit through the far face. The
+                # row-level skip killed that exit, so the child refracted once and
+                # died inside the solid (no_next_intersection after crossing other
+                # rows' planes). The reflect child leaves the solid, so the
+                # zero-distance re-hit the skip guards against cannot occur --
+                # the same reasoning that already exempts the internal cemented
+                # diagonal of the cube BS above.
+                if transition == "entry":
+                    return None
         try:
             return int(surface_index)
         except Exception:
