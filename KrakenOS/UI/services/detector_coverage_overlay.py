@@ -559,12 +559,37 @@ class DetectorCoverageOverlayService:
         finite = self._is_finite_object()
         try:
             obj_pt = np.asarray(self.editor._surface_reference_world_point(0, system=system), dtype=float).reshape(3)
-            # The object's optical axis = direction object -> first surface (shared by both arms).
-            first_pt = np.asarray(self.editor._surface_reference_world_point(1, system=system), dtype=float).reshape(3)
         except Exception as exc:
             self.editor.append_debug(f"Detector coverage overlay reference points unavailable: {exc}")
             return 0
-        object_axis = first_pt - obj_pt
+        # bugs/0443: the object's optical axis is +Z in the OBJECT ROW's own frame.
+        # The old derivation (direction object -> row 1's world point) silently
+        # assumed row 1 sits on the source axis -- true for every walk-folded scene,
+        # but on a frozen/snapped chain (0433) row 1 is a baked OFF-AXIS row, the
+        # derived axis went diagonal, and the object FOV plate drew tilted
+        # (flag_20260726_153531). The object row is never frozen/snapped (0432/0436
+        # exclude it), so its authored tilts are the truth; fall back to the legacy
+        # row-1 derivation only if the rotation is unavailable.
+        object_axis = None
+        try:
+            from KrakenOS.UI.optical_solid_metadata import rotation_matrix_from_kraken_tilts
+
+            obj_row = self.editor.rows[0]
+            rot = rotation_matrix_from_kraken_tilts(
+                float(obj_row.tilt_x), float(obj_row.tilt_y), float(obj_row.tilt_z)
+            )
+            object_axis = np.asarray(rot @ np.array((0.0, 0.0, 1.0)), dtype=float).reshape(3)
+        except Exception:
+            object_axis = None
+        if object_axis is None or float(np.linalg.norm(object_axis)) < 1e-9:
+            try:
+                first_pt = np.asarray(
+                    self.editor._surface_reference_world_point(1, system=system), dtype=float
+                ).reshape(3)
+                object_axis = first_pt - obj_pt
+            except Exception as exc:
+                self.editor.append_debug(f"Detector coverage overlay reference points unavailable: {exc}")
+                return 0
         ou, ov = _basis(object_axis)
         sys_mag = self._magnification() if finite else None
         sys_image_radius = self._image_circle_radius()
