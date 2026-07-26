@@ -276,6 +276,26 @@ class ParaxialToolsMixin:
                 return False
         return True
 
+    @staticmethod
+    def _row_placement_is_baked_world_pose(row) -> bool:
+        """bugs/0440: after the 0433 stay-put freeze / axis snap, a row's desp/tilt are
+        its BAKED WORLD PLACEMENT (display/axis frame), not an optical prescription --
+        the thickness sequence still is the along-leg gap. Those operations stamp a
+        ``ScenePlacement`` breadcrumb (``stay_put_freeze`` / ``last_axis_to_axis_move``);
+        such rows unfold in the first-order reference exactly like a branch arm's fold
+        (DESIGN §5b) instead of tripping the centered guard -- which returned None for
+        the shared reference and silently dropped the object plane / magnification
+        ("Object Plane is missing after enabling the overlays")."""
+        try:
+            placement = (getattr(row, "advanced", None) or {}).get("ScenePlacement")
+            if not isinstance(placement, dict):
+                return False
+            return bool(
+                placement.get("stay_put_freeze") or placement.get("last_axis_to_axis_move")
+            )
+        except Exception:
+            return False
+
     def _paraxial_reference_rows_for_layout(
         self,
         rows: list[SurfaceRow] | None = None,
@@ -340,7 +360,10 @@ class ParaxialToolsMixin:
                     row.axis_move,
                 )
             )
-            if tilted and not unfold_branch_tilts:
+            if tilted and not unfold_branch_tilts and not self._row_placement_is_baked_world_pose(row):
+                # bugs/0440: a breadcrumbed (frozen/snapped) row's desp/tilt is world
+                # PLACEMENT, not prescription -- unfold it below like a branch arm.
+                # A genuinely hand-tilted prescription row still raises.
                 raise RuntimeError("Paraxial solve supports centered refractive systems plus folding mirrors only")
             kept = SurfaceRow(**asdict(row))
             if tilted:

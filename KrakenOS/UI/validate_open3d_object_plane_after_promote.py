@@ -114,10 +114,18 @@ def run_checks() -> "tuple[bool, list[str]]":
     if plain_mag is None or not np.isfinite(plain_mag) or abs(abs(plain_mag) - 1.0) > 0.05:
         failures.append(f"FAIL: plain MV 150 1X magnification regressed (expected ~1X, got {plain_mag!r})")
 
+    # bugs/0440: the straighten gate moved INTO the shared first-order reference
+    # (bugs/0297 -- ONE first order for every conjugate consumer), so inspect the
+    # DELEGATION CHAIN, not just the magnification method: the stale single-method
+    # source check false-failed this guard from the 0297 refactor onward (it sat
+    # mis-binned in the 0434 environmental baseline until flag_20260726_111415).
     src = inspect.getsource(type(bs_editor)._current_finite_paraxial_magnification)
-    if "_layout_needs_paraxial_reference" not in src:
+    chain_src = src
+    if "_shared_first_order_reference" in src:
+        chain_src += inspect.getsource(type(bs_editor)._shared_first_order_reference)
+    if "_layout_needs_paraxial_reference" not in chain_src:
         failures.append(
-            "FAIL: _current_finite_paraxial_magnification must straighten on "
+            "FAIL: the magnification's first-order chain must straighten on "
             "_layout_needs_paraxial_reference (beam splitter / solid), not just a Mirror")
 
     return (not failures), failures
