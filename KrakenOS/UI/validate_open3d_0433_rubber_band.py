@@ -82,6 +82,19 @@ def _make_fakes():
         _cancel_rubber_band_select = Kraken3DInspector._cancel_rubber_band_select
         _clear_rubber_band_preview = Kraken3DInspector._clear_rubber_band_preview
         _rubber_band_display_points = Kraken3DInspector._rubber_band_display_points
+        # bugs/0436: completion now expands lens-group selections, syncs the table
+        # without collapsing the multi-selection, and re-lights the STEP-body cue.
+        _expand_selection_rows_for_groups = Kraken3DInspector._expand_selection_rows_for_groups
+        _selection_step_highlight_labels = Kraken3DInspector._selection_step_highlight_labels
+        _apply_selection_step_highlights = Kraken3DInspector._apply_selection_step_highlights
+        _sync_table_to_selection = Kraken3DInspector._sync_table_to_selection
+        _release_table_selection_sync_suppression = (
+            Kraken3DInspector._release_table_selection_sync_suppression
+        )
+
+        def after_idle(self, callback, *args):
+            callback(*args)
+            return None
 
         def __init__(self, editor) -> None:
             self.editor = editor

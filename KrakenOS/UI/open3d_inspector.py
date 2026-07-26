@@ -329,6 +329,29 @@ def rubber_band_rows_in_rect(display_points, corner_a, corner_b) -> list[int]:
     return out
 
 
+def expand_rows_to_lens_block(row_indices, front_datum, rear_datum) -> tuple[list[int], bool]:
+    """bugs/0436: never tear the lens surrogate. The imaging lens is ONE physical part
+    drawn as a contiguous row block (front datum .. rear datum, with the thin-lens
+    groups + aperture inside); snapping a partial slice of it moves some datums and
+    not others, splitting the surrogate away from the barrel (flag_20260726_095224:
+    the front datum alone teleported while rows 4-7 + the STEP barrel stayed). A
+    selection touching the block is therefore expanded to the WHOLE block. Pure:
+    returns (sorted rows, expanded?)."""
+    rows = sorted({int(i) for i in (row_indices or [])})
+    try:
+        front = int(front_datum)
+        rear = int(rear_datum)
+    except Exception:
+        return rows, False
+    if front < 0 or rear < front:
+        return rows, False
+    block = set(range(front, rear + 1))
+    selected = set(rows)
+    if not (selected & block) or block <= selected:
+        return rows, False
+    return sorted(selected | block), True
+
+
 class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     # Pick state lives on a SelectionModel that survives RemoveAllViewProps().
     # These five properties are compatibility shims so existing call sites
@@ -7984,11 +8007,104 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.render()
         return len(rows)
 
+    def _expand_selection_rows_for_groups(self, rows) -> tuple[list[int], bool]:
+        """bugs/0436: group-integrity expansion (currently the lens surrogate block)."""
+        try:
+            front = self.editor._lens_datum_row_index("front")
+            rear = self.editor._lens_datum_row_index("rear")
+        except Exception:
+            front = rear = None
+        if front is None or rear is None:
+            return sorted({int(i) for i in (rows or [])}), False
+        return expand_rows_to_lens_block(rows, front, rear)
+
+    def _selection_step_highlight_labels(self, rows) -> list[str]:
+        """The lens barrel / camera body labels a row selection implies (their anchor
+        rows -- lens front datum / Image -- are members). apply_row_selection skips
+        STEP actors, so these bodies need the explicit step-highlight cue; the Image
+        row has NO row actor at all, making the camera body its ONLY visual
+        (flag_20260726_095147: 'camera not selected' was the invisible selection)."""
+        selected = {int(i) for i in (rows or [])}
+        labels: list[str] = []
+        try:
+            front_datum = self.editor._lens_datum_row_index("front")
+        except Exception:
+            front_datum = None
+        image_row = next(
+            (
+                i
+                for i in range(len(self.editor.rows) - 1, -1, -1)
+                if getattr(self.editor.rows[i], "surface", None) == "Image"
+            ),
+            None,
+        )
+        if front_datum is not None and front_datum in selected and self.editor._step_path_for_label("lens") is not None:
+            labels.append("lens")
+        if image_row is not None and image_row in selected and self.editor._step_path_for_label("camera") is not None:
+            labels.append("camera")
+        return labels
+
+    def _apply_selection_step_highlights(self, rows, *, render: bool = False) -> None:
+        try:
+            self._set_step_highlight_set(self._selection_step_highlight_labels(rows), render=render)
+        except Exception:
+            pass
+
+    def _release_table_selection_sync_suppression(self) -> None:
+        try:
+            self.editor._suppress_3d_row_selection_sync = False
+        except Exception:
+            pass
+
+    def _sync_table_to_selection(self, rows) -> None:
+        """bugs/0436 root cause: `editor._select_table_row(rows[0])` synchronously runs
+        `_sync_surface_selection` -> `inspector.highlight_row(one)` -> the plural
+        multi-selection COLLAPSES to {min} (and a deferred <<TreeviewSelect>> repeats
+        it), which is exactly flag_20260726_095147's picked=[3]. Sync the table with
+        the 3-D->table suppression flag held (the 0145 promote-window flag) and use the
+        MULTI-row table selection; release the flag after the deferred event drains."""
+        editor = self.editor
+        rows = [int(i) for i in (rows or [])]
+        if not rows:
+            return
+        released = False
+        try:
+            editor._suppress_3d_row_selection_sync = True
+            select_indices = getattr(editor, "_select_table_indices", None)
+            if callable(select_indices):
+                select_indices(rows, focus_index=rows[0])
+            else:
+                editor._select_table_row(rows[0])
+        except Exception:
+            pass
+        finally:
+            try:
+                # Deferred <<TreeviewSelect>> events drain BEFORE idle callbacks, so
+                # releasing on after_idle keeps them suppressed too.
+                self.after_idle(self._release_table_selection_sync_suppression)
+                released = True
+            except Exception:
+                released = False
+            if not released:
+                self._release_table_selection_sync_suppression()
+
     def _arm_snap_to_axis(self, selection, source: str) -> None:
         """Shared arming for the snap-to-axis pick: highlight the group, drop other selections, and wait
         for the user to click ONE optical axis (then _apply_snap_rows_to_axis relocates them as a rigid
         body -- R @ each element's current orientation, so a mirror keeps its fold)."""
         selection = [int(i) for i in selection]
+        # bugs/0436: group integrity + degenerate-selection guard. ONE row cannot
+        # define the chain direction -- the rigid transform collapses to a teleport
+        # onto the axis origin (flag_20260726_095224: the lens front datum landed
+        # exactly on the branch point and read as 'snapped to the wrong axis').
+        selection, expanded = self._expand_selection_rows_for_groups(selection)
+        if len(selection) < 2:
+            self._snap_rows_to_axis_pick_mode = False
+            self.status_var.set(
+                "Snap to Optical Axis needs at least 2 selected elements (one element cannot define "
+                "the chain direction) -- rubber-band a box around the chain and retry."
+            )
+            return
         self._snap_rows_selection = selection
         self._snap_rows_to_axis_pick_mode = True
         self._axis_to_axis_move_pick_mode = False
@@ -7998,12 +8114,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._set_optical_axis_highlight(None)
         self._clear_open3d_selection(render=False)
         self._set_row_highlights(selection)
+        # bugs/0436: _clear_open3d_selection above wiped the lens/camera STEP-body cue;
+        # re-light it for the armed group (the camera body is the Image row's only visual).
+        self._apply_selection_step_highlights(selection, render=False)
         self._set_axis_pick_cursor(True)
         self._update_mode_badge()
         self._hide_regular_rays_for_center_axis_pick()
         self.render()
+        suffix = " (expanded to the full lens group)" if expanded else ""
         self.status_var.set(
-            f"Snap {len(selection)} {source} element(s) to Optical Axis: click the target dotted axis guide."
+            f"Snap {len(selection)} {source} element(s) to Optical Axis: click the target dotted axis guide.{suffix}"
         )
 
     def start_snap_selected_to_axis(self) -> None:
@@ -8206,42 +8326,25 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.render()
             self.status_var.set("Rubber band: no elements inside the box. Drag again from the Place menu.")
             return
+        # bugs/0436: a box grazing part of the lens surrogate expands to the whole block
+        # so a later snap can never tear the surrogate from the barrel.
+        rows, expanded = self._expand_selection_rows_for_groups(rows)
         self._set_row_highlights(rows)
-        try:
-            self.editor._select_table_row(int(rows[0]))
-        except Exception:
-            pass
+        # bugs/0436: table sync must NOT collapse the multi-selection (the old
+        # `_select_table_row(rows[0])` synchronously re-highlighted ONE row -- the
+        # flag_20260726_095147 'only one element selected' collapse).
+        self._sync_table_to_selection(rows)
         # Light the visible lens barrel / camera body too (apply_row_selection skips STEP
-        # actors) when their anchor rows are inside -- mirror _highlight_axis_move_candidates.
-        selected = set(rows)
-        step_labels: list[str] = []
-        try:
-            front_datum = self.editor._lens_datum_row_index("front")
-        except Exception:
-            front_datum = None
-        image_row = next(
-            (
-                i
-                for i in range(len(self.editor.rows) - 1, -1, -1)
-                if getattr(self.editor.rows[i], "surface", None) == "Image"
-            ),
-            None,
-        )
-        if front_datum is not None and front_datum in selected and self.editor._step_path_for_label("lens") is not None:
-            step_labels.append("lens")
-        if image_row is not None and image_row in selected and self.editor._step_path_for_label("camera") is not None:
-            step_labels.append("camera")
-        try:
-            self._set_step_highlight_set(step_labels, render=False)
-        except Exception:
-            pass
+        # actors; the Image row has no row actor, so the camera body IS its highlight).
+        self._apply_selection_step_highlights(rows, render=False)
         self.render()
         names = ", ".join(f"S{i}" for i in rows)
+        suffix = " (expanded to the full lens group)" if expanded else ""
         if chain:
             self.start_snap_selected_to_axis()
         else:
             self.status_var.set(
-                f"Rubber band selected {len(rows)} element(s): {names}. "
+                f"Rubber band selected {len(rows)} element(s): {names}.{suffix} "
                 "Snap Selected to Optical Axis / Add Selected to Assembly next."
             )
 
@@ -8257,6 +8360,21 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
     def _apply_snap_rows_to_axis(self, axis_info: dict[str, object]) -> None:
         selection = list(getattr(self, "_snap_rows_selection", []) or [])
+        selection = [int(i) for i in selection if 0 <= int(i) < len(self.editor.rows)]
+        if len(selection) < 2:
+            # bugs/0436 belt: rows vanished between arming and the axis click (or the
+            # arm guard was bypassed) -- refuse rather than teleport one row onto the
+            # axis origin.
+            self._snap_rows_to_axis_pick_mode = False
+            self._snap_rows_selection = []
+            self._set_axis_pick_cursor(False)
+            self._set_optical_axis_highlight(None)
+            self._update_mode_badge()
+            self.status_var.set(
+                "Snap to Optical Axis cancelled: fewer than 2 selected elements remain -- "
+                "rubber-band the chain again."
+            )
+            return
         try:
             self.editor.snap_rows_to_axis(selection, dict(axis_info))
             self.status_var.set(self.editor.status_var.get())
