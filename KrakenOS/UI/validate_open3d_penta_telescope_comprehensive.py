@@ -15282,6 +15282,9 @@ phase_360_bs_rotation_ghost = _phase_from_standalone(
 phase_361_first_surface_split = _phase_from_standalone(
     361, "object-facing BS coating + entry-face split transmits through the glass (0445)",
     "KrakenOS.UI.validate_open3d_0445_first_surface_split", "first_surface_split")
+phase_362_bs_never_rides_chain_snap = _phase_from_standalone(
+    362, "the glued BS never rides a chain snap (candidates, fill, arm) (0446)",
+    "KrakenOS.UI.validate_open3d_0446_bs_never_rides_chain_snap", "bs_never_rides_chain_snap")
 
 
 # ---------------------------------------------------------------------------
@@ -15690,6 +15693,7 @@ def main() -> int:
             phase_359_object_fov_axis,
             phase_360_bs_rotation_ghost,
             phase_361_first_surface_split,
+            phase_362_bs_never_rides_chain_snap,
         ]
         for phase in phases:
             # Streamed progress marker: the report only prints at the END, so a hard
