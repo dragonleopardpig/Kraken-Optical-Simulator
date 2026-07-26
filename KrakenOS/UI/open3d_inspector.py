@@ -11555,7 +11555,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             from KrakenOS.UI.services.paraxial_tools import _row_is_promoted_mirror_fold
         except Exception:
             return []
-        editor = self.editor
+        # Defensive: penta guards drive the axis-record assembler through partial stub
+        # inspectors without an `editor` (phases 26/177) -- emit nothing rather than raise.
+        editor = getattr(self, "editor", None)
+        if editor is None:
+            return []
         rows = list(getattr(editor, "rows", []) or [])
         mirror_rows = [i for i, row in enumerate(rows) if _row_is_promoted_mirror_fold(row)]
         if not mirror_rows:
@@ -16943,6 +16947,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         rebuilt-but-unstyled actors would hide behind. Single-row and step picks
         keep their existing paths -- this only re-asserts a MULTI-row selection
         (the rubber-band / snap-armed set) and its implied lens/camera body cue."""
+        # Fully defensive: several penta guards drive refresh_scene through partial
+        # stub inspectors (no `editor`, no selection model) -- the funnel must never
+        # raise on them (phases 26/177 broke on the first wiring of this method).
+        if getattr(self, "editor", None) is None:
+            return
         try:
             rows = sorted(int(i) for i in (self._picked_row_indices or set()))
         except Exception:

@@ -141,17 +141,21 @@ def run_checks() -> "tuple[bool, list[str]]":
     if ed_noled.set_optical_led_glue(True):
         failures.append("FAIL: glue must be refused when the LED is not imported")
 
-    # D) Carry: user drags the promoted BS row -> the glued LED overlay follows by ONE delta.
+    # D) Carry (contract updated by bugs/0437, flag_20260726_110337 "old bug
+    #    resurface"): dragging the promoted BS row positions it INSIDE the LED
+    #    housing -- the glued LED must STAY PUT (a symmetric carry cancelled the
+    #    relative move). The assembly direction lives in check E (LED-drag carries
+    #    the BS).
     ed_d = _FakeEditor(has_optical_overlay=False, has_led=True, promoted_bs=True)
     ed_d._offsets["led"] = [1.0, 2.0, 3.0]
     ed_d.set_optical_led_glue(True)
     ed_d.translate_scene_row_pose_vector(0, (10.0, 0.0, -4.0))
     if not _approx(ed_d.rows[0].desp, (10.0, 0.0, -4.0)):
         failures.append(f"FAIL: BS row should move by the drag delta (got {ed_d.rows[0].desp})")
-    if not _approx(ed_d._step_placement_offset_xyz("led"), (11.0, 2.0, -1.0)):
+    if not _approx(ed_d._step_placement_offset_xyz("led"), (1.0, 2.0, 3.0)):
         failures.append(
-            f"FAIL: glued LED must follow the BS by exactly one delta "
-            f"(got {ed_d._step_placement_offset_xyz('led')}, expected (11,2,-1))"
+            f"FAIL (0437): dragging the BS must leave the glued LED where it is "
+            f"(got {ed_d._step_placement_offset_xyz('led')}, expected unchanged (1,2,3))"
         )
 
     # E) Carry: user drags the LED -> the glued promoted BS row follows; the row
