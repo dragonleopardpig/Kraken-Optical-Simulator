@@ -4174,7 +4174,16 @@ class LayoutTableWorkbenchMixin:
         # getattr-guarded for validator stub editors.
         _freeze_capture = getattr(self, "_stay_put_freeze_capture", None)
         stay_put = _freeze_capture(targets) if callable(_freeze_capture) else None
-        _is_spacer = getattr(self, "_is_inpath_trailing_spacer", None)
+
+        # bugs/0444: `_is_inpath_trailing_spacer` lives on StepOverlayPromotionService,
+        # NOT in this editor's MRO -- the previous getattr silently resolved to None and
+        # the whole spacer-claim branch never ran (the 0319 wrapper trap again). Inline
+        # the predicate on the row's advanced mark.
+        def _is_spacer(row) -> bool:
+            try:
+                return bool((getattr(row, "advanced", None) or {}).get("InPathTrailingSpacer"))
+            except Exception:
+                return False
         for index in targets:
             # bugs/0442 (found under 0440): deleting a promoted solid silently DROPPED
             # its axial span (row thickness + its trailing AIR spacer) from the
@@ -4182,12 +4191,20 @@ class LayoutTableWorkbenchMixin:
             # delete and the first-order magnification read 2.52 instead of 1.15.
             # Hand the span back to the preceding row's gap, exactly like unpromote.
             span = float(getattr(self.rows[index], "thickness", 0.0) or 0.0)
+            # bugs/0444: the solid's trailing AIR spacer is not always ADJACENT -- the
+            # one-click BS row is inserted right after the mirror row (between the
+            # mirror and its spacer), so the +1 assumption left the spacer orphaned in
+            # the table. Scan forward past station-neutral promoted rows (thickness 0,
+            # the only rows that legally sit inside another solid's span post-0435).
             spacer_index = index + 1
-            if (
-                callable(_is_spacer)
-                and spacer_index < len(self.rows)
-                and _is_spacer(self.rows[spacer_index])
+            while (
+                spacer_index < len(self.rows)
+                and not _is_spacer(self.rows[spacer_index])
+                and self._is_open3d_promoted_optical_solid_row(self.rows[spacer_index])
+                and abs(float(getattr(self.rows[spacer_index], "thickness", 0.0) or 0.0)) <= 1e-9
             ):
+                spacer_index += 1
+            if spacer_index < len(self.rows) and _is_spacer(self.rows[spacer_index]):
                 span += float(getattr(self.rows[spacer_index], "thickness", 0.0) or 0.0)
                 del self.rows[spacer_index]
             del self.rows[index]

@@ -5605,6 +5605,13 @@ class ScenePlacementMixin:
         zhat = np.asarray((0.0, 0.0, 1.0), dtype=float)
         best_face_id = ""
         best_area = -1.0
+        # bugs/0444 NOTE (flag_20260726_153723 "the reflecting surface is at the second
+        # surface relative to the Object"): the plate's two big diagonal faces tie on
+        # |angle| and area, so this abs() pick is ARBITRARY between the object-facing
+        # and away-facing surface. Preferring the object-facing face (signed dot < 0)
+        # was tried and REVERTED: it changes the canonical branched-trace structure
+        # (phase 347's transmit branch stops covering the imaging chain), so the pick
+        # is a physics-visible design choice, not a display fix -- see bugs/0444.
         for face in list(metadata.get("faces", []) or []):
             if not isinstance(face, dict):
                 continue
