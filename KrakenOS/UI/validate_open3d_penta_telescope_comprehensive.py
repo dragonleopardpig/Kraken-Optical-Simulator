@@ -15285,6 +15285,12 @@ phase_361_first_surface_split = _phase_from_standalone(
 phase_362_bs_never_rides_chain_snap = _phase_from_standalone(
     362, "the glued BS never rides a chain snap (candidates, fill, arm) (0446)",
     "KrakenOS.UI.validate_open3d_0446_bs_never_rides_chain_snap", "bs_never_rides_chain_snap")
+phase_363_solve_legs_frozen = _phase_from_standalone(
+    363, "solve dialog 2+2 fold-leg pins on frozen/BS scenes (0447)",
+    "KrakenOS.UI.validate_open3d_0447_solve_legs_frozen", "solve_legs_frozen")
+phase_364_frozen_trace = _phase_from_standalone(
+    364, "frozen rows trace as drawn; no phantom mid-chain detector (0448)",
+    "KrakenOS.UI.validate_open3d_0448_frozen_trace", "frozen_trace")
 
 
 # ---------------------------------------------------------------------------
@@ -15694,6 +15700,8 @@ def main() -> int:
             phase_360_bs_rotation_ghost,
             phase_361_first_surface_split,
             phase_362_bs_never_rides_chain_snap,
+            phase_363_solve_legs_frozen,
+            phase_364_frozen_trace,
         ]
         for phase in phases:
             # Streamed progress marker: the report only prints at the END, so a hard
