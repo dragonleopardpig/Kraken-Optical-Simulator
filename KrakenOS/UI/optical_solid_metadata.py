@@ -1011,6 +1011,37 @@ def rotation_matrix_from_kraken_tilts(tilt_x: float, tilt_y: float, tilt_z: floa
     return rz @ ry @ rx
 
 
+def trace_convention_tilts_from_rotation_matrix(rotation) -> tuple[float, float, float]:
+    """bugs/0448: tilt angles for the ENGINE'S ANALYTIC-TRACE convention.
+
+    The engine has TWO tilt conventions that diverge for compound tilts:
+    the drawn/NS-mesh path (``GeometricRotatAndTran``) composes
+    ``Rz(-tz) @ Ry(ty) @ Rx(tx)`` (== :func:`rotation_matrix_from_kraken_tilts`),
+    while the analytic-surface trace (``Prerequisites3SMath``'s TRANS matrices,
+    consumed by ``InterNormalCalc``) composes ``Rx(tx) @ Ry(ty) @ Rz(-tz)`` --
+    the REVERSED order. A 0433-baked row stores its world pose in the MESH
+    convention; for the (0, -90, -180) folded family the traced surface then
+    faces exactly OPPOSITE the drawn one and rays fragment
+    (flag_20260726_181751). This decomposes a rotation matrix into angles that
+    reproduce it under the TRACE convention: ``Rx(a) @ Ry(b) @ Rz(c)`` with the
+    returned ``tilt_z = -c``. Gimbal-locked poses (|cos b| ~ 0) pin ``c = 0``
+    and fold everything into ``a`` -- any consistent choice reproduces R."""
+    matrix = np.asarray(rotation, dtype=float).reshape((3, 3))
+    sin_b = float(np.clip(matrix[0, 2], -1.0, 1.0))
+    b = float(np.arcsin(sin_b))
+    if abs(float(np.cos(b))) > 1e-10:
+        a = float(np.arctan2(-float(matrix[1, 2]), float(matrix[2, 2])))
+        c = float(np.arctan2(-float(matrix[0, 1]), float(matrix[0, 0])))
+    else:
+        c = 0.0
+        a = float(np.arctan2(float(matrix[2, 1]), float(matrix[1, 1])))
+    return (
+        float(np.rad2deg(a)),
+        float(np.rad2deg(b)),
+        float(-np.rad2deg(c)),
+    )
+
+
 def kraken_tilts_from_rotation_matrix(rotation) -> tuple[float, float, float]:
     matrix = np.asarray(rotation, dtype=float).reshape((3, 3))
     tilt_y = float(np.arcsin(np.clip(-float(matrix[2, 0]), -1.0, 1.0)))

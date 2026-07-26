@@ -2139,9 +2139,34 @@ def _build_system_from_specs(
         if native_vars:
             surface.Var = native_vars
         surface.Glass = str(spec["glass"])
-        surface.TiltX = float(spec.get("tilt_x", 0.0))
-        surface.TiltY = float(spec.get("tilt_y", 0.0))
-        surface.TiltZ = float(spec.get("tilt_z", 0.0))
+        tilt_x = float(spec.get("tilt_x", 0.0))
+        tilt_y = float(spec.get("tilt_y", 0.0))
+        tilt_z = float(spec.get("tilt_z", 0.0))
+        # bugs/0448: a 0433-frozen/snapped row's tilts are its BAKED WORLD POSE in the
+        # drawn/NS-mesh convention (Rz(-tz)@Ry@Rx); the analytic-surface trace reads
+        # the TRANS matrices, which compose in the REVERSED order (Rx@Ry@Rz(-tz)).
+        # For the folded (0,-90,-180) family the traced surface then faces exactly
+        # OPPOSITE the drawn one -- rays refract through backwards surfaces and the
+        # display fragments (flag_20260726_181751 "ray on"). Re-express the SAME
+        # rotation in the trace convention for baked NON-SOLID rows (a baked SOLID's
+        # trace geometry is its mesh, placed by the mesh-convention path -- already
+        # consistent, so it keeps its stored angles). Non-breadcrumbed rows are
+        # byte-identical: display follows physics by making both read one pose.
+        _placement = _advanced_surface_attrs_from_spec(spec).get("ScenePlacement")
+        _is_baked_world_pose = isinstance(_placement, dict) and bool(
+            _placement.get("stay_put_freeze") or _placement.get("last_axis_to_axis_move")
+        )
+        _has_solid_mesh = isinstance(solid_stl, str) and solid_stl.strip() and solid_stl != "None"
+        if _is_baked_world_pose and not _has_solid_mesh and (tilt_x or tilt_y or tilt_z):
+            from KrakenOS.UI.optical_solid_metadata import (
+                rotation_matrix_from_kraken_tilts as _mesh_rot,
+                trace_convention_tilts_from_rotation_matrix as _trace_tilts,
+            )
+
+            tilt_x, tilt_y, tilt_z = _trace_tilts(_mesh_rot(tilt_x, tilt_y, tilt_z))
+        surface.TiltX = float(tilt_x)
+        surface.TiltY = float(tilt_y)
+        surface.TiltZ = float(tilt_z)
         surface.DespX = float(spec.get("desp_x", 0.0))
         surface.DespY = float(spec.get("desp_y", 0.0))
         surface.DespZ = float(spec.get("desp_z", 0.0))

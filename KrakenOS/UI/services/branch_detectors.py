@@ -383,6 +383,49 @@ def derive_branch_detectors(
         # reached Image so the detector and image COINCIDE ("the original is correct,
         # the image plane lands on the detector").
         reached = _reached_image_target(existing_targets) if reaches_image else None
+        # bugs/0448: a leaf that reaches the sequential Image with only a TINY fraction
+        # of its rays (the rest vignette inside the chain -- the frozen/snapped BS
+        # scene's launch-aiming seam leaves ~1% survivors) has a vignette-dominated
+        # exit bundle: its "focus" was garbage mid-scene, so the synthesized detector
+        # drew a phantom Sensor/Image-circle ring AND planted a phantom hard-stop
+        # plane that clipped the legit rays crossing it (flag_20260726_181751). Pin
+        # this leaf's detector to the DESIGNED Image unconditionally (the supersede
+        # rule at scene_builder drops the sequential Image whenever branch detectors
+        # exist, so the arm must still get one -- coincident with the Image, 0093's
+        # canon) and read the exit bundle from the SURVIVORS only so the plane's
+        # normal is the beam that actually lands. A leaf whose beam genuinely lands
+        # on a detector (0097 perpendicular arms, 0099 dual-lens, two-arm folds)
+        # keeps a HIGH reach fraction and is untouched.
+        _force_pin_focus = None
+        if reached is not None:
+            def _path_reaches(p) -> bool:
+                if bool(getattr(p, "reaches_image", False)):
+                    return True
+                try:
+                    return ray_path_terminal_status_from_events(p) == "hit_detector"
+                except Exception:
+                    return False
+
+            _reaching = [p for p in group if _path_reaches(p)]
+            if group and (len(_reaching) / float(len(group))) < 0.5:
+                _pin = np.asarray(
+                    getattr(reached, "center_world", (np.nan,) * 3), dtype=float
+                ).reshape(-1)
+                if _pin.shape == (3,) and np.all(np.isfinite(_pin)):
+                    _force_pin_focus = _pin
+                    reached = None  # the designed Image IS this arm's detector
+                    if _reaching:
+                        # Re-read the exit bundle from the survivors so the plane's
+                        # normal is the beam that actually lands on the sensor.
+                        _o2, _d2 = _exit_rays_for_group(_reaching)
+                        if _o2.shape[0] > 0:
+                            _md2 = _unit(_d2.mean(axis=0))
+                            if _md2 is not None:
+                                origins, directions = _o2, _d2
+                                mean_dir = _md2
+                                mean_origin = _o2.mean(axis=0)
+                    focus = _force_pin_focus
+                    focus_source = "reached_image"
         if reached is not None:
             ri = np.asarray(getattr(reached, "center_world", focus), dtype=float).reshape(-1)
             # bugs/0097: in a multi-arm split EVERY leaf that lands on a detector trips
