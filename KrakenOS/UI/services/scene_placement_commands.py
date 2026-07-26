@@ -5730,6 +5730,21 @@ class ScenePlacementMixin:
         except Exception:
             pass
 
+        # bugs/0435: the BS lives INSIDE the LED housing, off the imaging chain's
+        # span -- its row must not feed the cumulative station arithmetic. The raw
+        # promote inserted axial_reserve (~62.5 mm for a 45-deg plate) as row
+        # thickness, growing every downstream station: the PINNED second RA mirror
+        # (pose = station + desp) and the sequential Image slid by exactly that
+        # amount the moment the BS was added (flag_20260726_094845_383 "shifted
+        # down"), with the shift dependent on the table selection (insert index).
+        # Elements must stay where they are when an axis-introducing element is
+        # ADDED (user requirement 5) -- zero the footprint, keep the physical span
+        # in the promotion metadata. getattr-guarded: orchestration validators
+        # drive this flow with spy/stub editors that bind selected methods only.
+        _neutralize = getattr(self, "_neutralize_bs_row_station_footprint", None)
+        if callable(_neutralize):
+            _neutralize(row_index)
+
         self._refresh_open_3d_views()
         coating_note = (
             f"; coating on {coating.get('face_id')}"
@@ -5752,6 +5767,32 @@ class ScenePlacementMixin:
             "coating_tilt_deg": float(solid.coating_tilt_deg),
             "coating_face": (coating.get("face_id") if isinstance(coating, dict) else None),
         }
+
+    def _neutralize_bs_row_station_footprint(self, row_index) -> bool:
+        """bugs/0435: make a promoted beam-splitter row STATION-NEUTRAL (thickness 0).
+
+        Stations are cumulative row thickness; a BS glued into the LED housing spans
+        no distance on the imaging axis, yet promotion reserved its full axial extent
+        (a 45-deg plate: ~sqrt(2)/2 * width). Every station-fed consumer downstream --
+        the free-placed pinned mirror pose (station + desp), the sequential Image,
+        any later stay-put bake -- shifted by that reserve, and by an amount that
+        depended on WHERE the table selection happened to insert the row. The
+        physical span stays recorded in StepOverlayPromotion.axial_reserve_mm."""
+        try:
+            row = self.rows[int(row_index)]
+        except Exception:
+            return False
+        try:
+            row.thickness = 0.0
+            advanced = getattr(row, "advanced", None)
+            if isinstance(advanced, dict):
+                promotion = advanced.get("StepOverlayPromotion")
+                if isinstance(promotion, dict):
+                    promotion["row_thickness_mm"] = 0.0
+                    promotion["station_neutral"] = True
+            return True
+        except Exception:
+            return False
 
     def beam_splitter_resize_info(self, row_index) -> "tuple[str, dict] | None":
         """bugs/0423: the parametric recipe (kind, dimensions) for a promoted beam-splitter row, or
@@ -5836,6 +5877,12 @@ class ScenePlacementMixin:
             self._flag_beam_splitter_coating_face(new_row_index, tilt_deg=float(params.get("tilt_deg", 45.0)))
         except Exception:
             pass
+        # bugs/0435: the replace re-promoted with a raw axial_reserve thickness --
+        # re-neutralize so the resize does not shove downstream stations either
+        # (getattr-guarded for spy/stub validator editors).
+        _neutralize = getattr(self, "_neutralize_bs_row_station_footprint", None)
+        if callable(_neutralize):
+            _neutralize(new_row_index)
         if refresh_open_3d:
             self._refresh_open_3d_views()
         dims = ", ".join(f"{k.replace('_mm', '').replace('_deg', '')}={v:g}" for k, v in params.items())
