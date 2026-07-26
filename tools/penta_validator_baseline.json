@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-07-26T09:54:00+00:00",
+  "generated_at": "2026-07-26T11:03:33+00:00",
   "phases": {
     "0": "pass",
     "1": "fail",
@@ -362,7 +362,10 @@
     "358": "pass",
     "359": "pass",
     "360": "pass",
-    "361": "pass"
+    "361": "pass",
+    "362": "pass",
+    "363": "pass",
+    "364": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -725,6 +728,9 @@
     "358": "baked aperture placement survives normalize + table round-trips (0441)",
     "359": "the object FOV plate faces the object's own axis (0443)",
     "360": "BS rotation re-poses single-bodied; delete claims the trailing spacer (0444, 0442)",
-    "361": "object-facing BS coating + entry-face split transmits through the glass (0445)"
+    "361": "object-facing BS coating + entry-face split transmits through the glass (0445)",
+    "362": "the glued BS never rides a chain snap (candidates, fill, arm) (0446)",
+    "363": "solve dialog 2+2 fold-leg pins on frozen/BS scenes (0447)",
+    "364": "frozen rows trace as drawn; no phantom mid-chain detector (0448)2026-07-26 19:03:31.291 (1183.213s) [    7985C66D2780]  vtkTkRenderWidget.cxx:571   WARN| A TkRenderWidget is being destroyed before it associated vtkRenderWindow is destroyed.This is very bad and usually due to the order in which objects are being destroyed.Always destroy the vtkRenderWindow before destroying the user interface components."
   }
 }
