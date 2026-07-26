@@ -20766,6 +20766,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 near_lbl = "Constrain lens rear → mirror distance (mm):"
                 far_lbl = "Constrain mirror → sensor distance — last leg (mm):"
                 near_name, far_name, total_name = "lens rear → mirror", "mirror → sensor", "image distance"
+            # bugs/0447: a frozen-scene split may name its own legs (the object-side
+            # fold vertex is the BEAM SPLITTER coating there, not a mirror).
+            near_lbl = str(seg_split.get("near_label") or near_lbl)
+            far_lbl = str(seg_split.get("far_label") or far_lbl)
+            near_name = str(seg_split.get("near_name") or near_name)
+            far_name = str(seg_split.get("far_name") or far_name)
             use_near_var = tk.BooleanVar(value=False)
             use_far_var = tk.BooleanVar(value=False)
             near_var = tk.StringVar(value=f"{seg_near0:.6g}")

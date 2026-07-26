@@ -1071,6 +1071,261 @@ class ParaxialToolsMixin:
     # after) so the total conjugate -- and therefore the first-order image -- is untouched.
     # ------------------------------------------------------------------ #
 
+    # ------------------------------------------------------------------ #
+    # bugs/0447: frozen/snapped-scene conjugate splits. After the 0433 freeze +
+    # snap the chain's world poses are BAKED desp/tilt (no fold override map), the
+    # object-side fold vertex is the BS COATING (never a mirror fold), and the
+    # image-side fold mirror is breadcrumbed. Station arithmetic can drift from
+    # the world after a user's click-anchored snap, so these splits measure the
+    # legs in WORLD geometry and the appliers move world poses directly (with the
+    # gap rows book-kept so the 0440 paraxial reference keeps the same totals).
+    # ------------------------------------------------------------------ #
+
+    def _split_row_world_center(self, index: int) -> "np.ndarray":
+        """station + desp world centre of a row (the frozen-scene pose source)."""
+        z_positions = self._row_z_positions()
+        row = self.rows[int(index)]
+        z = float(z_positions[int(index)]) if int(index) < len(z_positions) else 0.0
+        return np.asarray(
+            (float(row.desp_x), float(row.desp_y), z + float(row.desp_z)), dtype=float
+        )
+
+    def _frozen_scene_has_no_fold_overrides(self) -> bool:
+        """True when the derived fold-override map is empty -- the frozen-scene gate
+        (matches the 0439 frozen-fold guide's 'not an active fold source')."""
+        try:
+            from KrakenOS.UI.nonseq_output_ports import optical_solid_output_port_pose_overrides
+
+            return not optical_solid_output_port_pose_overrides(None, self.rows)
+        except Exception:
+            return False
+
+    def _frozen_bs_object_conjugate_split(self) -> "dict | None":
+        """Object-side split at the BEAM SPLITTER coating on a frozen/snapped scene.
+
+        ``near`` = object plane -> coating crossing (along the object's own axis),
+        ``far`` = crossing -> first optical surface (along the reflect leg), both in
+        WORLD geometry; ``total = near + far`` is the bent object working distance.
+        Returns None when there is no marked BS between object and lens, or the
+        scene still has live fold overrides (the classic path owns those)."""
+        rows = list(getattr(self, "rows", []) or [])
+        if len(rows) < 3 or not self._frozen_scene_has_no_fold_overrides():
+            return None
+        try:
+            from KrakenOS.UI.nonseq_output_ports import (
+                _row_is_marked_beam_splitter,
+                beam_splitter_coating_world_frames,
+            )
+
+            bs_row = next(
+                (i for i, r in enumerate(rows) if _row_is_marked_beam_splitter(r)), None
+            )
+            if bs_row is None:
+                return None
+            frames = beam_splitter_coating_world_frames(rows)
+            if not frames:
+                return None
+            centroid, normal = frames[0]
+            centroid = np.asarray(centroid, dtype=float).reshape(3)
+            normal = np.asarray(normal, dtype=float).reshape(3)
+            nn = float(np.linalg.norm(normal))
+            if nn <= 1e-9:
+                return None
+            normal = normal / nn
+            # Object point + its outgoing axis (+Z in the object row's frame, 0443).
+            from KrakenOS.UI.optical_solid_metadata import rotation_matrix_from_kraken_tilts
+
+            p0 = self._split_row_world_center(0)
+            obj = rows[0]
+            rot = rotation_matrix_from_kraken_tilts(
+                float(obj.tilt_x), float(obj.tilt_y), float(obj.tilt_z)
+            )
+            entry = np.asarray(rot @ np.array((0.0, 0.0, 1.0)), dtype=float).reshape(3)
+            denom = float(np.dot(entry, normal))
+            if abs(denom) <= 1e-9:
+                return None
+            t = float(np.dot(centroid - p0, normal)) / denom
+            if not (np.isfinite(t) and t > 1e-6):
+                return None
+            fold_point = p0 + t * entry
+            # First optical surface = the first breadcrumbed chain row after the object
+            # (skip the BS row itself); its world centre anchors the reflect leg.
+            first_row = next(
+                (
+                    i
+                    for i, r in enumerate(rows)
+                    if i > 0 and i != bs_row and str(getattr(r, "surface", "")) not in ("Object", "Image")
+                    and not _row_is_marked_beam_splitter(r)
+                    and not (
+                        isinstance(getattr(r, "advanced", None), dict)
+                        and r.advanced.get("InPathTrailingSpacer")
+                    )
+                ),
+                None,
+            )
+            if first_row is None:
+                return None
+            p1 = self._split_row_world_center(first_row)
+            far_vec = p1 - fold_point
+            far = float(np.linalg.norm(far_vec))
+            if not (np.isfinite(far) and far > 1e-6):
+                return None
+            near = float(t)
+            # Safe floor: the lens front stays outside the plate's axial envelope.
+            adv = getattr(rows[bs_row], "advanced", None) or {}
+            promo = adv.get("StepOverlayPromotion") if isinstance(adv, dict) else None
+            reserve = float((promo or {}).get("axial_reserve_mm", 0.0) or 0.0)
+            return {
+                "total": float(near + far),
+                "near": near,
+                "far": far,
+                "mirror_row": int(bs_row),
+                "near_gap_row": 0,
+                "far_gap_row": 0,
+                "near_min": 0.0,
+                "far_min": float(0.5 * reserve),
+                "frozen_world": True,
+                "frozen_kind": "bs_object",
+                "fold_point": tuple(float(v) for v in fold_point),
+                "entry_dir": tuple(float(v) for v in entry),
+                "leg_dir": tuple(float(v) for v in (far_vec / far)),
+                "near_label": "Constrain object → beam splitter distance — first leg (mm):",
+                "far_label": "Constrain beam splitter → lens front distance (mm):",
+                "near_name": "object → beam splitter",
+                "far_name": "beam splitter → lens front",
+            }
+        except Exception:
+            return None
+
+    def _frozen_image_fold_world_geometry(self, split: "dict") -> "dict | None":
+        """World geometry of the breadcrumbed image-side fold for a classic split dict:
+        mirror centre, incoming leg (lens rear -> mirror), outgoing leg (mirror ->
+        sensor), with world near/far. None when the mirror still has a live override."""
+        if not self._frozen_scene_has_no_fold_overrides():
+            return None
+        rows = self.rows
+        mirror_row = int(split["mirror_row"])
+        image_row = next(
+            (
+                i
+                for i in range(len(rows) - 1, -1, -1)
+                if str(getattr(rows[i], "surface", "")) == "Image"
+            ),
+            len(rows) - 1,
+        )
+        lens_rear = int(split["near_gap_row"])
+        c_r = self._split_row_world_center(lens_rear)
+        c_m = self._split_row_world_center(mirror_row)
+        c_i = self._split_row_world_center(image_row)
+        in_vec = c_m - c_r
+        out_vec = c_i - c_m
+        near = float(np.linalg.norm(in_vec))
+        far = float(np.linalg.norm(out_vec))
+        if not (near > 1e-6 and far > 1e-6):
+            return None
+        return {
+            "mirror_row": mirror_row,
+            "image_row": int(image_row),
+            "lens_rear_row": lens_rear,
+            "c_m": c_m,
+            "c_i": c_i,
+            "in_dir": in_vec / near,
+            "out_dir": out_vec / far,
+            "near": near,
+            "far": far,
+        }
+
+    def _rebake_frozen_row_world_center(self, index: int, target) -> None:
+        """Write a frozen row's desp so station + desp == the world target (stations
+        re-read AFTER any thickness bookkeeping; breadcrumbs untouched)."""
+        z_positions = self._row_z_positions()
+        row = self.rows[int(index)]
+        z = float(z_positions[int(index)]) if int(index) < len(z_positions) else 0.0
+        target = np.asarray(target, dtype=float).reshape(3)
+        row.desp_x = float(target[0])
+        row.desp_y = float(target[1])
+        row.desp_z = float(target[2] - z)
+
+    def _shift_step_offset(self, label: str, delta) -> bool:
+        """Translate a STEP overlay body's persisted placement offset by a world delta."""
+        try:
+            cur = np.asarray(self._step_placement_offset_xyz(label), dtype=float).reshape(3)
+            self._set_step_placement_offset_xyz(label, cur + np.asarray(delta, dtype=float).reshape(3))
+            return True
+        except Exception:
+            return False
+
+    def _apply_frozen_bs_object_split(
+        self, split: "dict", near_new: float, far_new: float, delta: float
+    ) -> "tuple[bool, str]":
+        """bugs/0447: pin an object-side leg on the frozen BS scene. The coating
+        crossing slides ``delta`` along the object's axis (LED + glued BS move
+        together), and the WHOLE frozen chain translates ``delta * (entry - leg)`` so
+        every element keeps its own total path length (near grows by delta, each far
+        leg shrinks by delta) -- a rigid repackaging, focus untouched."""
+        rows = self.rows
+        entry = np.asarray(split.get("entry_dir"), dtype=float).reshape(3)
+        leg = np.asarray(split.get("leg_dir"), dtype=float).reshape(3)
+        bs_row = int(split["mirror_row"])
+        chain = [
+            i
+            for i, r in enumerate(rows)
+            if i != bs_row
+            and isinstance(getattr(r, "advanced", None), dict)
+            and isinstance(r.advanced.get("ScenePlacement"), dict)
+            and (
+                r.advanced["ScenePlacement"].get("stay_put_freeze")
+                or r.advanced["ScenePlacement"].get("last_axis_to_axis_move")
+            )
+        ]
+        if not chain:
+            return False, "Object split: no frozen chain rows to repackage."
+        targets = {i: self._split_row_world_center(i) + delta * (entry - leg) for i in chain}
+        targets[bs_row] = self._split_row_world_center(bs_row) + delta * entry
+        # Prescription bookkeeping: the object gap carries the slide (the 0440
+        # reference total moves with it); stations then shift, the re-bake absorbs.
+        rows[0].thickness = float(rows[0].thickness) + float(delta)
+        for index, target in targets.items():
+            self._rebake_frozen_row_world_center(index, target)
+        chain_delta = delta * (entry - leg)
+        self._shift_step_offset("led", delta * entry)
+        self._shift_step_offset("lens", chain_delta)
+        self._shift_step_offset("camera", chain_delta)
+        return True, (
+            f"Object distance split: object->beam splitter {near_new:.4g} mm, "
+            f"beam splitter->lens front {far_new:.4g} mm (total {near_new + far_new:.4g} mm; "
+            "LED+BS slid, chain repackaged)."
+        )
+
+    def _apply_frozen_image_split(
+        self, split: "dict", near_new: float, far_new: float, delta: float
+    ) -> "tuple[bool, str]":
+        """bugs/0447: pin an image-side leg on the frozen scene. The breadcrumbed
+        mirror slides ``delta`` along its incoming leg; the sensor re-seats at
+        ``far_new`` down its exit leg; the camera body follows the sensor."""
+        geometry = self._frozen_image_fold_world_geometry(split)
+        if geometry is None:
+            return False, "Image split: the frozen fold geometry is unavailable."
+        rows = self.rows
+        mirror_row = int(geometry["mirror_row"])
+        image_row = int(geometry["image_row"])
+        mirror_target = geometry["c_m"] + delta * geometry["in_dir"]
+        sensor_target = mirror_target + float(far_new) * geometry["out_dir"]
+        camera_delta = sensor_target - geometry["c_i"]
+        # Prescription bookkeeping first (stations shift), then world re-bake.
+        ng, fg = int(split["near_gap_row"]), int(split["far_gap_row"])
+        if 0 <= ng < len(rows) and 0 <= fg < len(rows):
+            rows[ng].thickness = float(rows[ng].thickness) + float(delta)
+            rows[fg].thickness = float(rows[fg].thickness) - float(delta)
+        self._rebake_frozen_row_world_center(mirror_row, mirror_target)
+        self._rebake_frozen_row_world_center(image_row, sensor_target)
+        self._shift_step_offset("camera", camera_delta)
+        return True, (
+            f"Image distance split: lens rear->mirror {near_new:.4g} mm, "
+            f"mirror->sensor {far_new:.4g} mm (total {near_new + far_new:.4g} mm; "
+            "mirror slid along its leg, sensor + camera re-seated)."
+        )
+
     def _folded_object_conjugate_split(self) -> "dict | None":
         """Split the object distance c at the OBJECT-side RA-mirror fold centre.
 
@@ -1086,14 +1341,16 @@ class ParaxialToolsMixin:
         except Exception:
             folds = []
         if not folds:
-            return None
+            # bugs/0447: on the frozen/snapped BS scene the OBJECT-side fold vertex is
+            # the BEAM SPLITTER COATING (a marked BS is deliberately not a mirror fold).
+            return self._frozen_bs_object_conjugate_split()
         try:
             total, first_lens = self._paraxial_total_object_gap()
         except Exception:
             return None
         mirror_row = next((m for m in folds if 0 < m < int(first_lens)), None)
         if mirror_row is None:
-            return None
+            return self._frozen_bs_object_conjugate_split()
         # bugs/0234 -> 0236: a TRAILING fold mirror (a 2nd periscope fold DOWNSTREAM of the object
         # mirror) is a free-placed promoted solid pinned along global +Z (bugs/0213/0218), so
         # sliding the object mirror used to leave it FROZEN beside the walked beam -- the split was
@@ -1272,6 +1529,9 @@ class ParaxialToolsMixin:
         if near_new < near_min - 1e-6:
             return False, f"Object -> mirror must stay >= {near_min:.4g} mm."
         delta = near_new - float(split["near"])
+        if split.get("frozen_world"):
+            # bugs/0447: frozen/snapped scene -- move world poses, not station gaps.
+            return self._apply_frozen_bs_object_split(split, near_new, far_new, delta)
         ng, fg = int(split["near_gap_row"]), int(split["far_gap_row"])
         rows = self.rows
         if not (0 <= ng < len(rows) and 0 <= fg < len(rows)):
@@ -1350,7 +1610,7 @@ class ParaxialToolsMixin:
         # IS the far leg being slid -- the floor would shrink with it and never stop the mirror.)
         aperture = float(getattr(rows[mirror_row], "diameter", 0.0) or 0.0)
         body = 0.5 * aperture
-        return {
+        split = {
             "total": float(total),
             "near": float(near),
             "far": float(far),
@@ -1360,6 +1620,20 @@ class ParaxialToolsMixin:
             "near_min": float(body),
             "far_min": float(body),
         }
+        # bugs/0447: on a frozen/snapped scene (breadcrumbed mirror, no fold overrides)
+        # the station sums can drift from the world after a click-anchored snap -- the
+        # WORLD legs are the truth the user sees, and the applier moves world poses.
+        try:
+            geometry = self._frozen_image_fold_world_geometry(split)
+        except Exception:
+            geometry = None
+        if geometry is not None:
+            split["near"] = float(geometry["near"])
+            split["far"] = float(geometry["far"])
+            split["total"] = float(geometry["near"] + geometry["far"])
+            split["frozen_world"] = True
+            split["frozen_kind"] = "image_mirror"
+        return split
 
     def _apply_folded_image_split(self, fixed_leg: str, value: float) -> "tuple[bool, str]":
         """Slide the image-side fold mirror so the fixed leg equals ``value``, keeping the total
@@ -1395,6 +1669,10 @@ class ParaxialToolsMixin:
                 f"collide with the detector (requested {far_new:.4g} mm)."
             )
         delta = near_new - float(split["near"])
+        if split.get("frozen_world"):
+            # bugs/0447: frozen/snapped scene -- slide the breadcrumbed mirror along its
+            # incoming leg and re-seat the sensor + camera on its exit leg.
+            return self._apply_frozen_image_split(split, near_new, far_new, delta)
         ng, fg = int(split["near_gap_row"]), int(split["far_gap_row"])
         rows = self.rows
         if not (0 <= ng < len(rows) and 0 <= fg < len(rows)):
