@@ -4174,8 +4174,26 @@ class LayoutTableWorkbenchMixin:
         # getattr-guarded for validator stub editors.
         _freeze_capture = getattr(self, "_stay_put_freeze_capture", None)
         stay_put = _freeze_capture(targets) if callable(_freeze_capture) else None
+        _is_spacer = getattr(self, "_is_inpath_trailing_spacer", None)
         for index in targets:
+            # bugs/0442 (found under 0440): deleting a promoted solid silently DROPPED
+            # its axial span (row thickness + its trailing AIR spacer) from the
+            # prescription -- the object distance shrank by ~90 mm on the AZ85 mirror
+            # delete and the first-order magnification read 2.52 instead of 1.15.
+            # Hand the span back to the preceding row's gap, exactly like unpromote.
+            span = float(getattr(self.rows[index], "thickness", 0.0) or 0.0)
+            spacer_index = index + 1
+            if (
+                callable(_is_spacer)
+                and spacer_index < len(self.rows)
+                and _is_spacer(self.rows[spacer_index])
+            ):
+                span += float(getattr(self.rows[spacer_index], "thickness", 0.0) or 0.0)
+                del self.rows[spacer_index]
             del self.rows[index]
+            if index >= 1 and span > 0.0:
+                prev = self.rows[index - 1]
+                prev.thickness = float(getattr(prev, "thickness", 0.0) or 0.0) + span
         self._normalize_special_rows()
         _freeze_apply = getattr(self, "_stay_put_freeze_apply", None)
         if callable(_freeze_apply):
@@ -7335,6 +7353,20 @@ class LayoutTableWorkbenchMixin:
 
     def _clear_disabled_surface_type_fields(self, row: SurfaceRow) -> None:
         disabled = (set(FIELDS) | set(GRATING_SETTING_FIELDS)) - self._surface_type_enabled_fields(row.surface)
+        # bugs/0441: a row whose desp/tilt are a BAKED WORLD POSE (the 0433
+        # freeze/snap ScenePlacement breadcrumbs) must keep them through every table
+        # round-trip -- the Aperture template disables tilt_y/tilt_z, so each rebuild
+        # flattened the frozen stop's (0,-90,-180) placement to straight while its
+        # neighbours stayed leg-facing ("Aperture plane still flipped"). Placement
+        # fields are exempt from template clearing for baked rows of ANY surface type.
+        try:
+            placement = (row.advanced or {}).get("ScenePlacement")
+        except Exception:
+            placement = None
+        if isinstance(placement, dict) and (
+            placement.get("stay_put_freeze") or placement.get("last_axis_to_axis_move")
+        ):
+            disabled -= {"tilt_x", "tilt_y", "tilt_z", "desp_x", "desp_y", "desp_z"}
         if "glass" in disabled:
             row.glass = "MIRROR" if row.surface in REFLECTIVE_PROXY_SURFACES else "AIR"
         numeric_attrs = {

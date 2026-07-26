@@ -1228,8 +1228,18 @@ class LayoutImportExportMixin:
                     row.name = "Aperture"
                 row.glass = "AIR"
                 row.rc = 0.0
-                row.tilt_y = 0.0
-                row.tilt_z = 0.0
+                # bugs/0441: a frozen/snapped aperture's tilt_y/tilt_z are its BAKED
+                # WORLD PLACEMENT (0433 ScenePlacement breadcrumb) -- flattening them
+                # turned the drawn ring straight while its neighbours stayed on the
+                # leg ("Aperture plane still flipped"). Normalize only prescription
+                # apertures.
+                placement = (row.advanced or {}).get("ScenePlacement")
+                if not (
+                    isinstance(placement, dict)
+                    and (placement.get("stay_put_freeze") or placement.get("last_axis_to_axis_move"))
+                ):
+                    row.tilt_y = 0.0
+                    row.tilt_z = 0.0
             elif row.surface in _reflective_proxy_surfaces():
                 row.glass = "MIRROR"
                 if row.surface == DIFFUSE_OBJECT_SURFACE:
