@@ -5628,8 +5628,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def _set_row_highlight(self, row_index: int | None) -> None:
         self._set_row_highlights([] if row_index is None else [int(row_index)])
 
-    def _set_row_highlights(self, row_indices) -> None:
-        self._selection_representation.apply_row_selection(row_indices)
+    def _set_row_highlights(self, row_indices, *, force: bool = False) -> None:
+        self._selection_representation.apply_row_selection(row_indices, force=force)
 
     def highlight_row(self, row_index: int | None) -> None:
         self._set_row_highlight(row_index)
@@ -8113,13 +8113,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._set_ray_highlight(None)
         self._set_optical_axis_highlight(None)
         self._clear_open3d_selection(render=False)
+        # bugs/0438: run the ray-hide REFRESH before styling -- it rebuilds every actor,
+        # and styling applied before it lived for exactly one paint (the "flashes only"
+        # armed highlight). The refresh_scene funnel also re-applies selection after any
+        # LATER rebuild (async trace), so the armed highlight persists either way.
         self._set_row_highlights(selection)
+        self._hide_regular_rays_for_center_axis_pick()
+        self._set_row_highlights(selection, force=True)
         # bugs/0436: _clear_open3d_selection above wiped the lens/camera STEP-body cue;
         # re-light it for the armed group (the camera body is the Image row's only visual).
         self._apply_selection_step_highlights(selection, render=False)
         self._set_axis_pick_cursor(True)
         self._update_mode_badge()
-        self._hide_regular_rays_for_center_axis_pick()
         self.render()
         suffix = " (expanded to the full lens group)" if expanded else ""
         self.status_var.set(
@@ -9217,7 +9222,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._show_rays_before_axis_pick = showing_rays
             if showing_rays:
                 self.show_rays_var.set(False)
-            self.refresh_from_editor()
+                self.refresh_from_editor()
+            # bugs/0438: rays already hidden -> nothing to hide; the unconditional
+            # refresh_from_editor() here was a full actor rebuild that wiped the
+            # just-applied armed-selection styling for no visual gain.
         except Exception as exc:
             self.editor.append_debug(f"Center Row->Optical Axis ray-hide refresh failed: {exc}")
 
@@ -11503,6 +11511,165 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             )
         return records
 
+    def _frozen_fold_axis_guide_records(self, bounds, axis_records) -> list[dict[str, object]]:
+        """bugs/0439: dotted fold-axis guide(s) for FROZEN promoted RA mirrors.
+
+        After the 0433 stay-put freeze (upstream mirror deleted) or an explicit axis
+        snap (``last_axis_to_axis_move`` breadcrumb), a fold mirror's world pose lives
+        in its OWN baked desp/tilt and the override map carries no fold for it -- so
+        the override-derived reflected guides above vanish. The user still needs that
+        leg VISIBLE and PICKABLE to align the camera (flag_20260726_110657: "This fold
+        optical axis is required for the Camera to be aligned with the 2nd RA
+        mirror"). Rebuild it from the baked pose: the Mirror interaction face's world
+        plane comes from the row's desp/tilt + station
+        (``optical_solid_face_world_records``), the incoming direction is the axis
+        leg the face centroid sits on (``_incoming_axis_leg_for_point``, the 0430
+        fold-aware pattern), and the guide runs from the FACE CENTROID along
+        ``d - 2(d.n)n`` out to the scene bounds.
+
+        Gate: a mirror only gets a synthetic guide when it is NOT an active fold
+        source in the override map (``source_index`` of any entry) -- live folded
+        scenes keep their real guides and stay byte-identical. Additive display+pick
+        only: emitted AFTER the fold-branch grouping and the BS incoming-leg matching
+        consumed ``axis_records``, and never re-enters follower placement (0429's
+        spurious-fold-vertex lesson)."""
+        try:
+            from KrakenOS.UI.nonseq_output_ports import (
+                _solid_has_full_mirror_interaction_face,
+                optical_solid_output_port_pose_overrides,
+                select_optical_solid_interaction_face,
+            )
+            from KrakenOS.UI.optical_solid_metadata import optical_solid_face_world_records
+            from KrakenOS.UI.services.paraxial_tools import _row_is_promoted_mirror_fold
+        except Exception:
+            return []
+        editor = self.editor
+        rows = list(getattr(editor, "rows", []) or [])
+        mirror_rows = [i for i, row in enumerate(rows) if _row_is_promoted_mirror_fold(row)]
+        if not mirror_rows:
+            return []
+        try:
+            overrides = optical_solid_output_port_pose_overrides(None, rows)
+        except Exception:
+            overrides = {}
+        active_sources: set[int] = set()
+        for entry in (overrides or {}).values():
+            try:
+                source = entry.get("source_index") if isinstance(entry, dict) else None
+                if source is not None:
+                    active_sources.add(int(source))
+            except Exception:
+                continue
+        frozen_mirrors = [i for i in mirror_rows if i not in active_sources]
+        if not frozen_mirrors:
+            return []
+        try:
+            z_positions = editor._row_z_positions()
+            bounds_arr = np.asarray(bounds, dtype=float).reshape(6)
+            corners = np.asarray(
+                [
+                    (bounds_arr[a], bounds_arr[2 + b], bounds_arr[4 + c])
+                    for a in (0, 1)
+                    for b in (0, 1)
+                    for c in (0, 1)
+                ],
+                dtype=float,
+            )
+        except Exception:
+            return []
+        records: list[dict[str, object]] = []
+        for row_index in frozen_mirrors:
+            try:
+                world_faces = optical_solid_face_world_records(
+                    rows[row_index],
+                    float(z_positions[row_index]) if row_index < len(z_positions) else 0.0,
+                    assigned_only=True,
+                )
+            except Exception:
+                continue
+            if not _solid_has_full_mirror_interaction_face(world_faces):
+                continue
+            face = select_optical_solid_interaction_face(world_faces)
+            if face is None:
+                continue
+            centroid = np.asarray(face.get("centroid_world", (0.0, 0.0, 0.0)), dtype=float).reshape(3)
+            raw_normal = np.asarray(face.get("normal_world", (0.0, 0.0, 1.0)), dtype=float).reshape(3)
+            n_len = float(np.linalg.norm(raw_normal))
+            if n_len < 1e-9 or not (np.all(np.isfinite(centroid)) and np.all(np.isfinite(raw_normal))):
+                continue
+            normal = raw_normal / n_len
+            # Incoming direction: the frozen chain's OWN baked geometry -- the rows
+            # upstream of the mirror lie along its entry leg (the same fact the 0433
+            # snap's entry-leg fit uses), which stays right even when no drawn axis
+            # coincides with the frozen leg yet (pre-snap, no-BS scenes). Fall back
+            # to the nearest drawn leg only when no baked neighbor exists.
+            in_dir = None
+            mirror_center = None
+            try:
+                mrow = rows[row_index]
+                mirror_center = np.asarray(
+                    (
+                        float(mrow.desp_x),
+                        float(mrow.desp_y),
+                        (float(z_positions[row_index]) if row_index < len(z_positions) else 0.0)
+                        + float(mrow.desp_z),
+                    ),
+                    dtype=float,
+                )
+            except Exception:
+                mirror_center = None
+            if mirror_center is not None and np.all(np.isfinite(mirror_center)):
+                for prev_index in range(row_index - 1, -1, -1):
+                    prev = rows[prev_index]
+                    try:
+                        prev_center = np.asarray(
+                            (
+                                float(prev.desp_x),
+                                float(prev.desp_y),
+                                (float(z_positions[prev_index]) if prev_index < len(z_positions) else 0.0)
+                                + float(prev.desp_z),
+                            ),
+                            dtype=float,
+                        )
+                    except Exception:
+                        continue
+                    delta = mirror_center - prev_center
+                    span = float(np.linalg.norm(delta))
+                    if span > 1e-6 and np.all(np.isfinite(delta)):
+                        in_dir = delta / span
+                        break
+            if in_dir is None:
+                _origin, in_dir = self._incoming_axis_leg_for_point(centroid, axis_records)
+            if in_dir is None:
+                continue
+            if abs(float(np.dot(in_dir, normal))) < 1e-9:  # incoming parallel to the face
+                continue
+            # Anchored at the FACE CENTROID: the incoming line through the centroid
+            # crosses the mirror plane exactly there, and a frozen mirror may sit off
+            # every drawn axis line until the user snaps the chain -- the leg must
+            # leave the MIRROR, not a displaced axis crossing.
+            reflect_dir = in_dir - 2.0 * float(np.dot(in_dir, normal)) * normal
+            rd_norm = float(np.linalg.norm(reflect_dir))
+            if rd_norm < 1e-9 or not np.all(np.isfinite(reflect_dir)):
+                continue
+            rd = reflect_dir / rd_norm
+            reach = float(np.max((corners - centroid) @ rd))
+            if not (reach > 1e-6):
+                continue
+            far = centroid + rd * reach
+            records.append(
+                {
+                    "axis_id": f"axis:global:frozen-fold:{row_index}",
+                    "axis_label": "Optical Axis (fold)",
+                    "axis_kind": "dotted_global_guide",
+                    "branch_path": "",
+                    "source_id": "",
+                    "ray_index": -1,
+                    "points": np.asarray((centroid, far), dtype=float),
+                }
+            )
+        return records
+
     def _folded_axis_row_anchor_direction(self, row_index, z_positions):
         """World axis anchor + unit direction for a row (bugs/0216): its folded pose if the
         row sits on a reflected branch, else the straight +Z station. ``(None, None)`` on
@@ -11741,6 +11908,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # scene-wide "not scene_is_folded" gate that suppressed the axis whenever any mirror was present,
         # flag_20260723_155614 "no optical axis generated from BS plate").
         records.extend(self._bs_reflect_axis_guide_records(bounds, list(records)))
+        # bugs/0439: a FROZEN fold mirror (stay-put freeze after deleting the upstream
+        # mirror, or an explicit axis snap -- its pose baked in desp/tilt, no override
+        # entry) emits no reflected guide above, yet the user aligns the CAMERA to
+        # exactly that leg. Rebuild it from the baked pose (additive, display+pick only).
+        records.extend(self._frozen_fold_axis_guide_records(bounds, list(records)))
         try:
             show_rays = bool(self.show_rays_var.get())
         except Exception:
@@ -16739,10 +16911,37 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # view. Skipped on reset_camera (a full reframe is a context change, not a toggle).
         if not reset_camera:
             self._reapply_sensor_isolation_if_active()
+        # bugs/0438: a rebuild re-creates every actor UNSTYLED while the
+        # SelectionModel survives -- without a re-apply the multi-selection
+        # highlight (and the lens/camera STEP cue that is the Image row's only
+        # visual) exists for exactly one paint ("highlight with flashes only",
+        # flag_20260726_110540). Funnelled here so it covers both the sync and
+        # async (bugs/0223) traces, like the sensor isolation above.
+        self._reapply_selection_after_scene_rebuild()
         # Apply a restored camera pose (buffered by a session restore) after the
         # rebuild -- funnelled here so it covers both the sync and async traces.
         self._apply_pending_session_camera()
         return result
+
+    def _reapply_selection_after_scene_rebuild(self) -> None:
+        """bugs/0438: re-style the surviving multi-selection onto freshly rebuilt actors.
+
+        ``apply_row_selection`` must be FORCED: the model already matches (it
+        survives rebuilds by design), which is precisely the early-return the
+        rebuilt-but-unstyled actors would hide behind. Single-row and step picks
+        keep their existing paths -- this only re-asserts a MULTI-row selection
+        (the rubber-band / snap-armed set) and its implied lens/camera body cue."""
+        try:
+            rows = sorted(int(i) for i in (self._picked_row_indices or set()))
+        except Exception:
+            rows = []
+        if len(rows) < 2:
+            return
+        try:
+            self._set_row_highlights(rows, force=True)
+            self._apply_selection_step_highlights(rows, render=False)
+        except Exception:
+            pass
 
     def _refresh_rays_only(self, rays, scene_bundle: SceneBundle | None = None) -> None:
         # bugs/0024: rays-only partial refresh (skips the body/handle rebuild),

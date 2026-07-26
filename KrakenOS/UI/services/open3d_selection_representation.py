@@ -44,7 +44,7 @@ class SelectionRepresentation:
     # ------------------------------------------------------------------
     # row highlight
 
-    def apply_row_selection(self, row_indices) -> None:
+    def apply_row_selection(self, row_indices, *, force: bool = False) -> None:
         selected_rows: set[int] = set()
         for row_index in list(row_indices or []):
             try:
@@ -61,9 +61,12 @@ class SelectionRepresentation:
         # into thinking the work is done). Caught by the comprehensive
         # harness's Phase 4: a direct ``_picked_row_index = N``
         # assignment was leaving the clear path as a no-op.
+        # bugs/0438: ``force`` bypasses the early-return -- after a scene rebuild the
+        # MODEL still matches but every rebuilt actor is unstyled, so the matching
+        # state is exactly the case that must re-style.
         plural_matches = selected_rows == current_plural
         singular_matches = current_singular == picked
-        if plural_matches and singular_matches:
+        if plural_matches and singular_matches and not force:
             return
         if self._renderer is None:
             self._picked_row_index = picked
