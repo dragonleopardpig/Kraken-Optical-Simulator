@@ -15279,6 +15279,9 @@ phase_359_object_fov_axis = _phase_from_standalone(
 phase_360_bs_rotation_ghost = _phase_from_standalone(
     360, "BS rotation re-poses single-bodied; delete claims the trailing spacer (0444, 0442)",
     "KrakenOS.UI.validate_open3d_0444_bs_rotation_ghost", "bs_rotation_ghost")
+phase_361_first_surface_split = _phase_from_standalone(
+    361, "object-facing BS coating + entry-face split transmits through the glass (0445)",
+    "KrakenOS.UI.validate_open3d_0445_first_surface_split", "first_surface_split")
 
 
 # ---------------------------------------------------------------------------
@@ -15686,6 +15689,7 @@ def main() -> int:
             phase_358_aperture_ring_orientation,
             phase_359_object_fov_axis,
             phase_360_bs_rotation_ghost,
+            phase_361_first_surface_split,
         ]
         for phase in phases:
             # Streamed progress marker: the report only prints at the END, so a hard
