@@ -1062,6 +1062,20 @@ def build_scene_bundle(
         # OTHER branch-detector draw (kept as a ray hard-stop). Mirrors the bugs/0184
         # scatter gate for the no-scatter-object illumination case.
         illumination_flood = _scene_has_illumination_flood(scene_sources)
+        # bugs/0451: the LONE arm of an unsplit scene that never reaches the designed
+        # Image is a dead end, not an imaging arm -- after deleting the fold mirror the
+        # straight beam simply runs into the LED and stops, and its synthesized detector
+        # drew a "Sensor 23.0x23.0 / Image circle" ring inside the housing where no
+        # sensor exists (flag_20260726_191053). Its ray HARD-STOP is still wanted (the
+        # bugs/0182 lesson: dropping the target un-bounds the rays into a starburst), so
+        # only the DRAW is gated. A genuine SPLIT keeps both arms drawn (bugs/0090: "a
+        # beam splitter must show a detector on BOTH arms"), and a scene with no designed
+        # Image at all keeps its only detector visible.
+        lone_dead_end_arm = (
+            len(branch_detectors) == 1
+            and str(getattr(branch_detectors[0], "focus_source", "")) != "reached_image"
+            and any(bool(getattr(t, "is_detector", False)) for t in (scene_targets or []))
+        )
         for offset, branch_detector in enumerate(branch_detectors):
             target = branch_detector_scene_target(branch_detector, row_index=100000 + offset)
             # bugs/0182 + bugs/0183 + bugs/0184 + bugs/0285: a diffuse-scatter leaf, an
@@ -1080,6 +1094,7 @@ def build_scene_bundle(
                     illumination_flood
                     and str(branch_detector.focus_source) != "reached_image"
                 )
+                or lone_dead_end_arm  # bugs/0451
             )
             if draw_suppressed:
                 target.metadata["draw_suppressed"] = True
