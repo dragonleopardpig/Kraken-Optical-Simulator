@@ -15303,6 +15303,9 @@ phase_367_snap_collinearity = _phase_from_standalone(
 phase_368_bs_led_fov_solve = _phase_from_standalone(
     368, "FOV thickness solve holds the LED+BS fixed and moves the lens (0453)",
     "KrakenOS.UI.validate_open3d_0453_bs_led_fov_solve", "bs_led_fov_solve")
+phase_369_hide_object_led_dimension = _phase_from_standalone(
+    369, "the amber Object->LED dimension honours right-click Hide (0454)",
+    "KrakenOS.UI.validate_open3d_0454_hide_object_led_dimension", "hide_object_led_dimension")
 
 
 # ---------------------------------------------------------------------------
@@ -15718,6 +15721,7 @@ def main() -> int:
             phase_366_bs_add_rays_on,
             phase_367_snap_collinearity,
             phase_368_bs_led_fov_solve,
+            phase_369_hide_object_led_dimension,
         ]
         for phase in phases:
             # Streamed progress marker: the report only prints at the END, so a hard

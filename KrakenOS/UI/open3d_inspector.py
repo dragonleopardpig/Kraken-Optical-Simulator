@@ -19816,7 +19816,21 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
     def _show_thickness_dimension_menu(self, event, row_index: int) -> None:
         menu = tk.Menu(self, tearoff=False)
-        menu.add_command(label=f"S{int(row_index)} Thickness dimension", state="disabled")
+        # bugs/0454: special dimensions carry synthetic row keys (the amber Object -> LED
+        # arrow is LED_OBJECT_EDGE_DIM_ROW = -7, branch overlays are >= 100000) -- a raw
+        # "S-7 Thickness dimension" header reads wrong, so name them.
+        try:
+            from KrakenOS.UI.services.open3d_thickness_dimensions import Open3DThicknessDimensionService as _TD
+            _led_row = int(getattr(_TD, "LED_OBJECT_EDGE_DIM_ROW", -7))
+        except Exception:
+            _led_row = -7
+        if int(row_index) == _led_row:
+            header = "Object → LED dimension"
+        elif int(row_index) < 0 or int(row_index) >= 100000:
+            header = "Distance dimension"
+        else:
+            header = f"S{int(row_index)} Thickness dimension"
+        menu.add_command(label=header, state="disabled")
         menu.add_separator()
         # Conjugate object/image gaps keep their Quick Estimation role control.
         qe = None

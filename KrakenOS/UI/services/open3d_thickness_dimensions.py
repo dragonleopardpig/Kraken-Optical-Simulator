@@ -1224,6 +1224,17 @@ class Open3DThicknessDimensionService:
         editor = self.editor
         if getattr(editor, "imported_led_step_path", None) is None:
             return 0
+        # bugs/0454 (flag_20260727_160952 "right click: unable hide the manual thickness
+        # overlay (gold color)"): this amber dimension keys the hidden set under
+        # LED_OBJECT_EDGE_DIM_ROW, and the right-click menu toggles it there -- but unlike
+        # the blue per-row arrows (gated in the draw loops at :434/:688), this builder was
+        # called unconditionally, so the arrow re-emitted every frame and "Hide" did
+        # nothing. Honour the hidden set here too.
+        try:
+            if editor._thickness_dimension_is_hidden(self.LED_OBJECT_EDGE_DIM_ROW):
+                return 0
+        except Exception:
+            pass
         try:
             distance = float(getattr(editor, "led_object_edge_distance_mm", 0.0) or 0.0)
         except Exception:
