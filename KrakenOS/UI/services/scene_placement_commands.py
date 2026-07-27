@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+import functools
 import hashlib
 from pathlib import Path
 import tkinter as tk
@@ -68,6 +69,32 @@ def _short_error_message(exc: Exception, limit: int = 220) -> str:
     if len(first) > limit:
         return first[:limit] + "..."
     return first
+
+
+def _history_atomic(func):
+    """bugs/0449: run a public command inside ONE history transaction.
+
+    A composite command (add/resize a beam splitter) fires a CHAIN of service-level
+    begin/commit pairs; each used to push its own snapshot, so the first Undo restored
+    a MID-COMMAND intermediate the user never saw -- rows at the un-neutralized
+    stations with the lens barrel still seated elsewhere ("surrogate get separated
+    from the body", flag_20260726_191350).
+
+    Implemented as a ``functools.wraps`` decorator ON PURPOSE: several guards assert on
+    ``inspect.getsource(ScenePlacementMixin.add_beam_splitter_to_led)`` (the plate-thickness
+    formula, the resize wiring), and ``inspect.getsource`` unwraps ``__wrapped__`` -- so the
+    command's real source stays visible to them. getattr-guarded for the spy/stub editors
+    those guards drive, which have no history machinery at all."""
+
+    @functools.wraps(func)
+    def _wrapped(self, *args, **kwargs):
+        transaction = getattr(self, "history_transaction", None)
+        if not callable(transaction):
+            return func(self, *args, **kwargs)
+        with transaction():
+            return func(self, *args, **kwargs)
+
+    return _wrapped
 
 
 class ScenePlacementMixin:
@@ -5677,6 +5704,7 @@ class ScenePlacementMixin:
         except Exception:
             return None
 
+    @_history_atomic
     def add_beam_splitter_to_led(self, kind: str = "cube") -> dict[str, object] | None:
         """One-click "Add Beam Splitter to LED" (bugs/0319 C3).
 
@@ -5692,19 +5720,6 @@ class ScenePlacementMixin:
         if kind not in ("cube", "plate"):
             self.status_var.set(f"Add Beam Splitter to LED: unknown kind {kind!r} (want 'cube' or 'plate').")
             return None
-        # bugs/0449: ONE user action = ONE undo step. This command runs a chain of
-        # service-level history pairs (import overlay -> centre CA -> orient -> seat
-        # -> glue -> promote -> coating flag -> station-neutralize); without the
-        # transaction each pushed its own snapshot and the first Undo restored a
-        # MID-COMMAND intermediate -- rows at the un-neutralized stations with the
-        # lens barrel still seated where it was ("surrogate get separated from the
-        # body", flag_20260726_191350).
-        with self.history_transaction():
-            return self._add_beam_splitter_to_led_body(kind)
-
-    def _add_beam_splitter_to_led_body(self, kind: str) -> dict[str, object] | None:
-        """bugs/0449: the real body of ``add_beam_splitter_to_led`` (wrapped by its
-        public entry point in one history transaction)."""
         if self._step_path_for_label("led") is None:
             self.status_var.set("Add Beam Splitter to LED: import the LED STEP first.")
             return None
@@ -5992,20 +6007,13 @@ class ScenePlacementMixin:
             return None
         return kind, {str(k): float(v) for k, v in params.items()}
 
+    @_history_atomic
     def resize_beam_splitter(self, row_index, *, refresh_open_3d: bool = True, **new_dimensions):
         """bugs/0423: regenerate a promoted parametric beam splitter at NEW dimensions and replace it
         IN PLACE. bugs/0427: the user's gizmo orientation + placement (row tilt / desp) are captured
         before the replace and re-applied after -- the replace's unpromote restores only the
         promotion-time rotation, so a manual re-orientation would otherwise be lost. Right-click a BS
         solid -> "Resize Beam Splitter...". Returns a summary, or None on a graceful stop."""
-        # bugs/0449: one action, one undo step (this unpromotes + re-promotes + re-applies
-        # the user's pose + re-neutralizes -- several inner history pairs).
-        with self.history_transaction():
-            return self._resize_beam_splitter_body(row_index, refresh_open_3d=refresh_open_3d, **new_dimensions)
-
-    def _resize_beam_splitter_body(self, row_index, *, refresh_open_3d: bool = True, **new_dimensions):
-        """bugs/0449: the real body of ``resize_beam_splitter`` (wrapped by its public
-        entry point in one history transaction)."""
         info = self.beam_splitter_resize_info(row_index)
         if info is None:
             self.status_var.set("Resize Beam Splitter: this row is not a parametric beam splitter.")
