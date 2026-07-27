@@ -270,6 +270,7 @@ class Open3DTraceRefreshService:
         sampling_mode: str | None = None,
         force_retrace: bool = False,
         update_state: bool = True,
+        bodies_only: bool = False,
     ) -> Open3DRefreshResult:
         resolved_sampling_mode = self.normalize_sampling_mode_label(sampling_mode)
         open3d_sampling_mode = None
@@ -307,6 +308,12 @@ class Open3DTraceRefreshService:
                     trace_rays = bool(inspector.show_rays_var.get())
                 except Exception:
                     trace_rays = True  # unknown ray state -> trace (safe default)
+            # bugs/0450: an explicit bodies-only build for the paint that accompanies an
+            # ASYNC trace kick -- the geometry must appear immediately (the worker's rays
+            # arrive later). Without it, adding a BS with Show Rays ON painted nothing at
+            # all until the long folded trace returned, and the user added a second one.
+            if bodies_only:
+                trace_rays = False
             system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
                 sampling_mode=resolved_sampling_mode,
                 update_state=bool(update_state),

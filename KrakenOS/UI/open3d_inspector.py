@@ -17100,6 +17100,33 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 pass
             return False
 
+    def _paint_bodies_while_async_trace_runs(self, *, sampling_mode: str | None = None) -> None:
+        """bugs/0450: paint a bodies-only scene for an in-flight async trace.
+
+        Geometry is cheap and must be immediate; only the ray trace is slow. Failures
+        here are non-fatal -- the worker's own refresh still lands, so a problem in
+        this preview must never break the async path (or the refresh that kicked it)."""
+        try:
+            result = self.editor._open3d_trace_refresh_service().build_inspector_refresh(
+                self,
+                sampling_mode=sampling_mode,
+                force_retrace=False,
+                update_state=False,
+                bodies_only=True,
+            )
+            self.refresh_scene(
+                result.system,
+                result.rays,
+                result.row_names,
+                scene_bundle=result.scene_bundle,
+                reset_camera=False,
+            )
+        except Exception as exc:
+            try:
+                self.editor.append_debug(f"async bodies-only preview failed: {exc!r}")
+            except Exception:
+                pass
+
     def refresh_from_editor(self, *, sampling_mode: str | None = None, force_retrace: bool = False) -> None:
         # Full-scene Open: pull any saved 3D-session sidecar into the inspector
         # BEFORE the build, so this rebuild reproduces the saved measurements,
@@ -17107,6 +17134,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # applied after the build, in refresh_scene).
         self._maybe_restore_open3d_session_state()
         if self._maybe_begin_async_scene_trace(sampling_mode=sampling_mode, force_retrace=force_retrace):
+            # bugs/0450: the async kick used to return having painted NOTHING, so a model
+            # change made with Show Rays ON (add a beam splitter, delete the fold mirror)
+            # stayed invisible until the long folded worker trace applied -- the user
+            # added a SECOND beam splitter believing the first had failed
+            # (flag_20260726_191350). Paint the BODIES synchronously now; the worker's
+            # rays replace this scene when they arrive.
+            self._paint_bodies_while_async_trace_runs(sampling_mode=sampling_mode)
             return
         token = self._timing_start(
             "refresh_from_editor",
