@@ -13,6 +13,7 @@ real sensor.
    cardinal_points
    pupil_sampling
    lens_design_intro
+   aberration_polynomial
    ir_subpixel_detection
    step_overlay_promotion
    coaxial_led_dark_edges
