@@ -1993,7 +1993,13 @@ class LayoutOpticalSolidWorkflowMixin:
         if self._three_d_inspector is not None:
             try:
                 if self._three_d_inspector.winfo_exists():
-                    self._three_d_inspector.refresh_from_editor(force_retrace=force_retrace)
+                    # bugs/0450: every caller of this helper has just MUTATED the model
+                    # (import/promote/glue/resize/delete), so the geometry must appear
+                    # even when the refresh goes async -- mark it so the async kick
+                    # paints the bodies (a pure ray toggle does not come through here).
+                    self._three_d_inspector.refresh_from_editor(
+                        force_retrace=force_retrace, geometry_changed=True
+                    )
             except Exception:
                 pass
         if self._legacy_3d_plotter is not None:

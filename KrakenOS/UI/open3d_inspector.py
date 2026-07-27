@@ -17135,7 +17135,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 pass
 
-    def refresh_from_editor(self, *, sampling_mode: str | None = None, force_retrace: bool = False) -> None:
+    def refresh_from_editor(
+        self,
+        *,
+        sampling_mode: str | None = None,
+        force_retrace: bool = False,
+        geometry_changed: bool = False,
+    ) -> None:
         # Full-scene Open: pull any saved 3D-session sidecar into the inspector
         # BEFORE the build, so this rebuild reproduces the saved measurements,
         # hidden items and overlay toggles (once per layout file; the camera is
@@ -17146,9 +17152,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             # change made with Show Rays ON (add a beam splitter, delete the fold mirror)
             # stayed invisible until the long folded worker trace applied -- the user
             # added a SECOND beam splitter believing the first had failed
-            # (flag_20260726_191350). Paint the BODIES synchronously now; the worker's
-            # rays replace this scene when they arrive.
-            self._paint_bodies_while_async_trace_runs(sampling_mode=sampling_mode)
+            # (flag_20260726_191350). Paint the BODIES synchronously for a GEOMETRY
+            # change; the worker's rays replace this scene when they arrive.
+            #
+            # Only for a geometry change: a pure Show-Rays toggle also routes here, and
+            # repainting there would drop the traced axis records the previous trace
+            # produced (penta phase 8 -- "second rays-on lost segments"). With nothing
+            # to show, leaving the current scene alone until the worker lands is right.
+            if geometry_changed:
+                self._paint_bodies_while_async_trace_runs(sampling_mode=sampling_mode)
             return
         token = self._timing_start(
             "refresh_from_editor",
