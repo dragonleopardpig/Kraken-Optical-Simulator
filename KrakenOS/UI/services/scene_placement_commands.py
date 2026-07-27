@@ -2380,7 +2380,9 @@ class ScenePlacementMixin:
         self.status_var.set(
             f"S{row_index} Thickness dimension {'hidden' if hidden else 'shown'}."
         )
-        self._refresh_open_3d_views()
+        # bugs/0455: hiding/showing a dimension is display-only -- re-render the cached
+        # scene, don't re-trace the rays (the disappear-and-retrace flicker the user saw).
+        self._refresh_open_3d_views(display_only=True)
 
     def toggle_thickness_dimension_hidden(self, row_index: int) -> None:
         self.set_thickness_dimension_hidden(
@@ -2397,7 +2399,7 @@ class ScenePlacementMixin:
         self._hidden_thickness_dimension_rows = current
         self._commit_history_capture()
         self.status_var.set("All Thickness dimensions shown.")
-        self._refresh_open_3d_views()
+        self._refresh_open_3d_views(display_only=True)  # bugs/0455: display-only, no retrace
 
     def _dimension_anchor_feature_label(self, feature_center_xyz) -> str:
         """Best-effort human label for a re-anchored measurement target."""

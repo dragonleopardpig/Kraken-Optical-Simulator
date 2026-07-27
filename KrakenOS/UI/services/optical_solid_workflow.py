@@ -1987,19 +1987,29 @@ class LayoutOpticalSolidWorkflowMixin:
         camera_only: bool = False,
         step_label: str | None = None,
         force_retrace: bool = False,
+        display_only: bool = False,
     ) -> None:
         if camera_only:
             step_label = "camera"
         if self._three_d_inspector is not None:
             try:
                 if self._three_d_inspector.winfo_exists():
-                    # bugs/0450: every caller of this helper has just MUTATED the model
-                    # (import/promote/glue/resize/delete), so the geometry must appear
-                    # even when the refresh goes async -- mark it so the async kick
-                    # paints the bodies (a pure ray toggle does not come through here).
-                    self._three_d_inspector.refresh_from_editor(
-                        force_retrace=force_retrace, geometry_changed=True
-                    )
+                    if display_only:
+                        # bugs/0455: a pure VISIBILITY toggle (hide/show a dimension
+                        # overlay) must re-render the CACHED scene, never re-trace --
+                        # the dimension hidden-set is read live by refresh_scene at
+                        # render time (bugs/0166). Route through the display-toggle
+                        # handler, which reuses the cached scene when valid and only
+                        # falls back to a full refresh when there is nothing cached.
+                        self._three_d_inspector._on_scene_visibility_changed()
+                    else:
+                        # bugs/0450: every non-display-only caller has just MUTATED the
+                        # model (import/promote/glue/resize/delete), so the geometry
+                        # must appear even when the refresh goes async -- mark it so the
+                        # async kick paints the bodies.
+                        self._three_d_inspector.refresh_from_editor(
+                            force_retrace=force_retrace, geometry_changed=True
+                        )
             except Exception:
                 pass
         if self._legacy_3d_plotter is not None:
