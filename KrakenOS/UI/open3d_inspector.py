@@ -17114,9 +17114,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 update_state=False,
                 bodies_only=True,
             )
+            # Keep whatever rays are already on screen: this paint exists to show the
+            # GEOMETRY change now, and blanking the ray display until the worker
+            # returns would be a fresh regression (a plain rays-on toggle routes here
+            # too -- penta phase 8 caught exactly that). The worker's refresh replaces
+            # both system and rays when it lands.
+            rays = result.rays
+            if rays is None or (hasattr(rays, "__len__") and len(rays) == 0):
+                rays = self.__dict__.get("_current_rays")
             self.refresh_scene(
                 result.system,
-                result.rays,
+                rays,
                 result.row_names,
                 scene_bundle=result.scene_bundle,
                 reset_camera=False,
