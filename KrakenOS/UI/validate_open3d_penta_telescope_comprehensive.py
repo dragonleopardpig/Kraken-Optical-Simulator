@@ -15291,6 +15291,15 @@ phase_363_solve_legs_frozen = _phase_from_standalone(
 phase_364_frozen_trace = _phase_from_standalone(
     364, "frozen rows trace as drawn; no phantom mid-chain detector (0448)",
     "KrakenOS.UI.validate_open3d_0448_frozen_trace", "frozen_trace")
+phase_365_undo_atomicity = _phase_from_standalone(
+    365, "one user action = one undo step, restoring rows+settings+glue (0449)",
+    "KrakenOS.UI.validate_open3d_0449_undo_atomicity", "undo_atomicity")
+phase_366_bs_add_rays_on = _phase_from_standalone(
+    366, "a model change with rays ON paints its bodies immediately (0450)",
+    "KrakenOS.UI.validate_open3d_0450_bs_add_rays_on", "bs_add_rays_on")
+phase_367_snap_collinearity = _phase_from_standalone(
+    367, "a snap refuses a selection that is not on one axis (0452)",
+    "KrakenOS.UI.validate_open3d_0452_snap_collinearity", "snap_collinearity")
 
 
 # ---------------------------------------------------------------------------
@@ -15702,6 +15711,9 @@ def main() -> int:
             phase_362_bs_never_rides_chain_snap,
             phase_363_solve_legs_frozen,
             phase_364_frozen_trace,
+            phase_365_undo_atomicity,
+            phase_366_bs_add_rays_on,
+            phase_367_snap_collinearity,
         ]
         for phase in phases:
             # Streamed progress marker: the report only prints at the END, so a hard
