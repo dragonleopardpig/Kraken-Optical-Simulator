@@ -15300,6 +15300,9 @@ phase_366_bs_add_rays_on = _phase_from_standalone(
 phase_367_snap_collinearity = _phase_from_standalone(
     367, "a snap refuses a selection that is not on one axis (0452)",
     "KrakenOS.UI.validate_open3d_0452_snap_collinearity", "snap_collinearity")
+phase_368_bs_led_fov_solve = _phase_from_standalone(
+    368, "FOV thickness solve holds the LED+BS fixed and moves the lens (0453)",
+    "KrakenOS.UI.validate_open3d_0453_bs_led_fov_solve", "bs_led_fov_solve")
 
 
 # ---------------------------------------------------------------------------
@@ -15714,6 +15717,7 @@ def main() -> int:
             phase_365_undo_atomicity,
             phase_366_bs_add_rays_on,
             phase_367_snap_collinearity,
+            phase_368_bs_led_fov_solve,
         ]
         for phase in phases:
             # Streamed progress marker: the report only prints at the END, so a hard

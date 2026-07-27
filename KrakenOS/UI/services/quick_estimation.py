@@ -933,7 +933,7 @@ class QuickEstimationService:
         a FIXED illumination constraint that must be EXCLUDED from QE. Return the first air gap AFTER
         that solid -- the lens gap QE should vary instead of the object gap -- or None when not in
         that locked configuration."""
-        if obj_row is None or not bool(getattr(self.editor, "_optical_led_glued", False)):
+        if obj_row is None:
             return None
         rows = getattr(self.editor, "rows", None) or []
         solid = int(obj_row) + 1
@@ -944,6 +944,24 @@ class QuickEstimationService:
             advanced.get("OpticalSolidFaces") or advanced.get("Solid_3d_stl")
         ):
             return None  # the row after the object gap isn't a promoted solid
+        # bugs/0453 (flag_20260727_132644 "BS Cube detached from the LED STEP after changing
+        # FOV"): the trigger USED to require the ``_optical_led_glued`` bool. That was only
+        # ever reliable by accident -- before bugs/0449 the settings service could not write
+        # the editor's ``_optical_led_glued`` (the delegation trap), so a stale runtime True
+        # kept this firing; once 0449 made the flag restore correctly to the saved False, the
+        # redirect stopped, the FOV thickness solve started writing the object gap, and the
+        # promoted BS slid away from its LED body (which is anchored separately). The
+        # illumination unit is defined by TOPOLOGY, not the bool: a promoted solid sitting
+        # immediately after the object gap in a scene that has imported an LED STEP body IS
+        # the coaxial LED+BS unit (glued or not), so hold the object gap and move the lens
+        # for it too.
+        led_present = False
+        try:
+            led_present = self.editor._step_path_for_label("led") is not None
+        except Exception:
+            led_present = False
+        if not (bool(getattr(self.editor, "_optical_led_glued", False)) or led_present):
+            return None
         cand = solid + 1
         if not (0 <= cand < len(rows) - 1):
             return None  # need a non-terminal air gap to absorb the change
