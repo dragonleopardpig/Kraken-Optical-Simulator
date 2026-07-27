@@ -368,7 +368,8 @@
     "364": "pass",
     "365": "pass",
     "366": "pass",
-    "367": "pass"
+    "367": "pass",
+    "368": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -737,6 +738,7 @@
     "364": "frozen rows trace as drawn; no phantom mid-chain detector (0448)2026-07-27 10:23:09.777 (1241.024s) [    75DDCE2AA780]  vtkTkRenderWidget.cxx:571   WARN| A TkRenderWidget is being destroyed before it associated vtkRenderWindow is destroyed.This is very bad and usually due to the order in which objects are being destroyed.Always destroy the vtkRenderWindow before destroying the user interface components.",
     "365": "one user action = one undo step, restoring rows+settings+glue (0449)",
     "366": "a model change with rays ON paints its bodies immediately (0450)",
-    "367": "a snap refuses a selection that is not on one axis (0452)"
+    "367": "a snap refuses a selection that is not on one axis (0452)",
+    "368": "FOV thickness solve holds the LED+BS fixed and moves the lens (0453)"
   }
 }
