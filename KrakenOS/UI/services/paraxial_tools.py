@@ -1255,6 +1255,40 @@ class ParaxialToolsMixin:
         except Exception:
             return False
 
+    def _step_body_world_center(self, label: str):
+        """The drawn world centre of a STEP overlay body, or None."""
+        try:
+            mesh = self._transformed_imported_step_mesh_for_label(label)
+            if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
+                return None
+            b = np.asarray(mesh.bounds, dtype=float).reshape(6)
+            return np.asarray(
+                ((b[0] + b[1]) / 2.0, (b[2] + b[3]) / 2.0, (b[4] + b[5]) / 2.0), dtype=float
+            )
+        except Exception:
+            return None
+
+    def _seat_step_body_world_center(self, label: str, target) -> bool:
+        """bugs/0456: put a STEP body's world CENTRE exactly on ``target``.
+
+        ``_shift_step_offset`` only nudges the persisted offset -- but a body is ALSO
+        anchored to its row's z-STATION, so every gap a solve rewrites drags it as
+        well, and the nudge then double-counts. On the frozen FOV solve that produced
+        rows moving -4.3 mm while their bodies moved +16.8 mm (flag_20260727_195719),
+        the surrogate detached from its CAD. Measure where the body actually sits after
+        the row re-bake and correct by the RESIDUAL instead, so the body lands on its
+        intended world pose no matter what the stations did."""
+        current = self._step_body_world_center(label)
+        if current is None:
+            return False
+        try:
+            goal = np.asarray(target, dtype=float).reshape(3)
+            cur_off = np.asarray(self._step_placement_offset_xyz(label), dtype=float).reshape(3)
+            self._set_step_placement_offset_xyz(label, cur_off + (goal - current))
+            return True
+        except Exception:
+            return False
+
     def _apply_frozen_bs_object_split(
         self, split: "dict", near_new: float, far_new: float, delta: float
     ) -> "tuple[bool, str]":
@@ -1282,15 +1316,23 @@ class ParaxialToolsMixin:
             return False, "Object split: no frozen chain rows to repackage."
         targets = {i: self._split_row_world_center(i) + delta * (entry - leg) for i in chain}
         targets[bs_row] = self._split_row_world_center(bs_row) + delta * entry
+        chain_delta = delta * (entry - leg)
+        # bugs/0456: capture each body's world centre and its intended target BEFORE any
+        # station changes -- a body is anchored to its row's z-station, so the gap edit
+        # below (and the FOV solve that ran just before this split) drags it too. Seating
+        # it absolutely afterwards is the only way both sides land together.
+        body_targets: dict[str, object] = {}
+        for label, body_delta in (("led", delta * entry), ("lens", chain_delta), ("camera", chain_delta)):
+            current = self._step_body_world_center(label)
+            if current is not None:
+                body_targets[label] = current + body_delta
         # Prescription bookkeeping: the object gap carries the slide (the 0440
         # reference total moves with it); stations then shift, the re-bake absorbs.
         rows[0].thickness = float(rows[0].thickness) + float(delta)
         for index, target in targets.items():
             self._rebake_frozen_row_world_center(index, target)
-        chain_delta = delta * (entry - leg)
-        self._shift_step_offset("led", delta * entry)
-        self._shift_step_offset("lens", chain_delta)
-        self._shift_step_offset("camera", chain_delta)
+        for label, target in body_targets.items():
+            self._seat_step_body_world_center(label, target)
         return True, (
             f"Object distance split: object->beam splitter {near_new:.4g} mm, "
             f"beam splitter->lens front {far_new:.4g} mm (total {near_new + far_new:.4g} mm; "
@@ -1312,6 +1354,11 @@ class ParaxialToolsMixin:
         mirror_target = geometry["c_m"] + delta * geometry["in_dir"]
         sensor_target = mirror_target + float(far_new) * geometry["out_dir"]
         camera_delta = sensor_target - geometry["c_i"]
+        # bugs/0456: the camera body's target is captured BEFORE the gap edit below --
+        # it is station-anchored, so the edit drags it and a plain offset shift would
+        # double-count (rows and body then move opposite ways).
+        camera_current = self._step_body_world_center("camera")
+        camera_target = None if camera_current is None else camera_current + camera_delta
         # Prescription bookkeeping first (stations shift), then world re-bake.
         ng, fg = int(split["near_gap_row"]), int(split["far_gap_row"])
         if 0 <= ng < len(rows) and 0 <= fg < len(rows):
@@ -1319,7 +1366,8 @@ class ParaxialToolsMixin:
             rows[fg].thickness = float(rows[fg].thickness) - float(delta)
         self._rebake_frozen_row_world_center(mirror_row, mirror_target)
         self._rebake_frozen_row_world_center(image_row, sensor_target)
-        self._shift_step_offset("camera", camera_delta)
+        if camera_target is not None:
+            self._seat_step_body_world_center("camera", camera_target)
         return True, (
             f"Image distance split: lens rear->mirror {near_new:.4g} mm, "
             f"mirror->sensor {far_new:.4g} mm (total {near_new + far_new:.4g} mm; "
