@@ -15309,6 +15309,9 @@ phase_369_hide_object_led_dimension = _phase_from_standalone(
 phase_370_dimension_hide_no_retrace = _phase_from_standalone(
     370, "hiding a dimension re-renders the cached scene, no ray re-trace (0455)",
     "KrakenOS.UI.validate_open3d_0455_dimension_hide_no_retrace", "dimension_hide_no_retrace")
+phase_371_frozen_solve_bodies_follow_rows = _phase_from_standalone(
+    371, "a constrained frozen solve keeps every STEP body on its row (0456)",
+    "KrakenOS.UI.validate_open3d_0456_frozen_solve_bodies_follow_rows", "frozen_solve_bodies_follow_rows")
 
 
 # ---------------------------------------------------------------------------
@@ -15726,6 +15729,7 @@ def main() -> int:
             phase_368_bs_led_fov_solve,
             phase_369_hide_object_led_dimension,
             phase_370_dimension_hide_no_retrace,
+            phase_371_frozen_solve_bodies_follow_rows,
         ]
         for phase in phases:
             # Streamed progress marker: the report only prints at the END, so a hard
