@@ -2967,6 +2967,16 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         self._history_pending_state: dict[str, object] | None = None
         self._history_restoring = False
         self._history_limit = 80
+        # bugs/0449: a public command wraps its whole body in `history_transaction()`
+        # so ONE user action is ONE undo step. Its inner service-level
+        # begin/commit pairs then no-op (the transaction snapshot stands for the
+        # action). Without this, add_beam_splitter_to_led's import+center+glue+
+        # promote chain pushed several MID-COMMAND snapshots and the first Undo
+        # restored a torn intermediate: rows at the un-neutralized stations
+        # (z=115.5) with the lens barrel still seated at z=53 -- the user's
+        # "surrogate get separated from the body" (flag_20260726_191350).
+        self._history_txn_depth = 0
+        self._history_txn_snapshot: dict[str, object] | None = None
 
         self._build_menu()
         self._build_ui()
@@ -2986,6 +2996,8 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         self._undo_stack.clear()
         self._redo_stack.clear()
         self._history_pending_state = None
+        self._history_txn_depth = 0
+        self._history_txn_snapshot = None
         self._mark_saved_state()
         self._update_undo_redo_buttons()
         # Backend probing imports Torch/CuPy and may initialise CUDA; do it lazily.

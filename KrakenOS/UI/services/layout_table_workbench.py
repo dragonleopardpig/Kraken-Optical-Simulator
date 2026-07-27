@@ -9,6 +9,8 @@ modules.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+
 from KrakenOS.UI.camera_database import (
     camera_model_for_step_path,
     refresh_imported_cameras,
@@ -1522,11 +1524,22 @@ class LayoutTableWorkbenchMixin:
         }
 
     def _begin_history_capture(self, _event: tk.Event | None = None) -> None:
+        # bugs/0449: inside an open history transaction the TRANSACTION snapshot
+        # (taken at the public command boundary) stands for the whole user action --
+        # inner service-level pairs must not capture fresh intermediates, or one
+        # click pushes several mid-command snapshots and Undo restores a torn state
+        # (flag_20260726_191350: surrogate at the un-neutralized stations, barrel
+        # elsewhere).
+        if int(self.__dict__.get("_history_txn_depth", 0) or 0) > 0:
+            return
         if self._history_restoring or self._history_pending_state is not None:
             return
         self._history_pending_state = self._capture_editor_state()
 
     def _commit_history_capture(self) -> None:
+        if int(self.__dict__.get("_history_txn_depth", 0) or 0) > 0:
+            self._history_pending_state = None
+            return
         if self._history_restoring:
             self._history_pending_state = None
             return
@@ -1542,6 +1555,33 @@ class LayoutTableWorkbenchMixin:
             self._undo_stack = self._undo_stack[-self._history_limit :]
         self._redo_stack.clear()
         self._update_undo_redo_buttons()
+
+    @contextmanager
+    def history_transaction(self):
+        """bugs/0449: group EVERYTHING a public command does -- row mutations,
+        per-label STEP settings, glue -- into ONE undo step. Reentrant: nested
+        transactions (commands calling commands) share the outermost snapshot.
+        Robust against commands that pump the Tk event loop mid-body (the failure
+        mode of an idle-coalesced design)."""
+        depth = int(self.__dict__.get("_history_txn_depth", 0) or 0)
+        if depth == 0 and not self._history_restoring:
+            self._history_txn_snapshot = self._capture_editor_state()
+        self._history_txn_depth = depth + 1
+        try:
+            yield
+        finally:
+            self._history_txn_depth = depth
+            if depth == 0:
+                snapshot = self.__dict__.get("_history_txn_snapshot")
+                self._history_txn_snapshot = None
+                if snapshot is not None and not self._history_restoring:
+                    current = self._capture_editor_state()
+                    if snapshot != current:
+                        self._undo_stack.append(snapshot)
+                        if len(self._undo_stack) > self._history_limit:
+                            self._undo_stack = self._undo_stack[-self._history_limit :]
+                        self._redo_stack.clear()
+                        self._update_undo_redo_buttons()
 
     def _push_history_snapshot(self) -> None:
         if self._history_restoring:
@@ -1754,6 +1794,10 @@ class LayoutTableWorkbenchMixin:
             finally:
                 self._history_restoring = False
                 self._history_pending_state = None
+                # bugs/0449: a restore invalidates any open transaction snapshot
+                # (it predates the restored state).
+                self._history_txn_snapshot = None
+                self._history_txn_depth = 0
         self._clear_step_runtime_after_history_restore(set(changed_settings))
         self._refresh_history_restore_views(
             previous_state=previous_state,

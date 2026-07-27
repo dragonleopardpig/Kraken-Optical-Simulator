@@ -4797,8 +4797,8 @@ class ScenePlacementMixin:
         # flag_20260724_145932 "camera and lens misplaced, RA mirror snap to the BS": infer the reference
         # axis from the ALONG-AXIS members (lens/camera), NOT fold solids (mirrors) which sit off-axis and
         # skew the fit -- then the same transform still moves ALL members (mirror included, fold preserved).
-        ref_centers = [
-            c for i, c in zip(rows, centers)
+        ref_pairs = [
+            (i, c) for i, c in zip(rows, centers)
             if not (hasattr(self, "_is_any_promoted_optical_solid_row") and self._is_any_promoted_optical_solid_row(self.rows[i]))
         ]
         # bugs/0433 slice C: a selection SPANNING a fold (lens leg + mirror-2 + the Image row on the
@@ -4812,19 +4812,51 @@ class ScenePlacementMixin:
         except Exception:
             first_fold = None
         if first_fold is not None:
-            entry_centers = [
-                c for i, c in zip(rows, centers)
+            entry_pairs = [
+                (i, c) for i, c in zip(rows, centers)
                 if i < first_fold
                 and not (hasattr(self, "_is_any_promoted_optical_solid_row") and self._is_any_promoted_optical_solid_row(self.rows[i]))
             ]
-            if len(entry_centers) >= 2:
-                ref_centers = entry_centers
-        if len(ref_centers) < 2:
-            ref_centers = centers
+            if len(entry_pairs) >= 2:
+                ref_pairs = entry_pairs
+        if len(ref_pairs) < 2:
+            ref_pairs = list(zip(rows, centers))
+        ref_centers = [c for _i, c in ref_pairs]
         old_origin = ref_centers[0]
         old_dir = ref_centers[-1] - ref_centers[0]
         norm = float(np.linalg.norm(old_dir))
         old_dir = old_dir / norm if norm > 1e-6 else np.asarray((0.0, 0.0, 1.0), dtype=float)
+        # bugs/0452 (flag_20260726_191537 "rubberband snap" scattered the lens block on a
+        # diagonal): the first->last fit assumes the reference members LIE ON ONE LINE.
+        # After the 0449 undo-tear the front datum sat at z=53 while the rest of the
+        # block sat at z=115.5 -- the fit ran corner-to-corner through the bend (48.7
+        # degrees), the single rigid R rotated the whole selection by that skew, and the
+        # preserved internal bend READ as "scattered" (rows 3-5 landed on a -49 degree
+        # string; the fit's two endpoints landed exactly on the axis). Rigid-from-garbage
+        # is still garbage: measure each reference member's perpendicular deviation from
+        # the fit line and REFUSE loudly instead of moving anything. Tolerance
+        # max(2.0 mm, 2% of span): sub-mm intentional decenters pass; a torn chain
+        # (28 mm deviation on the flag's geometry) is unmistakably rejected.
+        if norm > 1e-6:
+            tolerance = max(2.0, 0.02 * norm)
+            offenders: list[tuple[int, float]] = []
+            for i, c in ref_pairs:
+                rel = c - old_origin
+                perp = float(np.linalg.norm(rel - float(np.dot(rel, old_dir)) * old_dir))
+                if perp > tolerance:
+                    offenders.append((i, perp))
+            if offenders:
+                names = ", ".join(f"S{i} ({perp:.1f} mm off)" for i, perp in offenders)
+                self.status_var.set(
+                    "Snap to Optical Axis refused: the selected elements do not lie on one axis "
+                    f"(worst: {names}). Re-align or undo the torn placement first -- nothing was moved."
+                )
+                return {
+                    "moved_rows": [],
+                    "error": "non_collinear_selection",
+                    "offenders": [int(i) for i, _p in offenders],
+                    "max_perp_mm": max(p for _i, p in offenders),
+                }
         old_record = {
             "axis_id": "axis:selection",
             "axis_label": "current placement",
@@ -5660,6 +5692,19 @@ class ScenePlacementMixin:
         if kind not in ("cube", "plate"):
             self.status_var.set(f"Add Beam Splitter to LED: unknown kind {kind!r} (want 'cube' or 'plate').")
             return None
+        # bugs/0449: ONE user action = ONE undo step. This command runs a chain of
+        # service-level history pairs (import overlay -> centre CA -> orient -> seat
+        # -> glue -> promote -> coating flag -> station-neutralize); without the
+        # transaction each pushed its own snapshot and the first Undo restored a
+        # MID-COMMAND intermediate -- rows at the un-neutralized stations with the
+        # lens barrel still seated where it was ("surrogate get separated from the
+        # body", flag_20260726_191350).
+        with self.history_transaction():
+            return self._add_beam_splitter_to_led_body(kind)
+
+    def _add_beam_splitter_to_led_body(self, kind: str) -> dict[str, object] | None:
+        """bugs/0449: the real body of ``add_beam_splitter_to_led`` (wrapped by its
+        public entry point in one history transaction)."""
         if self._step_path_for_label("led") is None:
             self.status_var.set("Add Beam Splitter to LED: import the LED STEP first.")
             return None
@@ -5953,6 +5998,14 @@ class ScenePlacementMixin:
         before the replace and re-applied after -- the replace's unpromote restores only the
         promotion-time rotation, so a manual re-orientation would otherwise be lost. Right-click a BS
         solid -> "Resize Beam Splitter...". Returns a summary, or None on a graceful stop."""
+        # bugs/0449: one action, one undo step (this unpromotes + re-promotes + re-applies
+        # the user's pose + re-neutralizes -- several inner history pairs).
+        with self.history_transaction():
+            return self._resize_beam_splitter_body(row_index, refresh_open_3d=refresh_open_3d, **new_dimensions)
+
+    def _resize_beam_splitter_body(self, row_index, *, refresh_open_3d: bool = True, **new_dimensions):
+        """bugs/0449: the real body of ``resize_beam_splitter`` (wrapped by its public
+        entry point in one history transaction)."""
         info = self.beam_splitter_resize_info(row_index)
         if info is None:
             self.status_var.set("Resize Beam Splitter: this row is not a parametric beam splitter.")
