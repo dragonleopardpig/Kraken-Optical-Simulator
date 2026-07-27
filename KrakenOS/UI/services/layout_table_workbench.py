@@ -1861,6 +1861,14 @@ class LayoutTableWorkbenchMixin:
 
     def _apply_layout_settings(self, settings: object) -> None:
         self._layout_settings_service()._apply_layout_settings(settings)
+        # bugs/0449: the settings SERVICE cannot write the editor's `_`-prefixed state --
+        # its __setattr__ routes those onto itself (the documented delegation trap that
+        # bit bugs/0306 + 0312), so `self._optical_led_glued = ...` inside the service is
+        # dead for the editor. An undo therefore restored the persisted glue value while
+        # the LIVE flag stayed stale, and the restored scene disagreed with itself.
+        # Re-assert the editor-side flags here, where the write lands on the editor.
+        if isinstance(settings, dict):
+            self._optical_led_glued = bool(settings.get("optical_led_glued", False))
 
     def load_example_by_name(self, name: str) -> None:
         path = self.example_files.get(name)
