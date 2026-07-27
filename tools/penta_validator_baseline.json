@@ -370,7 +370,8 @@
     "366": "pass",
     "367": "pass",
     "368": "pass",
-    "369": "pass"
+    "369": "pass",
+    "370": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -741,6 +742,7 @@
     "366": "a model change with rays ON paints its bodies immediately (0450)",
     "367": "a snap refuses a selection that is not on one axis (0452)",
     "368": "FOV thickness solve holds the LED+BS fixed and moves the lens (0453)",
-    "369": "the amber Object->LED dimension honours right-click Hide (0454)"
+    "369": "the amber Object->LED dimension honours right-click Hide (0454)",
+    "370": "hiding a dimension re-renders the cached scene, no ray re-trace (0455)"
   }
 }
