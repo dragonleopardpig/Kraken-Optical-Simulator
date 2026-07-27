@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-07-27T02:23:12+00:00",
+  "generated_at": "2026-07-27T12:41:10+00:00",
   "phases": {
     "0": "pass",
     "1": "fail",
@@ -371,7 +371,8 @@
     "367": "pass",
     "368": "pass",
     "369": "pass",
-    "370": "pass"
+    "370": "pass",
+    "371": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -737,12 +738,13 @@
     "361": "object-facing BS coating + entry-face split transmits through the glass (0445)",
     "362": "the glued BS never rides a chain snap (candidates, fill, arm) (0446)",
     "363": "solve dialog 2+2 fold-leg pins on frozen/BS scenes (0447)",
-    "364": "frozen rows trace as drawn; no phantom mid-chain detector (0448)2026-07-27 10:23:09.777 (1241.024s) [    75DDCE2AA780]  vtkTkRenderWidget.cxx:571   WARN| A TkRenderWidget is being destroyed before it associated vtkRenderWindow is destroyed.This is very bad and usually due to the order in which objects are being destroyed.Always destroy the vtkRenderWindow before destroying the user interface components.",
+    "364": "frozen rows trace as drawn; no phantom mid-chain detector (0448)2026-07-27 20:41:08.566 (1255.170s) [    71CBC7360780]  vtkTkRenderWidget.cxx:571   WARN| A TkRenderWidget is being destroyed before it associated vtkRenderWindow is destroyed.This is very bad and usually due to the order in which objects are being destroyed.Always destroy the vtkRenderWindow before destroying the user interface components.",
     "365": "one user action = one undo step, restoring rows+settings+glue (0449)",
     "366": "a model change with rays ON paints its bodies immediately (0450)",
     "367": "a snap refuses a selection that is not on one axis (0452)",
     "368": "FOV thickness solve holds the LED+BS fixed and moves the lens (0453)",
     "369": "the amber Object->LED dimension honours right-click Hide (0454)",
-    "370": "hiding a dimension re-renders the cached scene, no ray re-trace (0455)"
+    "370": "hiding a dimension re-renders the cached scene, no ray re-trace (0455)",
+    "371": "a constrained frozen solve keeps every STEP body on its row (0456)"
   }
 }
