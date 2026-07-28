@@ -475,39 +475,6 @@ class LayoutTableWorkbenchMixin:
         self._commit_history_capture()
         self._clear_preview_after_reset()
 
-    def _rebuild_live_open3d_after_layout_load(self) -> None:
-        """bugs/0457: force a live Open 3D viewer to REBUILD after a layout load.
-
-        A load replaces the whole prescription, but an open viewer keeps its actor
-        registry (``_row_actor_map`` / ``_actor_by_key``). A row the NEW scene draws no
-        geometry for then keeps the actor from the PREVIOUS scene, parked at its old
-        position: loading ``machine_vision_AZ85_RA_Mirror_BS.py`` -- whose sequential
-        Image is superseded by branch detectors, so the bundle emits no row-8 curve at
-        all -- still drew a sensor plane at z = -48.8 while the prescription, the camera
-        body and the reached-image detector all said +2.73 (``flag_20260728_084648``,
-        "direct loaded the file"). The user read it as the sensor relocating.
-
-        The full rebuild path already clears every actor map; the load simply never asked
-        for one -- it refreshed the 2-D plot only. Same invariant as the "2-D is stale"
-        gate (bugs/0248/0296/0298): no actor may outlive the geometry that justified it.
-
-        Guarded three ways because the load may have torn the viewer down just above
-        (``_reset_complete_layout_runtime_state(close_viewers=True)``): missing attribute,
-        a destroyed Tk widget, and any error from the rebuild itself. Worst case this is a
-        no-op -- it can never be the thing that breaks a load."""
-        inspector = self.__dict__.get("_three_d_inspector")
-        if inspector is None:
-            return
-        try:
-            if not inspector.winfo_exists():
-                return
-        except Exception:
-            return
-        try:
-            inspector.refresh_from_editor(force_retrace=True, geometry_changed=True)
-        except Exception:
-            pass
-
     def load_layout_by_name(self, name: str, *, refresh: bool = True) -> None:
         path = self.layout_files.get(name)
         if path is None:
@@ -581,7 +548,6 @@ class LayoutTableWorkbenchMixin:
             self._commit_history_capture()
         if refresh:
             self.refresh_plot(suppress_analysis=True)
-            self._rebuild_live_open3d_after_layout_load()
         if path.stem.startswith("machine_vision_"):
             self.layout_var.set("Common Optical Layout")
             self.machine_vision_var.set(name)
