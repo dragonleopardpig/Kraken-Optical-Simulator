@@ -48,6 +48,23 @@ body {
     height: auto;
 }
 
+/* Keep Sphinx equation numbers aligned with the formula, not its top line. */
+.rst-content div.math[id^="equation-"] {
+    position: relative;
+    padding-right: 3.5rem;
+    padding-left: 3.5rem;
+}
+
+.rst-content div.math[id^="equation-"] > span.eqno {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    float: none;
+    line-height: 1;
+    white-space: nowrap;
+    transform: translateY(-50%);
+}
+
 .wy-side-nav-search,
 .wy-nav-top {
     background-color: #800000;
