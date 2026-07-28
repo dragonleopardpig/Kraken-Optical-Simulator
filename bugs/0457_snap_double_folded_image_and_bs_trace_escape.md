@@ -379,3 +379,50 @@ intersection distance/offset for row 7 -- rather than guessing between these thr
 **Acceptance test unchanged:** `desp_experiment.py 0` must report `terminated_z = 2.73`, and
 `path_diverge.py attachment/machine_vision_AZ85_RA_Mirror.py` must stay
 `{'image': 585, 'stopped_at_surface_5': 144}`.
+
+
+## THE GAP FOUND: the reached-fold walk treats LOCAL face normals as WORLD vectors
+
+Instrumented the walk (`walk_trace.py`). Face metadata for the two solids:
+
+    spec3 (the BS plate, world centre [0.31, 0, 55.31]):
+        Beam Splitter  normal=[0, -0.707, -0.707]  centroid=[0, -0.39, -0.39]  area=8123.5
+        Beam Splitter  normal=[0,  0.707,  0.707]  centroid=[0,  0.39,  0.39]  area=8123.5
+        (4 Transmit/Port faces, normals +-X and +-(Y,Z))
+
+    spec7 (the image-side fold mirror, world centre [228.73, 0, 54.23]):
+        Mirror         normal=[-0.707, 0, -0.707]  centroid=[0, 0, 0]  area=883.9
+
+Walking +Z from the origin:
+
+    spec3 (splitter): denom=-0.7071  distance=+54.54  hit=[0,0,54.54]  offset=0.63 vs r_hit=92.13 -> HIT
+                      reflected direction -> [0, -1, 0]
+    spec7 (mirror):   leg_dir=[0,-1,0]  normal=[-0.707,0,-0.707]  denom=+0.0000 -> leg PARALLEL to the face: MISS
+
+So the walk folds the beam to **-Y**, then row 7's face is exactly parallel to that leg and can never
+be hit -- which is why row 7 is not exempted and its thickness is zeroed.
+
+**But the real trace folds to +X**: the measured ray path is
+(0,0,0) -> (0,0,54.23) -> (70.46,0,54.23) -> ... So the walk and the tracer disagree about which way
+the beam splitter points.
+
+**Cause: the stored face normals are in the SOLID'S LOCAL frame, and the walk consumes them as
+WORLD vectors.** The BS's diagonal reads as a Y-Z tilt locally; in world (after the row's
+rotation) it folds +X. Row 7's Mirror normal happens to be world-plausible ([-0.707, 0, -0.707]
+folds +X -> -Z, matching the trace), which is exactly why mirror-only scenes worked and this stayed
+hidden. It is the same class as bugs/0448 (drawn-vs-traced convention divergence), one layer down.
+
+### The fix
+
+In `folded_beam_reached_mirror_fold_indices`, transform each face's `normal` AND `centroid` by the
+row's rotation before the intersection test -- `optical_solid_metadata.rotation_matrix_from_kraken_tilts`
+is the existing helper (the 0448 work already uses it to convert between the mesh and trace
+conventions). Then the BS reflects the leg to +X, the leg meets row 7's mirror face, row 7 joins
+`reached`, its 51.5 mm thickness survives neutralisation, and the Image lands at 2.73.
+
+Combine with the (already written, reverted) local splitter gate so the walk accepts a Beam
+Splitter face as a fold at all -- that half is verified to move `reached_fold_indices` from `[]` to
+`[3]` with the original scene unchanged at 585.
+
+**Acceptance test unchanged:** `desp_experiment.py 0` -> `terminated_z = 2.73`, and the original
+scene stays `{'image': 585, 'stopped_at_surface_5': 144}`.
