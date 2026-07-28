@@ -92,3 +92,45 @@ Look at, in order:
 
 **User-visible workaround stands:** toggling Show Rays off/on forces the synchronous repaint, which
 draws the full beam (174 records reaching the sensor headless).
+
+
+## Round 2 evidence (6-flag walkthrough, build `6e0efacd`) -- staleness is NOT the whole story
+
+The user rebuilt the entire workflow on the fixed build and flagged each step:
+`original` -> `1st RA mirror deleted` -> `BS plate added, resized, repositioned` ->
+`rubberband select + Optical axis snapping of Imaging Lens, 2nd RA mirror and Camera` ->
+`STEP hidden` -> `Rays ON`.
+
+**The 0457 fix holds through all of it.** Final state:
+
+    row 8 (Image)  [228.5, 0.0, 2.3]
+    detector 100000 (reached_image) [228.5, 0.0, 2.3]      <- coincident
+    camera body     [228.5, 0.0, 2.3]                      <- coincident
+    rows 1-7 along +X at z = 53.8
+
+No trace of the -48.77 error anywhere in the walkthrough.
+
+**But the drawn beam still stops at the last lens element** (screenshot of `Rays ON`): it folds at
+the BS, crosses all four lens elements, and ends there -- never reaching the fold mirror at
+x = 228.5 or the sensor.
+
+Crucially, that flag is titled **"Rays ON"** -- a FRESH toggle, i.e. the synchronous repaint this
+document proposed as the workaround. It still truncates. So the "stale pre-worker paint" theory
+above does NOT explain the live behaviour on its own, and the workaround does not work.
+
+Yet headless, the same scene draws to the sensor in both sampling modes
+(`world_envelope` 174/174 reaching past x=200, `world_cone` 2449/2449). So the divergence is
+LIVE-ONLY and survives a synchronous repaint.
+
+**What that leaves:** something in the live inspector's ray-display path truncates polylines that
+the editor-level bundle carries in full. Next probe should compare, IN ONE live session, the
+polylines in `inspector._current_scene_bundle.ray_paths` against the vertices actually handed to
+the ray actors -- i.e. instrument the ray-actor construction the way `_add_mesh_actor` was
+instrumented for bugs/0457, and find where the tail vertices are dropped. Do NOT theorise about
+async vs sync again; measure the polyline going into the actor.
+
+Also visible in the same screenshot and worth deciding: THREE "Sensor 23.0x23.0 / Image circle"
+label pairs -- the real sensor plus the two mid-scene branch arms at (74.3, 31.3) and
+(-0.5, 68.4). Per the agreed rule (sensor iconography follows CAMERA REGISTRATION, not leaf count)
+only the arm carrying the camera should draw sensor dimensions; the others should draw at most a
+neutral plane.
