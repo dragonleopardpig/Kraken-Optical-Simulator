@@ -76,6 +76,22 @@ def run_checks() -> tuple[bool, list[str]]:
         notes.append("SOURCE load_layout_by_name never calls the rebuild")
         ok = False
 
+    # bugs/0457 round 2: there are TWO load entry points. Fixing only the menu-driven
+    # one left File -> Open ("direct open") still showing the previous scene's sensor
+    # plane -- flag_20260728_091045, on a process started AFTER the first fix landed.
+    try:
+        from KrakenOS.UI.services import layout_import_export as _lie
+
+        opener = _inspect.getsource(_lie)
+    except Exception as exc:
+        notes.append(f"SKIP: import/export module unavailable ({exc!r})")
+        return ok, notes
+    if "_rebuild_live_open3d_after_layout_load()" in opener:
+        notes.append("SOURCE = File -> Open rebuilds the viewer too (both entry points)")
+    else:
+        notes.append("SOURCE File -> Open does not rebuild the viewer (0457 round-2 gap)")
+        ok = False
+
     return ok, notes
 
 
