@@ -164,3 +164,32 @@ Also note the live-vs-saved asymmetry still stands and is unexplained: the user'
 healthy (145 hit) while the interactive scene does not. Whatever holds that difference is live state
 the save normalises — the same suspicion as defect A. A live flag taken WITHOUT closing the app is
 the cheapest way to see it.
+
+
+## Attempt at fixing A — REVERTED (unsafe), read this before trying again
+
+Wiring: `load_layout_by_name` ends at `refresh_plot(...)` and never asks a live viewer to
+rebuild, so the stale actor is exactly the gap. Added
+`_rebuild_live_open3d_after_layout_load()` calling
+`inspector.refresh_from_editor(force_retrace=True, geometry_changed=True)` after a load,
+guarded by `winfo_exists()`.
+
+**Its validator SEGFAULTED (dumped core)** driving the flag's own gesture — open the
+inspector, then load the machine-vision scene again. That is the known 0294-class
+use-after-free (`reference_vtk_render_backend_segfault`: "machine-vision load with live
+inspector destroys the viewer; fix = keep-viewers flag around the load"), and note that
+`load_layout_by_name` calls `_reset_complete_layout_runtime_state(close_viewers=True)`
+BEFORE the point where the new hook fires. `winfo_exists()` is not sufficient: the Tk
+widget can outlive the VTK render window.
+
+Reverted — a fix that can segfault the app is worse than the stale actor, and a
+segfaulted run also blocks the penta gate.
+
+**Next attempt must first establish which is true:**
+1. does that gesture segfault on `main` WITHOUT the hook (i.e. pre-existing, and the
+   keep-viewers flag is not covering the load path here), or
+2. does the hook itself resurrect a torn-down viewer?
+
+Answer that with a bare probe (open inspector -> load -> capture snapshot, no code change)
+before writing any fix. If (1), the stale actor is a symptom of the viewer teardown and the
+real fix is in the keep-viewers path, NOT in a post-load refresh call.
