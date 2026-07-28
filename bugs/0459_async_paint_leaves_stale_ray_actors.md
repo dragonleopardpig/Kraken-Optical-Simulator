@@ -58,3 +58,37 @@ synchronous path.
 
 **User-visible check meanwhile:** toggling Show Rays off/on forces a synchronous repaint, which
 should draw the full beam to the sensor. If it does, that confirms this diagnosis from the UI side.
+
+
+## Refinement: the async COMPLETION path is not the bug -- the delivery is
+
+`_poll_inspector_async_trace` applies its result through
+`inspector.refresh_scene(system, rays, row_names, scene_bundle=..., reset_camera=False)` -- the
+SAME full path that clears `_actor_ray_map` / `_ray_actor_map` / `_actor_by_key`. So if the worker
+delivers, the maps are rebuilt correctly and there is nothing stale.
+
+The stale 12 keys therefore mean the worker had **not delivered** at the moment of measurement --
+the scene on screen is still the pre-worker paint (bugs/0450 has the async kick paint BODIES
+synchronously so a geometry change is visible immediately, and lets the worker's rays replace the
+scene when they arrive).
+
+A follow-up probe that waits up to 400 s for delivery produced **no output at all** and was killed
+by its timeout, i.e. `refresh_from_editor()` (async-eligible) blocked and never returned control to
+the poll loop. For contrast, a SYNCHRONOUS trace of this same scene completes comfortably inside a
+minute (every measurement in bugs/0457 used it).
+
+So the question for 0459 is no longer "why is the map stale" but:
+
+**why does the async path for this scene never deliver (or block on kick), when the synchronous
+trace of the same scene is fast?**
+
+Look at, in order:
+1. `maybe_begin_inspector_async_trace` -- the capture step runs the sampling on the main thread
+   (`_preview_trace_bundle_capture`); if capture itself is heavy or re-enters, the kick blocks.
+2. the worker subprocess: does it start, and does it ever post a result? `_record_async_worker_outcome`
+   records `applied` / `stale_rekick_exhausted` / failures -- capture that string.
+3. the `stale` + `rekicks` loop above the apply: two rekicks then `_fallback_sync_refresh`; if the
+   BS scene keeps looking stale, it could rekick indefinitely without ever painting rays.
+
+**User-visible workaround stands:** toggling Show Rays off/on forces the synchronous repaint, which
+draws the full beam (174 records reaching the sensor headless).
