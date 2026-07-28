@@ -193,3 +193,33 @@ segfaulted run also blocks the penta gate.
 Answer that with a bare probe (open inspector -> load -> capture snapshot, no code change)
 before writing any fix. If (1), the stale actor is a symptom of the viewer teardown and the
 real fix is in the keep-viewers path, NOT in a post-load refresh call.
+
+
+## CORRECTION — the "stale actor" theory is REFUTED; it is a real double fold after all
+
+`flag_20260728_092327` ("quit Kitty and restarted, direct open …") kills it. The app was
+restarted at 09:21:12, after BOTH fixes landed (09:06:39 and 09:13:05), and row 8 still
+drew at z = **−48.8**.
+
+A freshly started app has **no previous scene to leave an actor behind**, and rows 1–7 all
+showed the new file's positions, so the viewer had rebuilt correctly. The load hooks were
+therefore redundant work, not a fix — both reverted (`git revert 38a6360d 080b70ba`).
+
+So the LIVE build genuinely emits geometry for row 8 at −48.8, and the very first
+arithmetic was right: 54.23 − 2×51.5 = −48.77, the fold displacement applied twice. I
+abandoned that reading because a headless `_build_preview_system_rays_bundle` emits no
+row-8 curve at all — but that is a DIFFERENT BUILD PATH, not evidence of staleness. Two
+wrong turns came from trusting it.
+
+**Why it still has no headless repro:** the editor-level bundle call and the inspector's
+own `refresh_scene` are not the same build. `_open_inspector` + `capture_scene_snapshot`
+reports `row_actors: 0` — that helper never populates the actor registry — so neither
+route reproduces what the live viewer draws.
+
+**The one thing to do next:** find how the live inspector actually builds its scene
+(`refresh_scene` → its bundle call → `_apply_folded_display_bend` /
+`_reconcile_folded_image_to_ray_convergence`) and drive THAT in a probe, checking whether
+the Image lands at 2.73 or −48.77. Once it reproduces, the fix is the one named at the top
+of this file: do not apply the display fold to a row whose placement is already absolute.
+Do not attempt the fix before the probe reproduces — that mistake has now cost three
+reverts on this bug alone.
