@@ -15318,6 +15318,9 @@ phase_372_straight_arm_ring = _phase_from_standalone(
 phase_373_row_placement_space = _phase_from_standalone(
     373, "one source of truth for a row's coordinate space (design step 1)",
     "KrakenOS.UI.validate_row_placement_space", "row_placement_space")
+phase_374_bs_fold_reaches_sensor = _phase_from_standalone(
+    374, "a beam splitter folds the beam, so the fold mirror it feeds survives (0457)",
+    "KrakenOS.UI.validate_open3d_0457_bs_fold_reaches_sensor", "bs_fold_reaches_sensor")
 
 
 # ---------------------------------------------------------------------------
@@ -15738,6 +15741,7 @@ def main() -> int:
             phase_371_frozen_solve_bodies_follow_rows,
             phase_372_straight_arm_ring,
             phase_373_row_placement_space,
+            phase_374_bs_fold_reaches_sensor,
         ]
         for phase in phases:
             # Streamed progress marker: the report only prints at the END, so a hard

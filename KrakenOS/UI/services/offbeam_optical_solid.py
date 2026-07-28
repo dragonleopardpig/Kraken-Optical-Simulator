@@ -282,6 +282,51 @@ def axially_inert_offbeam_solid_spec(spec: dict) -> dict:
     return new_spec
 
 
+def _spec_face_folds_beam(spec: dict) -> bool:
+    """bugs/0457: True when this promoted solid has a face that FOLDS the beam.
+
+    ``_is_promoted_mirror_fold`` demands a MIRROR face, so a BEAM SPLITTER -- which folds
+    light just as surely, it merely also transmits -- was invisible to the reached-fold walk.
+    Deliberately NOT fixed by widening ``_is_promoted_mirror_fold``: that predicate also gates
+    fold-to-sequential, and a splitter scene must stay non-sequential (trace_mode_north_star).
+    """
+    if not isinstance(spec, dict):
+        return False
+    advanced = _advanced_surface_attrs_from_spec(spec)
+    metadata = normalize_optical_solid_face_metadata(advanced.get("OpticalSolidFaces"))
+    for face in metadata.get("faces", []) or []:
+        if not isinstance(face, dict):
+            continue
+        function = str(face.get("function", face.get("role", "")) or "").strip().lower()
+        if "split" in function or "mirror" in function:
+            return True
+    return False
+
+
+def _spec_face_rotation(spec: dict):
+    """bugs/0457: the rotation taking a face's LOCAL normal/centroid into WORLD.
+
+    Face metadata is stored in the solid's own frame. The walk below used to consume it as
+    if it were world, which is invisible while every fold is an untilted mirror -- and wrong
+    the moment one is not. The user's BS plate carries ``tilt_z = -90``: its diagonal reads
+    as a Y-Z tilt locally and folds in X-Z in world, so the un-rotated walk reflected the
+    beam to -Y, missed the downstream fold mirror entirely, and let it be neutralised.
+    """
+    try:
+        from KrakenOS.UI.optical_solid_metadata import rotation_matrix_from_kraken_tilts
+
+        return np.asarray(
+            rotation_matrix_from_kraken_tilts(
+                float(spec.get("tilt_x", 0.0) or 0.0),
+                float(spec.get("tilt_y", 0.0) or 0.0),
+                float(spec.get("tilt_z", 0.0) or 0.0),
+            ),
+            dtype=float,
+        ).reshape(3, 3)
+    except Exception:
+        return np.eye(3, dtype=float)
+
+
 def folded_beam_reached_mirror_fold_indices(row_specs: list[dict]) -> set[int]:
     """Indices of promoted MIRROR-FOLD solids the FOLDED beam actually reaches.
 
@@ -307,57 +352,76 @@ def folded_beam_reached_mirror_fold_indices(row_specs: list[dict]) -> set[int]:
     )
 
     specs = list(row_specs or [])
-    origin = np.zeros(3, dtype=float)
-    direction = np.asarray((0.0, 0.0, 1.0), dtype=float)
     reached: set[int] = set()
-    for index, spec in enumerate(specs):
-        if not isinstance(spec, dict) or not _is_promoted_mirror_fold(spec):
-            continue
-        advanced = spec.get("advanced") if isinstance(spec.get("advanced"), dict) else {}
-        metadata = normalize_optical_solid_face_metadata(advanced.get("OpticalSolidFaces"))
-        face = next(
-            (
-                f
-                for f in (metadata.get("faces") or [])
-                if "mirror" in str(f.get("function", "") or "").lower()
-            ),
-            None,
-        )
-        center = promoted_mirror_world_center(specs, index)
-        if face is None or center is None:
-            continue
-        normal = np.asarray(face.get("normal", (0.0, 0.0, 1.0)), dtype=float).reshape(3)
-        norm = float(np.linalg.norm(normal))
-        if norm <= 1e-12:
-            continue
-        normal = normal / norm
-        face_point = np.asarray(center, dtype=float).reshape(3) + np.asarray(
-            face.get("centroid", (0.0, 0.0, 0.0)), dtype=float
-        ).reshape(3)
-        denominator = float(np.dot(direction, normal))
-        if abs(denominator) <= 1e-9:
-            continue
-        distance = float(np.dot(face_point - origin, normal) / denominator)
-        if not np.isfinite(distance) or distance <= 1e-6:
-            continue  # the face lies behind the current leg -- not reachable forward
-        hit = origin + direction * distance
-        area = float(face.get("area_mm2", 0.0) or 0.0)
-        if np.isfinite(area) and area > 1e-9:
-            hit_radius = float(np.sqrt(area)) + 2.0
-        else:
-            hit_radius = 0.75 * max(
-                float(spec.get("thickness", 0.0) or 0.0),
-                float(spec.get("diameter", 0.0) or 0.0),
-            ) + 2.0
-        if float(np.linalg.norm(hit - face_point)) > hit_radius:
-            continue  # the leg misses the face -- a parked mirror, not a fold
-        reached.add(index)
-        direction = direction - 2.0 * float(np.dot(direction, normal)) * normal
-        norm = float(np.linalg.norm(direction))
-        if norm <= 1e-12:
-            break
-        direction = direction / norm
-        origin = hit
+    # bugs/0457: walk BOTH legs -- a splitter folds one arm and transmits the other, and a
+    # solid on EITHER arm is genuinely reached. Being "reached" only PRESERVES a spec, so a
+    # false positive keeps a thickness rather than corrupting the chain.
+    legs: list[tuple[np.ndarray, np.ndarray]] = [
+        (np.zeros(3, dtype=float), np.asarray((0.0, 0.0, 1.0), dtype=float))
+    ]
+    guard = 0
+    while legs and guard < 64:
+        guard += 1
+        origin, direction = legs.pop(0)
+        for index, spec in enumerate(specs):
+            if not isinstance(spec, dict):
+                continue
+            if not (_is_promoted_mirror_fold(spec) or _spec_face_folds_beam(spec)):
+                continue
+            advanced = spec.get("advanced") if isinstance(spec.get("advanced"), dict) else {}
+            metadata = normalize_optical_solid_face_metadata(advanced.get("OpticalSolidFaces"))
+            faces = metadata.get("faces") or []
+            face = next(
+                (f for f in faces if "mirror" in str(f.get("function", "") or "").lower()),
+                None,
+            )
+            splits = False
+            if face is None:
+                face = next(
+                    (f for f in faces if "split" in str(f.get("function", "") or "").lower()),
+                    None,
+                )
+                splits = face is not None
+            center = promoted_mirror_world_center(specs, index)
+            if face is None or center is None:
+                continue
+            rotation = _spec_face_rotation(spec)
+            normal = rotation @ np.asarray(
+                face.get("normal", (0.0, 0.0, 1.0)), dtype=float
+            ).reshape(3)
+            norm = float(np.linalg.norm(normal))
+            if norm <= 1e-12:
+                continue
+            normal = normal / norm
+            face_point = np.asarray(center, dtype=float).reshape(3) + rotation @ np.asarray(
+                face.get("centroid", (0.0, 0.0, 0.0)), dtype=float
+            ).reshape(3)
+            denominator = float(np.dot(direction, normal))
+            if abs(denominator) <= 1e-9:
+                continue
+            distance = float(np.dot(face_point - origin, normal) / denominator)
+            if not np.isfinite(distance) or distance <= 1e-6:
+                continue  # the face lies behind the current leg -- not reachable forward
+            hit = origin + direction * distance
+            area = float(face.get("area_mm2", 0.0) or 0.0)
+            if np.isfinite(area) and area > 1e-9:
+                hit_radius = float(np.sqrt(area)) + 2.0
+            else:
+                hit_radius = 0.75 * max(
+                    float(spec.get("thickness", 0.0) or 0.0),
+                    float(spec.get("diameter", 0.0) or 0.0),
+                ) + 2.0
+            if float(np.linalg.norm(hit - face_point)) > hit_radius:
+                continue  # the leg misses the face -- a parked mirror, not a fold
+            reached.add(index)
+            if splits and len(legs) < 8:
+                legs.append((hit + direction * 1.0e-6, direction.copy()))
+            direction = direction - 2.0 * float(np.dot(direction, normal)) * normal
+            norm = float(np.linalg.norm(direction))
+            if norm <= 1e-12:
+                break
+            direction = direction / norm
+            origin = hit
     return reached
 
 
