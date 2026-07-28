@@ -289,3 +289,46 @@ affected row; what remains is to find the single site that adds that thickness a
 Next probe: instrument the construction of the image/detector target in the NON-SEQUENTIAL trace
 path (not the folded-sequential one) and find where a term equal to the fold row's thickness enters
 the image plane position.
+
+
+## The mechanism, fully measured (and one inert fix attempt)
+
+`build_system` produces, for the BS scene:
+
+    S7 (promoted mirror solid)  Th=0.000  DespZ=-234.67  acc_before=288.90  ->  54.23  OK
+    S8 (Image)                  Th=0.000  DespZ=-337.67  acc_before=288.90  -> -48.77  WRONG
+
+while the EDITOR's stations are:
+
+    row7  thickness=51.500  desp_z=-234.67  station=288.90  ->  54.23
+    row8  thickness= 0.000  desp_z=-337.67  station=340.40  ->   2.73
+
+So the editor's `_row_z_positions()` counts the promoted solid's 51.5 mm thickness and the SPEC
+chain zeroes it (confirmed directly: `spec7 thickness=0.000` vs `row7 thickness=51.500`). A
+WORLD-placed row's `desp_z` is baked against the EDITOR station, so applying it against the shorter
+SPEC station lands the image plane exactly one solid-thickness short. Only rows AFTER a promoted
+solid can be affected -- which is why the image alone is wrong.
+
+**Attempt (REVERTED, inert):** re-expressed a WORLD row's `desp_z` against the spec station inside
+`_serializable_specs_for_rows`. The BS scene was UNCHANGED (still -48.77); the original scene was
+also unchanged (585 hit_detector, so no regression). Reverted.
+
+Why it did nothing is the next question, and there is a concrete lead: wrapping
+`_build_system_from_specs` captured SIX calls for this scene and **every one had `desp_z = 0` on
+every spec** (all `apply_optical_solid_output_ports=False` reference builds) -- yet the system
+`build_system()` returns has `DespZ=-337.67` on S8. So the system carrying the real desps is NOT
+built through the calls that wrapper saw. Find that path first:
+
+* is `build_system` returning a CACHED system (`_build_cached_system_from_specs`, the
+  `_PARAXIAL_REF_SYSTEM_CACHE`, or the signature cache in `layout_analysis_display.build_system`)
+  built at a moment the wrapper missed?
+* or does another builder construct the traced system directly from rows, bypassing
+  `_serializable_specs_for_rows` entirely?
+
+Instrument the RETURNED system's identity (`id(system)`) alongside every builder call to see which
+call produced the object the trace actually uses. Only then place the correction.
+
+**Acceptance test for any fix** (cheap, ~1 min):
+`desp_experiment.py 0` must report `terminated_z = 2.73` with `prescription_z = 2.73`, and
+`path_diverge.py attachment/machine_vision_AZ85_RA_Mirror.py` must still report
+`{'image': 585, 'stopped_at_surface_5': 144}`.
