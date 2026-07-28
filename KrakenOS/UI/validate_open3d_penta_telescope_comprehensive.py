@@ -15315,6 +15315,9 @@ phase_371_frozen_solve_bodies_follow_rows = _phase_from_standalone(
 phase_372_straight_arm_ring = _phase_from_standalone(
     372, "the dead-end straight arm keeps its ray stop but draws no sensor ring (0451)",
     "KrakenOS.UI.validate_open3d_0451_straight_arm_ring", "straight_arm_ring")
+phase_373_stale_row_actor_after_load = _phase_from_standalone(
+    373, "a layout load rebuilds a live Open 3D viewer (0457 stale row actor)",
+    "KrakenOS.UI.validate_open3d_0457_stale_row_actor_after_load", "stale_row_actor_after_load")
 
 
 # ---------------------------------------------------------------------------
@@ -15734,6 +15737,7 @@ def main() -> int:
             phase_370_dimension_hide_no_retrace,
             phase_371_frozen_solve_bodies_follow_rows,
             phase_372_straight_arm_ring,
+            phase_373_stale_row_actor_after_load,
         ]
         for phase in phases:
             # Streamed progress marker: the report only prints at the END, so a hard
