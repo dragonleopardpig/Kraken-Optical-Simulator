@@ -6,7 +6,10 @@ AND orientation — the underlying physics should match."
 This reports, per row, the pose each subsystem believes in, and flags disagreements:
 
   PRESCRIPTION  station + desp (+ tilts)      — what the sequential trace consumes
-  DRAWN         the live VTK actor            — what the user actually sees
+  DRAWN         the live VTK actor            — what the user actually sees (VISIBLE actors
+                                                only: zero-opacity picking proxies are not
+                                                "seen", and counting them produced a false
+                                                51.50 mm disagreement on bugs/0457)
   BODY          the STEP overlay mesh centre  — what the CAD shows
 
 Read-only: it changes nothing. It exists because three fixes were reverted on 2026-07-28
@@ -73,6 +76,17 @@ def _drawn_poses(inspector) -> dict:
             if actor is None:
                 continue
             try:
+                # Only VISIBLE geometry counts as "what the user sees". An actor at zero
+                # opacity is a picking proxy: the suppress_reference_aperture path
+                # (bugs/0033/0047) adds the Object/Image disk invisibly so picking still
+                # works while the detector-coverage overlay draws the real iconography.
+                # Counting those cost a long chase on bugs/0457 -- the recorder's
+                # row_actor_bounds includes them, and a -48.77 picking disk was read as a
+                # visibly misplaced sensor.
+                if not bool(actor.GetVisibility()):
+                    continue
+                if float(actor.GetProperty().GetOpacity()) <= 1.0e-6:
+                    continue
                 b = [float(v) for v in actor.GetBounds()]
                 if any(b[i] > b[i + 1] for i in (0, 2, 4)):
                     continue

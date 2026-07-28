@@ -196,3 +196,42 @@ iconography, not a surface ring. The next probe should wrap the ACTOR-CREATION s
 keyed row 8, which bundle member it came from and what coordinates it was handed. That answers
 "who drew this" directly instead of guessing which producer fed it — the question every attempt so
 far has answered wrongly.
+
+
+## 0457-A RESOLVED — there was no visibly misplaced sensor
+
+Traced the actor itself (wrap `Kraken3DInspector._add_mesh_actor`, record who registers row 8):
+
+    center=[228.73, 0.0, -48.77]   opacity=0.0  visible=True
+    created at services/open3d_scene_refresh.py:567
+
+**Opacity zero.** That actor is the Object/Image reference disk deliberately added INVISIBLY for
+picking by the `suppress_reference_aperture` path (bugs/0033 + 0047) while the detector-coverage
+overlay draws the real iconography. The user cannot see it, and never could.
+
+The recorder's `row_actor_bounds` includes invisible actors, and every step of this investigation
+— including the flag evidence itself — read that -48.8 as "the drawn sensor". It was a picking
+proxy. `tools/pose_audit.py` now counts only VISIBLE, non-zero-opacity actors, and with that fix
+the scene reports:
+
+* row 8 (Image): **no visible actor** — the sensor the user sees is the coverage overlay at
+  +2.73, coincident with the camera body and the reached-image branch detector. Correct.
+* row 7 (the promoted mirror): **1.78 mm** — the only genuine visible divergence left on this
+  scene, and still uncharacterised (candidate: the solid's centroid-vs-vertex convention).
+
+So the 51.50 mm "double fold" was real arithmetic on an invisible object. The design's §2/§3 still
+stand on their own merits — a WORLD row's `desp` genuinely IS double-counted by
+`_compute_folded_layout_geometry_for_rows` — but that defect was never what the user reported, and
+0457-A should not be treated as an open display bug.
+
+**What the user actually saw** is most likely the THREE "Sensor 23.0x23.0 / Image circle" label
+pairs in `flag_20260728_080101`: the branch detectors at (228.73, 2.73), (73.42, 32.07) and
+(-0.47, 68.40). Two of those sit mid-scene on beam-splitter arms and draw full sensor iconography
+there, which reads exactly as "the sensor/image plane relocated to a wrong position". That is the
+bugs/0451 family for a MULTI-LEAF scene, where both arms are drawn deliberately (bugs/0090, "a beam
+splitter must show a detector on BOTH arms") — so changing it is a product decision, not a bug fix,
+and it needs the user's call.
+
+**Lesson for the instrument:** an audit that measures invisible geometry produces confident,
+precise, wrong answers. Visibility is part of "what the user sees" and belongs in the measurement,
+not in the interpretation.
