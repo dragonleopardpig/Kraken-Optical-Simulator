@@ -332,3 +332,50 @@ call produced the object the trace actually uses. Only then place the correction
 `desp_experiment.py 0` must report `terminated_z = 2.73` with `prescription_z = 2.73`, and
 `path_diverge.py attachment/machine_vision_AZ85_RA_Mirror.py` must still report
 `{'image': 585, 'stopped_at_surface_5': 144}`.
+
+
+## CONFIRMED AGENT: neutralisation zeroes the fold mirror's thickness
+
+Measured directly on the user's scene (`neutralize_check.py`):
+
+    reached_fold_indices  = [3]        (with the experimental splitter gate; [] without)
+    beam_clear_radius     = 14.5
+    spec7: folds_beam=True  offbeam=True  th=51.500
+    THICKNESS before -> after neutralize_offbeam_inert_solids:
+        row 7 Standard   51.500 -> 0.000    <== ZEROED
+
+So the chain is: `neutralize_offbeam_inert_solids` classifies row 7 (the image-side fold
+mirror) as an off-beam parked body -- it IS far off the straight +Z axis, because it sits on the
+folded arm -- and zeroes its 51.5 mm thickness. Every downstream row's station then falls short by
+exactly that, and the WORLD-placed Image row's absolute `desp_z` lands it at -48.77 instead of
+2.73. bugs/0243 already anticipated this and exempts folds the beam actually REACHES; the
+exemption simply never fires here.
+
+### Why the exemption misses (the one remaining gap)
+
+`folded_beam_reached_mirror_fold_indices` walks from the origin along +Z and reflects only at a
+promoted MIRROR fold. The user replaced the object-side RA mirror with a BEAM SPLITTER, and
+`_is_promoted_mirror_fold` requires a *Mirror* face -- so the walk sailed straight past the BS and
+never reached row 7.
+
+**Experimental fix (REVERTED, incomplete):** accept a splitter face as a fold (a local gate, NOT by
+widening `_is_promoted_mirror_fold` -- that also gates fold-to-sequential, and a splitter scene must
+stay non-sequential), and walk BOTH legs at a splitter. Effect measured:
+
+* `reached_fold_indices` went from `[]` to `[3]` -- the BS IS now seen as a fold. Real progress.
+* the original AZ85 scene was unchanged (`{'image': 585, ...}`) -- no regression.
+* BUT row 7 still was not reached, so the acceptance test still fails (image at -48.77).
+
+The single remaining question: after the walk reflects off the BS, why does the resulting leg not
+register a hit on row 7's mirror face at (228.73, 0, 54.23)? Candidates, in order:
+1. the reflected DIRECTION is wrong (the BS face normal orientation / which face is picked -- the
+   plate has two, and its diagonal coating is the folding one);
+2. the hit lands outside `hit_radius` (`sqrt(area)+2mm`) for that face;
+3. `promoted_mirror_world_center(specs, 7)` returns something unexpected for a world-placed row.
+
+Instrument the walk itself -- print, per leg, the direction after each reflection and the
+intersection distance/offset for row 7 -- rather than guessing between these three.
+
+**Acceptance test unchanged:** `desp_experiment.py 0` must report `terminated_z = 2.73`, and
+`path_diverge.py attachment/machine_vision_AZ85_RA_Mirror.py` must stay
+`{'image': 585, 'stopped_at_surface_5': 144}`.
