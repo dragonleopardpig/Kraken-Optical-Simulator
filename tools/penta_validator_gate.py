@@ -93,7 +93,8 @@ def _parse_phase_states(log_text: str) -> dict[str, dict[str, str]]:
 
 
 def run_validator(
-    *, interpreter: str, display: int | None, timeout: int, log_path: Path
+    *, interpreter: str, display: int | None, timeout: int, log_path: Path,
+    phases: str | None = None,
 ) -> tuple[int, dict[str, dict[str, str]], str | None]:
     """Boot Xvfb, run the validator, return (exit_code, phase_states, env_error)."""
     chosen = _free_display(display)
@@ -102,6 +103,8 @@ def run_validator(
         return 0, {}, err
     env = dict(os.environ)
     env["DISPLAY"] = f":{chosen}"
+    if phases:
+        env["KRAKEN_PENTA_PHASES"] = str(phases)
     env["PYTHONPATH"] = os.pathsep.join(
         [str(REPO_ROOT), env.get("PYTHONPATH", "")]
     ).rstrip(os.pathsep)
@@ -213,6 +216,19 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=int(os.environ.get("KRAKEN_PENTA_GATE_TIMEOUT", "10800")),
     )
+    # bugs/0457 tooling: the full marathon is ~2 h here. --phases / --quick run a SUBSET so a
+    # smoke check costs minutes. A filtered run can never rewrite a full baseline (below): it
+    # proves the phases it ran, not the suite.
+    parser.add_argument(
+        "--phases",
+        default=None,
+        help='run a SUBSET: "370-374", "12,88", or "last:20" (smoke tier, cannot update a full baseline)',
+    )
+    parser.add_argument(
+        "--quick",
+        action="store_true",
+        help="smoke tier (~5 min): equivalent to --phases last:10",
+    )
     parser.add_argument("--python", default=None, help="interpreter to run the validator with")
     parser.add_argument("--require-env", action="store_true",
                         help="treat a missing Xvfb/interpreter as a failure (exit 1) instead of skipping")
@@ -228,9 +244,17 @@ def main(argv: list[str] | None = None) -> int:
         return 1 if args.require_env else 0
 
     log_path = Path(tempfile.gettempdir()) / "penta_validator_last.log"
-    print("[gate] running penta-telescope validator on a virtual display ...")
+    selected_phases = args.phases or ("last:10" if args.quick else None)
+    if selected_phases:
+        print(f"[gate] SMOKE tier: running phases {selected_phases} (not the full suite)")
+    else:
+        print("[gate] running penta-telescope validator on a virtual display ...")
     code, states, env_error = run_validator(
-        interpreter=interpreter, display=args.display, timeout=args.timeout, log_path=log_path
+        interpreter=interpreter,
+        display=args.display,
+        timeout=args.timeout,
+        log_path=log_path,
+        phases=selected_phases,
     )
     if env_error is not None:
         print(f"[gate] SKIP: {env_error}", file=sys.stderr)
@@ -245,6 +269,28 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[gate] phases: {passed} pass, {failed} fail (validator exit {code})")
 
     if args.update_baseline:
+        if selected_phases:
+            # bugs/0457 tooling: a SMOKE run knows nothing about the phases it skipped.
+            # Writing its results as the baseline would silently delete every other phase's
+            # recorded state, so a later full run would report no regressions no matter what
+            # broke. Merge into the existing baseline instead, and never create one from a
+            # partial run.
+            existing = load_baseline(args.baseline)
+            if not existing:
+                print(
+                    "[gate] refusing to CREATE a baseline from a filtered run "
+                    f"(--phases {selected_phases}); run the full suite once first.",
+                    file=sys.stderr,
+                )
+                return 1
+            merged = dict(existing)
+            merged.update(states)
+            write_baseline(args.baseline, merged)
+            print(
+                f"[gate] baseline updated for the {len(states)} phase(s) that ran "
+                f"({len(merged)} total kept)"
+            )
+            return 0
         write_baseline(args.baseline, states)
         print(f"[gate] baseline written to {args.baseline}")
         return 0
@@ -252,6 +298,10 @@ def main(argv: list[str] | None = None) -> int:
     baseline = load_baseline(args.baseline)
     if not baseline:
         print(f"[gate] no baseline at {args.baseline}; treating all phases as must-pass.")
+    if selected_phases and baseline:
+        # A SMOKE run did not execute the other phases; absent != regressed. Compare only
+        # what actually ran, or every skipped phase reports as "missing from run".
+        baseline = {k: v for k, v in baseline.items() if k in states}
     regressions, fixed, still_failing = compare(baseline, states)
 
     for num in fixed:

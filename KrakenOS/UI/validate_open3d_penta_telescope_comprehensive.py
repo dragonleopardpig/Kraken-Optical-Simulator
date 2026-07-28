@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15743,6 +15744,46 @@ def main() -> int:
             phase_373_row_placement_space,
             phase_374_bs_fold_reaches_sensor,
         ]
+        # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
+        # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
+        # smoke run costs minutes: "370-374" (ranges), "12,88" (explicit), or "last:20" (the
+        # most recent N). A filtered run is a SMOKE tier -- it proves the named phases, not the
+        # suite -- and the gate refuses to overwrite a full baseline from one.
+        _phase_filter = str(os.environ.get("KRAKEN_PENTA_PHASES", "") or "").strip()
+        if _phase_filter:
+            def _phase_number(fn) -> int:
+                try:
+                    return int(str(fn.__name__).split("_", 2)[1])
+                except Exception:
+                    return -1
+
+            if _phase_filter.lower().startswith("last:"):
+                try:
+                    _count = max(1, int(_phase_filter.split(":", 1)[1]))
+                except Exception:
+                    _count = 20
+                phases = phases[-_count:]
+            else:
+                _wanted: set[int] = set()
+                for _part in _phase_filter.split(","):
+                    _part = _part.strip()
+                    if not _part:
+                        continue
+                    if "-" in _part:
+                        try:
+                            _lo, _hi = (int(x) for x in _part.split("-", 1))
+                            _wanted.update(range(_lo, _hi + 1))
+                        except Exception:
+                            continue
+                    else:
+                        try:
+                            _wanted.add(int(_part))
+                        except Exception:
+                            continue
+                if _wanted:
+                    phases = [f for f in phases if _phase_number(f) in _wanted]
+            print(f"[filter] KRAKEN_PENTA_PHASES={_phase_filter} -> running {len(phases)} phase(s)", flush=True)
+
         for phase in phases:
             # Streamed progress marker: the report only prints at the END, so a hard
             # crash (VTK/llvmpipe SIGSEGV) would otherwise leave no clue WHICH phase
