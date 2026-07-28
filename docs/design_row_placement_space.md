@@ -141,3 +141,30 @@ So Step 2's first move needs a decision, not a patch:
 Not attempted: choosing between these by inference is how this bug already cost three reverts.
 Whichever is picked, the verification loop is now cheap and real -- `tools/pose_audit.py` reports
 row 8's 51.50 mm going to zero in about two minutes.
+
+
+## Step 2 attempt with option (a) — REVERTED, inert: wrong producer
+
+Implemented (a) in `_compute_folded_layout_geometry_for_rows`: a parallel WORLD walk mirroring the
+display walk step for step, so a WORLD row's true position is expressed in local
+(along, transverse) coordinates and re-applied in display space, with SEQUENTIAL rows keeping
+their original arithmetic byte for byte.
+
+`tools/pose_audit.py` afterwards: **completely unchanged** — row 8 still 51.50 mm, row 7 still
+1.78 mm. The edit was inert, so that function is NOT the producer of the drawn geometry for this
+scene. Reverted (no unverified code left in the walk).
+
+That is a useful elimination: the double count is real and the arithmetic in that walk really does
+double-count a WORLD row, but this scene reaches the drawn actor by a DIFFERENT route.
+
+**Check next, in order:**
+1. `_compute_world_folded_layout_geometry` (`layout_scene_projection.py`, just below the patched
+   one) — the name says world, and this scene is world-placed.
+2. Whether `scene_builder` even receives `folded_geometry` here: it uses
+   `_build_folded_surface_curves` only when `folded_geometry is not None`, otherwise
+   `_build_sequential_surface_curves` — and a fold may then be applied later.
+
+The one-line diagnostic that settles it: instrument BOTH producers to print when they run for
+`machine_vision_AZ85_RA_Mirror_BS.py`, then patch only the one that fires. The audit turns any
+guess into a two-minute yes/no, so the loop is cheap — the mistake to avoid is patching a
+plausible-looking site without first proving it runs.
