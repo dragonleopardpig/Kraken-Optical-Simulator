@@ -103,3 +103,41 @@ launch re-aim (broke the healthy baseline), and a load-rebuild hook (redundant; 
 already rebuilding). All three failed the same way: **a fix written before a reproduction existed.**
 Step 0 exists precisely to stop that, and no further code should be written on this bug until the
 audit reproduces the −48.8.
+
+
+## Step 2 — the site is located; one design question blocks the first move
+
+`_compute_folded_layout_geometry_for_rows` (`services/layout_scene_projection.py`) is where the
+drawn pose is produced, and the double count is this line:
+
+    center_point = current_point + branch_dir * float(row.desp_z) + branch_tangent * float(row.desp_y)
+
+`current_point` is already accumulated from the chain's thicknesses. Adding `desp_z` on top is
+CORRECT for a SEQUENTIAL row (there, `desp_z` is an offset along the branch) and WRONG for a WORLD
+row (there, `desp_z` is an absolute world coordinate, so the fold displacement lands twice). That
+is the measured 51.50 mm on row 8, and `must_not_display_fold(row)` already identifies exactly
+which rows are affected.
+
+**The blocker is not the predicate — it is the frame.** This walk operates in a 2-D FOLDED DISPLAY
+space: `point`/`direction`/`branch_dir` are 2-vectors, the chain is unrolled into a plane, and
+mirrors reflect the walk direction. A WORLD row's placement is a 3-D world coordinate. Substituting
+one for the other requires the world -> folded-display mapping, which does not exist as a function
+today; the walk never needed it because every row was assumed sequential.
+
+So Step 2's first move needs a decision, not a patch:
+
+* **(a) Give the walk an explicit world -> display frame map.** Then a WORLD row's centre is
+  `map(world_pose(row).position)` and the walk stops accumulating for it. Most faithful, and it is
+  the honest form of `world_pose()` from step 1. Costs: the map must handle the mirror reflections
+  the walk applies, and every consumer of `extent_points` inherits it.
+* **(b) Keep the walk sequential-only and place WORLD rows in a second pass**, after the walk, from
+  their absolute poses — the walk then skips them entirely (no accumulate, no desp add). Smaller
+  blast radius; the risk is that `current_point` continuity across a skipped row must still be
+  defined for the rows that FOLLOW it.
+
+(b) looks smaller but may be wrong for a WORLD row mid-chain, which is exactly the AZ85 case
+(rows 1-8 are world-placed, row 3 is not). (a) is the change the design actually argues for.
+
+Not attempted: choosing between these by inference is how this bug already cost three reverts.
+Whichever is picked, the verification loop is now cheap and real -- `tools/pose_audit.py` reports
+row 8's 51.50 mm going to zero in about two minutes.
