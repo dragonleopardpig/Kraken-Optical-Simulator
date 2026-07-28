@@ -223,3 +223,69 @@ the Image lands at 2.73 or −48.77. Once it reproduces, the fix is the one name
 of this file: do not apply the display fold to a row whose placement is already absolute.
 Do not attempt the fix before the probe reproduces — that mistake has now cost three
 reverts on this bug alone.
+
+
+## ROOT CAUSE FOUND — A and B are ONE bug: the TRACED image plane is off by the fold thickness
+
+Measured on the user's saved `machine_vision_AZ85_RA_Mirror_BS.py`, one probe at a time.
+
+**1. The beam traverses the chain correctly.** The axial ray:
+
+    (0,0,0) -> (0,0,54.23) -> (70.46,.,54.23) -> (88.10) -> (97.96) -> (107.83)
+           -> (125.46) -> (228.73,.,54.23) -> (228.73,.,-48.77)
+
+It folds at the BS, passes every lens surface, reaches the image-side mirror -- then terminates
+51.50 mm PAST the sensor. The BS fold itself is fine; the user's replacement of the RA mirror with
+a BS plate works.
+
+**2. Nothing reaches the sensor.** 0 of 837 ray paths end within 15 mm of the Image row's
+prescribed position (228.73, 0, 2.73). `termination_reason` histogram:
+`target_termination 145, no_next_intersection 286, missed_image 299, aperture_stop_vignette 107`.
+The 145 "hit_detector" rays measured earlier hit a target at the WRONG plane, which is why that
+number looked healthy.
+
+**3. The offset is exactly the fold mirror's thickness, and it is constant.** Shifting the Image
+row's `desp_z` by +51.50 (row 7's thickness) moves the termination from -48.77 to 2.73 -- i.e. onto
+the sensor -- and MORE rays arrive (167 vs 145):
+
+    | Image desp_z shift | prescription z | rays terminate at |
+    |--------------------|----------------|-------------------|
+    | 0                  |    2.73        |   -48.77          |
+    | +51.50             |   54.23        |     2.73          |
+
+**4. Only the image plane is affected.** Every other row traces at its prescribed position (the
+lens surfaces at x = 70.46 ... 125.46 and the mirror at 228.73 all match). So this is not a
+whole-chain frame error -- it is the IMAGE PLANE placement specifically.
+
+**5. The rows are WORLD-placed and the prescription is correct.** Row 8: `desp_z = -337.67`,
+`tilt_x = 180`, station 340.41, so station+desp = 2.73 exactly. `placement_space()` reports
+`world` for rows 1,2,4,5,6,7,8 and `sequential` for 0 and 3. Nothing is wrong with the numbers the
+user's scene stores.
+
+**6. It is NOT the folded-sequential path.** `_folded_sequential_trace_rows(app.rows)` returns
+**None** for this scene -- it traces NON-SEQUENTIALLY (the BS forces that). So the earlier Step-2
+work in `_compute_folded_layout_geometry_for_rows` was aimed at a path this scene never takes,
+which is why patching it was inert.
+
+**7. It is not the phantom detectors.** Filtering `derive_branch_detectors` down to the single
+`reached_image` leaf (3 -> 1) changed nothing: still 0 reaching, identical 33.0 mm closest
+approach. The bugs/0448-style hard-stop theory is refuted for this scene.
+
+### Consequence for the earlier conclusions
+
+* "0457-A is only an invisible picking proxy" was **half right**: the -48.77 actor is indeed
+  invisible, but -48.77 is ALSO where the trace terminates, so the number is real in the physics.
+  The invisible disk was a symptom, not the bug.
+* A and B are therefore the SAME defect, and it matches the user's report exactly: the image plane
+  sits one fold-thickness away, and the rays visibly stop there.
+
+### Where the fix goes
+
+The image plane's placement for a chain containing a promoted-mirror fold, where the image row is
+WORLD-placed. The fold mirror's thickness (51.5) is being applied to the image plane IN ADDITION to
+the row's absolute placement. `must_not_display_fold()` / `placement_space()` already identify the
+affected row; what remains is to find the single site that adds that thickness and gate it.
+
+Next probe: instrument the construction of the image/detector target in the NON-SEQUENTIAL trace
+path (not the folded-sequential one) and find where a term equal to the fold row's thickness enters
+the image plane position.
