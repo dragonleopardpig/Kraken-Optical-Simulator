@@ -202,7 +202,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--install", action="store_true",
                         help="set git core.hooksPath to .githooks and exit")
     parser.add_argument("--display", type=int, default=None, help="force a specific Xvfb display number")
-    parser.add_argument("--timeout", type=int, default=1800)
+    # The marathon streams "[running] phase_N" as it goes but only prints PASS/FAIL at the
+    # END, so a run that overruns the timeout yields ZERO parsed phases and looks like a
+    # hang. On 2026-07-28 it was measured at ~19 s/phase over the first 8 phases -- ~2 h
+    # for 373 phases -- and two consecutive gate runs died at 1800 s having attempted the
+    # whole marathon. The budget, not the validator, was the failure. Overridable with
+    # KRAKEN_PENTA_GATE_TIMEOUT for a slow or loaded machine.
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=int(os.environ.get("KRAKEN_PENTA_GATE_TIMEOUT", "10800")),
+    )
     parser.add_argument("--python", default=None, help="interpreter to run the validator with")
     parser.add_argument("--require-env", action="store_true",
                         help="treat a missing Xvfb/interpreter as a failure (exit 1) instead of skipping")
