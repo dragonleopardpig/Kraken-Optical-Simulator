@@ -134,3 +134,62 @@ label pairs -- the real sensor plus the two mid-scene branch arms at (74.3, 31.3
 (-0.5, 68.4). Per the agreed rule (sensor iconography follows CAMERA REGISTRATION, not leaf count)
 only the arm carrying the camera should draw sensor dimensions; the others should draw at most a
 neutral plane.
+
+
+## Round 3 -- the user's CURRENT scene (saved 2026-07-29 07:47) traces CORRECTLY
+
+Loading the freshly saved `machine_vision_AZ85_RA_Mirror_BS.py` (their live geometry):
+
+    rows 1,2,4,5,6 world along +X at z=53.80, tilts (0,-90,-180), space=world
+    row 3 (BS)   world (-0.12, 0, 54.46)  tilts (0,0,-90)   space=sequential
+    row 7 (fold) world (229.93, 0, 53.80) th=51.500         space=world
+    row 8 (Image) world (229.93, 0, 2.30) tilts (180,0,0)   space=world
+
+    reached_folds=[3, 7]        neutralized_zeroed=[]        <- 0457 fix working
+    RAY TERMINATIONS: target_termination 166, no_next_intersection 287,
+                      missed_image 274, aperture_stop_vignette 110
+    166 of 837 ray ends land within 15 mm of the sensor (229.93, 0, 2.30); max ray x = 243.0
+
+So the PHYSICS of the user's own scene is correct: light folds at the BS, crosses the lens,
+reflects at the fold mirror and lands on the sensor. Nothing about the geometry explains a beam
+that visually stops at the lens.
+
+## The live registry IS inconsistent (measured)
+
+Same scene, live inspector, after `refresh_from_editor(force_retrace=True, geometry_changed=True)`:
+
+    ray_actor_map = 174     (per-ray entries prepared -- matches the 174 display records)
+    actor_ray_map =  13     (reverse map)
+    actor_by_key  =  82     (live actors)
+    -> NONE of the 13 actor_ray_map keys resolve in actor_by_key
+
+The merged-ray path (`_flush_merged_ray_actors`, bugs/0223 Fix B) groups the 174 polylines by
+(color, opacity, line_width) into ~13 merged actors. The forward map keeps 174 per-ray entries and
+the reverse map keeps 13 keys that do not resolve, so the two registries describe different worlds.
+Note this does NOT by itself prove the rays are invisible -- a merged actor added straight to the
+renderer still draws -- but it does mean ray picking/lookup is broken, and it is the same
+"no actor may outlive the geometry that justified it" invariant.
+
+## Optical axes (the user's observation)
+
+Five axis records on this scene:
+
+    axis:global                       dotted_global_axis
+    axis:global:split                 dotted_global_axis
+    axis:global:frozen-fold:7         dotted_global_axis
+    axis:ray:374:segment:3            traced_chief_ray
+    axis:ray:426:segment:4            traced_chief_ray
+
+They are snap/display references, and since the trace of this same scene is correct they are not
+corrupting the physics. But they DO accumulate per operation (a split axis, a frozen-fold axis per
+folded row, plus one per traced chief-ray segment), which is why snap targets multiply as a scene
+is edited. Worth a separate decision: which of these should persist, and which are per-gesture.
+
+## The one remaining question
+
+The user's LIVE view truncates the beam while THIS SAME FILE traces and draws to the sensor
+headless. Since the file is now their exact geometry, the difference is confined to live session
+state. Next: have them close the app, reopen the saved file fresh, and report. If the beam is
+complete, the truncation was stale live state (and the registry inconsistency above is the lead);
+if it still truncates on a fresh load, it is a live-only rendering defect and the registry evidence
+above is where to start.
