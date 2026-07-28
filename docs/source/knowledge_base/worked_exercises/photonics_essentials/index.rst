@@ -12,6 +12,12 @@ trend, and results table instead of invented observations.
 
 .. toctree::
    :maxdepth: 1
+   :caption: Chapter Concepts
+
+   ch03_diffusion_equation
+
+.. toctree::
+   :maxdepth: 1
    :caption: Chapter Problems
 
    ch02_problems

@@ -8,6 +8,12 @@ Thomas P. Pearsall, *Photonics Essentials: An Introduction with Experiments*
 (McGraw-Hill, 2003), Chapter 3, ``Photodiodes``, Problems 3.1--3.5,
 printed pages 58--60.
 
+.. seealso::
+
+   :doc:`ch03_diffusion_equation` explains how the diffusion current on
+   printed page 38 leads to the second-order spatial derivative in Equation
+   3.5.
+
 Values read from the book's plots are estimates.  The calculations use
 
 .. math::

@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 350" role="img" aria-labelledby="title desc">
+  <title id="title">Carrier balance in a small semiconductor slab</title>
+  <desc id="desc">Diffusion current enters and leaves a slab while light generates carriers and recombination removes them.</desc>
+  <defs>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10Z" fill="#315a84"/>
+    </marker>
+    <marker id="arrow-gold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10Z" fill="#d48b23"/>
+    </marker>
+    <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10Z" fill="#b13f2e"/>
+    </marker>
+  </defs>
+  <rect width="860" height="350" fill="#fbfaf4"/>
+  <text x="430" y="30" text-anchor="middle" fill="#292b2a" font-family="Georgia, serif" font-size="22">Carrier conservation in a slab of width dx</text>
+  <rect x="295" y="100" width="270" height="150" rx="8" fill="#dcebe7" stroke="#31746b" stroke-width="3"/>
+  <g fill="#31746b">
+    <circle cx="335" cy="135" r="7"/><circle cx="395" cy="160" r="7"/>
+    <circle cx="470" cy="132" r="7"/><circle cx="525" cy="180" r="7"/>
+    <circle cx="360" cy="215" r="7"/><circle cx="445" cy="205" r="7"/>
+  </g>
+  <g fill="none" stroke="#315a84" stroke-width="5" marker-end="url(#arrow-blue)">
+    <path d="M80 175H285"/>
+    <path d="M575 175H780"/>
+  </g>
+  <g fill="none" stroke="#d48b23" stroke-width="4" marker-end="url(#arrow-gold)">
+    <path d="M365 72V100"/>
+    <path d="M430 72V100"/>
+    <path d="M495 72V100"/>
+  </g>
+  <g fill="none" stroke="#b13f2e" stroke-width="4" marker-end="url(#arrow-red)">
+    <path d="M385 250V306"/>
+    <path d="M475 250V306"/>
+  </g>
+  <g fill="#292b2a" font-family="Georgia, serif" font-size="18">
+    <text x="155" y="160" text-anchor="middle">inflow</text>
+    <text x="155" y="199" text-anchor="middle" font-style="italic">J(x)</text>
+    <text x="690" y="160" text-anchor="middle">outflow</text>
+    <text x="690" y="199" text-anchor="middle" font-style="italic">J(x + dx)</text>
+    <text x="430" y="61" text-anchor="middle" fill="#9a6418">generation G<tspan baseline-shift="sub" font-size="13">L</tspan></text>
+    <text x="430" y="334" text-anchor="middle" fill="#8e3023">recombination &#916;n / &#964;</text>
+    <text x="285" y="273" text-anchor="middle" font-style="italic">x</text>
+    <text x="575" y="273" text-anchor="middle" font-style="italic">x + dx</text>
+  </g>
+</svg>
