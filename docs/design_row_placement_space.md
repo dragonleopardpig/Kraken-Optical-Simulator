@@ -168,3 +168,31 @@ The one-line diagnostic that settles it: instrument BOTH producers to print when
 `machine_vision_AZ85_RA_Mirror_BS.py`, then patch only the one that fires. The audit turns any
 guess into a two-minute yes/no, so the loop is cheap — the mistake to avoid is patching a
 plausible-looking site without first proving it runs.
+
+
+## Step 2, elimination round 2 — NEITHER curve builder runs in-process
+
+Wrapped `scene_builder._build_folded_surface_curves`,
+`scene_builder._build_sequential_surface_curves`, and every
+`_compute_*_layout_geometry*` on the projection mixin, then loaded the BS scene, opened the
+viewer and forced `refresh_from_editor(force_retrace=True, geometry_changed=True)`.
+
+**Not one of them fired** — while the audit, run the same way, reports twelve row actors. And it
+is not the async worker hiding them: `maybe_begin_inspector_async_trace` documents that
+"explicit force_retrace flows expect synchronous completion", so that refresh took the
+in-process path.
+
+So the drawn row-8 actor is NOT produced by the surface-curve path at all. Three sites are now
+eliminated by measurement rather than by argument:
+
+1. `_compute_folded_layout_geometry_for_rows` — patched, audit unchanged (inert).
+2. `_build_folded_surface_curves` / `_build_sequential_surface_curves` — never called.
+3. the async worker — bypassed by force_retrace.
+
+**Where to look instead.** The bundle carries `targets`, `planes` and `surface_meshes` as well as
+`surface_curves`, and the Image draws as a "Sensor 23.0x23.0 / Image circle" — detector
+iconography, not a surface ring. The next probe should wrap the ACTOR-CREATION side in
+`services/open3d_scene_refresh.py` (whatever populates `_row_actor_map`) and record, for the entry
+keyed row 8, which bundle member it came from and what coordinates it was handed. That answers
+"who drew this" directly instead of guessing which producer fed it — the question every attempt so
+far has answered wrongly.
