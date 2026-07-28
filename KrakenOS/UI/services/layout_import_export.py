@@ -553,12 +553,6 @@ class LayoutImportExportMixin:
             pass
         self._sync_table()
         self.refresh_plot(suppress_analysis=True)
-        # bugs/0457: File -> Open is a SECOND load entry point (the menu-driven
-        # load_layout_by_name is the other). Both must rebuild a live Open 3D viewer or
-        # its actor registry survives the load -- flag_20260728_091045 proved the fix on
-        # the menu path alone left "direct open" still drawing the previous scene's
-        # sensor plane at z=-48.8.
-        self._rebuild_live_open3d_after_layout_load()
         self._mark_saved_state()
         self.status_var.set(f"Opened {Path(path).name}. Click Update to run analysis.")
 
