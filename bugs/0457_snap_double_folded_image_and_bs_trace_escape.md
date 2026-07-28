@@ -71,5 +71,34 @@ Defect A is separately fixable: gate the display fold for rows whose placement i
 (`stay_put_freeze` / `last_axis_to_axis_move` / snapped), the same predicate the 0447 appliers use.
 Its guard MUST assert on drawn actor bounds.
 
-Not started — documented with the evidence above so the fix can begin from measurements rather than
-from a re-derivation.
+## Attempt 1 at B — REVERTED (negative result, kept because it narrows the next attempt)
+
+Hypothesis: in finite-conjugate mode the chief ray is by definition the ray from the object point
+through the centre of the stop, so re-aiming each launch bundle at the stop's world point should
+repair a folded/frozen chain and be a no-op on a healthy one. Implemented as a rigid Rodrigues
+rotation of each bundle about its own launch point, applied at `_trace_preview_bundles` (the
+documented choke point every sampling path funnels through), gated to Finite mode (Infinity's
+bundle DIRECTION *is* the field angle — re-aiming it would silently zero the field).
+
+It broke the healthy baseline and was reverted:
+
+| step | before | with the re-aim |
+|---|---|---|
+| 1. original (healthy) | 585 hit_detector | **729 missed_detector** |
+| 2. mirror deleted | 3249 stopped | 3249 missed_detector |
+
+**Why it failed — the useful part:** `_analysis_surface_index()` → `_surface_reference_world_point()`
+does NOT return the stop centre in world space. On this scene it returns the STRAIGHT-EQUIVALENT
+(unfolded) Image point — visible in the replay as the Image row's prescription `[0, 0, 340.4]` while
+the drawn/traced sensor is at `[235.9, 0, 1.5]`. So the fan was aimed at an unfolded phantom, which
+is why even the healthy scene lost its focus. The rotation machinery itself was fine (it is exactly
+the identity when the aim already matches); the REFERENCE was wrong.
+
+**Next attempt should start from `_trace_per_branch_bundles`** (`trace_preview.py`, guarded by
+"DESIGN §5b per-branch launch"). That path already exists to give a beam splitter one launch bundle
+per imaging arm, "each aimed at that arm's own pupil", and its comment concedes the current
+whole-layout reference "can't even build the whole-layout reference past the folded arm" — i.e. the
+per-arm pupil in WORLD space is the reference this fix needs, and it is already computed there.
+Reuse that, do not re-derive an aim point from the prescription.
+
+Baseline after revert, re-measured and identical to before the attempt: 585 / 3249 / 279 / 279.
