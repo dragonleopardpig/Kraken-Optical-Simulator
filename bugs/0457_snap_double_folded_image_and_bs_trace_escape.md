@@ -102,3 +102,38 @@ per-arm pupil in WORLD space is the reference this fix needs, and it is already 
 Reuse that, do not re-derive an aim point from the prescription.
 
 Baseline after revert, re-measured and identical to before the attempt: 585 / 3249 / 279 / 279.
+
+## Attempt 2 at B — also REVERTED, and it falsifies the "launch aiming" thesis
+
+Followed the lead above. The off-axis FINITE launch in `_trace_preview_rays` does fire from
+`[field_x, field_y, 0]` at a pupil disk on `z = object_distance` — both on the nominal axis — so a
+launch frame was added that fires down the object -> entrance-surface direction instead, returning
+`None` (arithmetic untouched) whenever the chain is still nominal.
+
+**Result: no change at all.** 585 / 3249 / 279 / 279, identical. Reverted.
+
+Measured why, and this is the part that matters:
+
+* `_build_scene_source_bundles` returns **0** bundles for this scene — the LED is not driving the
+  launch, so no source-aiming fix applies either.
+* `off_axis = True`, `object mode = Finite` — it does reach that branch.
+* But the folded path traces **straight-equivalent rows** (`_folded_sequential_trace_rows`), and on
+  those rows the chain IS nominal, so the new frame correctly declined to act.
+
+So the launch is NOT mis-aimed, and B is not a first-order/pupil seam. What actually happens: after
+the freeze the chain's rows carry ABSOLUTE world placements (x ≈ 77…235 at z = 53) while the object
+row sits at the origin, and those same rows are then handed to a SEQUENTIAL trace that assumes rows
+are stations along one axis. The rays vignette because the traced prescription is geometrically
+incoherent, not because the fan points the wrong way — the same family as bugs/0448 ("baked rows
+traced BACKWARDS") and the `trace_mode_north_star` rule that a frozen/split scene must be traced
+NON-SEQUENTIALLY as real world geometry.
+
+**Corrected next step:** stop treating this as an aiming problem. The question to answer first is
+whether a frozen/snapped chain should be traced non-sequentially, and if so what supplies its
+per-arm stops. That is an architecture decision, not a patch, and it should be taken deliberately
+rather than attempted a third time from inference.
+
+Also note the live-vs-saved asymmetry still stands and is unexplained: the user's SAVED file traces
+healthy (145 hit) while the interactive scene does not. Whatever holds that difference is live state
+the save normalises — the same suspicion as defect A. A live flag taken WITHOUT closing the app is
+the cheapest way to see it.
