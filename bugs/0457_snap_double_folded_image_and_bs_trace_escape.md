@@ -71,6 +71,33 @@ Defect A is separately fixable: gate the display fold for rows whose placement i
 (`stay_put_freeze` / `last_axis_to_axis_move` / snapped), the same predicate the 0447 appliers use.
 Its guard MUST assert on drawn actor bounds.
 
+## Defect A SOLVED (diagnosis) — it is a STALE ACTOR, not a double fold
+
+`flag_20260728_084648` ("direct loaded the file.", build `070a867d`) settles it. The user loaded
+`attachment/machine_vision_AZ85_RA_Mirror_BS.py` — nothing else, no freeze/BS/snap — and the live
+view still drew row 8 at z = **−48.8**. Loading that same file headlessly gives:
+
+* prescription Image row 8 = **+2.73**
+* drawn `surface_curves`: rows 1,2,3,4,5,6,7,0 … and **no curve for row 8 at all**. The only
+  `kind='image'` curves carry `row_index = -1` — the three branch detectors at (230.65, 2.3, 4.01),
+  (74.15, 2.4, 34.26), (−2.77, 2.37, 68.39).
+
+So the scene bundle does not draw the sequential Image at all here (branch detectors supersede it,
+per the scene_builder rule), yet the LIVE viewer still has a row-8 actor — parked at the value the
+PREVIOUS scene had. Nothing in the rebuild removes a row actor whose row no longer contributes a
+curve, so it survives the load and floats at its old position.
+
+That also explains the live-vs-saved asymmetry that made no sense for two rounds: the saved file was
+never wrong, and the prescription was never wrong. **The arithmetic 54.23 − 2×51.5 = −48.77 was a
+coincidence of the previous state, not a double fold.** Chasing that number cost attempts 1 and 2.
+
+**Fix shape:** on scene rebuild, drop (or hide) row actors for rows the new bundle produces no
+geometry for — the supersede path is exactly the case that leaves one behind. Same family as the
+"2-D is stale" gate: the invariant is that no actor outlives the geometry that justified it.
+Verification needs a LIVE viewer (headless never creates the actor, so a headless probe cannot see
+this bug) — assert on the recorder's `row_actor_bounds` after loading a scene whose Image is
+superseded, which is precisely what the flag captured.
+
 ## Attempt 1 at B — REVERTED (negative result, kept because it narrows the next attempt)
 
 Hypothesis: in finite-conjugate mode the chief ray is by definition the ray from the object point
