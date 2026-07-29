@@ -2950,6 +2950,19 @@ class ScenePlacementMixin:
         if self._step_path_for_label(label) is None:
             self.status_var.set(f"No {label} STEP is imported to glue to its surrogate.")
             return False
+        # bugs/0475: the CAMERA's automatic station is NOT "zero offset". For a lens or an LED
+        # the zero-offset default IS the auto-aligned station, so clearing the drags is the whole
+        # job. A camera is different: with a zero offset the body seats on the NOMINAL axis, which
+        # on a folded scene is nowhere near the sensor -- exactly the failure seat_camera_on_sensor
+        # was written for ("replace a camera placed the new camera on top on the LED", bugs/0473).
+        # Clearing the offset here therefore did the opposite of the menu's promise: it threw away
+        # a correct seating (x = 229.93 on the reported scene) and dropped the body onto the LED,
+        # and because the offset was then all-zero the "already glued" short-circuit below refused
+        # every retry, stranding it there. Delegate to the real seating instead -- it is a RELATIVE
+        # correction computed from the body's current bounds, so it lands the sensor on the image
+        # plane from ANY starting offset and never needs the destructive zeroing step.
+        if label == "camera":
+            return self._reset_camera_to_image_plane()
         display = self._step_overlay_display_label(label)
         axis_off = self._step_axis_offset_xy(label)
         place_off = self._step_placement_offset_xyz(label)
@@ -2971,6 +2984,37 @@ class ScenePlacementMixin:
             "(centred on the optical axis, datum aligned)."
         )
         return True
+
+    def _reset_camera_to_image_plane(self) -> bool:
+        """bugs/0475: back the "Reset Camera to Image Plane" menu item with the real seating.
+
+        The menu label promises the camera's SENSOR lands on the Image plane, which is exactly
+        what ``seat_camera_on_sensor`` computes (bugs/0471, extended to 3-D by bugs/0473). The
+        offsets are deliberately NOT cleared first: the seating is relative to the body's current
+        bounds, so zeroing buys nothing and opens a window where a refusal (no traced detector)
+        would leave the body stranded at the origin -- which is the bug being fixed.
+
+        Wrapped in one history capture so the move is a single undo step (bugs/0449).
+        """
+        captured = False
+        try:
+            self._begin_history_capture()
+            captured = True
+        except Exception:
+            captured = False
+        try:
+            moved = bool(self.seat_camera_on_sensor("camera"))
+        except Exception as exc:
+            moved = False
+            self.status_var.set(f"Reset Camera to Image Plane failed: {exc}")
+        if captured:
+            try:
+                self._commit_history_capture()
+            except Exception:
+                pass
+        if moved:
+            self._selected_step_label = "camera"
+        return moved
 
     def improve_lens_surrogate_rear_to_step(self) -> bool:
         """Item 4 ("vendor CAD is truth; improve the surrogate to fit it"): move the lens

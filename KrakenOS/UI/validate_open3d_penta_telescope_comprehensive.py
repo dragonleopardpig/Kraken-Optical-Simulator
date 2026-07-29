@@ -6098,14 +6098,21 @@ def phase_77_glue_step_to_surrogate(
     The user wanted glue to be automatic AND on the right-click menu, so a STEP
     dragged off its auto-aligned station snaps back -- a lens re-centres on its
     CAD cylinder axis, the camera sensor returns to the Image plane, the LED to
-    its object station. `glue_step_overlay_to_surrogate` clears the two manual
-    drag offsets that `_cad_mesh_aligned_to_optical_axis` consumes; the action is
+    its object station. For the LENS and LED that means clearing the two manual
+    drag offsets `_cad_mesh_aligned_to_optical_axis` consumes; the action is
     wired to the CAD menu and the canvas right-click (alongside a one-click "Snap
     Picked Face -> Optical Axis" that reuses the tested feature-normal snap).
 
+    bugs/0475: the CAMERA is the exception and used to be handled wrongly. Its
+    auto station is NOT the zero offset -- with the drags cleared the body seats on
+    the NOMINAL axis, which on a folded scene is on top of the LED -- so it now
+    delegates to `seat_camera_on_sensor` (bugs/0471, 0473) instead of clearing.
+
     The guard (`validate_open3d_glue_step_to_surrogate`) is display-free: it drives
-    the editor glue method on a stub mixin (re-glue clears offsets; clean overlay
-    is a no-op; per-label isolation; unknown label rejected).
+    the editor glue method on a stub mixin (re-glue clears offsets for lens/LED;
+    clean overlay is a no-op; the camera delegates to the seating and is never
+    zeroed, and a REFUSED seating leaves it where it was rather than at the
+    origin; per-label isolation; unknown label rejected).
     """
     result = PhaseResult(
         name="Phase 77: Open 3D 'Glue STEP to Surrogate' re-applies auto optical-surrogate placement"

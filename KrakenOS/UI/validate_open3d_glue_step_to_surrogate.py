@@ -84,15 +84,37 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     ok("already glued" in stub.status_var.get().lower(),
        f"B2: status explains it is already glued (got {stub.status_var.get()!r})")
 
-    # --- C. works per-label and only touches the targeted overlay -------------
+    # --- C. the CAMERA seats, it does NOT clear (bugs/0475) -------------------
+    # This section used to assert the camera's offsets were zeroed. That assertion encoded
+    # the bug: a zero offset seats the body on the NOMINAL axis, which on a folded scene is
+    # on top of the LED, and left the "already glued" short-circuit refusing every retry.
+    # The camera's automatic station is the seating computation (bugs/0471, 0473).
+    seat_calls: list[str] = []
+    stub.seat_camera_on_sensor = lambda label="camera": (seat_calls.append(str(label)), True)[1]
     stub._set_step_axis_offset_xy("camera", (2.0, 2.0))
+    stub._set_step_placement_offset_xyz("camera", (229.93, 0.0, -25.335))
     stub._set_step_placement_offset_xyz("led", (0.0, 0.0, 9.0))
     ok(stub.glue_step_overlay_to_surrogate("camera") is True,
-       "C1: gluing the camera clears its offset independently")
-    ok(stub._step_axis_offset_xy("camera") == (0.0, 0.0),
-       "C2: camera offset cleared")
+       "C1: resetting the camera reports it moved")
+    ok(seat_calls == ["camera"],
+       f"C2: it delegates to seat_camera_on_sensor (calls={seat_calls})")
+    ok(stub._step_placement_offset_xyz("camera") == (229.93, 0.0, -25.335),
+       f"C3: the seating is left to compute the station -- the offset is NOT zeroed "
+       f"(got {stub._step_placement_offset_xyz('camera')})")
     ok(stub._step_placement_offset_xyz("led") == (0.0, 0.0, 9.0),
-       "C3: the untouched LED overlay keeps its offset (glue is per-label)")
+       "C4: the untouched LED overlay keeps its offset (the action is per-label)")
+
+    # --- C2. a refused seating must not strand the body ----------------------
+    def _refuse(label="camera"):
+        return False
+
+    stub.seat_camera_on_sensor = _refuse
+    stub._set_step_placement_offset_xyz("camera", (229.93, 0.0, -25.335))
+    ok(stub.glue_step_overlay_to_surrogate("camera") is False,
+       "C5: a refused seating reports no move")
+    ok(stub._step_placement_offset_xyz("camera") == (229.93, 0.0, -25.335),
+       f"C6: a refused seating leaves the camera where it was, never at the origin "
+       f"(got {stub._step_placement_offset_xyz('camera')})")
 
     # --- D. unknown / unimported label is rejected, not crashed ---------------
     ok(stub.glue_step_overlay_to_surrogate("not-a-label") is False,
