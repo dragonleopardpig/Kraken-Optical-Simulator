@@ -1427,6 +1427,51 @@ class ParaxialToolsMixin:
             "mirror slid along its leg, sensor + camera re-seated)."
         )
 
+    def apply_image_distance_frozen_aware(self, image_distance: float) -> bool:
+        """bugs/0478: place a solved image distance in WORLD terms on a frozen scene.
+
+        On a frozen scene the mirror->sensor gap row is NOT a signed distance along the beam.
+        The beam after the fold runs one way while the station axis advances the other, so the
+        world leg goes as ``const - thickness``: writing the solved distance straight into
+        ``rows[img_row].thickness`` moves the sensor the WRONG WAY, one millimetre per
+        millimetre. That is the whole of the reported "changed to FOV 30x30, ray defocus at
+        sensor" -- the solve asked for a 25 mm move and got one of -25 mm.
+
+        ``_apply_frozen_image_split`` already does this correctly for the manual leg-pin path:
+        it re-bakes the mirror and sensor world centres along the measured ``out_dir`` and
+        carries the camera body. Reuse it with ``delta = 0`` -- the mirror stays put and only
+        the sensor re-seats, which is exactly what an unconstrained conjugate solve wants.
+
+        Returns True when it handled the write. Returns False -- leaving the caller to do its
+        plain prescription write -- whenever the scene is not frozen, has no image-side fold,
+        or the geometry cannot be read. A straight (unfolded) scene has no inversion and must
+        keep its existing behaviour.
+        """
+        try:
+            split = self._folded_image_conjugate_split()
+        except Exception:
+            return False
+        if not isinstance(split, dict):
+            return False
+        try:
+            geometry = self._frozen_image_fold_world_geometry(split)
+        except Exception:
+            return False
+        if geometry is None:
+            return False
+        try:
+            far_new = float(image_distance)
+            near_new = float(geometry["near"])
+        except Exception:
+            return False
+        if not np.isfinite(far_new) or far_new <= 0.0 or not np.isfinite(near_new):
+            return False
+        try:
+            applied, _message = self._apply_frozen_image_split(split, near_new, far_new, 0.0)
+        except Exception:
+            return False
+        return bool(applied)
+
     def _folded_object_conjugate_split(self) -> "dict | None":
         """Split the object distance c at the OBJECT-side RA-mirror fold centre.
 

@@ -1231,11 +1231,22 @@ class QuickEstimationService:
             )
             image_distance = _new_gap
             _collision_note = _note
+        # Object side first: the prescription write shifts stations, and the frozen image write
+        # below re-bakes world centres, so it has to run last (bugs/0447's ordering rule).
         self.editor.rows[obj_row].thickness = float(object_distance)
-        self.editor.rows[img_row].thickness = float(image_distance)
+        # bugs/0478: on a FROZEN folded scene the image gap row is not a signed distance along
+        # the beam -- the world leg runs as ``const - thickness``, so the plain write below
+        # moves the sensor the wrong way and leaves the defocus it was solving for. The
+        # frozen-aware path places the sensor in WORLD terms and carries the camera; it returns
+        # False on any straight/unfrozen scene, which keeps the original behaviour there.
+        _frozen_note = ""
+        if self.editor.apply_image_distance_frozen_aware(image_distance):
+            _frozen_note = " (frozen scene: sensor re-seated in world terms, camera carried)"
+        else:
+            self.editor.rows[img_row].thickness = float(image_distance)
         return True, (
             f"Solved thickness: object {object_distance:.6g} mm, "
-            f"image {image_distance:.6g} mm (|m|={mag:.4g})."
+            f"image {image_distance:.6g} mm (|m|={mag:.4g}).{_frozen_note}"
             f"{_collision_note}"
         )
 
