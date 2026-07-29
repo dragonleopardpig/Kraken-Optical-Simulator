@@ -20287,6 +20287,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             pass
         if moved:
             self._apply_model_change()
+            # bugs/0471: check AFTER the rebuild -- the transformed STEP mesh is memoized, so a
+            # check inside the action reads the pre-move body (bugs/0331).
+            try:
+                collisions = self.editor.camera_body_collisions()
+            except Exception:
+                collisions = []
+            if collisions:
+                self.status_var.set(
+                    f"{self.status_var.get()}  WARNING: the camera body overlaps "
+                    + ", ".join(collisions)
+                    + "."
+                )
 
     def _add_image_plane_camera_menu(self, menu) -> None:
         """Append a 'Register STEP camera (sensor size)' cascade for the single-axis detector,

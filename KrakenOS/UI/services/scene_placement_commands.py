@@ -2862,9 +2862,11 @@ class ScenePlacementMixin:
             self.status_var.set(f"Seat camera failed: {exc}")
             return False
         message = f"Seated the camera on the sensor (moved {delta:+.4g} mm along the beam)."
-        collisions = self.camera_body_collisions(label)
-        if collisions:
-            message += " WARNING: the body still overlaps " + ", ".join(collisions) + "."
+        # The overlap check is deliberately NOT run here: the transformed STEP mesh is memoized
+        # (bugs/0331), so querying it immediately after writing the placement offset can read
+        # the PRE-MOVE body and warn about a collision that no longer exists -- observed once,
+        # reporting an overlap with the LED that is 120 mm away in x. Callers that want the
+        # check run `camera_body_collisions()` after the refresh, when the mesh is rebuilt.
         self.status_var.set(message)
         return True
 
