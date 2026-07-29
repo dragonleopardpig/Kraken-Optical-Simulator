@@ -2309,7 +2309,12 @@ class ParaxialToolsMixin:
         except Exception:
             return None
 
-        origins, directions = [], []
+        # AXIAL field only -- a mixed-field bundle images to a patch, not a single waist. The
+        # axial field is picked RELATIVE TO THE OBJECT, not to the world origin: a scene whose
+        # object sits away from (0,0,0) would otherwise match no rays at all and report "best
+        # focus is not computable". Take the launch point closest to the object row and keep
+        # every ray sharing it.
+        candidates = []
         for path in list(getattr(bundle, "ray_paths", None) or []):
             if str(getattr(path, "termination_reason", "")) != "target_termination":
                 continue
@@ -2319,14 +2324,33 @@ class ParaxialToolsMixin:
                 continue
             if pts.ndim != 2 or pts.shape[0] < 2:
                 continue
-            if float(np.linalg.norm(pts[0, :3])) > 1.0:
-                continue  # AXIAL field only -- a mixed-field bundle has no single waist
             step = pts[-1, :3] - pts[-2, :3]
             length = float(np.linalg.norm(step))
             if length <= 1.0e-9:
                 continue
-            origins.append(pts[-1, :3])
-            directions.append(step / length)
+            candidates.append((pts[0, :3].copy(), pts[-1, :3].copy(), step / length))
+        if not candidates:
+            return None
+        try:
+            rows = list(getattr(self, "rows", []) or [])
+            stations = self._row_z_positions()
+            object_point = np.asarray(
+                [float(rows[0].desp_x), float(rows[0].desp_y), float(stations[0]) + float(rows[0].desp_z)],
+                dtype=float,
+            )
+        except Exception:
+            object_point = np.zeros(3, dtype=float)
+        launches = np.asarray([c[0] for c in candidates], dtype=float)
+        offsets = np.linalg.norm(launches - object_point, axis=1)
+        nearest = float(np.min(offsets))
+        spread = float(np.max(offsets) - nearest)
+        tolerance = max(1.0e-3, 0.02 * spread)
+        origins, directions = [], []
+        for (launch, end, direction), offset in zip(candidates, offsets):
+            if offset > nearest + tolerance:
+                continue
+            origins.append(end)
+            directions.append(direction)
         if len(origins) < 4:
             return None
         origins = np.asarray(origins, dtype=float)

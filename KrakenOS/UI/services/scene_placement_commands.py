@@ -2791,41 +2791,73 @@ class ScenePlacementMixin:
         except Exception:
             self.status_var.set("Seat camera: the image plane / sensor offset is unavailable.")
             return False
-        beam_z = -1.0
+        # The beam direction is read from the detector normal (bugs/0464 made it point along
+        # the beam) as a full 3-D vector -- NOT an assumed +-Z. A camera fed along X, or on a
+        # skew arm, has to seat just as correctly as this scene's -Z fold.
+        # NOTE trace_rays=True: the detector (and therefore the beam direction) only exists in a
+        # TRACED bundle. Reading it from an untraced one found no detector and silently fell back
+        # to a default -Z, which seated the AZ85 RA-mirror scene by +338.9 mm. This action is a
+        # user-invoked one-off, so paying for a trace is the right trade -- and if no detector
+        # turns up, it refuses rather than guessing a direction.
+        beam = None
+        sensor_point = None
         try:
             _s, _r, bundle = self._build_preview_system_rays_bundle(
-                sampling_mode=None, update_state=False, trace_rays=False
+                sampling_mode=None, update_state=False, trace_rays=True
             )
+            # Prefer the arm pinned to the designed Image; fall back to ANY detector. A plain
+            # SEQUENTIAL scene has no branch detectors at all, and demanding one refused to
+            # seat the camera on exactly the scenes that are simplest to seat.
+            chosen = None
             for target in list(getattr(bundle, "targets", None) or []):
                 if not bool(getattr(target, "is_detector", False)):
                     continue
                 meta = getattr(target, "metadata", None) or {}
-                if str(meta.get("focus_source", "")) != "reached_image":
-                    continue
-                normal = np.asarray(getattr(target, "normal_world", None), dtype=float).reshape(3)
-                if float(np.linalg.norm(normal)) > 1.0e-9 and abs(float(normal[2])) > 1.0e-6:
-                    beam_z = float(np.sign(normal[2]))
-                break
+                if str(meta.get("focus_source", "")) == "reached_image":
+                    chosen = target
+                    break
+                if chosen is None:
+                    chosen = target
+            if chosen is not None:
+                normal = np.asarray(getattr(chosen, "normal_world", None), dtype=float).reshape(3)
+                if float(np.linalg.norm(normal)) > 1.0e-9:
+                    beam = normal / float(np.linalg.norm(normal))
+                centre = np.asarray(getattr(chosen, "center_world", None), dtype=float).reshape(3)
+                if np.all(np.isfinite(centre)):
+                    sensor_point = centre
         except Exception:
-            pass
-        target_front = sensor_z - back * beam_z
+            beam = None
+        if beam is None or sensor_point is None:
+            self.status_var.set(
+                "Seat camera: no imaging detector in this scene, so the beam direction at the "
+                "sensor is unknown. Trace the scene (Show Rays) and retry."
+            )
+            return False
+        upstream = -beam  # from the sensor back toward the optics
         try:
             mesh = self._transformed_imported_step_mesh_for_label(label)
             bounds = np.asarray(mesh.bounds, dtype=float).reshape(6)
         except Exception:
             self.status_var.set("Seat camera: no camera STEP body in this scene.")
             return False
-        # The sensor faces the incoming beam. With the beam arriving along -Z at the detector,
-        # that is the body's +Z face; read it from the bounds rather than assuming a convention.
-        current_front = float(bounds[5]) if beam_z < 0.0 else float(bounds[4])
-        delta = float(target_front) - current_front
+        if sensor_point is None:
+            sensor_point = np.asarray((0.0, 0.0, sensor_z), dtype=float)
+        # The face the beam meets FIRST is the body extreme in the upstream direction. Project
+        # all eight bound-box corners rather than picking a bounds index, so any beam direction
+        # works.
+        corners = np.array(
+            [[bounds[i], bounds[2 + j], bounds[4 + k]] for i in (0, 1) for j in (0, 1) for k in (0, 1)],
+            dtype=float,
+        )
+        current_front = float(np.max(corners @ upstream))
+        desired_front = float(np.dot(sensor_point + upstream * back, upstream))
+        delta = desired_front - current_front
         if abs(delta) <= 1.0e-6:
             self.status_var.set("Camera already seated on the sensor.")
             return False
         try:
-            offset = list(self._step_placement_offset_xyz(label))
-            offset[2] = float(offset[2]) + delta
-            self._set_step_placement_offset_xyz(label, tuple(offset))
+            offset = np.asarray(self._step_placement_offset_xyz(label), dtype=float).reshape(3)
+            self._set_step_placement_offset_xyz(label, tuple(offset + upstream * delta))
         except Exception as exc:
             self.status_var.set(f"Seat camera failed: {exc}")
             return False
