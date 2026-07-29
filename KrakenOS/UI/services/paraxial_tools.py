@@ -307,6 +307,34 @@ class ParaxialToolsMixin:
             raise RuntimeError("Not enough surfaces for paraxial solve")
         reference_rows = [SurfaceRow(**asdict(source_rows[0]))]
         last_source_index: int | None = None
+
+        def _center_reference_row(ref_row, src_row) -> None:
+            """bugs/0465: a first-order reference must be a CENTRED straight system.
+
+            A 0433-frozen / snapped chain carries ABSOLUTE world placement in its rows -- the
+            user's scene sits at x = 71...230 with tilts (0, -90, -180). Copying those into the
+            reference leaves the probe rays, which are launched down the nominal axis, missing
+            every surface: ``RP.pick(-1)`` then comes back EMPTY and ``PupilCalc.__init__``
+            dies on ``L[0]`` with "index 0 is out of bounds for axis 0 with size 0", so the
+            launch silently degrades to the coarse geometric aim
+            (flag report 2026-07-29, traced to PupilTool.py:638). The reference keeps the
+            SPACINGS (thicknesses) and drops the placement, which is what "first-order
+            reference" means. Sequential rows, whose desps ARE the design, are untouched.
+            """
+            try:
+                from KrakenOS.UI.services.row_placement import is_world_placed
+            except Exception:
+                return
+            if not is_world_placed(src_row):
+                return
+            for attr in ("desp_x", "desp_y", "desp_z", "tilt_x", "tilt_y", "tilt_z"):
+                if hasattr(ref_row, attr):
+                    try:
+                        setattr(ref_row, attr, 0.0)
+                    except Exception:
+                        pass
+
+        _center_reference_row(reference_rows[0], source_rows[0])
         for index, row in enumerate(source_rows[1:], start=1):
             if row.surface == "Image":
                 if index >= len(source_rows) - 1:
@@ -343,6 +371,7 @@ class ParaxialToolsMixin:
                     # is inert, so its first-order equivalent is AIR, keeping the relay 1:1. (An INTERNAL
                     # prism keeps its glass.) Matches the AIR flat-plate the display+focus use.
                     ref_row.glass = "AIR"
+                _center_reference_row(ref_row, row)
                 reference_rows.append(ref_row)
                 last_source_index = index
                 continue
@@ -376,6 +405,7 @@ class ParaxialToolsMixin:
                 kept.tilt_x = kept.tilt_y = kept.tilt_z = 0.0
                 kept.desp_x = kept.desp_y = kept.desp_z = 0.0
                 kept.axis_move = 0.0
+            _center_reference_row(kept, row)
             reference_rows.append(kept)
             last_source_index = index
         if last_source_index is None:
