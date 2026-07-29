@@ -604,6 +604,21 @@ class DetectorCoverageOverlayService:
             # phantom "Sensor NxN / Image circle" coverage beside the beam splitter.
             if meta.get("draw_suppressed"):
                 continue
+            # bugs/0459 (follow-up): "Sensor 23.0x23.0 / Image circle" are properties of a REAL
+            # CAMERA. A beam splitter makes every terminal leaf a detector, and drawing the
+            # camera's dimensions on arms that have no camera puts two phantom sensors mid-scene
+            # -- the user's "still have 3 sensor/image plane" on a scene with ONE camera. Sensor
+            # iconography therefore follows the CAMERA REGISTRATION, not the leaf count: the arm
+            # that reaches the designed Image (or carries an explicitly assigned camera) draws it;
+            # the other arms do not. This does NOT drop their detector -- they keep their plane and
+            # their ray hard-stop, exactly as bugs/0451 kept the dead-end arm's stop while removing
+            # its ring.
+            if (
+                str(meta.get("target_source", "")) == "branch_detector"
+                and str(meta.get("focus_source", "")) != "reached_image"
+                and not meta.get("assigned_camera_label")
+            ):
+                continue
             mag = meta["two_arm_magnification"] if "two_arm_magnification" in meta else sys_mag
             image_radius = meta.get("two_arm_image_circle_radius") or sys_image_radius
             if image_radius is None:

@@ -15325,6 +15325,9 @@ phase_374_bs_fold_reaches_sensor = _phase_from_standalone(
 phase_375_rays_drawn_to_sensor = _phase_from_standalone(
     375, "a ray that hit its detector is drawn all the way to it (0459)",
     "KrakenOS.UI.validate_open3d_0459_rays_drawn_to_sensor", "rays_drawn_to_sensor")
+phase_376_sensor_iconography_follows_camera = _phase_from_standalone(
+    376, "sensor iconography follows the camera, not the leaf count (0462)",
+    "KrakenOS.UI.validate_open3d_0462_sensor_iconography_follows_camera", "sensor_iconography_follows_camera")
 
 
 # ---------------------------------------------------------------------------
@@ -15747,6 +15750,7 @@ def main() -> int:
             phase_373_row_placement_space,
             phase_374_bs_fold_reaches_sensor,
             phase_375_rays_drawn_to_sensor,
+            phase_376_sensor_iconography_follows_camera,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
