@@ -61,6 +61,10 @@ class BranchDetector:
     focus_source: str = ""  # "converging_rays" | "default_distance"
     # B2 (reserved -- a STEP camera registered to this detector). Unused in B1.
     assigned_camera_label: str | None = None
+    # bugs/0477: does THIS arm's bundle actually land on the designed Image? A property of
+    # the arm's own rays, unlike ``focus_source``, which also records HOW this arm's plane was
+    # positioned and therefore flips when the Image moves. The draw gate needs the former.
+    reaches_designed_image: bool = False
     # bugs/0093: where this arm exits the cube / its last surface (the mean exit-ray
     # origin), for the per-branch "exit face -> detector" distance overlay.
     exit_point_world: Any = None
@@ -522,6 +526,7 @@ def derive_branch_detectors(
                 half_h=float(half_h),
                 focus_source=focus_source,
                 assigned_camera_label=assigned_camera_label,
+                reaches_designed_image=bool(reaches_image),
                 exit_point_world=np.asarray(mean_origin, dtype=float),
             )
         )
@@ -559,6 +564,8 @@ def branch_detector_scene_target(detector: BranchDetector, row_index: int | None
             "branch_path": detector.branch_path,
             "assigned_camera_label": detector.assigned_camera_label,
             "focus_source": detector.focus_source,
+            # bugs/0477: the draw gate's real question, exposed for guards and diagnostics.
+            "reaches_designed_image": bool(detector.reaches_designed_image),
             "exit_point_world": (
                 tuple(float(v) for v in np.asarray(detector.exit_point_world, dtype=float).reshape(-1)[:3])
                 if detector.exit_point_world is not None

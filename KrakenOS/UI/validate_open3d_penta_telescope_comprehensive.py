@@ -15359,6 +15359,9 @@ phase_383_physics_star_import = _phase_from_standalone(
 phase_384_camera_collision_promoted = _phase_from_standalone(
     384, "the camera anti-crash sees PROMOTED solids, and remove-defocus asks it (0476)",
     "KrakenOS.UI.validate_open3d_0476_camera_body_collision_promoted", "camera_collision_promoted")
+phase_385_phantom_sensor_planes = _phase_from_standalone(
+    385, "a branch arm's draw gate reads its OWN rays, not a scene-global label (0477)",
+    "KrakenOS.UI.validate_open3d_0477_phantom_sensor_planes", "phantom_sensor_planes")
 
 
 # ---------------------------------------------------------------------------
@@ -15790,6 +15793,7 @@ def main() -> int:
             phase_382_seat_camera_on_sensor,
             phase_383_physics_star_import,
             phase_384_camera_collision_promoted,
+            phase_385_phantom_sensor_planes,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

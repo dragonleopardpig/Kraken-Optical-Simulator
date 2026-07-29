@@ -882,6 +882,81 @@ def drop_superseded_image_display(targets, surface_curves, labels, rows, *, has_
     return kept_targets, curves, kept_labels
 
 
+def scene_has_real_sensor_arm(branch_detectors) -> bool:
+    """Does ANY arm in this scene carry a real sensor?
+
+    bugs/0464 uses this to decide whether camera-less arms may be suppressed at all: a scene
+    whose imaging arm never reaches the designed Image must keep its detector rather than be
+    left with none.
+
+    bugs/0477: the question is whether an arm's RAYS land on the designed Image
+    (``reaches_designed_image``), not how its plane got positioned (``focus_source``). The
+    latter also reads "reached_image" when the code force-pins a plane it could not trust, so
+    it flips when the IMAGE moves even though no arm's rays changed -- which is how "remove
+    defocus" turned this flag False and un-suppressed two phantom arms at once.
+    """
+    return any(
+        bool(getattr(d, "reaches_designed_image", False))
+        or getattr(d, "assigned_camera_label", None)
+        for d in (branch_detectors or [])
+    )
+
+
+def branch_detector_draw_suppressed(
+    branch_detector,
+    *,
+    scene_has_diffuse_scatter: bool,
+    illumination_flood: bool,
+    lone_dead_end_arm: bool,
+    scene_has_real_sensor_arm: bool,
+) -> bool:
+    """Should this branch detector's plane/footprint/coverage be hidden?
+
+    bugs/0182 + bugs/0183 + bugs/0184 + bugs/0285: a diffuse-scatter leaf, an internal
+    multi-bounce ghost, any leaf in a whole-scene diffuse double-pass, OR a non-imaging
+    illumination-flood arm still earns a detector so it acts as a ray hard-stop
+    (``detector_planes_for_hard_stop`` bounds the otherwise-escaping rays), but its plane
+    must NOT draw -- dozens of such footprints buried the 2-D 'full 3-D' projection in
+    crisscrossing orange rectangles. The single ``draw_suppressed`` flag is honoured by
+    every downstream draw path (2-D projection, 3-D footprint, detector-coverage overlay).
+
+    Extracted as a pure function (bugs/0477) so the decision is testable without building a
+    whole scene. It had to be reasoned about from a rendered screenshot twice.
+    """
+    # Imported here, not at module scope: branch_detectors imports scene_geometry which this
+    # module also feeds, and build_scene_bundle already pulls these in lazily for that reason.
+    from KrakenOS.UI.services.branch_detectors import _branch_path_draw_suppressed
+
+    if scene_has_diffuse_scatter:
+        return True
+    if _branch_path_draw_suppressed(getattr(branch_detector, "branch_path", "")):
+        return True
+    if illumination_flood and str(getattr(branch_detector, "focus_source", "")) != "reached_image":
+        return True
+    if lone_dead_end_arm:  # bugs/0451
+        return True
+    # bugs/0464: an arm with NO CAMERA has no sensor and no image circle, so it must not draw
+    # a sensor plane, footprint or coverage -- the user, twice: "there are still 2 additional
+    # sensor planes (orange color). There are no camera why there is a sensor?"
+    # (flag_20260729_120601). A splitter makes every terminal leaf a detector; only the arm
+    # that reaches the designed Image or carries an assigned camera is a real sensor.
+    # bugs/0090 ("show a detector on BOTH arms") is preserved for a genuine two-CAMERA split,
+    # because such an arm has assigned_camera_label set. The target itself survives, so the arm
+    # keeps its ray hard-stop exactly as bugs/0451 kept the dead-end arm's.
+    #
+    # bugs/0477: the test is THIS arm's own rays (``reaches_designed_image``), not
+    # ``focus_source``. focus_source conflates "landed on the Image" with "we force-pinned a
+    # plane we could not trust", so it flips when the IMAGE moves even though the arm's rays
+    # did not change -- which is how "remove defocus" un-suppressed two arms at once.
+    if (
+        scene_has_real_sensor_arm
+        and not bool(getattr(branch_detector, "reaches_designed_image", False))
+        and not getattr(branch_detector, "assigned_camera_label", None)
+    ):
+        return True
+    return False
+
+
 def build_scene_bundle(
     *,
     rows: list,
@@ -1075,11 +1150,7 @@ def build_scene_bundle(
         # Otherwise a scene whose imaging arm never reaches the designed Image would be left
         # with no detector plane at all -- caught by the bugs/0451 control, which asserts a
         # real split still draws its arms.
-        _scene_has_real_sensor_arm = any(
-            str(getattr(d, "focus_source", "")) == "reached_image"
-            or getattr(d, "assigned_camera_label", None)
-            for d in branch_detectors
-        )
+        _scene_has_real_sensor_arm = scene_has_real_sensor_arm(branch_detectors)
         lone_dead_end_arm = (
             len(branch_detectors) == 1
             and str(getattr(branch_detectors[0], "focus_source", "")) != "reached_image"
@@ -1096,28 +1167,12 @@ def build_scene_bundle(
             # single ``draw_suppressed`` metadata flag, computed here where the scene-scatter
             # and flood context is known, is honoured by every downstream draw path (2-D
             # projection, 3-D footprint, detector-coverage overlay).
-            draw_suppressed = (
-                scene_has_diffuse_scatter
-                or _branch_path_draw_suppressed(branch_detector.branch_path)
-                or (
-                    illumination_flood
-                    and str(branch_detector.focus_source) != "reached_image"
-                )
-                or lone_dead_end_arm  # bugs/0451
-                # bugs/0464: an arm with NO CAMERA has no sensor and no image circle, so it
-                # must not draw a sensor plane, footprint or coverage -- the user, twice:
-                # "there are still 2 additional sensor planes (orange color). There are no
-                # camera why there is a sensor?" (flag_20260729_120601). A splitter makes
-                # every terminal leaf a detector; only the arm that reaches the designed Image
-                # or carries an assigned camera is a real sensor. bugs/0090 ("show a detector
-                # on BOTH arms") is preserved for a genuine two-CAMERA split, because such an
-                # arm has assigned_camera_label set. The target itself survives, so the arm
-                # keeps its ray hard-stop exactly as bugs/0451 kept the dead-end arm's.
-                or (
-                    _scene_has_real_sensor_arm
-                    and str(branch_detector.focus_source) != "reached_image"
-                    and not getattr(branch_detector, "assigned_camera_label", None)
-                )
+            draw_suppressed = branch_detector_draw_suppressed(
+                branch_detector,
+                scene_has_diffuse_scatter=scene_has_diffuse_scatter,
+                illumination_flood=illumination_flood,
+                lone_dead_end_arm=lone_dead_end_arm,
+                scene_has_real_sensor_arm=_scene_has_real_sensor_arm,
             )
             if draw_suppressed:
                 target.metadata["draw_suppressed"] = True
