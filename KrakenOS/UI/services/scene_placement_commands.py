@@ -2738,6 +2738,15 @@ class ScenePlacementMixin:
         numbers -- on the reported scene the camera top sat ~5 mm inside the mirror substrate
         after a focus move. Axis-aligned bounds overlap is deliberately coarse: it is a warning,
         not a clearance calculation, and a false quiet is worse than a false alarm here.
+
+        bugs/0476: this used to scan ONLY the STEP-overlay labels, which made it structurally
+        blind to exactly the obstacle it was written for. Once a beam splitter or fold mirror is
+        PROMOTED its overlay is gone (the same disappearance bugs/0103 handled for the glue
+        menu), so on the reported scene -- where the BS is row 3 and the RA mirror row 7 -- the
+        loop found no "optical" overlay and returned [] no matter how deep the camera sat inside
+        the mirror. Promoted rows are now scanned too, via the bugs/0393b bounds helper that
+        re-reads the live centre (the promotion metadata's centre goes stale once the solid is
+        moved). Overlay scanning is kept: a scene can have both.
         """
         hits: list[str] = []
         try:
@@ -2749,6 +2758,10 @@ class ScenePlacementMixin:
             a = _np.asarray(mesh.bounds, dtype=float).reshape(6)
         except Exception:
             return hits
+
+        def _overlaps(b) -> bool:
+            return all(a[2 * i] < b[2 * i + 1] - 1e-6 and b[2 * i] < a[2 * i + 1] - 1e-6 for i in range(3))
+
         for other in ("lens", "led", "optical"):
             if other == label:
                 continue
@@ -2759,9 +2772,23 @@ class ScenePlacementMixin:
                 b = _np.asarray(other_mesh.bounds, dtype=float).reshape(6)
             except Exception:
                 continue
-            overlap = all(a[2 * i] < b[2 * i + 1] - 1e-6 and b[2 * i] < a[2 * i + 1] - 1e-6 for i in range(3))
-            if overlap:
+            if _overlaps(b):
                 hits.append(other)
+
+        for index, row in enumerate(list(getattr(self, "rows", None) or [])):
+            advanced = getattr(row, "advanced", None)
+            if not isinstance(advanced, dict) or not isinstance(advanced.get("StepOverlayPromotion"), dict):
+                continue
+            try:
+                bounds = self._promoted_solid_world_bounds(row, row_index=index)
+            except Exception:
+                continue
+            if bounds is None or len(tuple(bounds)) != 6:
+                continue
+            if _overlaps(tuple(float(v) for v in bounds)):
+                name = str(getattr(row, "name", "") or "").strip() or f"row S{index}"
+                if name not in hits:
+                    hits.append(name)
         return hits
 
     def seat_camera_on_sensor(self, label: str = "camera") -> bool:

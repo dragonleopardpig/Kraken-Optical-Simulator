@@ -15356,6 +15356,9 @@ phase_382_seat_camera_on_sensor = _phase_from_standalone(
 phase_383_physics_star_import = _phase_from_standalone(
     383, "the Physics package re-exports the legacy optics helpers (0474)",
     "KrakenOS.UI.validate_open3d_0474_physics_star_import", "physics_star_import")
+phase_384_camera_collision_promoted = _phase_from_standalone(
+    384, "the camera anti-crash sees PROMOTED solids, and remove-defocus asks it (0476)",
+    "KrakenOS.UI.validate_open3d_0476_camera_body_collision_promoted", "camera_collision_promoted")
 
 
 # ---------------------------------------------------------------------------
@@ -15786,6 +15789,7 @@ def main() -> int:
             phase_381_remove_defocus_on_splitter,
             phase_382_seat_camera_on_sensor,
             phase_383_physics_star_import,
+            phase_384_camera_collision_promoted,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

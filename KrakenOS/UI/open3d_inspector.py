@@ -20286,6 +20286,24 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             pass
         if moved:
             self._apply_model_change()
+            # bugs/0476: the camera is glued to the detector, so this action moves the BODY --
+            # on the reported scene it drove the camera 20.7 mm into the RA mirror. It was the
+            # only camera-moving action with no collision warning (the seating paths have had
+            # one since bugs/0471). The image-gap collision FLOOR does not cover this: it
+            # reserves the mirror's half-aperture for the sensor PLANE and knows nothing about
+            # the body's front-to-sensor standoff hanging upstream of it.
+            # Checked AFTER the rebuild, never inside the move: the transformed STEP mesh is
+            # memoized (bugs/0331), so an in-action check reads the pre-move body.
+            try:
+                collisions = self.editor.camera_body_collisions()
+            except Exception:
+                collisions = []
+            if collisions:
+                self.status_var.set(
+                    f"{self.status_var.get()}  WARNING: the camera body overlaps "
+                    + ", ".join(collisions)
+                    + "."
+                )
 
     def _seat_camera_on_sensor(self) -> None:
         """bugs/0471: re-seat the camera STEP so its sensor lands on the Image row."""
