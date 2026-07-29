@@ -1358,7 +1358,29 @@ class ParaxialToolsMixin:
                 body_targets[label] = current + body_delta
         # Prescription bookkeeping: the object gap carries the slide (the 0440
         # reference total moves with it); stations then shift, the re-bake absorbs.
+        #
+        # bugs/0467: growing the OBJECT gap alone also grows the object CONJUGATE, which
+        # changes the paraxial magnification -- the exact opposite of the "rigid
+        # repackaging, focus untouched" promised above. Measured on the user's scene:
+        # sliding the BS to a 40 mm object leg moved |m| from 1.152 to 1.4171 while both
+        # split totals stayed at 125.463 / 154.770, so the readouts said "unchanged" while
+        # the optics did not. Downstream that destroyed a just-solved FOV: the user solved
+        # 30 x 30, applied the leg constraint, and the scene reported 16.3 x 16.3 with the
+        # rays defocused at the sensor (flag_20260729_140916). The unfrozen path has always
+        # compensated (near += delta, far -= delta); the frozen path only ever added. Take
+        # the same delta back out of the FAR leg so the conjugate is genuinely preserved.
         rows[0].thickness = float(rows[0].thickness) + float(delta)
+        _far_gap = int(split.get("far_gap_row", -1))
+        if 0 <= _far_gap < len(rows):
+            _far_new = float(rows[_far_gap].thickness) - float(delta)
+            if _far_new >= 0.0:
+                rows[_far_gap].thickness = _far_new
+            else:
+                rows[0].thickness = float(rows[0].thickness) - float(delta)
+                return False, (
+                    f"Constraint out of range: that leg needs a negative spacer "
+                    f"({_far_new:.4g} mm) on the far side."
+                )
         for index, target in targets.items():
             self._rebake_frozen_row_world_center(index, target)
         for label, target in body_targets.items():

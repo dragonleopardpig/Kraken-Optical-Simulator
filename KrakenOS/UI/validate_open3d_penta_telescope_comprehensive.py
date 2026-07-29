@@ -15334,6 +15334,9 @@ phase_377_axis_dedup = _phase_from_standalone(
 phase_378_sensor_plane_and_axis_sanity = _phase_from_standalone(
     378, "the sensor is square to its beam; only real sensors/axes draw (0464)",
     "KrakenOS.UI.validate_open3d_0464_sensor_plane_and_axis_sanity", "sensor_plane_and_axis_sanity")
+phase_379_split_preserves_conjugate = _phase_from_standalone(
+    379, "a frozen leg split does not move the magnification (0467)",
+    "KrakenOS.UI.validate_open3d_0467_split_preserves_conjugate", "split_preserves_conjugate")
 
 
 # ---------------------------------------------------------------------------
@@ -15759,6 +15762,7 @@ def main() -> int:
             phase_376_sensor_iconography_follows_camera,
             phase_377_axis_dedup,
             phase_378_sensor_plane_and_axis_sanity,
+            phase_379_split_preserves_conjugate,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
