@@ -12178,6 +12178,49 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                         forward_points = self._folded_traced_axis_forward_points(segment)
                         if forward_points is not None:
                             segment["points"] = forward_points
+                # bugs/0463: a traced segment must also be distinct from the GUIDE axes
+                # already assembled above (axis:global, the beam-splitter reflect guides,
+                # the frozen-fold guides). The collinearity test above only compares each
+                # segment with the LAUNCH direction, so a traced segment lying exactly on
+                # a guide line survived and drew a second dotted line on top of it -- the
+                # user's "multiple optical axis" on a scene with one beam path
+                # (flag_20260729_105204: 5 axes, of which axis:ray:374:segment:3 and
+                # axis:ray:426:segment:4 duplicated the split / frozen-fold guides).
+                # Drop a segment whose LINE (direction AND position) already exists.
+                def _axis_line(record):
+                    try:
+                        pts = np.asarray(record.get("points"), dtype=float).reshape(-1, 3)
+                    except Exception:
+                        return None
+                    if pts.shape[0] < 2:
+                        return None
+                    direction = pts[-1] - pts[0]
+                    norm = float(np.linalg.norm(direction))
+                    if norm <= 1.0e-9:
+                        return None
+                    return pts[0], direction / norm
+
+                existing_lines = [ln for ln in (_axis_line(r) for r in records) if ln is not None]
+
+                def _duplicates_existing(segment) -> bool:
+                    line = _axis_line(segment)
+                    if line is None:
+                        return False
+                    origin, unit = line
+                    for other_origin, other_unit in existing_lines:
+                        if abs(float(np.dot(unit, other_unit))) < 0.999:
+                            continue  # not parallel -- a genuinely different direction
+                        offset = origin - other_origin
+                        perpendicular = offset - other_unit * float(np.dot(offset, other_unit))
+                        # 10 mm, not a hair's breadth: a traced chief ray runs a few mm off
+                        # the guide it belongs to (measured 3.9 mm on the user's scene, where
+                        # axis:ray:426 shadowed axis:global:split), and two dotted lines that
+                        # close together read as one smeared axis, never as two.
+                        if float(np.linalg.norm(perpendicular)) <= 10.0:
+                            return True  # same direction AND effectively the same line
+                    return False
+
+                traced_segments = [seg for seg in traced_segments if not _duplicates_existing(seg)]
                 for axis_number, segment in enumerate(traced_segments, start=2):
                     segment["axis_label"] = f"Optical Axis {axis_number}"
                 records.extend(traced_segments)
