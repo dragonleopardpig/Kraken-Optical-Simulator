@@ -57,6 +57,13 @@ class SceneSnapshot:
     placement_rotate_handle_count: int = 0
     thickness_dimension_count: int = 0
     ray_actor_count: int = 0
+    # bugs/0459: the COUNT alone cannot say whether the drawn beam reaches the sensor. On
+    # 2026-07-29 the user's live view truncated the beam at the lens while every headless
+    # measurement of the same file drew it to x=264.9, and the flag could not distinguish the
+    # two. These bounds make a flag decide it: the union extent of the visible ray actors, plus
+    # how many reach past the scene's far half.
+    ray_actor_bounds: list[float] = field(default_factory=list)
+    ray_actor_extents: list[list[float]] = field(default_factory=list)
     optical_axis_actor_count: int = 0
     optical_axis_highlight_present: bool = False
     # bugs/0010: capture the STEP face-hover edge highlight so a "ghost edges"
@@ -589,6 +596,41 @@ class Open3DEventRecorder:
             snapshot.thickness_dimension_count = len(inspector._actor_thickness_dimension_map or {})
             snapshot.ray_actor_count = len(inspector._actor_ray_map or {})
             snapshot.optical_axis_actor_count = len(inspector._actor_optical_axis_map or {})
+            # bugs/0459: read the ray geometry straight off the RENDERER, not off the actor
+            # maps -- the merged-ray path (bugs/0223 Fix B) collapses many polylines into a
+            # few actors whose keys do not round-trip through _actor_ray_map, so a map-based
+            # read reports nothing while the screen is full of rays. Union extent + per-actor
+            # extents let a flag say whether the drawn beam reaches the sensor.
+            renderer = getattr(inspector, "_renderer", None)
+            if renderer is not None:
+                props = renderer.GetViewProps()
+                props.InitTraversal()
+                lo = [float("inf")] * 3
+                hi = [float("-inf")] * 3
+                extents: list[list[float]] = []
+                for _ in range(int(props.GetNumberOfItems())):
+                    prop = props.GetNextProp()
+                    try:
+                        if not bool(prop.GetVisibility()):
+                            continue
+                        mapper = prop.GetMapper()
+                        data = mapper.GetInput() if mapper is not None else None
+                        if data is None or int(getattr(data, "GetNumberOfLines", lambda: 0)()) <= 0:
+                            continue
+                        b = [float(v) for v in prop.GetBounds()]
+                        if any(b[i] > b[i + 1] for i in (0, 2, 4)):
+                            continue
+                        for axis in range(3):
+                            lo[axis] = min(lo[axis], b[2 * axis])
+                            hi[axis] = max(hi[axis], b[2 * axis + 1])
+                        extents.append([round(v, 2) for v in b])
+                    except Exception:
+                        continue
+                if extents:
+                    snapshot.ray_actor_bounds = [
+                        lo[0], hi[0], lo[1], hi[1], lo[2], hi[2]
+                    ]
+                    snapshot.ray_actor_extents = extents[:40]
             snapshot.optical_axis_highlight_present = inspector._optical_axis_highlight_actor is not None
         except Exception:
             pass
