@@ -20257,6 +20257,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             pass
         self._apply_model_change()
+        # bugs/0473: registering or REPLACING a camera resets its placement offset, and the
+        # default seats the body on the nominal axis -- which on a folded scene is nowhere near
+        # the sensor. The user replaced a camera and it landed on top of the LED (body at
+        # x = [-40, 40] with the sensor at x = 229.9). Seat it automatically here, where the
+        # camera is being (re)chosen and there is no deliberate placement to preserve; a later
+        # manual move is still the user's own and is never overridden.
+        if camera_name:
+            try:
+                if self.editor.seat_camera_on_sensor():
+                    msg = f"{msg}  {self.editor.status_var.get()}"
+                    self._apply_model_change()
+            except Exception:
+                pass
         self.status_var.set(msg)
 
     def _snap_detector_to_image_plane(self) -> None:

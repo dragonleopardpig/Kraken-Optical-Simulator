@@ -2849,19 +2849,37 @@ class ScenePlacementMixin:
             [[bounds[i], bounds[2 + j], bounds[4 + k]] for i in (0, 1) for j in (0, 1) for k in (0, 1)],
             dtype=float,
         )
-        current_front = float(np.max(corners @ upstream))
-        desired_front = float(np.dot(sensor_point + upstream * back, upstream))
-        delta = desired_front - current_front
-        if abs(delta) <= 1.0e-6:
+        # Seat in ALL THREE axes, not just along the beam. Registering or REPLACING a camera
+        # resets its placement offset, and the default seats the body on the nominal axis --
+        # on a folded scene that is nowhere near the sensor: the user replaced the camera and
+        # it landed at x = [-40, 40], on top of the LED, while the sensor sits at x = 229.9
+        # ("replace a camera placed the new camera on top on the LED"). Along the beam the
+        # front face goes front_to_sensor upstream of the sensor; transverse to it, the body
+        # centres ON the sensor point.
+        centre = np.array(
+            [(bounds[0] + bounds[1]) / 2.0, (bounds[2] + bounds[3]) / 2.0, (bounds[4] + bounds[5]) / 2.0],
+            dtype=float,
+        )
+        current_front_axial = float(np.max(corners @ upstream))
+        # the body's beam-facing face CENTRE: transverse from the body centre, axial from the face
+        current_point = centre + upstream * (current_front_axial - float(np.dot(centre, upstream)))
+        desired_point = sensor_point + upstream * back
+        shift = desired_point - current_point
+        delta = float(np.dot(shift, upstream))
+        if float(np.linalg.norm(shift)) <= 1.0e-6:
             self.status_var.set("Camera already seated on the sensor.")
             return False
         try:
             offset = np.asarray(self._step_placement_offset_xyz(label), dtype=float).reshape(3)
-            self._set_step_placement_offset_xyz(label, tuple(offset + upstream * delta))
+            self._set_step_placement_offset_xyz(label, tuple(offset + shift))
         except Exception as exc:
             self.status_var.set(f"Seat camera failed: {exc}")
             return False
-        message = f"Seated the camera on the sensor (moved {delta:+.4g} mm along the beam)."
+        lateral = float(np.linalg.norm(shift - upstream * delta))
+        message = (
+            f"Seated the camera on the sensor (moved {delta:+.4g} mm along the beam"
+            + (f", {lateral:.4g} mm across it)." if lateral > 1.0e-6 else ").")
+        )
         # The overlap check is deliberately NOT run here: the transformed STEP mesh is memoized
         # (bugs/0331), so querying it immediately after writing the placement offset can read
         # the PRE-MOVE body and warn about a collision that no longer exists -- observed once,

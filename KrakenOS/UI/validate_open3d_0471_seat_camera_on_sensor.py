@@ -20,8 +20,15 @@ existing seating math writes ``image_plane_z - front_to_sensor``, correct only w
 travels +Z; on a folded scene it arrives travelling -Z and that sign puts the camera entirely
 behind its own sensor (first implementation did exactly that).
 
+bugs/0473 extends it to THREE axes: registering or replacing a camera resets the placement
+offset, and the default seats the body on the nominal axis -- on a folded scene nowhere near the
+sensor. The user replaced a camera and it landed on the LED (body x = [-40, 40], sensor at
+x = 229.9). Seating now also centres the body transversely on the sensor, and camera
+registration performs it automatically.
+
 Checks:
   SEATED  -- the front face ends front_to_sensor upstream of the sensor.
+  LATERAL -- a body reset onto the nominal axis is brought back over the sensor.
   CLEAR   -- the body no longer overlaps another solid.
 """
 from __future__ import annotations
@@ -69,6 +76,21 @@ def run_checks() -> tuple[bool, list[str]]:
             notes.append(
                 f"SEATED the camera front is {front - sensor_z:.3g} mm from the sensor, expected {back:.3g} mm"
             )
+            ok = False
+
+        # bugs/0473: a body reset onto the nominal axis (what replacing a camera does) must be
+        # brought back OVER the sensor, not merely shifted along the beam.
+        app._set_step_placement_offset_xyz("camera", (0.0, 0.0, 0.0))
+        app.seat_camera_on_sensor()
+        reseated = np.asarray(
+            app._transformed_imported_step_mesh_for_label("camera").bounds, dtype=float
+        ).reshape(6)
+        sensor_x = float(app.rows[image_row].desp_x)
+        body_x = (reseated[0] + reseated[1]) / 2.0
+        if abs(body_x - sensor_x) <= 1.0:
+            notes.append(f"LATERAL = a reset body is re-seated over the sensor (x {body_x:.1f} vs {sensor_x:.1f})")
+        else:
+            notes.append(f"LATERAL a reset body stayed off the sensor: x {body_x:.1f} vs sensor {sensor_x:.1f}")
             ok = False
 
         collisions = app.camera_body_collisions()
