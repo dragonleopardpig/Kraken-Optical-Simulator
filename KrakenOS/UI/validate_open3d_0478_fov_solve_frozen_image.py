@@ -31,23 +31,26 @@ PRE_SOLVE_ROW7 = 44.1193
 BROKEN_RESIDUAL_MM = 62.08  # what the plain prescription write left behind
 
 
-class _Stub:
-    """Drives apply_image_distance_frozen_aware's fallback contract without a scene."""
+class _Row:
+    def __init__(self, thickness):
+        self.thickness = float(thickness)
 
-    def __init__(self, split=None, geometry=None):
+
+class _Stub:
+    """Drives apply_image_distance_frozen_aware without a scene."""
+
+    def __init__(self, split=None, geometry=None, gap_now=44.1193):
         self._split = split
         self._geometry = geometry
-        self.applied = None
+        self.rows = [_Row(0.0) for _ in range(9)]
+        if isinstance(split, dict) and "far_gap_row" in split:
+            self.rows[int(split["far_gap_row"])] = _Row(gap_now)
 
     def _folded_image_conjugate_split(self):
         return self._split
 
     def _frozen_image_fold_world_geometry(self, split):
         return self._geometry
-
-    def _apply_frozen_image_split(self, split, near_new, far_new, delta):
-        self.applied = {"near_new": near_new, "far_new": far_new, "delta": delta}
-        return True, "applied"
 
 
 def _bind():
@@ -75,28 +78,40 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     # --- A. fallback contract: a straight / unfrozen scene is UNTOUCHED ------
     check(fn(_Stub(split=None, geometry=None), 12.0) is False, "A1: no image-side fold -> falls back to the plain write")
     check(
-        fn(_Stub(split={"mirror_row": 7}, geometry=None), 12.0) is False,
+        fn(_Stub(split={"mirror_row": 7, "far_gap_row": 7}, geometry=None), 12.0) is False,
         "A2: a fold that is NOT frozen -> falls back (geometry is None)",
     )
-    bad = _Stub(split={"mirror_row": 7}, geometry={"near": 58.88})
-    check(fn(bad, 0.0) is False and bad.applied is None, "A3: a non-positive image distance is refused")
-    check(fn(bad, float("nan")) is False and bad.applied is None, "A4: a non-finite image distance is refused")
+    SPLIT = {"mirror_row": 7, "far_gap_row": 7}
+    GEO = {"near": 58.8807, "far": 58.8807}
+    bad = _Stub(split=SPLIT, geometry=GEO)
+    check(fn(bad, 0.0) is False and bad.rows[7].thickness == PRE_SOLVE_ROW7, "A3: a non-positive image distance is refused")
+    check(fn(bad, float("nan")) is False and bad.rows[7].thickness == PRE_SOLVE_ROW7, "A4: a non-finite image distance is refused")
+    check(
+        fn(_Stub(split=SPLIT, geometry=GEO), 1.0e6) is False,
+        "A5: an image distance that would need a NEGATIVE gap is refused, not written",
+    )
 
-    # --- B. the frozen write: solved distance goes down the EXIT leg ---------
-    good = _Stub(split={"mirror_row": 7}, geometry={"near": 58.8807})
+    # --- B. the frozen write: the gap that YIELDS the wanted world leg -------
+    # The world leg is derived from the gap (const - thickness), so the invariant
+    # ``gap + world_far`` must be preserved. Re-baking the sensor's world centre while
+    # leaving the gap stale (the first 0478 attempt) broke exactly this, and the drift
+    # compounded across successive solves.
+    good = _Stub(split=SPLIT, geometry=GEO)
+    const = good.rows[7].thickness + GEO["far"]
     check(fn(good, SOLVED_IMAGE_MM) is True, "B1: a frozen folded scene is handled")
     check(
-        good.applied is not None and abs(float(good.applied["far_new"]) - SOLVED_IMAGE_MM) < 1e-9,
-        f"B2: the solved distance is the FAR leg verbatim (got {good.applied})",
+        abs(good.rows[7].thickness - (const - SOLVED_IMAGE_MM)) < 1e-9,
+        f"B2: the gap is written as const - far_new (got {good.rows[7].thickness:.4f}, "
+        f"want {const - SOLVED_IMAGE_MM:.4f})",
     )
     check(
-        good.applied is not None and abs(float(good.applied["delta"])) < 1e-12,
-        "B3: delta = 0 -- the mirror stays put, only the sensor re-seats",
+        abs((good.rows[7].thickness + SOLVED_IMAGE_MM) - const) < 1e-9,
+        "B3: the gap + world-leg INVARIANT is preserved (the frames do not drift)",
     )
-    check(
-        good.applied is not None and abs(float(good.applied["near_new"]) - 58.8807) < 1e-6,
-        "B4: the near leg is preserved at its measured world value",
-    )
+    # Applying twice must land on the same place, not compound.
+    again = _Stub(split=SPLIT, geometry={"near": 58.8807, "far": SOLVED_IMAGE_MM}, gap_now=good.rows[7].thickness)
+    check(fn(again, SOLVED_IMAGE_MM) is True and abs(again.rows[7].thickness - good.rows[7].thickness) < 1e-9,
+          "B4: re-applying the SAME distance is idempotent (no compounding drift)")
 
     # --- C. the conjugate applier actually calls it, BEFORE the plain write --
     try:
@@ -141,13 +156,24 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
             editor.layout_files[name] = SCENE
             editor.load_layout_by_name(name)
             qe = _QE(_Shim(editor))
+            def _invariant():
+                s = editor._folded_image_conjugate_split()
+                g = editor._frozen_image_fold_world_geometry(s)
+                if g is None:
+                    return None, None
+                gap = float(editor.rows[int(s["far_gap_row"])].thickness)
+                return float(g["far"]), gap + float(g["far"])
+
             editor.snap_detector_to_image_plane()
             before = float(editor._traced_bundle_best_focus_shift())
+            _f0, inv0 = _invariant()
+            # The flagged sequence: 23x23 and THEN 30x30 -- a repeated solve is what exposed
+            # the frame drift, so the guard drives it twice too.
+            applied, _msg = qe.fov_solve("object", "thickness", 23, 23, (23.04, 23.04))
+            _f1, inv1 = _invariant()
             applied, _msg = qe.fov_solve("object", "thickness", 30, 30, (23.04, 23.04))
             after = float(editor._traced_bundle_best_focus_shift())
-            split = editor._folded_image_conjugate_split()
-            geometry = editor._frozen_image_fold_world_geometry(split)
-            far = None if geometry is None else float(geometry["far"])
+            far, inv2 = _invariant()
         finally:
             try:
                 editor.destroy()
@@ -157,8 +183,11 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         notes.append(f"SKIP: real-scene drive failed ({type(exc).__name__}: {exc})")
         return ok, notes
 
-    notes.append(f"REAL = residual before {before:+.4f} mm, after {after:+.4f} mm, world far leg {far}")
-    check(bool(applied), "D1: the FOV 30x30 solve applies on the frozen scene")
+    notes.append(
+        f"REAL = residual before {before:+.4f} mm, after {after:+.4f} mm, world far leg {far}; "
+        f"invariant {inv0} -> {inv1} -> {inv2}"
+    )
+    check(bool(applied), "D1: the FOV 23x23 then 30x30 solves apply on the frozen scene")
     check(abs(before) < 1.0, f"D2: remove-defocus really does zero the residual first (got {before:+.4f})")
     check(
         abs(after) < 0.5 * BROKEN_RESIDUAL_MM,
@@ -167,6 +196,12 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     check(
         far is not None and abs(far - SOLVED_IMAGE_MM) < 1e-3,
         f"D4: the WORLD far leg equals the solved image distance {SOLVED_IMAGE_MM} (got {far})",
+    )
+    check(
+        None not in (inv0, inv1, inv2) and abs(inv1 - inv0) < 1e-6 and abs(inv2 - inv0) < 1e-6,
+        f"D5: gap + world-leg is CONSTANT across two successive solves "
+        f"({inv0} -> {inv1} -> {inv2}); it drifted 103.0 -> 82.85 -> 62.98 when the sensor "
+        f"was re-baked and the gap left stale",
     )
     return ok, notes
 

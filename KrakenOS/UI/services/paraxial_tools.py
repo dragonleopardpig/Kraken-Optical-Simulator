@@ -1466,11 +1466,29 @@ class ParaxialToolsMixin:
             return False
         if not np.isfinite(far_new) or far_new <= 0.0 or not np.isfinite(near_new):
             return False
+        # The world leg is DERIVED from the gap row (station + desp), so the whole fix is to
+        # write the gap that yields the wanted world leg -- not to re-bake the sensor's world
+        # centre and leave the gap stale. Re-baking (the first 0478 attempt) moved the sensor
+        # correctly ONCE but let the prescription and the world drift apart, and the drift
+        # compounded: two successive FOV solves took ``row7 + world_far`` from 103.0 to 82.85
+        # to 62.98, so the next solve read a stale thickness and the drawn planes no longer
+        # matched the traced rays ("the orange plane misplaced", "rays seems not focus").
+        #
+        # ``const`` is MEASURED from the live scene (gap + world leg), never assumed -- it is
+        # whatever this scene's fold makes it. Writing ``const - far_new`` lands the world leg
+        # on ``far_new`` and leaves both frames agreeing by construction. The glued camera
+        # follows on its own: it is station-anchored, so the gap edit drags it (bugs/0456).
         try:
-            applied, _message = self._apply_frozen_image_split(split, near_new, far_new, 0.0)
+            far_gap_row = int(split["far_gap_row"])
+            gap_now = float(self.rows[far_gap_row].thickness)
         except Exception:
             return False
-        return bool(applied)
+        const = gap_now + float(geometry["far"])
+        gap_new = const - far_new
+        if not np.isfinite(gap_new) or gap_new < 0.0:
+            return False
+        self.rows[far_gap_row].thickness = gap_new
+        return True
 
     def _folded_object_conjugate_split(self) -> "dict | None":
         """Split the object distance c at the OBJECT-side RA-mirror fold centre.
