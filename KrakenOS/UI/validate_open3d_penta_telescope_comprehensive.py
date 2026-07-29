@@ -15322,6 +15322,9 @@ phase_373_row_placement_space = _phase_from_standalone(
 phase_374_bs_fold_reaches_sensor = _phase_from_standalone(
     374, "a beam splitter folds the beam, so the fold mirror it feeds survives (0457)",
     "KrakenOS.UI.validate_open3d_0457_bs_fold_reaches_sensor", "bs_fold_reaches_sensor")
+phase_375_rays_drawn_to_sensor = _phase_from_standalone(
+    375, "a ray that hit its detector is drawn all the way to it (0459)",
+    "KrakenOS.UI.validate_open3d_0459_rays_drawn_to_sensor", "rays_drawn_to_sensor")
 
 
 # ---------------------------------------------------------------------------
@@ -15743,6 +15746,7 @@ def main() -> int:
             phase_372_straight_arm_ring,
             phase_373_row_placement_space,
             phase_374_bs_fold_reaches_sensor,
+            phase_375_rays_drawn_to_sensor,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

@@ -826,8 +826,20 @@ def bounded_ray_points_for_scene_display(
     # Hard stop: a detector/Image plane terminates the DRAWN ray (display-only;
     # the trace is unchanged). Applied after the escaped tail / missed cap so a
     # tail that would shoot past a detector is truncated at the plane instead.
+    #
+    # bugs/0459: NOT for a ray that already terminated ON a detector. The hard stop
+    # exists to bound rays that would otherwise run past one -- escaped and missed ones,
+    # per the docstring above. A ray with ``hit_detector`` has already stopped where the
+    # physics put it, and clipping it again can only cut it SHORT at some OTHER arm's
+    # plane: ``detector_planes_for_hard_stop`` returns a plane for EVERY is_detector
+    # target, including the synthesized detectors on non-imaging beam-splitter arms.
+    # Measured on the user's BS scene: all 166 hit_detector rays entered this function
+    # reaching x=230.4 (median) and left it at x=81.7, clipped by the mid-scene arm's
+    # plane at x=74.4 -- the beam visibly stopped just past the lens and never reached
+    # the sensor, while the trace itself was correct the whole time
+    # (flag_20260729_094555: traced_ray_max_x 243.04 vs drawn 85.4).
     detector_clip_applied = False
-    if detector_planes:
+    if detector_planes and status != "hit_detector":
         pts, detector_clip_applied = _clip_polyline_at_detector_planes(pts, detector_planes)
         if detector_clip_applied:
             terminal_was_capped = True
