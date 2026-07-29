@@ -193,3 +193,45 @@ state. Next: have them close the app, reopen the saved file fresh, and report. I
 complete, the truncation was stale live state (and the registry inconsistency above is the lead);
 if it still truncates on a fresh load, it is a live-only rendering defect and the registry evidence
 above is where to start.
+
+
+## SETTLED (flag_20260729_094555, build 7a4dc898): the TRACE is fine, the DISPLAY clips
+
+With both sides instrumented, one flag decided it:
+
+    TRACED:  traced_ray_path_count = 837   traced_ray_max_x = 243.04
+             terminations {target_termination 166, no_next_intersection 287,
+                           missed_image 274, aperture_stop_vignette 110}
+    DRAWN:   16 spanning ray actors, max x = 85.4, ZERO past x=200
+
+The traced numbers are IDENTICAL to every headless run of the same file. So the live trace is
+correct and the live DISPLAY truncates it. Every trace-side hypothesis is dead.
+
+### The clip is mid-segment, and there is a detector plane right there
+
+85.4 is not a vertex: the surrounding rows sit at x = 71.7 and x = 89.3, and the traced polylines
+have vertices at those stations. A polyline ending at 85.4 was CUT, not shortened by dropping
+vertices -- so this is a clip, not a vertex/segment-count limit.
+
+The synthesized mid-scene branch detector sits at **(74.4, 0.1, 31.3)** -- immediately upstream of
+the cut -- and `show_detector_overlays_var` is True in the user's session sidecar.
+
+**Prime suspect: `detector_planes_for_hard_stop`.** The display path bounds each ray with
+`_bounded_3d_ray_points_for_display(...)`, and detector planes are handed to the hard-stop
+machinery (`_detector_planes_for_hard_stop(scene_bundle, radius)`). A plane belonging to a
+NON-IMAGING branch arm has no business truncating the drawn imaging beam -- exactly the bugs/0448
+pattern ("a vignette-dominated leaf planted a phantom hard-stop plane that clipped the legit rays
+crossing it"), and exactly the bugs/0451 family (a synthesized arm's geometry acting on the real
+arm).
+
+Note this was tested ONCE before and dismissed: filtering `derive_branch_detectors` down to the
+`reached_image` leaf changed the TRACE not at all -- correctly, because the trace was never the
+problem. It was never tested against the DRAWN extent, which is where it would show.
+
+### Next probe
+
+Headless does not reproduce the clip (all four sampling modes draw to 243+), so drive it with the
+user's session state applied -- in particular `show_detector_overlays_var` True and the STEP bodies
+hidden (their flags show `bodies: {}`) -- then measure the DRAWN extent while toggling the
+detector hard-stop planes. If suppressing the non-imaging arms' planes restores the beam to
+x=243, that is the fix.
