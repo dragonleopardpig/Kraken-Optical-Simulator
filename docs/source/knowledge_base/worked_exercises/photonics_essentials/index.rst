@@ -15,6 +15,7 @@ trend, and results table instead of invented observations.
    :caption: Chapter Concepts
 
    ch03_diffusion_equation
+   ch03_interactive_lab
 
 .. toctree::
    :maxdepth: 1

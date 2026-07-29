@@ -2,6 +2,8 @@
 
 The Sphinx source lives in `docs/source`.
 The HTML build uses the Read the Docs theme via `sphinx-rtd-theme`.
+JupyterLite supplies a Pyodide-backed Python kernel for interactive
+notebooks while keeping the GitHub Pages deployment fully static.
 
 Build locally:
 

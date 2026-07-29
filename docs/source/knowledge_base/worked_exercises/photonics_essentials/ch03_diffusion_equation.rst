@@ -272,3 +272,10 @@ Source correction
    The paragraph below Equation 3.5 says that **Equation 3.4** is a
    second-order differential equation.  Equation 3.4 is algebraic.  The
    sentence should refer to **Equation 3.5**.
+
+Continue interactively
+----------------------
+
+Use the :doc:`ch03_interactive_lab` to change the diffusion coefficient,
+carrier lifetime, generation rate, and the other Chapter 3 variables while
+the corresponding curves update.
