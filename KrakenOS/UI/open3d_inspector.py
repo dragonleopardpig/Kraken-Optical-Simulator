@@ -20915,9 +20915,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             seg_total = float(seg_split["total"])
             seg_near0 = float(seg_split["near"])
             seg_far0 = float(seg_split["far"])
-            seg_leg_min = float(max(
-                seg_split.get("near_min", 0.0) or 0.0, seg_split.get("far_min", 0.0) or 0.0
-            ))
+            # bugs/0469: keep the two legs' floors SEPARATE. They are different physical
+            # limits -- the user: "there are 4 distance in the FOV pop up dialog, all of them
+            # actually have crashing distance. I think now we guard only the 4th distance and
+            # the Camera only?" -- and maxing them together quoted the stricter one at both
+            # legs, so a leg could look more restricted than it is.
+            seg_near_min = float(seg_split.get("near_min", 0.0) or 0.0)
+            seg_far_min = float(seg_split.get("far_min", 0.0) or 0.0)
+            seg_leg_min = float(max(seg_near_min, seg_far_min))
             # bugs/0299: name each leg by WHERE IT SITS in the folded beam. The old image-side
             # labels read "last surface → mirror" / "mirror → sensor", so a user pinning "the last
             # distance" ticked the FIRST of the two (its label starts with "last") and got the
@@ -20961,9 +20966,22 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             near_cb.configure(command=_sync_seg)
             far_cb.configure(command=_sync_seg)
             near_cb.grid(row=row, column=0, sticky="w", padx=(12, 4), pady=(0, 2))
-            near_entry.grid(row=row, column=1, sticky="ew", padx=(0, 12), pady=(0, 2))
+            near_entry.grid(row=row, column=1, sticky="ew", padx=(0, 2), pady=(0, 2))
             far_cb.grid(row=row + 1, column=0, sticky="w", padx=(12, 4), pady=(0, 2))
-            far_entry.grid(row=row + 1, column=1, sticky="ew", padx=(0, 12), pady=(0, 2))
+            far_entry.grid(row=row + 1, column=1, sticky="ew", padx=(0, 2), pady=(0, 2))
+            # bugs/0469: put each leg's OWN collision floor beside its box, in faint gray, so
+            # the limit is visible while typing instead of arriving as a refusal afterwards
+            # (the user's suggestion: "It will be good if there is a faint gray numerial value
+            # in the input box to mention this crashing distance to alert the user"). A leg with
+            # no physical floor says nothing rather than a misleading "0".
+            for _leg_row, _leg_min in ((row, seg_near_min), (row + 1, seg_far_min)):
+                if not (float(_leg_min) > 0.0):
+                    continue
+                ttk.Label(
+                    dialog,
+                    text=f"≥ {float(_leg_min):.4g} mm",
+                    foreground="#999999",
+                ).grid(row=_leg_row, column=2, sticky="w", padx=(0, 12), pady=(0, 2))
             ttk.Label(
                 dialog,
                 text=(
