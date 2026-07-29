@@ -899,6 +899,49 @@ class QuickEstimationService:
             return None
         return float(mag)
 
+    def _largest_feasible_object_semi(self, requested_semi: float, image_semi: float):
+        """bugs/0466: the largest object semi-height that still has a REAL conjugate.
+
+        Bisection on ``_conjugate_pair`` -- cheap (it is closed-form paraxial), and it turns
+        a bare refusal into a number the user can act on. Returns None when even a tiny
+        object fails (then the scene, not the size, is the problem) or when the request
+        already works."""
+        try:
+            requested = float(requested_semi)
+            image = float(image_semi)
+            if not (requested > 0.0):
+                return None
+            if self._conjugate_pair(requested, image) is not None:
+                return None
+        except Exception:
+            return None
+        feasible = None
+        probe = requested * 0.5
+        for _ in range(40):
+            if probe <= 1.0e-6:
+                break
+            try:
+                if self._conjugate_pair(probe, image) is not None:
+                    feasible = probe
+                    break
+            except Exception:
+                pass
+            probe *= 0.5
+        if feasible is None:
+            return None
+        lo, hi = feasible, requested
+        for _ in range(40):
+            mid = 0.5 * (lo + hi)
+            try:
+                ok = self._conjugate_pair(mid, image) is not None
+            except Exception:
+                ok = False
+            if ok:
+                lo = mid
+            else:
+                hi = mid
+        return lo
+
     def _conjugate_pair(self, object_semi: Any, image_semi: Any):
         """``(object_distance, image_distance, |m|)`` imaging ``object_semi`` to
         ``image_semi`` in focus, or None when there is no real-image conjugate."""
@@ -1057,6 +1100,25 @@ class QuickEstimationService:
                 )
         pair = self._conjugate_pair(object_semi, image_semi)
         if pair is None:
+            # bugs/0466: "No real-image conjugate" is TRUE but useless -- the user asked for
+            # 55 x 55 mm, got this, and reported "Solve for Thickness. Nothing happen."
+            # (flag_20260729_132816). The refusal is correct: on that scene the image gap
+            # shrinks as the object grows (35 x 35 -> 9.5 mm left) and runs out around
+            # 40 x 40, past which the sensor would have to sit inside the fold mirror. Say
+            # so, and say what DOES fit, so the number is actionable instead of a dead end.
+            limit_semi = self._largest_feasible_object_semi(object_semi, image_semi)
+            if limit_semi:
+                # Report it as a FRACTION of what was asked for. ``object_semi`` is a
+                # semi-DIAGONAL, but the user types SIDES into the FOV box (55 x 55 became
+                # 77.78 here), so quoting the raw number would answer a question nobody
+                # asked. A percentage is exact in either convention.
+                fraction = float(limit_semi) / float(object_semi)
+                return False, (
+                    "That field is beyond this lens's range on the current sensor -- the "
+                    "image distance would go negative (the sensor would sit inside the "
+                    f"optics). The largest field it can image is about "
+                    f"{fraction * 100.0:.0f}% of the size you entered."
+                )
             return False, "No real-image conjugate for that size (near the focal point?)."
         object_distance, image_distance, mag = pair
         obj_row = self.object_thickness_row()

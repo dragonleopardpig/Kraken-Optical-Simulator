@@ -20160,6 +20160,25 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 best_path = meta.get("branch_path")
         return str(best_path) if best_path else None
 
+    def _branch_detector_is_reached_image(self, branch_path: str) -> bool:
+        """bugs/0466: True when this arm's detector is pinned to the DESIGNED Image.
+
+        That arm is the real sensor (bugs/0093 pins it to the Image; bugs/0464 gave it the
+        Image's orientation too), so its right-click menu must offer the Image-plane actions.
+        """
+        try:
+            bundle = self.__dict__.get("_current_scene_bundle")
+            for target in list(getattr(bundle, "targets", None) or []):
+                if not bool(getattr(target, "is_detector", False)):
+                    continue
+                meta = getattr(target, "metadata", None) or {}
+                if str(meta.get("branch_path", "")) != str(branch_path):
+                    continue
+                return str(meta.get("focus_source", "")) == "reached_image"
+        except Exception:
+            return False
+        return False
+
     def _show_branch_detector_camera_menu(self, event, branch_path: str) -> None:
         """B2 right-click menu: register/unregister a vendor STEP camera (= sensor
         size) on a branch detector."""
@@ -20186,6 +20205,28 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             menu.add_command(label="Register STEP camera (no cameras in DB)", state="disabled")
         if current:
             menu.add_command(label=f"Unregister camera ({current})", command=lambda bp=branch_path: self._register_branch_detector_camera(bp, None))
+        # bugs/0466: the arm that reaches the designed Image IS the user's sensor -- since
+        # bugs/0464 put it exactly on the Image row, right-clicking the sensor lands on this
+        # branch-detector menu and the user lost the Image-plane actions they had before:
+        # "Right click on the sensor does not give the long pop up with remove defocus, only
+        # a pop up with 2 lines" (flag_20260729_133009, screenshot showing exactly two rows).
+        # Offer them here rather than making the user hunt for the row: this menu is now the
+        # sensor's menu. A NON-imaging arm keeps the short menu -- it has no image plane.
+        if self._branch_detector_is_reached_image(branch_path):
+            appended = False
+            for label, attr in (
+                ("Snap detector to image plane (remove defocus)", "_snap_detector_to_image_plane"),
+                ("Set sensor semi-height (Field value)…", "_quick_estimation_edit_field_value"),
+                ("Set Field type…", "_quick_estimation_edit_field_type"),
+            ):
+                command = getattr(self, attr, None)
+                if not callable(command):
+                    continue
+                if not appended:
+                    menu.add_separator()
+                    menu.add_command(label="Image plane (this arm reaches the Image)", state="disabled")
+                    appended = True
+                menu.add_command(label=label, command=command)
         try:
             menu.tk_popup(int(event.x_root), int(event.y_root))
         finally:
