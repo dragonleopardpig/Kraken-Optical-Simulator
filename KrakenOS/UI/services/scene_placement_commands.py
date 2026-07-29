@@ -2731,6 +2731,111 @@ class ScenePlacementMixin:
         self._clear_step_overlay_axis_anchor(label)
         self._invalidate_step_overlay_after_mutation(label, before_signature)  # bugs/0143
 
+    def camera_body_collisions(self, label: str = "camera") -> list[str]:
+        """bugs/0471: names of promoted solids whose bodies OVERLAP this STEP body.
+
+        A body that reaches into the fold mirror is a build error the user cannot see from the
+        numbers -- on the reported scene the camera top sat ~5 mm inside the mirror substrate
+        after a focus move. Axis-aligned bounds overlap is deliberately coarse: it is a warning,
+        not a clearance calculation, and a false quiet is worse than a false alarm here.
+        """
+        hits: list[str] = []
+        try:
+            import numpy as _np
+
+            mesh = self._transformed_imported_step_mesh_for_label(label)
+            if mesh is None:
+                return hits
+            a = _np.asarray(mesh.bounds, dtype=float).reshape(6)
+        except Exception:
+            return hits
+        for other in ("lens", "led", "optical"):
+            if other == label:
+                continue
+            try:
+                other_mesh = self._transformed_imported_step_mesh_for_label(other)
+                if other_mesh is None:
+                    continue
+                b = _np.asarray(other_mesh.bounds, dtype=float).reshape(6)
+            except Exception:
+                continue
+            overlap = all(a[2 * i] < b[2 * i + 1] - 1e-6 and b[2 * i] < a[2 * i + 1] - 1e-6 for i in range(3))
+            if overlap:
+                hits.append(other)
+        return hits
+
+    def seat_camera_on_sensor(self, label: str = "camera") -> bool:
+        """bugs/0471: re-seat the camera STEP so its SENSOR lands on the Image row.
+
+        The seating code already knows where the sensor should go --
+        ``image_plane_z - front_to_sensor`` (bugs/0220), with the vendor front-to-sensor
+        distance read from the camera database -- but the body also carries a PERSISTED
+        ``placement_offset_xyz`` from drags/glue/axis moves, and on the reported scene that
+        offset put the body's CENTRE on the sensor plane instead: its beam-facing face ended
+        36.8 mm up the beam, and a later focus move drove it into the fold mirror.
+
+        This is an explicit action rather than an automatic correction precisely because that
+        offset is the user's own placement state -- recomputing it silently would discard
+        deliberate positioning. It adjusts ONLY the along-beam component.
+        """
+        import numpy as np
+
+        # The front face sits ``front_to_sensor`` UPSTREAM of the sensor along the beam. The
+        # existing seating math (bugs/0220) writes ``image_plane_z - front_to_sensor``, which
+        # is right only while the beam travels +Z; on a folded scene it arrives travelling -Z
+        # and that sign puts the camera entirely BEHIND its own sensor. Read the propagation
+        # direction from the detector normal (bugs/0464 made it point along the beam).
+        try:
+            sensor_z = float(self._camera_track_image_plane_z())
+            back = float(self._current_camera_front_to_sensor_mm())
+        except Exception:
+            self.status_var.set("Seat camera: the image plane / sensor offset is unavailable.")
+            return False
+        beam_z = -1.0
+        try:
+            _s, _r, bundle = self._build_preview_system_rays_bundle(
+                sampling_mode=None, update_state=False, trace_rays=False
+            )
+            for target in list(getattr(bundle, "targets", None) or []):
+                if not bool(getattr(target, "is_detector", False)):
+                    continue
+                meta = getattr(target, "metadata", None) or {}
+                if str(meta.get("focus_source", "")) != "reached_image":
+                    continue
+                normal = np.asarray(getattr(target, "normal_world", None), dtype=float).reshape(3)
+                if float(np.linalg.norm(normal)) > 1.0e-9 and abs(float(normal[2])) > 1.0e-6:
+                    beam_z = float(np.sign(normal[2]))
+                break
+        except Exception:
+            pass
+        target_front = sensor_z - back * beam_z
+        try:
+            mesh = self._transformed_imported_step_mesh_for_label(label)
+            bounds = np.asarray(mesh.bounds, dtype=float).reshape(6)
+        except Exception:
+            self.status_var.set("Seat camera: no camera STEP body in this scene.")
+            return False
+        # The sensor faces the incoming beam. With the beam arriving along -Z at the detector,
+        # that is the body's +Z face; read it from the bounds rather than assuming a convention.
+        current_front = float(bounds[5]) if beam_z < 0.0 else float(bounds[4])
+        delta = float(target_front) - current_front
+        if abs(delta) <= 1.0e-6:
+            self.status_var.set("Camera already seated on the sensor.")
+            return False
+        try:
+            offset = list(self._step_placement_offset_xyz(label))
+            offset[2] = float(offset[2]) + delta
+            self._set_step_placement_offset_xyz(label, tuple(offset))
+        except Exception as exc:
+            self.status_var.set(f"Seat camera failed: {exc}")
+            return False
+        message = f"Seated the camera on the sensor (moved {delta:+.4g} mm along the beam)."
+        collisions = self.camera_body_collisions(label)
+        if collisions:
+            message += " WARNING: the body still overlaps " + ", ".join(collisions) + "."
+        self.status_var.set(message)
+        return True
+
     def snap_detector_to_image_plane(self) -> bool:
         """Move the detector (the final ``Image`` row) onto the optics' paraxial best-focus image
         plane, removing the defocus gap. Returns True when it actually moved. The detector is the

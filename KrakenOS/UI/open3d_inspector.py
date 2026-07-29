@@ -20216,6 +20216,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             appended = False
             for label, attr in (
                 ("Snap detector to image plane (remove defocus)", "_snap_detector_to_image_plane"),
+                # bugs/0471: put the camera's SENSOR on the Image row. The body carries a
+                # persisted placement offset that can sit its CENTRE there instead, which on the
+                # reported scene left the beam-facing face 36.8 mm up the beam and drove the
+                # camera into the fold mirror after a focus move.
+                ("Seat camera on the sensor", "_seat_camera_on_sensor"),
                 ("Set sensor semi-height (Field value)…", "_quick_estimation_edit_field_value"),
                 ("Set Field type…", "_quick_estimation_edit_field_type"),
             ):
@@ -20261,6 +20266,20 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             moved = bool(self.editor.snap_detector_to_image_plane())
         except Exception as exc:
             self.status_var.set(f"Snap detector to image plane failed: {exc}")
+            return
+        try:
+            self.status_var.set(self.editor.status_var.get())
+        except Exception:
+            pass
+        if moved:
+            self._apply_model_change()
+
+    def _seat_camera_on_sensor(self) -> None:
+        """bugs/0471: re-seat the camera STEP so its sensor lands on the Image row."""
+        try:
+            moved = bool(self.editor.seat_camera_on_sensor())
+        except Exception as exc:  # noqa: BLE001 -- report, never raise into the menu
+            self.status_var.set(f"Seat camera on the sensor failed: {exc}")
             return
         try:
             self.status_var.set(self.editor.status_var.get())
