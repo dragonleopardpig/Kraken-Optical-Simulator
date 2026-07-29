@@ -46,6 +46,29 @@ def run_checks() -> tuple[bool, list[str]]:
     if not BS_SCENE.exists():
         return True, ["SKIP: the BS scene is absent (gitignored attachment)"]
 
+    # bugs/0473: EVERY camera-registration entry point must seat. Wiring only the
+    # branch-detector one left "replace a camera" -- which goes through the single-axis
+    # detector path -- dropping the body on the nominal axis, and it survived a relaunch.
+    # Same shape as the earlier load_layout_by_name / open_layout miss, so assert on both.
+    try:
+        import inspect as _inspect
+
+        from KrakenOS.UI import open3d_inspector as _oi
+
+        wired = [
+            name
+            for name in ("_register_branch_detector_camera", "_register_image_plane_camera")
+            if "seat_camera_on_sensor"
+            in _inspect.getsource(getattr(_oi.Kraken3DInspector, name))
+        ]
+        if len(wired) == 2:
+            notes.append("WIRED = both camera-registration paths seat the body")
+        else:
+            notes.append(f"WIRED only {wired or 'no'} registration path(s) seat the body")
+            ok = False
+    except Exception as exc:
+        notes.append(f"SKIP: registration wiring unreadable ({exc!r})")
+
     app = None
     try:
         from KrakenOS.UI.layout_editor import KrakenLayoutEditor

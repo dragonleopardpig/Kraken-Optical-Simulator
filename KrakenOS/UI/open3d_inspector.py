@@ -20378,6 +20378,25 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             pass
         self._apply_model_change()
+        # bugs/0473: this is the OTHER camera-registration entry point (the single-axis
+        # detector's own right-click), and it is the one "replace a camera" actually uses --
+        # wiring only _register_branch_detector_camera left the replaced body sitting on the
+        # nominal axis, on top of the LED, and it stayed there across a relaunch. Seat here
+        # too: registering a camera is exactly when there is no deliberate placement to keep.
+        if camera_name:
+            try:
+                if self.editor.seat_camera_on_sensor():
+                    self.status_var.set(f"{msg}  {self.editor.status_var.get()}")
+                    self._apply_model_change()
+                    collisions = self.editor.camera_body_collisions()
+                    if collisions:
+                        self.status_var.set(
+                            f"{self.status_var.get()}  WARNING: the camera body overlaps "
+                            + ", ".join(collisions)
+                            + "."
+                        )
+            except Exception:
+                pass
 
     def _show_quick_estimation_role_menu(self, event, quantity: str, plane: str | None = None) -> None:
         from KrakenOS.UI.services.quick_estimation import (
