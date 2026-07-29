@@ -247,12 +247,17 @@
                     ) * 1e9,
             ),
         }));
+        const currentLimit = 1.08 * Math.max(
+            ...series.flatMap((curve) => curve.y.map(Math.abs)),
+        );
         const openCircuit = state.ideality * KB_EV_K * state.temperature *
             Math.log1p(basePhoto / saturation);
         return {
             series,
             xLabel: "Applied voltage (V)",
             yLabel: "Current (nA)",
+            yDomain: [-currentLimit, currentLimit],
+            quadrantAxes: true,
             readouts: [
                 ["Dark current", `${engineering(saturation * 1e12)} pA`],
                 ["Base photocurrent", `${engineering(basePhoto * 1e12)} pA`],
@@ -595,20 +600,37 @@
             svg.append(yLabel);
         }
 
-        svg.append(svgElement("line", {
-            class: "axis",
-            x1: margin.left,
-            x2: margin.left + plotWidth,
-            y1: margin.top + plotHeight,
-            y2: margin.top + plotHeight,
-        }));
-        svg.append(svgElement("line", {
-            class: "axis",
-            x1: margin.left,
-            x2: margin.left,
-            y1: margin.top,
-            y2: margin.top + plotHeight,
-        }));
+        if (result.quadrantAxes) {
+            svg.append(svgElement("line", {
+                class: "axis axis--zero",
+                x1: margin.left,
+                x2: margin.left + plotWidth,
+                y1: yScale(0),
+                y2: yScale(0),
+            }));
+            svg.append(svgElement("line", {
+                class: "axis axis--zero",
+                x1: xScale(0),
+                x2: xScale(0),
+                y1: margin.top,
+                y2: margin.top + plotHeight,
+            }));
+        } else {
+            svg.append(svgElement("line", {
+                class: "axis",
+                x1: margin.left,
+                x2: margin.left + plotWidth,
+                y1: margin.top + plotHeight,
+                y2: margin.top + plotHeight,
+            }));
+            svg.append(svgElement("line", {
+                class: "axis",
+                x1: margin.left,
+                x2: margin.left,
+                y1: margin.top,
+                y2: margin.top + plotHeight,
+            }));
+        }
 
         result.series.forEach((series) => {
             const commands = series.x.map((xValue, index) => {

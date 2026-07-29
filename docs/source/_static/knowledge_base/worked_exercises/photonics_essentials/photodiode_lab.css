@@ -186,6 +186,11 @@
     stroke-width: 1.25;
 }
 
+.photodiode-lab__plot .axis--zero {
+    stroke: #342f29;
+    stroke-width: 1.8;
+}
+
 .photodiode-lab__plot .curve {
     fill: none;
     stroke-width: 3;
