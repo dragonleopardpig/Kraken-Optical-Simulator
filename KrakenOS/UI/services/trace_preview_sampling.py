@@ -11,6 +11,8 @@ from contextlib import redirect_stderr, redirect_stdout
 import io
 import warnings
 
+from pathlib import Path
+
 import numpy as np
 
 import KrakenOS as Kos
@@ -1487,10 +1489,27 @@ class TracePreviewSamplingMixin:
 
     def _note_pupil_launch_fallback(self, exc: Exception) -> None:
         """bugs/0094: surface (don't silently swallow) a PupilCalc failure on the
-        first-order reference -- the launch then falls back to a coarse geometric aim."""
+        first-order reference -- the launch then falls back to a coarse geometric aim.
+
+        bugs/0465: the repr alone is not actionable. The user hit
+        ``IndexError('index 0 is out of bounds for axis 0 with size 0')`` at relaunch, and it
+        reproduced on NEITHER the 3-D bundle build nor the 2-D refresh of the same saved
+        scene here -- so the message has to carry its own origin. Append the innermost frames
+        (file:line:function), which is what turns a one-line report into a fix."""
+        where = ""
+        try:
+            import traceback as _traceback
+
+            frames = _traceback.extract_tb(getattr(exc, "__traceback__", None))
+            if frames:
+                where = " at " + " <- ".join(
+                    f"{Path(f.filename).name}:{f.lineno}:{f.name}" for f in frames[-3:]
+                )
+        except Exception:
+            where = ""
         try:
             self.append_debug(
-                f"[pupil] reference launch failed, geometric fallback: {repr(exc)[:200]}\n"
+                f"[pupil] reference launch failed, geometric fallback: {repr(exc)[:200]}{where}\n"
             )
         except Exception:
             pass
