@@ -64,6 +64,10 @@ class SceneSnapshot:
     # how many reach past the scene's far half.
     ray_actor_bounds: list[float] = field(default_factory=list)
     ray_actor_extents: list[list[float]] = field(default_factory=list)
+    # bugs/0459: the TRACED side, to sit beside the drawn side above.
+    traced_ray_path_count: int = 0
+    traced_ray_max_x: float = 0.0
+    traced_ray_terminations: dict[str, int] = field(default_factory=dict)
     optical_axis_actor_count: int = 0
     optical_axis_highlight_present: bool = False
     # bugs/0010: capture the STEP face-hover edge highlight so a "ghost edges"
@@ -631,6 +635,37 @@ class Open3DEventRecorder:
                         lo[0], hi[0], lo[1], hi[1], lo[2], hi[2]
                     ]
                     snapshot.ray_actor_extents = extents[:40]
+            # bugs/0459: the drawn extent alone cannot say WHERE the beam was lost. Record the
+            # TRACED extent beside it, straight off the bundle the inspector is holding, so one
+            # flag separates "the live trace produced short rays" from "the trace is fine and
+            # the DISPLAY truncated them". Measured 2026-07-29: the user's drawn rays stop at
+            # x=85.4 while every headless trace of the same file reaches x=243+.
+            try:
+                bundle = inspector.__dict__.get("_current_scene_bundle")
+                paths = list(getattr(bundle, "ray_paths", None) or [])
+                snapshot.traced_ray_path_count = len(paths)
+                far = None
+                for path in paths:
+                    pts = getattr(path, "points_world", None)
+                    if pts is None:
+                        continue
+                    try:
+                        xs = [float(p[0]) for p in pts]
+                    except Exception:
+                        continue
+                    if xs:
+                        top = max(xs)
+                        far = top if far is None else max(far, top)
+                if far is not None:
+                    snapshot.traced_ray_max_x = round(float(far), 2)
+                snapshot.traced_ray_terminations = {}
+                for path in paths[:2000]:
+                    reason = str(getattr(path, "termination_reason", "") or "")
+                    snapshot.traced_ray_terminations[reason] = (
+                        snapshot.traced_ray_terminations.get(reason, 0) + 1
+                    )
+            except Exception:
+                pass
             snapshot.optical_axis_highlight_present = inspector._optical_axis_highlight_actor is not None
         except Exception:
             pass
