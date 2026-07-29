@@ -899,6 +899,77 @@ class QuickEstimationService:
             return None
         return float(mag)
 
+    def _image_gap_collision_floor(self) -> float:
+        """bugs/0468: the smallest image gap that does not drive the sensor into the fold mirror.
+
+        The manual leg split already refuses to cross this floor ("Safe gap: mirror -> sensor
+        must stay >= N mm so the mirror does not collide"), and it is measured from the mirror
+        CENTRE -- half the mirror row's own along-axis extent sits on the sensor side of it. The
+        FOV solve wrote its solved image distance straight into the row and never consulted the
+        floor, so a large field could seat the sensor INSIDE the mirror: 35 x 35 on the user's
+        scene solved to a 9.53 mm gap against a 12.5 mm floor. Returns 0.0 when the scene has no
+        fold mirror to collide with.
+        """
+        try:
+            split = self.editor._folded_image_conjugate_split()
+        except Exception:
+            return 0.0
+        if not isinstance(split, dict):
+            return 0.0
+        try:
+            return max(0.0, float(split.get("far_min", 0.0) or 0.0))
+        except Exception:
+            return 0.0
+
+    def _resolve_image_gap_collision(self, image_distance):
+        """bugs/0468: keep the sensor off the fold mirror by SLIDING THE MIRROR, not by refusing.
+
+        The optics fixes the TOTAL lens->sensor distance; how that total splits between
+        ``lens rear -> mirror`` and ``mirror -> sensor`` is a free mechanical choice -- which is
+        exactly what the manual leg split exists to let the user set. So when a solved field
+        would seat the sensor inside the mirror, move the MIRROR toward the lens by the deficit
+        and give that length to the sensor leg. The conjugate is untouched (the two legs sum to
+        the same total), and the collision is gone.
+
+        Returns ``(new_image_gap, near_gap_row, near_gap_delta, note)`` or ``None`` when nothing
+        needs doing. Raises no exception; returns a refusal string as ``note`` only when even the
+        redistribution cannot fit (the lens->mirror leg would go negative).
+        """
+        floor = self._image_gap_collision_floor()
+        try:
+            gap = float(image_distance)
+        except Exception:
+            return None
+        if floor <= 0.0 or gap >= floor - 1.0e-6:
+            return None
+        try:
+            split = self.editor._folded_image_conjugate_split()
+            near_row = int(split["near_gap_row"])
+            near_min = float(split.get("near_min", 0.0) or 0.0)
+            near_now = float(self.editor.rows[near_row].thickness)
+        except Exception:
+            return (None, None, 0.0, (
+                f"That field needs a {gap:.4g} mm mirror->sensor gap, below the {floor:.4g} mm "
+                "collision floor, and the lens->mirror leg could not be read to compensate."
+            ))
+        deficit = float(floor) - gap
+        near_new = near_now - deficit
+        if near_new < near_min - 1.0e-6:
+            return (None, None, 0.0, (
+                f"That field needs a {gap:.4g} mm mirror->sensor gap (floor {floor:.4g} mm), and "
+                f"sliding the mirror to make room would leave only {near_new:.4g} mm from the "
+                f"lens (minimum {near_min:.4g} mm). Use a smaller field."
+            ))
+        return (
+            float(floor),
+            near_row,
+            -deficit,
+            (
+                f" Mirror slid {deficit:.4g} mm toward the lens so the sensor clears it "
+                f"(lens->mirror {near_new:.4g} mm, mirror->sensor {floor:.4g} mm)."
+            ),
+        )
+
     def _largest_feasible_object_semi(self, requested_semi: float, image_semi: float):
         """bugs/0466: the largest object semi-height that still has a REAL conjugate.
 
@@ -1149,11 +1220,23 @@ class QuickEstimationService:
                 "FOV needs the lens nearer than the glued LED+BS allows (object unit is locked at "
                 "its minimum). Unglue the LED or relax the FOV."
             )
+        _collision_note = ""
+        _resolved = self._resolve_image_gap_collision(image_distance)
+        if _resolved is not None:
+            _new_gap, _near_row, _near_delta, _note = _resolved
+            if _new_gap is None:
+                return False, _note
+            self.editor.rows[_near_row].thickness = (
+                float(self.editor.rows[_near_row].thickness) + float(_near_delta)
+            )
+            image_distance = _new_gap
+            _collision_note = _note
         self.editor.rows[obj_row].thickness = float(object_distance)
         self.editor.rows[img_row].thickness = float(image_distance)
         return True, (
             f"Solved thickness: object {object_distance:.6g} mm, "
             f"image {image_distance:.6g} mm (|m|={mag:.4g})."
+            f"{_collision_note}"
         )
 
     def apply_sensor_diagonal(self, diagonal: Any, horizontal: float | None = None) -> tuple[bool, str]:

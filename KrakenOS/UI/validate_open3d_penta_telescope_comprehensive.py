@@ -15337,6 +15337,9 @@ phase_378_sensor_plane_and_axis_sanity = _phase_from_standalone(
 phase_379_split_preserves_conjugate = _phase_from_standalone(
     379, "a frozen leg split does not move the magnification (0467)",
     "KrakenOS.UI.validate_open3d_0467_split_preserves_conjugate", "split_preserves_conjugate")
+phase_380_fov_solve_collision_floor = _phase_from_standalone(
+    380, "the FOV solve honours the mirror/sensor collision floor (0468)",
+    "KrakenOS.UI.validate_open3d_0468_fov_solve_respects_collision_floor", "fov_solve_collision_floor")
 
 
 # ---------------------------------------------------------------------------
@@ -15763,6 +15766,7 @@ def main() -> int:
             phase_377_axis_dedup,
             phase_378_sensor_plane_and_axis_sanity,
             phase_379_split_preserves_conjugate,
+            phase_380_fov_solve_collision_floor,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
