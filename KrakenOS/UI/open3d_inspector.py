@@ -12221,6 +12221,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     return False
 
                 traced_segments = [seg for seg in traced_segments if not _duplicates_existing(seg)]
+                # bugs/0464: once GUIDE axes describe the scene's legs, a traced segment axis
+                # adds nothing but clutter -- and it is derived from whichever ray the picker
+                # judged most chief-like, which on a splitter scene can be a marginal ray of a
+                # NON-IMAGING arm. The user: "I can't really figure out why it is a real
+                # optical axis. It is neither 45 degree nor 90 degree to the BS plate"
+                # (flag_20260729_120601, axis:ray:374 running 17 deg off +X -- the same
+                # direction as the no-camera arm's detector normal [0.949, 0, -0.315]).
+                # Traced axes predate the guides (bugs/0200/0216 drew the folded legs before
+                # bugs/0428 and the frozen-fold guides existed), so where a guide beyond
+                # axis:global is present they are now superseded. A scene with no such guide
+                # keeps them, which is the case they were built for.
+                if any(str(r.get("axis_id", "")) not in ("", "axis:global") for r in records):
+                    traced_segments = []
                 for axis_number, segment in enumerate(traced_segments, start=2):
                     segment["axis_label"] = f"Optical Axis {axis_number}"
                 records.extend(traced_segments)

@@ -1071,6 +1071,15 @@ def build_scene_bundle(
         # only the DRAW is gated. A genuine SPLIT keeps both arms drawn (bugs/0090: "a
         # beam splitter must show a detector on BOTH arms"), and a scene with no designed
         # Image at all keeps its only detector visible.
+        # bugs/0464: only suppress the camera-less arms when SOME arm is a real sensor.
+        # Otherwise a scene whose imaging arm never reaches the designed Image would be left
+        # with no detector plane at all -- caught by the bugs/0451 control, which asserts a
+        # real split still draws its arms.
+        _scene_has_real_sensor_arm = any(
+            str(getattr(d, "focus_source", "")) == "reached_image"
+            or getattr(d, "assigned_camera_label", None)
+            for d in branch_detectors
+        )
         lone_dead_end_arm = (
             len(branch_detectors) == 1
             and str(getattr(branch_detectors[0], "focus_source", "")) != "reached_image"
@@ -1095,6 +1104,20 @@ def build_scene_bundle(
                     and str(branch_detector.focus_source) != "reached_image"
                 )
                 or lone_dead_end_arm  # bugs/0451
+                # bugs/0464: an arm with NO CAMERA has no sensor and no image circle, so it
+                # must not draw a sensor plane, footprint or coverage -- the user, twice:
+                # "there are still 2 additional sensor planes (orange color). There are no
+                # camera why there is a sensor?" (flag_20260729_120601). A splitter makes
+                # every terminal leaf a detector; only the arm that reaches the designed Image
+                # or carries an assigned camera is a real sensor. bugs/0090 ("show a detector
+                # on BOTH arms") is preserved for a genuine two-CAMERA split, because such an
+                # arm has assigned_camera_label set. The target itself survives, so the arm
+                # keeps its ray hard-stop exactly as bugs/0451 kept the dead-end arm's.
+                or (
+                    _scene_has_real_sensor_arm
+                    and str(branch_detector.focus_source) != "reached_image"
+                    and not getattr(branch_detector, "assigned_camera_label", None)
+                )
             )
             if draw_suppressed:
                 target.metadata["draw_suppressed"] = True

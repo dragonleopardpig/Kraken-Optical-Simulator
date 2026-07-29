@@ -493,13 +493,30 @@ def derive_branch_detectors(
                     half_w, half_h = sensor_w / 2.0, sensor_h / 2.0
             except Exception:
                 pass
-        tangent = _orthogonal_unit(mean_dir)
+        # bugs/0464: a detector pinned to the DESIGNED Image takes its ORIENTATION from that
+        # Image too, not from the mean exit-ray direction. bugs/0093 pinned the POSITION and
+        # left the normal on ``mean_dir``, which is the average of every surviving ray -- and
+        # on a beam-splitter scene most survivors are NOT the imaging bundle (measured on the
+        # user's scene: 166 of 837 reach the sensor; 671 escape, miss or vignette). The mean
+        # then tilts the sensor plane away from the beam: its normal came out
+        # [0.563, 0, -0.826], i.e. 34.3 deg off perpendicular to the fold leg, while the Image
+        # row's own prescription says square-on (tilts 180, 0, 0). The user saw the sensor
+        # "slanted relative to the 2nd RA mirror optical axis" (flag_20260729_120601).
+        plane_normal = np.asarray(mean_dir, dtype=float)
+        if focus_source == "reached_image" and reached is not None:
+            _reached_normal = _unit(getattr(reached, "normal_world", None))
+            if _reached_normal is not None:
+                # Keep the sense of travel (point along the beam), flip only the sign.
+                if float(np.dot(_reached_normal, mean_dir)) < 0.0:
+                    _reached_normal = -_reached_normal
+                plane_normal = _reached_normal
+        tangent = _orthogonal_unit(plane_normal)
         detectors.append(
             BranchDetector(
                 detector_id=f"branch_detector:{index}:{bp[:48]}",
                 branch_path=bp,
                 center_world=np.asarray(focus, dtype=float),
-                normal_world=np.asarray(mean_dir, dtype=float),
+                normal_world=np.asarray(plane_normal, dtype=float),
                 tangent_world=np.asarray(tangent, dtype=float),
                 half_w=float(half_w),
                 half_h=float(half_h),

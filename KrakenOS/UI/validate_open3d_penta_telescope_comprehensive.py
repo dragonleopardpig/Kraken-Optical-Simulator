@@ -15331,6 +15331,9 @@ phase_376_sensor_iconography_follows_camera = _phase_from_standalone(
 phase_377_axis_dedup = _phase_from_standalone(
     377, "a traced axis that shadows a guide axis is not drawn twice (0463)",
     "KrakenOS.UI.validate_open3d_0463_axis_dedup", "axis_dedup")
+phase_378_sensor_plane_and_axis_sanity = _phase_from_standalone(
+    378, "the sensor is square to its beam; only real sensors/axes draw (0464)",
+    "KrakenOS.UI.validate_open3d_0464_sensor_plane_and_axis_sanity", "sensor_plane_and_axis_sanity")
 
 
 # ---------------------------------------------------------------------------
@@ -15755,6 +15758,7 @@ def main() -> int:
             phase_375_rays_drawn_to_sensor,
             phase_376_sensor_iconography_follows_camera,
             phase_377_axis_dedup,
+            phase_378_sensor_plane_and_axis_sanity,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
