@@ -1678,16 +1678,27 @@ class system():
 
     def __WavePrecalc(self):
         """__WavePrecalc.
+
+        The precalc is committed ATOMICALLY: build into locals, publish only
+        once every surface resolved. Assigning ``self.PreWave`` up front (as
+        this used to) poisons the cache when dispersion raises -- the lists are
+        left empty but the wavelength reads as already-done, so the NEXT call
+        skips the rebuild and ``self.N_Prec[j]`` dies with a misleading
+        ``IndexError: list index out of range`` far from the real fault. That
+        laundering is what made bug 0474 read as a pupil failure.
         """
         if (self.Wave != self.PreWave):
-            self.N_Prec = []
-            self.AlphaPrecal = []
-            self.PreWave = self.Wave
+            N_Prec = []
+            AlphaPrecal = []
 
             for i in range(0, self.n):
                 (NP, AP) = n_wave_dispersion(self.SETUP, self.GlobGlass[i], self.Wave)
-                self.N_Prec.append(NP)
-                self.AlphaPrecal.append(AP)
+                N_Prec.append(NP)
+                AlphaPrecal.append(AP)
+
+            self.N_Prec = N_Prec
+            self.AlphaPrecal = AlphaPrecal
+            self.PreWave = self.Wave
 
 
     def __CollectData(self, ValToSav):

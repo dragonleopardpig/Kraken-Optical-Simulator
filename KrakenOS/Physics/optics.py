@@ -1,6 +1,6 @@
 import numpy as np
 
-from .ParaxialMatrix import build_paraxial_matrix_trace
+from ..ParaxialMatrix import build_paraxial_matrix_trace
 
 '''
 I modified the code that is copied from below

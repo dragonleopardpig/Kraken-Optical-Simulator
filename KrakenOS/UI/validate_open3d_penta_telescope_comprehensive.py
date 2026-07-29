@@ -15346,6 +15346,9 @@ phase_381_remove_defocus_on_splitter = _phase_from_standalone(
 phase_382_seat_camera_on_sensor = _phase_from_standalone(
     382, "the camera's sensor seats on the Image row, clear of the mirror (0471)",
     "KrakenOS.UI.validate_open3d_0471_seat_camera_on_sensor", "seat_camera_on_sensor")
+phase_383_physics_star_import = _phase_from_standalone(
+    383, "the Physics package re-exports the legacy optics helpers (0474)",
+    "KrakenOS.UI.validate_open3d_0474_physics_star_import", "physics_star_import")
 
 
 # ---------------------------------------------------------------------------
@@ -15775,6 +15778,7 @@ def main() -> int:
             phase_380_fov_solve_collision_floor,
             phase_381_remove_defocus_on_splitter,
             phase_382_seat_camera_on_sensor,
+            phase_383_physics_star_import,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
