@@ -325,6 +325,7 @@ class ParaxialToolsMixin:
                 from KrakenOS.UI.services.row_placement import is_world_placed
             except Exception:
                 return
+            return  # bugs/0465 A/B: centring disabled for this measurement
             if not is_world_placed(src_row):
                 return
             for attr in ("desp_x", "desp_y", "desp_z", "tilt_x", "tilt_y", "tilt_z"):
@@ -2268,6 +2269,95 @@ class ParaxialToolsMixin:
         finally:
             self._preview_field_bundle_count = field_bundle_count_before
             self._preview_field_ray_count = ray_count_before
+
+    def _traced_bundle_best_focus_shift(self):
+        """bugs/0470: best-focus shift measured from the ACTUAL traced bundle.
+
+        The analytic conjugate and the straight-equivalent fallback both give up on a beam
+        splitter scene -- ``_folded_optical_solid_straight_equivalent_rows()`` returns None,
+        so "Snap detector to image plane (remove defocus)" reported "best focus is not
+        computable for this layout" on exactly the scene that needed it (the user, after an
+        unconstrained FOV solve left the axial spot at 0.805 mm RMS where it had been 0.269).
+
+        But the rays themselves are right there: the preview trace lands 169 of them on the
+        detector. Walk the AXIAL bundle's final segments along the detector normal and return
+        the shift that minimises their transverse spread -- the same "where does the cone
+        actually waist" idea ``_reconcile_folded_image_to_ray_convergence`` uses for display.
+        Returns None when there is no usable axial bundle."""
+        try:
+            _system, _rays, bundle = self._build_preview_system_rays_bundle(
+                sampling_mode=None, update_state=False, trace_rays=True
+            )
+        except Exception:
+            return None
+        detector = None
+        for target in list(getattr(bundle, "targets", None) or []):
+            if not bool(getattr(target, "is_detector", False)):
+                continue
+            meta = getattr(target, "metadata", None) or {}
+            if str(meta.get("focus_source", "")) == "reached_image" or detector is None:
+                detector = target
+        if detector is None:
+            return None
+        try:
+            centre = np.asarray(detector.center_world, dtype=float).reshape(3)
+            normal = np.asarray(detector.normal_world, dtype=float).reshape(3)
+            norm = float(np.linalg.norm(normal))
+            if norm <= 1.0e-9:
+                return None
+            normal = normal / norm
+        except Exception:
+            return None
+
+        origins, directions = [], []
+        for path in list(getattr(bundle, "ray_paths", None) or []):
+            if str(getattr(path, "termination_reason", "")) != "target_termination":
+                continue
+            try:
+                pts = np.asarray(path.points_world, dtype=float)
+            except Exception:
+                continue
+            if pts.ndim != 2 or pts.shape[0] < 2:
+                continue
+            if float(np.linalg.norm(pts[0, :3])) > 1.0:
+                continue  # AXIAL field only -- a mixed-field bundle has no single waist
+            step = pts[-1, :3] - pts[-2, :3]
+            length = float(np.linalg.norm(step))
+            if length <= 1.0e-9:
+                continue
+            origins.append(pts[-1, :3])
+            directions.append(step / length)
+        if len(origins) < 4:
+            return None
+        origins = np.asarray(origins, dtype=float)
+        directions = np.asarray(directions, dtype=float)
+
+        def _spread(shift: float) -> float:
+            along = float(shift) / np.clip(directions @ normal, 1.0e-6, None)
+            pts = origins + directions * along[:, None]
+            centred = pts - pts.mean(axis=0)
+            transverse = centred - np.outer(centred @ normal, normal)
+            return float(np.sqrt((transverse ** 2).sum(axis=1).mean()))
+
+        span = 100.0
+        best = 0.0
+        for _ in range(60):  # coarse-to-fine scan; no algebra to get subtly wrong
+            candidates = np.linspace(best - span, best + span, 41)
+            values = [(_spread(float(c)), float(c)) for c in candidates]
+            best = min(values)[1]
+            span *= 0.5
+            if span < 1.0e-4:
+                break
+        if not np.isfinite(best):
+            return None
+        _unused = centre
+        # Sign convention: the scan above measures along the detector NORMAL (negative =
+        # back toward the optics), while ``snap_detector_to_image_plane`` consumes the shift
+        # in the detector's cumulative-z / gap frame, which runs the other way. Measured on
+        # the user's scene: the waist sits at -20.02 mm along the normal (transverse RMS
+        # 0.0007 mm there vs 0.805 mm at the detector), and feeding -20.02 straight through
+        # moved the detector to the +20 spread instead. Hand back the gap-frame value.
+        return -float(best)
 
     def _real_ray_best_focus_shift_for_rows(self, rows=None, wavelength=None):
         """Axial shift (mm) from the detector to REAL-RAY on-axis best focus, for layouts the

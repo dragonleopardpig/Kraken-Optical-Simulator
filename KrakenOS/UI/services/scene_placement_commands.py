@@ -2750,10 +2750,17 @@ class ScenePlacementMixin:
             # cube in the path that the centered-refractive paraxial solve can't model). Fall
             # back to the REAL-RAY on-axis best focus so the one-click snap still works.
             delta = self._real_ray_best_focus_shift_for_rows()
+            source = "best focus (ray-traced)"
+            if delta is None:
+                # bugs/0470: last resort -- measure the waist of the bundle that ACTUALLY
+                # traced. A beam-splitter scene has no straight equivalent, so the two paths
+                # above both give up and the user is told "not computable" on precisely the
+                # layout where the defocus is visible.
+                delta = self._traced_bundle_best_focus_shift()
+                source = "best focus (traced bundle)"
             if delta is None:
                 self.status_var.set("Snap detector: best focus is not computable for this layout.")
                 return False
-            source = "best focus (ray-traced)"
         if abs(delta) <= 1e-6:
             self.status_var.set("Detector already at best focus (no defocus).")
             return False
