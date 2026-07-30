@@ -16,6 +16,100 @@ ELEMENTARY_CHARGE_C = 1.602176634e-19
 BOLTZMANN_EV_K = 8.617333262145e-5
 HC_EV_UM = 1.2398419843320026
 
+# Intrinsic crystalline silicon at 300 K, Green (2008), Table 1.
+# The near-band-edge subset covers the wavelength range used by the slab lab.
+GREEN_2008_SILICON_WAVELENGTH_NM = np.arange(900.0, 1301.0, 10.0)
+GREEN_2008_SILICON_ABSORPTION_CM_INV = np.array(
+    [
+        303.0,
+        271.0,
+        240.0,
+        209.0,
+        183.0,
+        156.0,
+        134.0,
+        113.0,
+        96.0,
+        79.0,
+        64.0,
+        51.1,
+        39.9,
+        30.2,
+        22.6,
+        16.3,
+        11.1,
+        8.0,
+        6.2,
+        4.7,
+        3.5,
+        2.7,
+        2.0,
+        1.5,
+        1.0,
+        0.68,
+        0.42,
+        0.22,
+        6.5e-2,
+        3.6e-2,
+        2.2e-2,
+        1.3e-2,
+        8.2e-3,
+        4.7e-3,
+        2.4e-3,
+        1.0e-3,
+        3.6e-4,
+        2.0e-4,
+        1.2e-4,
+        7.1e-5,
+        4.5e-5,
+    ]
+)
+GREEN_2008_SILICON_REFRACTIVE_INDEX = np.array(
+    [
+        3.614,
+        3.609,
+        3.604,
+        3.600,
+        3.595,
+        3.591,
+        3.587,
+        3.583,
+        3.579,
+        3.575,
+        3.572,
+        3.568,
+        3.565,
+        3.562,
+        3.559,
+        3.556,
+        3.553,
+        3.550,
+        3.547,
+        3.545,
+        3.542,
+        3.540,
+        3.537,
+        3.535,
+        3.532,
+        3.530,
+        3.528,
+        3.526,
+        3.524,
+        3.522,
+        3.520,
+        3.518,
+        3.517,
+        3.515,
+        3.513,
+        3.511,
+        3.509,
+        3.508,
+        3.506,
+        3.505,
+        3.503,
+    ]
+)
+
 
 def _positive(name: str, value: float) -> float:
     value = float(value)
@@ -175,6 +269,107 @@ def absorption_depth_gain_per_decade(absorption_cm_inv: float) -> float:
 
     absorption_cm_inv = _positive("absorption_cm_inv", absorption_cm_inv)
     return float(np.log(10.0) / absorption_cm_inv * 1.0e4)
+
+
+def silicon_optical_properties(wavelength_nm):
+    """Return Green (2008) ``(alpha, n)`` for intrinsic silicon at 300 K.
+
+    Absorption is interpolated logarithmically because it spans nearly seven
+    decades over the table subset.  Refractive index is interpolated linearly.
+    """
+
+    wavelength_nm = _finite_array("wavelength_nm", wavelength_nm)
+    lower = GREEN_2008_SILICON_WAVELENGTH_NM[0]
+    upper = GREEN_2008_SILICON_WAVELENGTH_NM[-1]
+    if np.any((wavelength_nm < lower) | (wavelength_nm > upper)):
+        raise ValueError(
+            f"wavelength_nm must be between {lower:g} and {upper:g}"
+        )
+
+    absorption_cm_inv = 10.0 ** np.interp(
+        wavelength_nm,
+        GREEN_2008_SILICON_WAVELENGTH_NM,
+        np.log10(GREEN_2008_SILICON_ABSORPTION_CM_INV),
+    )
+    refractive_index = np.interp(
+        wavelength_nm,
+        GREEN_2008_SILICON_WAVELENGTH_NM,
+        GREEN_2008_SILICON_REFRACTIVE_INDEX,
+    )
+    return absorption_cm_inv, refractive_index
+
+
+def silicon_slab_transmission(
+    thickness_mm: float,
+    wavelength_nm: float,
+    source_fwhm_nm: float = 0.0,
+    *,
+    include_surface_reflection: bool = True,
+) -> float:
+    """Return transmitted power fraction for intrinsic silicon at 300 K.
+
+    A zero source FWHM gives a monochromatic calculation.  A non-zero FWHM
+    models a Gaussian source spectrum and integrates the transmitted spectral
+    power.  For uncoated parallel surfaces, incoherent repeated internal
+    reflections are included.  Scattering, coatings, doping, temperature
+    shifts, and the detector spectral response are not included.
+    """
+
+    thickness_mm = float(thickness_mm)
+    if not np.isfinite(thickness_mm) or thickness_mm < 0.0:
+        raise ValueError("thickness_mm must be finite and not negative")
+    wavelength_nm = float(wavelength_nm)
+    if not np.isfinite(wavelength_nm):
+        raise ValueError("wavelength_nm must be finite")
+    silicon_optical_properties(wavelength_nm)
+    source_fwhm_nm = float(source_fwhm_nm)
+    if not np.isfinite(source_fwhm_nm) or source_fwhm_nm < 0.0:
+        raise ValueError("source_fwhm_nm must be finite and not negative")
+
+    if source_fwhm_nm == 0.0:
+        wavelengths_nm = np.array([wavelength_nm])
+        weights = None
+    else:
+        sigma_nm = source_fwhm_nm / (2.0 * np.sqrt(2.0 * np.log(2.0)))
+        lower = max(
+            GREEN_2008_SILICON_WAVELENGTH_NM[0],
+            wavelength_nm - 4.0 * sigma_nm,
+        )
+        upper = min(
+            GREEN_2008_SILICON_WAVELENGTH_NM[-1],
+            wavelength_nm + 4.0 * sigma_nm,
+        )
+        if lower >= upper:
+            raise ValueError("source spectrum lies outside the silicon table")
+        wavelengths_nm = np.linspace(lower, upper, 401)
+        weights = np.exp(
+            -0.5 * ((wavelengths_nm - wavelength_nm) / sigma_nm) ** 2
+        )
+
+    absorption_cm_inv, refractive_index = silicon_optical_properties(
+        wavelengths_nm
+    )
+    bulk_transmission = np.exp(
+        -absorption_cm_inv * thickness_mm * 0.1
+    )
+    if include_surface_reflection:
+        reflectance = ((1.0 - refractive_index) / (
+            1.0 + refractive_index
+        )) ** 2
+        transmission = (
+            (1.0 - reflectance) ** 2
+            * bulk_transmission
+            / (1.0 - (reflectance * bulk_transmission) ** 2)
+        )
+    else:
+        transmission = bulk_transmission
+
+    if weights is None:
+        return float(transmission[0])
+    return float(
+        np.trapezoid(transmission * weights, wavelengths_nm)
+        / np.trapezoid(weights, wavelengths_nm)
+    )
 
 
 def slab_log10_transmission(

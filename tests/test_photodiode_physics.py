@@ -156,6 +156,43 @@ def test_silicon_slab_inverse_design_reference_case():
     ) == pytest.approx(-80.0 / np.log(10.0))
 
 
+def test_green_2008_silicon_slab_matches_1100_nm_lab_scale():
+    absorption, refractive_index = photodiode.silicon_optical_properties(
+        1100.0
+    )
+    assert float(absorption) == pytest.approx(3.5)
+    assert float(refractive_index) == pytest.approx(3.542)
+
+    monochromatic = photodiode.silicon_slab_transmission(
+        thickness_mm=8.0,
+        wavelength_nm=1100.0,
+    )
+    broadband_led = photodiode.silicon_slab_transmission(
+        thickness_mm=8.0,
+        wavelength_nm=1100.0,
+        source_fwhm_nm=50.0,
+    )
+
+    assert monochromatic == pytest.approx(0.0286920525)
+    assert broadband_led == pytest.approx(0.0504053049)
+    assert 3.0 * monochromatic == pytest.approx(0.0860761576)
+    assert 0.1 / monochromatic == pytest.approx(3.48528569)
+    assert broadband_led > monochromatic
+
+
+def test_green_2008_silicon_interpolation_and_validation():
+    absorption, refractive_index = photodiode.silicon_optical_properties(
+        [1100.0, 1105.0, 1110.0]
+    )
+    assert absorption[1] == pytest.approx(np.sqrt(3.5 * 2.7))
+    assert refractive_index[1] == pytest.approx((3.542 + 3.540) / 2.0)
+
+    with pytest.raises(ValueError):
+        photodiode.silicon_optical_properties(899.0)
+    with pytest.raises(ValueError):
+        photodiode.silicon_slab_transmission(8.0, 1100.0, -1.0)
+
+
 def test_absorption_coefficient_solves_fractional_transmission_target():
     reflectance = photodiode.fresnel_reflectance(1.0, 3.5)
     alpha = photodiode.absorption_coefficient_for_transmission(

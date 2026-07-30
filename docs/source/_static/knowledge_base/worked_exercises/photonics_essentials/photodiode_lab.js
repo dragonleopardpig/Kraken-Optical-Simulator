@@ -61,7 +61,7 @@
     };
 
     // Format both normal and extreme powers without 1e+N notation. The 2022
-    // SI prefixes ronna (R) and quetta (Q) keep the 8 mm reference result readable.
+    // SI prefixes ronna (R) and quetta (Q) cover the full slider range.
     const powerLogLabel = (log10PowerW) => {
         if (log10PowerW === -Infinity) return "0 W";
         if (!Number.isFinite(log10PowerW)) return "beyond numeric range";
@@ -86,6 +86,24 @@
     // (bugs/0481: an autoscaled frame made a four-decade slider produce no visible change).
     const SILICON_SOURCE_LOG_MIN = -3;
     const SILICON_SOURCE_LOG_MAX = 1;
+
+    // Intrinsic crystalline silicon at 300 K, Green (2008), Table 1.
+    const GREEN_SILICON_WAVELENGTH_NM = linearSpace(900, 1300, 41);
+    const GREEN_SILICON_ALPHA_CM_INV = [
+        303, 271, 240, 209, 183, 156, 134, 113, 96, 79, 64, 51.1,
+        39.9, 30.2, 22.6, 16.3, 11.1, 8, 6.2, 4.7, 3.5, 2.7, 2,
+        1.5, 1, 0.68, 0.42, 0.22, 6.5e-2, 3.6e-2, 2.2e-2, 1.3e-2,
+        8.2e-3, 4.7e-3, 2.4e-3, 1e-3, 3.6e-4, 2e-4, 1.2e-4,
+        7.1e-5, 4.5e-5,
+    ];
+    const GREEN_SILICON_INDEX = [
+        3.614, 3.609, 3.604, 3.6, 3.595, 3.591, 3.587, 3.583,
+        3.579, 3.575, 3.572, 3.568, 3.565, 3.562, 3.559, 3.556,
+        3.553, 3.55, 3.547, 3.545, 3.542, 3.54, 3.537, 3.535,
+        3.532, 3.53, 3.528, 3.526, 3.524, 3.522, 3.52, 3.518,
+        3.517, 3.515, 3.513, 3.511, 3.509, 3.508, 3.506, 3.505,
+        3.503,
+    ];
 
     const control = (
         key,
@@ -213,19 +231,20 @@
             calculate: siliconAbsorptionPower,
         },
         slabDesigner: {
-            label: "Silicon slab inverse designer (Sec. 3.4.1)",
+            label: "Silicon slab + 1100 nm LED (Sec. 3.4.1)",
             note:
-                "Fractional transmission is fixed by the surfaces, alpha, and slab width; " +
-                "raising source power cannot change that percentage. This inverse design " +
-                "instead calculates the source needed for an ABSOLUTE output power and the " +
-                "alpha or maximum width needed for a desired transmission percentage. " +
-                "The surface curve includes two uncoated air-silicon boundaries.",
+                "Uses Green's tabulated intrinsic-silicon data at 300 K instead of a fixed " +
+                "absorption coefficient. The LED curve integrates a Gaussian source spectrum; " +
+                "an 8 mm slab strongly favors its longer-wavelength tail. Power means optical " +
+                "power incident on the slab, not the LED's electrical rating. Uncoated curves " +
+                "include both surfaces and incoherent repeated internal reflections.",
             controls: [
                 control("widthMm", "Silicon slab width", 0.1, 10, 0.1, 8, (v) => `${v.toFixed(1)} mm`),
-                control("logAlpha", "Silicon log10(alpha)", -2, 2, 0.02, 2, (v) => `10^${v.toFixed(2)} cm-1`),
-                control("siliconIndex", "Silicon refractive index", 3.2, 4.2, 0.01, 3.5, (v) => v.toFixed(2)),
+                control("wavelengthNm", "Center wavelength", 1000, 1200, 1, 1100, (v) => `${v.toFixed(0)} nm`),
+                control("sourceFwhmNm", "LED spectral FWHM", 0, 50, 1, 50, (v) => v === 0 ? "0 nm (laser)" : `${v.toFixed(0)} nm`),
+                control("logSourcePower", "Incident optical power", -3, 1, 0.02, Math.log10(3), (v) => powerLogLabel(v)),
                 control("targetPercent", "Desired transmission", 0.1, 50, 0.1, 10, (v) => `${v.toFixed(1)}%`),
-                control("logTargetPower", "Desired output power", -12, 0, 0.05, -1, (v) => powerLogLabel(v)),
+                control("logTargetPower", "Desired output power", -6, 0, 0.05, -1, (v) => powerLogLabel(v)),
             ],
             calculate: slabInverseDesigner,
         },
@@ -555,82 +574,201 @@
         };
     }
 
-    function slabInverseDesigner(state) {
-        const alpha = 10 ** state.logAlpha;
+    function siliconOpticalProperties(wavelengthNm) {
+        if (
+            wavelengthNm < GREEN_SILICON_WAVELENGTH_NM[0] ||
+            wavelengthNm > GREEN_SILICON_WAVELENGTH_NM.at(-1)
+        ) {
+            throw new RangeError("wavelength is outside the Green silicon table");
+        }
+        const lowerIndex = Math.min(
+            GREEN_SILICON_WAVELENGTH_NM.length - 2,
+            Math.floor((wavelengthNm - 900) / 10),
+        );
+        const fraction =
+            (wavelengthNm - GREEN_SILICON_WAVELENGTH_NM[lowerIndex]) / 10;
+        const lowerLogAlpha = Math.log10(
+            GREEN_SILICON_ALPHA_CM_INV[lowerIndex],
+        );
+        const upperLogAlpha = Math.log10(
+            GREEN_SILICON_ALPHA_CM_INV[lowerIndex + 1],
+        );
+        return {
+            alpha:
+                10 ** (
+                    lowerLogAlpha +
+                    fraction * (upperLogAlpha - lowerLogAlpha)
+                ),
+            index:
+                GREEN_SILICON_INDEX[lowerIndex] +
+                fraction *
+                    (GREEN_SILICON_INDEX[lowerIndex + 1] -
+                        GREEN_SILICON_INDEX[lowerIndex]),
+        };
+    }
+
+    function monochromaticSiliconTransmission(
+        thicknessMm,
+        wavelengthNm,
+        includeSurfaceReflection = true,
+    ) {
+        const properties = siliconOpticalProperties(wavelengthNm);
+        const bulk = Math.exp(-properties.alpha * thicknessMm * 0.1);
+        if (!includeSurfaceReflection) return bulk;
+
         const reflectance =
-            ((1 - state.siliconIndex) / (1 + state.siliconIndex)) ** 2;
-        const surfaceFraction = (1 - reflectance) ** 2;
+            ((1 - properties.index) / (1 + properties.index)) ** 2;
+        return (
+            ((1 - reflectance) ** 2 * bulk) /
+            (1 - (reflectance * bulk) ** 2)
+        );
+    }
+
+    function siliconSlabTransmission(
+        thicknessMm,
+        wavelengthNm,
+        sourceFwhmNm,
+        includeSurfaceReflection = true,
+    ) {
+        if (sourceFwhmNm === 0) {
+            return monochromaticSiliconTransmission(
+                thicknessMm,
+                wavelengthNm,
+                includeSurfaceReflection,
+            );
+        }
+
+        const sigmaNm = sourceFwhmNm / (2 * Math.sqrt(2 * Math.log(2)));
+        const lower = Math.max(900, wavelengthNm - 4 * sigmaNm);
+        const upper = Math.min(1300, wavelengthNm + 4 * sigmaNm);
+        const wavelengths = linearSpace(lower, upper, 401);
+        let weightedTransmission = 0;
+        let totalWeight = 0;
+        for (let index = 0; index < wavelengths.length; index += 1) {
+            const wavelength = wavelengths[index];
+            const weight = Math.exp(
+                -0.5 * ((wavelength - wavelengthNm) / sigmaNm) ** 2,
+            );
+            const trapezoidWeight =
+                index === 0 || index === wavelengths.length - 1 ? 0.5 : 1;
+            weightedTransmission +=
+                trapezoidWeight *
+                weight *
+                monochromaticSiliconTransmission(
+                    thicknessMm,
+                    wavelength,
+                    includeSurfaceReflection,
+                );
+            totalWeight += trapezoidWeight * weight;
+        }
+        return weightedTransmission / totalWeight;
+    }
+
+    function wavelengthForTransmission(thicknessMm, targetFraction) {
+        const maximum = monochromaticSiliconTransmission(0, 1300, true);
+        if (targetFraction > maximum) return null;
+        let lower = 900;
+        let upper = 1300;
+        for (let iteration = 0; iteration < 40; iteration += 1) {
+            const midpoint = (lower + upper) / 2;
+            if (
+                monochromaticSiliconTransmission(
+                    thicknessMm,
+                    midpoint,
+                    true,
+                ) < targetFraction
+            ) {
+                lower = midpoint;
+            } else {
+                upper = midpoint;
+            }
+        }
+        return upper;
+    }
+
+    function slabInverseDesigner(state) {
+        const properties = siliconOpticalProperties(state.wavelengthNm);
+        const sourcePower = 10 ** state.logSourcePower;
+        const targetPower = 10 ** state.logTargetPower;
         const targetFraction = state.targetPercent / 100;
         const x = linearSpace(0, state.widthMm);
-        const bulkLossLog10 = (widthMm) =>
-            (alpha * widthMm * 0.1) / Math.LN10;
-        const surfaceLossLog10 = -Math.log10(surfaceFraction);
-        const noReflectionLogPower = x.map(
-            (widthMm) => state.logTargetPower + bulkLossLog10(widthMm),
+        const noReflectionTransmission = x.map((widthMm) =>
+            siliconSlabTransmission(
+                widthMm,
+                state.wavelengthNm,
+                0,
+                false,
+            ),
         );
-        const withReflectionLogPower = noReflectionLogPower.map(
-            (value) => value + surfaceLossLog10,
+        const monochromaticTransmission = x.map((widthMm) =>
+            siliconSlabTransmission(widthMm, state.wavelengthNm, 0, true),
         );
-        const selectedLogTransmission =
-            Math.log10(surfaceFraction) - bulkLossLog10(state.widthMm);
-        const selectedNoReflectionLogSource =
-            noReflectionLogPower[noReflectionLogPower.length - 1];
-        const selectedSurfaceLogSource =
-            withReflectionLogPower[withReflectionLogPower.length - 1];
-        const targetIsPossible = targetFraction <= surfaceFraction;
-        const lossBudget = targetIsPossible
-            ? -Math.log(targetFraction / surfaceFraction)
-            : 0;
-        const requiredAlpha = targetIsPossible
-            ? lossBudget / (state.widthMm * 0.1)
-            : null;
-        const maximumWidthMm = targetIsPossible
-            ? (lossBudget / alpha) * 10
-            : null;
-        const transmissionDecades = -selectedLogTransmission;
-        const transmissionLabel =
-            selectedLogTransmission >= -5
-                ? `${readableNumber(100 * 10 ** selectedLogTransmission)}%`
-                : `effectively 0% (${readableNumber(transmissionDecades)} decades of loss)`;
+        const ledTransmission = x.map((widthMm) =>
+            siliconSlabTransmission(
+                widthMm,
+                state.wavelengthNm,
+                state.sourceFwhmNm,
+                true,
+            ),
+        );
+        const requiredSource = (transmission) =>
+            transmission.map((fraction) =>
+                Math.log10(targetPower / fraction),
+            );
+        const selectedMonochromatic = monochromaticTransmission.at(-1);
+        const selectedLed = ledTransmission.at(-1);
+        const selectedNoReflection = noReflectionTransmission.at(-1);
+        const targetWavelength = wavelengthForTransmission(
+            state.widthMm,
+            targetFraction,
+        );
+        const ledLabel =
+            state.sourceFwhmNm === 0
+                ? `${state.wavelengthNm.toFixed(0)} nm laser, uncoated`
+                : `${state.wavelengthNm.toFixed(0)} nm LED (${state.sourceFwhmNm.toFixed(0)} nm FWHM)`;
 
         return {
             series: [
                 {
-                    label: "No surface reflection",
+                    label: `${state.wavelengthNm.toFixed(0)} nm, no reflection`,
                     color: COLORS[1],
                     x,
-                    y: noReflectionLogPower,
+                    y: requiredSource(noReflectionTransmission),
                 },
                 {
-                    label: "Two uncoated silicon surfaces",
+                    label: `${state.wavelengthNm.toFixed(0)} nm, uncoated`,
                     color: COLORS[0],
                     x,
-                    y: withReflectionLogPower,
+                    y: requiredSource(monochromaticTransmission),
+                },
+                {
+                    label: ledLabel,
+                    color: COLORS[3],
+                    x,
+                    y: requiredSource(ledTransmission),
                 },
             ],
             xLabel: "Silicon slab width (mm)",
-            yLabel: "Required source power",
+            yLabel: "Incident optical power for desired output",
             xDomain: [0, state.widthMm],
             yTickFormat: "power-log10",
             readouts: [
-                ["Actual transmission", transmissionLabel],
-                ["Source for desired output", powerLogLabel(selectedSurfaceLogSource)],
-                ["Source without reflection", powerLogLabel(selectedNoReflectionLogSource)],
+                ["Green alpha at center", `${engineering(properties.alpha)} cm-1`],
+                ["Green n at center", properties.index.toFixed(3)],
+                ["Monochromatic transmission", `${readableNumber(100 * selectedMonochromatic)}%`],
+                ["LED-band transmission", `${readableNumber(100 * selectedLed)}%`],
+                ["Output from selected source (mono)", powerLabel(sourcePower * selectedMonochromatic)],
+                ["Output from selected source (LED)", powerLabel(sourcePower * selectedLed)],
+                ["Source for desired output (mono)", powerLabel(targetPower / selectedMonochromatic)],
+                ["Source for desired output (LED)", powerLabel(targetPower / selectedLed)],
+                ["No-reflection transmission", `${readableNumber(100 * selectedNoReflection)}%`],
+                [
+                    `${state.targetPercent.toFixed(1)}% monochromatic target`,
+                    targetWavelength === null
+                        ? "Above the uncoated-surface ceiling"
+                        : `requires about ${targetWavelength.toFixed(0)} nm or longer`,
+                ],
                 ["Can power change the percent?", "No - not in the linear model"],
-                [
-                    "Alpha for desired percent",
-                    targetIsPossible
-                        ? `${engineering(requiredAlpha)} cm-1 or less`
-                        : "Impossible: surface loss is already too large",
-                ],
-                [
-                    "Maximum width at this alpha",
-                    targetIsPossible
-                        ? `${engineering(maximumWidthMm)} mm`
-                        : "No non-negative width",
-                ],
-                ["Two-surface ceiling", `${readableNumber(100 * surfaceFraction)}%`],
-                ["Desired output", powerLogLabel(state.logTargetPower)],
             ],
         };
     }
@@ -1107,6 +1245,8 @@
                 powerLabel,
                 powerLogLabel,
                 engineering,
+                siliconOpticalProperties,
+                siliconSlabTransmission,
             };
         }
     } else if (document.readyState === "loading") {

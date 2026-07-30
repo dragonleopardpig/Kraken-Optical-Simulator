@@ -68,10 +68,11 @@ The explorer includes:
        :math:`1/\alpha`, which belongs to the material. What power does move is
        the depth at which the beam is still above the floor, by
        :math:`\ln(10)/\alpha` per decade
-   * - Silicon slab inverse designer
+   * - Silicon slab and 1100 nm LED
      - Section 3.4.1; inverse of Equation 3.22
-     - Slab width, desired fractional transmission, desired absolute output
-       power, absorption coefficient, and silicon refractive index
+     - Slab width, wavelength, LED spectral width, incident optical power,
+       desired fractional transmission, and desired absolute output power.
+       The wavelength-dependent silicon data are from Green (2008)
    * - Responsivity
      - Figure 3.9; Equations 3.25--3.28
      - Quantum efficiency and band gap
@@ -100,6 +101,8 @@ The browser controls and the notebook use the same equations implemented in
        photovoltage,
        required_source_log10_power,
        responsivity,
+       silicon_optical_properties,
+       silicon_slab_transmission,
        slab_log10_transmission,
    )
 
@@ -192,12 +195,34 @@ remains, or about :math:`25.4\%` of the original source power.
    real index.  The controls isolate the Chapter 3 equations; they are not a
    substitute for wavelength-dependent measured optical constants.
 
-Inverse design: how much source power is required?
---------------------------------------------------
+Silicon slab and 1100 nm LED
+----------------------------
 
-For a slab, light crosses an entrance and an exit surface.  In the simple
-single-pass model, the fraction transmitted through two uncoated surfaces
-and the absorbing bulk is
+The absorption coefficient in Equation 3.22 is not one fixed property of
+silicon.  It is a strong function of wavelength, especially near silicon's
+indirect band edge.  The slab explorer uses the tabulated intrinsic-silicon
+values at :math:`300\ \mathrm K` from `Green (2008)
+<https://doi.org/10.1016/j.solmat.2008.06.009>`_.  At
+:math:`1100\ \mathrm{nm}`, that table gives
+
+.. math::
+
+   \alpha=3.5\ \mathrm{cm^{-1}},
+   \qquad
+   n=3.542.
+
+.. important::
+
+   An earlier version of this page used
+   :math:`\alpha=100\ \mathrm{cm^{-1}}` in the 8 mm example.  That is close
+   to Green's value near :math:`980\ \mathrm{nm}`, not
+   :math:`1100\ \mathrm{nm}`.  Applying it to an 1100 nm experiment caused
+   the physically absurd million-quetta-watt result.
+
+For a slab, let the one-pass bulk transmission be
+:math:`A=e^{-\alpha d}`.  The explorer includes the incoherent sequence of
+forward beams produced by repeated reflections between two parallel,
+uncoated surfaces:
 
 .. math::
 
@@ -205,95 +230,113 @@ and the absorbing bulk is
    =
    \frac{P_{\mathrm{out}}}{P_{\mathrm{source}}}
    =
-   (1-R)^2 e^{-\alpha d},
+   \frac{(1-R)^2A}{1-R^2A^2},
+   \qquad
+   A=e^{-\alpha d}.
 
-where :math:`d` is the slab width.  Therefore, the source power required for
-a specified **absolute** output power is
+The single-pass approximation :math:`(1-R)^2e^{-\alpha d}` is recovered by
+omitting the denominator.  For a specified **absolute** output power,
 
 .. math::
 
    P_{\mathrm{source}}
    =
-   \frac{P_{\mathrm{out,target}}}
-        {(1-R)^2e^{-\alpha d}}.
+   \frac{P_{\mathrm{out,target}}}{T_{\mathrm{slab}}}.
 
 This is different from asking for a percentage of the source to be
-transmitted.  For a desired fractional transmission
-:math:`T_{\mathrm{target}}`,
+transmitted.  Source power cancels from the fraction:
 
 .. math::
 
-   T_{\mathrm{target}}
-   =
-   (1-R)^2e^{-\alpha d}.
+   \frac{P_{\mathrm{out}}}{P_{\mathrm{source}}}
+   =T_{\mathrm{slab}}(\lambda,d).
 
-The source power cancels.  Increasing it raises both
+Increasing source power raises both
 :math:`P_{\mathrm{source}}` and :math:`P_{\mathrm{out}}` by the same factor,
-so it cannot change the percentage.  Instead, solve for the largest
-acceptable absorption coefficient:
-
-.. math::
-
-   \alpha_{\max}
-   =
-   -\frac{1}{d}
-   \ln\left(
-      \frac{T_{\mathrm{target}}}{(1-R)^2}
-   \right).
+so it cannot change the percentage in this linear model.  Wavelength,
+thickness, surface treatment, temperature, and material properties do change
+the percentage.
 
 Eight-millimetre silicon example
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Use the initial inverse-designer values:
+For monochromatic :math:`1100\ \mathrm{nm}` light and
+:math:`d=8\ \mathrm{mm}=0.8\ \mathrm{cm}`,
 
 .. math::
 
-   d=8\ \mathrm{mm}=0.8\ \mathrm{cm},
+   A=e^{-3.5(0.8)}=e^{-2.8}=0.0608,
    \qquad
-   \alpha=100\ \mathrm{cm^{-1}},
-   \qquad
-   n_{\mathrm{Si}}=3.5.
+   R=\left(\frac{1-3.542}{1+3.542}\right)^2=0.3132.
 
-The surface reflectance and total transmission are
+The predicted uncoated-slab transmission is therefore
 
 .. math::
 
-   R=0.3086,
-   \qquad
    T_{\mathrm{slab}}
-   =(1-0.3086)^2e^{-80}
-   \approx 8.63\times10^{-36}.
+   =
+   \frac{(1-0.3132)^2e^{-2.8}}
+        {1-0.3132^2e^{-5.6}}
+   =0.02869
+   \approx 2.87\%.
 
-Consequently, **no source power can make 10% of the incident power emerge**
-while these linear material parameters remain fixed.  Achieving
-:math:`T_{\mathrm{target}}=10\%` through :math:`8\ \mathrm{mm}` would
-require
-
-.. math::
-
-   \boxed{\alpha\leq1.96\ \mathrm{cm^{-1}}}.
-
-At :math:`\alpha=100\ \mathrm{cm^{-1}}`, the maximum width that gives 10%
-transmission is only approximately
+Thus :math:`3\ \mathrm W` of **optical power incident on the slab** gives
 
 .. math::
 
-   \boxed{d_{\max}=0.156\ \mathrm{mm}}.
+   P_{\mathrm{out}}
+   =(3\ \mathrm W)(0.02869)
+   =86.1\ \mathrm{mW}.
 
-If the intended requirement is instead an absolute output of
-:math:`100\ \mathrm{mW}`, then the ideal equation predicts a required source
-near :math:`1.16\times10^{34}\ \mathrm W`.  That impossible result is useful:
-it says to change wavelength, material, thickness, or detection method rather
-than searching for a stronger source.
+Conversely, obtaining :math:`100\ \mathrm{mW}` after the slab requires
 
-The **Silicon slab inverse designer** plots required source power against
-width.  Its logarithmic Y-axis uses readable SI power units rather than
-scientific notation.
+.. math::
+
+   P_{\mathrm{source}}
+   =\frac{0.100\ \mathrm W}{0.02869}
+   =3.49\ \mathrm W.
+
+This result is consistent with seeing transmitted light using a few-watt
+source and a sensitive SWIR camera.  It does not say that 10% is transmitted:
+a camera can clearly detect much less than 10%, depending on irradiance,
+exposure, lens throughput, sensor response, and display gain.
+
+Real LED spectrum
+~~~~~~~~~~~~~~~~~
+
+An LED is not monochromatic.  The explorer models its spectral power density
+as a Gaussian with a selectable full width at half maximum (FWHM) and
+integrates
+
+.. math::
+
+   T_{\mathrm{LED}}
+   =
+   \frac{\int S(\lambda)T_{\mathrm{slab}}(\lambda,d)\,d\lambda}
+        {\int S(\lambda)\,d\lambda}.
+
+For a nominal 1100 nm LED with a 50 nm FWHM, the model predicts approximately
+:math:`5.04\%` transmission through 8 mm.  The transmitted spectrum is biased
+toward the longer-wavelength tail because :math:`\alpha(\lambda)` falls
+rapidly there.  With :math:`3\ \mathrm W` incident optical power, this example
+gives about :math:`151\ \mathrm{mW}` after the slab.
+
+The desired-transmission readout reports the approximate monochromatic
+wavelength needed for the selected thickness.  For 10% through 8 mm, the
+tabulated model gives about :math:`1121\ \mathrm{nm}` or longer.
 
 .. warning::
 
-   This is a linear, single-pass Beer--Lambert calculation.  It neglects
-   coherent etalon effects, repeated internal reflections, heating,
-   free-carrier absorption, and nonlinear absorption.  At high power the
-   relevant quantity is irradiance, so beam area and pulse duration would
-   also be required.
+   The source-power control is **incident optical radiant power**, not an
+   LED's electrical input rating.  Use the LED datasheet's radiant-power
+   spectrum, or measure it, for a quantitative comparison.
+
+.. note::
+
+   Green's table describes intrinsic silicon at 300 K.  Doping, defects,
+   temperature, oxide or antireflection layers, surface roughness, incidence
+   angle, finite camera aperture, and the actual LED and camera spectra can
+   materially change a laboratory result.  The independent Schinke et al.
+   dataset provides wavelength-dependent uncertainty and temperature
+   coefficients for crystalline silicon (`ISFH data
+   <https://isfh.de/en/datensaetze>`_).

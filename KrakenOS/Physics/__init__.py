@@ -22,6 +22,9 @@ from .optics import *  # noqa: F401,F403 -- legacy unqualified API, see docstrin
 
 from .photodiode import (
     HC_EV_UM,
+    GREEN_2008_SILICON_ABSORPTION_CM_INV,
+    GREEN_2008_SILICON_REFRACTIVE_INDEX,
+    GREEN_2008_SILICON_WAVELENGTH_NM,
     PhotodiodeParameters,
     absorption_depth_for_power,
     absorption_depth_gain_per_decade,
@@ -38,12 +41,17 @@ from .photodiode import (
     required_source_log10_power,
     responsivity,
     single_layer_reflectance,
+    silicon_optical_properties,
+    silicon_slab_transmission,
     slab_log10_transmission,
 )
 
 #: Names the photodiode half contributes. Explicit, because it is a curated API.
 PHOTODIODE_API = (
     "HC_EV_UM",
+    "GREEN_2008_SILICON_ABSORPTION_CM_INV",
+    "GREEN_2008_SILICON_REFRACTIVE_INDEX",
+    "GREEN_2008_SILICON_WAVELENGTH_NM",
     "PhotodiodeParameters",
     "absorption_depth_for_power",
     "absorption_depth_gain_per_decade",
@@ -60,6 +68,8 @@ PHOTODIODE_API = (
     "required_source_log10_power",
     "responsivity",
     "single_layer_reflectance",
+    "silicon_optical_properties",
+    "silicon_slab_transmission",
     "slab_log10_transmission",
 )
 
