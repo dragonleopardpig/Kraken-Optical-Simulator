@@ -234,6 +234,108 @@ def _reached_image_target(existing_targets: list | None):
     return best[1] if best is not None else None
 
 
+# bugs/0480: why each rung of the camera-seating ladder chose (or refused) a target. The
+# caller puts this in the status line and the guard asserts on it, so the reason is part of
+# the contract rather than a comment.
+SEATING_REASON_ASSIGNED = "assigned_camera"
+SEATING_REASON_DESIGNED_IMAGE = "designed_image_target"
+SEATING_REASON_PINNED_ARM = "arm_pinned_to_designed_image"
+SEATING_REASON_REACHING_ARM = "arm_rays_reach_designed_image"
+SEATING_REASON_SOLE = "sole_detector"
+SEATING_REASON_NONE = "no_detector"
+SEATING_REASON_AMBIGUOUS = "ambiguous_arms"
+
+
+def camera_seating_detector_target(
+    targets: list | None,
+    *,
+    camera_label: str = "camera",
+    designed_image_point=None,
+) -> tuple[object | None, str]:
+    """Which detector target is THIS camera's sensor? Returns ``(target, reason)``.
+
+    bugs/0480: ``seat_camera_on_sensor`` used to take the first ``is_detector`` target that
+    was not pinned to the designed Image. On a beam-splitter scene there is a detector per
+    TERMINAL LEAF, and ``derive_branch_detectors`` enumerates ``sorted(leaves)`` -- so "first"
+    means *alphabetically first branch path*, with ``reflect`` sorting before ``transmit``.
+    That is not a physical fact about the scene, and on ``Beam Splitter Two Path Doublets`` it
+    picked the transmit-path detector ROW (z = 140) instead of the Image (z = 192), 52 mm away.
+    Seating a physical camera body onto the wrong arm is worse than not seating it (bugs/0473),
+    so where no rung identifies a sensor this REFUSES instead of guessing.
+
+    The rungs, most authoritative first:
+
+    0. ``assigned_camera_label == camera_label`` -- this camera was registered to this arm
+       (Phase B2). Nothing outranks the user's own assignment, including the designed Image:
+       a per-arm camera's sensor is its OWN arm's detector.
+    1. the scene's prescription Image detector (:func:`_reached_image_target` -- the same
+       helper the branch-detector pin uses, so seating and pinning cannot disagree).
+    2. an arm PINNED to the designed Image (``focus_source == "reached_image"``): its centre
+       IS that image.
+    3. an arm whose OWN rays land on the designed Image (``reaches_designed_image``). bugs/0477
+       is why this is separate from rung 2: ``focus_source`` also encodes *how* the plane was
+       positioned, so it flips when the Image moves; this does not.
+    4. the sole detector in the scene -- a plain sequential/folded layout.
+
+    Ties inside a rung go to the candidate nearest ``designed_image_point`` when one is given,
+    then to target order. ``designed_image_point`` is advisory only: it never admits or rejects
+    a candidate, so a scene whose Image row cannot be located in world still seats correctly.
+    """
+    detectors = [t for t in (targets or []) if bool(getattr(t, "is_detector", False))]
+    if not detectors:
+        return None, SEATING_REASON_NONE
+
+    try:
+        reference = np.asarray(designed_image_point, dtype=float).reshape(3)
+        if not np.all(np.isfinite(reference)):
+            reference = None
+    except Exception:
+        reference = None
+
+    def _distance(target) -> float:
+        if reference is None:
+            return 0.0
+        try:
+            centre = np.asarray(getattr(target, "center_world", None), dtype=float).reshape(3)
+        except Exception:
+            return float("inf")
+        if not np.all(np.isfinite(centre)):
+            return float("inf")
+        return float(np.linalg.norm(centre - reference))
+
+    wanted = str(camera_label or "").strip().lower()
+    assigned = [
+        t
+        for t in detectors
+        if wanted
+        and str(((getattr(t, "metadata", None) or {}).get("assigned_camera_label") or "")).strip().lower() == wanted
+    ]
+    if assigned:
+        return min(enumerate(assigned), key=lambda e: (_distance(e[1]), e[0]))[1], SEATING_REASON_ASSIGNED
+
+    designed = _reached_image_target(detectors)
+    if designed is not None:
+        return designed, SEATING_REASON_DESIGNED_IMAGE
+
+    for reason, predicate in (
+        (
+            SEATING_REASON_PINNED_ARM,
+            lambda t: str(((getattr(t, "metadata", None) or {}).get("focus_source", "")) or "") == "reached_image",
+        ),
+        (
+            SEATING_REASON_REACHING_ARM,
+            lambda t: bool(((getattr(t, "metadata", None) or {}).get("reaches_designed_image", False))),
+        ),
+    ):
+        matches = [t for t in detectors if predicate(t)]
+        if matches:
+            return min(enumerate(matches), key=lambda e: (_distance(e[1]), e[0]))[1], reason
+
+    if len(detectors) == 1:
+        return detectors[0], SEATING_REASON_SOLE
+    return None, SEATING_REASON_AMBIGUOUS
+
+
 def _exit_rays_for_group(group: list) -> tuple[np.ndarray, np.ndarray]:
     """Return (origins, unit_directions) for the EXIT segment of each ray.
 

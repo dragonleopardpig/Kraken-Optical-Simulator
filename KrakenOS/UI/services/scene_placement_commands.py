@@ -2791,6 +2791,41 @@ class ScenePlacementMixin:
                     hits.append(name)
         return hits
 
+    def _designed_image_world_point(self):
+        """The designed Image row's position in WORLD space, or None.
+
+        bugs/0480 uses it only to break ties between equally-ranked detector candidates, so a
+        None here degrades the choice to target order rather than breaking it.
+
+        ``_row_z_positions`` is the STRAIGHT cumulative-thickness axis; a row repositioned onto
+        a reflected branch carries a fold override, and the bundle's targets are folded through
+        exactly this transform (see ``_optical_axis_fold_world_transform_for_row``). Comparing a
+        straight-frame point against folded target centres would put every candidate hundreds of
+        mm away, so the fold is applied here too -- the display must follow the same transform
+        the trace uses.
+        """
+        try:
+            import numpy as _np
+
+            index = self._image_plane_row_index()
+            if index is None:
+                return None
+            row = self.rows[int(index)]
+            point = _np.asarray(
+                [
+                    float(row.desp_x),
+                    float(row.desp_y),
+                    float(self._row_z_positions()[int(index)]) + float(row.desp_z),
+                ],
+                dtype=float,
+            )
+            fold = self._optical_axis_fold_world_transform_for_row(int(index))
+            if fold is not None:
+                point = (_np.asarray(fold, dtype=float).reshape(4, 4) @ _np.append(point, 1.0))[:3]
+            return point if _np.all(_np.isfinite(point)) else None
+        except Exception:
+            return None
+
     def seat_camera_on_sensor(self, label: str = "camera") -> bool:
         """bugs/0471: re-seat the camera STEP so its SENSOR lands on the Image row.
 
@@ -2804,6 +2839,10 @@ class ScenePlacementMixin:
         This is an explicit action rather than an automatic correction precisely because that
         offset is the user's own placement state -- recomputing it silently would discard
         deliberate positioning. It adjusts ONLY the along-beam component.
+
+        bugs/0480: WHICH detector target counts as "the sensor" is decided by
+        ``camera_seating_detector_target``, not by bundle order. See that function for the
+        ladder; an unidentifiable multi-arm scene refuses rather than seating on a guess.
         """
         import numpy as np
 
@@ -2826,25 +2865,34 @@ class ScenePlacementMixin:
         # to a default -Z, which seated the AZ85 RA-mirror scene by +338.9 mm. This action is a
         # user-invoked one-off, so paying for a trace is the right trade -- and if no detector
         # turns up, it refuses rather than guessing a direction.
+        # bugs/0480: WHICH detector is this camera's sensor is a physical question, and it used
+        # to be answered by list order -- "the arm pinned to the designed Image, else the FIRST
+        # is_detector target". A beam splitter puts a detector on every terminal leaf and the
+        # leaves are enumerated alphabetically by branch path, so on a scene where no arm is
+        # pinned that fallback seated the body on whichever arm sorted first. The ladder
+        # (assigned camera > designed Image > pinned arm > reaching arm) lives in
+        # branch_detectors so seating and the branch-detector pin share one answer, and an
+        # unidentifiable scene REFUSES rather than seating on the wrong arm.
+        # Imported locally, like the other service reach-ins here: the 0477 postmortem is what a
+        # NameError in this area costs when a bare `except` swallows it.
+        from KrakenOS.UI.services.branch_detectors import (
+            SEATING_REASON_AMBIGUOUS,
+            SEATING_REASON_NONE,
+            camera_seating_detector_target,
+        )
+
         beam = None
         sensor_point = None
+        seating_reason = SEATING_REASON_NONE
         try:
             _s, _r, bundle = self._build_preview_system_rays_bundle(
                 sampling_mode=None, update_state=False, trace_rays=True
             )
-            # Prefer the arm pinned to the designed Image; fall back to ANY detector. A plain
-            # SEQUENTIAL scene has no branch detectors at all, and demanding one refused to
-            # seat the camera on exactly the scenes that are simplest to seat.
-            chosen = None
-            for target in list(getattr(bundle, "targets", None) or []):
-                if not bool(getattr(target, "is_detector", False)):
-                    continue
-                meta = getattr(target, "metadata", None) or {}
-                if str(meta.get("focus_source", "")) == "reached_image":
-                    chosen = target
-                    break
-                if chosen is None:
-                    chosen = target
+            chosen, seating_reason = camera_seating_detector_target(
+                list(getattr(bundle, "targets", None) or []),
+                camera_label=label,
+                designed_image_point=self._designed_image_world_point(),
+            )
             if chosen is not None:
                 normal = np.asarray(getattr(chosen, "normal_world", None), dtype=float).reshape(3)
                 if float(np.linalg.norm(normal)) > 1.0e-9:
@@ -2855,10 +2903,19 @@ class ScenePlacementMixin:
         except Exception:
             beam = None
         if beam is None or sensor_point is None:
-            self.status_var.set(
-                "Seat camera: no imaging detector in this scene, so the beam direction at the "
-                "sensor is unknown. Trace the scene (Show Rays) and retry."
-            )
+            if seating_reason == SEATING_REASON_AMBIGUOUS:
+                # bugs/0480: several detectors and nothing that says which one is THIS camera's
+                # sensor. Say what would fix it rather than seating on a coin-flip arm.
+                self.status_var.set(
+                    f"Seat camera: this scene has several candidate sensors and none is identified "
+                    f"as {label}'s. Register the camera to a detector (right-click the detector "
+                    f"plane), or trace the scene so an arm reaches the Image, then retry."
+                )
+            else:
+                self.status_var.set(
+                    "Seat camera: no imaging detector in this scene, so the beam direction at the "
+                    "sensor is unknown. Trace the scene (Show Rays) and retry."
+                )
             return False
         upstream = -beam  # from the sensor back toward the optics
         try:
@@ -2905,7 +2962,10 @@ class ScenePlacementMixin:
         lateral = float(np.linalg.norm(shift - upstream * delta))
         message = (
             f"Seated the camera on the sensor (moved {delta:+.4g} mm along the beam"
-            + (f", {lateral:.4g} mm across it)." if lateral > 1.0e-6 else ").")
+            + (f", {lateral:.4g} mm across it" if lateral > 1.0e-6 else "")
+            # bugs/0480: WHICH detector was taken as the sensor is the thing that went wrong
+            # here, so it belongs in the message the user reads, not only in a comment.
+            + f"; sensor from {seating_reason})."
         )
         # The overlap check is deliberately NOT run here: the transformed STEP mesh is memoized
         # (bugs/0331), so querying it immediately after writing the placement offset can read

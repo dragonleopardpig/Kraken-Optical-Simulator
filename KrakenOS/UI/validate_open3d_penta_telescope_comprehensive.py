@@ -15365,6 +15365,9 @@ phase_385_phantom_sensor_planes = _phase_from_standalone(
 phase_386_fov_solve_frozen_image = _phase_from_standalone(
     386, "a solved image distance goes down the exit leg, not into an inverted gap row (0478)",
     "KrakenOS.UI.validate_open3d_0478_fov_solve_frozen_image", "fov_solve_frozen_image")
+phase_387_camera_seating_arm_choice = _phase_from_standalone(
+    387, "the camera seats on the arm that IS its sensor, not whichever sorted first (0480)",
+    "KrakenOS.UI.validate_open3d_0480_camera_seating_arm_choice", "camera_seating_arm_choice")
 
 
 # ---------------------------------------------------------------------------
@@ -15798,6 +15801,7 @@ def main() -> int:
             phase_384_camera_collision_promoted,
             phase_385_phantom_sensor_planes,
             phase_386_fov_solve_frozen_image,
+            phase_387_camera_seating_arm_choice,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
