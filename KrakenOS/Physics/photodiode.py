@@ -102,6 +102,30 @@ def absorption_intensity(
     )
 
 
+def absorption_power(
+    position_um,
+    absorption_cm_inv: float,
+    incident_power_w: float,
+    surface_reflectance: float = 0.0,
+) -> np.ndarray:
+    """Return power remaining after surface reflection and bulk absorption.
+
+    For a beam with constant cross-sectional area, power follows the same
+    Beer-Lambert depth dependence as intensity.  ``surface_reflectance`` is
+    the fraction removed at the entrance boundary before bulk absorption.
+    """
+
+    incident_power_w = _positive("incident_power_w", incident_power_w)
+    surface_reflectance = _fraction(
+        "surface_reflectance", surface_reflectance
+    )
+    return absorption_intensity(
+        position_um,
+        absorption_cm_inv,
+        incident_intensity=incident_power_w,
+    ) * (1.0 - surface_reflectance)
+
+
 def responsivity(
     wavelength_um,
     quantum_efficiency: float,

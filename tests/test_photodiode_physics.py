@@ -57,6 +57,20 @@ def test_spectral_cutoff_absorption_and_responsivity_reference_points():
     assert responsivity == pytest.approx([0.5, 1.0], rel=2.0e-4)
 
 
+def test_absorption_power_applies_surface_reflection_before_bulk_absorption():
+    surface_reflectance = photodiode.fresnel_reflectance(1.0, 3.5)
+    depth_um = np.array([0.0, 100.0])
+    power = photodiode.absorption_power(
+        depth_um,
+        absorption_cm_inv=100.0,
+        incident_power_w=0.1,
+        surface_reflectance=surface_reflectance,
+    )
+
+    assert power[0] == pytest.approx(0.1 * (1.0 - surface_reflectance))
+    assert power[1] == pytest.approx(power[0] * np.exp(-1.0))
+
+
 def test_quarter_wave_layer_cancels_design_wavelength_reflection():
     substrate_index = 3.5
     film_index = np.sqrt(substrate_index)
@@ -81,6 +95,7 @@ def test_quarter_wave_layer_cancels_design_wavelength_reflection():
         (photodiode.diffusion_length, (-1.0, 1.0)),
         (photodiode.ideal_spectral_response, ([1.0], 0.0)),
         (photodiode.absorption_intensity, ([-1.0], 100.0)),
+        (photodiode.absorption_power, ([1.0], 100.0, 1.0, 1.1)),
         (photodiode.responsivity, ([1.0], 1.1)),
     ],
 )

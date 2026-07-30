@@ -23,6 +23,11 @@
         return Number(value.toPrecision(digits)).toString();
     };
 
+    const powerLabel = (powerW) => {
+        if (powerW < 1) return `${engineering(powerW * 1e3)} mW`;
+        return `${engineering(powerW)} W`;
+    };
+
     const control = (
         key,
         label,
@@ -119,6 +124,21 @@
                 control("depths", "Displayed absorption lengths", 1, 8, 0.1, 5, (v) => v.toFixed(1)),
             ],
             calculate: absorptionCurve,
+        },
+        siliconPower: {
+            label: "Silicon power + surface reflection (Sec. 3.4.1)",
+            note:
+                "Both curves obey Equation 3.22. The surface-reflection curve first loses " +
+                "the normal-incidence Fresnel fraction R, then undergoes the same silicon " +
+                "bulk absorption. Power and intensity have the same depth dependence for " +
+                "a beam of constant area.",
+            controls: [
+                control("logPower", "Source power", -3, 1, 0.02, -1, (v) => powerLabel(10 ** v)),
+                control("logAlpha", "Silicon log10(alpha)", 2, 5, 0.05, 2, (v) => `10^${v.toFixed(2)} cm-1`),
+                control("siliconIndex", "Silicon refractive index", 3.2, 4.2, 0.01, 3.5, (v) => v.toFixed(2)),
+                control("depths", "Displayed absorption lengths", 1, 8, 0.1, 5, (v) => v.toFixed(1)),
+            ],
+            calculate: siliconAbsorptionPower,
         },
         responsivity: {
             label: "Responsivity (Fig. 3.9)",
@@ -359,6 +379,54 @@
                 ["Absorption length", `${engineering(absorptionLengthUm)} um`],
                 ["Intensity at 1/alpha", "0.3679 I_0"],
                 ["Absorbed at 1/alpha", "63.21%"],
+            ],
+        };
+    }
+
+    function siliconAbsorptionPower(state) {
+        const incidentPower = 10 ** state.logPower;
+        const alpha = 10 ** state.logAlpha;
+        const absorptionLengthUm = 1e4 / alpha;
+        const maximumDepthUm = state.depths * absorptionLengthUm;
+        const x = linearSpace(0, maximumDepthUm);
+        const reflectance =
+            ((1 - state.siliconIndex) / (1 + state.siliconIndex)) ** 2;
+        const enteringPower = incidentPower * (1 - reflectance);
+        const noReflection = x.map(
+            (position) =>
+                incidentPower * Math.exp(-alpha * position * 1e-4),
+        );
+        const withReflection = x.map(
+            (position) =>
+                enteringPower * Math.exp(-alpha * position * 1e-4),
+        );
+        const finalPower = withReflection[withReflection.length - 1];
+        return {
+            series: [
+                {
+                    label: "No surface reflection",
+                    color: COLORS[1],
+                    x,
+                    y: noReflection,
+                },
+                {
+                    label: "Air-to-silicon surface",
+                    color: COLORS[0],
+                    x,
+                    y: withReflection,
+                },
+            ],
+            xLabel: "Depth inside silicon (um)",
+            yLabel: "Optical power remaining (W)",
+            xDomain: [0, maximumDepthUm],
+            yDomain: [0, 1.03 * incidentPower],
+            readouts: [
+                ["Source power", powerLabel(incidentPower)],
+                ["Surface reflected", `${(100 * reflectance).toFixed(1)}% (${powerLabel(incidentPower * reflectance)})`],
+                ["Power entering Si", powerLabel(enteringPower)],
+                ["Bulk absorbed in range", powerLabel(enteringPower - finalPower)],
+                ["Power remaining", powerLabel(finalPower)],
+                ["Absorption length", `${engineering(absorptionLengthUm)} um`],
             ],
         };
     }

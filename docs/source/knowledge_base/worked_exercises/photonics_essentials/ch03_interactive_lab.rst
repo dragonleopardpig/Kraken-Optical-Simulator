@@ -3,7 +3,8 @@ Photonics Essentials: Chapter 3 Interactive Physics Lab
 
 This lab turns the equations in Chapter 3, ``Photodiodes``, into curves that
 can be changed directly in the browser.  It complements the
-:doc:`ch03_diffusion_equation` derivation.
+:doc:`ch03_diffusion_equation` derivation and
+:doc:`ch03_detector_modes` explanation.
 
 .. important::
 
@@ -58,6 +59,10 @@ The explorer includes:
    * - Absorption with depth
      - Figure 3.8; Equation 3.22
      - Absorption coefficient
+   * - Silicon power with surface reflection
+     - Section 3.4.1; Equation 3.22 and normal-incidence Fresnel reflection
+     - Source power from :math:`1\ \mathrm{mW}` to :math:`10\ \mathrm W`,
+       silicon absorption coefficient, refractive index, and plotted depth
    * - Responsivity
      - Figure 3.9; Equations 3.25--3.28
      - Quantum efficiency and band gap
@@ -80,6 +85,7 @@ The browser controls and the notebook use the same equations implemented in
    from KrakenOS.Physics.photodiode import (
        PhotodiodeParameters,
        excess_carrier_profile,
+       absorption_power,
        photodiode_current_density,
        photovoltage,
        responsivity,
@@ -112,3 +118,64 @@ take several seconds because the browser downloads Python and NumPy.
 The notebook is intentionally separate from the instant slider explorer:
 the explorer is fast and works without a kernel, while the notebook exposes
 the Python equations for modification and further experiments.
+
+Silicon absorption with and without surface reflection
+------------------------------------------------------
+
+Equation 3.22 describes the intensity after light has entered the material:
+
+.. math::
+
+   I_{\mathrm{bulk}}(x)=I_0e^{-\alpha x}.
+   \tag{3.22}
+
+For a beam whose cross-sectional area is constant, :math:`P=IA`, so optical
+power has the same exponential dependence:
+
+.. math::
+
+   P_{\mathrm{no\ surface}}(x)=P_0e^{-\alpha x}.
+
+At normal incidence, an uncoated air-to-silicon boundary reflects the
+fraction
+
+.. math::
+
+   R
+   =
+   \left(
+      \frac{n_{\mathrm{air}}-n_{\mathrm{Si}}}
+           {n_{\mathrm{air}}+n_{\mathrm{Si}}}
+   \right)^2.
+
+The power that actually enters silicon is :math:`(1-R)P_0`.  The comparison
+curve is therefore
+
+.. math::
+
+   P_{\mathrm{with\ surface}}(x)
+   =
+   (1-R)P_0e^{-\alpha x}.
+
+For the explorer's initial values,
+:math:`n_{\mathrm{air}}=1`, :math:`n_{\mathrm{Si}}=3.5`, and
+:math:`\alpha=100\ \mathrm{cm^{-1}}`:
+
+.. math::
+
+   R=0.3086,
+   \qquad
+   \frac{1}{\alpha}=100\ \mathrm{\mu m}.
+
+Thus about :math:`69.1\%` of the incident power crosses the uncoated surface.
+At one absorption length, :math:`e^{-1}=0.3679` of that entering power
+remains, or about :math:`25.4\%` of the original source power.
+
+.. note::
+
+   Real silicon's refractive index and absorption coefficient depend strongly
+   on wavelength, temperature, doping, surface layers, and angle of
+   incidence.  Strongly absorbing silicon is described by a complex
+   refractive index, whereas this introductory Fresnel calculation uses a
+   real index.  The controls isolate the Chapter 3 equations; they are not a
+   substitute for wavelength-dependent measured optical constants.

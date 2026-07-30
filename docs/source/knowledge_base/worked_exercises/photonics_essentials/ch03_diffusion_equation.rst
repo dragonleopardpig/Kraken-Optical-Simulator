@@ -104,6 +104,36 @@ Expand the outgoing current to first order:
    J(x+dx)
    \approx J(x)+\frac{\partial J}{\partial x}dx.
 
+Yes: this is a Taylor series
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The general Taylor expansion of a smooth function about :math:`x` is
+
+.. math::
+
+   J(x+dx)
+   =
+   J(x)
+   +\frac{\partial J}{\partial x}dx
+   +\frac{1}{2}\frac{\partial^2J}{\partial x^2}(dx)^2
+   +\cdots.
+
+The book keeps terms only through first order in the very small slab width
+:math:`dx`:
+
+.. math::
+
+   J(x+dx)
+   =
+   J(x)
+   +\frac{\partial J}{\partial x}dx
+   +O\!\left((dx)^2\right).
+
+After subtracting the entering and outgoing currents and dividing by
+:math:`dx`, the omitted part is :math:`O(dx)`.  It approaches zero as the
+slab is made infinitesimally thin.  This is why the first-order expansion is
+sufficient for the local conservation equation.
+
 The net carrier inflow per unit volume and time is consequently
 
 .. math::
