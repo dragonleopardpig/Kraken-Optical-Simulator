@@ -33,68 +33,23 @@ SCENES = [
 
 
 def fold_emissions(app) -> dict:
-    """Every folder's (fold point, emitted direction), from the editor's own geometry."""
-    out: dict[int, dict] = {}
+    """bugs/0485 stage 1: ask the ONE authoritative classifier."""
+    from KrakenOS.UI.nonseq_output_ports import axis_fold_emissions
 
-    # Object-side fold: the BS coating. fold_point / entry_dir / leg_dir come straight from it.
+    out = {}
     try:
-        split = app._folded_object_conjugate_split()
-        if isinstance(split, dict) and split.get("fold_point") is not None:
-            out[int(split["mirror_row"])] = {
-                "origin": np.asarray(split["fold_point"], dtype=float),
-                "direction": np.asarray(split["leg_dir"], dtype=float),
-                "kind": "reflect",
-                "source": "object_split",
-            }
-    except Exception as exc:
-        print(f"    (object split unavailable: {type(exc).__name__}: {exc})")
-
-    # Image-side fold: the RA mirror. c_m is its centre, out_dir the emitted leg.
-    try:
-        split = app._folded_image_conjugate_split()
-        if isinstance(split, dict):
-            geo = app._frozen_image_fold_world_geometry(split)
-            if isinstance(geo, dict) and geo.get("c_m") is not None:
-                out[int(split["mirror_row"])] = {
-                    "origin": np.asarray(geo["c_m"], dtype=float),
-                    "direction": np.asarray(geo["out_dir"], dtype=float),
-                    "kind": "reflect",
-                    "source": "image_split",
-                }
-    except Exception as exc:
-        print(f"    (image split unavailable: {type(exc).__name__}: {exc})")
-
-    # Any remaining folding promoted solid, from the live override map.
-    #
-    # CORRECTION (stage 0 measurement): the override map's keys are the rows a fold REPOSITIONS,
-    # not the rows that fold. Taking every key as a folder invented 8 segments on the single-fold
-    # AZ85 scene (rows 2-9, all emitting +x). A row only EMITS a segment if it actually turns the
-    # axis, so keep an override only when its direction is not parallel to the incoming one.
-    try:
-        from KrakenOS.UI.nonseq_output_ports import optical_solid_output_port_pose_overrides
-
-        incoming = np.asarray((0.0, 0.0, 1.0), dtype=float)
-        for record in out.values():
-            incoming = np.asarray(record["direction"], dtype=float)
-        for row_index, pose in (optical_solid_output_port_pose_overrides(None, app.rows) or {}).items():
-            if int(row_index) in out or not isinstance(pose, dict):
-                continue
-            rotation = np.asarray(pose.get("rotation"), dtype=float).reshape(3, 3)
-            emitted = rotation @ np.asarray((0.0, 0.0, 1.0), dtype=float)
-            norm = float(np.linalg.norm(emitted))
-            if norm <= 1e-12:
-                continue
-            emitted = emitted / norm
-            if abs(abs(float(np.dot(emitted, incoming))) - 1.0) < 1e-6:
-                continue  # repositioned BY a fold, not a folder itself
+        for row_index, spec in (axis_fold_emissions(app.rows) or {}).items():
             out[int(row_index)] = {
-                "origin": np.asarray(pose.get("center"), dtype=float).reshape(3),
-                "direction": emitted,
+                "origin": np.asarray(spec["origin"], dtype=float),
+                "direction": np.asarray(spec["direction"], dtype=float),
                 "kind": "reflect",
-                "source": "pose_override",
+                "source": f"{spec['kind']}/{spec['source']}",
             }
     except Exception as exc:
-        print(f"    (pose overrides unavailable: {type(exc).__name__}: {exc})")
+        import traceback
+
+        print(f"    (axis_fold_emissions failed: {type(exc).__name__}: {exc})")
+        traceback.print_exc()
     return out
 
 

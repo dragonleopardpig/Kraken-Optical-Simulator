@@ -94,7 +94,64 @@ That absence is the root cause of the pattern this session kept hitting: with no
 (`stay_put_freeze`, `last_axis_to_axis_move`) is written from **nine different modules**. The
 detection heuristics deliberately were NOT hardened in the probe — the fix belongs in the model.
 
-## Next (stage 1)
+## Stage 1a: naming the decision, and what measuring it exposed
+
+The user's refinement, which the model needs before any auto-re-snap is written:
+
+> the BS replace or slot in existing optical element chain, those elements should stay because there
+> are 2-axis. Let the user rubberband select and snap to the optical axis he wants.
+
+So a folder has a **kind**, and the code already distinguished the two under different bug numbers:
+
+* `FOLD_KIND_CONSUMING` — a full mirror. bugs/0185: *"a full mirror has NO straight-through path --
+  the beam physically reflects off the mirror face (the user's 'only one way the ray can go')"*. One
+  leg leaves, the incoming axis ends, downstream elements have a single place to go, so
+  delete/replace/slide/flip may re-snap them without asking.
+* `FOLD_KIND_BRANCHING` — a beam splitter. bugs/0398: *"a BEAM SPLITTER never folds the downstream
+  imaging chain ... the reflected 2nd branch is handled separately"*; bugs/0428 exposes its coating
+  as *"the geometry needed to draw its REFLECT-branch axis (the '2nd optical axis'; the transmit leg
+  is axis:global)"*. Two axes exist, so membership is ambiguous and elements must STAY — the user
+  assigns them with the bugs/0433 rubber-band snap, whose `_row_explicitly_axis_snapped` flag
+  already means "this element's axis is the user's choice, not an inference".
+
+`nonseq_output_ports.axis_fold_emissions(rows)` names that decision, reusing the follower builder's
+own primitives so the two cannot drift, and threading the incoming direction down the chain so a
+second mirror reflects the FIRST mirror's leg (bugs/0213: *"the fold direction is the mirror's
+orientation, never a hard-coded axis"*).
+
+**Measured, it finds nothing on the scene that matters** — and that is the finding:
+
+| scene | folders found | expected |
+|---|---|---|
+| AZ85 RA mirror + BS | **0** | 2 (BS row 3, mirror row 7) |
+| AZ85 RA mirror (no BS) | 2 (rows 1, 8) | 1 |
+| Beam Splitter Two Path Doublets | 0 | 1 |
+| five penta prism cascade | 1 | 5 |
+| plain doublet | 0 (correct) — all invariants hold | 0 |
+
+The classifier is faithful to the follower builder; the builder simply has nothing to say about the
+AZ85 scene, because that scene is **FROZEN**. `_frozen_scene_has_no_fold_overrides()` is true there
+— which is exactly why the frozen conjugate splits are what describe its folds at all (bugs/0447).
+
+**There are therefore TWO parallel fold representations:**
+
+1. the **live** one — assigned face functions, output ports, `optical_solid_output_port_pose_overrides`;
+2. the **frozen** one — baked world poses plus `_folded_object_conjugate_split` /
+   `_folded_image_conjugate_split`.
+
+Stage 0 read (2) and got the AZ85 scene exactly right; stage 1a reads (1) and gets it empty. And a
+third gap: the Two Path Doublets BS is not a promoted solid, so neither path sees it.
+
+That duplication is the deeper reason this session kept finding bespoke "frozen" branches --
+bugs/0447, 0448, 0478, 0479, 0482, 0484 each carry one. The authoritative emission source has to
+span both representations (and non-promoted BS rows) before any of the four rules can be
+implemented on top of it, because a rule that fires on one representation and not the other is
+worse than no rule.
+
+`axis_fold_emissions` is committed as-is: additive, read-only, called by nothing in production. Its
+value right now is the measurement above.
+
+## Next (stage 1b)
 
 Introduce the authoritative emission source — one function answering "does this row fold the axis,
 and what does it emit?" covering marked BS coatings, `Mirror` surfaces and folding promoted solids

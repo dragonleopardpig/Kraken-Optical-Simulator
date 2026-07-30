@@ -1506,6 +1506,134 @@ def beam_splitter_coating_world_frames(rows) -> list[tuple[np.ndarray, np.ndarra
     return coatings
 
 
+#: bugs/0485 stage 1 -- the two ways an element can act on the optical axis.
+FOLD_KIND_CONSUMING = "consuming"  # a full mirror: one emitted leg, the incoming axis ENDS here
+FOLD_KIND_BRANCHING = "branching"  # a beam splitter: the incoming axis CONTINUES, a leg branches
+
+
+def axis_fold_emissions(rows, *, system=None) -> dict[int, dict[str, object]]:
+    """Which rows act on the optical axis, and what does each EMIT? (bugs/0485 stage 1)
+
+    The answer already existed inside ``build_optical_solid_output_port_pose_overrides``, computed
+    inline and thrown away, so nothing else could ask it. Every consumer therefore reconstructed it
+    from whatever was to hand -- and the reconstructions disagree: stage 0's probe read the
+    override map (whose keys are the rows a fold REPOSITIONS, not the rows that fold) and reported
+    6 folders on a single-fold scene, none on ``Beam Splitter Two Path Doublets``, and 1 of 5 on the
+    penta cascade. Naming the decision is the whole point; the geometry below is the SAME
+    primitives the follower builder uses, so the two cannot drift.
+
+    Two kinds, which the code already distinguished under two different bug numbers:
+
+    ``FOLD_KIND_CONSUMING`` -- a full mirror. bugs/0185: *"a full mirror has NO straight-through
+    path -- the beam physically reflects off the mirror face (the user's 'only one way the ray can
+    go')"*. The incoming axis ends; exactly one leg leaves. Downstream elements have one place to
+    go, so a delete/replace/slide/flip can re-snap them without asking.
+
+    ``FOLD_KIND_BRANCHING`` -- a beam splitter. bugs/0398: *"a BEAM SPLITTER never folds the
+    downstream imaging chain -- its primary path is a straight-through transmit and the reflected
+    2nd branch is handled separately"*, and bugs/0428 exposes its coating as *"the geometry needed
+    to draw its REFLECT-branch axis (the '2nd optical axis'; the transmit leg is axis:global)"*.
+    The incoming axis CONTINUES and a second one appears, so which axis a downstream element
+    belongs to is genuinely ambiguous. Inserting or replacing a BS must therefore leave those
+    elements where they are and let the user assign them -- the rubber-band snap of bugs/0433,
+    whose ``_row_explicitly_axis_snapped`` flag already means "this element's axis is the user's
+    choice, not an inference".
+
+    Returns ``{row_index: {"kind", "origin", "direction", "incoming", "source"}}`` with ``origin``
+    the fold point and ``direction`` the emitted leg, both in world coordinates. The incoming
+    direction is threaded down the chain, so a second mirror reflects the FIRST mirror's leg rather
+    than a hard-coded axis (bugs/0213: "the fold direction is the mirror's orientation, never a
+    hard-coded axis"). Read-only: builds nothing, stores nothing.
+    """
+    prepared = [_row_like(row) for row in list(rows or [])]
+    if len(prepared) < 2:
+        return {}
+    z_positions = row_z_positions(prepared)
+    emissions: dict[int, dict[str, object]] = {}
+    # The axis as we walk it: a point on the current leg and its direction. A CONSUMING fold
+    # replaces both; a BRANCHING one leaves them alone.
+    axis_point = np.asarray((0.0, 0.0, 0.0), dtype=float)
+    axis_direction = np.asarray((0.0, 0.0, 1.0), dtype=float)
+
+    for row_index, current in enumerate(prepared):
+        if not _row_has_optical_solid(current):
+            continue
+        z_station = float(z_positions[row_index]) if row_index < len(z_positions) else 0.0
+        thickness = float(getattr(current, "thickness", 0.0) or 0.0)
+        try:
+            world_faces = optical_solid_face_world_records(current, z_station, assigned_only=True)
+        except Exception:
+            continue
+        # A point on the current leg level with this row's station, so a folded chain reflects off
+        # its own leg rather than off the straight axis.
+        station_point = axis_point + axis_direction * float(
+            np.dot(np.asarray((0.0, 0.0, z_station), dtype=float) - axis_point, axis_direction)
+        )
+        incoming_rotation = _frame_rotation_from_normal(axis_direction)
+
+        if _row_is_marked_beam_splitter(current) or _solid_has_beam_splitter_interaction_face(world_faces):
+            reflected = _reflected_frame_from_interaction_face(
+                world_faces, station_point, incoming_rotation, thickness
+            )
+            if reflected is None:
+                continue
+            origin, rotation = reflected
+            emissions[row_index] = {
+                "kind": FOLD_KIND_BRANCHING,
+                "origin": np.asarray(origin, dtype=float).reshape(3),
+                "direction": _unit_vector(np.asarray(rotation, dtype=float).reshape(3, 3)[:, 2]),
+                "incoming": np.asarray(axis_direction, dtype=float),
+                "source": "beam_splitter_coating",
+            }
+            continue  # the transmit leg carries on: axis_point / axis_direction untouched
+
+        # A consuming candidate. Resolve the exit frame exactly as the follower builder does.
+        output_face = select_optical_solid_output_face(world_faces)
+        explicit_output_face = select_optical_solid_explicit_output_face(world_faces)
+        frame_origin = frame_rotation = None
+        source = ""
+        if output_face is None:
+            reflected = _reflected_frame_from_interaction_face(
+                world_faces, station_point, incoming_rotation, thickness
+            )
+            if reflected is None:
+                continue
+            frame_origin, frame_rotation = reflected
+            source = "interaction_reflection"
+        else:
+            centre = np.asarray(output_face.get("centroid_world", (0.0, 0.0, 0.0)), dtype=float).reshape(3)
+            normal = _unit_vector(output_face.get("normal_world", (0.0, 0.0, 1.0)))
+            frame_origin = centre + normal * thickness
+            frame_rotation = _frame_rotation_from_normal(normal)
+            source = "explicit_output" if explicit_output_face is not None else "inferred_output"
+        # bugs/0185 + bugs/0022: a merely INFERRED exit that does not turn the beam is not a fold
+        # at all -- unless the solid is a full mirror, which has no straight-through path.
+        if source == "inferred_output" and _exit_frame_is_non_folding(frame_rotation, axis_direction):
+            reflected = None
+            if _solid_has_full_mirror_interaction_face(world_faces):
+                reflected = _reflected_frame_from_interaction_face(
+                    world_faces, station_point, incoming_rotation, thickness
+                )
+            if reflected is None:
+                continue
+            frame_origin, frame_rotation = reflected
+            source = "interaction_reflection_fallback"
+        emitted = _unit_vector(np.asarray(frame_rotation, dtype=float).reshape(3, 3)[:, 2])
+        if emitted is None:
+            continue
+        emissions[row_index] = {
+            "kind": FOLD_KIND_CONSUMING,
+            "origin": np.asarray(frame_origin, dtype=float).reshape(3),
+            "direction": emitted,
+            "incoming": np.asarray(axis_direction, dtype=float),
+            "source": source,
+        }
+        # The incoming axis ENDS here; everything after it travels the emitted leg.
+        axis_point = np.asarray(frame_origin, dtype=float).reshape(3)
+        axis_direction = emitted
+    return emissions
+
+
 def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict[int, dict[str, object]]:
     prepared = [_row_like(row) for row in list(rows or [])]
     if len(prepared) < 2:
