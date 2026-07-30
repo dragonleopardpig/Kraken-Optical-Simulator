@@ -160,20 +160,30 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
                 s = editor._folded_image_conjugate_split()
                 g = editor._frozen_image_fold_world_geometry(s)
                 if g is None:
-                    return None, None
+                    return (None,) * 5
                 gap = float(editor.rows[int(s["far_gap_row"])].thickness)
-                return float(g["far"]), gap + float(g["far"])
+                # bugs/0482 also reads the SECTION split here: the solved image distance is no
+                # longer required to sit entirely on the exit leg, so the checks below compare
+                # against the section shares rather than against one hard-coded number.
+                return (
+                    float(g["far"]),
+                    gap + float(g["far"]),
+                    float(s["near"]),
+                    float(s["far"]),
+                    float(s["total"]),
+                )
 
             editor.snap_detector_to_image_plane()
             before = float(editor._traced_bundle_best_focus_shift())
-            _f0, inv0 = _invariant()
+            _f0, inv0, _n0, _r0, _t0 = _invariant()
             # The flagged sequence: 23x23 and THEN 30x30 -- a repeated solve is what exposed
             # the frame drift, so the guard drives it twice too.
             applied, _msg = qe.fov_solve("object", "thickness", 23, 23, (23.04, 23.04))
-            _f1, inv1 = _invariant()
+            _f1, inv1, _n1, _r1, _t1 = _invariant()
             applied, _msg = qe.fov_solve("object", "thickness", 30, 30, (23.04, 23.04))
             after = float(editor._traced_bundle_best_focus_shift())
-            far, inv2 = _invariant()
+            far, inv2, near2, far2, total2 = _invariant()
+            floor2 = float(qe._image_gap_collision_floor())
         finally:
             try:
                 editor.destroy()
@@ -193,15 +203,40 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         abs(after) < 0.5 * BROKEN_RESIDUAL_MM,
         f"D3: the solve does NOT leave the inverted-sign defocus (got {after:+.4f}, broken was +{BROKEN_RESIDUAL_MM})",
     )
+    # bugs/0482 changed what these two may assert, and the reason matters more than the numbers.
+    #
+    # D4 used to read "the WORLD far leg equals the solved image distance (18.86 mm)". That holds
+    # only while the ENTIRE image distance sits on the exit leg -- which is exactly the behaviour
+    # that drove the camera into the fold mirror (flag_20260730_103719). The solve now shares the
+    # leg-total change between `lens rear -> mirror` and `mirror -> sensor`, and raises the
+    # collision floor to include the camera body, so the exit leg is a SHARE and the solved
+    # distance is floored. What is still true -- and is the invariant worth pinning -- is that the
+    # world far leg IS that share, and that the share clears the floor.
+    #
+    # D5 used to read "gap + world-leg is CONSTANT across two successive solves". That is the
+    # frozen-fold arithmetic `world leg = const - thickness`, and `const` is a property of the
+    # MIRROR's position. bugs/0482 slides the mirror, so the constant legitimately moves with it.
+    # The arithmetic itself is still pinned, with the mirror held, by B2/B3/B4 above -- including
+    # the idempotency check that caught the original drift. End to end, the meaningful statement
+    # is that the two sections still SUM to the solved total, i.e. the conjugate is preserved.
     check(
-        far is not None and abs(far - SOLVED_IMAGE_MM) < 1e-3,
-        f"D4: the WORLD far leg equals the solved image distance {SOLVED_IMAGE_MM} (got {far})",
+        far is not None and far2 is not None and abs(far - far2) < 1e-3,
+        f"D4: the WORLD far leg is the mirror->sensor SECTION share (leg {far}, section {far2})",
     )
     check(
-        None not in (inv0, inv1, inv2) and abs(inv1 - inv0) < 1e-6 and abs(inv2 - inv0) < 1e-6,
-        f"D5: gap + world-leg is CONSTANT across two successive solves "
-        f"({inv0} -> {inv1} -> {inv2}); it drifted 103.0 -> 82.85 -> 62.98 when the sensor "
-        f"was re-baked and the gap left stale",
+        far is not None and far >= floor2 - 1e-6,
+        f"D4b: that share clears the camera-aware collision floor ({far} >= {floor2})",
+    )
+    check(
+        None not in (near2, far2, total2) and abs((near2 + far2) - total2) < 1e-6,
+        f"D5: the two image sections still SUM to the solved total -- the conjugate is preserved "
+        f"({near2} + {far2} = {total2})",
+    )
+    check(
+        None not in (inv0, inv1, inv2) and inv1 >= inv0 - 1e-6 and inv2 >= inv1 - 1e-6,
+        f"D5b: gap + world-leg never SHRINKS across successive solves ({inv0} -> {inv1} -> {inv2}); "
+        f"it drifted DOWN 103.0 -> 82.85 -> 62.98 when the sensor was re-baked and the gap left "
+        f"stale (bugs/0479), and it grows only as bugs/0482 slides the mirror away",
     )
     return ok, notes
 

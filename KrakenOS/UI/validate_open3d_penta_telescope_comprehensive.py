@@ -15371,6 +15371,12 @@ phase_387_camera_seating_arm_choice = _phase_from_standalone(
 phase_388_silicon_absorption_depth = _phase_from_standalone(
     388, "silicon depth responds to source power, and to the right thing (0481)",
     "KrakenOS.UI.validate_open3d_0481_silicon_absorption_depth", "silicon_absorption_depth")
+phase_389_fov_shares_image_leg = _phase_from_standalone(
+    389, "a solved image leg is shared, and its floor sees the camera body (0482)",
+    "KrakenOS.UI.validate_open3d_0482_fov_solve_shares_image_leg", "fov_shares_image_leg")
+phase_390_promoted_solid_live_center = _phase_from_standalone(
+    390, "a promoted solid's obstacle box follows the ROW, not the last refresh (0483)",
+    "KrakenOS.UI.validate_open3d_0483_promoted_solid_live_center", "promoted_solid_live_center")
 
 
 # ---------------------------------------------------------------------------
@@ -15806,6 +15812,8 @@ def main() -> int:
             phase_386_fov_solve_frozen_image,
             phase_387_camera_seating_arm_choice,
             phase_388_silicon_absorption_depth,
+            phase_389_fov_shares_image_leg,
+            phase_390_promoted_solid_live_center,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

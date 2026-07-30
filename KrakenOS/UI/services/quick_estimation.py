@@ -899,6 +899,30 @@ class QuickEstimationService:
             return None
         return float(mag)
 
+    #: bugs/0482: assembly clearance left between the camera body and the fold mirror once the
+    #: body's own reach is accounted for. Small and explicit: the floor is a hard geometric
+    #: limit, and landing exactly ON it means the body grazes the substrate.
+    IMAGE_LEG_ASSEMBLY_MARGIN_MM = 1.0
+
+    def _camera_body_image_leg_reach_mm(self) -> float:
+        """bugs/0482: how far back up the sensor leg the CAMERA BODY reaches, in mm.
+
+        A camera STEP is bolted to its sensor and extends the vendor front-to-sensor distance
+        UPSTREAM of it (the same number ``seat_camera_on_sensor`` places the body by, bugs/0220
+        / 0471). That body, not the sensor plane, is what meets the fold mirror first. 0.0 when
+        no camera STEP is imported -- then the sensor plane really is the leading edge.
+        """
+        try:
+            if self.editor._step_path_for_label("camera") is None:
+                return 0.0
+        except Exception:
+            return 0.0
+        try:
+            reach = float(self.editor._current_camera_front_to_sensor_mm())
+        except Exception:
+            return 0.0
+        return reach if (np.isfinite(reach) and reach > 0.0) else 0.0
+
     def _image_gap_collision_floor(self) -> float:
         """bugs/0468: the smallest image gap that does not drive the sensor into the fold mirror.
 
@@ -909,6 +933,14 @@ class QuickEstimationService:
         floor, so a large field could seat the sensor INSIDE the mirror: 35 x 35 on the user's
         scene solved to a 9.53 mm gap against a 12.5 mm floor. Returns 0.0 when the scene has no
         fold mirror to collide with.
+
+        bugs/0482: that floor protects the SENSOR PLANE, and the sensor plane is not the leading
+        edge -- the camera BODY is, reaching ``front_to_sensor`` back up the leg. On the reported
+        scene (flag_20260730_103719, "the sensor misplaced to RA mirror, the camera crash to RA
+        mirror") a 30 x 30 field solved to an 18.86 mm gap. That clears the 12.5 mm sensor floor,
+        so this resolver stood down -- and the body, needing 11.48 mm of the remaining 6.36 mm,
+        ended 5.3 mm inside the prism. The floor now includes the body's reach plus an assembly
+        margin, which is what "the camera should not crash the RA mirror" actually requires.
         """
         try:
             split = self.editor._folded_image_conjugate_split()
@@ -917,9 +949,15 @@ class QuickEstimationService:
         if not isinstance(split, dict):
             return 0.0
         try:
-            return max(0.0, float(split.get("far_min", 0.0) or 0.0))
+            sensor_floor = max(0.0, float(split.get("far_min", 0.0) or 0.0))
         except Exception:
             return 0.0
+        if sensor_floor <= 0.0:
+            return 0.0
+        reach = self._camera_body_image_leg_reach_mm()
+        if reach <= 0.0:
+            return sensor_floor
+        return sensor_floor + reach + float(self.IMAGE_LEG_ASSEMBLY_MARGIN_MM)
 
     def _resolve_image_gap_collision(self, image_distance):
         """bugs/0468: keep the sensor off the fold mirror by SLIDING THE MIRROR, not by refusing.
@@ -1220,6 +1258,13 @@ class QuickEstimationService:
                 "FOV needs the lens nearer than the glued LED+BS allows (object unit is locked at "
                 "its minimum). Unglue the LED or relax the FOV."
             )
+        # bugs/0482: remember where the image leg was SPLIT before anything is written, so the
+        # rebalance at the end can share the change between both sections from the real starting
+        # point rather than from wherever the writes leave them.
+        try:
+            _pre_image_split = self.editor._folded_image_conjugate_split()
+        except Exception:
+            _pre_image_split = None
         _collision_note = ""
         _resolved = self._resolve_image_gap_collision(image_distance)
         if _resolved is not None:
@@ -1244,10 +1289,78 @@ class QuickEstimationService:
             _frozen_note = " (frozen scene: sensor re-seated in world terms, camera carried)"
         else:
             self.editor.rows[img_row].thickness = float(image_distance)
+        # bugs/0482: LAST, after the frozen write has re-baked world centres (0447's ordering
+        # rule) -- share the image-leg change across BOTH sections instead of leaving all of it
+        # on the sensor leg.
+        _share_note = self._rebalance_image_leg_sections(_pre_image_split)
         return True, (
             f"Solved thickness: object {object_distance:.6g} mm, "
             f"image {image_distance:.6g} mm (|m|={mag:.4g}).{_frozen_note}"
-            f"{_collision_note}"
+            f"{_collision_note}{_share_note}"
+        )
+
+    def _rebalance_image_leg_sections(self, pre: "dict | None") -> str:
+        """bugs/0482: share a solved image-leg change 50:50 between the fold's two sections.
+
+        The solve fixes the lens->sensor TOTAL; how it splits between ``lens rear -> mirror`` and
+        ``mirror -> sensor`` is a free mechanical choice (the same reasoning bugs/0468 used to
+        slide the mirror rather than refuse). It was not a choice in practice: the whole change
+        landed on the sensor leg because that is the row the solve writes. Measured on
+        flag_20260730_103719's scene, 23x23 then 30x30 drove ``mirror -> sensor`` 51.500 ->
+        38.728 -> 18.860 mm while ``lens rear -> mirror`` sat at 103.270 mm throughout, with room
+        to spare -- and the camera crashed into the prism.
+
+        With no user constraint the change is shared evenly, then clamped to the floors the split
+        itself reports (``near_min``, and the bugs/0482 body-aware ``_image_gap_collision_floor``);
+        the writer holds the total, so anything a clamp takes off one section lands on the other.
+        Applied through ``_apply_folded_image_split`` rather than the rows because on a frozen
+        scene that writer slides the breadcrumbed mirror and re-seats the sensor AND camera on the
+        exit leg (bugs/0447) -- a raw thickness write does neither.
+
+        Returns a status-line fragment (possibly empty). Never raises: a rebalance that cannot be
+        applied leaves the already-correct conjugate alone.
+        """
+        if not isinstance(pre, dict):
+            return ""
+        try:
+            post = self.editor._folded_image_conjugate_split()
+        except Exception:
+            return ""
+        if not isinstance(post, dict):
+            return ""
+        try:
+            total_new = float(post["total"])
+            delta = total_new - float(pre["total"])
+            pre_near = float(pre["near"])
+            post_near = float(post["near"])
+            near_min = float(post.get("near_min", 0.0) or 0.0)
+        except (KeyError, TypeError, ValueError):
+            return ""
+        if not (np.isfinite(delta) and np.isfinite(total_new)) or abs(delta) < 1.0e-9:
+            return ""
+        far_floor = max(
+            float(self._image_gap_collision_floor()),
+            float(post.get("far_min", 0.0) or 0.0),
+        )
+        if near_min + far_floor > total_new + 1.0e-6:
+            # Both sections cannot clear at this total. The conjugate is already applied and the
+            # 0468 resolver has had its say, so report rather than thrash the geometry.
+            return (
+                f" Both image sections cannot clear at {total_new:.4g} mm "
+                f"(lens->mirror >= {near_min:.4g}, mirror->camera >= {far_floor:.4g} mm)."
+            )
+        target = min(max(pre_near + delta / 2.0, near_min), total_new - far_floor)
+        if abs(target - post_near) < 1.0e-6:
+            return ""
+        try:
+            ok, message = self.editor._apply_folded_image_split("near", float(target))
+        except Exception as exc:
+            return f" Image 50:50 share skipped ({type(exc).__name__}: {exc})."
+        if not ok:
+            return f" Image 50:50 share skipped: {message}"
+        return (
+            f" Image change shared 50:50: lens->mirror {post_near:.4g} -> {target:.4g} mm, "
+            f"mirror->sensor {total_new - target:.4g} mm (camera floor {far_floor:.4g} mm)."
         )
 
     def apply_sensor_diagonal(self, diagonal: Any, horizontal: float | None = None) -> tuple[bool, str]:

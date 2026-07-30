@@ -851,11 +851,44 @@ class LayoutTableWorkbenchMixin:
         return deficit if deficit > 0.0 else 0.0
 
     def _promoted_solid_current_center(self, row_index):
-        """Current world CENTRE of a promoted optical-solid row, read from the last scene
-        bundle's ``optical_solid`` placement (bugs/0393b). The promotion metadata's centre is
-        STALE once the solid is moved, but the mirror does not move during a lens swap, so the
-        last-refresh placement centre is its live position. Returns None when unavailable."""
+        """Current world CENTRE of a promoted optical-solid row.
+
+        bugs/0393b read this from the last scene bundle's ``optical_solid`` placement, on the
+        stated assumption that "the mirror does not move during a lens swap, so the last-refresh
+        placement centre is its live position". True for a swap; false for anything that moves a
+        solid and then ASKS before the next refresh -- a FOV solve, a leg split, a focus move.
+
+        bugs/0483 (flag_20260729_185536 "the anti-crash algorithm not functioning, camera crash
+        to RA mirror"): measured on the AZ85 RA-mirror BS scene, a 30 x 30 FOV solve leaves the
+        cached placement 13.3 mm out in x and 31.6 mm out in z on the fold mirror (36.9 mm in z
+        on the BS). ``camera_body_collisions`` sizes its obstacle from here, so the anti-crash
+        was testing the mirror's PRE-SOLVE box and found no overlap however deep the camera sat.
+
+        The ROW's own pose is the truth the trace and the frozen split writers already use
+        (``_split_row_world_center`` = station + desp, folded when the row carries an override).
+        Measured, it equals the bundle placement EXACTLY whenever the bundle is fresh -- as
+        loaded, after a refresh, and after a re-refresh -- so preferring it is identical when
+        nothing has moved and correct when something has. The bundle placement stays as the
+        fallback for a row whose pose cannot be read. Returns None when unavailable.
+        """
         import math
+
+        # The row pose first: same answer as the bundle when fresh, right answer when not.
+        try:
+            center = self._split_row_world_center(int(row_index))
+            fold = self._optical_axis_fold_world_transform_for_row(int(row_index))
+            if fold is not None:
+                import numpy as _np
+
+                folded = _np.asarray(fold, dtype=float).reshape(4, 4) @ _np.append(
+                    _np.asarray(center, dtype=float).reshape(3), 1.0
+                )
+                center = folded[:3]
+            live = [float(v) for v in list(center)[:3]]
+        except Exception:
+            live = None
+        if live is not None and len(live) == 3 and all(math.isfinite(v) for v in live):
+            return live
         bundle = getattr(self, "_last_scene_bundle", None)
         placements = list(getattr(bundle, "placements", None) or []) if bundle is not None else []
         for placement in placements:
