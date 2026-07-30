@@ -1265,6 +1265,22 @@ class QuickEstimationService:
             _pre_image_split = self.editor._folded_image_conjugate_split()
         except Exception:
             _pre_image_split = None
+        # bugs/0484: and the object split, for the same reason -- section 1 must be restored to
+        # where it was so the BS stays on its LED and section 2 takes the whole change. The
+        # BS -> LED glue vector is captured HERE, before any write moves either of them.
+        try:
+            _pre_object_split = self.editor._folded_object_conjugate_split()
+        except Exception:
+            _pre_object_split = None
+        _pre_led_offset = None
+        try:
+            if isinstance(_pre_object_split, dict):
+                _bs0 = self.editor._promoted_solid_current_center(int(_pre_object_split["mirror_row"]))
+                _led0 = self.editor._step_body_world_center("led")
+                if _bs0 is not None and _led0 is not None:
+                    _pre_led_offset = np.asarray(_led0, dtype=float) - np.asarray(_bs0, dtype=float)
+        except Exception:
+            _pre_led_offset = None
         _collision_note = ""
         _resolved = self._resolve_image_gap_collision(image_distance)
         if _resolved is not None:
@@ -1293,11 +1309,75 @@ class QuickEstimationService:
         # rule) -- share the image-leg change across BOTH sections instead of leaving all of it
         # on the sensor leg.
         _share_note = self._rebalance_image_leg_sections(_pre_image_split)
+        # bugs/0484 LAST: restoring section 1 is a rigid repackaging of the frozen chain (the
+        # writer keeps every element's own path length), so it runs once the image side has
+        # settled -- otherwise the image re-bake would be computed against a chain that is about
+        # to translate.
+        _object_note = self._rebalance_object_leg_sections(_pre_object_split, _pre_led_offset)
         return True, (
             f"Solved thickness: object {object_distance:.6g} mm, "
             f"image {image_distance:.6g} mm (|m|={mag:.4g}).{_frozen_note}"
-            f"{_collision_note}{_share_note}"
+            f"{_collision_note}{_share_note}{_object_note}"
         )
+
+    def _rebalance_object_leg_sections(self, pre: "dict | None", led_offset=None) -> str:
+        """bugs/0484: put the whole object-side change into section 2, holding section 1.
+
+        Sections, as the object split names them: 1 = ``object -> beam splitter``
+        (``near``), 2 = ``beam splitter -> lens front`` (``far``). The solve changes their
+        TOTAL and wrote all of it into the gap row -- which is section 1. Section 1 IS the BS's
+        world position (the split's ``fold_point`` tracks it exactly), so the BS slid up the axis
+        while its separately-anchored LED body stayed put: "the BS Plate is shifted down, the
+        subsequent elements shifted down as well ... the BS should glue to the LED, cannot be
+        displaced". Measured on the reported scene, section 1 went 53.803 -> 64.871 -> 90.696
+        across 23x23 then 30x30 while section 2 never moved off 71.660.
+
+        Holding section 1 at its pre-solve value pins BOTH ends of it -- the object plane is the
+        station anchor and the BS crossing sits a fixed distance along the axis from it -- so
+        section 2 absorbs the entire change and the LENS moves instead. That is the user's call
+        ("just change the section 2 distance") and it is what bugs/0453's redirect was reaching
+        for; its topology test could not fire here because it wants a promoted solid immediately
+        after the object gap and this scene's BS is row 3, which is also why gluing by hand
+        changed nothing.
+
+        Growing section 2 only increases the mirror-to-lens clearance, so the common direction is
+        always safe; a shrink is clamped at the split's own ``far_min`` ("so the mirror does not
+        collide with the lens"), and because the writer holds the total the remainder then falls
+        back onto section 1 -- moving the BS only when there is no alternative.
+
+        ``led_offset`` is the BS -> LED world vector captured BEFORE the solve wrote anything. The
+        glue is a fixed RELATIVE pose and has to be restored as one: the split writer slides the BS
+        and the LED together by its own delta, which is right when a user drives it by hand but
+        wrong here, because the solve had already moved the BS alone (through the station shift)
+        and not the LED. Cancelling the BS's motion then leaves the LED displaced by the same
+        amount -- measured, it drifted -11.07 / -36.89 / -55.34 / -73.79 mm across a 23/30/35/40
+        sweep while the BS held. Measuring the vector any later than the caller does is the same
+        bug one level down: by then it already carries the delta.
+        """
+        mirror_row = None
+        try:
+            mirror_row = int(pre["mirror_row"]) if isinstance(pre, dict) else None
+        except (KeyError, TypeError, ValueError):
+            mirror_row = None
+        offset = np.asarray(led_offset, dtype=float) if led_offset is not None else None
+        note = self._rebalance_split_sections(
+            pre,
+            side="object",
+            reader=getattr(self.editor, "_folded_object_conjugate_split", None),
+            writer=getattr(self.editor, "_apply_folded_object_split", None),
+            target_from=lambda pre_near, delta: pre_near,  # section 1 HELD
+            label="object",
+        )
+        if offset is not None and mirror_row is not None:
+            try:
+                bs_after = self.editor._promoted_solid_current_center(mirror_row)
+                if bs_after is not None:
+                    target = np.asarray(bs_after, dtype=float) + offset
+                    if self.editor._seat_step_body_world_center("led", target):
+                        note += " LED re-seated on the BS (glue held)."
+            except Exception:
+                pass
+        return note
 
     def _rebalance_image_leg_sections(self, pre: "dict | None") -> str:
         """bugs/0482: share a solved image-leg change 50:50 between the fold's two sections.
@@ -1320,10 +1400,42 @@ class QuickEstimationService:
         Returns a status-line fragment (possibly empty). Never raises: a rebalance that cannot be
         applied leaves the already-correct conjugate alone.
         """
-        if not isinstance(pre, dict):
+        return self._rebalance_split_sections(
+            pre,
+            side="image",
+            reader=getattr(self.editor, "_folded_image_conjugate_split", None),
+            writer=getattr(self.editor, "_apply_folded_image_split", None),
+            target_from=lambda pre_near, delta: pre_near + delta / 2.0,  # shared 50:50
+            label="image",
+            far_floor_extra=self._image_gap_collision_floor,
+        )
+
+    def _rebalance_split_sections(
+        self,
+        pre,
+        *,
+        side: str,
+        reader,
+        writer,
+        target_from,
+        label: str,
+        far_floor_extra=None,
+    ) -> str:
+        """The shared body behind the object (bugs/0484) and image (bugs/0482) rebalances.
+
+        Both do the same thing and differ only in ``target_from``: the image side shares the
+        change evenly between its two sections, the object side holds section 1 so section 2 takes
+        all of it. Extracted because two copies of a distance-distribution rule in this file is
+        how bugs/0314, 0466, 0468, 0478 and 0479 each got their own subtly different arithmetic.
+
+        Never raises. Any failure leaves the already-correct conjugate alone and says so, because
+        a wrong redistribution is worse than none: the conjugate (focus, magnification) is right
+        either way, and only the mechanical packaging is at stake.
+        """
+        if not isinstance(pre, dict) or reader is None or writer is None:
             return ""
         try:
-            post = self.editor._folded_image_conjugate_split()
+            post = reader()
         except Exception:
             return ""
         if not isinstance(post, dict):
@@ -1334,33 +1446,44 @@ class QuickEstimationService:
             pre_near = float(pre["near"])
             post_near = float(post["near"])
             near_min = float(post.get("near_min", 0.0) or 0.0)
+            far_min = float(post.get("far_min", 0.0) or 0.0)
         except (KeyError, TypeError, ValueError):
             return ""
         if not (np.isfinite(delta) and np.isfinite(total_new)) or abs(delta) < 1.0e-9:
             return ""
-        far_floor = max(
-            float(self._image_gap_collision_floor()),
-            float(post.get("far_min", 0.0) or 0.0),
-        )
+        far_floor = far_min
+        if far_floor_extra is not None:
+            try:
+                far_floor = max(far_floor, float(far_floor_extra()))
+            except Exception:
+                pass
         if near_min + far_floor > total_new + 1.0e-6:
-            # Both sections cannot clear at this total. The conjugate is already applied and the
-            # 0468 resolver has had its say, so report rather than thrash the geometry.
+            # Both sections cannot clear at this total. The conjugate is already applied, so
+            # report rather than thrash the geometry.
             return (
-                f" Both image sections cannot clear at {total_new:.4g} mm "
-                f"(lens->mirror >= {near_min:.4g}, mirror->camera >= {far_floor:.4g} mm)."
+                f" Both {label} sections cannot clear at {total_new:.4g} mm "
+                f"(near >= {near_min:.4g}, far >= {far_floor:.4g} mm)."
             )
-        target = min(max(pre_near + delta / 2.0, near_min), total_new - far_floor)
+        try:
+            wanted = float(target_from(pre_near, delta))
+        except Exception:
+            return ""
+        if not np.isfinite(wanted):
+            return ""
+        target = min(max(wanted, near_min), total_new - far_floor)
         if abs(target - post_near) < 1.0e-6:
             return ""
         try:
-            ok, message = self.editor._apply_folded_image_split("near", float(target))
+            ok, message = writer("near", float(target))
         except Exception as exc:
-            return f" Image 50:50 share skipped ({type(exc).__name__}: {exc})."
+            return f" {label.capitalize()} section share skipped ({type(exc).__name__}: {exc})."
         if not ok:
-            return f" Image 50:50 share skipped: {message}"
+            return f" {label.capitalize()} section share skipped: {message}"
+        held = abs(target - pre_near) < 1.0e-6
+        how = "section 1 held" if held else "shared 50:50"
         return (
-            f" Image change shared 50:50: lens->mirror {post_near:.4g} -> {target:.4g} mm, "
-            f"mirror->sensor {total_new - target:.4g} mm (camera floor {far_floor:.4g} mm)."
+            f" {label.capitalize()} change {how}: near {post_near:.4g} -> {target:.4g} mm, "
+            f"far {total_new - target:.4g} mm (far floor {far_floor:.4g} mm)."
         )
 
     def apply_sensor_diagonal(self, diagonal: Any, horizontal: float | None = None) -> tuple[bool, str]:

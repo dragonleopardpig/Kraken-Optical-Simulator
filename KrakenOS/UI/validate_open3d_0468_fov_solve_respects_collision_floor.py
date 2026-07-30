@@ -48,11 +48,14 @@ def run_checks() -> tuple[bool, list[str]]:
             return ok, notes
 
         applied, message = qe.fov_solve("object", "thickness", 30.0, 30.0, None)
-        gap = float(app.rows[7].thickness)
+        # bugs/0482: the WORLD leg, for the same reason as SLID below -- the row is the inverted
+        # quantity on a frozen fold, so it passed this check by coincidence rather than by meaning.
+        _split_safe = app._folded_image_conjugate_split()
+        gap = float(_split_safe["far"]) if isinstance(_split_safe, dict) else float("nan")
         if applied and gap >= floor - 1e-6:
-            notes.append(f"SAFE = a field that fits still solves (gap {gap:.3g} mm >= floor {floor:.3g} mm)")
+            notes.append(f"SAFE = a field that fits still solves (WORLD gap {gap:.3g} mm >= floor {floor:.3g} mm)")
         else:
-            notes.append(f"SAFE a fitting field was refused or left an unsafe gap: {str(message)[:70]}")
+            notes.append(f"SAFE a fitting field was refused or left an unsafe WORLD gap {gap:.3g}: {str(message)[:70]}")
             ok = False
 
         app.load_layout_by_name("bs")
@@ -60,23 +63,35 @@ def run_checks() -> tuple[bool, list[str]]:
         near_before = float(app.rows[6].thickness)
         applied2, message2 = qe.fov_solve("object", "thickness", 35.0, 35.0, None)
         near_after = float(app.rows[6].thickness)
-        far_after = float(app.rows[7].thickness)
+        # bugs/0482: read the WORLD leg, not ``rows[7].thickness``. On this frozen fold the world
+        # mirror->sensor leg runs as ``const - thickness`` (bugs/0478, measured derivative -1), so
+        # the row is the INVERTED quantity and comparing it to a world-space floor was only ever
+        # right by coincidence -- it happened to agree while const was twice the leg. Measured
+        # after a 35 x 35 solve: row 91.854 mm, world leg 38.814 mm. The row reading would now
+        # report a 91.9 mm "sensor leg" that is really 38.8 mm.
+        _split_after = app._folded_image_conjugate_split()
+        far_after = float(_split_after["far"]) if isinstance(_split_after, dict) else float("nan")
         # NOT compared against the pre-solve total: solving a new FOV legitimately changes the
-        # image total. The slide preserves the total relative to the SOLVED value, which shows
-        # up as the sensor leg landing exactly ON the floor while the mirror moved toward the
-        # lens by the deficit.
+        # image total. The slide preserves the total relative to the SOLVED value.
+        #
+        # bugs/0482 also relaxes ``== floor`` to ``>= floor``. 0468's contract was "slide by
+        # exactly the deficit", which lands the leg ON the floor. The solve now also shares the
+        # leg-total change between the two sections, which carries the sensor FURTHER from the
+        # mirror than the floor requires (38.8 mm against a 24.98 mm floor here) -- strictly safer
+        # than what this guard was written to pin. What must never happen is landing BELOW it.
         slid = ("slid" in str(message2).lower())
-        on_floor = abs(far_after - floor) < 1e-3
+        on_floor = far_after >= floor - 1e-6
         if applied2 and on_floor and near_after < near_before and slid:
             notes.append(
                 f"SLID = a colliding field still solves: mirror moved "
-                f"{near_before - near_after:.3g} mm toward the lens, sensor leg {far_after:.3g} mm "
-                f"(floor {floor:.3g}), legs still sum to the same total"
+                f"{near_before - near_after:.3g} mm toward the lens, WORLD sensor leg "
+                f"{far_after:.3g} mm >= floor {floor:.3g}, legs still sum to the same total"
             )
         else:
             notes.append(
                 f"SLID the colliding field was not resolved by sliding: applied={applied2} "
-                f"lens->mirror {near_before:.3g} -> {near_after:.3g} sensor leg {far_after:.3g}"
+                f"lens->mirror {near_before:.3g} -> {near_after:.3g} WORLD sensor leg "
+                f"{far_after:.3g} (floor {floor:.3g})"
             )
             ok = False
     except Exception as exc:

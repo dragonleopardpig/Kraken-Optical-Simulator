@@ -15377,6 +15377,9 @@ phase_389_fov_shares_image_leg = _phase_from_standalone(
 phase_390_promoted_solid_live_center = _phase_from_standalone(
     390, "a promoted solid's obstacle box follows the ROW, not the last refresh (0483)",
     "KrakenOS.UI.validate_open3d_0483_promoted_solid_live_center", "promoted_solid_live_center")
+phase_391_object_leg_holds_section_one = _phase_from_standalone(
+    391, "the object-side change goes into section 2; the BS and its LED hold (0484)",
+    "KrakenOS.UI.validate_open3d_0484_object_leg_holds_section_one", "object_leg_holds_section_one")
 
 
 # ---------------------------------------------------------------------------
@@ -15814,6 +15817,7 @@ def main() -> int:
             phase_388_silicon_absorption_depth,
             phase_389_fov_shares_image_leg,
             phase_390_promoted_solid_live_center,
+            phase_391_object_leg_holds_section_one,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
