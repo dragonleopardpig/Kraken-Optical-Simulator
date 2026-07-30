@@ -68,6 +68,10 @@ The explorer includes:
        :math:`1/\alpha`, which belongs to the material. What power does move is
        the depth at which the beam is still above the floor, by
        :math:`\ln(10)/\alpha` per decade
+   * - Silicon slab inverse designer
+     - Section 3.4.1; inverse of Equation 3.22
+     - Slab width, desired fractional transmission, desired absolute output
+       power, absorption coefficient, and silicon refractive index
    * - Responsivity
      - Figure 3.9; Equations 3.25--3.28
      - Quantum efficiency and band gap
@@ -89,11 +93,14 @@ The browser controls and the notebook use the same equations implemented in
 
    from KrakenOS.Physics.photodiode import (
        PhotodiodeParameters,
+       absorption_coefficient_for_transmission,
        excess_carrier_profile,
        absorption_power,
        photodiode_current_density,
        photovoltage,
+       required_source_log10_power,
        responsivity,
+       slab_log10_transmission,
    )
 
    parameters = PhotodiodeParameters(
@@ -184,3 +191,109 @@ remains, or about :math:`25.4\%` of the original source power.
    refractive index, whereas this introductory Fresnel calculation uses a
    real index.  The controls isolate the Chapter 3 equations; they are not a
    substitute for wavelength-dependent measured optical constants.
+
+Inverse design: how much source power is required?
+--------------------------------------------------
+
+For a slab, light crosses an entrance and an exit surface.  In the simple
+single-pass model, the fraction transmitted through two uncoated surfaces
+and the absorbing bulk is
+
+.. math::
+
+   T_{\mathrm{slab}}
+   =
+   \frac{P_{\mathrm{out}}}{P_{\mathrm{source}}}
+   =
+   (1-R)^2 e^{-\alpha d},
+
+where :math:`d` is the slab width.  Therefore, the source power required for
+a specified **absolute** output power is
+
+.. math::
+
+   P_{\mathrm{source}}
+   =
+   \frac{P_{\mathrm{out,target}}}
+        {(1-R)^2e^{-\alpha d}}.
+
+This is different from asking for a percentage of the source to be
+transmitted.  For a desired fractional transmission
+:math:`T_{\mathrm{target}}`,
+
+.. math::
+
+   T_{\mathrm{target}}
+   =
+   (1-R)^2e^{-\alpha d}.
+
+The source power cancels.  Increasing it raises both
+:math:`P_{\mathrm{source}}` and :math:`P_{\mathrm{out}}` by the same factor,
+so it cannot change the percentage.  Instead, solve for the largest
+acceptable absorption coefficient:
+
+.. math::
+
+   \alpha_{\max}
+   =
+   -\frac{1}{d}
+   \ln\left(
+      \frac{T_{\mathrm{target}}}{(1-R)^2}
+   \right).
+
+Eight-millimetre silicon example
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Use the initial inverse-designer values:
+
+.. math::
+
+   d=8\ \mathrm{mm}=0.8\ \mathrm{cm},
+   \qquad
+   \alpha=100\ \mathrm{cm^{-1}},
+   \qquad
+   n_{\mathrm{Si}}=3.5.
+
+The surface reflectance and total transmission are
+
+.. math::
+
+   R=0.3086,
+   \qquad
+   T_{\mathrm{slab}}
+   =(1-0.3086)^2e^{-80}
+   \approx 8.63\times10^{-36}.
+
+Consequently, **no source power can make 10% of the incident power emerge**
+while these linear material parameters remain fixed.  Achieving
+:math:`T_{\mathrm{target}}=10\%` through :math:`8\ \mathrm{mm}` would
+require
+
+.. math::
+
+   \boxed{\alpha\leq1.96\ \mathrm{cm^{-1}}}.
+
+At :math:`\alpha=100\ \mathrm{cm^{-1}}`, the maximum width that gives 10%
+transmission is only approximately
+
+.. math::
+
+   \boxed{d_{\max}=0.156\ \mathrm{mm}}.
+
+If the intended requirement is instead an absolute output of
+:math:`100\ \mathrm{mW}`, then the ideal equation predicts a required source
+near :math:`1.16\times10^{34}\ \mathrm W`.  That impossible result is useful:
+it says to change wavelength, material, thickness, or detection method rather
+than searching for a stronger source.
+
+The **Silicon slab inverse designer** plots required source power against
+width.  Its logarithmic Y-axis uses readable SI power units rather than
+scientific notation.
+
+.. warning::
+
+   This is a linear, single-pass Beer--Lambert calculation.  It neglects
+   coherent etalon effects, repeated internal reflections, heating,
+   free-carrier absorption, and nonlinear absorption.  At high power the
+   relevant quantity is irradiance, so beam area and pulse duration would
+   also be required.

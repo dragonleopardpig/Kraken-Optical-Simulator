@@ -25,6 +25,7 @@ from .photodiode import (
     PhotodiodeParameters,
     absorption_depth_for_power,
     absorption_depth_gain_per_decade,
+    absorption_coefficient_for_transmission,
     absorption_intensity,
     absorption_power,
     diffusion_length,
@@ -34,8 +35,10 @@ from .photodiode import (
     photodiode_current_density,
     photovoltage,
     qualitative_quantum_efficiency,
+    required_source_log10_power,
     responsivity,
     single_layer_reflectance,
+    slab_log10_transmission,
 )
 
 #: Names the photodiode half contributes. Explicit, because it is a curated API.
@@ -44,6 +47,7 @@ PHOTODIODE_API = (
     "PhotodiodeParameters",
     "absorption_depth_for_power",
     "absorption_depth_gain_per_decade",
+    "absorption_coefficient_for_transmission",
     "absorption_intensity",
     "absorption_power",
     "diffusion_length",
@@ -53,8 +57,10 @@ PHOTODIODE_API = (
     "photodiode_current_density",
     "photovoltage",
     "qualitative_quantum_efficiency",
+    "required_source_log10_power",
     "responsivity",
     "single_layer_reflectance",
+    "slab_log10_transmission",
 )
 
 #: Names the legacy optics half contributes, derived from the module so it

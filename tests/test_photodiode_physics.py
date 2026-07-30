@@ -132,6 +132,47 @@ def test_source_power_moves_the_floor_depth_but_not_the_decay_length():
     ) == pytest.approx(expected / 10.0)
 
 
+def test_silicon_slab_inverse_design_reference_case():
+    reflectance = photodiode.fresnel_reflectance(1.0, 3.5)
+    log_transmission = photodiode.slab_log10_transmission(
+        thickness_mm=8.0,
+        absorption_cm_inv=100.0,
+        surface_reflectance=reflectance,
+    )
+    expected_fraction = (1.0 - reflectance) ** 2 * np.exp(-80.0)
+
+    assert 10.0**log_transmission == pytest.approx(expected_fraction)
+    assert log_transmission == pytest.approx(np.log10(expected_fraction))
+
+    required_log_w = photodiode.required_source_log10_power(
+        target_transmitted_power_w=0.1,
+        thickness_mm=8.0,
+        absorption_cm_inv=100.0,
+        surface_reflectance=reflectance,
+    )
+    assert required_log_w == pytest.approx(np.log10(0.1 / expected_fraction))
+    assert photodiode.slab_log10_transmission(
+        8.0, 100.0, surface_reflectance=1.0, surface_count=0
+    ) == pytest.approx(-80.0 / np.log(10.0))
+
+
+def test_absorption_coefficient_solves_fractional_transmission_target():
+    reflectance = photodiode.fresnel_reflectance(1.0, 3.5)
+    alpha = photodiode.absorption_coefficient_for_transmission(
+        0.10,
+        thickness_mm=8.0,
+        surface_reflectance=reflectance,
+    )
+    achieved_log10 = photodiode.slab_log10_transmission(
+        8.0,
+        alpha,
+        surface_reflectance=reflectance,
+    )
+
+    assert 10.0**achieved_log10 == pytest.approx(0.10)
+    assert alpha == pytest.approx(1.9553, rel=1.0e-4)
+
+
 def test_quarter_wave_layer_cancels_design_wavelength_reflection():
     substrate_index = 3.5
     film_index = np.sqrt(substrate_index)
@@ -160,6 +201,12 @@ def test_quarter_wave_layer_cancels_design_wavelength_reflection():
         (photodiode.absorption_depth_for_power, (0.0, 100.0, 1.0)),
         (photodiode.absorption_depth_for_power, (1.0e-9, 100.0, -1.0)),
         (photodiode.absorption_depth_gain_per_decade, (0.0,)),
+        (photodiode.slab_log10_transmission, (-1.0, 100.0)),
+        (photodiode.required_source_log10_power, (0.0, 1.0, 100.0)),
+        (
+            photodiode.absorption_coefficient_for_transmission,
+            (1.1, 1.0),
+        ),
         (photodiode.responsivity, ([1.0], 1.1)),
     ],
 )

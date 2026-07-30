@@ -177,6 +177,103 @@ def absorption_depth_gain_per_decade(absorption_cm_inv: float) -> float:
     return float(np.log(10.0) / absorption_cm_inv * 1.0e4)
 
 
+def slab_log10_transmission(
+    thickness_mm: float,
+    absorption_cm_inv: float,
+    surface_reflectance: float = 0.0,
+    surface_count: int = 2,
+) -> float:
+    """Return ``log10(P_out / P_in)`` for an absorbing slab.
+
+    Each uncoated surface transmits ``1 - R`` and the bulk follows
+    Beer-Lambert absorption.  Multiple internal reflections and coherent
+    etalon effects are intentionally omitted from this Chapter 3 model.
+    """
+
+    thickness_mm = float(thickness_mm)
+    if not np.isfinite(thickness_mm) or thickness_mm < 0.0:
+        raise ValueError("thickness_mm must be finite and not negative")
+    absorption_cm_inv = _positive("absorption_cm_inv", absorption_cm_inv)
+    surface_reflectance = _fraction(
+        "surface_reflectance", surface_reflectance
+    )
+    if (
+        isinstance(surface_count, bool)
+        or int(surface_count) != surface_count
+        or surface_count < 0
+    ):
+        raise ValueError("surface_count must be a non-negative integer")
+
+    if surface_count == 0:
+        surface_log10 = 0.0
+    elif surface_reflectance == 1.0:
+        return float("-inf")
+    else:
+        surface_log10 = (
+            surface_count
+            * np.log1p(-surface_reflectance)
+            / np.log(10.0)
+        )
+    bulk_log10 = (
+        -absorption_cm_inv * thickness_mm * 0.1 / np.log(10.0)
+    )
+    return float(surface_log10 + bulk_log10)
+
+
+def required_source_log10_power(
+    target_transmitted_power_w: float,
+    thickness_mm: float,
+    absorption_cm_inv: float,
+    surface_reflectance: float = 0.0,
+    surface_count: int = 2,
+) -> float:
+    """Return ``log10`` of source watts required for an absolute output."""
+
+    target_transmitted_power_w = _positive(
+        "target_transmitted_power_w", target_transmitted_power_w
+    )
+    return float(
+        np.log10(target_transmitted_power_w)
+        - slab_log10_transmission(
+            thickness_mm,
+            absorption_cm_inv,
+            surface_reflectance,
+            surface_count,
+        )
+    )
+
+
+def absorption_coefficient_for_transmission(
+    transmission_fraction: float,
+    thickness_mm: float,
+    surface_reflectance: float = 0.0,
+    surface_count: int = 2,
+) -> float:
+    """Return the largest ``alpha`` in cm^-1 that meets a transmission target."""
+
+    transmission_fraction = _positive(
+        "transmission_fraction", transmission_fraction
+    )
+    if transmission_fraction > 1.0:
+        raise ValueError("transmission_fraction must not exceed one")
+    thickness_mm = _positive("thickness_mm", thickness_mm)
+    surface_log10 = slab_log10_transmission(
+        0.0,
+        absorption_cm_inv=1.0,
+        surface_reflectance=surface_reflectance,
+        surface_count=surface_count,
+    )
+    surface_fraction = 10.0**surface_log10
+    if transmission_fraction > surface_fraction:
+        raise ValueError(
+            "surface reflection alone exceeds the permitted transmission loss"
+        )
+    thickness_cm = thickness_mm * 0.1
+    return float(
+        -np.log(transmission_fraction / surface_fraction) / thickness_cm
+    )
+
+
 def responsivity(
     wavelength_um,
     quantum_efficiency: float,

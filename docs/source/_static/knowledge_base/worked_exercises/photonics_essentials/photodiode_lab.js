@@ -23,17 +23,62 @@
         return Number(value.toPrecision(digits)).toString();
     };
 
-    // bugs/0481: the silicon panel now reaches down to a detector noise floor, and the old
-    // two-branch version rendered 1 nW as "1e-6 mW". Step through the engineering prefixes so
-    // every power in the lab reads as a number a datasheet would print.
+    const POWER_UNITS = [
+        [30, "QW"],
+        [27, "RW"],
+        [24, "YW"],
+        [21, "ZW"],
+        [18, "EW"],
+        [15, "PW"],
+        [12, "TW"],
+        [9, "GW"],
+        [6, "MW"],
+        [3, "kW"],
+        [0, "W"],
+        [-3, "mW"],
+        [-6, "uW"],
+        [-9, "nW"],
+        [-12, "pW"],
+    ];
+
+    const readableNumber = (value) => {
+        const absolute = Math.abs(value);
+        const namedScales = [
+            [1e12, "trillion"],
+            [1e9, "billion"],
+            [1e6, "million"],
+        ];
+        const scale = namedScales.find(([threshold]) => absolute >= threshold);
+        if (scale) {
+            return `${new Intl.NumberFormat("en-US", {
+                maximumSignificantDigits: 3,
+            }).format(value / scale[0])} ${scale[1]}`;
+        }
+        return new Intl.NumberFormat("en-US", {
+            maximumSignificantDigits: 3,
+            useGrouping: true,
+        }).format(value);
+    };
+
+    // Format both normal and extreme powers without 1e+N notation. The 2022
+    // SI prefixes ronna (R) and quetta (Q) keep the 8 mm reference result readable.
+    const powerLogLabel = (log10PowerW) => {
+        if (log10PowerW === -Infinity) return "0 W";
+        if (!Number.isFinite(log10PowerW)) return "beyond numeric range";
+        const [exponent, unit] =
+            POWER_UNITS.find(([candidate]) => log10PowerW >= candidate) ||
+            POWER_UNITS[POWER_UNITS.length - 1];
+        const scaled = 10 ** (log10PowerW - exponent);
+        if (!Number.isFinite(scaled) || scaled >= 1e15) {
+            return `more than 999 trillion ${unit}`;
+        }
+        return `${readableNumber(scaled)} ${unit}`;
+    };
+
     const powerLabel = (powerW) => {
-        const absolute = Math.abs(powerW);
-        if (absolute === 0) return "0 W";
-        if (absolute < 1e-9) return `${engineering(powerW * 1e12)} pW`;
-        if (absolute < 1e-6) return `${engineering(powerW * 1e9)} nW`;
-        if (absolute < 1e-3) return `${engineering(powerW * 1e6)} uW`;
-        if (absolute < 1) return `${engineering(powerW * 1e3)} mW`;
-        return `${engineering(powerW)} W`;
+        if (powerW === 0) return "0 W";
+        const sign = powerW < 0 ? "-" : "";
+        return `${sign}${powerLogLabel(Math.log10(Math.abs(powerW)))}`;
     };
 
     // The "Source power" control's log10 bounds, shared with the plot frame below so raising
@@ -166,6 +211,23 @@
                 control("depths", "Minimum displayed absorption lengths", 1, 25, 0.1, 5, (v) => v.toFixed(1)),
             ],
             calculate: siliconAbsorptionPower,
+        },
+        slabDesigner: {
+            label: "Silicon slab inverse designer (Sec. 3.4.1)",
+            note:
+                "Fractional transmission is fixed by the surfaces, alpha, and slab width; " +
+                "raising source power cannot change that percentage. This inverse design " +
+                "instead calculates the source needed for an ABSOLUTE output power and the " +
+                "alpha or maximum width needed for a desired transmission percentage. " +
+                "The surface curve includes two uncoated air-silicon boundaries.",
+            controls: [
+                control("widthMm", "Silicon slab width", 0.1, 10, 0.1, 8, (v) => `${v.toFixed(1)} mm`),
+                control("logAlpha", "Silicon log10(alpha)", -2, 2, 0.02, 2, (v) => `10^${v.toFixed(2)} cm-1`),
+                control("siliconIndex", "Silicon refractive index", 3.2, 4.2, 0.01, 3.5, (v) => v.toFixed(2)),
+                control("targetPercent", "Desired transmission", 0.1, 50, 0.1, 10, (v) => `${v.toFixed(1)}%`),
+                control("logTargetPower", "Desired output power", -12, 0, 0.05, -1, (v) => powerLogLabel(v)),
+            ],
+            calculate: slabInverseDesigner,
         },
         responsivity: {
             label: "Responsivity (Fig. 3.9)",
@@ -471,6 +533,7 @@
             // lifts both lines inside it. Autoscaling to 1.03 * incidentPower rescaled the frame
             // by exactly the factor it was showing, so the plot never changed (bugs/0481).
             yTransform: "log10",
+            yTickFormat: "power-log10",
             yDomain: [
                 floorPower / 10,
                 10 ** SILICON_SOURCE_LOG_MAX,
@@ -488,6 +551,86 @@
                 ["Depth per power decade", `${engineering(gainPerDecadeUm)} um`],
                 ["Absorption length", `${engineering(absorptionLengthUm)} um (power-independent)`],
                 ["Power remaining at edge", powerLabel(finalPower)],
+            ],
+        };
+    }
+
+    function slabInverseDesigner(state) {
+        const alpha = 10 ** state.logAlpha;
+        const reflectance =
+            ((1 - state.siliconIndex) / (1 + state.siliconIndex)) ** 2;
+        const surfaceFraction = (1 - reflectance) ** 2;
+        const targetFraction = state.targetPercent / 100;
+        const x = linearSpace(0, state.widthMm);
+        const bulkLossLog10 = (widthMm) =>
+            (alpha * widthMm * 0.1) / Math.LN10;
+        const surfaceLossLog10 = -Math.log10(surfaceFraction);
+        const noReflectionLogPower = x.map(
+            (widthMm) => state.logTargetPower + bulkLossLog10(widthMm),
+        );
+        const withReflectionLogPower = noReflectionLogPower.map(
+            (value) => value + surfaceLossLog10,
+        );
+        const selectedLogTransmission =
+            Math.log10(surfaceFraction) - bulkLossLog10(state.widthMm);
+        const selectedNoReflectionLogSource =
+            noReflectionLogPower[noReflectionLogPower.length - 1];
+        const selectedSurfaceLogSource =
+            withReflectionLogPower[withReflectionLogPower.length - 1];
+        const targetIsPossible = targetFraction <= surfaceFraction;
+        const lossBudget = targetIsPossible
+            ? -Math.log(targetFraction / surfaceFraction)
+            : 0;
+        const requiredAlpha = targetIsPossible
+            ? lossBudget / (state.widthMm * 0.1)
+            : null;
+        const maximumWidthMm = targetIsPossible
+            ? (lossBudget / alpha) * 10
+            : null;
+        const transmissionDecades = -selectedLogTransmission;
+        const transmissionLabel =
+            selectedLogTransmission >= -5
+                ? `${readableNumber(100 * 10 ** selectedLogTransmission)}%`
+                : `effectively 0% (${readableNumber(transmissionDecades)} decades of loss)`;
+
+        return {
+            series: [
+                {
+                    label: "No surface reflection",
+                    color: COLORS[1],
+                    x,
+                    y: noReflectionLogPower,
+                },
+                {
+                    label: "Two uncoated silicon surfaces",
+                    color: COLORS[0],
+                    x,
+                    y: withReflectionLogPower,
+                },
+            ],
+            xLabel: "Silicon slab width (mm)",
+            yLabel: "Required source power",
+            xDomain: [0, state.widthMm],
+            yTickFormat: "power-log10",
+            readouts: [
+                ["Actual transmission", transmissionLabel],
+                ["Source for desired output", powerLogLabel(selectedSurfaceLogSource)],
+                ["Source without reflection", powerLogLabel(selectedNoReflectionLogSource)],
+                ["Can power change the percent?", "No - not in the linear model"],
+                [
+                    "Alpha for desired percent",
+                    targetIsPossible
+                        ? `${engineering(requiredAlpha)} cm-1 or less`
+                        : "Impossible: surface loss is already too large",
+                ],
+                [
+                    "Maximum width at this alpha",
+                    targetIsPossible
+                        ? `${engineering(maximumWidthMm)} mm`
+                        : "No non-negative width",
+                ],
+                ["Two-surface ceiling", `${readableNumber(100 * surfaceFraction)}%`],
+                ["Desired output", powerLogLabel(state.logTargetPower)],
             ],
         };
     }
@@ -639,7 +782,8 @@
         return [domain[0] - span * fraction, domain[1] + span * fraction];
     }
 
-    function tickLabel(value, transform) {
+    function tickLabel(value, transform, format) {
+        if (format === "power-log10") return powerLogLabel(value);
         if (transform === "log10") return `10^${Number(value.toFixed(1))}`;
         return engineering(value, 3);
     }
@@ -656,7 +800,12 @@
         svg.replaceChildren();
         const width = 900;
         const height = 500;
-        const margin = { left: 92, right: 25, top: 25, bottom: 70 };
+        const margin = {
+            left: result.yTickFormat === "power-log10" ? 135 : 92,
+            right: 25,
+            top: 25,
+            bottom: 70,
+        };
         const plotWidth = width - margin.left - margin.right;
         const plotHeight = height - margin.top - margin.bottom;
         const allX = result.series.flatMap((series) => series.x);
@@ -725,7 +874,11 @@
                 y: yPixel + 4,
                 "text-anchor": "end",
             });
-            yLabel.textContent = tickLabel(yValue, result.yTransform);
+            yLabel.textContent = tickLabel(
+                yValue,
+                result.yTransform,
+                result.yTickFormat,
+            );
             svg.append(yLabel);
         }
 
@@ -949,7 +1102,12 @@
         // implementations of one model drift silently. Inert in a browser, where `module` is
         // undefined and the DOM branch below runs exactly as before.
         if (typeof module !== "undefined" && module.exports) {
-            module.exports = { MODES, powerLabel, engineering };
+            module.exports = {
+                MODES,
+                powerLabel,
+                powerLogLabel,
+                engineering,
+            };
         }
     } else if (document.readyState === "loading") {
         document.addEventListener("DOMContentLoaded", start, { once: true });
