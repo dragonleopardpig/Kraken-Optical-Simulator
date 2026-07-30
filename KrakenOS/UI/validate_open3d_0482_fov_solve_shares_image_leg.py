@@ -15,7 +15,8 @@ Two defects, measured on ``attachment/machine_vision_AZ85_RA_Mirror_BS.py``:
    the 12.5 mm sensor floor, so the 0468 resolver stood down -- and the body, needing 11.48 mm of
    the 6.36 mm that remained past the mirror face, ended 5.3 mm inside the prism.
 
-Fixed: the floor is ``far_min + front_to_sensor + margin`` (24.98 mm here), and the change is
+Fixed: the floor is ``far_min + front_to_sensor + margin`` (28.98 mm with bugs/0486's 5 mm
+margin), and the change is
 shared 50:50 between the two sections through ``_apply_folded_image_split`` (which on a frozen
 scene slides the breadcrumbed mirror and re-seats sensor AND camera, bugs/0447). Certified on the
 real scene with the camera re-seated after each solve, and with bugs/0483 making the mirror's box
@@ -25,7 +26,9 @@ truthful -- without 0483 the clearance cannot even be measured:
     23x23   96.884   45.114        +21.13 mm              38.728  /  +3.68
     30x30   86.950   35.180        +11.20 mm              18.860  / -44.86  <- the report
     35x35   82.287   30.517         +6.54 mm              12.500  / -26.89
-    40x40   79.525   27.755         +3.78 mm              12.500  / -24.07
+    40x40   76.830   28.980         +5.00 mm              12.500  / -24.07
+
+(the 40 x 40 row is where the floor binds, so it tracks bugs/0486's margin exactly)
 
 Display-free: drives the floor and the share against a stub editor. No Tk, no render, no trace.
 
@@ -133,17 +136,23 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     check(bool(note) and "50:50" in note, f"B3: the share is reported to the user ({note.strip()[:60]!r})")
 
     # --- C. clamped, never below a floor ---------------------------------------------------
-    # A total so short that an even share would breach the camera floor: it clamps, and the
-    # writer holds the total, so the remainder lands on the other section.
-    tight_before = {**SPLIT_BEFORE, "total": 60.0, "near": 40.0, "far": 20.0}
-    tight_after = {**tight_before, "total": 40.0, "near": 40.0, "far": 0.0}
+    # A total short enough that an even share would breach the camera floor, but long enough that
+    # BOTH floors still fit: it clamps, and the writer holds the total, so the remainder lands on
+    # the other section.
+    #
+    # bugs/0486 re-scaled these totals when the assembly margin went 1 -> 5 mm (floor 24.98 ->
+    # 28.98). The old pair (60 -> 40) put `near_min + far_floor = 41.48` ABOVE the 40 mm total, so
+    # the "cannot clear" branch fired first and the clamp under test never ran. The numbers move
+    # with the floor; the assertion does not -- it still reads `total - floor`, computed.
+    tight_before = {**SPLIT_BEFORE, "total": 80.0, "near": 50.0, "far": 30.0}
+    tight_after = {**tight_before, "total": 60.0, "near": 50.0, "far": 10.0}
     calls.clear()
     service = _service(_editor(split=tight_after, applied=_record))
     service._rebalance_image_leg_sections(tight_before)
     check(
-        len(calls) == 1 and abs(calls[0][1] - (40.0 - floor)) < 1.0e-6,
+        len(calls) == 1 and abs(calls[0][1] - (tight_after["total"] - floor)) < 1.0e-6,
         f"C1: an even share that would breach the floor clamps to total - floor "
-        f"({40.0 - floor:.4g} mm, got {calls[0][1] if calls else None})",
+        f"({tight_after['total'] - floor:.4g} mm, got {calls[0][1] if calls else None})",
     )
     # Both floors cannot fit -> report, do not thrash the geometry.
     impossible_before = {**SPLIT_BEFORE, "total": 60.0, "near": 40.0, "far": 20.0}

@@ -900,9 +900,14 @@ class QuickEstimationService:
         return float(mag)
 
     #: bugs/0482: assembly clearance left between the camera body and the fold mirror once the
-    #: body's own reach is accounted for. Small and explicit: the floor is a hard geometric
-    #: limit, and landing exactly ON it means the body grazes the substrate.
-    IMAGE_LEG_ASSEMBLY_MARGIN_MM = 1.0
+    #: body's own reach is accounted for. Explicit, because the floor is a hard geometric limit and
+    #: landing exactly ON it means the body grazes the substrate.
+    #:
+    #: bugs/0486: raised 1.0 -> 5.0 mm on the user's call. At 1 mm a 40 x 40 field left the camera
+    #: body's bounding box only 3.04 mm from the mirror's -- clear, and ``camera_body_collisions()``
+    #: agreed, but too close to read as safe ("+3.04 ... should crash already"). This is the single
+    #: knob for how much daylight a large field keeps.
+    IMAGE_LEG_ASSEMBLY_MARGIN_MM = 5.0
 
     def _camera_body_image_leg_reach_mm(self) -> float:
         """bugs/0482: how far back up the sensor leg the CAMERA BODY reaches, in mm.
@@ -1287,9 +1292,32 @@ class QuickEstimationService:
             _new_gap, _near_row, _near_delta, _note = _resolved
             if _new_gap is None:
                 return False, _note
-            self.editor.rows[_near_row].thickness = (
-                float(self.editor.rows[_near_row].thickness) + float(_near_delta)
-            )
+            # bugs/0486: on a FROZEN fold a station thickness is not a distance ALONG the mirror's
+            # incoming leg. Sliding the mirror by writing rows[near].thickness moves it down the
+            # station axis (+z here) while its incoming leg runs +x, so the fold point leaves the
+            # beam by exactly the slide -- measured, the 6.12 mm deficit at 30 x 30 became 6.12 mm
+            # of off-axis error, and the emitted leg then drew slanted 3.39 deg ("RA mirror
+            # shifted, not centered to optical axis, the fold axis also slanted",
+            # flag_20260730_160140). A fold point is BY DEFINITION on the axis feeding it.
+            #
+            # The frozen writer slides along ``in_dir`` and re-seats the sensor and camera on the
+            # exit leg (bugs/0447), which is why the MANUAL leg constraint has always been clean
+            # (measured 0.0 deg off axis). Route the same slide through it. The raw thickness write
+            # is kept for straight/unfrozen scenes, where a station IS along the beam.
+            _frozen_slide = False
+            if bool((_pre_image_split or {}).get("frozen_world")) and _near_row is not None:
+                try:
+                    _target_near = float(_pre_image_split["near"]) + float(_near_delta)
+                    _slid_ok, _slid_msg = self.editor._apply_folded_image_split("near", _target_near)
+                    _frozen_slide = bool(_slid_ok)
+                    if not _slid_ok:
+                        _note += f" (frozen slide refused: {_slid_msg})"
+                except Exception as exc:
+                    _note += f" (frozen slide failed: {type(exc).__name__}: {exc})"
+            if not _frozen_slide:
+                self.editor.rows[_near_row].thickness = (
+                    float(self.editor.rows[_near_row].thickness) + float(_near_delta)
+                )
             image_distance = _new_gap
             _collision_note = _note
         # Object side first: the prescription write shifts stations, and the frozen image write
