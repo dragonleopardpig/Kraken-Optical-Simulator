@@ -15,6 +15,7 @@ real sensor.
    lens_design_intro
    aberration_polynomial
    ir_subpixel_detection
+   eol_imaging_qualification/index
    step_overlay_promotion
    coaxial_led_dark_edges
    worked_exercises/index
