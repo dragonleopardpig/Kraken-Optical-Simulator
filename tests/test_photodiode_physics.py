@@ -71,6 +71,67 @@ def test_absorption_power_applies_surface_reflection_before_bulk_absorption():
     assert power[1] == pytest.approx(power[0] * np.exp(-1.0))
 
 
+def test_absorption_depth_for_power_inverts_beer_lambert():
+    """bugs/0481: the depth at which the beam falls to an absolute level."""
+    surface_reflectance = photodiode.fresnel_reflectance(1.0, 3.5)
+    depth_um = photodiode.absorption_depth_for_power(
+        1.0e-9,
+        absorption_cm_inv=100.0,
+        incident_power_w=0.1,
+        surface_reflectance=surface_reflectance,
+    )
+
+    # It is exactly where the power model says the floor is reached.
+    remaining = photodiode.absorption_power(
+        depth_um,
+        absorption_cm_inv=100.0,
+        incident_power_w=0.1,
+        surface_reflectance=surface_reflectance,
+    )
+    assert float(remaining) == pytest.approx(1.0e-9, rel=1.0e-12)
+
+    # A floor already met at the entrance is reached at the surface, not inside.
+    assert (
+        photodiode.absorption_depth_for_power(1.0, 100.0, 0.1) == 0.0
+    )
+
+
+def test_source_power_moves_the_floor_depth_but_not_the_decay_length():
+    """bugs/0481: the reported "depth never changes" is half right, and this is which half.
+
+    Beer-Lambert is multiplicative, so the FRACTIONAL profile is power-independent -- a
+    power-dependent ``alpha`` would be a fake. The depth to an ABSOLUTE floor is what moves,
+    and it moves by ``ln(10) / alpha`` per decade.
+    """
+    surface_reflectance = photodiode.fresnel_reflectance(1.0, 3.5)
+    position_um = np.array([0.0, 25.0, 100.0, 500.0])
+
+    low = photodiode.absorption_power(
+        position_um, 100.0, 1.0e-3, surface_reflectance=surface_reflectance
+    )
+    high = photodiode.absorption_power(
+        position_um, 100.0, 10.0, surface_reflectance=surface_reflectance
+    )
+    ratio = high / low
+    assert ratio == pytest.approx(np.full(position_um.shape, 1.0e4))
+
+    depths = [
+        photodiode.absorption_depth_for_power(
+            1.0e-9, 100.0, power, surface_reflectance=surface_reflectance
+        )
+        for power in (0.01, 0.1, 1.0, 10.0)
+    ]
+    gains = np.diff(depths)
+    expected = photodiode.absorption_depth_gain_per_decade(100.0)
+    assert expected == pytest.approx(np.log(10.0) / 100.0 * 1.0e4)
+    assert gains == pytest.approx(np.full(gains.shape, expected))
+
+    # alpha alone sets the scale: ten times the absorption, a tenth of the gain.
+    assert photodiode.absorption_depth_gain_per_decade(
+        1000.0
+    ) == pytest.approx(expected / 10.0)
+
+
 def test_quarter_wave_layer_cancels_design_wavelength_reflection():
     substrate_index = 3.5
     film_index = np.sqrt(substrate_index)
@@ -96,6 +157,9 @@ def test_quarter_wave_layer_cancels_design_wavelength_reflection():
         (photodiode.ideal_spectral_response, ([1.0], 0.0)),
         (photodiode.absorption_intensity, ([-1.0], 100.0)),
         (photodiode.absorption_power, ([1.0], 100.0, 1.0, 1.1)),
+        (photodiode.absorption_depth_for_power, (0.0, 100.0, 1.0)),
+        (photodiode.absorption_depth_for_power, (1.0e-9, 100.0, -1.0)),
+        (photodiode.absorption_depth_gain_per_decade, (0.0,)),
         (photodiode.responsivity, ([1.0], 1.1)),
     ],
 )

@@ -23,6 +23,8 @@ from .optics import *  # noqa: F401,F403 -- legacy unqualified API, see docstrin
 from .photodiode import (
     HC_EV_UM,
     PhotodiodeParameters,
+    absorption_depth_for_power,
+    absorption_depth_gain_per_decade,
     absorption_intensity,
     absorption_power,
     diffusion_length,
@@ -40,6 +42,8 @@ from .photodiode import (
 PHOTODIODE_API = (
     "HC_EV_UM",
     "PhotodiodeParameters",
+    "absorption_depth_for_power",
+    "absorption_depth_gain_per_decade",
     "absorption_intensity",
     "absorption_power",
     "diffusion_length",

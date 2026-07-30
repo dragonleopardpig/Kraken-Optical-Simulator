@@ -23,10 +23,24 @@
         return Number(value.toPrecision(digits)).toString();
     };
 
+    // bugs/0481: the silicon panel now reaches down to a detector noise floor, and the old
+    // two-branch version rendered 1 nW as "1e-6 mW". Step through the engineering prefixes so
+    // every power in the lab reads as a number a datasheet would print.
     const powerLabel = (powerW) => {
-        if (powerW < 1) return `${engineering(powerW * 1e3)} mW`;
+        const absolute = Math.abs(powerW);
+        if (absolute === 0) return "0 W";
+        if (absolute < 1e-9) return `${engineering(powerW * 1e12)} pW`;
+        if (absolute < 1e-6) return `${engineering(powerW * 1e9)} nW`;
+        if (absolute < 1e-3) return `${engineering(powerW * 1e6)} uW`;
+        if (absolute < 1) return `${engineering(powerW * 1e3)} mW`;
         return `${engineering(powerW)} W`;
     };
+
+    // The "Source power" control's log10 bounds, shared with the plot frame below so raising
+    // the power LIFTS the curve inside a fixed window instead of rescaling the window with it
+    // (bugs/0481: an autoscaled frame made a four-decade slider produce no visible change).
+    const SILICON_SOURCE_LOG_MIN = -3;
+    const SILICON_SOURCE_LOG_MAX = 1;
 
     const control = (
         key,
@@ -131,12 +145,25 @@
                 "Both curves obey Equation 3.22. The surface-reflection curve first loses " +
                 "the normal-incidence Fresnel fraction R, then undergoes the same silicon " +
                 "bulk absorption. Power and intensity have the same depth dependence for " +
-                "a beam of constant area.",
+                "a beam of constant area. Source power does NOT change the decay length " +
+                "1/alpha -- that is the material's, and the fractional profile is identical " +
+                "at every power. What power moves is how deep the beam stays above an " +
+                "absolute level: the crossing of the detection floor slides ln(10)/alpha " +
+                "deeper per decade, which is why the depth axis follows it.",
             controls: [
-                control("logPower", "Source power", -3, 1, 0.02, -1, (v) => powerLabel(10 ** v)),
+                control(
+                    "logPower",
+                    "Source power",
+                    SILICON_SOURCE_LOG_MIN,
+                    SILICON_SOURCE_LOG_MAX,
+                    0.02,
+                    -1,
+                    (v) => powerLabel(10 ** v),
+                ),
+                control("logFloor", "Detection floor", -12, -3, 0.05, -9, (v) => powerLabel(10 ** v)),
                 control("logAlpha", "Silicon log10(alpha)", 2, 5, 0.05, 2, (v) => `10^${v.toFixed(2)} cm-1`),
                 control("siliconIndex", "Silicon refractive index", 3.2, 4.2, 0.01, 3.5, (v) => v.toFixed(2)),
-                control("depths", "Displayed absorption lengths", 1, 8, 0.1, 5, (v) => v.toFixed(1)),
+                control("depths", "Minimum displayed absorption lengths", 1, 25, 0.1, 5, (v) => v.toFixed(1)),
             ],
             calculate: siliconAbsorptionPower,
         },
@@ -385,22 +412,37 @@
 
     function siliconAbsorptionPower(state) {
         const incidentPower = 10 ** state.logPower;
+        const floorPower = 10 ** state.logFloor;
         const alpha = 10 ** state.logAlpha;
         const absorptionLengthUm = 1e4 / alpha;
-        const maximumDepthUm = state.depths * absorptionLengthUm;
-        const x = linearSpace(0, maximumDepthUm);
         const reflectance =
             ((1 - state.siliconIndex) / (1 + state.siliconIndex)) ** 2;
         const enteringPower = incidentPower * (1 - reflectance);
-        const noReflection = x.map(
-            (position) =>
-                incidentPower * Math.exp(-alpha * position * 1e-4),
+        // bugs/0481: the depth at which the beam falls to an ABSOLUTE level is the only depth
+        // source power moves -- z = ln(P_enter / P_floor) / alpha. Mirrors
+        // KrakenOS.Physics.photodiode.absorption_depth_for_power; keep the two in step.
+        const floorDepthUm =
+            enteringPower > floorPower
+                ? (Math.log(enteringPower / floorPower) / alpha) * 1e4
+                : 0;
+        // ... and it is why the window no longer always terminates at the same depth: the view
+        // follows that crossing, so a decade of power visibly buys ln(10)/alpha more silicon.
+        const gainPerDecadeUm = (Math.LN10 / alpha) * 1e4;
+        const maximumDepthUm = Math.max(
+            state.depths * absorptionLengthUm,
+            1.05 * floorDepthUm,
         );
-        const withReflection = x.map(
-            (position) =>
-                enteringPower * Math.exp(-alpha * position * 1e-4),
-        );
+        const x = linearSpace(0, maximumDepthUm);
+        const decayFrom = (startPower) =>
+            x.map(
+                (position) =>
+                    startPower *
+                    Math.exp(clampExponent(-alpha * position * 1e-4)),
+            );
+        const noReflection = decayFrom(incidentPower);
+        const withReflection = decayFrom(enteringPower);
         const finalPower = withReflection[withReflection.length - 1];
+        const floorReached = floorDepthUm > 0 && floorDepthUm <= maximumDepthUm;
         return {
             series: [
                 {
@@ -415,18 +457,37 @@
                     x,
                     y: withReflection,
                 },
+                {
+                    label: "Detection floor",
+                    color: COLORS[3],
+                    x: [0, maximumDepthUm],
+                    y: [floorPower, floorPower],
+                },
             ],
             xLabel: "Depth inside silicon (um)",
             yLabel: "Optical power remaining (W)",
             xDomain: [0, maximumDepthUm],
-            yDomain: [0, 1.03 * incidentPower],
+            // A FIXED log frame, floor to the slider's top power: raising the source power now
+            // lifts both lines inside it. Autoscaling to 1.03 * incidentPower rescaled the frame
+            // by exactly the factor it was showing, so the plot never changed (bugs/0481).
+            yTransform: "log10",
+            yDomain: [
+                floorPower / 10,
+                10 ** SILICON_SOURCE_LOG_MAX,
+            ],
             readouts: [
                 ["Source power", powerLabel(incidentPower)],
                 ["Surface reflected", `${(100 * reflectance).toFixed(1)}% (${powerLabel(incidentPower * reflectance)})`],
                 ["Power entering Si", powerLabel(enteringPower)],
-                ["Bulk absorbed in range", powerLabel(enteringPower - finalPower)],
-                ["Power remaining", powerLabel(finalPower)],
-                ["Absorption length", `${engineering(absorptionLengthUm)} um`],
+                [
+                    "Depth to floor",
+                    floorDepthUm > 0
+                        ? `${engineering(floorDepthUm)} um${floorReached ? "" : " (past view)"}`
+                        : "at the surface",
+                ],
+                ["Depth per power decade", `${engineering(gainPerDecadeUm)} um`],
+                ["Absorption length", `${engineering(absorptionLengthUm)} um (power-independent)`],
+                ["Power remaining at edge", powerLabel(finalPower)],
             ],
         };
     }
@@ -880,7 +941,17 @@
             .querySelectorAll("[data-photodiode-lab]")
             .forEach(initializeLab);
 
-    if (document.readyState === "loading") {
+    if (typeof document === "undefined") {
+        // bugs/0481: headless (node) -- there is no DOM to attach to, so export the pure panel
+        // models instead. Every `calculate` is a pure function of its control state, and this is
+        // the only way a guard can check that the lab and
+        // KrakenOS.Physics.photodiode agree: the same equations live in both, and two
+        // implementations of one model drift silently. Inert in a browser, where `module` is
+        // undefined and the DOM branch below runs exactly as before.
+        if (typeof module !== "undefined" && module.exports) {
+            module.exports = { MODES, powerLabel, engineering };
+        }
+    } else if (document.readyState === "loading") {
         document.addEventListener("DOMContentLoaded", start, { once: true });
     } else {
         start();

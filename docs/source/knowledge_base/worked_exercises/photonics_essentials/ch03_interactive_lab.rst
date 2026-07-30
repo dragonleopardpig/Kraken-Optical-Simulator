@@ -62,7 +62,12 @@ The explorer includes:
    * - Silicon power with surface reflection
      - Section 3.4.1; Equation 3.22 and normal-incidence Fresnel reflection
      - Source power from :math:`1\ \mathrm{mW}` to :math:`10\ \mathrm W`,
-       silicon absorption coefficient, refractive index, and plotted depth
+       detection floor, silicon absorption coefficient, refractive index, and
+       plotted depth. Power is plotted logarithmically on a fixed frame: raising
+       the source lifts the curve without changing the decay length
+       :math:`1/\alpha`, which belongs to the material. What power does move is
+       the depth at which the beam is still above the floor, by
+       :math:`\ln(10)/\alpha` per decade
    * - Responsivity
      - Figure 3.9; Equations 3.25--3.28
      - Quantum efficiency and band gap

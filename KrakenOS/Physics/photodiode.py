@@ -126,6 +126,57 @@ def absorption_power(
     ) * (1.0 - surface_reflectance)
 
 
+def absorption_depth_for_power(
+    target_power_w: float,
+    absorption_cm_inv: float,
+    incident_power_w: float,
+    surface_reflectance: float = 0.0,
+) -> float:
+    """Depth in um at which the remaining power has fallen to ``target_power_w``.
+
+    Inverts Equation 3.22 for depth:
+
+        z = ln(P_enter / P_target) / alpha,    P_enter = P_0 (1 - R)
+
+    bugs/0481: this is the only depth in the model that responds to source power, and
+    it is why "more power penetrates deeper" is both a misconception and a real effect
+    depending on what is asked. The DECAY LENGTH ``1 / alpha`` is set by the material
+    alone -- doubling the source power does not move it, because Beer-Lambert is
+    multiplicative and the *fractional* profile is identical at every power. What does
+    move is the depth at which the beam is still above some ABSOLUTE level (a detector
+    noise floor, a damage threshold, a "fully absorbed" criterion), and it moves
+    logarithmically: every decade of source power buys a further ``ln(10) / alpha``, so
+    at alpha = 100 cm-1 (1 / alpha = 100 um) a decade is worth 230.3 um.
+
+    Returns ``0.0`` when the target is already at or above the power entering the
+    material -- the level is reached at the surface, not inside.
+    """
+
+    target_power_w = _positive("target_power_w", target_power_w)
+    absorption_cm_inv = _positive("absorption_cm_inv", absorption_cm_inv)
+    incident_power_w = _positive("incident_power_w", incident_power_w)
+    surface_reflectance = _fraction(
+        "surface_reflectance", surface_reflectance
+    )
+    entering_power_w = incident_power_w * (1.0 - surface_reflectance)
+    if entering_power_w <= target_power_w:
+        return 0.0
+    depth_cm = np.log(entering_power_w / target_power_w) / absorption_cm_inv
+    return float(depth_cm * 1.0e4)
+
+
+def absorption_depth_gain_per_decade(absorption_cm_inv: float) -> float:
+    """Extra depth in um that one decade of source power buys: ``ln(10) / alpha``.
+
+    bugs/0481: the slope of :func:`absorption_depth_for_power` in log-power, split out
+    because it is the number that answers "how much deeper does turning the power up
+    actually get me?" without needing a floor to be chosen first.
+    """
+
+    absorption_cm_inv = _positive("absorption_cm_inv", absorption_cm_inv)
+    return float(np.log(10.0) / absorption_cm_inv * 1.0e4)
+
+
 def responsivity(
     wavelength_um,
     quantum_efficiency: float,
