@@ -77,3 +77,38 @@ That last step needs a live drag.
 0487, 0489, 0437, 0486 and the model-change pairing guard all PASS; 54/54 pytest. Gate --phases
 8,251,381,382,386,389,392..395 = 9 pass, 1 known-failing (251, in baseline) -- phase 8 included on
 purpose, since it is the "second rays-on lost segments" check the force_retrace path warns about.
+
+
+## Third attempt: the flag the mid-drag refresh was eating
+
+`flag_20260731_211354` — *"Ctrl+z LED move back the position, glue the BS, slide down, the rest of
+the components are not following"* — on `4e793239`, i.e. WITH the forced-retrace promotion in:
+
+    BS row 3 desp_z   -103.676 -> -79.355   +24.32   model
+    mirror row 7      -235.102 -> -210.781  +24.32   model carried
+    row 3 ACTOR       z[16.77,92.15] -> z[40.95,116.61]   +24.2   (mirrored live, bugs/0137)
+    row 7 ACTOR       z[41.30,66.30] -> z[41.16,66.50]    unchanged
+    lens / camera ACTORS, axis:global:split               unchanged
+
+So the promotion never fired. `_preview_scene_trace_dirty` is **consumed by any build** —
+`three_d_scene_tools` sets it to `not trace_rays`, the async trace clears it outright — and the
+glue carry runs every drag FRAME (bugs/0137). By the time the drag is released the flag is already
+False, so a refresh keyed off it does nothing. Demonstrated directly:
+
+    pending_rebuild after carry   True
+    trace_dirty after one build   False      <-- consumed
+    pending_rebuild survives      True
+
+`_fold_slide_carry_apply` now also sets `_fold_carry_pending_rebuild`, a marker no intermediate
+build touches, and `refresh_from_editor` promotes to a retrace when it sees it — clearing it only
+then, and only when no drag is still in flight so the interactive path never becomes a ~2 s rebuild
+per frame (bugs/0024).
+
+Why bugs/0137 makes this hard to see: during a drag the glued partner's ACTORS are mirrored by the
+same world delta, so the BS tracks the LED live. Everything the fold carry moves has no such
+mirror, so the chain depends entirely on the rebuild at release. That is why row 3 looks right and
+nothing else does.
+
+Gate --phases 8,24,251,382,386,389,392..395 = 9 pass, 1 known-failing (251, in baseline); 54/54
+pytest. Phases 8 and 24 included on purpose: the rays-on segment check and the drag-interactivity
+check are what a wrongly-scoped retrace would break.

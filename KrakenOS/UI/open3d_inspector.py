@@ -17220,6 +17220,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 force_retrace = bool(getattr(self.editor, "_preview_scene_trace_dirty", False))
             except Exception:
                 force_retrace = False
+        # The sticky half: a fold carry sets a marker no intermediate build consumes, so the first
+        # refresh AFTER the drag is guaranteed to retrace even though every mid-drag refresh has
+        # already eaten _preview_scene_trace_dirty. Left alone while a drag is still in flight, so
+        # this never turns the interactive path into a ~2 s rebuild per frame (bugs/0024).
+        if self._placement_drag_state is None and bool(
+            getattr(self.editor, "_fold_carry_pending_rebuild", False)
+        ):
+            force_retrace = True
+            try:
+                self.editor._fold_carry_pending_rebuild = False
+            except Exception:
+                pass
         if self._maybe_begin_async_scene_trace(sampling_mode=sampling_mode, force_retrace=force_retrace):
             # bugs/0450: the async kick used to return having painted NOTHING, so a model
             # change made with Show Rays ON (add a beam splitter, delete the fold mirror)

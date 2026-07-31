@@ -284,6 +284,14 @@ class ScenePlacementMixin:
             )
         except Exception:
             pass
+        # ... and a marker the mid-drag refreshes cannot eat. _preview_scene_trace_dirty is
+        # CONSUMED by any build (three_d_scene_tools sets it to `not trace_rays`, the async trace
+        # clears it outright), and the glue carry runs every drag FRAME (bugs/0137) -- so by the
+        # time the drag is released the flag is already False and a refresh that keys off it does
+        # nothing. Measured on flag_20260731_211354, taken on the fix that did exactly that: rows
+        # carried +24.32 mm and every actor, body and axis record still sat at its as-loaded pose.
+        # This marker is cleared only by a refresh that actually retraces.
+        self._fold_carry_pending_rebuild = True
         self._pin_moved_fold_section(row_index, delta)
         self._report_fold_slide_conjugates(len(carried), delta, conjugates_before)
 
