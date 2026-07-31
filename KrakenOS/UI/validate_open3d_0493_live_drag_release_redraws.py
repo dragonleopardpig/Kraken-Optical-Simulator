@@ -242,6 +242,42 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
             not bool(getattr(editor, "_fold_carry_pending_rebuild", False)),
             "B9: the marker is consumed, so the next refresh is not forced to redo this work",
         )
+
+        # --- C. the OTHER stale path: a STEP-overlay arrow drag with Live Mode OFF ---------
+        # _finish_step_translate_drag commits with refresh=physics_requested, and
+        # inspector_physics_requested IS live_mode_var (open3d_trace_refresh.py:133-139). With
+        # Live Mode off that is False, so the commit takes the partial branch and
+        # refresh_imported_step_overlay redraws ONLY the body that was dragged -- while the carry
+        # has just moved the whole leg. Same ending as B, reached a completely different way.
+        insp.live_mode_var.set(False)
+        editor.set_optical_led_glue(True)
+        c_before = _snapshot(insp)
+        step_state = {
+            "label": "led", "axis": "z",
+            "applied_delta_mm": DELTA, "axis_unit": (0.0, 0.0, 1.0),
+        }
+        insp._step_translate_drag_state = None  # release clears every drag state first
+        insp._finish_step_translate_drag(step_state)
+        insp._flush_fold_carry_rebuild_after_drag()
+        _settle(editor, insp)
+        c_after = _snapshot(insp)
+        c_carried = [f"row{i}" for i in range(1, 9)] + ["STEP:lens", "STEP:camera", "STEP:led"]
+        c_straggle = {
+            k: round(_moved(c_before, c_after, k), 3)
+            for k in c_carried
+            if _moved(c_before, c_after, k) is None or abs(_moved(c_before, c_after, k) - DELTA) > TOL
+        }
+        check(
+            not c_straggle,
+            f"C1: dragging the LED's STEP arrows with Live Mode OFF also redraws the whole carried "
+            f"leg ({c_straggle or 'all followed'}) -- refresh=physics_requested is False there, so "
+            f"the commit only repainted the LED itself",
+        )
+        c_split = _moved(c_before, c_after, "axis:axis:global:split")
+        check(
+            c_split is not None and abs(c_split - DELTA) < TOL,
+            f"C2: ... and the emitted split axis with it ({c_split})",
+        )
     except Exception as exc:
         notes.append(f"SKIP: the live drag could not be driven ({type(exc).__name__}: {exc})")
     finally:

@@ -87,6 +87,21 @@ marker and never fires mid-drag. Section B drives the real gesture with Live Mod
 flush, held button, release — and asserts on the DRAWING. Against the pre-fix code section A fails
 and section B cannot even run (the method does not exist).
 
+## The same ending down a second path
+
+There are **two** stale paths, not one, and the flag is probably the other one. A plain drag of the
+LED body resolves at press time to `_step_translate_drag_state` (its three translate arrows are the
+only members of `_actor_step_translate_map`), so release runs `_finish_step_translate_drag`, which
+commits with `refresh=physics_requested` — and `inspector_physics_requested` **is** `live_mode_var`
+(`open3d_trace_refresh.py:133-139`). With Live Mode OFF that is False, so the commit takes the
+partial branch and `refresh_imported_step_overlay(label)` repaints ONLY the body that was dragged,
+while the carry has just moved the whole leg.
+
+So: Live Mode ON strands the row-gizmo drag (no tail left to commit, hence no refresh), Live Mode
+OFF strands the STEP-arrow drag (a deliberately partial refresh). Opposite settings, opposite
+gestures, same ending — which is why putting the flush in `left_release` rather than in either
+commit is the fix that holds both. Guard section C covers the second path.
+
 ## Still open, found alongside
 
 Four more writers move rows or overlays **without** the carry. None is implicated in this flag, and
