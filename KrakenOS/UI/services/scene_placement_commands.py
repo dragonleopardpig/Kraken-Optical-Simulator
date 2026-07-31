@@ -134,7 +134,26 @@ class ScenePlacementMixin:
             carried = axis_tree.rows_on_emitted_leg(self.rows, tree, snaps, int(row_index))
             if not carried:
                 return None
-            return carried, np.asarray(spec["origin"], dtype=float).reshape(3)
+            # bugs/0456: capture each body's world centre BEFORE anything moves. A STEP body is
+            # ALSO anchored to its row's z-STATION, so the row translation below already drags it
+            # -- reading the body afterwards and adding the delta again double-counts. Measured on
+            # the glued LED drag: the camera moved +40 mm for a +20 mm drag. It did not show on a
+            # drag along x, where the station anchor does not apply, which is why seating
+            # ABSOLUTELY against a pre-move capture is the only version that is right on both.
+            bodies = {}
+            for label in ("camera",):
+                try:
+                    centre = self._step_body_world_center(label)
+                except Exception:
+                    centre = None
+                if centre is not None:
+                    bodies[label] = np.asarray(centre, dtype=float).reshape(3)
+            return (
+                carried,
+                np.asarray(spec["origin"], dtype=float).reshape(3),
+                bodies,
+                self._fold_slide_conjugates(),
+            )
         except Exception:
             return None
 
@@ -153,7 +172,7 @@ class ScenePlacementMixin:
         """
         if not captured:
             return
-        carried, fold_before = captured
+        carried, fold_before, bodies_before, conjugates_before = captured
         try:
             from KrakenOS.UI.nonseq_output_ports import axis_fold_emissions
         except Exception:
@@ -177,15 +196,69 @@ class ScenePlacementMixin:
                 follower.desp_y = float(follower.desp_y) + float(delta[1])
                 follower.desp_z = float(follower.desp_z) + float(delta[2])
             # The bodies bolted to those rows ride along too -- a camera is on the sensor's arm.
-            for label in ("camera",):
+            # Seated ABSOLUTELY against the pre-move capture (bugs/0456): the seater corrects by
+            # the residual, so the body lands on its intended pose whatever the row translation
+            # above already did to it.
+            for label, before_centre in (bodies_before or {}).items():
                 try:
-                    current = self._step_body_world_center(label)
-                    if current is not None:
-                        self._seat_step_body_world_center(label, np.asarray(current, dtype=float) + delta)
+                    self._seat_step_body_world_center(label, np.asarray(before_centre, dtype=float) + delta)
                 except Exception:
                     continue
         finally:
             self._fold_slide_carry_active = False
+        self._report_fold_slide_conjugates(len(carried), delta, conjugates_before)
+
+    def _fold_slide_conjugates(self):
+        """(object total, image total) as the leg splits report them, or None."""
+        totals = []
+        for reader in ("_folded_object_conjugate_split", "_folded_image_conjugate_split"):
+            try:
+                split = getattr(self, reader)()
+                totals.append(float(split["total"]) if isinstance(split, dict) else None)
+            except Exception:
+                totals.append(None)
+        return tuple(totals)
+
+    def _report_fold_slide_conjugates(self, carried_count: int, delta, before) -> None:
+        """bugs/0487: say what the slide cost optically, instead of changing it silently.
+
+        A rigid carry moves one conjugate by exactly the slide and leaves the other alone --
+        measured on the AZ85 scene, dragging the glued LED+BS down 20 mm takes the working
+        distance 53.803 -> 73.803 with the image total untouched, while sliding the RA mirror
+        20 mm along its leg takes the image total 154.770 -> 134.770 with the working distance
+        untouched. Both are what those mechanical moves really do. Doing it WITHOUT saying so is
+        the failure mode this codebase keeps repeating, so the status line names it.
+        """
+        after = self._fold_slide_conjugates()
+        parts = []
+        for label, index in (("working distance", 0), ("image distance", 1)):
+            try:
+                was, now = before[index], after[index]
+            except Exception:
+                continue
+            if was is None or now is None or abs(now - was) < 1.0e-6:
+                continue
+            parts.append(f"{label} {was:.4g} -> {now:.4g} mm ({now - was:+.4g})")
+        try:
+            distance = float(np.linalg.norm(np.asarray(delta, dtype=float)))
+        except Exception:
+            distance = 0.0
+        message = f"Fold slid {distance:.4g} mm: {carried_count} element(s) carried on its axis"
+        message += ("; " + ", ".join(parts) + "." if parts else "; conjugates unchanged.")
+        # STASHED, not set: the table sync and row re-select later in the same call overwrite
+        # status_var ("Selected row 7: ..."), so the carry's message has to be emitted LAST.
+        self._fold_slide_status_pending = message
+
+    def _flush_fold_slide_status(self) -> None:
+        """Emit the carry's message once the rest of the slide has finished writing status."""
+        message = getattr(self, "_fold_slide_status_pending", None)
+        if not message:
+            return
+        self._fold_slide_status_pending = None
+        try:
+            self.status_var.set(str(message))
+        except Exception:
+            pass
 
     def translate_scene_row_pose_vector(
         self,
@@ -215,7 +288,10 @@ class ScenePlacementMixin:
         # the snapped elements should follow the fold axis". Which elements those are has to be
         # read BEFORE the pose moves -- afterwards they are off the leg and no longer look like
         # members of it.
-        _fold_carry = self._fold_slide_carry_before(row_index)
+        # getattr, not a direct call: guards drive partial fake editors that mix in only the
+        # methods under test, and a hard call here breaks them (validate_open3d_led_bs_glue_promoted).
+        _carry_hook = getattr(self, "_fold_slide_carry_before", None)
+        _fold_carry = _carry_hook(row_index) if callable(_carry_hook) else None
         history_started = False
         if bool(record_history) and "_history_restoring" in self.__dict__ and "_history_pending_state" in self.__dict__:
             try:
@@ -237,7 +313,9 @@ class ScenePlacementMixin:
             and self._promoted_optical_solid_row_index("optical") == row_index
         ):
             self._carry_glued_optical_led("optical", delta[:3])
-        self._fold_slide_carry_apply(row_index, _fold_carry)
+        _apply_hook = getattr(self, "_fold_slide_carry_apply", None)
+        if _fold_carry is not None and callable(_apply_hook):
+            _apply_hook(row_index, _fold_carry)
         row.advanced = dict(row.advanced or {})
         settings = normalize_scene_placement_settings(row.advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {}))
         settings["last_translate_axis"] = "xyz"
@@ -269,6 +347,11 @@ class ScenePlacementMixin:
                 z=float(row.desp_z),
             )
         )
+        # AFTER append_debug: it calls update_idletasks(), which lets the deferred table
+        # re-select fire and overwrite status_var -- the carry's message has to be last.
+        _flush_hook = getattr(self, "_flush_fold_slide_status", None)
+        if callable(_flush_hook):
+            _flush_hook()
         return {
             "row_index": row_index,
             "axis": "xyz",

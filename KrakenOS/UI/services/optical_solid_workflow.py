@@ -959,7 +959,10 @@ class LayoutOpticalSolidWorkflowMixin:
         # SECOND implementation of the same operation (it carries its own copy of the BS<->LED
         # glue block too), and the drag gizmo comes through here, so a carry wired only into the
         # vector form never fires on a real drag.
-        _fold_carry = self._fold_slide_carry_before(row_index)
+        # getattr, not a direct call: guards drive partial fake editors that mix in only the
+        # methods under test, and a hard call here breaks them (validate_open3d_led_bs_glue_promoted).
+        _carry_hook = getattr(self, "_fold_slide_carry_before", None)
+        _fold_carry = _carry_hook(row_index) if callable(_carry_hook) else None
         history_started = False
         if "_history_restoring" in self.__dict__ and "_history_pending_state" in self.__dict__:
             try:
@@ -980,7 +983,9 @@ class LayoutOpticalSolidWorkflowMixin:
         ):
             vec = {"x": (delta, 0.0, 0.0), "y": (0.0, delta, 0.0), "z": (0.0, 0.0, delta)}[axis_key]
             self._carry_glued_optical_led("optical", vec)
-        self._fold_slide_carry_apply(row_index, _fold_carry)
+        _apply_hook = getattr(self, "_fold_slide_carry_apply", None)
+        if _fold_carry is not None and callable(_apply_hook):
+            _apply_hook(row_index, _fold_carry)
         row.advanced = dict(row.advanced or {})
         settings = normalize_scene_placement_settings(row.advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {}))
         settings["last_translate_axis"] = axis_key
@@ -1010,6 +1015,11 @@ class LayoutOpticalSolidWorkflowMixin:
                 z=float(row.desp_z),
             )
         )
+        # AFTER append_debug: it calls update_idletasks(), which lets the deferred table
+        # re-select fire and overwrite status_var -- the carry's message has to be last.
+        _flush_hook = getattr(self, "_flush_fold_slide_status", None)
+        if callable(_flush_hook):
+            _flush_hook()
         return {
             "row_index": row_index,
             "axis": axis_key,

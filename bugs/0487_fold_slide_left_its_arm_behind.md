@@ -71,5 +71,50 @@ is exactly what happened on the first attempt, and why guard section B asserts b
 (both slide entry points hooked) are display-free; C drives the real scene and SKIPs when the
 attachment is absent.
 
-Unchanged and re-checked: 0437 BS drag glue, 0433 rubber band, gap-to-solid slide, 0484, 0485,
-0486; 54/54 pytest.
+Unchanged and re-checked: 0437 BS drag glue, 0433 rubber band, gap-to-solid slide, LED/BS glue
+after promotion, 0484, 0485, 0486; 54/54 pytest.
+
+## Two defects found by the user's own proposed test, before it was run
+
+**The camera moved TWICE.** Simulating "glue the BS to the LED and drag it down" showed the camera
+going +40 mm for a +20 mm drag. A STEP body is ALSO anchored to its row's z-station, so the row
+translation already drags it and the explicit seat then added the delta again -- the bugs/0456
+double-count, verbatim. It did NOT show on the mirror drag because that one is along **x**, where
+the station anchor does not apply, which is precisely why the body has to be seated ABSOLUTELY
+against a pre-move capture: that is the only version right on both axes.
+
+**The hooks broke partial fake editors.** Guards here compose mixins selectively, so a direct
+``self._fold_slide_carry_before(...)`` raised ``AttributeError`` inside
+``validate_open3d_led_bs_glue_promoted``'s ``_FakeEditor``. The call sites now use ``getattr``.
+
+## The optical cost is now reported, not silent
+
+A rigid carry moves exactly one conjugate, by exactly the slide, and leaves the other alone --
+measured on the AZ85 scene:
+
+    drag glued LED+BS down +20 z   working distance 125.463 -> 145.463   image total unchanged
+    slide RA mirror -20 x          image total 154.770 -> 134.770        working distance unchanged
+
+Both are what those mechanical moves really do; doing it silently is the failure mode this
+codebase keeps repeating. The status line now says so:
+
+    Fold slid 20 mm: 1 element(s) carried on its axis; image distance 154.8 -> 134.8 mm (-20).
+
+It is emitted AFTER ``append_debug``, which calls ``update_idletasks()`` and lets the deferred
+table re-select fire -- flushing any earlier left the message overwritten by "Selected row 7: ...".
+
+## Known next: a drag is a CONSTRAINT the solver must honour
+
+Measured after these fixes -- starting in focus (residual 0.0000), dragging, then clicking Solve
+for Thickness:
+
+    slide RA mirror -20 x    residual -20.0000 after the drag  ->  -25.5266 after the solve  (WORSE)
+    drag glued LED+BS +20 z  residual +23.7662 after the drag  ->  +12.6664 after the solve  (not focused)
+
+So "just re-solve afterwards" does not work today. The user's diagnosis is the fix: a drag FIXES
+one or more of the four section thicknesses, and the solver has to treat those as pinned instead
+of re-running its own default distribution (bugs/0482's 50:50 image share, bugs/0484's hold of
+section 1), which overwrites exactly what the drag just set. Sliding the RA mirror pins section 3
+(its only meaningful DOF is along the leg feeding it); a glued LED+BS drag pins section 1 and/or 2
+depending on direction; the lens pins 2 and 3; the camera pins 4. With all four pinned the solve is
+over-constrained and must refuse rather than redistribute silently.
