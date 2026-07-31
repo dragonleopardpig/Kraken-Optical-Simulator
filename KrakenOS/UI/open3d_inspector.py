@@ -3939,15 +3939,26 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         """bugs/0493: a drag that moved a fold element carried its whole leg in the MODEL, so when
         the gesture ends the drawing has to catch up.
 
-        Live Mode makes the release path skip its own refresh. ``_flush_pending_placement_drag_for_live``
-        commits the accumulated offset MID-drag and zeroes ``pending_translate_mm``, so
-        ``_finish_placement_drag`` finds no tail and returns without ever calling
-        ``refresh_from_editor``. The mid-drag refreshes are rays-only by design (bugs/0024: "the
-        bodies/handles don't change (the dragged one tracks the cursor via its cheap actor
-        transform)") -- true when it was written, false once a carry started moving OTHER bodies.
-        So nothing redrew the carried leg at all: in flag_20260731_222802 the model had carried
-        +13.681 mm while every actor, STEP body and axis record stood still, and 88 s and a second
-        drag later flag_20260731_222930 was still showing the same stale chain.
+        TWO release paths strand it, from opposite settings, which is why this lives in
+        ``left_release`` rather than in either commit:
+
+        * **The STEP translate-ARROW drag** -- what flag_20260731_222802 actually was.
+          ``_finish_step_translate_drag`` commits with ``refresh=physics_requested``, and
+          ``inspector_physics_requested`` IS ``live_mode_var`` (open3d_trace_refresh.py:133-139).
+          With Live Mode OFF that is False, so the commit takes the partial branch and
+          ``refresh_imported_step_overlay(label)`` repaints only the body that was dragged -- and,
+          being truthy, skips the ``refresh_from_editor`` fallback below it.
+        * **The placement (row gizmo) drag with Live Mode ON.**
+          ``_flush_pending_placement_drag_for_live`` commits the accumulated offset MID-drag and
+          zeroes ``pending_translate_mm``, so ``_finish_placement_drag`` finds no tail and returns
+          without calling ``refresh_from_editor`` at all.
+
+        Under both, the mid-drag refreshes are rays-only by design (bugs/0024: "the bodies/handles
+        don't change (the dragged one tracks the cursor via its cheap actor transform)") -- true
+        when it was written, false once a carry started moving OTHER bodies. So nothing redrew the
+        carried leg: in flag_20260731_222802 the model had carried while every actor, STEP body and
+        axis record stood still, and 88 s and a second drag later flag_20260731_222930 was still
+        showing the same stale chain.
 
         Keyed on the sticky carry marker, so a drag that carried nothing keeps its interactive cost
         (bugs/0024's whole point) and only a fold move pays for the rebuild.

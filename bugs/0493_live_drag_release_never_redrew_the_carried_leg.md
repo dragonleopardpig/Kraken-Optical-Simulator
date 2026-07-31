@@ -1,4 +1,4 @@
-# 0493 — a Live-Mode drag ended without ever redrawing the carried leg
+# 0493 — a drag ended without ever redrawing the carried leg
 
 `flag_20260731_222802` (build `141abba7`) — *"glued BS + LED dragged down, no elements follow."*
 Recorded on the build whose bugs/0491 guard passes.
@@ -6,11 +6,29 @@ Recorded on the build whose bugs/0491 guard passes.
 Its sibling `flag_20260731_222930` — *"glued → save layout → restart, still glued, it works"* — is a
 **confirmation**, not a defect: bugs/0492 verified in the live app.
 
-## Why the 0491 guard passed while the app was broken
+## Which gesture this was — settled by the flags, not by guesswork
 
-That guard drives the programmatic apis (`translate_scene_row_pose`, `translate_step_overlay`), and
-through those everything follows. The user drives the gizmo, and with **Live Mode on** the release
-path is different:
+The LED's own `placement_offset_xyz` moved **+10.070 in z between the two flags**, with x
+byte-identical at −8.934. `_carry_glued_optical_led` opens with
+
+```python
+if moved == "optical":
+    return          # bugs/0437: the glue is ASYMMETRIC, a BS move never drags the LED
+```
+
+(`scene_placement_commands.py:3601`) — so no BS/row move can put a delta on the LED. The LED was
+therefore the body being dragged, and a delta that is pure z with x untouched is an
+**axis-constrained translate-ARROW drag**, not a free drag-plane carry.
+
+That path releases through `_finish_step_translate_drag`, which commits with
+`refresh=physics_requested` — and `inspector_physics_requested` **is** `live_mode_var`
+(`open3d_trace_refresh.py:133-139`). With Live Mode OFF that is False, so the commit takes the
+partial branch: `refresh_imported_step_overlay(label)` repaints only the dragged body and, being
+truthy, skips the `refresh_from_editor` fallback beneath it. Nothing consumes the marker.
+
+## The same ending down a second path (found by reproduction)
+
+A **placement (row gizmo) drag with Live Mode ON** strands the drawing too, by the opposite route:
 
 1. `_flush_pending_placement_drag_for_live` commits the accumulated offset **mid-drag** and zeroes
    `pending_translate_mm` — bugs/0024, so the live trace reflects the dragged pose.
@@ -38,14 +56,24 @@ axis:global:split                  still z 53.80
 marker still pending at the end    True
 ```
 
-which is `flag_20260731_222802` exactly — its row 3 actor sits at z[30.31, 105.97], the same value
-this reproduction produces. Not a slow rebuild either: 88 s and a second drag later,
-`flag_20260731_222930` still showed the same stale chain.
+Not a slow rebuild either: 88 s and a second drag later, `flag_20260731_222930` still showed the
+same stale chain.
+
+So: Live Mode ON strands the row-gizmo drag (no tail left to commit, hence no refresh), Live Mode
+OFF strands the STEP-arrow drag (a deliberately partial refresh). Opposite settings, opposite
+gestures, same ending.
+
+## Why the 0491 guard passed while the app was broken
+
+It drives the programmatic apis (`translate_scene_row_pose`, `translate_step_overlay`), and through
+those everything follows — `translate_step_overlay` defaults to `refresh=True`, which is exactly the
+argument the interactive path does *not* pass.
 
 ## Reading the flags: what the recorder does and does not dump
 
-`state.json` records `desp` only for rows carrying a `StepOverlayPromotion`
-(`open3d_event_recorder.py`), and rows 3 and 7 are the only promoted rows in this scene. Rows
+`state.json` records `desp` only for rows carrying BOTH a non-empty `Solid_3d_stl` and a
+`StepOverlayPromotion` dict (`open3d_event_recorder.py:441-451`), and rows 3 and 7 are the only such
+rows in this scene. Rows
 1,2,4,5,6,8 have **no model field in the snapshot at all**. So "only the promoted rows moved" is an
 artifact of what the recorder dumps, not of the carry — an inference I made from
 `flag_20260731_222930` and had to withdraw. The carry moves every row on the emitted leg:
@@ -87,21 +115,6 @@ marker and never fires mid-drag. Section B drives the real gesture with Live Mod
 flush, held button, release — and asserts on the DRAWING. Against the pre-fix code section A fails
 and section B cannot even run (the method does not exist).
 
-## The same ending down a second path
-
-There are **two** stale paths, not one, and the flag is probably the other one. A plain drag of the
-LED body resolves at press time to `_step_translate_drag_state` (its three translate arrows are the
-only members of `_actor_step_translate_map`), so release runs `_finish_step_translate_drag`, which
-commits with `refresh=physics_requested` — and `inspector_physics_requested` **is** `live_mode_var`
-(`open3d_trace_refresh.py:133-139`). With Live Mode OFF that is False, so the commit takes the
-partial branch and `refresh_imported_step_overlay(label)` repaints ONLY the body that was dragged,
-while the carry has just moved the whole leg.
-
-So: Live Mode ON strands the row-gizmo drag (no tail left to commit, hence no refresh), Live Mode
-OFF strands the STEP-arrow drag (a deliberately partial refresh). Opposite settings, opposite
-gestures, same ending — which is why putting the flush in `left_release` rather than in either
-commit is the fix that holds both. Guard section C covers the second path.
-
 ## Still open, found alongside
 
 Four more writers move rows or overlays **without** the carry. None is implicated in this flag, and
@@ -113,6 +126,15 @@ each needs its own scene to provoke:
 | `translate_step_overlay` detector-thickness write — `rows[-2].thickness +=` relocates the Image row and every station downstream | `scene_placement_commands.py:3895` |
 | `translate_step_overlay` lens front-gap write — same class | `scene_placement_commands.py:3903` |
 | `slide_lens_along_axis` — rewrites preceding/trailing thicknesses, no carry hook | `scene_placement_commands.py:611` |
+| `move_axis_downstream_to_axis` / `snap_rows_to_axis` — the 0432 "Move Elements to Optical Axis" rewrites `desp` AND `tilt` of every moved row | `scene_placement_commands.py:5667` |
+| `_apply_stl_row_pose` — shared writer for `apply_stl_axis_fit` / `rotate_stl_row_pose` / `center_stl_row_xy` / `place_stl_row_front_on_station` | `optical_solid_workflow.py:876` |
+
+Wider still on the overlay side: **fourteen** other STEP-overlay movers (`rotate_step_axis`,
+`rotate_step_world_axis`, `center_step_axis_on_world_point`, `snap_step_overlay_face_to_optical_axis`
+and its `_pair` form, `snap_step_feature_normal_to_optical_axis`, `center_step_feature_on_optical_axis`,
+`orient_step_feature_normal_to_direction`, `seat_camera_on_sensor`, `glue_step_overlay_to_surrogate`, …)
+do not carry even the **glue**, let alone the fold — `translate_step_overlay` is the only overlay
+mutator that reaches `_carry_glued_optical_led` at all.
 
 A thickness write is the common shape: it relocates fold rows without ever touching `desp`, so no
 `translate_*`/`rotate_*` hook sees it. The carry is currently wired into exactly four methods —
