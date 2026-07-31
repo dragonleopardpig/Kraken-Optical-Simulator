@@ -98,6 +98,95 @@ def _history_atomic(func):
 
 
 class ScenePlacementMixin:
+    def _fold_slide_carry_before(self, row_index: int):
+        """bugs/0485 rule 3: the rows riding on this folder's emitted leg, and where that leg is.
+
+        Returns ``(carried_row_indices, fold_point_before)`` or ``None`` when this row does not
+        fold the axis. Read BEFORE the slide: once the folder has moved, the elements that were on
+        its leg are off it, and asking then would find nothing.
+
+        Measured on the AZ85 scene before this existed: dragging the RA mirror 20 mm along its
+        incoming leg moved the fold point but left the sensor and the camera exactly where they
+        were -- 20 mm OFF the beam, i.e. the arm detached from the fold. The sanctioned leg-split
+        writer never had this problem (it re-seats the sensor and camera itself, bugs/0447); the
+        free drag had no equivalent.
+        """
+        try:
+            from KrakenOS.UI.nonseq_output_ports import axis_fold_emissions
+            from KrakenOS.UI.services import optical_axis_tree as axis_tree
+        except Exception:
+            return None
+        if getattr(self, "_fold_slide_carry_active", False):
+            return None  # carrying the followers must not recurse into another carry
+        try:
+            emissions = axis_fold_emissions(self.rows) or {}
+            spec = emissions.get(int(row_index))
+            if spec is None:
+                return None
+            tree = axis_tree.build_axis_tree(
+                self.rows,
+                fold_emissions={
+                    key: {"origin": value["origin"], "direction": value["direction"], "kind": "reflect"}
+                    for key, value in emissions.items()
+                },
+            )
+            snaps = axis_tree.snap_rows(self.rows, tree)
+            carried = axis_tree.rows_on_emitted_leg(self.rows, tree, snaps, int(row_index))
+            if not carried:
+                return None
+            return carried, np.asarray(spec["origin"], dtype=float).reshape(3)
+        except Exception:
+            return None
+
+    def _fold_slide_carry_apply(self, row_index: int, captured) -> None:
+        """bugs/0485 rule 3: translate the folder's followers by however far its fold point went.
+
+        A pure TRANSLATION, deliberately: a slide moves the emitted leg's origin and leaves its
+        direction alone, so every element keeps its own arc-length along that leg and its own
+        transverse offset -- which is exactly "follows the fold axis". Rotating a folder is rule 4
+        and needs the leg's DIRECTION carried too; it is not attempted here.
+
+        Note this changes the optical path length, and so the focus: sliding a fold mirror away
+        from the lens with the camera bolted to its arm genuinely lengthens lens -> sensor. The
+        conjugate-PRESERVING slide is a different intent and already exists as the leg-split
+        constraint, which trades near against far and holds the total.
+        """
+        if not captured:
+            return
+        carried, fold_before = captured
+        try:
+            from KrakenOS.UI.nonseq_output_ports import axis_fold_emissions
+        except Exception:
+            return
+        try:
+            spec = (axis_fold_emissions(self.rows) or {}).get(int(row_index))
+            if spec is None:
+                return
+            delta = np.asarray(spec["origin"], dtype=float).reshape(3) - np.asarray(fold_before, dtype=float)
+        except Exception:
+            return
+        if not np.all(np.isfinite(delta)) or not np.any(np.abs(delta) > 1.0e-9):
+            return
+        self._fold_slide_carry_active = True
+        try:
+            for carried_index in carried:
+                if not (0 <= int(carried_index) < len(self.rows)):
+                    continue
+                follower = self.rows[int(carried_index)]
+                follower.desp_x = float(follower.desp_x) + float(delta[0])
+                follower.desp_y = float(follower.desp_y) + float(delta[1])
+                follower.desp_z = float(follower.desp_z) + float(delta[2])
+            # The bodies bolted to those rows ride along too -- a camera is on the sensor's arm.
+            for label in ("camera",):
+                try:
+                    current = self._step_body_world_center(label)
+                    if current is not None:
+                        self._seat_step_body_world_center(label, np.asarray(current, dtype=float) + delta)
+                except Exception:
+                    continue
+        finally:
+            self._fold_slide_carry_active = False
+
     def translate_scene_row_pose_vector(
         self,
         row_index: int,
@@ -122,6 +211,11 @@ class ScenePlacementMixin:
             raise RuntimeError("3D placement translation vector is zero")
         row = self.rows[row_index]
         before = (float(row.desp_x), float(row.desp_y), float(row.desp_z))
+        # bugs/0485 rule 3: "if the user slide the elements that introduce a fold axis, then all
+        # the snapped elements should follow the fold axis". Which elements those are has to be
+        # read BEFORE the pose moves -- afterwards they are off the leg and no longer look like
+        # members of it.
+        _fold_carry = self._fold_slide_carry_before(row_index)
         history_started = False
         if bool(record_history) and "_history_restoring" in self.__dict__ and "_history_pending_state" in self.__dict__:
             try:
@@ -143,6 +237,7 @@ class ScenePlacementMixin:
             and self._promoted_optical_solid_row_index("optical") == row_index
         ):
             self._carry_glued_optical_led("optical", delta[:3])
+        self._fold_slide_carry_apply(row_index, _fold_carry)
         row.advanced = dict(row.advanced or {})
         settings = normalize_scene_placement_settings(row.advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {}))
         settings["last_translate_axis"] = "xyz"

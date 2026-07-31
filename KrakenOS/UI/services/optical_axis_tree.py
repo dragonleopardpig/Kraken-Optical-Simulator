@@ -303,3 +303,50 @@ def describe(rows, tree, snaps) -> str:
             f"off={snap.offset:8.4f}"
         )
     return "\n".join(lines)
+
+
+def descendant_segment_ids(tree, segment_id: str) -> "set[str]":
+    """``segment_id`` and every segment below it."""
+    out = {str(segment_id)}
+    changed = True
+    while changed:
+        changed = False
+        for segment in tree.values():
+            if segment.parent_id in out and segment.segment_id not in out:
+                out.add(segment.segment_id)
+                changed = True
+    return out
+
+
+def rows_on_emitted_leg(rows, tree, snaps, folder_row: int) -> "list[int]":
+    """Rows snapped to a folder's emitted leg, or to anything below it (bugs/0485 rule 3).
+
+    "If the user slide the elements that introduce a fold axis, then all the snapped elements
+    should follow the fold axis." These are those elements: everything sitting on the leg the
+    folder emits, plus everything on legs emitted further down that chain -- slide the first
+    mirror of a periscope and the second mirror's arm has to come too.
+
+    Excludes the folder itself (it is what moved) and any ``Object`` row (the station anchor the
+    whole prescription is measured from).
+    """
+    emitted = None
+    for segment in tree.values():
+        if segment.source_row is not None and int(segment.source_row) == int(folder_row):
+            emitted = segment
+            break
+    if emitted is None:
+        return []
+    family = descendant_segment_ids(tree, emitted.segment_id)
+    carried = []
+    for snap in snaps:
+        if int(snap.row_index) == int(folder_row):
+            continue
+        if snap.segment_id not in family:
+            continue
+        try:
+            if str(getattr(rows[int(snap.row_index)], "surface", "") or "") == "Object":
+                continue
+        except Exception:
+            pass
+        carried.append(int(snap.row_index))
+    return carried

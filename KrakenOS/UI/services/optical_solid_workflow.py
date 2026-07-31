@@ -955,6 +955,11 @@ class LayoutOpticalSolidWorkflowMixin:
             raise RuntimeError("3D placement translation step is zero or non-finite")
         row = self.rows[row_index]
         before = float(getattr(row, attr))
+        # bugs/0485 rule 3, same hook as translate_scene_row_pose_vector -- this axis form is a
+        # SECOND implementation of the same operation (it carries its own copy of the BS<->LED
+        # glue block too), and the drag gizmo comes through here, so a carry wired only into the
+        # vector form never fires on a real drag.
+        _fold_carry = self._fold_slide_carry_before(row_index)
         history_started = False
         if "_history_restoring" in self.__dict__ and "_history_pending_state" in self.__dict__:
             try:
@@ -975,6 +980,7 @@ class LayoutOpticalSolidWorkflowMixin:
         ):
             vec = {"x": (delta, 0.0, 0.0), "y": (0.0, delta, 0.0), "z": (0.0, 0.0, delta)}[axis_key]
             self._carry_glued_optical_led("optical", vec)
+        self._fold_slide_carry_apply(row_index, _fold_carry)
         row.advanced = dict(row.advanced or {})
         settings = normalize_scene_placement_settings(row.advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {}))
         settings["last_translate_axis"] = axis_key
