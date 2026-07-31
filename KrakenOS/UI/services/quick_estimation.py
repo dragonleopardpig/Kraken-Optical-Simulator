@@ -1342,11 +1342,59 @@ class QuickEstimationService:
         # settled -- otherwise the image re-bake would be computed against a chain that is about
         # to translate.
         _object_note = self._rebalance_object_leg_sections(_pre_object_split, _pre_led_offset)
+        _focus_note = self._finish_solve_on_traced_focus()
         return True, (
             f"Solved thickness: object {object_distance:.6g} mm, "
             f"image {image_distance:.6g} mm (|m|={mag:.4g}).{_frozen_note}"
-            f"{_collision_note}{_share_note}{_object_note}"
+            f"{_collision_note}{_share_note}{_object_note}{_focus_note}"
         )
+
+    def _finish_solve_on_traced_focus(self) -> str:
+        """bugs/0490: land the solve on the TRACED focus, not just the paraxial plane.
+
+        The solve targets the prescription's paraxial image distance, and on a real scene the
+        traced best focus is somewhere else -- measured on the AZ85 BS scene, solving for the field
+        the system was ALREADY at took the residual from -0.0000 to -7.3808 and put the image
+        distance back to the as-loaded 154.770 mm, undoing a snap that had it at 162.151. That gap
+        is a genuine optical effect (real-ray aberration plus the glass paths through the BS cube
+        and the prism), not an arithmetic error: it varies with conjugate, -7.38 mm at 1.15X and
+        -3.69 mm at 28 x 28.
+
+        So "click Solve for Thickness" could never focus by construction. Measured, the snap costs
+        NOTHING in field accuracy -- solve then snap lands the field at exactly 23.000 mm AND the
+        residual at -0.0000, in a single cycle, with no iteration -- so the solve now finishes with
+        it. Repeating the solve afterwards would undo it again, which is why it belongs inside the
+        solve rather than in the user's hands.
+
+        Skipped when the sensor leg is pinned by hand (bugs/0489): the snap moves the detector
+        along that leg, so honouring the pin has to win over auto-focusing.
+        """
+        if getattr(self.editor, "_solve_focus_finish_active", False):
+            return ""
+        pins = self._axis_section_pins()
+        if pins.get("image_far") is not None:
+            return " Sensor leg pinned by hand: left where you placed it, not snapped to focus."
+        snap = getattr(self.editor, "snap_detector_to_image_plane", None)
+        if not callable(snap):
+            return ""
+        try:
+            before = float(self.editor._traced_bundle_best_focus_shift())
+        except Exception:
+            before = float("nan")
+        self.editor._solve_focus_finish_active = True
+        try:
+            snap()
+        except Exception as exc:
+            return f" Focus snap skipped ({type(exc).__name__}: {exc})."
+        finally:
+            self.editor._solve_focus_finish_active = False
+        try:
+            after = float(self.editor._traced_bundle_best_focus_shift())
+        except Exception:
+            return " Snapped the detector to the traced focus."
+        if not np.isfinite(before):
+            return " Snapped the detector to the traced focus."
+        return f" Focus: residual {before:+.4g} -> {after:+.4g} mm (snapped to the traced focus)."
 
     def _rebalance_object_leg_sections(self, pre: "dict | None", led_offset=None) -> str:
         """bugs/0484: put the whole object-side change into section 2, holding section 1.

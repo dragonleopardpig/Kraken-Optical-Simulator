@@ -76,14 +76,28 @@ def run_checks() -> tuple[bool, list[str]]:
 
         before = _axial_rms(app)
         moved = bool(app.snap_detector_to_image_plane())
+        reason = str(app.status_var.get())
         after = _axial_rms(app)
-        if moved:
-            notes.append(f"SNAPPED = remove-defocus succeeded ({str(app.status_var.get())[:60]})")
+        # bugs/0490 changed what this can assert, and the reason matters more than the wording.
+        # The defect here was that the snap REFUSED on a splitter scene -- "best focus is not
+        # computable for this layout" -- so the invariant is that it is COMPUTABLE and the scene
+        # ends at best focus, not that this particular call moves something. Since the solve now
+        # finishes on the traced focus itself, there is usually nothing left to remove by the time
+        # this runs, and "Detector already at best focus" is the healthy answer. A refusal that
+        # says "not computable" is still the bug and still fails.
+        already = "already at best focus" in reason.lower()
+        if moved or already:
+            notes.append(
+                f"SNAPPED = remove-defocus is computable on the splitter scene "
+                f"({'moved' if moved else 'already at best focus after the solve'}: {reason[:52]})"
+            )
         else:
-            notes.append(f"SNAPPED remove-defocus refused: {str(app.status_var.get())[:70]}")
+            notes.append(f"SNAPPED remove-defocus refused: {reason[:70]}")
             ok = False
+        # ... and the spot is AT the minimum, whether this call or the solve put it there.
         if before is not None and after is not None and after <= before + 1e-9:
-            notes.append(f"FOCUSED = the axial spot shrank {before:.4g} -> {after:.4g} mm RMS")
+            trend = "shrank" if after < before - 1e-12 else "was already at the minimum"
+            notes.append(f"FOCUSED = the axial spot {trend} {before:.4g} -> {after:.4g} mm RMS")
         else:
             notes.append(f"FOCUSED the axial spot did not improve: {before} -> {after}")
             ok = False
