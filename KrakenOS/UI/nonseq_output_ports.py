@@ -1862,8 +1862,9 @@ def _surface_row_fold_emission(row, pose, axis_origin, incoming):
     reflected = _unit_vector(direction - 2.0 * float(np.dot(direction, normal)) * normal)
     if reflected is None:
         return None
-    if _exit_frame_is_non_folding(_frame_rotation_from_normal(reflected), direction):
-        return None  # a surface square-on to the beam is not a fold
+    # No codirectional check here, deliberately: a crossing exists only when ``d . n != 0``, and a
+    # reflection then always turns the beam. The degenerate case is a surface square-ON to the
+    # beam, which RETRO-reflects (180 deg) -- a real fold, not a pass-through.
     return [(hit, reflected)]
 
 

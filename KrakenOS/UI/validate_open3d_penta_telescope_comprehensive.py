@@ -15383,6 +15383,9 @@ phase_391_object_leg_holds_section_one = _phase_from_standalone(
 phase_392_fold_point_stays_on_its_axis = _phase_from_standalone(
     392, "a fold point stays ON the axis feeding it; a station is not that axis (0486)",
     "KrakenOS.UI.validate_open3d_0486_fold_point_stays_on_its_axis", "fold_point_stays_on_its_axis")
+phase_393_axis_fold_emissions = _phase_from_standalone(
+    393, "one axis-fold derivation: consuming vs branching, multi-bounce, live and frozen (0485)",
+    "KrakenOS.UI.validate_open3d_0485_axis_fold_emissions", "axis_fold_emissions")
 
 
 # ---------------------------------------------------------------------------
@@ -15822,6 +15825,7 @@ def main() -> int:
             phase_390_promoted_solid_live_center,
             phase_391_object_leg_holds_section_one,
             phase_392_fold_point_stays_on_its_axis,
+            phase_393_axis_fold_emissions,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
