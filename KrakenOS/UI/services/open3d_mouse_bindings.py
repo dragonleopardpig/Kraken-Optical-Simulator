@@ -341,7 +341,7 @@ class Open3DMouseBindingsService:
             self._left_drag_last_xy = current
             return "break"
 
-        def left_release(event):
+        def _left_release_body(event):
             record_mouse("mouse_release", event, 1)
             set_event_info(event)
             should_pick = self._left_drag_active and not self._left_drag_moved
@@ -436,6 +436,16 @@ class Open3DMouseBindingsService:
             elif placement_drag_state is not None:
                 self._finish_placement_drag(placement_drag_state)
             return "break"
+
+        def left_release(event):
+            # bugs/0493: whichever of the eight branches above a release takes, the drawing has to
+            # end up agreeing with the model. Wrapped rather than added to each branch because this
+            # family has now been fixed one entry point at a time four times (bugs/0487, 0488,
+            # 0491) -- guard the invariant, not the caller.
+            try:
+                return _left_release_body(event)
+            finally:
+                self._flush_fold_carry_rebuild_after_drag()
 
         def middle_press(event):
             record_mouse("mouse_press", event, 2)

@@ -3935,6 +3935,40 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self.editor._drag_preview_ray_count_override = 3
                 self.schedule_live_refresh("placement drag")
 
+    def _flush_fold_carry_rebuild_after_drag(self) -> None:
+        """bugs/0493: a drag that moved a fold element carried its whole leg in the MODEL, so when
+        the gesture ends the drawing has to catch up.
+
+        Live Mode makes the release path skip its own refresh. ``_flush_pending_placement_drag_for_live``
+        commits the accumulated offset MID-drag and zeroes ``pending_translate_mm``, so
+        ``_finish_placement_drag`` finds no tail and returns without ever calling
+        ``refresh_from_editor``. The mid-drag refreshes are rays-only by design (bugs/0024: "the
+        bodies/handles don't change (the dragged one tracks the cursor via its cheap actor
+        transform)") -- true when it was written, false once a carry started moving OTHER bodies.
+        So nothing redrew the carried leg at all: in flag_20260731_222802 the model had carried
+        +13.681 mm while every actor, STEP body and axis record stood still, and 88 s and a second
+        drag later flag_20260731_222930 was still showing the same stale chain.
+
+        Keyed on the sticky carry marker, so a drag that carried nothing keeps its interactive cost
+        (bugs/0024's whole point) and only a fold move pays for the rebuild.
+        """
+        for attr in (
+            "_placement_drag_state",
+            "_step_translate_drag_state",
+            "_step_carry_drag_state",
+            "_row_carry_drag_state",
+            "_axis_slide_drag_state",
+        ):
+            if getattr(self, attr, None) is not None:
+                return
+        if not bool(getattr(self.editor, "_fold_carry_pending_rebuild", False)):
+            return
+        try:
+            # refresh_from_editor consumes the marker and promotes itself to a forced retrace.
+            self.refresh_from_editor()
+        except Exception as exc:
+            self.editor.append_debug(f"Fold-carry rebuild after drag failed: {exc}")
+
     def _finish_placement_drag(self, state: dict[str, object]) -> None:
         # bugs/0024: the drag preview traced a sparse fan; clear the override so
         # the on-release commit retraces the full-fidelity bundle.
