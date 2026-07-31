@@ -176,8 +176,14 @@ class ScenePlacementMixin:
             # the glued LED drag: the camera moved +40 mm for a +20 mm drag. It did not show on a
             # drag along x, where the station anchor does not apply, which is why seating
             # ABSOLUTELY against a pre-move capture is the only version that is right on both.
+            # Every body bolted to the carried rows, not just the camera. flag_20260731_192318
+            # ("BS glued to LED and drag down: the rest not following"): the rows all carried
+            # +25.28 mm and so did the camera, but the LENS body sat at z 26.3 throughout --
+            # it is a separate overlay with its own placement offset, and only the camera was
+            # ever re-seated. The LED is excluded on purpose: it is the body being dragged, and
+            # bugs/0437's glue is asymmetric anyway.
             bodies = {}
-            for label in ("camera",):
+            for label in ("camera", "lens"):
                 try:
                     centre = self._step_body_world_center(label)
                 except Exception:
