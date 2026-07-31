@@ -17203,6 +17203,23 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # hidden items and overlay toggles (once per layout file; the camera is
         # applied after the build, in refresh_scene).
         self._maybe_restore_open3d_session_state()
+        # bugs/0491: if the EDITOR says its preview trace is dirty, this refresh must retrace --
+        # whatever the caller asked for. A model change made outside the ordinary edit path (the
+        # bugs/0487 fold carry rewrites carried rows' desp directly) leaves callers like
+        # _apply_scene_placement_translate_handle calling refresh_from_editor() with no
+        # force_retrace, so the drawing keeps the pre-change poses. Measured on
+        # flag_20260731_210040, taken after a full relaunch on the fix that only invalidated the
+        # cache: every carried row's desp moved +15.39 mm and NOT ONE actor or axis record did --
+        # row 7 still drawn at z[41.16, 66.50], axis:global:split still at z 53.803.
+        #
+        # Enforced HERE rather than at each call site on purpose: this is the third time this
+        # family has been fixed one caller at a time (bugs/0248, 0296, 0298 -- "eleven others
+        # retraced the 3D and left the 2D showing the OLD prescription"). Guard the invariant.
+        if not force_retrace:
+            try:
+                force_retrace = bool(getattr(self.editor, "_preview_scene_trace_dirty", False))
+            except Exception:
+                force_retrace = False
         if self._maybe_begin_async_scene_trace(sampling_mode=sampling_mode, force_retrace=force_retrace):
             # bugs/0450: the async kick used to return having painted NOTHING, so a model
             # change made with Show Rays ON (add a beam splitter, delete the fold mirror)

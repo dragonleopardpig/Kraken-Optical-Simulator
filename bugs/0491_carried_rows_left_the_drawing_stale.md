@@ -33,6 +33,34 @@ cannot reuse the pre-carry bundle. Verified:
     dirty after mirror slide      True
     dirty after glued LED drag    True
 
+## The second half, measured after the first fix shipped
+
+`flag_20260731_210040` — *"dragged glued BS and LED, the rest not followed. This is after quit
+Kitty and relaunched."* — on build `bf06e2b9`, i.e. with the cache invalidation in and no possible
+stale-process explanation:
+
+| | as loaded | in the flag | |
+|---|---|---|---|
+| LED body | z 5.60 | z 20.99 | +15.39 (the drag) |
+| BS row 3 `desp_z` | −103.676 | −88.285 | **+15.39** model |
+| mirror row 7 `desp_z` | −235.102 | −219.711 | **+15.39** model carried |
+| mirror row 7 **actor** | z[41.30, 66.30] | z[41.16, 66.50] | unchanged |
+| lens body **actor** | z[26.30, 81.30] | z[26.30, 81.30] | unchanged |
+| `axis:global:split` | z 53.803 | z 53.803 | unchanged |
+
+Every carried row's `desp` moved and **not one** actor or axis record did. Only row 3's actor moved
+(+15.25) — that is the body being dragged, which gets a cheap live transform.
+
+So invalidating the cache was necessary and not sufficient: **no retrace ran at all**.
+`_apply_scene_placement_translate_handle` calls `refresh_from_editor()` with no `force_retrace`,
+and nothing else asked for one.
+
+`refresh_from_editor` now promotes itself to a retrace whenever the EDITOR reports
+`_preview_scene_trace_dirty`, whatever the caller asked for. Enforced there rather than at each
+call site deliberately: this is the third time the family has been fixed one caller at a time
+(bugs/0248, 0296, 0298 — *"eleven others retraced the 3D and left the 2D showing the OLD
+prescription"*). Guard the invariant, not the instance.
+
 ## Scope — what this does not do
 
 It removes the **cache** cause. It does not force a refresh to happen: the row-gizmo commit
@@ -42,8 +70,10 @@ pattern. `validate_open3d_model_change_marks_2d_stale` does not catch it because
 about pairing a retrace with 2D staleness and accepts `_stl_placement_dirty = True` as the marker —
 a different concern.
 
-So if the drawing is still stale after this, the remaining half is "no full retrace runs after the
-carry", which is an inspector-side change. That needs a live check: actors cannot be built
-headlessly here, so this fix is verified at the cache level only.
+Actors still cannot be built headlessly here, so the retrace promotion is verified by its
+precondition (the dirty flag flips) and by regression rather than by observing the actors move.
+That last step needs a live drag.
 
-0487, 0489, 0437 and the model-change pairing guard all PASS; 54/54 pytest.
+0487, 0489, 0437, 0486 and the model-change pairing guard all PASS; 54/54 pytest. Gate --phases
+8,251,381,382,386,389,392..395 = 9 pass, 1 known-failing (251, in baseline) -- phase 8 included on
+purpose, since it is the "second rays-on lost segments" check the force_retrace path warns about.
