@@ -271,6 +271,19 @@ class ScenePlacementMixin:
                     continue
         finally:
             self._fold_slide_carry_active = False
+        # bugs/0491: the carry moves rows OUTSIDE the normal edit path, so a cached preview
+        # trace survives the refresh that follows and the drawn actors keep the old poses.
+        # flag_20260731_192318 is what that looks like from the outside: row 7's desp moved
+        # +25.27 mm while its row_actor_bounds stayed at z[41.16, 66.50], so a chain that had
+        # carried correctly still read as "the rest not following". Same shape as
+        # flag_20260730_160244, where axis:global:split was byte-identical after the BS moved
+        # 22 mm. Mark the trace dirty so the next build cannot reuse it.
+        try:
+            self._invalidate_preview_scene_trace(
+                f"fold carry moved {len(carried)} element(s) with row S{row_index}"
+            )
+        except Exception:
+            pass
         self._pin_moved_fold_section(row_index, delta)
         self._report_fold_slide_conjugates(len(carried), delta, conjugates_before)
 
