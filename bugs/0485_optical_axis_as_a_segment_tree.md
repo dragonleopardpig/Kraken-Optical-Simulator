@@ -151,7 +151,71 @@ worse than no rule.
 `axis_fold_emissions` is committed as-is: additive, read-only, called by nothing in production. Its
 value right now is the measurement above.
 
-## Next (stage 1b)
+## Stage 1b: one derivation for live AND frozen
+
+Stage 1a's classifier found nothing on the flagged scene, and the reason turned out not to be
+frozenness at all. Instrumenting every guard, per row:
+
+* **row 3 (the BS)** -- coating faces present, ``marked_BS=True``, but ``specular=False``.
+  ``_reflected_frame_from_interaction_face`` refuses a ``Beam Splitter`` function on purpose
+  (``_is_specular_fold_interaction_face`` accepts Mirror/uncoated only) because a BS must never
+  fold the FOLLOWER chain (bugs/0398). It does still EMIT a reflect axis -- bugs/0428's coating
+  geometry -- so the axis derivation has to reflect off the coating directly.
+* **row 7 (the RA mirror)** -- ``full_mirror_face=True``, ``specular=True``, and STILL no frame,
+  because of the bugs/0224 hit-radius test: *"a mirror face only folds the frame when the beam
+  LINE actually crosses the face"*. The mirror sits at x = 229.93 on the BS's reflect leg, and the
+  probe line ran from ``(0, 0, z_station)`` along +Z, which never reaches it. The helper was right;
+  the input was wrong.
+
+**Each folder must be probed from the axis that actually feeds it, and which axis that is, is told
+by the folder's own POSE.** That single change is also what removes the live/frozen split: a frozen
+scene has no live fold overrides but it still has poses (``station + desp``) and the same face
+records, so there is no frozen branch in the derivation at all.
+
+Two further corrections the measurement forced:
+
+* **a full mirror outranks an inferred port.** The old order tried the output face first and only
+  reached the mirror when ``_exit_frame_is_non_folding`` fired -- a test against the INCOMING
+  direction, so it worked only while every probe used the nominal +Z axis. Once row 7 was correctly
+  probed from (1,0,0), its +Z Transmit/Port face stopped looking codirectional and it emitted
+  ``(0,0,1)`` from an inferred port. Rank on what the face IS (bugs/0185), not on where the beam
+  came from.
+* **an axis wants the CROSSING, not the exit frame.** ``_reflected_frame_from_interaction_face``
+  returns ``hit + reflected * (thickness - pre_hit_run)`` with ``pre_hit_run`` measured from the
+  row's station marker (bugs/0207) -- correct for follower bookkeeping, but it moves when the probe
+  point moves along the same line. Measured: penta prism 1's fold point shifted z 57.626 -> 96.517.
+  ``_interaction_fold_emission`` intersects the leg with the face plane instead, keeping the
+  bugs/0224 hit test, so the answer depends only on the line.
+
+### Result
+
+On the flagged scene the derivation now reproduces the app's own frozen records to machine
+precision, from faces and poses alone:
+
+| fold | app's record | classifier | \|Δorigin\| | \|Δdir\| |
+|---|---|---|---|---|
+| BS row 3 | (0, 0, 53.8032) → (1,0,0) | identical | **7.11e-15** | 4.58e-12 |
+| mirror row 7 | (229.9299, 0, 53.8032) → (0,0,−1) | identical | **2.38e-10** | 2.40e-15 |
+
+and it classifies them correctly: row 3 ``branching`` (the transmit leg carries on), row 7
+``consuming`` with ``parent_row=3`` -- i.e. it knows the mirror hangs off the BS's reflect leg,
+which is the fact stage 1a could not represent.
+
+### Known gaps, deliberately not papered over
+
+* **multi-bounce solids.** A penta prism folds TWICE internally (two ``Mirror`` faces); the
+  derivation applies one interaction face and so emits the intermediate 45° leg, after which the
+  rest of the cascade no longer lies on it -- 1 of 5 folders found. The emission needs to compose
+  the bounces within a solid.
+* **non-promoted BS / Mirror rows.** ``Beam Splitter Two Path Doublets``' splitter is a plain
+  surface row (``has_optical_solid=False``), so the face path cannot see it at all. Those rows need
+  their normal from the row's own tilt.
+* ``AZ85 RA mirror (no BS)`` reports a self-consistent two-fold periscope; that scene has no
+  conjugate splits to check against, so it is unverified rather than known-good.
+
+``axis_fold_emissions`` remains called by nothing in production.
+
+## Next
 
 Introduce the authoritative emission source — one function answering "does this row fold the axis,
 and what does it emit?" covering marked BS coatings, `Mirror` surfaces and folding promoted solids
