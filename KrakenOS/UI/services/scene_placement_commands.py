@@ -97,6 +97,42 @@ def _history_atomic(func):
     return _wrapped
 
 
+def _rotation_between_directions(before, after, *, tolerance: float = 1.0e-9):
+    """The rotation carrying ``before`` onto ``after``, or None when they already agree.
+
+    bugs/0488: a folder that turns takes its emitted leg with it (the reflection law gives 2x the
+    mirror's rotation), and everything snapped to that leg has to turn with it about the fold
+    point. Rodrigues; the antiparallel case picks any perpendicular axis, which is the right
+    answer for a 180 degree retro-fold.
+    """
+    try:
+        d0 = np.asarray(before, dtype=float).reshape(3)
+        d1 = np.asarray(after, dtype=float).reshape(3)
+    except Exception:
+        return None
+    n0, n1 = float(np.linalg.norm(d0)), float(np.linalg.norm(d1))
+    if not (np.isfinite(n0) and np.isfinite(n1)) or n0 <= 1e-12 or n1 <= 1e-12:
+        return None
+    d0, d1 = d0 / n0, d1 / n1
+    cosine = float(np.clip(np.dot(d0, d1), -1.0, 1.0))
+    if cosine >= 1.0 - tolerance:
+        return None  # unchanged: a pure slide
+    axis = np.cross(d0, d1)
+    norm = float(np.linalg.norm(axis))
+    if norm <= 1e-12:
+        seed = np.asarray((1.0, 0.0, 0.0)) if abs(d0[0]) < 0.9 else np.asarray((0.0, 1.0, 0.0))
+        axis = np.cross(d0, seed)
+        norm = float(np.linalg.norm(axis))
+        if norm <= 1e-12:
+            return None
+    axis = axis / norm
+    angle = float(np.arccos(cosine))
+    cross = np.asarray(
+        ((0.0, -axis[2], axis[1]), (axis[2], 0.0, -axis[0]), (-axis[1], axis[0], 0.0)), dtype=float
+    )
+    return np.eye(3) + np.sin(angle) * cross + (1.0 - np.cos(angle)) * (cross @ cross)
+
+
 class ScenePlacementMixin:
     def _fold_slide_carry_before(self, row_index: int):
         """bugs/0485 rule 3: the rows riding on this folder's emitted leg, and where that leg is.
@@ -153,6 +189,7 @@ class ScenePlacementMixin:
                 np.asarray(spec["origin"], dtype=float).reshape(3),
                 bodies,
                 self._fold_slide_conjugates(),
+                np.asarray(spec["direction"], dtype=float).reshape(3),
             )
         except Exception:
             return None
@@ -172,7 +209,7 @@ class ScenePlacementMixin:
         """
         if not captured:
             return
-        carried, fold_before, bodies_before, conjugates_before = captured
+        carried, fold_before, bodies_before, conjugates_before, direction_before = captured
         try:
             from KrakenOS.UI.nonseq_output_ports import axis_fold_emissions
         except Exception:
@@ -181,32 +218,96 @@ class ScenePlacementMixin:
             spec = (axis_fold_emissions(self.rows) or {}).get(int(row_index))
             if spec is None:
                 return
-            delta = np.asarray(spec["origin"], dtype=float).reshape(3) - np.asarray(fold_before, dtype=float)
+            fold_after = np.asarray(spec["origin"], dtype=float).reshape(3)
+            direction_after = np.asarray(spec["direction"], dtype=float).reshape(3)
+            delta = fold_after - np.asarray(fold_before, dtype=float)
+            rotation = _rotation_between_directions(direction_before, direction_after)
         except Exception:
             return
-        if not np.all(np.isfinite(delta)) or not np.any(np.abs(delta) > 1.0e-9):
+        turned = rotation is not None
+        if not np.all(np.isfinite(delta)) or (not np.any(np.abs(delta) > 1.0e-9) and not turned):
             return
+        # bugs/0488 (0485 rule 4): ONE rigid transform about the fold point covers both rules --
+        # ``new = fold_after + R (old - fold_before)``. A slide is the case R = I; a rotation
+        # leaves the fold point where it is and turns the leg. Measured: rotating the RA mirror
+        # 10 deg turns its emitted leg exactly 20.000 deg (the reflection law, which the
+        # derivation already got right for free) while the sensor stayed put, 17.614 mm off the
+        # beam that now feeds it.
         self._fold_slide_carry_active = True
         try:
             for carried_index in carried:
                 if not (0 <= int(carried_index) < len(self.rows)):
                     continue
                 follower = self.rows[int(carried_index)]
-                follower.desp_x = float(follower.desp_x) + float(delta[0])
-                follower.desp_y = float(follower.desp_y) + float(delta[1])
-                follower.desp_z = float(follower.desp_z) + float(delta[2])
+                pose = self._fold_carry_row_world_pose(int(carried_index))
+                if pose is None:
+                    continue
+                moved = self._fold_carry_transform_point(pose, fold_before, fold_after, rotation)
+                shift = moved - pose
+                follower.desp_x = float(follower.desp_x) + float(shift[0])
+                follower.desp_y = float(follower.desp_y) + float(shift[1])
+                follower.desp_z = float(follower.desp_z) + float(shift[2])
+                if turned:
+                    self._fold_carry_rotate_row_tilts(follower, rotation)
             # The bodies bolted to those rows ride along too -- a camera is on the sensor's arm.
             # Seated ABSOLUTELY against the pre-move capture (bugs/0456): the seater corrects by
             # the residual, so the body lands on its intended pose whatever the row translation
             # above already did to it.
             for label, before_centre in (bodies_before or {}).items():
                 try:
-                    self._seat_step_body_world_center(label, np.asarray(before_centre, dtype=float) + delta)
+                    self._seat_step_body_world_center(
+                        label,
+                        self._fold_carry_transform_point(
+                            np.asarray(before_centre, dtype=float), fold_before, fold_after, rotation
+                        ),
+                    )
                 except Exception:
                     continue
         finally:
             self._fold_slide_carry_active = False
         self._report_fold_slide_conjugates(len(carried), delta, conjugates_before)
+
+    @staticmethod
+    def _fold_carry_transform_point(point, fold_before, fold_after, rotation):
+        """``fold_after + R (point - fold_before)`` -- the rigid carry, rotation optional."""
+        rel = np.asarray(point, dtype=float).reshape(3) - np.asarray(fold_before, dtype=float)
+        if rotation is not None:
+            rel = np.asarray(rotation, dtype=float).reshape(3, 3) @ rel
+        return np.asarray(fold_after, dtype=float).reshape(3) + rel
+
+    def _fold_carry_row_world_pose(self, index: int):
+        try:
+            from KrakenOS.UI.services import optical_axis_tree as axis_tree
+
+            return axis_tree.row_world_pose(self.rows, int(index))
+        except Exception:
+            return None
+
+    @staticmethod
+    def _fold_carry_rotate_row_tilts(row, rotation) -> None:
+        """Turn a carried row's own orientation with the leg (bugs/0488).
+
+        A sensor that lands in the right place facing the old direction is still wrong -- it must
+        stay square to the beam. Composed as ``R @ R_row`` and written back through
+        ``kraken_tilts_from_rotation_matrix``, matching the existing convention rather than a
+        second one (bugs/0448)."""
+        try:
+            from KrakenOS.UI.optical_solid_metadata import (
+                kraken_tilts_from_rotation_matrix,
+                rotation_matrix_from_kraken_tilts,
+            )
+
+            current = rotation_matrix_from_kraken_tilts(
+                float(getattr(row, "tilt_x", 0.0) or 0.0),
+                float(getattr(row, "tilt_y", 0.0) or 0.0),
+                float(getattr(row, "tilt_z", 0.0) or 0.0),
+            )
+            tilt_x, tilt_y, tilt_z = kraken_tilts_from_rotation_matrix(
+                np.asarray(rotation, dtype=float).reshape(3, 3) @ np.asarray(current, dtype=float)
+            )
+            row.tilt_x, row.tilt_y, row.tilt_z = float(tilt_x), float(tilt_y), float(tilt_z)
+        except Exception:
+            return
 
     def _fold_slide_conjugates(self):
         """(object total, image total) as the leg splits report them, or None."""
@@ -494,6 +595,11 @@ class ScenePlacementMixin:
             raise RuntimeError("3D placement rotation step is zero or non-finite")
         row = self.rows[row_index]
         before = float(getattr(row, attr))
+        # bugs/0488 (0485 rule 4): a rotation turns the emitted leg, so the same carry applies --
+        # captured BEFORE the tilt changes, exactly as for a slide. Two more entry points: the
+        # rotate gizmo does not go through either translate form.
+        _carry_hook = getattr(self, "_fold_slide_carry_before", None)
+        _fold_carry = _carry_hook(row_index) if callable(_carry_hook) else None
         history_started = False
         if "_history_restoring" in self.__dict__ and "_history_pending_state" in self.__dict__:
             try:
@@ -502,6 +608,9 @@ class ScenePlacementMixin:
             except Exception:
                 history_started = False
         setattr(row, attr, before + delta)
+        _apply_hook = getattr(self, "_fold_slide_carry_apply", None)
+        if _fold_carry is not None and callable(_apply_hook):
+            _apply_hook(row_index, _fold_carry)
         row.advanced = dict(row.advanced or {})
         settings = normalize_scene_placement_settings(row.advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {}))
         settings["last_rotate_axis"] = axis_key
@@ -561,6 +670,11 @@ class ScenePlacementMixin:
         current_matrix = _rotation_matrix_from_kraken_tilts(*before)
         delta_matrix = self._world_axis_rotation_matrix(axis_key, delta)
         next_tilts = tuple(float(value) for value in optical_solid_metadata.kraken_tilts_from_rotation_matrix(delta_matrix @ current_matrix))
+        # bugs/0488 (0485 rule 4): a rotation turns the emitted leg, so the same carry applies --
+        # captured BEFORE the tilt changes, exactly as for a slide. Two more entry points: the
+        # rotate gizmo does not go through either translate form.
+        _carry_hook = getattr(self, "_fold_slide_carry_before", None)
+        _fold_carry = _carry_hook(row_index) if callable(_carry_hook) else None
         history_started = False
         if "_history_restoring" in self.__dict__ and "_history_pending_state" in self.__dict__:
             try:
@@ -569,6 +683,9 @@ class ScenePlacementMixin:
             except Exception:
                 history_started = False
         row.tilt_x, row.tilt_y, row.tilt_z = next_tilts
+        _apply_hook = getattr(self, "_fold_slide_carry_apply", None)
+        if _fold_carry is not None and callable(_apply_hook):
+            _apply_hook(row_index, _fold_carry)
         row.advanced = dict(row.advanced or {})
         settings = normalize_scene_placement_settings(row.advanced.get(SCENE_PLACEMENT_ADVANCED_ATTR, {}))
         settings["last_rotate_axis"] = axis_key

@@ -1,4 +1,4 @@
-"""bugs/0487 (0485 rule 3) -- slide a folder and everything snapped to its leg comes with it.
+"""bugs/0487 + 0488 (0485 rules 3 and 4) -- move a folder and its leg's elements come with it.
 
 The user's rule 3: *"If the user slide the elements that introduce a fold axis, then all the
 snapped elements should follow the fold axis."*
@@ -94,25 +94,33 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         "A5: a row that emits nothing carries nothing",
     )
 
-    # --- B. both slide entry points are hooked --------------------------------------------
-    # There are TWO implementations of this operation, each with its own copy of the BS<->LED
-    # glue block, and the drag gizmo goes through the axis form -- a carry wired only into the
-    # vector form never fires on a real drag. That is exactly what happened first.
+    # --- B. ALL FOUR move entry points are hooked ------------------------------------------
+    # "Move a row" has FOUR parallel implementations -- two translate, two rotate -- each
+    # historically carrying its own copy of the BS<->LED glue block. The trap fired three times
+    # while this was being written: the carry went into the vector form first (the drag gizmo uses
+    # the AXIS form, so it fired on nothing a user does), and then rule 4 went in without either
+    # rotate form (so a rotation still left the arm behind). A source-level assertion over all
+    # four is the only thing that catches a fifth.
     try:
         import inspect as _inspect
 
         from KrakenOS.UI.services.optical_solid_workflow import LayoutOpticalSolidWorkflowMixin
         from KrakenOS.UI.services.scene_placement_commands import ScenePlacementMixin
 
-        axis_src = _inspect.getsource(LayoutOpticalSolidWorkflowMixin.translate_scene_row_pose)
-        vector_src = _inspect.getsource(ScenePlacementMixin.translate_scene_row_pose_vector)
-        for label, src in (("axis form", axis_src), ("vector form", vector_src)):
+        entry_points = (
+            ("translate/axis", LayoutOpticalSolidWorkflowMixin.translate_scene_row_pose),
+            ("translate/vector", ScenePlacementMixin.translate_scene_row_pose_vector),
+            ("rotate/local", ScenePlacementMixin.rotate_scene_row_pose),
+            ("rotate/world", ScenePlacementMixin.rotate_scene_row_pose_world_axis),
+        )
+        for label, function in entry_points:
+            src = _inspect.getsource(function)
             check(
                 "_fold_slide_carry_before" in src and "_fold_slide_carry_apply" in src,
-                f"B[{label}]: the slide captures the carry set BEFORE moving and applies it after",
+                f"B[{label}]: captures the carry set BEFORE moving and applies it after",
             )
     except Exception as exc:
-        notes.append(f"SKIP: slide sources unreadable ({type(exc).__name__}: {exc})")
+        notes.append(f"SKIP: move sources unreadable ({type(exc).__name__}: {exc})")
 
     # --- C. the real scene ------------------------------------------------------------------
     if not SCENE.exists():
@@ -184,6 +192,42 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
             )
         else:
             notes.append("SKIP: no camera STEP body to check the body carry")
+        # --- D. rule 4: ROTATING the folder turns the leg, and the arm turns with it -------
+        # Measured before this existed: a 10 deg mirror rotation turned the emitted leg exactly
+        # 20 deg (the reflection law, which the derivation already got right for free) while the
+        # sensor stayed put -- 17.614 mm off the beam that now fed it.
+        editor.load_layout_by_name("fold_slide")
+        editor.seat_camera_on_sensor()
+        before_folds, before_snaps, before_body = state()
+        editor.rotate_scene_row_pose(7, "y", 10.0)
+        after_folds, after_snaps, after_body = state()
+        d0 = np.asarray(before_folds[7]["direction"], dtype=float)
+        d1 = np.asarray(after_folds[7]["direction"], dtype=float)
+        turned = float(np.degrees(np.arccos(np.clip(float(np.dot(d0, d1)), -1.0, 1.0))))
+        check(
+            abs(turned - 20.0) < 1e-3,
+            f"D1: a 10 deg mirror rotation turns its emitted leg 20 deg ({turned:.4f}) -- the "
+            f"reflection law, straight out of the derivation",
+        )
+        sensor_after = after_snaps.get(8)
+        check(
+            sensor_after is not None and sensor_after.offset < 1e-3,
+            f"D2: the sensor swung onto the NEW leg (transverse {sensor_after.offset:.4f} mm) "
+            f"-- it sat 17.614 mm off before rule 4",
+        )
+        if before_body is not None and after_body is not None:
+            check(
+                float(np.linalg.norm(after_body - before_body)) > 1.0,
+                f"D3: the camera swung with the arm ({np.round(after_body - before_body, 3).tolist()})",
+            )
+        fold_shift = np.asarray(after_folds[7]["origin"], dtype=float) - np.asarray(
+            before_folds[7]["origin"], dtype=float
+        )
+        check(
+            float(np.linalg.norm(fold_shift)) < 1e-6,
+            f"D4: a pure rotation leaves the fold POINT alone ({np.round(fold_shift, 6).tolist()}) "
+            f"-- rules 3 and 4 compose as one rigid transform about it",
+        )
     except Exception as exc:
         notes.append(f"SKIP: scene drive failed ({type(exc).__name__}: {exc})")
     finally:

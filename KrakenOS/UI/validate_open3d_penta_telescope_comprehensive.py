@@ -15387,7 +15387,7 @@ phase_393_axis_fold_emissions = _phase_from_standalone(
     393, "one axis-fold derivation: consuming vs branching, multi-bounce, live and frozen (0485)",
     "KrakenOS.UI.validate_open3d_0485_axis_fold_emissions", "axis_fold_emissions")
 phase_394_fold_slide_carries_its_leg = _phase_from_standalone(
-    394, "sliding a folder carries everything snapped to its leg (0487, 0485 rule 3)",
+    394, "moving a folder carries its leg -- slide and rotate (0487+0488, 0485 rules 3-4)",
     "KrakenOS.UI.validate_open3d_0487_fold_slide_carries_its_leg", "fold_slide_carries_its_leg")
 
 
