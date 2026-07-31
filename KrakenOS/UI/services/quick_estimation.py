@@ -1438,6 +1438,16 @@ class QuickEstimationService:
             far_floor_extra=self._image_gap_collision_floor,
         )
 
+    def _axis_section_pins(self) -> dict:
+        """Section values the user fixed by dragging (bugs/0489). Empty when nothing is pinned.
+
+        Runtime state, deliberately: a pin records "I put this here", which belongs to the editing
+        session rather than the prescription, and it is cleared when a layout is loaded so a scene
+        never arrives silently over-constrained.
+        """
+        pins = getattr(self.editor, "_axis_section_pins_state", None)
+        return dict(pins) if isinstance(pins, dict) else {}
+
     def _rebalance_split_sections(
         self,
         pre,
@@ -1492,10 +1502,29 @@ class QuickEstimationService:
                 f" Both {label} sections cannot clear at {total_new:.4g} mm "
                 f"(near >= {near_min:.4g}, far >= {far_floor:.4g} mm)."
             )
-        try:
-            wanted = float(target_from(pre_near, delta))
-        except Exception:
-            return ""
+        # bugs/0489: a drag is a CONSTRAINT. The user placing a folder by hand fixes that
+        # section, and the solver's own default distribution (bugs/0482's 50:50 image share,
+        # bugs/0484's hold of section 1) would overwrite exactly what the drag just set -- measured,
+        # sliding the RA mirror 20 mm then clicking Solve for Thickness took the residual defocus
+        # from -20.0000 to -25.5266, i.e. further from focus than before solving. A pin wins over
+        # the default; the sibling section absorbs the change instead.
+        pins = self._axis_section_pins()
+        pinned_near = pins.get(f"{side}_near")
+        pinned_far = pins.get(f"{side}_far")
+        if pinned_near is not None and pinned_far is not None:
+            return (
+                f" Both {label} sections are pinned by hand ({pinned_near:.4g} + {pinned_far:.4g} mm); "
+                f"the solve cannot reach {total_new:.4g} mm without releasing one."
+            )
+        if pinned_near is not None:
+            wanted = float(pinned_near)
+        elif pinned_far is not None:
+            wanted = total_new - float(pinned_far)
+        else:
+            try:
+                wanted = float(target_from(pre_near, delta))
+            except Exception:
+                return ""
         if not np.isfinite(wanted):
             return ""
         target = min(max(wanted, near_min), total_new - far_floor)

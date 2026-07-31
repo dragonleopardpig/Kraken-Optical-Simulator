@@ -265,7 +265,54 @@ class ScenePlacementMixin:
                     continue
         finally:
             self._fold_slide_carry_active = False
+        self._pin_moved_fold_section(row_index, delta)
         self._report_fold_slide_conjugates(len(carried), delta, conjugates_before)
+
+    def _pin_moved_fold_section(self, row_index: int, delta) -> None:
+        """bugs/0489: a hand-placed folder pins the section its POSITION defines.
+
+        Which section that is falls out of the split it belongs to: the object split's ``near`` is
+        object -> beam splitter (section 1), the image split's ``near`` is lens rear -> mirror
+        (section 3). Pinning ``near`` -- the distance from the upstream element to the folder --
+        is what makes "it stays where I put it" true regardless of what the solve does to the
+        total, because the sibling ``far`` then absorbs the change. That is also exactly the
+        policy the user already chose for the object side in bugs/0484.
+
+        A pure ROTATION pins nothing: it leaves the fold point, so no section length changed.
+        """
+        try:
+            if not np.any(np.abs(np.asarray(delta, dtype=float)) > 1.0e-9):
+                return
+        except Exception:
+            return
+        for side, reader in (
+            ("object", "_folded_object_conjugate_split"),
+            ("image", "_folded_image_conjugate_split"),
+        ):
+            try:
+                split = getattr(self, reader)()
+            except Exception:
+                continue
+            if not isinstance(split, dict):
+                continue
+            try:
+                if int(split.get("mirror_row", -1)) != int(row_index):
+                    continue
+                value = float(split["near"])
+            except Exception:
+                continue
+            pins = getattr(self, "_axis_section_pins_state", None)
+            if not isinstance(pins, dict):
+                pins = {}
+            pins[f"{side}_near"] = value
+            self._axis_section_pins_state = pins
+            try:
+                self.append_debug(
+                    f"bugs/0489: pinned {side} section to {value:.4g} mm "
+                    f"(hand-placed row S{row_index})"
+                )
+            except Exception:
+                pass
 
     @staticmethod
     def _fold_carry_transform_point(point, fold_before, fold_after, rotation):

@@ -482,6 +482,9 @@ class LayoutTableWorkbenchMixin:
         if self.rows:
             self._begin_history_capture()
         self.current_layout_file = path
+        # bugs/0489: hand-placed section pins belong to the editing session, not the
+        # prescription -- a freshly loaded scene must never arrive silently over-constrained.
+        self._axis_section_pins_state = {}
         # bugs/0375: a normal menu/Open load ties the layout to this file; the lens
         # importer re-marks it transient AFTER this call (it loads then imports).
         self._layout_is_unsaved_import = False
