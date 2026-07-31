@@ -95,7 +95,16 @@ class LayoutSettingsService:
         return getattr(self.editor, name)
 
     def __setattr__(self, name: str, value: Any) -> None:
-        if name.startswith("_") or name == "editor":
+        # bugs/0492: this facade owns NOTHING but its editor reference. The old carve-out kept
+        # `_`-prefixed writes local, and since `__getattr__` only fires when normal lookup
+        # FAILS, the first such write permanently shadowed the editor's copy for every later
+        # read through this facade -- which the editor CACHES for its lifetime. One layout load
+        # was enough: `_apply_layout_settings` writes eight `_` names, so save then read back
+        # its own stale snapshot instead of what the user had done. `optical_led_glued`, the
+        # bugs/0134 clear apertures, the bugs/0379 clear-aperture RAY STOPS and the bugs/0306
+        # pre-couple stash all persisted as whatever the LAST LOAD held. bugs/0449 patched the
+        # apply side by re-asserting on the editor; this removes the trap instead.
+        if name == "editor":
             object.__setattr__(self, name, value)
             return
         setattr(self.editor, name, value)

@@ -15392,6 +15392,10 @@ phase_394_fold_slide_carries_its_leg = _phase_from_standalone(
 phase_395_drag_pins_a_section = _phase_from_standalone(
     395, "a hand-placed folder pins its section and the solve stops discarding it (0489)",
     "KrakenOS.UI.validate_open3d_0489_drag_pins_a_section", "drag_pins_a_section")
+phase_396_settings_facade_holds_no_state = _phase_from_standalone(
+    396, "a settings facade owns nothing, so a save cannot read back its own stale copy (0492)",
+    "KrakenOS.UI.validate_open3d_0492_settings_facade_holds_no_state",
+    "settings_facade_holds_no_state")
 
 
 # ---------------------------------------------------------------------------
@@ -15834,6 +15838,7 @@ def main() -> int:
             phase_393_axis_fold_emissions,
             phase_394_fold_slide_carries_its_leg,
             phase_395_drag_pins_a_section,
+            phase_396_settings_facade_holds_no_state,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

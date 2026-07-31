@@ -26,7 +26,9 @@ class Legacy3DSceneService:
         return getattr(self.editor, name)
 
     def __setattr__(self, name: str, value: Any) -> None:
-        if name.startswith("_") or name == "editor":
+        # bugs/0492: a facade owns nothing but its editor -- a `_`-prefixed local would shadow
+        # the editor's copy for every later read through it. State belongs to the editor.
+        if name == "editor":
             object.__setattr__(self, name, value)
             return
         setattr(self.editor, name, value)
