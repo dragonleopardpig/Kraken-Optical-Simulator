@@ -112,3 +112,45 @@ nothing else does.
 Gate --phases 8,24,251,382,386,389,392..395 = 9 pass, 1 known-failing (251, in baseline); 54/54
 pytest. Phases 8 and 24 included on purpose: the rays-on segment check and the drag-interactivity
 check are what a wrongly-scoped retrace would break.
+
+
+## Verified at the drawing, and what `flag_20260731_212425` actually was
+
+`flag_20260731_212425` ("dragged the glued BS and LED down, nothing follows") was recorded on
+`7f2c49bb` -- WITH the sticky marker -- one minute after the restart of `flag_20260731_212326`,
+i.e. in a session that had **lost the glue** to bugs/0492. Its premise is contaminated, and the
+recorded deltas agree: the LED moved +4.37 mm while the BS moved +18.43 mm, which is not a rigid
+pair.
+
+Driven on current code, the whole gesture propagates -- and these are DRAWN quantities, measured
+through the same `_row_actor_map` / `_step_actor_map` / `_optical_axis_pick_records` the flag
+recorder reads:
+
+    row actors 1..8, 100000   +18.43        row actor 0 (object plane)   unchanged
+    STEP lens, STEP camera    +18.43        axis:global:split   z 53.80 -> 72.23
+    STEP led (glue gesture)   +18.43        axis:global:frozen-fold:7    +18.43
+
+The LED body lands at z[24.03, 161.65] -- exactly where the flag recorded it. So the user's model
+ended in precisely the state this produces; only the drawing in that snapshot was behind.
+
+**The rebuild takes ~7-9 s on this scene.** That is the remaining user-visible problem: drag,
+look immediately, and the chain has not moved yet. It is indistinguishable from "nothing follows"
+unless you wait. `_paint_bodies_while_async_trace_runs` (bugs/0450) already exists for exactly this
+and is applied on the ASYNC branch when `geometry_changed=True`; a forced retrace takes the
+synchronous branch, so nothing is repainted early. Worth pulling forward -- not fixed here.
+
+An earlier reading of mine that `overlay:camera` did not follow was `_step_placement_offset_xyz`,
+a stored anchor rather than the drawn pose; the camera body does move (+18.43 above).
+
+## Guard
+
+`validate_open3d_0491_carry_reaches_the_drawing.py`, penta phase 397 -- the guard this bug never
+had, which is why it needed three fixes. Section A holds the mechanism at source level (the carry
+raises its own marker; the refresh promotes it; not while a drag is in flight). Sections B and C
+drive both entry paths -- sliding the BS row, and gluing then dragging the LED body -- and assert
+on the DRAWING. Both gestures run in one app: a second editor+inspector in the same process does
+not come up (the 0294-class viewer hazard), and only deltas are asserted.
+
+Note for anyone extending it: `translate_step_overlay` refreshes internally, which legitimately
+CONSUMES the marker before a test can observe it. The drawing checks are what hold that path;
+asserting the marker there would be testing an implementation detail at the wrong moment.

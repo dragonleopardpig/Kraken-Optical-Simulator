@@ -15396,6 +15396,9 @@ phase_396_settings_facade_holds_no_state = _phase_from_standalone(
     396, "a settings facade owns nothing, so a save cannot read back its own stale copy (0492)",
     "KrakenOS.UI.validate_open3d_0492_settings_facade_holds_no_state",
     "settings_facade_holds_no_state")
+phase_397_carry_reaches_the_drawing = _phase_from_standalone(
+    397, "a fold carry reaches the DRAWING -- actors, STEP bodies and axis records (0491)",
+    "KrakenOS.UI.validate_open3d_0491_carry_reaches_the_drawing", "carry_reaches_the_drawing")
 
 
 # ---------------------------------------------------------------------------
@@ -15839,6 +15842,7 @@ def main() -> int:
             phase_394_fold_slide_carries_its_leg,
             phase_395_drag_pins_a_section,
             phase_396_settings_facade_holds_no_state,
+            phase_397_carry_reaches_the_drawing,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
