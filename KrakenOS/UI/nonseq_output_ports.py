@@ -1597,9 +1597,33 @@ def axis_fold_emissions(rows, *, system=None) -> dict[int, dict[str, object]]:
         return best[1] if best is not None else segments[0]
 
     for row_index, current in enumerate(prepared):
-        if not _row_has_optical_solid(current):
-            continue
         z_station = float(z_positions[row_index]) if row_index < len(z_positions) else 0.0
+        if not _row_has_optical_solid(current):
+            # A plain Mirror / Beam Splitter SURFACE row folds by its own plane (bugs/0485 1b).
+            surface = _row_surface(current)
+            if surface not in ("Mirror", "Beam Splitter"):
+                continue
+            pose = _row_pose(row_index)
+            parent_origin, parent_direction, parent_row, parent_depth = _parent_for(pose)
+            probe_origin = parent_origin + parent_direction * float(
+                np.dot(pose - parent_origin, parent_direction)
+            )
+            bounces = _surface_row_fold_emission(current, pose, probe_origin, parent_direction)
+            if not bounces:
+                continue
+            kind = FOLD_KIND_BRANCHING if surface == "Beam Splitter" else FOLD_KIND_CONSUMING
+            origin, direction = bounces[-1]
+            emissions[row_index] = {
+                "kind": kind,
+                "origin": origin,
+                "direction": direction,
+                "incoming": np.asarray(parent_direction, dtype=float),
+                "parent_row": parent_row,
+                "bounces": [tuple(b) for b in bounces],
+                "source": f"surface_row:{surface.lower().replace(' ', '_')}",
+            }
+            segments.append((origin, direction, row_index, parent_depth + 1))
+            continue
         thickness = float(getattr(current, "thickness", 0.0) or 0.0)
         try:
             world_faces = optical_solid_face_world_records(current, z_station, assigned_only=True)
@@ -1618,18 +1642,19 @@ def axis_fold_emissions(rows, *, system=None) -> dict[int, dict[str, object]]:
             # (``_is_specular_fold_interaction_face`` accepts Mirror/uncoated only) because a BS
             # must never fold the FOLLOWER chain -- bugs/0398. It does still EMIT a reflect axis,
             # which is what bugs/0428 exposes for drawing.
-            emitted = _interaction_fold_emission(
+            bounces = _interaction_fold_emission(
                 world_faces, probe_origin, parent_direction, accept={"Beam Splitter"}
             )
-            if emitted is None:
+            if not bounces:
                 continue
-            origin, direction = emitted
+            origin, direction = bounces[-1]
             emissions[row_index] = {
                 "kind": FOLD_KIND_BRANCHING,
                 "origin": origin,
                 "direction": direction,
                 "incoming": np.asarray(parent_direction, dtype=float),
                 "parent_row": parent_row,
+                "bounces": [tuple(b) for b in bounces],
                 "source": "beam_splitter_coating",
             }
             # The transmit leg carries on unchanged; the reflect leg joins the candidates.
@@ -1647,6 +1672,7 @@ def axis_fold_emissions(rows, *, system=None) -> dict[int, dict[str, object]]:
         # from.
         explicit_output_face = select_optical_solid_explicit_output_face(world_faces)
         origin = direction = None
+        mirror_bounces = None
         source = ""
         if explicit_output_face is not None:
             centre = np.asarray(
@@ -1655,11 +1681,12 @@ def axis_fold_emissions(rows, *, system=None) -> dict[int, dict[str, object]]:
             normal = _unit_vector(explicit_output_face.get("normal_world", (0.0, 0.0, 1.0)))
             origin, direction, source = centre, normal, "explicit_output"
         elif _solid_has_full_mirror_interaction_face(world_faces):
-            emitted = _interaction_fold_emission(
+            mirror_bounces = _interaction_fold_emission(
                 world_faces, probe_origin, parent_direction, accept={"Mirror"}
             )
-            if emitted is not None:
-                origin, direction, source = emitted[0], emitted[1], "mirror_reflection"
+            if mirror_bounces:
+                origin, direction = mirror_bounces[-1]
+                source = f"mirror_reflection x{len(mirror_bounces)}"
         if origin is None or direction is None:
             # An INFERRED Transmit/Port exit folds only if it genuinely turns the beam
             # (bugs/0022: moving a cube sideways must not drag anything -- a codirectional
@@ -1684,53 +1711,160 @@ def axis_fold_emissions(rows, *, system=None) -> dict[int, dict[str, object]]:
             "direction": emitted_direction,
             "incoming": np.asarray(parent_direction, dtype=float),
             "parent_row": parent_row,
+            "bounces": [tuple(b) for b in (mirror_bounces or [])] or [(origin, emitted_direction)],
             "source": source,
         }
         segments.append((origin, emitted_direction, row_index, parent_depth + 1))
     return emissions
 
 
-def _interaction_fold_emission(world_faces, axis_origin, incoming, *, accept):
-    """Where an incoming leg crosses an interaction face, and the leg it emits. (bugs/0485 1b)
-
-    Purely geometric: intersect the leg with the face plane, keep the bugs/0224 hit-radius test so
-    a solid parked clear of the beam emits nothing rather than folding about its distant infinite
-    plane, and reflect. ``accept`` is the set of face functions this call will fold on.
-
-    Deliberately NOT ``_reflected_frame_from_interaction_face``. That helper answers a different
-    question -- where the sequential EXIT FRAME goes -- so it returns
-    ``hit + reflected * (thickness - pre_hit_run)`` with ``pre_hit_run`` measured from the row's
-    station marker (bugs/0207). Its origin therefore moves when the probe point moves along the
-    same line, which is right for follower bookkeeping and wrong for an axis: measured, feeding it
-    a different point on the identical line moved penta prism 1's fold point from z 57.626 to
-    96.517. An axis wants the CROSSING, which depends only on the line.
-    """
-    face = select_optical_solid_interaction_face(world_faces)
-    if face is None:
-        return None
-    if _optical_solid_face_function(face) not in accept:
-        return None
-    origin = np.asarray(axis_origin, dtype=float).reshape(3)
-    direction = _unit_vector(incoming)
-    normal = _unit_vector(face.get("normal_world", (0.0, 0.0, 1.0)))
-    if direction is None or normal is None:
-        return None
+def _plane_crossing(origin, direction, point, normal, *, forward_only=False, hit_radius=None):
+    """Where a leg crosses a plane. ``None`` when it misses, is parallel, or lands off the face."""
     denominator = float(np.dot(direction, normal))
     if abs(denominator) <= 1e-12:
-        return None  # the leg runs along the face: no crossing
-    point = np.asarray(face.get("centroid_world", (0.0, 0.0, 0.0)), dtype=float).reshape(3)
+        return None  # the leg runs along the plane
     distance = float(np.dot(point - origin, normal) / denominator)
     if not np.isfinite(distance):
         return None
+    if forward_only and distance <= 1e-9:
+        return None
     hit = origin + direction * distance
+    if hit_radius is not None and float(np.linalg.norm(hit - point)) > float(hit_radius):
+        return None
+    return hit, distance
+
+
+def _face_hit_radius(face) -> "float | None":
+    """bugs/0224's transverse extent: sqrt(area) + 2 mm, or None when the face has no area."""
     area = float(face.get("area_mm2", 0.0) or 0.0)
-    if np.isfinite(area) and area > 1e-9:
-        if float(np.linalg.norm(hit - point)) > float(np.sqrt(area)) + 2.0:
-            return None  # the beam line never crosses the face
+    if not (np.isfinite(area) and area > 1e-9):
+        return None
+    return float(np.sqrt(area)) + 2.0
+
+
+def _interaction_fold_emission(world_faces, axis_origin, incoming, *, accept):
+    """Walk the leg through a solid's interaction faces and return every bounce. (bugs/0485 1b)
+
+    Returns ``[(hit, emitted_direction), ...]`` -- one entry per reflection, in order -- or
+    ``None`` when the leg never folds here.
+
+    **A solid can fold more than once.** A penta prism carries TWO ``Mirror`` faces and deviates
+    the beam 90 degrees by reflecting off both; taking a single interaction face emitted its
+    intermediate 45 degree leg, after which the rest of the cascade no longer lay on the axis and
+    only 1 of 5 prisms was found. So this walks: reflect, then look for the next accepted face the
+    beam actually reaches, until none is left.
+
+    Purely geometric, and it keeps bugs/0224's hit-radius test at every bounce so a solid parked
+    clear of the beam emits nothing rather than folding about its distant infinite plane.
+
+    Deliberately NOT ``_reflected_frame_from_interaction_face``: that answers a different question
+    -- where the sequential EXIT FRAME goes -- returning ``hit + reflected * (thickness -
+    pre_hit_run)`` with ``pre_hit_run`` measured from the row's station marker (bugs/0207). Its
+    origin therefore moves when the probe point moves along the same line, which is right for
+    follower bookkeeping and wrong for an axis: measured, feeding it a different point on the
+    identical line moved penta prism 1's fold point from z 57.626 to 96.517. An axis wants the
+    CROSSING, which depends only on the line.
+
+    The FIRST crossing is sign-agnostic in distance, matching bugs/0224 ("the walk's frame origin
+    is a sequential STATION marker that legitimately sits PAST the fold face"): the probe point is
+    an arbitrary point on the incoming line, so only the lateral offset discriminates a real fold.
+    Every LATER bounce must be strictly forward -- the beam now has a real starting point, and
+    without that it would re-hit the face it just left at distance zero.
+    """
+    candidates = [
+        face
+        for face in (world_faces or [])
+        if optical_solid_face_port_role(face) == OPTICAL_SOLID_FACE_PORT_INTERACTION
+        and _optical_solid_face_function(face) in accept
+    ]
+    if not candidates:
+        return None
+    direction = _unit_vector(incoming)
+    if direction is None:
+        return None
+    origin = np.asarray(axis_origin, dtype=float).reshape(3)
+    bounces: list[tuple[np.ndarray, np.ndarray]] = []
+    remaining = list(candidates)
+    for _step in range(len(candidates)):
+        best = None
+        for face in remaining:
+            normal = _unit_vector(face.get("normal_world", (0.0, 0.0, 1.0)))
+            if normal is None:
+                continue
+            point = np.asarray(face.get("centroid_world", (0.0, 0.0, 0.0)), dtype=float).reshape(3)
+            crossing = _plane_crossing(
+                origin,
+                direction,
+                point,
+                normal,
+                forward_only=bool(bounces),
+                hit_radius=_face_hit_radius(face),
+            )
+            if crossing is None:
+                continue
+            hit, distance = crossing
+            key = abs(distance) if not bounces else distance
+            if best is None or key < best[0]:
+                best = (key, face, hit, normal)
+        if best is None:
+            break
+        _key, face, hit, normal = best
+        reflected = _unit_vector(direction - 2.0 * float(np.dot(direction, normal)) * normal)
+        if reflected is None:
+            break
+        bounces.append((hit, reflected))
+        origin, direction = hit, reflected
+        remaining = [f for f in remaining if f is not face]
+    return bounces or None
+
+
+def _surface_row_fold_emission(row, pose, axis_origin, incoming):
+    """A plain ``Mirror`` / ``Beam Splitter`` SURFACE row folds by its own plane. (bugs/0485 1b)
+
+    ``Beam Splitter Two Path Doublets``' splitter is a surface row with no optical solid at all
+    (``_row_has_optical_solid`` False), so the face-record path cannot see it and the scene
+    reported zero folders while plainly having two arms. Its plane is the row's own: the normal is
+    ``rotation_matrix_from_kraken_tilts(...) @ (0, 0, 1)`` -- the same convention the 3-D tools,
+    the 2-D polyline display and the face-roles dialog use, rather than a fresh one (bugs/0448 is
+    what a second tilt convention costs).
+
+    Returns ``[(hit, emitted_direction)]`` or None.
+    """
+    try:
+        rotation = optical_solid_metadata.rotation_matrix_from_kraken_tilts(
+            float(getattr(row, "tilt_x", 0.0) or 0.0),
+            float(getattr(row, "tilt_y", 0.0) or 0.0),
+            float(getattr(row, "tilt_z", 0.0) or 0.0),
+        )
+    except Exception:
+        return None
+    normal = _unit_vector(np.asarray(rotation, dtype=float).reshape(3, 3) @ np.asarray((0.0, 0.0, 1.0)))
+    direction = _unit_vector(incoming)
+    if normal is None or direction is None:
+        return None
+    radius = None
+    try:
+        diameter = float(getattr(row, "diameter", 0.0) or 0.0)
+        if np.isfinite(diameter) and diameter > 0.0:
+            radius = diameter / 2.0 + 2.0
+    except Exception:
+        radius = None
+    crossing = _plane_crossing(
+        np.asarray(axis_origin, dtype=float).reshape(3),
+        direction,
+        np.asarray(pose, dtype=float).reshape(3),
+        normal,
+        hit_radius=radius,
+    )
+    if crossing is None:
+        return None
+    hit, _distance = crossing
     reflected = _unit_vector(direction - 2.0 * float(np.dot(direction, normal)) * normal)
     if reflected is None:
         return None
-    return hit, reflected
+    if _exit_frame_is_non_folding(_frame_rotation_from_normal(reflected), direction):
+        return None  # a surface square-on to the beam is not a fold
+    return [(hit, reflected)]
 
 
 def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict[int, dict[str, object]]:

@@ -201,17 +201,32 @@ and it classifies them correctly: row 3 ``branching`` (the transmit leg carries 
 ``consuming`` with ``parent_row=3`` -- i.e. it knows the mirror hangs off the BS's reflect leg,
 which is the fact stage 1a could not represent.
 
-### Known gaps, deliberately not papered over
+### Both gaps closed
 
-* **multi-bounce solids.** A penta prism folds TWICE internally (two ``Mirror`` faces); the
-  derivation applies one interaction face and so emits the intermediate 45° leg, after which the
-  rest of the cascade no longer lies on it -- 1 of 5 folders found. The emission needs to compose
-  the bounces within a solid.
-* **non-promoted BS / Mirror rows.** ``Beam Splitter Two Path Doublets``' splitter is a plain
-  surface row (``has_optical_solid=False``), so the face path cannot see it at all. Those rows need
-  their normal from the row's own tilt.
-* ``AZ85 RA mirror (no BS)`` reports a self-consistent two-fold periscope; that scene has no
-  conjugate splits to check against, so it is unverified rather than known-good.
+**Multi-bounce solids.** A penta prism carries TWO ``Mirror`` faces and deviates the beam 90° by
+reflecting off both; taking a single interaction face emitted its intermediate 45° leg, after which
+the rest of the cascade no longer lay on the axis (1 of 5 found). ``_interaction_fold_emission`` now
+WALKS the leg through the solid -- reflect, then look for the next accepted face the beam actually
+reaches -- and returns every bounce. The first crossing stays sign-agnostic in distance (bugs/0224:
+the probe point is an arbitrary point on the incoming line, so only the lateral offset
+discriminates a real fold); every later bounce must be strictly forward, or the beam would re-hit
+the face it just left at distance zero.
+
+**Plain surface rows.** ``Beam Splitter Two Path Doublets``' splitter has no optical solid at all,
+so the face-record path could not see it. ``_surface_row_fold_emission`` folds such a row about its
+own plane, taking the normal from ``rotation_matrix_from_kraken_tilts(...) @ (0,0,1)`` -- the
+convention the 3-D tools, the 2-D polyline display and the face-roles dialog already share, rather
+than a fresh one (bugs/0448 is what a second tilt convention costs).
+
+All five scenes now resolve correctly:
+
+| scene | folders | detail |
+|---|---|---|
+| AZ85 RA mirror + BS | **2** | row 3 branching, row 7 consuming with `parent_row=3`; matches the app's records to 7e-15 |
+| AZ85 RA mirror (no BS) | **2** | a genuine two-fold periscope -- verified, the scene really carries two mirror-bearing rows (S1, S8). The earlier "expected 1" was an unverified guess, not a defect |
+| five penta prism cascade | **5** | 2 bounces each, a clean 90° per prism, chained +z → −y → +x → +z → +y → −x, each parented to the previous |
+| Beam Splitter Two Path Doublets | **1** | surface-row BS, branching at (0,0,45) → (0,1,0), matching its reflect doublet at y = 70–130 |
+| plain doublet | **0** | no fold |
 
 ``axis_fold_emissions`` remains called by nothing in production.
 
