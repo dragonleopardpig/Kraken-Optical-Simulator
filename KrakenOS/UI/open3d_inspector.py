@@ -230,7 +230,7 @@ def _open3d_running_build_stamp() -> "dict[str, object]":
                 # headlessly from this checkout -- body 97.41 -> 132.56 matching the recording to
                 # the last digit, row 1 71.66 -> 106.81 where the recording has it unmoved.
                 "module_path": str(Path(__file__).resolve().parent.parent.parent),
-                "repo_path": str(repo_dir),
+                "repo_path": _git("rev-parse", "--show-toplevel"),
             }
     except Exception:
         stamp = {"git": None}
