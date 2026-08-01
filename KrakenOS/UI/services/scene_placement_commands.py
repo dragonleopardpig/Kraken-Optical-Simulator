@@ -3510,6 +3510,64 @@ class ScenePlacementMixin:
             return None
         return int(front), int(rear)
 
+    def _lens_leg_slide_plan(self):
+        """bugs/0499: how to slide the lens along its OWN leg -- (rows, direction, folded) or None.
+
+        The redirect used to push an axial lens drag into ``rows[lens_front_idx - 1].thickness``.
+        On a FOLDED scene that is structurally incapable of doing the job, which the leg-neighbour
+        lookup made visible: positions along a fold leg live in ``desp``, not in thicknesses.
+        Measured on the AZ85 layout, where the lens rides the splitter's +X leg --
+
+            +10 on rows[3].thickness (the true leg-upstream neighbour) -> row 1 moves [0, 0, 0]
+            +10 on rows[0].thickness (what the old code picked)        -> row 1 moves [0, 0, +10]
+
+        -- so repointing the thickness write at the correct row does nothing at all, and the old
+        target lifted the whole leg in Z for a drag along X. A folded leg has to be slid the way the
+        fold carry slides one: translate the rows.
+
+        Returns the surrogate's own rows (those on the datum leg between the front and rear datums
+        inclusive), that leg's direction, and whether it is a fold leg rather than the root.
+        """
+        datums = self._lens_surrogate_datum_rows()
+        if datums is None:
+            return None
+        front, rear = datums
+        try:
+            from KrakenOS.UI.nonseq_output_ports import axis_fold_emissions
+            from KrakenOS.UI.services import optical_axis_tree as axis_tree
+
+            emissions = axis_fold_emissions(self.rows) or {}
+            tree = axis_tree.build_axis_tree(
+                self.rows,
+                fold_emissions={
+                    key: {"origin": v["origin"], "direction": v["direction"], "kind": "reflect"}
+                    for key, v in emissions.items()
+                },
+            )
+            snaps = axis_tree.snap_rows(self.rows, tree)
+        except Exception:
+            return None
+        by_row = {int(snap.row_index): snap for snap in snaps}
+        if front not in by_row or rear not in by_row:
+            return None
+        segment_id = str(by_row[front].segment_id)
+        if str(by_row[rear].segment_id) != segment_id:
+            return None
+        low, high = sorted((float(by_row[front].s), float(by_row[rear].s)))
+        members = [
+            index
+            for index in axis_tree.rows_along_leg(snaps, segment_id)
+            if low - 1.0e-9 <= float(by_row[index].s) <= high + 1.0e-9
+        ]
+        segment = tree.get(segment_id)
+        if segment is None or not members:
+            return None
+        try:
+            direction = np.asarray(segment.direction, dtype=float).reshape(3)
+        except Exception:
+            return None
+        return members, direction, segment_id != "axis:root"
+
     def _lens_surrogate_seat_target(self):
         """bugs/0497: where the lens BODY belongs, wherever its surrogate actually sits.
 
@@ -4071,6 +4129,23 @@ class ScenePlacementMixin:
         # respond to the new lens position). Lateral drag still only centres the body.
         axial_lens_slide = 0.0
         lens_front_idx = None
+        # bugs/0499: on a FOLDED leg the axial part is applied by translating the surrogate's own
+        # rows, because no thickness controls position along such a leg. The thickness redirect
+        # below stays for the unfolded case, where it is both correct and the existing behaviour.
+        lens_leg_slide = 0.0
+        lens_leg_plan = self._lens_leg_slide_plan() if label == "lens" else None
+        if lens_leg_plan is not None and lens_leg_plan[2]:
+            _members, _leg_dir, _ = lens_leg_plan
+            lens_leg_slide = float(np.dot(np.asarray(delta, dtype=float).reshape(3), _leg_dir))
+            if abs(lens_leg_slide) > 1e-9:
+                for _index in _members:
+                    _row = self.rows[int(_index)]
+                    _shift = _leg_dir * lens_leg_slide
+                    _row.desp_x = float(_row.desp_x) + float(_shift[0])
+                    _row.desp_y = float(_row.desp_y) + float(_shift[1])
+                    _row.desp_z = float(_row.desp_z) + float(_shift[2])
+            else:
+                lens_leg_slide = 0.0
         if label == "lens" and overlay_on_axis and abs(float(delta[2])) > 1e-9:
             lens_front_idx = next(
                 (
@@ -4086,6 +4161,11 @@ class ScenePlacementMixin:
             else:
                 lens_front_idx = None
         redirect_axial = abs(axial_to_detector) > 1e-9 or abs(axial_lens_slide) > 1e-9
+        # bugs/0499: on a folded leg the rows were moved by their DESP, and a STEP body is anchored
+        # to its row's z-STATION, not to desp (bugs/0456 -- which is why the fold carry has to
+        # re-seat bodies explicitly). So the body still needs the FULL delta here: subtracting the
+        # axial part left the optics sliding +20 while the barrel stayed put, detaching it the other
+        # way round.
         applied = np.array(
             [float(delta[0]), float(delta[1]), 0.0 if redirect_axial else float(delta[2])],
             dtype=float,

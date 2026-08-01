@@ -97,10 +97,37 @@ collapses to plain index order, which is the reduction test that it generalises 
 
 Guard: `validate_open3d_0499_leg_neighbour_lookup.py`, penta phase 403 (display-free).
 
-### Still to do
+### Fixed
 
-Point the lens redirect at it — `rows[lens_front_idx - 1]` becomes the leg neighbour — and restore
-the two reverted helpers.
+Repointing the redirect at the leg neighbour turned out NOT to be the answer, and the lookup is what
+showed why. On a folded leg no thickness controls position along that leg:
+
+```
++10 on rows[3].thickness (the true leg-upstream neighbour) -> lens moves [0, 0,   0]
++10 on rows[0].thickness (what the old code picked)        -> lens moves [0, 0, +10]
+```
+
+Positions along a fold leg live in `desp`. So the redirect now slides a folded leg the way the fold
+carry does — it translates the surrogate's own rows (`rows_along_leg` between the two datums, so the
+set cannot disagree with `rows_on_emitted_leg`). The thickness redirect stays for the unfolded case,
+where it works and is the existing behaviour.
+
+One more trap on the way: having moved the rows, subtracting the axial part from the body's own
+placement left the optics sliding +20 while the barrel stood still — detached the other way round. A
+STEP body is anchored to its row's z-STATION, not to `desp` (bugs/0456, which is why the fold carry
+re-seats bodies explicitly), so the body needs the FULL delta.
+
+Measured after, dragging +X 20:
+
+```
+body +20   front datum +20   rear datum +20     together -- still attached
+object, splitter, mirror, image  unchanged
+section 1 (obj->BS)   54.459 -> 54.459          the working distance holds
+section 2 (BS->lens)  71.785 -> 91.784          +20
+section 3 (lens->mir) 103.270 -> 83.270         -20
+```
+
+Guard: `validate_open3d_0499_lens_slides_along_its_leg.py`, penta phase 404.
 
 The two helpers written for the attempt — `_lens_surrogate_axis_direction` and
 `_lens_body_centred_on_surrogate_axis` — were reverted with it, but both are correct and should be

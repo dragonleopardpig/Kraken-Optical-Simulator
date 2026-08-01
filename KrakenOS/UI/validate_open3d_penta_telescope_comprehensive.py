@@ -15421,6 +15421,9 @@ phase_402_glue_restores_the_recorded_placement = _phase_from_standalone(
 phase_403_leg_neighbour_lookup = _phase_from_standalone(
     403, "'the element before this one' comes from the axis, not row order (0499)",
     "KrakenOS.UI.validate_open3d_0499_leg_neighbour_lookup", "leg_neighbour_lookup")
+phase_404_lens_slides_along_its_leg = _phase_from_standalone(
+    404, "dragging the lens along its own leg carries its optics, and only its optics (0499)",
+    "KrakenOS.UI.validate_open3d_0499_lens_slides_along_its_leg", "lens_slides_along_its_leg")
 
 
 # ---------------------------------------------------------------------------
@@ -15871,6 +15874,7 @@ def main() -> int:
             phase_401_carry_reseats_only_bodies_on_the_leg,
             phase_402_glue_restores_the_recorded_placement,
             phase_403_leg_neighbour_lookup,
+            phase_404_lens_slides_along_its_leg,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
