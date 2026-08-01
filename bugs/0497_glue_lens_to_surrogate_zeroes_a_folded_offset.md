@@ -103,9 +103,31 @@ Those overhangs are a property of the CAD relative to its **optical** datums, an
 data marks where the barrel's front face sits relative to the first optical surface. It is known at
 IMPORT time, when the auto-alignment establishes it on an unfolded axis, and then discarded.
 
-So the exact fix is to **persist `k` (or the front/rear overhangs) at import**, alongside the other
-per-overlay state, and seat against that. That also makes the answer independent of whether the
-scene is frozen, folded, or neither — which is the property the runtime derivation kept failing.
+So the exact fix is to seat against the datum the alignment actually pins.
+
+**Lead worth following first, before adding any persisted state.** The codebase already states the
+invariant. `improve_lens_surrogate_rear_datum` (`scene_placement_commands.py`) computes
+
+```python
+# the STEP rear face = the axial extreme farther from the (front-pinned) front datum
+step_rear_z = zmax if abs(zmax - front_datum_z) >= abs(zmin - front_datum_z) else zmin
+```
+
+— "the **front-pinned** front datum", read from `self._lens_front_datum_z()`. If the body's front
+face is pinned to that datum, the target needs no `k` at all: it is
+`P_front_datum + d̂ · (centre-to-front-face distance along the leg)`, all of which is measurable at
+runtime from the transformed mesh.
+
+The catch, measured: that is NOT the `Front Optical Vertex Datum` row. Pinning the front face to
+row 1 (x 71.66) gives centre 101.256 — exactly the wrong answer this partial fix produces. The
+correctly glued body's front face sits at 67.81, i.e. **3.85 mm ahead of** the optical vertex,
+because this scene came from the machine-vision folder importer, which "placed g1 behind the front
+datum / g2 ahead of the rear datum" (`machine_vision_folder_import.py`).
+
+So the remaining work is: find which datum `_lens_front_datum_z()` resolves to on this scene (there
+is no `Lens Front Datum` row in it, so it is taking a fallback), and seat the front face against
+*that*. Persisting the overhang at import is the fallback plan if no such datum survives in the row
+data — but the front-pinned invariant looks like it is already there to be used.
 
 The LED takes the identical destructive path and still wants the same pass.
 
