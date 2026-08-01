@@ -227,6 +227,17 @@ def _open3d_running_build_stamp() -> "dict[str, object]":
     return stamp
 
 
+# bugs/0501: pin the stamp at IMPORT, i.e. when this code was actually loaded. It reads
+# `git rev-parse HEAD` from the working tree, so computing it lazily meant a long-running app that
+# was started before a commit and flagged after it reported the NEW hash while executing the OLD
+# code. flag_20260801_213047 ("lens dragged right") reported 9bde7db3 -- the bugs/0499 fix -- yet
+# showed the pre-fix behaviour exactly: the body moved +28.31 and its surrogate rows did not,
+# while both drag paths move both on that commit when driven headlessly. A build stamp that can
+# lie makes every flag ambiguous, which is expensive: the whole point of the stamp is to tell a
+# stale-app recording apart from a real regression.
+_open3d_running_build_stamp()
+
+
 def _load_3d_backends() -> None:
     global pv, vtkTkRenderWindowInteractor, vtkOrientationMarkerWidget, vtkCameraOrientationWidget
     global vtkAxesActor, vtkActor, vtkCellPicker, vtkPropPicker, vtkDataSetMapper, vtkRenderer, vtkTextActor, vtkBillboardTextActor3D
