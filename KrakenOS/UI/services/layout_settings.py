@@ -296,6 +296,17 @@ class LayoutSettingsService:
             },
             # Item 3: BS<->LED two-body glue flag (the optical + led overlays move together).
             "optical_led_glued": bool(getattr(self, "_optical_led_glued", False)),
+            # bugs/0497: the placement each overlay was PLACED at, as opposed to wherever the user
+            # has since dragged it. "Glue to surrogate" restores this. It cannot be recomputed from
+            # the surrogate: on an importer-placed lens the correct pose was never derived from the
+            # surrogate geometry -- measured on the AZ85 scene, the auto-aligned station is 3.849 mm
+            # from the real one even after accounting for the fold, because the machine-vision
+            # folder importer placed the body, not the auto-alignment.
+            "step_glue_reference_offset_xyz": {
+                str(k): [float(v[0]), float(v[1]), float(v[2])]
+                for k, v in (getattr(self, "_step_glue_reference_offsets", {}) or {}).items()
+                if isinstance(v, (list, tuple)) and len(v) >= 3
+            },
             "camera_step_path": _portable_step_path_text(self.imported_camera_step_path),
             "camera_step_rotation_x_deg": float(getattr(self, "camera_step_rotation_x_deg", 0.0)),
             "camera_step_rotation_y_deg": float(getattr(self, "camera_step_rotation_y_deg", 0.0)),
@@ -697,6 +708,32 @@ class LayoutSettingsService:
         self.lens_step_placement_offset_xyz = _offset_xyz_setting("lens_step_placement_offset_xyz")
         self.optical_step_placement_offset_xyz = _offset_xyz_setting("optical_step_placement_offset_xyz")
         self.led_step_placement_offset_xyz = _offset_xyz_setting("led_step_placement_offset_xyz")
+        # bugs/0497: restore each overlay's glue REFERENCE, and seed any that is missing from the
+        # placement this layout was saved with -- a saved layout's stored placement IS the reference
+        # (it is where the body was put, before any drag in this session). Seeding makes layouts
+        # written before this key existed work immediately, which matters because the scene that
+        # reported the bug is one of them.
+        restored_refs: dict[str, tuple] = {}
+        raw_refs = settings.get("step_glue_reference_offset_xyz", None)
+        if isinstance(raw_refs, dict):
+            for key, value in raw_refs.items():
+                try:
+                    if isinstance(value, (list, tuple)) and len(value) >= 3:
+                        restored_refs[str(key).strip().lower()] = (
+                            float(value[0]), float(value[1]), float(value[2])
+                        )
+                except (TypeError, ValueError):
+                    continue
+        for label in ("camera", "lens", "optical", "led"):
+            if label in restored_refs:
+                continue
+            try:
+                placed = getattr(self, f"{label}_step_placement_offset_xyz", None)
+                if placed is not None and len(placed) >= 3:
+                    restored_refs[label] = (float(placed[0]), float(placed[1]), float(placed[2]))
+            except (TypeError, ValueError):
+                continue
+        self._step_glue_reference_offsets = restored_refs
         self._cad_axis_pick_label = None
         self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = False

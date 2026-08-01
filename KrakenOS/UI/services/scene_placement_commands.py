@@ -3462,6 +3462,39 @@ class ScenePlacementMixin:
         )
         return True
 
+    def _step_glue_reference_offset_xyz(self, label: str):
+        """bugs/0497: the placement this overlay was PLACED at, or None if none was recorded.
+
+        Distinct from the live placement offset, which follows every drag. "Glue to surrogate"
+        restores this, because for an importer-placed body the correct pose cannot be recomputed
+        from the surrogate -- it was never derived from it.
+        """
+        try:
+            record = (getattr(self, "_step_glue_reference_offsets", None) or {}).get(
+                str(label).strip().lower()
+            )
+        except Exception:
+            return None
+        if record is None or len(record) < 3:
+            return None
+        try:
+            value = np.asarray(record, dtype=float).reshape(3)
+        except Exception:
+            return None
+        return value if np.all(np.isfinite(value)) else None
+
+    def _set_step_glue_reference_offset_xyz(self, label: str, offset) -> None:
+        """Record where an overlay was placed, so a later glue can put it back there."""
+        try:
+            value = np.asarray(offset, dtype=float).reshape(3)
+        except Exception:
+            return
+        if not np.all(np.isfinite(value)):
+            return
+        table = dict(getattr(self, "_step_glue_reference_offsets", None) or {})
+        table[str(label).strip().lower()] = (float(value[0]), float(value[1]), float(value[2]))
+        self._step_glue_reference_offsets = table
+
     def _lens_surrogate_datum_rows(self) -> "tuple[int, int] | None":
         """(front, rear) optical-vertex datum row indices of the lens surrogate, or None."""
         front = rear = None
@@ -3556,6 +3589,44 @@ class ScenePlacementMixin:
         except Exception:
             captured = False
         try:
+            # bugs/0497: the recorded placement wins. The surrogate-derived target below is a
+            # FALLBACK for a body that has no reference (never placed through a path that records
+            # one), and it is known to land 3.849 mm short on an importer-placed lens.
+            reference = self._step_glue_reference_offset_xyz("lens")
+            if reference is not None:
+                current_off = np.asarray(self._step_placement_offset_xyz("lens"), dtype=float).reshape(3)
+                if float(np.linalg.norm(current_off - reference)) <= 1.0e-9:
+                    self.status_var.set("LENS STEP is already glued to its optical surrogate.")
+                    return False
+                self._set_step_placement_offset_xyz("lens", tuple(float(v) for v in reference))
+                moved = True
+            else:
+                moved = self._seat_lens_on_surrogate_geometry()
+        finally:
+            if captured:
+                try:
+                    self._commit_history_capture()
+                except Exception:
+                    pass
+        if moved:
+            self._selected_step_label = "lens"
+            self.status_var.set(
+                "Glued LENS STEP back to the placement it was set at."
+                if reference is not None
+                else "Glued LENS STEP to its optical surrogate "
+                "(centred on the surrogate axis, datum aligned)."
+            )
+        return bool(moved)
+
+    def _seat_lens_on_surrogate_geometry(self) -> bool:
+        """bugs/0497 FALLBACK: seat the lens from the surrogate when no placement was recorded.
+
+        Known to land 3.849 mm short on an importer-placed lens (the machine-vision folder importer
+        does not place the body where the auto-alignment would), which is exactly why the recorded
+        reference is preferred. Kept for a body that reached the scene some other way, since landing
+        on the surrogate's leg still beats the origin.
+        """
+        try:
             self._set_step_axis_offset_xy("lens", (0.0, 0.0))
             target = self._lens_surrogate_seat_target()
             if target is None:
@@ -3569,20 +3640,9 @@ class ScenePlacementMixin:
                 if gap <= 1.0e-6:
                     self.status_var.set("LENS STEP is already glued to its optical surrogate.")
                     return False
-            moved = bool(self._seat_step_body_world_center("lens", target))
-        finally:
-            if captured:
-                try:
-                    self._commit_history_capture()
-                except Exception:
-                    pass
-        if moved:
-            self._selected_step_label = "lens"
-            self.status_var.set(
-                "Glued LENS STEP to its optical surrogate "
-                "(centred on the surrogate axis, datum aligned)."
-            )
-        return moved
+            return bool(self._seat_step_body_world_center("lens", target))
+        except Exception:
+            return False
 
     def _reset_camera_to_image_plane(self) -> bool:
         """bugs/0475: back the "Reset Camera to Image Plane" menu item with the real seating.

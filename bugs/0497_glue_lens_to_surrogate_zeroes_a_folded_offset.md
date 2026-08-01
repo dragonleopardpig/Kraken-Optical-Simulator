@@ -164,7 +164,25 @@ anything. Concretely: persist a per-overlay `glue_reference_offset_xyz` alongsid
 `_reset_lens_to_surrogate` seat to it. That is the "persist at import" plan, now with the runtime
 alternatives eliminated by measurement rather than by assumption.
 
-Until then the shipped partial stands: no origin dump, no stranding, 3.849 mm short.
+## Shipped — exact
+
+`step_glue_reference_offset_xyz`, a per-overlay record of the placement a body was PLACED at, kept
+beside the live placement offset and persisted in the layout settings. `glue_step_overlay_to_surrogate`
+restores it for the lens instead of deriving anything; the surrogate-derived seat remains as the
+fallback for a body that has no reference, where landing on the leg still beats the origin.
+
+A saved layout's stored placement **seeds** the reference on load, so layouts written before the key
+existed work immediately — which includes the scene that reported this.
+
+Measured: drag the body 30.8 mm away, glue, and it returns to x 97.406 with residual **0.000000 mm**.
+A second drag-then-glue lands identically (the stranding is gone), a third reports no move, and the
+reference round-trips through save/reload.
+
+Guard: `validate_open3d_0497_glue_restores_the_recorded_placement.py`, penta phase 402. Section C
+covers the round trip on purpose — bugs/0492 is this exact settings block, and the facade shadowing
+it fixed is what silently ate a key here before.
+
+Still open: the LED takes the same destructive zeroing path and wants the same treatment.
 
 The LED takes the identical destructive path and still wants the same pass.
 
