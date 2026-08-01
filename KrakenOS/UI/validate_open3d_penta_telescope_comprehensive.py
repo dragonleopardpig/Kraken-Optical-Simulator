@@ -15406,6 +15406,10 @@ phase_399_translation_preserves_emitted_direction = _phase_from_standalone(
     399, "sliding a folder moves its fold point and never turns its emitted leg (0494)",
     "KrakenOS.UI.validate_open3d_0494_translation_preserves_emitted_direction",
     "translation_preserves_emitted_direction")
+phase_400_detector_reads_the_rays_that_land = _phase_from_standalone(
+    400, "an arm's detector is fitted from the rays that actually LAND on it (0495)",
+    "KrakenOS.UI.validate_open3d_0495_detector_reads_the_rays_that_land",
+    "detector_reads_the_rays_that_land")
 
 
 # ---------------------------------------------------------------------------
@@ -15852,6 +15856,7 @@ def main() -> int:
             phase_397_carry_reaches_the_drawing,
             phase_398_live_drag_release_redraws,
             phase_399_translation_preserves_emitted_direction,
+            phase_400_detector_reads_the_rays_that_land,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

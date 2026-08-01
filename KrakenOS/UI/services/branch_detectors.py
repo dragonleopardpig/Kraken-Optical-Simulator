@@ -503,6 +503,7 @@ def derive_branch_detectors(
         # on a detector (0097 perpendicular arms, 0099 dual-lens, two-arm folds)
         # keeps a HIGH reach fraction and is untouched.
         _force_pin_focus = None
+        _reaching: list = []
         if reached is not None:
             def _path_reaches(p) -> bool:
                 if bool(getattr(p, "reaches_image", False)):
@@ -513,6 +514,35 @@ def derive_branch_detectors(
                     return False
 
             _reaching = [p for p in group if _path_reaches(p)]
+            # bugs/0495: read the exit bundle from the rays that actually LAND whenever ANY do,
+            # not only when they are a minority. _exit_rays_for_group takes the last segment of
+            # EVERY ray in the leaf, so a ray that dies at the fold mirror contributes the
+            # PRE-mirror direction (+X here) while one that reaches the sensor contributes the
+            # POST-mirror direction (-Z). Their mean is a 45 degree phantom, and everything
+            # downstream is computed from it: the fitted focus lands ON the mirror, and the
+            # bugs/0097 "is the image on this leaf" test (cos > 0.7) fails on a 45 degree mean
+            # direction, so the pin never fires either. Measured on the AZ85 BS scene, dragging
+            # the glued LED down 12.54 mm (flag_20260801_190613): the S3:S3/reflect detector went
+            # from center [229.93, 0, -5.08] normal [0,0,-1] to center [229.28, 0.18, 66.04]
+            # normal [0.689, 0, -0.725] -- a tilted plane drawn on the RA mirror, which is what
+            # the user saw as "sensor misplaced". bugs/0448 already named this principle ("read
+            # the exit bundle from the SURVIVORS only so the plane's normal is the beam that
+            # actually lands") but applied it only inside its <0.5 branch, so a HEALTHY arm --
+            # the majority of whose rays land -- was left with the contaminated bundle.
+            if _reaching and len(_reaching) < len(group):
+                _o1, _d1 = _exit_rays_for_group(_reaching)
+                if _o1.shape[0] > 0:
+                    _md1 = _unit(_d1.mean(axis=0))
+                    if _md1 is not None:
+                        origins, directions = _o1, _d1
+                        mean_dir, mean_origin = _md1, _o1.mean(axis=0)
+                        focus, converged = _closest_approach_point(origins, directions)
+                        forward = float(np.dot(focus - mean_origin, mean_dir)) if converged else -1.0
+                        if (not converged) or forward <= 1.0e-6 or not np.all(np.isfinite(focus)):
+                            focus = mean_origin + mean_dir * fallback_distance
+                            focus_source = "default_distance"
+                        else:
+                            focus_source = "converging_rays"
             if group and (len(_reaching) / float(len(group))) < 0.5:
                 _pin = np.asarray(
                     getattr(reached, "center_world", (np.nan,) * 3), dtype=float
