@@ -1653,8 +1653,24 @@ def axis_fold_emissions(rows, *, system=None) -> dict[int, dict[str, object]]:
             # _fold_slide_carry_apply rotated the entire leg about the fold point
             # (flag_20260731_225718, "drag again the LED, this time to the right, everything
             # misplaced").
+            # ... and off the SAME face the drawing reflects from. `beam_splitter_coating_world_frames`
+            # (bugs/0428, which draws axis:global:split) calls select_optical_solid_interaction_face
+            # and so reflects once off one chosen coating; the walk here ranked the plate's two sides
+            # by ABSOLUTE distance from a probe point that does not move when the body slides, so the
+            # ranking INVERTED at desp_x = 0 and the two derivations disagreed. That is the whole
+            # reason the recording showed a leg turned 90 degrees while the drawn split axis was
+            # still along +X. Selecting the face the same way makes them agree by construction --
+            # which is what axis_fold_emissions exists for ("the geometry below is the SAME
+            # primitives the follower builder uses, so the two cannot drift").
+            coating = select_optical_solid_interaction_face(world_faces)
+            if coating is not None and _optical_solid_face_function(coating) != "Beam Splitter":
+                coating = None  # a Mirror/uncoated face outranks the coating: fall back to the walk
             bounces = _interaction_fold_emission(
-                world_faces, probe_origin, parent_direction, accept={"Beam Splitter"}, max_bounces=1
+                [coating] if coating is not None else world_faces,
+                probe_origin,
+                parent_direction,
+                accept={"Beam Splitter"},
+                max_bounces=1,
             )
             if not bounces:
                 continue

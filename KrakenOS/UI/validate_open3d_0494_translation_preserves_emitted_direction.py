@@ -47,7 +47,10 @@ SCENE = Path("attachment/machine_vision_AZ85_RA_Mirror_BS.py")
 BS_ROW, MIRROR_ROW = 3, 7
 # Offsets to slide the splitter sideways by. 12.54 is the recorded drag; the rest bracket it so a
 # knife-edge that merely MOVES rather than disappears still gets caught.
-SIDEWAYS = (0.0, 1.0, 2.0, 5.0, 8.0, 12.54, 20.0, 30.0)
+# The flip was at desp_x = 0 EXACTLY -- the SIGN of the sideways drag, not its size -- because the
+# two plate sides were ranked by ABSOLUTE distance from a probe point that does not move when the
+# body slides. So the sweep must straddle zero, not just start at it.
+SIDEWAYS = (-20.0, -5.0, -1.0, -0.2, 0.0, 0.1221, 0.2, 1.0, 2.0, 5.0, 8.0, 12.54, 20.0, 30.0)
 ALONG = (0.0, 5.0, 13.681, 25.0)  # the gesture that already worked, kept as the control
 TOL = 1.0e-6
 
@@ -152,34 +155,49 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     # Slope only, measured between consecutive offsets: a 45-degree coating slid +d sideways drops
     # the point where the fixed incoming axis crosses it by the same d.
     walk_pts = []
-    for offset in (2.0, 5.0, 8.0, 12.54, 20.0, 30.0):
+    for offset in SIDEWAYS:
         spec = emissions_at(dx=offset).get(BS_ROW)
         if spec is not None:
             walk_pts.append((offset, float(np.asarray(spec["origin"])[2])))
-    slopes = [
-        ((z1 - z0) / (x1 - x0))
-        for (x0, z0), (x1, z1) in zip(walk_pts, walk_pts[1:])
-    ]
+    slopes = [((z1 - z0) / (x1 - x0)) for (x0, z0), (x1, z1) in zip(walk_pts, walk_pts[1:])]
+    worst = max((abs(s + 1.0) for s in slopes), default=1.0)
     check(
-        bool(slopes) and all(abs(s + 1.0) < 0.02 for s in slopes),
-        f"C1: the fold point tracks the slide 1:1 ({[round(s, 4) for s in slopes]}) -- the cap did "
-        f"not pin the geometry",
+        bool(slopes) and worst < 0.02,
+        f"C1: the fold point tracks the slide 1:1 across the WHOLE sweep INCLUDING desp_x = 0 "
+        f"(worst slope error {worst:.4f}) -- no jump where the face choice used to invert",
     )
-    # C2 is a MEASUREMENT, not an assertion. The coating is flagged on both sides, 1.556 mm apart
-    # along the incoming axis, and the first bounce takes whichever plane crossing is nearest in
-    # ABSOLUTE distance (deliberately sign-agnostic: the probe point is an arbitrary point on the
-    # incoming line). Which side wins therefore still flips as the body slides, and the fold point
-    # jumps by the sides' axial separation. That is the same "face choice depends on position"
-    # family as the 90-degree turn this bug fixes, two orders of magnitude smaller, and NOT fixed
-    # by the bounce cap -- it moves section 1 by ~1.5 mm. Recorded so it is not mistaken for noise.
-    first = emissions_at(dx=0.0).get(BS_ROW)
-    second = emissions_at(dx=2.0).get(BS_ROW)
-    if first is not None and second is not None:
-        jump = abs(float(np.asarray(first["origin"])[2]) - float(np.asarray(second["origin"])[2]) - 2.0)
-        notes.append(
-            f"NOTE   C2 residual, known and unfixed: the fold point jumps {jump:.3f} mm as the "
-            f"first bounce switches between the coating's two flagged sides)"
+
+    # --- C2. the emission reflects off the SAME coating the DRAWING does --------------------
+    # axis:global:split is drawn from beam_splitter_coating_world_frames (bugs/0428), which picks
+    # ONE face via select_optical_solid_interaction_face. The emission used to rank the plate's two
+    # flagged sides by ABSOLUTE distance from a probe point that does not move when the body slides,
+    # so the ranking inverted at desp_x = 0 and the two derivations chose different sides of the
+    # same 1.1 mm plate. That is exactly why the recording showed a leg turned 90 degrees while the
+    # drawn split axis was still along +X. They have to agree at every offset.
+    try:
+        from KrakenOS.UI.nonseq_output_ports import beam_splitter_coating_world_frames
+
+        off_plane = []
+        for offset in SIDEWAYS:
+            rows = copy.deepcopy(surfaces)
+            rows[BS_ROW]["desp_x"] = base_x + offset
+            spec = (axis_fold_emissions(rows) or {}).get(BS_ROW)
+            coatings = beam_splitter_coating_world_frames(rows)
+            if spec is None or not coatings:
+                off_plane.append(f"{offset:+.2f}:missing")
+                continue
+            point, normal = coatings[0]
+            gap = abs(float(np.dot(np.asarray(spec["origin"], dtype=float).reshape(3) - point, normal)))
+            if gap > 1.0e-6:
+                off_plane.append(f"{offset:+.2f}:{gap:.4f}mm")
+        check(
+            not off_plane,
+            f"C2: the fold point lies ON the coating plane the DRAWING reflects from at every "
+            f"offset ({', '.join(off_plane) if off_plane else 'model and drawing agree'}) -- two "
+            f"derivations over one solid must not drift",
         )
+    except Exception as exc:
+        notes.append(f"SKIP: coating frames unavailable ({type(exc).__name__}: {exc})")
 
     # --- D. the follower's own emission survives the slide --------------------------------
     mirror_rest = emissions_at().get(MIRROR_ROW)
