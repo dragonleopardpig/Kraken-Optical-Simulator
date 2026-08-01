@@ -220,6 +220,17 @@ def _open3d_running_build_stamp() -> "dict[str, object]":
                 "git": head,
                 "branch": _git("rev-parse", "--abbrev-ref", "HEAD"),
                 "dirty": bool(dirty),
+                # bugs/0502: WHICH COPY is running. `git rev-parse` reads the repository, so the
+                # hash above is honest about the checkout even when the process imported KrakenOS
+                # from somewhere else entirely -- an installed copy, a Nix store path, a stale
+                # editable install. Then a recording carries a commit whose code was never loaded,
+                # which is indistinguishable from a regression. Measured need: flag_20260801_213816
+                # ("still the same") reported 94421f9b and showed the pre-0499 behaviour, while
+                # every call signature the live drag paths use moves the rows correctly when driven
+                # headlessly from this checkout -- body 97.41 -> 132.56 matching the recording to
+                # the last digit, row 1 71.66 -> 106.81 where the recording has it unmoved.
+                "module_path": str(Path(__file__).resolve().parent.parent.parent),
+                "repo_path": str(repo_dir),
             }
     except Exception:
         stamp = {"git": None}
