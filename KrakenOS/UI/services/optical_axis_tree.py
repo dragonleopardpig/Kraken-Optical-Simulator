@@ -318,6 +318,92 @@ def descendant_segment_ids(tree, segment_id: str) -> "set[str]":
     return out
 
 
+def rows_along_leg(snaps, segment_id: str) -> "list[int]":
+    """Rows sitting on one leg, ordered by arc length ALONG that leg (bugs/0499).
+
+    Row INDEX order is not optical order once a scene is folded. On the AZ85 machine-vision layout
+    the rows read ``0 Object, 1 Front datum, 2 BB1, 3 BS, 4 Aperture, 5 BB2, 6 Rear datum,
+    7 mirror, 8 Image`` -- the lens datums BRACKET the beam splitter in index order, because the
+    splitter emits the leg the lens sits on. Anything that reasons about "the element before this
+    one" has to ask the axis, not the list.
+    """
+    ordered = [
+        snap for snap in (snaps or []) if str(getattr(snap, "segment_id", "")) == str(segment_id)
+    ]
+    ordered.sort(key=lambda snap: float(getattr(snap, "s", 0.0)))
+    return [int(snap.row_index) for snap in ordered]
+
+
+def leg_upstream_neighbour(tree, snaps, row_index: int, *, tolerance: float = 1.0e-6):
+    """The element immediately UPSTREAM of a row along its own leg, or None. (bugs/0499)
+
+    Returns the nearest row on the same segment with a smaller arc length; when the row is the
+    first thing on its leg, returns the segment's ``source_row`` -- the folder that emitted it,
+    which is genuinely what sits upstream (for the AZ85 lens that is the beam splitter). None only
+    when the row is first on the ROOT axis, where nothing precedes it.
+
+    This exists because ``rows[i - 1]`` is wrong on a folded scene, and quietly so: the lens
+    redirect used it to pick the gap to rewrite and got the OBJECT gap -- section 1, the object to
+    splitter distance -- so dragging the lens along its leg lifted the entire leg instead of
+    changing the splitter to lens distance. Measured: a +X 20 mm drag moved the body and both
+    datums +Z 20 mm (bugs/0499).
+    """
+    target = None
+    for snap in (snaps or []):
+        if int(getattr(snap, "row_index", -1)) == int(row_index):
+            target = snap
+            break
+    if target is None:
+        return None
+    segment_id = str(getattr(target, "segment_id", ""))
+    here = float(getattr(target, "s", 0.0))
+    best = None
+    for snap in (snaps or []):
+        if str(getattr(snap, "segment_id", "")) != segment_id:
+            continue
+        if int(getattr(snap, "row_index", -1)) == int(row_index):
+            continue
+        s = float(getattr(snap, "s", 0.0))
+        if s > here - float(tolerance):
+            continue
+        if best is None or s > float(getattr(best, "s", 0.0)):
+            best = snap
+    if best is not None:
+        return int(best.row_index)
+    # First thing on this leg. What sits upstream is the FOLDER that emitted it -- unless this row
+    # IS that folder, which is the case for a mirror sitting at s=0 on the leg it creates. Then the
+    # answer lives on the PARENT leg, at the arc length where this segment branches off it. Without
+    # this a folder came back as its own upstream neighbour (row 7 -> 7 on the AZ85 scene).
+    visited: set[str] = set()
+    while segment_id and segment_id not in visited:
+        visited.add(segment_id)
+        segment = (tree or {}).get(segment_id)
+        if segment is None:
+            return None
+        source = getattr(segment, "source_row", None)
+        if source is not None and int(source) != int(row_index):
+            return int(source)
+        parent_id = getattr(segment, "parent_id", None)
+        if not parent_id:
+            return None
+        branch_at = float(getattr(segment, "start_on_parent", 0.0))
+        upstream = None
+        for snap in (snaps or []):
+            if str(getattr(snap, "segment_id", "")) != str(parent_id):
+                continue
+            if int(getattr(snap, "row_index", -1)) == int(row_index):
+                continue
+            s_parent = float(getattr(snap, "s", 0.0))
+            if s_parent > branch_at - float(tolerance):
+                continue
+            if upstream is None or s_parent > float(getattr(upstream, "s", 0.0)):
+                upstream = snap
+        if upstream is not None:
+            return int(upstream.row_index)
+        segment_id = str(parent_id)
+    return None
+
+
 def point_on_emitted_leg(tree, folder_row: int, point) -> bool:
     """Does a world POINT sit on a folder's emitted leg, or on anything below it? (bugs/0496)
 

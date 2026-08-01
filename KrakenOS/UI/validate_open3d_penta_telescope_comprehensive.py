@@ -15418,6 +15418,9 @@ phase_402_glue_restores_the_recorded_placement = _phase_from_standalone(
     402, "glue to surrogate restores the placement the body was PLACED at (0497)",
     "KrakenOS.UI.validate_open3d_0497_glue_restores_the_recorded_placement",
     "glue_restores_the_recorded_placement")
+phase_403_leg_neighbour_lookup = _phase_from_standalone(
+    403, "'the element before this one' comes from the axis, not row order (0499)",
+    "KrakenOS.UI.validate_open3d_0499_leg_neighbour_lookup", "leg_neighbour_lookup")
 
 
 # ---------------------------------------------------------------------------
@@ -15867,6 +15870,7 @@ def main() -> int:
             phase_400_detector_reads_the_rays_that_land,
             phase_401_carry_reseats_only_bodies_on_the_leg,
             phase_402_glue_restores_the_recorded_placement,
+            phase_403_leg_neighbour_lookup,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

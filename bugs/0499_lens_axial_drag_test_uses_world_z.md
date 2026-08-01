@@ -76,15 +76,35 @@ lateral = delta - axial * leg_dir  # centre the body, as today
 On an unfolded scene `leg_dir` is +Z and this reduces to the present behaviour exactly — the same
 reduction test bugs/0497 used, and the check that it is a generalisation rather than a new rule.
 
-The redirect target is the real work, now that the classifier is understood: it must find the gap
-**upstream of the lens along its own leg** (here BS→lens, section 2) rather than `lens_front_idx - 1`
-by index. The axis tree already knows which segment each row sits on
-(`optical_axis_tree.snap_rows`, and `point_on_emitted_leg` from bugs/0496), so the leg-neighbour is
-derivable from the same primitives rather than from row order.
+### The missing primitive — BUILT
+
+`optical_axis_tree.leg_upstream_neighbour(tree, snaps, row)` and `rows_along_leg(snaps, segment)`,
+from the same tree the rest of the fold work uses, so a caller cannot disagree with
+`rows_on_emitted_leg` (bugs/0485) or `point_on_emitted_leg` (bugs/0496) about what is on a leg.
+
+Measured on this scene — the three that differ from `rows[i-1]` are the whole point:
+
+```
+leg axis:root      optical order [0, 3]            row 1 -> upstream 3 (the SPLITTER), index says 0
+leg axis:fold:3    optical order [1, 2, 4, 5, 6]   row 3 -> upstream 0,                index says 2
+leg axis:fold:7    optical order [7, 8]            row 4 -> upstream 2,                index says 3
+```
+
+Two traps it had to handle: a folder sits at `s = 0` on the leg **it emits**, so the naive
+"return the segment's `source_row`" fallback made row 7 its own upstream neighbour; the lookup now
+walks to the parent leg and takes the last row before the branch point. And on an unfolded scene it
+collapses to plain index order, which is the reduction test that it generalises rather than replaces.
+
+Guard: `validate_open3d_0499_leg_neighbour_lookup.py`, penta phase 403 (display-free).
+
+### Still to do
+
+Point the lens redirect at it — `rows[lens_front_idx - 1]` becomes the leg neighbour — and restore
+the two reverted helpers.
 
 The two helpers written for the attempt — `_lens_surrogate_axis_direction` and
-`_lens_body_centred_on_surrogate_axis` — were reverted with it, but both are correct and worth
-restoring when the redirect target is solved.
+`_lens_body_centred_on_surrogate_axis` — were reverted with it, but both are correct and should be
+restored alongside the redirect change.
 
 ## Guard it needs
 
