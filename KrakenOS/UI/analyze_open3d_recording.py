@@ -209,32 +209,44 @@ def _check_handles_after_snap(events: list[dict[str, Any]], findings: list[Findi
 
 
 def _check_view_up_drift(events: list[dict[str, Any]], findings: list[Finding]) -> None:
-    """Camera view-up must stay locked to world up; drift = orbit flip bug."""
-    target = (0.0, 1.0, 0.0)
+    """Camera view-up must stay PUT across a session; a change is the orbit flip bug.
+
+    bugs/0498: this used to compare every event against a hardcoded world +Y, so a scene viewed
+    from TOP -- ``view_up = (0, 0, -1)``, which is the AZ85 machine-vision default and what the
+    nav cube reads -- tripped on EVERY event. ``recording_20260801_204025`` produced 172 warnings
+    for 172 events and buried its one real line, which made the analyzer useless exactly when it
+    was needed. Any axis-aligned view-up is a legitimate orientation; what is not legitimate is the
+    vector TURNING under an interaction that should have kept it locked. So compare each event
+    against the previous one, which is what "drift" meant all along, and report a transition once
+    rather than every event after it.
+    """
+    previous: tuple[float, float, float] | None = None
     for i, ev in enumerate(events):
         snap = ev.get("scene_state") or {}
         vu = snap.get("camera_view_up") or []
         if len(vu) < 3:
             continue
         try:
-            d = (
-                abs(float(vu[0]) - target[0]),
-                abs(float(vu[1]) - target[1]),
-                abs(float(vu[2]) - target[2]),
-            )
+            current = (float(vu[0]), float(vu[1]), float(vu[2]))
         except Exception:
             continue
-        if max(d) > VIEW_UP_DRIFT_TOL:
-            findings.append(
-                Finding(
-                    severity="warning",
-                    code="camera_view_up_drift",
-                    event_index=i,
-                    timestamp_ms=float(ev.get("timestamp_ms") or 0.0),
-                    message=f"camera_view_up={tuple(vu[:3])} drifted from world up",
-                    detail={"delta": list(d)},
+        if previous is not None:
+            d = tuple(abs(c - p) for c, p in zip(current, previous))
+            if max(d) > VIEW_UP_DRIFT_TOL:
+                findings.append(
+                    Finding(
+                        severity="warning",
+                        code="camera_view_up_drift",
+                        event_index=i,
+                        timestamp_ms=float(ev.get("timestamp_ms") or 0.0),
+                        message=(
+                            f"camera_view_up turned {previous} -> {current}; a locked view-up "
+                            f"should not change during an orbit"
+                        ),
+                        detail={"delta": list(d), "previous": list(previous)},
+                    )
                 )
-            )
+        previous = current
 
 
 def _check_actor_disappearance(events: list[dict[str, Any]], findings: list[Finding]) -> None:
