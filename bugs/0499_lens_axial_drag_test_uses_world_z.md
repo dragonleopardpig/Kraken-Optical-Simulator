@@ -34,7 +34,35 @@ its surrogate — exactly "still detached".
 The same world-axis assumption is what bugs/0475 fixed for the camera and bugs/0497 for the lens
 placement. This is the third instance, in the drag classifier.
 
-## Fix — not yet written
+## Attempted, and REVERTED — there is a second, deeper blocker
+
+Both world-axis assumptions were generalised and measured, and the result was worse than the bug:
+
+* the inner test `abs(delta[2]) > 1e-9` → project onto the surrogate's leg direction;
+* the outer gate `overlay_on_axis`, which requires the placement offset's X/Y ≈ 0 — i.e. "on the
+  nominal +Z line". The AZ85 lens offset is [97.41, 0, -106.43] **because** it rides the +X leg, so
+  that gate was False and the axial branch had never run at all on this scene. Replaced with a
+  geometric test: is the body's centre on the line through its own datums?
+
+With both fixed the redirect fires and the optics do follow — **in the wrong direction**. Dragging
++X 20 moved the body *and* both datums +Z 20:
+
+```
+before   body [97.41, 0, 53.8]   front datum [71.66, 0, 53.8]
++X 20 -> body [97.41, 0, 73.8]   front datum [71.66, 0, 73.8]
+```
+
+Because the redirect rewrites `rows[lens_front_idx - 1].thickness`, and on this layout the row
+order is `0 Object, 1 Front datum, 2 BB1, 3 BS, 4 Aperture, 5 BB2, 6 Rear datum, 7 mirror, 8 Image`
+— the lens datums **bracket the beam splitter in index order**. So "the row before the front datum"
+is the Object gap: section 1, the object→BS distance, which moves the fold point and therefore the
+whole leg vertically. Dragging the lens right must change section 2 (BS→lens), not section 1.
+
+Index order does not follow optical order along the legs once a scene is folded — the same family
+as bugs/0448's backwards frozen gaps. Reverted: a drag that silently changes the working distance
+is worse than one that does nothing.
+
+## Fix — still not written
 
 Project the drag onto the lens's ACTUAL optical axis instead of testing world Z: the surrogate's
 front and rear datum rows already give that direction (`_lens_datum_row_index("front"/"rear")` plus
@@ -48,11 +76,15 @@ lateral = delta - axial * leg_dir  # centre the body, as today
 On an unfolded scene `leg_dir` is +Z and this reduces to the present behaviour exactly — the same
 reduction test bugs/0497 used, and the check that it is a generalisation rather than a new rule.
 
-Care needed: the axial branch rewrites `rows[lens_front_idx - 1].thickness`, so it changes the
-object-to-lens gap and the focus. Worth confirming on the folded scene that the redirect lands on
-the gap that is actually upstream of the lens on its leg, not merely the row before it in index
-order — the two coincide unfolded and need not when frozen (see the bugs/0448 "frozen gap rows run
-backwards" family).
+The redirect target is the real work, now that the classifier is understood: it must find the gap
+**upstream of the lens along its own leg** (here BS→lens, section 2) rather than `lens_front_idx - 1`
+by index. The axis tree already knows which segment each row sits on
+(`optical_axis_tree.snap_rows`, and `point_on_emitted_leg` from bugs/0496), so the leg-neighbour is
+derivable from the same primitives rather than from row order.
+
+The two helpers written for the attempt — `_lens_surrogate_axis_direction` and
+`_lens_body_centred_on_surrogate_axis` — were reverted with it, but both are correct and worth
+restoring when the redirect target is solved.
 
 ## Guard it needs
 
