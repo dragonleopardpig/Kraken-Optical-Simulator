@@ -1642,8 +1642,19 @@ def axis_fold_emissions(rows, *, system=None) -> dict[int, dict[str, object]]:
             # (``_is_specular_fold_interaction_face`` accepts Mirror/uncoated only) because a BS
             # must never fold the FOLLOWER chain -- bugs/0398. It does still EMIT a reflect axis,
             # which is what bugs/0428 exposes for drawing.
+            # bugs/0494: ONE bounce. A splitter's reflect leg is a single reflection off its
+            # coating -- the multi-bounce walk exists for a penta prism's two DISTINCT Mirror
+            # faces. A cube BS is promoted with the coating's two SIDES both flagged
+            # "Beam Splitter" (measured on the AZ85 scene: functions={'Transmit/Port': 4,
+            # 'Beam Splitter': 2}), and reflecting twice off one 45 deg plate sends the beam
+            # straight back down the incoming direction: +Z -> +X -> +Z. Whether the walk
+            # reached that second side was a knife-edge function of where the body sat, so
+            # sliding the splitter SIDEWAYS silently turned its emitted direction 90 deg and
+            # _fold_slide_carry_apply rotated the entire leg about the fold point
+            # (flag_20260731_225718, "drag again the LED, this time to the right, everything
+            # misplaced").
             bounces = _interaction_fold_emission(
-                world_faces, probe_origin, parent_direction, accept={"Beam Splitter"}
+                world_faces, probe_origin, parent_direction, accept={"Beam Splitter"}, max_bounces=1
             )
             if not bounces:
                 continue
@@ -1742,11 +1753,13 @@ def _face_hit_radius(face) -> "float | None":
     return float(np.sqrt(area)) + 2.0
 
 
-def _interaction_fold_emission(world_faces, axis_origin, incoming, *, accept):
+def _interaction_fold_emission(world_faces, axis_origin, incoming, *, accept, max_bounces=None):
     """Walk the leg through a solid's interaction faces and return every bounce. (bugs/0485 1b)
 
     Returns ``[(hit, emitted_direction), ...]`` -- one entry per reflection, in order -- or
-    ``None`` when the leg never folds here.
+    ``None`` when the leg never folds here. ``max_bounces`` caps the walk: a beam splitter passes
+    1, because its reflect leg is a SINGLE reflection off one coating and a promoted cube has that
+    coating's two sides both flagged (bugs/0494).
 
     **A solid can fold more than once.** A penta prism carries TWO ``Mirror`` faces and deviates
     the beam 90 degrees by reflecting off both; taking a single interaction face emitted its
@@ -1779,13 +1792,14 @@ def _interaction_fold_emission(world_faces, axis_origin, incoming, *, accept):
     ]
     if not candidates:
         return None
+    steps = len(candidates) if max_bounces is None else max(0, min(int(max_bounces), len(candidates)))
     direction = _unit_vector(incoming)
     if direction is None:
         return None
     origin = np.asarray(axis_origin, dtype=float).reshape(3)
     bounces: list[tuple[np.ndarray, np.ndarray]] = []
     remaining = list(candidates)
-    for _step in range(len(candidates)):
+    for _step in range(steps):
         best = None
         for face in remaining:
             normal = _unit_vector(face.get("normal_world", (0.0, 0.0, 1.0)))

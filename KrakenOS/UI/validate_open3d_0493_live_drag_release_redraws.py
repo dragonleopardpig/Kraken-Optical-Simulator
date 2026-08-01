@@ -291,7 +291,7 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
 def run() -> int:
     passed, notes = run_checks()
     for note in notes:
-        print((" " if note.startswith(("PASS", "SKIP")) else "!"), note)
+        print((" " if note.startswith(("PASS", "SKIP", "NOTE")) else "!"), note)
     print("PASS" if passed else "FAIL")
     return 0 if passed else 1
 

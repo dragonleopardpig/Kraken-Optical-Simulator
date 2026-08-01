@@ -15402,6 +15402,10 @@ phase_397_carry_reaches_the_drawing = _phase_from_standalone(
 phase_398_live_drag_release_redraws = _phase_from_standalone(
     398, "a Live-Mode drag redraws the carried leg when the gesture ends (0493)",
     "KrakenOS.UI.validate_open3d_0493_live_drag_release_redraws", "live_drag_release_redraws")
+phase_399_translation_preserves_emitted_direction = _phase_from_standalone(
+    399, "sliding a folder moves its fold point and never turns its emitted leg (0494)",
+    "KrakenOS.UI.validate_open3d_0494_translation_preserves_emitted_direction",
+    "translation_preserves_emitted_direction")
 
 
 # ---------------------------------------------------------------------------
@@ -15847,6 +15851,7 @@ def main() -> int:
             phase_396_settings_facade_holds_no_state,
             phase_397_carry_reaches_the_drawing,
             phase_398_live_drag_release_redraws,
+            phase_399_translation_preserves_emitted_direction,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

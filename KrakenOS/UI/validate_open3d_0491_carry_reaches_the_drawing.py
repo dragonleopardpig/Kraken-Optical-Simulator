@@ -212,7 +212,7 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         notes.append(driven)
         return ok, notes
     notes.append(
-        f"       (the AZ85 rebuild takes {driven.get('build_s', 0.0):.1f} s -- long enough that a "
+        f"NOTE   the AZ85 rebuild takes {driven.get('build_s', 0.0):.1f} s -- long enough that a "
         f"user who drags and looks straight away sees the OLD chain)"
     )
     for gesture, title in (("row", "B: sliding the BS row"), ("glue", "C: dragging the glued LED body")):
@@ -272,7 +272,7 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
 def run() -> int:
     passed, notes = run_checks()
     for note in notes:
-        print((" " if note.startswith(("PASS", "SKIP")) else "!"), note)
+        print((" " if note.startswith(("PASS", "SKIP", "NOTE")) else "!"), note)
     print("PASS" if passed else "FAIL")
     return 0 if passed else 1
 
