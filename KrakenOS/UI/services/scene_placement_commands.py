@@ -3434,6 +3434,12 @@ class ScenePlacementMixin:
         # plane from ANY starting offset and never needs the destructive zeroing step.
         if label == "camera":
             return self._reset_camera_to_image_plane()
+        # bugs/0497: the lens has the SAME problem on a folded scene -- 0475's carve-out covered one
+        # label. Zeroing seats the body on the NOMINAL axis, and on the AZ85 scene the lens rides
+        # the splitter's +X leg, so the menu threw its offset from [97.41, 0, -105.10] to [0, 0, 0]
+        # and dropped the body at the origin (flag_20260801_195042). Seat it relatively instead.
+        if label == "lens":
+            return self._reset_lens_to_surrogate()
         display = self._step_overlay_display_label(label)
         axis_off = self._step_axis_offset_xy(label)
         place_off = self._step_placement_offset_xyz(label)
@@ -3455,6 +3461,128 @@ class ScenePlacementMixin:
             "(centred on the optical axis, datum aligned)."
         )
         return True
+
+    def _lens_surrogate_datum_rows(self) -> "tuple[int, int] | None":
+        """(front, rear) optical-vertex datum row indices of the lens surrogate, or None."""
+        front = rear = None
+        for index, row in enumerate(getattr(self, "rows", None) or []):
+            name = str(getattr(row, "name", "") or "").lower()
+            if "datum" not in name and "edge" not in name:
+                continue
+            if "front" in name and front is None:
+                front = index
+            elif "rear" in name:
+                rear = index
+        if front is None or rear is None or int(rear) <= int(front):
+            return None
+        return int(front), int(rear)
+
+    def _lens_surrogate_seat_target(self):
+        """bugs/0497: where the lens BODY belongs, wherever its surrogate actually sits.
+
+        "Glue to surrogate" used to mean "zero the offsets", on the stated assumption that for a
+        lens the zero-offset default IS the auto-aligned station. True on an UNFOLDED scene, false
+        the moment the surrogate sits on a fold leg: on the AZ85 machine-vision scene the lens rides
+        the splitter's +X leg, so zeroing threw its offset from [97.41, 0, -105.10] to [0, 0, 0] and
+        dropped the body at the origin (flag_20260801_195042). bugs/0475 met exactly this for the
+        CAMERA and fixed it by delegating to a RELATIVE seating; this is the lens equivalent.
+
+        "Front datum on the surrogate" is not literally the body's front face -- measured while
+        correctly glued, the body centre sits 1.755 mm BEFORE the datum midpoint and its front face
+        3.85 mm before the front datum. That asymmetry belongs to the CAD, not the scene, so it is
+        the same in any orientation, which is what makes a general target computable rather than
+        hardcoded:
+
+        1. read the body centre at ZERO placement offset -- that is what the nominal-axis
+           auto-alignment produces, i.e. the designed pose expressed on the nominal axis;
+        2. ``k`` = its axial offset from the datum midpoint taken on the NOMINAL axis -- the CAD
+           asymmetry, recovered at runtime;
+        3. take the datum midpoint and leg direction as they ACTUALLY sit;
+        4. ``target = midpoint + leg * k``.
+
+        On an unfolded scene this reduces to the old behaviour exactly (the actual midpoint IS the
+        nominal one and the leg IS +Z, so the target is the zero-offset centre), which is the check
+        that this generalises rather than introducing a second rule.
+        """
+        datums = self._lens_surrogate_datum_rows()
+        if datums is None:
+            return None
+        front, rear = datums
+        keep = np.asarray(self._step_placement_offset_xyz("lens"), dtype=float).reshape(3)
+        try:
+            self._set_step_placement_offset_xyz("lens", (0.0, 0.0, 0.0))
+            c_zero = self._step_body_world_center("lens")
+        finally:
+            self._set_step_placement_offset_xyz("lens", tuple(float(v) for v in keep))
+        if c_zero is None:
+            return None
+        c_zero = np.asarray(c_zero, dtype=float).reshape(3)
+        try:
+            from KrakenOS.UI.nonseq_output_ports import row_z_positions
+
+            stations = row_z_positions(self.rows)
+            m_nom = np.asarray(
+                (0.0, 0.0, (float(stations[front]) + float(stations[rear])) / 2.0), dtype=float
+            )
+        except Exception:
+            return None
+        k = float(np.dot(c_zero - m_nom, np.asarray((0.0, 0.0, 1.0), dtype=float)))
+        p_front = self._fold_carry_row_world_pose(front)
+        p_rear = self._fold_carry_row_world_pose(rear)
+        if p_front is None or p_rear is None:
+            return None
+        p_front = np.asarray(p_front, dtype=float).reshape(3)
+        p_rear = np.asarray(p_rear, dtype=float).reshape(3)
+        leg = p_rear - p_front
+        span = float(np.linalg.norm(leg))
+        if not np.isfinite(span) or span <= 1.0e-9 or not np.isfinite(k):
+            return None
+        return (p_front + p_rear) / 2.0 + (leg / span) * k
+
+    def _reset_lens_to_surrogate(self) -> bool:
+        """bugs/0497: seat the lens body on its surrogate wherever that surrogate sits.
+
+        Relative, like the camera's (bugs/0475): ``_seat_step_body_world_center`` measures where the
+        body actually is and corrects by the RESIDUAL, so this lands from any starting offset and
+        never needs the destructive zeroing step. The "already glued" short-circuit is expressed
+        against the computed TARGET rather than against "is the offset zero" -- the old form refused
+        every retry once the offset had been zeroed, which is what stranded the body at the origin
+        with only Ctrl-Z to recover it.
+        """
+        captured = False
+        try:
+            self._begin_history_capture()
+            captured = True
+        except Exception:
+            captured = False
+        try:
+            self._set_step_axis_offset_xy("lens", (0.0, 0.0))
+            target = self._lens_surrogate_seat_target()
+            if target is None:
+                self.status_var.set(
+                    "Glue LENS to surrogate: no front/rear optical vertex datum to seat against."
+                )
+                return False
+            current = self._step_body_world_center("lens")
+            if current is not None:
+                gap = float(np.linalg.norm(np.asarray(current, dtype=float).reshape(3) - target))
+                if gap <= 1.0e-6:
+                    self.status_var.set("LENS STEP is already glued to its optical surrogate.")
+                    return False
+            moved = bool(self._seat_step_body_world_center("lens", target))
+        finally:
+            if captured:
+                try:
+                    self._commit_history_capture()
+                except Exception:
+                    pass
+        if moved:
+            self._selected_step_label = "lens"
+            self.status_var.set(
+                "Glued LENS STEP to its optical surrogate "
+                "(centred on the surrogate axis, datum aligned)."
+            )
+        return moved
 
     def _reset_camera_to_image_plane(self) -> bool:
         """bugs/0475: back the "Reset Camera to Image Plane" menu item with the real seating.
