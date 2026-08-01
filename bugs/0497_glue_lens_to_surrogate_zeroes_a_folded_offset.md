@@ -124,10 +124,47 @@ correctly glued body's front face sits at 67.81, i.e. **3.85 mm ahead of** the o
 because this scene came from the machine-vision folder importer, which "placed g1 behind the front
 datum / g2 ahead of the rear datum" (`machine_vision_folder_import.py`).
 
-So the remaining work is: find which datum `_lens_front_datum_z()` resolves to on this scene (there
-is no `Lens Front Datum` row in it, so it is taking a fallback), and seat the front face against
-*that*. Persisting the overhang at import is the fallback plan if no such datum survives in the row
-data — but the front-pinned invariant looks like it is already there to be used.
+**Resolved — the lead is a dead end, and it rules out the whole runtime-derivation family.**
+
+`_lens_datum_row_index(side)` matches `side` + (`datum` | `vertex` | `edge`), so on this scene it
+resolves to row 1 `Front Optical Vertex Datum` and row 6 `Rear Optical Vertex Datum` — exactly the
+rows already in use. No fallback is in play. So `_lens_front_datum_z()` = station 130.635, and
+pinning the front face to it reproduces the wrong answer (101.256) that was already measured.
+
+Putting the numbers together settles it:
+
+```
+datum stations            130.635 / 185.635   -> station midpoint 158.135
+c_zero (auto-aligned)     z 160.230           = station midpoint + 2.095
+world datums              x 71.66 / 126.66    -> world midpoint 99.160   (span 55.0 both, so a
+                                                 pure translation relates the two frames)
+correct glued centre      x 97.406            = world midpoint - 1.754
+```
+
+Both frames have the same 55.0 mm span, so the auto-aligned pose maps to world midpoint + 2.095 =
+**101.255**, while the correct pose is **97.406**. They differ by 3.849 mm *after* accounting for
+the fold. So the correct pose is **not what the auto-alignment produces at all** — no amount of
+frame-mapping recovers it.
+
+That is because this scene's lens was placed by the **machine-vision folder importer**, which
+"placed g1 behind the front datum / g2 ahead of the rear datum", not by the zero-offset
+auto-alignment. The 3.849 mm is genuine information that exists *only* in the stored placement
+offset — which is precisely what the menu destroys.
+
+## What this means for the fix
+
+"Glue to surrogate" cannot reconstruct the correct pose from the surrogate geometry, because for an
+importer-placed lens the correct pose was never derived from it. The menu's promise — "return to the
+auto-aligned station" — is simply wrong for such a lens; the auto-aligned station is 3.849 mm off.
+
+So the fix is to record the REFERENCE placement when it is established (by the importer, or by the
+auto-alignment, whichever placed the body) and have the menu restore *that*, rather than recompute
+anything. Concretely: persist a per-overlay `glue_reference_offset_xyz` alongside the existing
+`*_step_placement_offset_xyz` in the layout settings, written at import/auto-align time, and have
+`_reset_lens_to_surrogate` seat to it. That is the "persist at import" plan, now with the runtime
+alternatives eliminated by measurement rather than by assumption.
+
+Until then the shipped partial stands: no origin dump, no stranding, 3.849 mm short.
 
 The LED takes the identical destructive path and still wants the same pass.
 
