@@ -15410,6 +15410,10 @@ phase_400_detector_reads_the_rays_that_land = _phase_from_standalone(
     400, "an arm's detector is fitted from the rays that actually LAND on it (0495)",
     "KrakenOS.UI.validate_open3d_0495_detector_reads_the_rays_that_land",
     "detector_reads_the_rays_that_land")
+phase_401_carry_reseats_only_bodies_on_the_leg = _phase_from_standalone(
+    401, "a fold carry re-seats only the bodies ON the leg it moves (0496)",
+    "KrakenOS.UI.validate_open3d_0496_carry_reseats_only_bodies_on_the_leg",
+    "carry_reseats_only_bodies_on_the_leg")
 
 
 # ---------------------------------------------------------------------------
@@ -15857,6 +15861,7 @@ def main() -> int:
             phase_398_live_drag_release_redraws,
             phase_399_translation_preserves_emitted_direction,
             phase_400_detector_reads_the_rays_that_land,
+            phase_401_carry_reseats_only_bodies_on_the_leg,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

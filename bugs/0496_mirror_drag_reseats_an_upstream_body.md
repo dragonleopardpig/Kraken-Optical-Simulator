@@ -36,13 +36,22 @@ The mirror is different. Its emitted leg runs from the mirror to the sensor, so 
 the sensor and the camera. The lens sits **upstream**, on the splitter's leg, and is not in
 `carried` — yet it is re-seated anyway, because the body list never consults `carried`.
 
-## Fix (not yet written)
+## Fix
 
-Re-seat a body only when the rows it is bolted to are in the carried set. `carried` is already
-computed in `_fold_slide_carry_before` (`axis_tree.rows_on_emitted_leg`); what is missing is a
-label → anchor-rows mapping. There is no helper for this today — `_step_body_world_center` reads a
-body's bounds, and nothing maps "lens" back to rows 1,2,4,5,6.
+A body rides the carry only when its world centre sits on the leg being moved. No label →
+anchor-rows mapping was needed after all: `optical_axis_tree.point_on_emitted_leg` classifies a
+world POINT with the SAME two primitives that pick the carried ROWS — `_active_segment_for_point`
+for "which leg is this on" and `descendant_segment_ids` for "which legs does this fold carry" — so a
+body and a row cannot disagree about whether they ride a given carry. A classification failure falls
+back to carrying the body, so an error can never silently strand one.
 
-The guard should assert the invariant both ways on one scene: sliding the SPLITTER carries the lens
-body *and* its surrogate rows together, and sliding the MIRROR carries the camera and sensor while
-leaving the lens body and its surrogate rows alone.
+Measured after, sliding the mirror −22.60 in x: rows 1,2,4,5,6 and the lens body all +0.00, while
+row 7 −22.59, row 8 −22.60 and the camera −22.60.
+
+## Guard
+
+`validate_open3d_0496_carry_reseats_only_bodies_on_the_leg.py`, penta phase 401. The invariant is
+asserted BOTH ways, because either half alone is satisfiable by cheating: a MIRROR slide must leave
+the lens body and its surrogate rows alone *while* the mirror, sensor and camera all move (so B1 is
+not "nothing happened"), and a SPLITTER slide must still carry the lens body and its rows together
+— the bugs/0456 + bugs/0491 case that put the lens on the list, which this fix must not undo.

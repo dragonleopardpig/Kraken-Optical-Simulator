@@ -318,6 +318,36 @@ def descendant_segment_ids(tree, segment_id: str) -> "set[str]":
     return out
 
 
+def point_on_emitted_leg(tree, folder_row: int, point) -> bool:
+    """Does a world POINT sit on a folder's emitted leg, or on anything below it? (bugs/0496)
+
+    The body counterpart of :func:`rows_on_emitted_leg`, deliberately built from the SAME two
+    primitives -- ``_active_segment_for_point`` to say which leg a thing is on, and
+    ``descendant_segment_ids`` to say which legs the fold carries -- so a STEP body and a row
+    cannot disagree about whether they ride a given carry.
+
+    Why it is needed: the fold carry re-seats the camera and lens BODIES, and that list used to be
+    unconditional. It is right for a beam-splitter slide (the lens really is on the splitter's leg)
+    and wrong for a mirror slide, where the lens sits UPSTREAM. Measured on the AZ85 scene, dragging
+    the RA mirror 22.6 mm left moved the lens body 23.0 mm while its surrogate rows 1,2,4,5,6 stayed
+    put -- the drawn barrel slid clean off its own optical surfaces (flag_20260801_194857, "Lens
+    detached from surrogate").
+    """
+    emitted = None
+    for segment in tree.values():
+        if segment.source_row is not None and int(segment.source_row) == int(folder_row):
+            emitted = segment
+            break
+    if emitted is None:
+        return False
+    family = descendant_segment_ids(tree, emitted.segment_id)
+    try:
+        landed = _active_segment_for_point(tree, point)
+    except Exception:
+        return False
+    return str(getattr(landed, "segment_id", "")) in family
+
+
 def rows_on_emitted_leg(rows, tree, snaps, folder_row: int) -> "list[int]":
     """Rows snapped to a folder's emitted leg, or to anything below it (bugs/0485 rule 3).
 

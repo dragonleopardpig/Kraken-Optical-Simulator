@@ -182,14 +182,29 @@ class ScenePlacementMixin:
             # it is a separate overlay with its own placement offset, and only the camera was
             # ever re-seated. The LED is excluded on purpose: it is the body being dragged, and
             # bugs/0437's glue is asymmetric anyway.
+            # bugs/0496: ... but only the bodies that are actually ON the carried leg. This list
+            # was unconditional, which is right for a beam-splitter slide (the lens sits on the
+            # splitter's emitted leg) and wrong for a MIRROR slide, where the lens is UPSTREAM.
+            # Dragging the RA mirror 22.6 mm left moved the lens body 23.0 mm while its surrogate
+            # rows 1,2,4,5,6 stayed put, sliding the drawn barrel clean off its own optical
+            # surfaces (flag_20260801_194857, "Lens detached from surrogate"). Membership is
+            # decided by the SAME primitives that pick the carried ROWS, so a body and a row
+            # cannot disagree about whether they ride this carry.
             bodies = {}
             for label in ("camera", "lens"):
                 try:
                     centre = self._step_body_world_center(label)
                 except Exception:
                     centre = None
-                if centre is not None:
-                    bodies[label] = np.asarray(centre, dtype=float).reshape(3)
+                if centre is None:
+                    continue
+                centre = np.asarray(centre, dtype=float).reshape(3)
+                try:
+                    rides = axis_tree.point_on_emitted_leg(tree, int(row_index), centre)
+                except Exception:
+                    rides = True  # a classification failure must not silently strand a body
+                if rides:
+                    bodies[label] = centre
             return (
                 carried,
                 np.asarray(spec["origin"], dtype=float).reshape(3),
