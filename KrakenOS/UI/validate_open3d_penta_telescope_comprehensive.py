@@ -15424,6 +15424,10 @@ phase_403_leg_neighbour_lookup = _phase_from_standalone(
 phase_404_lens_slides_along_its_leg = _phase_from_standalone(
     404, "dragging the lens along its own leg carries its optics, and only its optics (0499)",
     "KrakenOS.UI.validate_open3d_0499_lens_slides_along_its_leg", "lens_slides_along_its_leg")
+phase_405_leg_slide_redraw_and_relative_glue = _phase_from_standalone(
+    405, "a leg slide flags the drawing rebuild; glue seats on the surrogate WHERE IT SITS (0503)",
+    "KrakenOS.UI.validate_open3d_0503_leg_slide_redraw_and_relative_glue",
+    "leg_slide_redraw_and_relative_glue")
 
 
 # ---------------------------------------------------------------------------
@@ -15875,6 +15879,7 @@ def main() -> int:
             phase_402_glue_restores_the_recorded_placement,
             phase_403_leg_neighbour_lookup,
             phase_404_lens_slides_along_its_leg,
+            phase_405_leg_slide_redraw_and_relative_glue,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

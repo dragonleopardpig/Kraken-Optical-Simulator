@@ -307,6 +307,15 @@ class LayoutSettingsService:
                 for k, v in (getattr(self, "_step_glue_reference_offsets", {}) or {}).items()
                 if isinstance(v, (list, tuple)) and len(v) >= 3
             },
+            # bugs/0503: the surrogate datum midpoint the reference was recorded AGAINST. Without
+            # it, a layout saved after a leg slide (rows moved, reference kept) would restore the
+            # body onto the original stations on the next load's glue. Persisted beside the
+            # reference so the pair stays consistent across save/reload.
+            "step_glue_reference_datum_mid_xyz": {
+                str(k): [float(v[0]), float(v[1]), float(v[2])]
+                for k, v in (getattr(self, "_step_glue_reference_datum_mids", {}) or {}).items()
+                if isinstance(v, (list, tuple)) and len(v) >= 3
+            },
             "camera_step_path": _portable_step_path_text(self.imported_camera_step_path),
             "camera_step_rotation_x_deg": float(getattr(self, "camera_step_rotation_x_deg", 0.0)),
             "camera_step_rotation_y_deg": float(getattr(self, "camera_step_rotation_y_deg", 0.0)),
@@ -734,6 +743,30 @@ class LayoutSettingsService:
             except (TypeError, ValueError):
                 continue
         self._step_glue_reference_offsets = restored_refs
+        # bugs/0503: restore the datum anchor each reference was recorded against, and seed a
+        # missing lens anchor from the rows this load just placed (load_layout_by_name assigns
+        # self.rows BEFORE applying settings, so the datums are readable here). For a layout saved
+        # before this key existed, reference == saved placement and rows == saved rows, so the pair
+        # is consistent by construction and the seed is exact.
+        restored_mids: dict[str, tuple] = {}
+        raw_mids = settings.get("step_glue_reference_datum_mid_xyz", None)
+        if isinstance(raw_mids, dict):
+            for key, value in raw_mids.items():
+                try:
+                    if isinstance(value, (list, tuple)) and len(value) >= 3:
+                        restored_mids[str(key).strip().lower()] = (
+                            float(value[0]), float(value[1]), float(value[2])
+                        )
+                except (TypeError, ValueError):
+                    continue
+        if "lens" in restored_refs and "lens" not in restored_mids:
+            try:
+                mid = self._lens_surrogate_datum_mid_world()
+                if mid is not None:
+                    restored_mids["lens"] = (float(mid[0]), float(mid[1]), float(mid[2]))
+            except Exception:
+                pass
+        self._step_glue_reference_datum_mids = restored_mids
         self._cad_axis_pick_label = None
         self._cad_axis_pick_any = False
         self._cad_led_object_edge_pick = False

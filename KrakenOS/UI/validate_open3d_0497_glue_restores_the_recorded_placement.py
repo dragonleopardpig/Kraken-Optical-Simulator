@@ -67,25 +67,41 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         check(base is not None, "A2: the lens body has a readable world centre")
         base = np.asarray(base, dtype=float).reshape(3)
 
-        editor.translate_step_overlay("lens", (25.0, 0.0, 18.0))
+        # bugs/0503: an AXIAL drag component now slides the whole unit (bugs/0499 carries the
+        # surrogate rows), and glue seats against the surrogate WHEREVER IT NOW SITS. So the pose
+        # glue restores is the as-placed pose CARRIED BY the axial slide -- "exact" means the same
+        # relative placement on the moved surrogate, not the original world coordinates.
+        plan = editor._lens_leg_slide_plan()
+        leg = (
+            np.asarray(plan[1], dtype=float).reshape(3)
+            if plan is not None and plan[2]
+            else np.asarray((0.0, 0.0, 0.0), dtype=float)
+        )
+
+        drag1 = np.asarray((25.0, 0.0, 18.0), dtype=float)
+        editor.translate_step_overlay("lens", tuple(drag1))
         moved_away = float(
             np.linalg.norm(np.asarray(editor._step_body_world_center("lens"), dtype=float).reshape(3) - base)
         )
         check(moved_away > 1.0, f"B1: the drag actually moved the body ({moved_away:.2f} mm)")
+        expected = base + leg * float(np.dot(drag1, leg))
         acted = editor.glue_step_overlay_to_surrogate("lens")
         after = np.asarray(editor._step_body_world_center("lens"), dtype=float).reshape(3)
-        residual = float(np.linalg.norm(after - base))
+        residual = float(np.linalg.norm(after - expected))
         check(
             bool(acted) and residual <= EXACT,
-            f"B2: glue restores the EXACT placement (residual {residual:.6f} mm) -- not the "
-            f"surrogate-derived pose, which lands 3.849 mm short on an importer-placed lens",
+            f"B2: glue restores the EXACT as-placed pose on the (slid) surrogate (residual "
+            f"{residual:.6f} mm) -- not the surrogate-derived pose, which lands 3.849 mm short "
+            f"on an importer-placed lens",
         )
 
-        editor.translate_step_overlay("lens", (-11.0, 0.0, 7.0))
+        drag2 = np.asarray((-11.0, 0.0, 7.0), dtype=float)
+        editor.translate_step_overlay("lens", tuple(drag2))
         editor.glue_step_overlay_to_surrogate("lens")
+        expected = expected + leg * float(np.dot(drag2, leg))
         again = np.asarray(editor._step_body_world_center("lens"), dtype=float).reshape(3)
         check(
-            float(np.linalg.norm(again - base)) <= EXACT,
+            float(np.linalg.norm(again - expected)) <= EXACT,
             "B3: a SECOND drag-then-glue lands identically -- the stranding is gone (the old "
             "short-circuit refused every retry once the offset had been zeroed)",
         )
@@ -94,7 +110,7 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
             "B4: gluing an already-glued lens reports no move rather than nudging it",
         )
         check(
-            float(np.linalg.norm(np.asarray(editor._step_body_world_center("lens"), dtype=float).reshape(3) - base)) <= EXACT,
+            float(np.linalg.norm(np.asarray(editor._step_body_world_center("lens"), dtype=float).reshape(3) - expected)) <= EXACT,
             "B5: ... and leaves it exactly where it was",
         )
 
@@ -111,6 +127,15 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
             back is not None and float(np.linalg.norm(np.asarray(back) - np.asarray(reference))) <= EXACT,
             "C2: ... and survives the round trip (bugs/0492 is this settings block, and the facade "
             "shadowing it fixed is exactly what ate a key here before)",
+        )
+        # bugs/0503: the datum anchor that makes the reference RELATIVE rides beside it.
+        persisted_mid = (saved.get("step_glue_reference_datum_mid_xyz") or {}).get("lens")
+        back_mid = reloaded._step_glue_reference_datum_mid("lens")
+        check(
+            persisted_mid is not None and back_mid is not None
+            and float(np.linalg.norm(np.asarray(persisted_mid, dtype=float) - np.asarray(back_mid))) <= EXACT,
+            "C3: the record-time datum midpoint persists with the reference and survives the "
+            "round trip -- without it a saved slid scene would glue back to the original station",
         )
     except Exception as exc:
         notes.append(f"SKIP: the scene could not be driven ({type(exc).__name__}: {exc})")

@@ -138,3 +138,11 @@ restored alongside the redirect change.
 Drag the lens along its leg on the FOLDED scene and assert the surrogate rows follow, so body and
 optics stay together; drag perpendicular and assert only the body centres; and assert the unfolded
 scene is unchanged.
+
+## Recurrence, resolved elsewhere
+
+`flag_20260801_220951` / `flag_20260801_221613` re-reported "detached after dragging right" on a
+build that CONTAINS this fix. Event replay proved the redirect fired and carried the rows both
+times — what failed was the DRAWING (the leg-slide branch never set the bugs/0493 rebuild marker,
+so nothing repainted the carried rows) and the GLUE (which restored an absolute pose onto the slid
+surrogate). Both are bugs/0503.

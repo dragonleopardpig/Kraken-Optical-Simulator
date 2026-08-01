@@ -3495,6 +3495,56 @@ class ScenePlacementMixin:
         table[str(label).strip().lower()] = (float(value[0]), float(value[1]), float(value[2]))
         self._step_glue_reference_offsets = table
 
+    def _lens_surrogate_datum_mid_world(self):
+        """World midpoint of the lens surrogate's front/rear datum rows, or None."""
+        datums = self._lens_surrogate_datum_rows()
+        if datums is None:
+            return None
+        p_front = self._fold_carry_row_world_pose(int(datums[0]))
+        p_rear = self._fold_carry_row_world_pose(int(datums[1]))
+        if p_front is None or p_rear is None:
+            return None
+        mid = (
+            np.asarray(p_front, dtype=float).reshape(3)
+            + np.asarray(p_rear, dtype=float).reshape(3)
+        ) / 2.0
+        return mid if np.all(np.isfinite(mid)) else None
+
+    def _step_glue_reference_datum_mid(self, label: str):
+        """bugs/0503: the surrogate datum midpoint AT THE TIME the glue reference was recorded.
+
+        The reference offset says where the body was PLACED -- relative to where its surrogate SAT
+        then. The surrogate rows legitimately move afterwards (the bugs/0499 leg slide, the fold
+        carry), so restoring the reference verbatim re-seats the body on the ORIGINAL stations,
+        ~28.7 mm off the surrogate the user is looking at. This anchor is what lets the glue
+        re-express the reference against the datums as they sit NOW.
+        """
+        try:
+            record = (getattr(self, "_step_glue_reference_datum_mids", None) or {}).get(
+                str(label).strip().lower()
+            )
+        except Exception:
+            return None
+        if record is None or len(record) < 3:
+            return None
+        try:
+            value = np.asarray(record, dtype=float).reshape(3)
+        except Exception:
+            return None
+        return value if np.all(np.isfinite(value)) else None
+
+    def _set_step_glue_reference_datum_mid(self, label: str, mid) -> None:
+        """Record where the surrogate's datums sat when the glue reference was recorded."""
+        try:
+            value = np.asarray(mid, dtype=float).reshape(3)
+        except Exception:
+            return
+        if not np.all(np.isfinite(value)):
+            return
+        table = dict(getattr(self, "_step_glue_reference_datum_mids", None) or {})
+        table[str(label).strip().lower()] = (float(value[0]), float(value[1]), float(value[2]))
+        self._step_glue_reference_datum_mids = table
+
     def _lens_surrogate_datum_rows(self) -> "tuple[int, int] | None":
         """(front, rear) optical-vertex datum row indices of the lens surrogate, or None."""
         front = rear = None
@@ -3652,6 +3702,17 @@ class ScenePlacementMixin:
             # one), and it is known to land 3.849 mm short on an importer-placed lens.
             reference = self._step_glue_reference_offset_xyz("lens")
             if reference is not None:
+                # bugs/0503 (flag_20260801_220951 "glue function not doing anything"): the
+                # reference means "where the body was placed RELATIVE to its surrogate as it sat
+                # then". After the bugs/0499 leg slide (or a fold carry) has moved the surrogate
+                # rows, restoring it VERBATIM seats the body on the ORIGINAL stations -- 28.7 mm
+                # from the surrogate the user is looking at, a glue that manufactures a detach.
+                # Re-express it against the datums as they sit NOW. When the surrogate has not
+                # moved, mid_now == mid_then exactly, so 0497's exact-restore guarantee holds.
+                anchor_then = self._step_glue_reference_datum_mid("lens")
+                anchor_now = self._lens_surrogate_datum_mid_world()
+                if anchor_then is not None and anchor_now is not None:
+                    reference = reference + (anchor_now - anchor_then)
                 current_off = np.asarray(self._step_placement_offset_xyz("lens"), dtype=float).reshape(3)
                 if float(np.linalg.norm(current_off - reference)) <= 1.0e-9:
                     self.status_var.set("LENS STEP is already glued to its optical surrogate.")
@@ -4133,17 +4194,19 @@ class ScenePlacementMixin:
         # rows, because no thickness controls position along such a leg. The thickness redirect
         # below stays for the unfolded case, where it is both correct and the existing behaviour.
         lens_leg_slide = 0.0
+        lens_leg_members: "list[int]" = []
+        lens_leg_dir = None
         lens_leg_plan = self._lens_leg_slide_plan() if label == "lens" else None
         if lens_leg_plan is not None and lens_leg_plan[2]:
             _members, _leg_dir, _ = lens_leg_plan
             lens_leg_slide = float(np.dot(np.asarray(delta, dtype=float).reshape(3), _leg_dir))
             if abs(lens_leg_slide) > 1e-9:
-                for _index in _members:
-                    _row = self.rows[int(_index)]
-                    _shift = _leg_dir * lens_leg_slide
-                    _row.desp_x = float(_row.desp_x) + float(_shift[0])
-                    _row.desp_y = float(_row.desp_y) + float(_shift[1])
-                    _row.desp_z = float(_row.desp_z) + float(_shift[2])
+                # flag_20260801_221613 (bugs/0503): classify here, APPLY inside the history capture
+                # below. The first cut mutated the rows at this point -- before
+                # _begin_history_capture -- so the undo snapshot already contained the moved rows
+                # and Ctrl-Z restored the offset but not the optics: an undo that detaches.
+                lens_leg_members = [int(_index) for _index in _members]
+                lens_leg_dir = _leg_dir
             else:
                 lens_leg_slide = 0.0
         if label == "lens" and overlay_on_axis and abs(float(delta[2])) > 1e-9:
@@ -4174,6 +4237,28 @@ class ScenePlacementMixin:
         next_offset = current + applied
         if record_history:
             self._begin_history_capture()
+        if lens_leg_members and lens_leg_dir is not None:
+            _shift = lens_leg_dir * lens_leg_slide
+            for _index in lens_leg_members:
+                _row = self.rows[_index]
+                _row.desp_x = float(_row.desp_x) + float(_shift[0])
+                _row.desp_y = float(_row.desp_y) + float(_shift[1])
+                _row.desp_z = float(_row.desp_z) + float(_shift[2])
+            if not bool(getattr(self, "headless", False)):
+                try:
+                    self._sync_table()
+                except Exception:
+                    pass
+            self._invalidate_preview_scene_trace()
+            # flag_20260801_221613 (bugs/0503): the slide moved ROWS, so the drawing has to catch
+            # up -- the commit's own refresh is scoped to the dragged STEP label, which repaints
+            # the body and nothing else. That is exactly the gap the bugs/0493 release flush
+            # exists for, and it is keyed on this sticky marker; without it the surrogate rows,
+            # the 2D and the axis records all stayed drawn at their old stations and the user
+            # watched the body "slide off its surrogate" while the model was attached the whole
+            # time. With Show Rays off there is no background-trace completion to ever repaint,
+            # so the stale picture was permanent.
+            self._fold_carry_pending_rebuild = True
         if abs(axial_to_detector) > 1e-9:
             self.rows[-2].thickness = float(self.rows[-2].thickness) + axial_to_detector  # move the detector
             if not bool(getattr(self, "headless", False)):
