@@ -7,7 +7,8 @@ Chapter 10.
 In-text exercises
 -----------------
 
-.. rubric:: Exercise 10.1-1 — Ring and bow-tie resonances
+Exercise 10.1-1 — Ring and bow-tie resonances
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -43,7 +44,8 @@ offset, which can be absorbed into the integer for four mirrors.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-10-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 10.1-2 — One-metre Fabry--Perot
+Exercise 10.1-2 — One-metre Fabry--Perot
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -78,7 +80,8 @@ enough for the high-finesse approximation.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-10-1-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 10.2-1 — Maximum stable length
+Exercise 10.2-1 — Maximum stable length
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -113,7 +116,8 @@ the marginal endpoints; the largest confined length is
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-10-2-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 10.2-2 — Plano-concave cavity
+Exercise 10.2-2 — Plano-concave cavity
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -148,7 +152,8 @@ plane mirror, :math:`z_0=\sqrt{d(|R_2|-d)}`,
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-10-2-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 10.2-3 — Confocal frequency comb
+Exercise 10.2-3 — Confocal frequency comb
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -185,7 +190,8 @@ produces two interleaved 249.83-MHz combs.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-10-2-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 10.2-4 — Confocal degeneracy
+Exercise 10.2-4 — Confocal degeneracy
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -219,7 +225,8 @@ absorbed into :math:`q`; odd changes shift the line by :math:`\nu_F/2`.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-10-2-4-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 10.3-1 — Two-dimensional mode density
+Exercise 10.3-1 — Two-dimensional mode density
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

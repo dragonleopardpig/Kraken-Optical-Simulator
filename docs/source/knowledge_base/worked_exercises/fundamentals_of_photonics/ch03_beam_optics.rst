@@ -7,7 +7,8 @@ Chapter 3.  Beam radius :math:`W` is the field's :math:`1/e` radius.
 In-text exercises
 -----------------
 
-.. rubric:: Exercise 3.1-1 — He--Ne Gaussian beam
+Exercise 3.1-1 — He--Ne Gaussian beam
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -47,7 +48,8 @@ only :math:`5.14\ \mathrm{W,cm^{-2}}`.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-3-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiation of an antiderivative, or normalization of a definite integral, checks the integration step.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 3.1-2 — Paraxial validity
+Exercise 3.1-2 — Paraxial validity
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -76,7 +78,8 @@ the neglected Helmholtz term is :math:`1/(kz_0)\sim\theta_0^2/2`; therefore
 
 **Step 5 — Check.**  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
 
-.. rubric:: Exercise 3.1-3 — Recovering a beam from :math:`W,R`
+Exercise 3.1-3 — Recovering a beam from :math:`W,R`
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -112,7 +115,8 @@ set by :math:`R`).
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-3-1-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 3.1-4 — Propagating known width and curvature
+Exercise 3.1-4 — Propagating known width and curvature
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -148,7 +152,8 @@ m.  Since :math:`q_2=q_1+0.1`, conversion back yields
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-3-1-4-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 3.1-5 — Two measured curvatures
+Exercise 3.1-5 — Two measured curvatures
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -183,7 +188,8 @@ Eliminating :math:`z_0` gives the printed
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-3-1-5-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 3.2-1 — Periodic beam relay
+Exercise 3.2-1 — Periodic beam relay
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -218,7 +224,8 @@ waist after the cell.  The resulting real :math:`z_0` contains
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-3-2-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 3.2-2 — Lens and collimation
+Exercise 3.2-2 — Lens and collimation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -254,7 +261,8 @@ requires the incident wavefront curvature at the lens to satisfy
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-3-2-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 3.2-3 — Two-lens beam expander
+Exercise 3.2-3 — Two-lens beam expander
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -290,7 +298,8 @@ Apply the ABCD law to :math:`M=L(f_2)P(s)L(f_1)`.  In the collimated limit
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-3-2-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Multiply the matrices independently in the stated input-to-output order and verify that every product has compatible dimensions.
 
-.. rubric:: Exercise 3.2-4 — Gaussian-reflectance mirror
+Exercise 3.2-4 — Gaussian-reflectance mirror
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -327,7 +336,8 @@ coordinate.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-3-2-4-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiation of an antiderivative, or normalization of a definite integral, checks the integration step.
 
-.. rubric:: Exercise 3.2-5 — Plane-parallel plate
+Exercise 3.2-5 — Plane-parallel plate
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -363,7 +373,8 @@ waist and divergence but is advanced relative to free propagation by
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-3-2-5-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Multiply the matrices independently in the stated input-to-output order and verify that every product has compatible dimensions.
 
-.. rubric:: Exercise 3.3-1 — Incoherent donut beam
+Exercise 3.3-1 — Incoherent donut beam
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

@@ -7,7 +7,8 @@ Chapter 11.
 In-text exercises
 -----------------
 
-.. rubric:: Exercise 11.1-1 — Coherence-time definitions
+Exercise 11.1-1 — Coherence-time definitions
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -42,7 +43,8 @@ At :math:`\tau=T_c`, the exponential magnitude has fallen to
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-11-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiation of an antiderivative, or normalization of a definite integral, checks the integration step.
 
-.. rubric:: Exercise 11.1-2 — Reciprocal equivalent widths
+Exercise 11.1-2 — Reciprocal equivalent widths
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -77,7 +79,8 @@ shows directly that the power-equivalent widths obey
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-11-1-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiation of an antiderivative, or normalization of a definite integral, checks the integration step.
 
-.. rubric:: Exercise 11.1-3 — Mutual-coherence wave equations
+Exercise 11.1-3 — Mutual-coherence wave equations
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -112,7 +115,8 @@ lets it pass through the average.  This gives the two Wolf equations, one in
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-11-1-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  For a probability result, verify the zero-to-one bounds; when a full distribution is present, also verify normalization and nonnegative variance.
 
-.. rubric:: Exercise 11.4-1 — Polarized plus unpolarized decomposition
+Exercise 11.4-1 — Polarized plus unpolarized decomposition
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

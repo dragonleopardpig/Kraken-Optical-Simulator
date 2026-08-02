@@ -7,7 +7,8 @@ Chapter 5.
 In-text exercise
 ----------------
 
-.. rubric:: Exercise 5.5-1 — Dilute absorbing impurities
+Exercise 5.5-1 — Dilute absorbing impurities
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

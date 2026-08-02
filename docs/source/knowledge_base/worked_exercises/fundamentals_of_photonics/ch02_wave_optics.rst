@@ -7,7 +7,8 @@ Chapter 2.  The time convention is the one used by the text.
 In-text exercises
 -----------------
 
-.. rubric:: Exercise 2.2-1 — Fresnel-approximation region
+Exercise 2.2-1 — Fresnel-approximation region
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -45,7 +46,8 @@ requires a radius appreciably smaller than this equality limit because
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-2-2-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 2.2-2 — Paraboloidal and Gaussian waves
+Exercise 2.2-2 — Paraboloidal and Gaussian waves
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -83,7 +85,8 @@ e^{-k\rho^2/z_0}`, a circular Gaussian.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-2-2-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiation of an antiderivative, or normalization of a definite integral, checks the integration step.
 
-.. rubric:: Exercise 2.4-1 — Thin prism
+Exercise 2.4-1 — Thin prism
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -119,7 +122,8 @@ wavevector :math:`k_x=(n-1)k_0a`; hence
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-2-4-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
 
-.. rubric:: Exercise 2.4-2 — Double-convex lens
+Exercise 2.4-2 — Double-convex lens
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -153,7 +157,8 @@ Adding the two parabolic surface sags leaves the quadratic phase
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-2-4-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 2.4-3 — Lens focusing
+Exercise 2.4-3 — Lens focusing
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -189,7 +194,8 @@ An axial plane wave multiplied by the lens phase becomes
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-2-4-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
 
-.. rubric:: Exercise 2.4-4 — Imaging by phase matching
+Exercise 2.4-4 — Imaging by phase matching
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -224,7 +230,8 @@ The incident paraboloid contributes :math:`+k\rho^2/(2z_1)` and the lens
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-2-4-4-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 2.4-5 — Sinusoidal phase grating
+Exercise 2.4-5 — Sinusoidal phase grating
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -260,7 +267,8 @@ with complex amplitudes :math:`h_0(-j)^qJ_q(\beta)` and
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-2-4-5-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
 
-.. rubric:: Exercise 2.4-6 — GRIN plate
+Exercise 2.4-6 — GRIN plate
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -295,7 +303,8 @@ the propagation convention).
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-2-4-6-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 2.5-1 — Plane/spherical interference
+Exercise 2.5-1 — Plane/spherical interference
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -329,7 +338,8 @@ For equal intensities, zeros obey
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-2-5-1-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
 
-.. rubric:: Exercise 2.5-2 — Young interference
+Exercise 2.5-2 — Young interference
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -364,7 +374,8 @@ The two Fresnel phases differ by :math:`2kax/d=kx\theta`, where
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-2-5-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
 
-.. rubric:: Exercise 2.5-3 — Bragg reflection
+Exercise 2.5-3 — Bragg reflection
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -399,7 +410,8 @@ Adjacent planes add path :math:`2\Lambda\sin\theta`, so
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-2-5-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
 
-.. rubric:: Exercise 2.6-1 — Optical Doppler radar
+Exercise 2.6-1 — Optical Doppler radar
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

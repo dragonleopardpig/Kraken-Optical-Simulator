@@ -7,7 +7,8 @@ Chapter 13.
 In-text exercises
 -----------------
 
-.. rubric:: Exercise 13.3-1 — Spontaneous-emission spectrum
+Exercise 13.3-1 — Spontaneous-emission spectrum
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -42,7 +43,8 @@ to this probability density and is consequently proportional to :math:`g`.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-13-3-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  For a probability result, verify the zero-to-one bounds; when a full distribution is present, also verify normalization and nonnegative variance.
 
-.. rubric:: Exercise 13.3-2 — Doppler broadening
+Exercise 13.3-2 — Doppler broadening
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -78,7 +80,8 @@ limit its FWHM is
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-13-3-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.
 
-.. rubric:: Exercise 13.4-1 — Blackbody peak in frequency
+Exercise 13.4-1 — Blackbody peak in frequency
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

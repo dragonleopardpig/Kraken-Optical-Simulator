@@ -7,7 +7,8 @@ Chapter 15.
 In-text exercises
 -----------------
 
-.. rubric:: Exercise 15.1-1 — Ruby threshold
+Exercise 15.1-1 — Ruby threshold
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -43,7 +44,8 @@ from :math:`N=N_2-N_1=2N_2-N_a` for this three-level transition.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-15-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 15.2-1 — Gas-laser oscillation band
+Exercise 15.2-1 — Gas-laser oscillation band
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -80,7 +82,8 @@ band; the given He--Ne parameters supply the requested count.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-15-2-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiation of an antiderivative, or normalization of a definite integral, checks the integration step.
 
-.. rubric:: Exercise 15.4-1 — Four-level population equation
+Exercise 15.4-1 — Four-level population equation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -114,7 +117,8 @@ Fast emptying makes :math:`N_1\simeq0`, so one stimulated transition changes
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-15-4-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 15.4-2 — Q-switched ruby pulse
+Exercise 15.4-2 — Q-switched ruby pulse
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -150,7 +154,8 @@ precision from the scanned plot.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-15-4-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiation of an antiderivative, or normalization of a definite integral, checks the integration step.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 15.4-3 — Mode-locking computation
+Exercise 15.4-3 — Mode-locking computation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

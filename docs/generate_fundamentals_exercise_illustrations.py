@@ -28,7 +28,8 @@ ASSET_DIR = (
     / "exercise_illustrations"
 )
 ENTRY_RE = re.compile(
-    r"^\.\. rubric:: (Exercise|Problem) (\d+)\.(\d+)-(\d+) — ([^\n]+)\n",
+    r"^(?:\.\. rubric:: )?(Exercise|Problem) "
+    r"(\d+)\.(\d+)-(\d+) — ([^\n]+)\n(?:\^+\n)?",
     re.MULTILINE,
 )
 
@@ -311,6 +312,15 @@ def clean_title(title: str) -> str:
     title = re.sub(r":math:`([^`]*)`", r"\1", title)
     title = title.replace("--", "–").replace("*", "")
     return title
+
+
+def exercise_heading(
+    chapter: int, section: str, item: str, raw_title: str
+) -> str:
+    """Return a third-level reStructuredText heading for an exercise."""
+
+    title = f"Exercise {chapter}.{section}-{item} — {raw_title}"
+    return f"{title}\n{'^' * len(title)}\n"
 
 
 def category_for(chapter: int, title: str) -> str:
@@ -665,6 +675,7 @@ def transform_chapter(
     chunks = [text[: entries[0].start()]]
     changed = 0
     for entry_index, entry in enumerate(entries):
+        entry_changed = False
         end = entries[entry_index + 1].start() if entry_index + 1 < len(entries) else len(text)
         body = text[entry.end() : end]
         kind, chapter_s, section, item, raw_title = entry.groups()
@@ -694,9 +705,16 @@ def transform_chapter(
                 new_body = transform_exercise_body(
                     body, chapter, section, item, title, figure_number
                 )
-            changed += new_body != body
+            entry_changed = new_body != body
             body = new_body
-        chunks.append(entry.group(0) + body)
+        entry_header = entry.group(0)
+        if kind == "Exercise":
+            entry_header = exercise_heading(
+                chapter, section, item, raw_title
+            )
+        entry_changed = entry_changed or entry_header != entry.group(0)
+        changed += entry_changed
+        chunks.append(entry_header + body)
     return "".join(chunks).rstrip() + "\n", changed
 
 

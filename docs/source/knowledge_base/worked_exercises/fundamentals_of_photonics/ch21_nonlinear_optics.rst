@@ -7,7 +7,8 @@ Chapter 21.
 In-text exercises
 -----------------
 
-.. rubric:: Exercise 21.1-1 — Intensity needed for nonlinearity
+Exercise 21.1-1 — Intensity needed for nonlinearity
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -43,7 +44,8 @@ The enormous values explain why focused laser fields are normally required.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-21-1-1-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 21.2-1 — Non-collinear type-II SHG
+Exercise 21.2-1 — Non-collinear type-II SHG
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -84,7 +86,8 @@ from that root gives the non-collinear branches.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-21-2-1-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 21.3-1 — DC-field-induced Kerr effect
+Exercise 21.3-1 — DC-field-induced Kerr effect
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -120,7 +123,8 @@ are :math:`12\chi^{(3)}E^2(0)E(\omega)`.  Equating this to
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-21-3-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 21.3-2 — Optical Kerr lens
+Exercise 21.3-2 — Optical Kerr lens
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -156,7 +160,8 @@ propagation and :math:`n_2`.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-21-3-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 21.3-3 — Self- and cross-phase modulation
+Exercise 21.3-3 — Self- and cross-phase modulation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -192,7 +197,8 @@ at :math:`c_0/(n+\Delta n_1)`.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-21-3-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 21.4-1 — Degenerate three-wave mixing
+Exercise 21.4-1 — Degenerate three-wave mixing
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -229,7 +235,8 @@ equivalent to Eqs. (21.4-14)--(21.4-16).
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-21-4-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 21.4-2 — Manley--Rowe relation
+Exercise 21.4-2 — Manley--Rowe relation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -265,7 +272,8 @@ photon.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-21-4-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 21.4-3 — Energy conservation
+Exercise 21.4-3 — Energy conservation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -299,7 +307,8 @@ Weight the preceding derivatives by :math:`\hbar\omega_q`.  Because
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-21-4-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 21.4-4 — SHG envelope equations
+Exercise 21.4-4 — SHG envelope equations
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -335,7 +344,8 @@ use :math:`|a_q''|\ll|k_qa_q'|`.  Division by :math:`-2jk_q` gives
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-21-4-4-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiating the proposed solution and substituting it into the original differential equation verifies the functional form.
 
-.. rubric:: Exercise 21.4-5 — Infrared up-conversion
+Exercise 21.4-5 — Infrared up-conversion
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -371,7 +381,8 @@ formula and the given :math:`d^2/n^3`, area, power, and 1-cm length,
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-21-4-5-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 21.4-6 — KTP parametric amplifier
+Exercise 21.4-6 — KTP parametric amplifier
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -409,7 +420,8 @@ requires :math:`\cosh^2(C L\sqrt{P/A})=2`, so
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-21-4-6-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Converting the final decibel value back to a linear power ratio checks the logarithm, sign, and accumulated loss budget.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 21.5-1 — Undepleted-pump THG
+Exercise 21.5-1 — Undepleted-pump THG
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -446,7 +458,8 @@ chapter's flux-amplitude normalization.  Integration adds the familiar
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-21-5-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiation of an antiderivative, or normalization of a definite integral, checks the integration step.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 21.7-1 — Anharmonic oscillator polarization
+Exercise 21.7-1 — Anharmonic oscillator polarization
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -482,7 +495,8 @@ b=K_2/(e^3N^2)}`.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-21-7-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiating the proposed solution and substituting it into the original differential equation verifies the functional form.
 
-.. rubric:: Exercise 21.7-2 — Miller's rule
+Exercise 21.7-2 — Miller's rule
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

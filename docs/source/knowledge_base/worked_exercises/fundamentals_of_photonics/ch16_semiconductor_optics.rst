@@ -7,7 +7,8 @@ Chapter 16.
 In-text exercises
 -----------------
 
-.. rubric:: Exercise 16.1-1 — Free-electron dispersion
+Exercise 16.1-1 — Free-electron dispersion
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -41,7 +42,8 @@ Substitute :math:`e^{-jkx}` in the free Schrödinger equation to get
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-16-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 16.1-2 — Boltzmann limit of Fermi occupation
+Exercise 16.1-2 — Boltzmann limit of Fermi occupation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -76,7 +78,8 @@ and :math:`p=N_ve^{-(E_F-E_v)/kT}`.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-16-1-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiation of an antiderivative, or normalization of a definite integral, checks the integration step.
 
-.. rubric:: Exercise 16.1-3 — Quasi-Fermi levels
+Exercise 16.1-3 — Quasi-Fermi levels
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -111,7 +114,8 @@ invert the preceding exponentials instead.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-16-1-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 16.1-4 — Injected GaAs carriers
+Exercise 16.1-4 — Injected GaAs carriers
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -147,7 +151,8 @@ from Exercise 16.1-3.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-16-1-4-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 16.1-5 — Infinite quantum well
+Exercise 16.1-5 — Infinite quantum well
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -183,7 +188,8 @@ equations.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-16-1-5-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
 
-.. rubric:: Exercise 16.2-1 — Semiconductor gain condition
+Exercise 16.2-1 — Semiconductor gain condition
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -218,7 +224,8 @@ population-inversion condition.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-16-2-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 16.2-2 — Peak direct absorption
+Exercise 16.2-2 — Peak direct absorption
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

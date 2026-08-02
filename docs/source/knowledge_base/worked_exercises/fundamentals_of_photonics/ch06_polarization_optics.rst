@@ -7,7 +7,8 @@ Chapter 6.  Global Jones phases are physically immaterial.
 In-text exercises
 -----------------
 
-.. rubric:: Exercise 6.1-1 — Measuring Stokes parameters
+Exercise 6.1-1 — Measuring Stokes parameters
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -43,7 +44,8 @@ right/left circular analyser vectors gives
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-6-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 6.1-2 — Cascaded quarter-wave plates
+Exercise 6.1-2 — Cascaded quarter-wave plates
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -78,7 +80,8 @@ is unchanged apart from global phase.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-6-1-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 6.1-3 — Rotated polarizer
+Exercise 6.1-3 — Rotated polarizer
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -113,7 +116,8 @@ is unchanged apart from global phase.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-6-1-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Multiply the matrices independently in the stated input-to-output order and verify that every product has compatible dimensions.
 
-.. rubric:: Exercise 6.1-4 — Normal polarization modes
+Exercise 6.1-4 — Normal polarization modes
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -142,7 +146,8 @@ the retarder eigenvectors are its fast/slow linear axes, eigenvalues
 
 **Step 5 — Check.**  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 6.2-1 — Brewster window
+Exercise 6.2-1 — Brewster window
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -176,7 +181,8 @@ angle, so TM reflection vanishes at both parallel faces.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-6-2-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 6.2-2 — Conductive reflector
+Exercise 6.2-2 — Conductive reflector
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -213,7 +219,8 @@ index is imaginary, so no net transmitted power exists and :math:`R=1`.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-6-2-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 6.4-1 — Optical rotatory power
+Exercise 6.4-1 — Optical rotatory power
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

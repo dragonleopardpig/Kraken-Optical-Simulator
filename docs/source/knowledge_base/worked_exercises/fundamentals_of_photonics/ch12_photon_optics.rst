@@ -7,7 +7,8 @@ Chapter 12.
 In-text exercises
 -----------------
 
-.. rubric:: Exercise 12.1-1 — Photons in a Gaussian beam
+Exercise 12.1-1 — Photons in a Gaussian beam
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -41,7 +42,8 @@ photons the expected count is :math:`n(1-e^{-2})`.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-12-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  For a probability result, verify the zero-to-one bounds; when a full distribution is present, also verify normalization and nonnegative variance.
 
-.. rubric:: Exercise 12.1-2 — Mercury recoil
+Exercise 12.1-2 — Mercury recoil
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -76,7 +78,8 @@ motion is about :math:`2.45\times10^4` times larger.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-12-1-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 12.1-3 — One photon in a Mach--Zehnder
+Exercise 12.1-3 — One photon in a Mach--Zehnder
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -112,7 +115,8 @@ each arm.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-12-1-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  For a probability result, verify the zero-to-one bounds; when a full distribution is present, also verify normalization and nonnegative variance.
 
-.. rubric:: Exercise 12.1-4 — Gaussian wavepacket uncertainty
+Exercise 12.1-4 — Gaussian wavepacket uncertainty
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -148,7 +152,8 @@ Normalize :math:`|a(t)|^2=e^{-t^2/(2T^2)}` to obtain
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-12-1-4-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.
 
-.. rubric:: Exercise 12.2-1 — Mean thermal-mode energy
+Exercise 12.2-1 — Mean thermal-mode energy
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

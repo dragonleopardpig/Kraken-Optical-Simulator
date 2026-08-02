@@ -7,7 +7,8 @@ Chapter 17.
 In-text exercises
 -----------------
 
-.. rubric:: Exercise 17.1-1 — Pumped quasi-Fermi levels
+Exercise 17.1-1 — Pumped quasi-Fermi levels
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -42,7 +43,8 @@ sets :math:`\Delta n=\Delta p`.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-17-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 17.1-2 — Weak-injection spectrum
+Exercise 17.1-2 — Weak-injection spectrum
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -78,7 +80,8 @@ e^{-(h\nu-E_g)/kT}}`.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-17-1-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 17.1-3 — LED peak and width
+Exercise 17.1-3 — LED peak and width
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -113,7 +116,8 @@ roots of :math:`\sqrt{x}e^{-x/kT}`; their difference is proportional to
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-17-1-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 17.1-4 — Planar LED extraction
+Exercise 17.1-4 — Planar LED extraction
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

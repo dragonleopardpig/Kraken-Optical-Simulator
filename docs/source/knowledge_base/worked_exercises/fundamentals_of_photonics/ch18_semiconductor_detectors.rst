@@ -7,7 +7,8 @@ Chapter 18.
 In-text exercises
 -----------------
 
-.. rubric:: Exercise 18.6-1 — Shot/Johnson crossover
+Exercise 18.6-1 — Shot/Johnson crossover
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -41,7 +42,8 @@ Set :math:`2e(\eta e\Phi)B=4kTB/R_L`.  For the stated ideal detector,
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-18-6-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 18.6-2 — APD sensitivity
+Exercise 18.6-2 — APD sensitivity
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -76,7 +78,8 @@ analogue of Eq. (18.6-45); with circuit noise zero, gain cancels and
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-18-6-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  For a probability result, verify the zero-to-one bounds; when a full distribution is present, also verify normalization and nonnegative variance.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 18.6-3 — Efficiency and background
+Exercise 18.6-3 — Efficiency and background
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

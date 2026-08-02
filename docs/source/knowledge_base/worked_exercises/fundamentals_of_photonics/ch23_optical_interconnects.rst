@@ -7,7 +7,8 @@ Chapter 23.
 In-text exercises
 -----------------
 
-.. rubric:: Exercise 23.1-1 — Interconnection capacity
+Exercise 23.1-1 — Interconnection capacity
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -44,7 +45,8 @@ every input is connected to every output, the maximum density is therefore
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-23-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 23.1-2 — Separable logarithmic map
+Exercise 23.1-2 — Separable logarithmic map
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -79,7 +81,8 @@ and likewise :math:`y'=\ln y`, which proves the map.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-23-1-2-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 23.4-1 — Bistable nonlinearities
+Exercise 23.4-1 — Bistable nonlinearities
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

@@ -7,7 +7,8 @@ Chapter 8.
 In-text exercises
 -----------------
 
-.. rubric:: Exercise 8.1-1 — Modal power
+Exercise 8.1-1 — Modal power
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -42,7 +43,8 @@ normalization.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-8-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
 
-.. rubric:: Exercise 8.1-2 — Multimode power
+Exercise 8.1-2 — Multimode power
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -76,7 +78,8 @@ cross integral zero, leaving
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-8-1-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
 
-.. rubric:: Exercise 8.2-1 — Slab confinement
+Exercise 8.2-1 — Slab confinement
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -112,7 +115,8 @@ therefore the largest confinement.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-8-2-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
 
-.. rubric:: Exercise 8.2-2 — Asymmetric slab
+Exercise 8.2-2 — Asymmetric slab
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

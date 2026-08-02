@@ -7,7 +7,8 @@ Chapter 9.
 In-text exercises
 -----------------
 
-.. rubric:: Exercise 9.3-1 — Optimum power-law profile
+Exercise 9.3-1 — Optimum power-law profile
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -43,7 +44,8 @@ including :math:`n_1(\omega)` and :math:`\Delta(\omega)`, to obtain Eq.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-9-3-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 9.3-2 — Rotated birefringent segments
+Exercise 9.3-2 — Rotated birefringent segments
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

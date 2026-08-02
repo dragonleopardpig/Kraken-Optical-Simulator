@@ -7,7 +7,8 @@ Chapter 19.
 In-text exercises
 -----------------
 
-.. rubric:: Exercise 19.2-1 — Modulator parameters
+Exercise 19.2-1 — Modulator parameters
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -42,7 +43,8 @@ Use the internal optical wavelength :math:`\lambda=\lambda _0/n`,
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-19-2-1-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 19.2-2 — Scanner parameters
+Exercise 19.2-2 — Scanner parameters
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -79,7 +81,8 @@ sound gives both a smaller aperture and a larger scan.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-19-2-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 19.2-3 — Filter resolving power
+Exercise 19.2-3 — Filter resolving power
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -114,7 +117,8 @@ Differentiate :math:`\sin\theta=\lambda f/(2v_s)` at fixed angle:
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-19-2-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
 
-.. rubric:: Exercise 19.3-1 — Transverse strain in a cubic crystal
+Exercise 19.3-1 — Transverse strain in a cubic crystal
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

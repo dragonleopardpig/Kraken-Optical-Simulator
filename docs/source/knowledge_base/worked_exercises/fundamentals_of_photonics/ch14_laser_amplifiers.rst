@@ -7,7 +7,8 @@ Chapter 14.
 In-text exercises
 -----------------
 
-.. rubric:: Exercise 14.1-1 — Ruby absorption and inversion
+Exercise 14.1-1 — Ruby absorption and inversion
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -44,7 +45,8 @@ Lorentzian lifetime formula in Sec. 13.3.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-14-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 14.2-1 — Optical pumping
+Exercise 14.2-1 — Optical pumping
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -78,7 +80,8 @@ Steady state gives :math:`N_2=R_2t_{sp}` and pump depletion
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-14-2-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 14.2-2 — Saturation time
+Exercise 14.2-2 — Saturation time
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -112,7 +115,8 @@ all fast nonradiative/level-1 terms drop out, leaving
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-14-2-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 14.2-3 — Three/four-level pump power
+Exercise 14.2-3 — Three/four-level pump power
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -148,7 +152,8 @@ requires four times the transition rate and correspondingly greater pump.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-14-2-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 14.4-1 — Ruby saturation
+Exercise 14.4-1 — Ruby saturation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -182,7 +187,8 @@ Evaluate :math:`\boxed{\phi_s(\nu_0)=1/[\sigma(\nu_0)T_s]}` using
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-14-4-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 14.4-2 — Saturation broadening
+Exercise 14.4-2 — Saturation broadening
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -219,7 +225,8 @@ detuning enlarged by :math:`\sqrt{1+\phi/\phi_s(\nu_0)}`, so
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-14-4-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 14.5-1 — Amplified spontaneous emission
+Exercise 14.5-1 — Amplified spontaneous emission
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

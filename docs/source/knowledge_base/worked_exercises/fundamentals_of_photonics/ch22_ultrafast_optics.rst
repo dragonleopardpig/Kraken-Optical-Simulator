@@ -7,7 +7,8 @@ Chapter 22.
 In-text exercises
 -----------------
 
-.. rubric:: Exercise 22.3-1 — Two-fiber dispersion compensation
+Exercise 22.3-1 — Two-fiber dispersion compensation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -45,7 +46,8 @@ Returning to the original width requires zero net GVD:
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-22-3-1-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 22.3-2 — Periodic phase compensation
+Exercise 22.3-2 — Periodic phase compensation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

@@ -7,7 +7,8 @@ Chapter 4.  Fourier frequency is in cycles per unit length.
 In-text exercises
 -----------------
 
-.. rubric:: Exercise 4.1-1 — Binary Fresnel plate
+Exercise 4.1-1 — Binary Fresnel plate
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -43,7 +44,8 @@ their amplitudes.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-4-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.
 
-.. rubric:: Exercise 4.1-2 — Gaussian propagation
+Exercise 4.1-2 — Gaussian propagation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -79,7 +81,8 @@ same Gaussian integral and therefore the Chapter 3 beam.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-4-1-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.
 
-.. rubric:: Exercise 4.2-1 — Fresnel versus Fraunhofer range
+Exercise 4.2-1 — Fresnel versus Fraunhofer range
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -116,7 +119,8 @@ For :math:`a=0.02` m, :math:`b=0.01` m, and
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-4-2-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 4.2-2 — Inverse transform
+Exercise 4.2-2 — Inverse transform
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -146,7 +150,8 @@ Fourier transform.
 
 **Step 5 — Check.**  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.
 
-.. rubric:: Exercise 4.3-1 — Rectangular aperture
+Exercise 4.3-1 — Rectangular aperture
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -183,7 +188,8 @@ The transform of :math:`\operatorname{rect}(x/D_x)
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-4-3-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.
 
-.. rubric:: Exercise 4.3-2 — Circular aperture
+Exercise 4.3-2 — Circular aperture
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -219,7 +225,8 @@ zero is 3.8317, hence
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-4-3-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.
 
-.. rubric:: Exercise 4.3-3 — Focused spot
+Exercise 4.3-3 — Focused spot
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

@@ -50,11 +50,14 @@ EXPECTED_COUNTS = {
     23: (3, 9),
     24: (0, 10),
 }
-RUBRIC_RE = re.compile(
-    r"^\.\. rubric:: (Exercise|Problem) (\d+)\.(\d+)-(\d+)\b", re.MULTILINE
+ITEM_RE = re.compile(
+    r"^(?:\.\. rubric:: )?(Exercise|Problem) "
+    r"(\d+)\.(\d+)-(\d+)\b[^\n]*\n(?:\^+\n)?",
+    re.MULTILINE,
 )
 ENTRY_RE = re.compile(
-    r"^\.\. rubric:: (Exercise|Problem) (\d+)\.(\d+)-(\d+)\b[^\n]*\n",
+    r"^(?:\.\. rubric:: )?(Exercise|Problem) "
+    r"(\d+)\.(\d+)-(\d+)\b[^\n]*\n(?:\^+\n)?",
     re.MULTILINE,
 )
 EQUATION_LABEL_RE = re.compile(r"^   :label: (fop-[a-z0-9-]+)$", re.MULTILINE)
@@ -165,7 +168,7 @@ def main() -> None:
     for path in chapter_files:
         chapter = int(path.name[2:4])
         chapter_text = path.read_text(encoding="utf-8")
-        matches = RUBRIC_RE.findall(chapter_text)
+        matches = ITEM_RE.findall(chapter_text)
         exercises = sum(kind == "Exercise" for kind, *_ in matches)
         problems = sum(kind == "Problem" for kind, *_ in matches)
         if (exercises, problems) != EXPECTED_COUNTS[chapter]:
@@ -192,6 +195,19 @@ def main() -> None:
             body = chapter_text[entry.end() : entry_end]
             kind, id_chapter, section, item = entry.groups()
             identity = f"{kind} {id_chapter}.{section}-{item}"
+
+            entry_lines = entry.group(0).splitlines()
+            if kind == "Exercise":
+                heading = entry_lines[0]
+                if (
+                    heading.startswith(".. rubric::")
+                    or len(entry_lines) != 2
+                    or set(entry_lines[1]) != {"^"}
+                    or len(entry_lines[1]) < len(heading)
+                ):
+                    fail(f"{identity} is not a third-level heading")
+            elif not entry_lines[0].startswith(".. rubric:: Problem"):
+                fail(f"{identity} is not a problem rubric")
 
             if kind == "Exercise":
                 expected_figure_number += 1

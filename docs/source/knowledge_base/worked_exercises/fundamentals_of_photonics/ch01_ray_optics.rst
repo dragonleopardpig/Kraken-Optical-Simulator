@@ -9,7 +9,8 @@ matrices.
 In-text exercises
 -----------------
 
-.. rubric:: Exercise 1.1-1 — Snell's law from stationary optical path
+Exercise 1.1-1 — Snell's law from stationary optical path
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Problem in our own words.**  A ray travels from a fixed point :math:`A` in
 medium 1 to a fixed point :math:`B` in medium 2, crossing their planar
@@ -155,7 +156,8 @@ one straight line.  At normal incidence, :math:`x_*=0` and :math:`d-x_*=0`
 in the corresponding aligned geometry (:math:`d=0`), and both sides vanish.
 These limits agree with physical expectation.
 
-.. rubric:: Exercise 1.2-1 — Spherical-mirror imaging
+Exercise 1.2-1 — Spherical-mirror imaging
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -192,7 +194,8 @@ same, inverted image point.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-1-2-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
 
-.. rubric:: Exercise 1.2-2 — One spherical refracting boundary
+Exercise 1.2-2 — One spherical refracting boundary
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -226,7 +229,8 @@ Equating the coefficient and constant terms yields
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-1-2-2-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
 
-.. rubric:: Exercise 1.2-3 — Aberration-free refracting surface
+Exercise 1.2-3 — Aberration-free refracting surface
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -262,7 +266,8 @@ for every ray and therefore images without spherical aberration.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-1-2-3-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 1.2-4 — Thin-lens formulas
+Exercise 1.2-4 — Thin-lens formulas
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -298,7 +303,8 @@ image distance cancels, leaving
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-1-2-4-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 1.2-5 — Step-index fibre acceptance
+Exercise 1.2-5 — Step-index fibre acceptance
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -332,7 +338,8 @@ gives
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-1-2-5-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 1.2-6 — Light trapped in a high-index block
+Exercise 1.2-6 — Light trapped in a high-index block
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -367,7 +374,8 @@ reflection.  For GaAs, :math:`n=3.6`, so
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-1-2-6-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 1.3-1 — A SELFOC slab as a lens
+Exercise 1.3-1 — A SELFOC slab as a lens
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -404,7 +412,8 @@ At :math:`d=\pi/(2a)` all rays cross the axis at the exit quarter-pitch; at
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-1-3-1-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
 
-.. rubric:: Exercise 1.3-2 — Graded-index fibre acceptance
+Exercise 1.3-2 — Graded-index fibre acceptance
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -441,7 +450,8 @@ gives :math:`\boxed{\mathrm{NA}\simeq n_0aa_f}`.  Since
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-1-3-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Exercise 1.4-1 — Zero elements of an ABCD matrix
+Exercise 1.4-1 — Zero elements of an ABCD matrix
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -476,7 +486,8 @@ output height; :math:`B=0` images an input plane; :math:`C=0` is afocal; and
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-1-4-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Multiply the matrices independently in the stated input-to-output order and verify that every product has compatible dimensions.
 
-.. rubric:: Exercise 1.4-2 — Parallel plates
+Exercise 1.4-2 — Parallel plates
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -509,7 +520,8 @@ so
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-1-4-2-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Multiply the matrices independently in the stated input-to-output order and verify that every product has compatible dimensions.
 
-.. rubric:: Exercise 1.4-3 — Gap followed by a lens
+Exercise 1.4-3 — Gap followed by a lens
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -543,7 +555,8 @@ Direct multiplication gives
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-1-4-3-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Multiply the matrices independently in the stated input-to-output order and verify that every product has compatible dimensions.
 
-.. rubric:: Exercise 1.4-4 — Single-lens imaging
+Exercise 1.4-4 — Single-lens imaging
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -579,7 +592,8 @@ at :math:`y_2=f\theta_1`.
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-1-4-4-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
 
-.. rubric:: Exercise 1.4-5 — Thick symmetric lens
+Exercise 1.4-5 — Thick symmetric lens
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -617,7 +631,8 @@ The condition :math:`B=0` then reduces to
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-1-4-5-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 1.4-6 — Alternating periodic lenses
+Exercise 1.4-6 — Alternating periodic lenses
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -650,7 +665,8 @@ Multiply one complete cell and apply the unimodular stability test
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-1-4-6-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Exercise 1.4-7 — Two-mirror resonator
+Exercise 1.4-7 — Two-mirror resonator
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
