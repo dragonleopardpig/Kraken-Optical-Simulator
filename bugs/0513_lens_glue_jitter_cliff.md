@@ -35,3 +35,24 @@ close/stop recording -> flag) before coding.
    FOLDED row-carry always did -- while preserving the deliberate-park gesture
    (decisively lateral drags, the flag_20260621_142758 / C1 protection).
 2. Whatever ships must add an M2-style jitter-cliff case to phase 409's guard.
+
+## RESOLVED — the fingerprint was DISPLAY-STALE, not a model detach
+
+Flag `flag_20260802_210224_063` (same scene, current build) reproduced the exact
+fingerprint: body front = front datum + 41.5, offset [0,0,0], zero lateral
+anywhere. Decoding: the MODEL was attached the whole time -- the body front sat
+exactly ON the MODEL datum (which the axial redirect had slid) while the DRAWN
+row actors stayed at the old station, because the unfolded thickness-redirect
+branches never set `_fold_carry_pending_rebuild`, so the release flush stayed
+scoped to the dragged STEP label (the exact bugs/0503 lesson, fixed on the
+folded branches only). My M1/M3 probes measured the model -- which is why they
+looked "held" while the user watched a detach.
+
+Fix: `_fold_carry_pending_rebuild = True` on BOTH unfolded redirect branches
+(lens axial + detector axial) in `translate_step_overlay`; phase 409's guard
+gained B3 pinning the marker. The live-drag half (surrogate rows now TRACK the
+barrel mid-drag instead of appearing at release) ships with bugs/0514.
+
+The M2 jitter cliff (one >3 mm lateral frame poisons the rest of the drag)
+remains REAL but was NOT the user's path (no lateral in either flag) -- kept
+open as a hardening item; fix direction unchanged (sticky per-gesture verdict).

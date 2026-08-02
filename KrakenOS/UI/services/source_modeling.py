@@ -1233,6 +1233,15 @@ class SourceModelingMixin:
             moved += 1
         if moved:
             self.layout_scene_source_specs = specs
+            moved_ids = [
+                str(spec.get("source_id", "") or "")
+                for spec in specs
+                if source_spec_bool(spec, "glued_to_led", False)
+            ]
+            crumbs = getattr(self, "_last_translate_source_shifts", None)
+            if isinstance(crumbs, list):
+                # bugs/0514: let the live drag translate the glyph actors too.
+                crumbs.append((moved_ids, tuple(float(v) for v in shift)))
             try:
                 self._invalidate_preview_scene_trace()
             except Exception:

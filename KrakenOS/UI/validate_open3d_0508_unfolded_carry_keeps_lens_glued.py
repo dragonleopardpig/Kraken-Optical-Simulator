@@ -67,6 +67,12 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
             abs((body_z() - (425.83 + 24.0))) <= 0.5,
             f"B2: the unit actually slid +24 mm (body z {body_z():.2f})",
         )
+        check(
+            bool(getattr(editor, "_fold_carry_pending_rebuild", False)),
+            "B3 (0513): the axial redirect flags the release flush for a FULL rebuild -- "
+            "without it the drawn surrogate stayed at its old station while the barrel "
+            "slid ('surrogate not moving', flags 204748/210224)",
+        )
 
         # flag_20260621_142758 protection intact: a body PARKED off the beam keeps a plain move.
         editor.translate_step_overlay("lens", (25.0, 0.0, 0.0), refresh=False, record_history=False)

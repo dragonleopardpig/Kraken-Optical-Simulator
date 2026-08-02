@@ -4420,6 +4420,13 @@ class ScenePlacementMixin:
         led_station_members: "list[int]" = []
         led_station_bs_row = None
         led_station_dir = None
+        # bugs/0514: row/source shift BREADCRUMBS for the live drag. Every branch below that
+        # slides MODEL rows (station write, folded leg slide, unfolded axial redirect,
+        # detector redirect) or glued sources records what it moved, so the per-frame drag
+        # paths can translate the DRAWN actors too -- the assembly follows the cursor live
+        # instead of jumping at release (flags 210122 / "lens body first, surrogate next").
+        self._last_translate_row_shifts = []
+        self._last_translate_source_shifts = []
         led_station_plan = self._led_station_slide_plan() if label == "led" else None
         if led_station_plan is not None:
             _members, _bs_row, _dir = led_station_plan
@@ -4495,6 +4502,9 @@ class ScenePlacementMixin:
                 # bugs/0512: the emitter belongs to the illumination station -- glued
                 # sources ride the atomic station write's leg component with it.
                 self._carry_glued_scene_sources(station_shift)
+                self._last_translate_row_shifts.append(
+                    (list(led_station_members) + [int(led_station_bs_row)], tuple(float(v) for v in station_shift))
+                )
             finally:
                 self._suppress_fold_slide_carry = False
             if not bool(getattr(self, "headless", False)):
@@ -4512,6 +4522,9 @@ class ScenePlacementMixin:
                 _row.desp_x = float(_row.desp_x) + float(_shift[0])
                 _row.desp_y = float(_row.desp_y) + float(_shift[1])
                 _row.desp_z = float(_row.desp_z) + float(_shift[2])
+            self._last_translate_row_shifts.append(
+                (list(lens_leg_members), tuple(float(v) for v in _shift))
+            )
             if not bool(getattr(self, "headless", False)):
                 try:
                     self._sync_table()
@@ -4535,6 +4548,13 @@ class ScenePlacementMixin:
                 except Exception:
                     pass
             self._invalidate_preview_scene_trace()
+            # bugs/0513: the redirect moved a ROW -- promote the release flush to a full
+            # rebuild (the 0503 lesson; the folded branches already do this). Without it the
+            # drawn Image/dims stay at the old station while the body slides.
+            self._fold_carry_pending_rebuild = True
+            self._last_translate_row_shifts.append(
+                ([len(self.rows) - 1], (0.0, 0.0, float(axial_to_detector)))
+            )
         if abs(axial_lens_slide) > 1e-9 and lens_front_idx is not None:
             self.rows[lens_front_idx - 1].thickness = float(self.rows[lens_front_idx - 1].thickness) + axial_lens_slide
             if not bool(getattr(self, "headless", False)):
@@ -4543,6 +4563,15 @@ class ScenePlacementMixin:
                 except Exception:
                     pass
             self._invalidate_preview_scene_trace()
+            # bugs/0513 (flags 204748 / 210224 "surrogate not moving"): the UNFOLDED axial
+            # redirect moved the surrogate ROWS in the model, but without this marker the
+            # release flush stays scoped to the dragged STEP label -- the drawn datums/optics
+            # kept their old station while the barrel slid, which read as a detach. The model
+            # was attached the whole time (probe M1/M3 measured it); the DISPLAY was stale.
+            self._fold_carry_pending_rebuild = True
+            self._last_translate_row_shifts.append(
+                (list(range(int(lens_front_idx), len(self.rows))), (0.0, 0.0, float(axial_lens_slide)))
+            )
         self._set_step_placement_offset_xyz(label, next_offset)
         # Item 3: BS<->LED two-body glue -- the optical (beam splitter) + led overlays move as ONE
         # rigid unit. The partner may be a STEP overlay OR a promoted solid row (after the BS is

@@ -191,11 +191,43 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         )
         passed = False
 
+    # C. bugs/0514: the LIVE assembly follow. The row-carry of a glued BS routes each
+    #    frame through the LED translate (assembly model write) and every drag path
+    #    applies the translate breadcrumbs so station rows / surrogate legs / glued
+    #    sources track the cursor instead of jumping at release.
+    try:
+        carry_src = inspect.getsource(Kraken3DInspector._apply_row_carry_drag_motion)
+        step_src = inspect.getsource(Kraken3DInspector._apply_step_carry_motion_delta)
+        applier_src = inspect.getsource(Kraken3DInspector._apply_translate_row_shift_breadcrumbs)
+    except Exception as exc:
+        notes.append(f"FAIL (0514): live-follow sources unreadable: {exc!r}")
+        return False, notes
+    if (
+        'translate_step_overlay(' not in carry_src
+        or "alt_suspend_glue" not in carry_src
+        or "_apply_translate_row_shift_breadcrumbs" not in carry_src
+    ):
+        notes.append(
+            "FAIL (0514): the glued-BS row carry no longer routes frames through the LED "
+            "translate with breadcrumb actor follow -- the LED would jump at release again"
+        )
+        passed = False
+    if "_apply_translate_row_shift_breadcrumbs" not in step_src:
+        notes.append(
+            "FAIL (0514): the STEP carry no longer applies row-shift breadcrumbs -- the lens "
+            "surrogate would lag the barrel again"
+        )
+        passed = False
+    if "_last_translate_row_shifts" not in applier_src or "_last_translate_source_shifts" not in applier_src:
+        notes.append("FAIL (0514): the breadcrumb applier no longer reads both shift lists")
+        passed = False
+
     if verbose:
         notes.append(
             "checked: _mirror_glued_partner_actors moves an overlay BS / promoted-row BS / symmetric LED, "
             "is inert when unglued, suppresses carry-back + render; the actor carry mirrors under carry_glue "
-            "and the row carry honours render"
+            "and the row carry honours render; 0514 live assembly follow wired (row carry -> LED translate + "
+            "breadcrumbs, step carry -> breadcrumbs)"
         )
     return passed, notes
 

@@ -95,6 +95,10 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
             np.allclose(origin(live_spec()) - o0, (7.0, 0.0, -4.0), atol=1e-6),
             "A2: an LED drag carries the glued source by the full delta",
         )
+        check(
+            bool(getattr(editor, "_last_translate_source_shifts", None)),
+            "A2b (0514): the led translate left source-shift breadcrumbs for the live drag",
+        )
         editor.update_scene_source_spec(sid, {"glued_to_led": True})
         bs = editor._promoted_optical_solid_row_index("optical")
         if bs is not None:

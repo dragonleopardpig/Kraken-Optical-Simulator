@@ -3010,6 +3010,40 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 state["center_world"] = (float(c[0]), float(c[1]), float(c[2] + axial))
                 state["applied_steps"] = int(state.get("applied_steps", 0)) + 1
             return
+        # bugs/0514 (flag_20260802_210122 "they should go together live as an assembly"):
+        # a body-drag of the GLUED promoted BS row is the assembly gesture per frame --
+        # route the model write through the LED translate (the same 0508 B delegation the
+        # release commit uses) and mirror the LED body + station rows + glued sources onto
+        # their actors, so nothing waits for mouse-up. The per-frame vector write below
+        # would move the BS alone (record_history=False = the 0437 internal layer).
+        assembly_bs = None
+        try:
+            assembly_bs = self.editor._promoted_optical_solid_row_index("optical")
+        except Exception:
+            assembly_bs = None
+        if (
+            assembly_bs is not None
+            and int(assembly_bs) == row_index
+            and bool(getattr(self.editor, "_optical_led_glued", False))
+            and not bool(state.get("alt_suspend_glue", False))
+        ):
+            try:
+                self.editor.translate_step_overlay(
+                    "led", tuple(float(v) for v in delta[:3]), refresh=False, record_history=False
+                )
+            except Exception as exc:
+                self.status_var.set(f"Assembly carry failed: {_short_error_message(exc)}")
+                self.editor.append_debug(f"Open 3D assembly carry failed: {exc}")
+                return
+            if self._translate_row_actors(row_index, delta[:3], render=False) <= 0:
+                self.refresh_from_editor()
+            else:
+                self._mirror_glued_partner_actors("optical", delta[:3])
+                self._apply_translate_row_shift_breadcrumbs(exclude_rows=(row_index,))
+                self.render()
+            self._open3d_carry_grip_service.update_after_delta(state, delta[:3])
+            self.editor._open3d_step_state_service().apply_row_carry_motion_delta(state, movement)
+            return
         try:
             self.editor.translate_scene_row_pose_vector(
                 row_index,
@@ -3372,6 +3406,53 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 row_index = None
             if row_index is not None:
                 self._translate_row_actors(int(row_index), delta, render=False)
+
+    def _apply_translate_row_shift_breadcrumbs(self, *, exclude_rows=()) -> int:
+        """bugs/0514: after a per-frame ``translate_step_overlay`` commit, move the DRAWN
+        actors of everything the model write slid -- station member rows, the folded lens
+        leg, the unfolded axial-redirect chain, the detector row, and glued source glyphs
+        -- so the assembly follows the cursor live instead of jumping at release
+        (flag_20260802_210122 "they should go together live"; "lens body move first, the
+        lens surrogate come next" on the folded AZ85). Renders are deferred to the caller."""
+        editor = self.editor
+        moved = 0
+        excluded = set()
+        for value in exclude_rows or ():
+            try:
+                excluded.add(int(value))
+            except Exception:
+                continue
+        for indices, vec in list(getattr(editor, "_last_translate_row_shifts", None) or []):
+            try:
+                shift = np.asarray(vec, dtype=float).reshape(-1)[:3]
+            except Exception:
+                continue
+            if shift.size < 3 or not np.all(np.isfinite(shift)):
+                continue
+            for index in indices:
+                try:
+                    index = int(index)
+                except Exception:
+                    continue
+                if index in excluded:
+                    continue
+                try:
+                    moved += max(0, int(self._translate_row_actors(index, shift, render=False)))
+                except Exception:
+                    continue
+        for source_ids, vec in list(getattr(editor, "_last_translate_source_shifts", None) or []):
+            try:
+                shift = np.asarray(vec, dtype=float).reshape(-1)[:3]
+            except Exception:
+                continue
+            if shift.size < 3 or not np.all(np.isfinite(shift)):
+                continue
+            for source_id in source_ids:
+                try:
+                    moved += max(0, int(self._translate_source_actors(str(source_id), shift, render=False)))
+                except Exception:
+                    continue
+        return moved
 
     def _remove_step_overlay_actors(self, label: str) -> int:
         return self._open3d_step_overlay_refresh_service()._remove_step_overlay_actors(label)
@@ -3794,6 +3875,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         )
         if self._translate_step_overlay_actors(label, delta) <= 0:
             self.refresh_from_editor(force_retrace=bool(getattr(movement, "force_refresh", False)))
+        else:
+            # bugs/0514: the model commit above may have slid rows (surrogate leg / axial
+            # redirect / station members) and glued sources -- move their actors live too.
+            # The glued-BS row actor is already mirrored by _mirror_glued_partner_actors.
+            exclude = ()
+            if bool(getattr(self.editor, "_optical_led_glued", False)):
+                try:
+                    bs_row = self.editor._promoted_optical_solid_row_index("optical")
+                except Exception:
+                    bs_row = None
+                exclude = (bs_row,) if bs_row is not None else ()
+            if self._apply_translate_row_shift_breadcrumbs(exclude_rows=exclude) > 0:
+                self.render()
         self._open3d_carry_grip_service.update_after_delta(state, delta)
         live_message = str(getattr(movement, "live_refresh_message", "") or "")
         if live_message:
