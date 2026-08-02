@@ -59,8 +59,34 @@ could set explicitly per drag — worth checking first, it may make B small.
 * Guard: sections via `axis_fold_emissions` origins AND row poses; LED/BS/object rigid; lens
   datums/mirror/image unmoved; perpendicular drag keeps today's behavior; trace still lands.
 
-## Status
+## Status — formulation B SHIPPED for the model/axes/glue; trace launch is the remaining gap
 
-Design captured, NOT implemented — blocked on choosing formulation A (works today, wrong visual)
-vs B (right visual, engine change; check the frozen-fold override anchor first). The probes above
-are the evidence base.
+User chose B ("the station follows the drag"). Shipped 2026-08-02:
+
+* **`axis_root_origin(rows)`** (nonseq_output_ports) — the ROOT axis is the line the OBJECT
+  emits, anchored at the object row's lateral position. Consumed by `axis_fold_emissions`, both
+  production `build_axis_tree` call sites, and the drawn `axis:global` guide. Zero change for
+  every centred-object scene.
+* **`_led_station_slide_plan` + the station write in `translate_step_overlay`** — a glued-LED
+  drag's leg component moves object-side rows AND the BS row as ONE atomic write with the
+  bugs/0485 fold-slide carry suppressed (`_suppress_fold_slide_carry`): the net fold point is
+  unchanged by construction, and letting the carry fire on the BS's half dragged the whole split
+  leg through the inconsistent intermediate state (measured: −20 mm in z). The ordinary LED→BS
+  carry receives only the perpendicular remainder. Sets `_fold_carry_pending_rebuild` (0503).
+* **LED glue anchored to the station** — `_led_station_anchor_world` (the object row's world
+  pose) rides the generic 0503 anchor table and its persistence; glue after a station slide is a
+  no-op, glue after a perpendicular housing displacement returns exactly onto the slid station.
+
+Measured on the AZ85 (guard `validate_open3d_0505_led_station_drag_slides_section_2.py`, penta
+phase 408): LED +20 along the leg → object, LED and the FOLD POINT all +20 at constant height;
+lens datums / mirror / image unmoved; s1 53.803 → 53.803, s2 93.701 → 73.701 — the pure
+section-2 edit. The drawn `axis:global` guide follows the station (screenshot-verified).
+
+**Remaining gap — the TRACE still launches from the nominal axis.** Measured live: after the +25
+station slide the imaging fan still leaves from x = 0, folds at the moved diagonal 25 mm below
+the arm, and `target_termination` collapses 129 → 0 (`no_next_intersection` 320 → 520). The
+launcher (`_default_nonseq_reference_bundles_from_settings` and the first-order/field aiming)
+needs the same `axis_root_origin` anchor — this is precisely the known "non-seq first-order
+pupil seam" (universal first-order reference), which this feature turns from a design note into
+the next required fix. Until it lands, the station slide is geometrically correct and fully
+drawn, but the traced rays vanish after a slide.

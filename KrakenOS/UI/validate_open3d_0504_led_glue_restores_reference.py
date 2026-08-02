@@ -73,7 +73,17 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
             "the old path zeroed the offset and threw the housing ~30 mm off its seat",
         )
 
+        # bugs/0505: the drag's component ALONG the splitter's emitted leg slides the whole
+        # illumination STATION (object + LED + BS), so glue restores the assembly onto the
+        # station WHEREVER IT NOW SITS -- only the perpendicular (housing-seat) part is undone.
+        plan = editor._led_station_slide_plan()
+        leg = (
+            np.asarray(plan[2], dtype=float).reshape(3)
+            if plan is not None
+            else np.asarray((0.0, 0.0, 0.0), dtype=float)
+        )
         drag = np.asarray(DRAG, dtype=float)
+        station = leg * float(np.dot(drag, leg))
         editor.translate_step_overlay("led", tuple(drag))
         check(
             float(np.linalg.norm((led() - led0) - drag)) <= EXACT
@@ -82,18 +92,18 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         )
         acted = editor.glue_step_overlay_to_surrogate("led")
         check(
-            bool(acted) and float(np.linalg.norm(led() - led0)) <= EXACT,
-            f"B2: glue restores the LED EXACTLY to its recorded placement (residual "
-            f"{float(np.linalg.norm(led() - led0)):.6f} mm)",
+            bool(acted) and float(np.linalg.norm(led() - (led0 + station))) <= EXACT,
+            f"B2: glue restores the LED EXACTLY onto the (slid) station (residual "
+            f"{float(np.linalg.norm(led() - (led0 + station))):.6f} mm)",
         )
         check(
-            float(np.linalg.norm(bs() - bs0)) <= EXACT,
+            float(np.linalg.norm(bs() - (bs0 + station))) <= EXACT,
             "B3: ... and carries the glued BS BACK with it -- glue restores the assembly, not "
             "just the housing",
         )
         check(
             editor.glue_step_overlay_to_surrogate("led") is False
-            and float(np.linalg.norm(led() - led0)) <= EXACT,
+            and float(np.linalg.norm(led() - (led0 + station))) <= EXACT,
             "B4: a second glue reports no move and leaves it seated -- no stranding",
         )
 

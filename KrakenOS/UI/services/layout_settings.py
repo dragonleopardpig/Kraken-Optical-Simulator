@@ -766,6 +766,14 @@ class LayoutSettingsService:
                     restored_mids["lens"] = (float(mid[0]), float(mid[1]), float(mid[2]))
             except Exception:
                 pass
+        # bugs/0505: the LED's anchor is the OBJECT row's world pose (the illumination station).
+        if "led" in restored_refs and "led" not in restored_mids:
+            try:
+                station = self._led_station_anchor_world()
+                if station is not None:
+                    restored_mids["led"] = (float(station[0]), float(station[1]), float(station[2]))
+            except Exception:
+                pass
         self._step_glue_reference_datum_mids = restored_mids
         self._cad_axis_pick_label = None
         self._cad_axis_pick_any = False

@@ -15435,6 +15435,10 @@ phase_406_led_glue_restores_reference = _phase_from_standalone(
 phase_407_flip_attaches_optics = _phase_from_standalone(
     407, "flipping the lens STEP keeps its optics on the surrogate datums (0500)",
     "KrakenOS.UI.validate_open3d_0500_flip_attaches_optics", "flip_attaches_optics")
+phase_408_led_station_drag_slides_section_2 = _phase_from_standalone(
+    408, "dragging the glued LED slides the station -- the pure section-2 edit (0505)",
+    "KrakenOS.UI.validate_open3d_0505_led_station_drag_slides_section_2",
+    "led_station_drag_slides_section_2")
 
 
 # ---------------------------------------------------------------------------
@@ -15889,6 +15893,7 @@ def main() -> int:
             phase_405_leg_slide_redraw_and_relative_glue,
             phase_406_led_glue_restores_reference,
             phase_407_flip_attaches_optics,
+            phase_408_led_station_drag_slides_section_2,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

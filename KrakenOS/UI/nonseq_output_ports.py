@@ -1511,6 +1511,41 @@ FOLD_KIND_CONSUMING = "consuming"  # a full mirror: one emitted leg, the incomin
 FOLD_KIND_BRANCHING = "branching"  # a beam splitter: the incoming axis CONTINUES, a leg branches
 
 
+def axis_root_origin(rows) -> "np.ndarray":
+    """bugs/0505: where the ROOT optical axis is anchored laterally -- the line the OBJECT emits.
+
+    Every axis reconstruction used to hardcode the nominal ``(0, 0, *) along +Z`` line. That is
+    only the object's axis while the object sits ON it: slide the illumination STATION (object +
+    LED + glued BS) sideways and the incoming beam comes down at the object's lateral position,
+    so the fold point -- the incoming line crossing the splitter diagonal -- moves WITH the
+    station instead of sliding down the nominal axis. Measured on the AZ85: with the root pinned
+    nominal, translating the BS +20 in x moved the fold origin [0,0,53.8] -> [0,0,33.8] (correct
+    for a LONE plate move, wrong for a station move whose object came along).
+
+    Returns ``(object_desp_x, object_desp_y, 0.0)``. Zero -- the nominal line, bit-identical to
+    the old behaviour -- whenever there is no leading Object row or it is centred, which is every
+    scene that existed before bugs/0505.
+    """
+    prepared = list(rows or [])
+    if not prepared:
+        return np.zeros(3, dtype=float)
+    first = _row_like(prepared[0])
+    if _row_surface(first) != "Object":
+        return np.zeros(3, dtype=float)
+    try:
+        anchor = np.asarray(
+            (
+                float(getattr(first, "desp_x", 0.0) or 0.0),
+                float(getattr(first, "desp_y", 0.0) or 0.0),
+                0.0,
+            ),
+            dtype=float,
+        )
+    except Exception:
+        return np.zeros(3, dtype=float)
+    return anchor if np.all(np.isfinite(anchor)) else np.zeros(3, dtype=float)
+
+
 def axis_fold_emissions(rows, *, system=None) -> dict[int, dict[str, object]]:
     """Which rows act on the optical axis, and what does each EMIT? (bugs/0485 stage 1)
 
@@ -1564,8 +1599,10 @@ def axis_fold_emissions(rows, *, system=None) -> dict[int, dict[str, object]]:
     z_positions = row_z_positions(prepared)
     emissions: dict[int, dict[str, object]] = {}
     # Candidate axes, deepest last: (origin, direction, emitting_row_or_None, depth).
+    # bugs/0505: the root is the line the OBJECT emits, not the nominal one -- see
+    # axis_root_origin. Identical to (0,0,0) on every centred-object scene.
     segments: list[tuple[np.ndarray, np.ndarray, int | None, int]] = [
-        (np.asarray((0.0, 0.0, 0.0), dtype=float), np.asarray((0.0, 0.0, 1.0), dtype=float), None, 0)
+        (axis_root_origin(rows), np.asarray((0.0, 0.0, 1.0), dtype=float), None, 0)
     ]
 
     def _row_pose(index: int) -> np.ndarray:

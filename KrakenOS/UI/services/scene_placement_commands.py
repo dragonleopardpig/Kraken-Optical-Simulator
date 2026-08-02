@@ -148,12 +148,19 @@ class ScenePlacementMixin:
         free drag had no equivalent.
         """
         try:
-            from KrakenOS.UI.nonseq_output_ports import axis_fold_emissions
+            from KrakenOS.UI.nonseq_output_ports import axis_fold_emissions, axis_root_origin
             from KrakenOS.UI.services import optical_axis_tree as axis_tree
         except Exception:
             return None
         if getattr(self, "_fold_slide_carry_active", False):
             return None  # carrying the followers must not recurse into another carry
+        # bugs/0505: an ATOMIC station slide (object + glued BS moved together) keeps the fold
+        # point fixed relative to the leg BY CONSTRUCTION -- but this hook fires on the BS's half
+        # of the move and would faithfully carry the leg through the inconsistent intermediate
+        # state (measured: the whole split leg dropped 20 mm in z). The station mover suppresses
+        # the carry for exactly that composite write.
+        if getattr(self, "_suppress_fold_slide_carry", False):
+            return None
         try:
             emissions = axis_fold_emissions(self.rows) or {}
             spec = emissions.get(int(row_index))
@@ -161,6 +168,9 @@ class ScenePlacementMixin:
                 return None
             tree = axis_tree.build_axis_tree(
                 self.rows,
+                # bugs/0505: the tree's root must agree with the emissions about where the
+                # object's axis runs, or a slid station snaps its rows onto the nominal line.
+                root_origin=axis_root_origin(self.rows),
                 fold_emissions={
                     key: {"origin": value["origin"], "direction": value["direction"], "kind": "reflect"}
                     for key, value in emissions.items()
@@ -3569,6 +3579,59 @@ class ScenePlacementMixin:
             return None
         return int(front), int(rear)
 
+    def _led_station_slide_plan(self):
+        """bugs/0505: how a glued-LED drag slides the illumination STATION -- (members, bs_row,
+        leg_direction) or None.
+
+        Dragging the LED (the parent housing, bugs/0437) along the splitter's EMITTED leg is the
+        one pure section-2 edit: the OBJECT, the LED and the glued BS move as one station, the
+        object->BS distance (section 1) rides along unchanged, and only BS->lens (section 2)
+        absorbs the motion. ``members`` are the rows on the BS's own leg strictly UPSTREAM of it
+        (the object side); the BS itself is moved by the caller inside the same atomic write.
+
+        Requires the BS<->LED glue and a PROMOTED BS row -- an overlay-only BS has no fold row,
+        so there is no section 2 in the prescription to edit.
+        """
+        if not bool(getattr(self, "_optical_led_glued", False)):
+            return None
+        bs_row = self._promoted_optical_solid_row_index("optical")
+        if bs_row is None:
+            return None
+        try:
+            from KrakenOS.UI.nonseq_output_ports import axis_fold_emissions, axis_root_origin
+            from KrakenOS.UI.services import optical_axis_tree as axis_tree
+
+            emissions = axis_fold_emissions(self.rows) or {}
+            record = emissions.get(int(bs_row))
+            if record is None:
+                return None
+            direction = np.asarray(record["direction"], dtype=float).reshape(3)
+            norm = float(np.linalg.norm(direction))
+            if not np.isfinite(norm) or norm <= 1.0e-9:
+                return None
+            direction = direction / norm
+            tree = axis_tree.build_axis_tree(
+                self.rows,
+                root_origin=axis_root_origin(self.rows),
+                fold_emissions={
+                    key: {"origin": v["origin"], "direction": v["direction"], "kind": "reflect"}
+                    for key, v in emissions.items()
+                },
+            )
+            snaps = axis_tree.snap_rows(self.rows, tree)
+        except Exception:
+            return None
+        by_row = {int(snap.row_index): snap for snap in snaps}
+        bs_snap = by_row.get(int(bs_row))
+        if bs_snap is None:
+            return None
+        members = [
+            int(index)
+            for index in axis_tree.rows_along_leg(snaps, str(bs_snap.segment_id))
+            if float(by_row[int(index)].s) < float(bs_snap.s) - 1.0e-9
+        ]
+        return (members, int(bs_row), direction) if members else None
+
     def _lens_leg_slide_plan(self):
         """bugs/0499: how to slide the lens along its OWN leg -- (rows, direction, folded) or None.
 
@@ -3592,12 +3655,14 @@ class ScenePlacementMixin:
             return None
         front, rear = datums
         try:
-            from KrakenOS.UI.nonseq_output_ports import axis_fold_emissions
+            from KrakenOS.UI.nonseq_output_ports import axis_fold_emissions, axis_root_origin
             from KrakenOS.UI.services import optical_axis_tree as axis_tree
 
             emissions = axis_fold_emissions(self.rows) or {}
             tree = axis_tree.build_axis_tree(
                 self.rows,
+                # bugs/0505: root follows the object's lateral anchor, like the emissions.
+                root_origin=axis_root_origin(self.rows),
                 fold_emissions={
                     key: {"origin": v["origin"], "direction": v["direction"], "kind": "reflect"}
                     for key, v in emissions.items()
@@ -3746,6 +3811,23 @@ class ScenePlacementMixin:
             )
         return bool(moved)
 
+    def _led_station_anchor_world(self):
+        """bugs/0505: the LED's glue anchor -- the OBJECT row's world pose.
+
+        The LED belongs to the illumination STATION; when the station slides along the splitter's
+        leg the object rides with it, so re-expressing the recorded LED placement against the
+        object's position keeps "glue" meaning "back onto the station wherever it now sits" --
+        the exact bugs/0503 treatment the lens got, with the object as the datum.
+        """
+        rows = getattr(self, "rows", None) or []
+        if not rows or str(getattr(rows[0], "surface", "") or "") != "Object":
+            return None
+        pose = self._fold_carry_row_world_pose(0)
+        if pose is None:
+            return None
+        pose = np.asarray(pose, dtype=float).reshape(3)
+        return pose if np.all(np.isfinite(pose)) else None
+
     def _reset_led_to_reference(self):
         """bugs/0504: restore the LED's recorded placement instead of zeroing it.
 
@@ -3764,8 +3846,17 @@ class ScenePlacementMixin:
         reference = self._step_glue_reference_offset_xyz("led")
         if reference is None:
             return None
+        reference = np.asarray(reference, dtype=float).reshape(3)
+        # bugs/0505: after a station slide the object (the LED's datum) has moved -- re-express
+        # the recorded placement against it, exactly as the lens does against its datum midpoint
+        # (bugs/0503). When the station has not moved, anchor_now == anchor_then and this is the
+        # recorded value bit-for-bit.
+        anchor_then = self._step_glue_reference_datum_mid("led")
+        anchor_now = self._led_station_anchor_world()
+        if anchor_then is not None and anchor_now is not None:
+            reference = reference + (anchor_now - anchor_then)
         current = np.asarray(self._step_placement_offset_xyz("led"), dtype=float).reshape(3)
-        delta = np.asarray(reference, dtype=float).reshape(3) - current
+        delta = reference - current
         if float(np.linalg.norm(delta)) <= 1.0e-9:
             self.status_var.set("LED STEP is already glued (at its recorded placement).")
             return False
@@ -4250,6 +4341,24 @@ class ScenePlacementMixin:
         # bugs/0499: on a FOLDED leg the axial part is applied by translating the surrogate's own
         # rows, because no thickness controls position along such a leg. The thickness redirect
         # below stays for the unfolded case, where it is both correct and the existing behaviour.
+        # bugs/0505: dragging the glued LED along the splitter's emitted leg slides the whole
+        # illumination STATION -- object + LED + BS -- so only section 2 (BS -> lens) changes.
+        # Classified here, APPLIED atomically inside the history capture below. The perpendicular
+        # remainder keeps today's parent/child housing-seat behaviour via the ordinary LED carry.
+        led_station_slide = 0.0
+        led_station_members: "list[int]" = []
+        led_station_bs_row = None
+        led_station_dir = None
+        led_station_plan = self._led_station_slide_plan() if label == "led" else None
+        if led_station_plan is not None:
+            _members, _bs_row, _dir = led_station_plan
+            led_station_slide = float(np.dot(np.asarray(delta[:3], dtype=float).reshape(3), _dir))
+            if abs(led_station_slide) > 1e-9:
+                led_station_members = [int(v) for v in _members]
+                led_station_bs_row = int(_bs_row)
+                led_station_dir = _dir
+            else:
+                led_station_slide = 0.0
         lens_leg_slide = 0.0
         lens_leg_members: "list[int]" = []
         lens_leg_dir = None
@@ -4294,6 +4403,34 @@ class ScenePlacementMixin:
         next_offset = current + applied
         if record_history:
             self._begin_history_capture()
+        station_shift = None
+        if led_station_bs_row is not None and led_station_dir is not None:
+            station_shift = led_station_dir * led_station_slide
+            # The station moves as ONE rigid write: object-side rows + the BS row together. The
+            # 0485 fold-slide carry is suppressed for the composite -- the net fold point is
+            # unchanged by construction, and letting the hook fire on the BS's half would carry
+            # the whole split leg through the inconsistent intermediate state (measured: the leg
+            # dropped 20 mm in z). The object row's tilt is zero, so its desp IS world-frame.
+            self._suppress_fold_slide_carry = True
+            try:
+                for _index in led_station_members:
+                    _row = self.rows[_index]
+                    _row.desp_x = float(_row.desp_x) + float(station_shift[0])
+                    _row.desp_y = float(_row.desp_y) + float(station_shift[1])
+                    _row.desp_z = float(_row.desp_z) + float(station_shift[2])
+                self.translate_scene_row_pose_vector(
+                    led_station_bs_row, station_shift, record_history=False, sync_table=False
+                )
+            finally:
+                self._suppress_fold_slide_carry = False
+            if not bool(getattr(self, "headless", False)):
+                try:
+                    self._sync_table()
+                except Exception:
+                    pass
+            self._invalidate_preview_scene_trace()
+            # bugs/0503's lesson: rows moved, so the release flush must promote to a full rebuild.
+            self._fold_carry_pending_rebuild = True
         if lens_leg_members and lens_leg_dir is not None:
             _shift = lens_leg_dir * lens_leg_slide
             for _index in lens_leg_members:
@@ -4336,7 +4473,11 @@ class ScenePlacementMixin:
         # Item 3: BS<->LED two-body glue -- the optical (beam splitter) + led overlays move as ONE
         # rigid unit. The partner may be a STEP overlay OR a promoted solid row (after the BS is
         # promoted), so _carry_glued_optical_led handles both and guards against carry-back.
-        self._carry_glued_optical_led(label, applied)
+        # bugs/0505: the station slide already moved the glued BS by the leg component inside the
+        # atomic write above -- hand the ordinary parent/child carry only the PERPENDICULAR
+        # remainder, or the BS would ride the leg component twice.
+        carry_delta = applied if station_shift is None else applied - station_shift
+        self._carry_glued_optical_led(label, carry_delta)
         self._selected_step_label = label
         if record_history:
             self._commit_history_capture()

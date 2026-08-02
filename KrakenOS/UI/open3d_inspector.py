@@ -12006,6 +12006,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             # to the vertex makes incoming -> middle -> outgoing one connected polyline
             # through the mirror centres (still within the 0189 anti-over-extension bound).
             z1 = min(z1, float(fold_point_z))
+        # bugs/0505: the global guide is the line the OBJECT emits -- anchored at the object
+        # row's lateral position, so a slid illumination station (object + LED + glued BS)
+        # keeps its incoming axis drawn through the station instead of down the nominal line.
+        # (0, 0) for every centred-object scene, i.e. byte-identical to the old guide there.
+        try:
+            from KrakenOS.UI.nonseq_output_ports import axis_root_origin
+
+            _root_xy = axis_root_origin(self.editor.rows)
+            _rx, _ry = float(_root_xy[0]), float(_root_xy[1])
+        except Exception:
+            _rx = _ry = 0.0
         records = [
             {
                 "axis_id": "axis:global",
@@ -12014,7 +12025,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 "branch_path": "",
                 "source_id": "",
                 "ray_index": -1,
-                "points": np.asarray(((0.0, 0.0, z0), (0.0, 0.0, z1)), dtype=float),
+                "points": np.asarray(((_rx, _ry, z0), (_rx, _ry, z1)), dtype=float),
             }
         ]
         # bugs/0200: on a single mirror fold the +Z guide above stops at the mirror; add
