@@ -955,17 +955,36 @@ class ScenePlacementMixin:
         # via apply_optical_solid_output_port_system_overrides -> ~40 s per refresh
         # ("Creating solid objects for optical elements" x32). Falls back to the rebuild
         # when no system is passed (headless callers) or it carries no transforms.
+        # bugs/0505 (flag_20260802_110437 "the FOV plane is not moving"): the engine's transform
+        # chain STARTS at the object, so surface 0's transform never carries the object row's own
+        # lateral decenter -- after a station slide the FOV plane and the object-plane actor
+        # stayed drawn on the nominal axis while the rays and axes moved. Every OTHER row's
+        # transform already includes its desp; fold the object's lateral desp in for row 0 on
+        # both engine-derived reads below.
+        def _with_object_lateral(point: np.ndarray) -> np.ndarray:
+            if row_index != 0:
+                return point
+            try:
+                row0 = self.rows[0]
+                return point + np.asarray(
+                    (float(row0.desp_x or 0.0), float(row0.desp_y or 0.0), 0.0), dtype=float
+                )
+            except Exception:
+                return point
+
         transforms = self._system_transform_list(system)
         if transforms is not None and 0 <= row_index < len(transforms):
             try:
                 origin = np.asarray(transforms[row_index], dtype=float).reshape(4, 4)[:3, 3]
                 if origin.size >= 3 and np.all(np.isfinite(origin)):
-                    return origin.astype(float)
+                    return _with_object_lateral(origin.astype(float))
             except Exception:
                 pass
 
         try:
-            return self._surface_origin_for_rows(self.rows, row_index)
+            return _with_object_lateral(
+                np.asarray(self._surface_origin_for_rows(self.rows, row_index), dtype=float).reshape(3)
+            )
         except Exception:
             z_positions = self._row_z_positions()
             row = self.rows[row_index]

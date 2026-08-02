@@ -1032,14 +1032,25 @@ def _trace_row_exit_frame(
     *,
     thickness: float,
     wavelength_um: float = 0.55,
+    probe_origin=(0.0, 0.0, 0.0),
 ) -> tuple[np.ndarray, np.ndarray] | None:
+    # bugs/0505 follow-through (flag_20260802_110629): the probe must launch on the line the
+    # OBJECT emits, not the nominal axis. After a station slide the nominal probe met the moved
+    # splitter diagonal below the imaging arm, never reached the mirror, and the follower builder
+    # fell back to face+thickness seating -- which planted the Image row exactly one
+    # mirror-to-image thickness (44.12 mm) below its station, so the traced rays flew PAST the
+    # visible camera sensor.
     if system is None:
         return None
+    try:
+        probe = [float(probe_origin[0]), float(probe_origin[1]), float(probe_origin[2])]
+    except Exception:
+        probe = [0.0, 0.0, 0.0]
     energy_probability = getattr(system, "energy_probability", None)
     try:
         if energy_probability is not None:
             setattr(system, "energy_probability", 0)
-        system.NsTrace([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], float(wavelength_um))
+        system.NsTrace(probe, [0.0, 0.0, 1.0], float(wavelength_um))
     except Exception:
         return None
     finally:
@@ -1075,11 +1086,19 @@ def _branch_traced_row_frames(system, rows, *, wavelength_um: float = 0.55) -> d
     so every non-BS scene is untouched. Pure w.r.t. the row list; traces the system once."""
     if system is None:
         return {}
+    # bugs/0505: same anchoring as _trace_row_exit_frame -- the branch probe launches on the
+    # line the object emits so a slid station still reaches its splitter and branches.
+    probe = [0.0, 0.0, 0.0]
+    try:
+        anchor = axis_root_origin(rows)
+        probe = [float(anchor[0]), float(anchor[1]), 0.0]
+    except Exception:
+        probe = [0.0, 0.0, 0.0]
     energy_probability = getattr(system, "energy_probability", None)
     try:
         if energy_probability is not None:
             setattr(system, "energy_probability", 0)
-        system.NsTrace([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], float(wavelength_um))
+        system.NsTrace(probe, [0.0, 0.0, 1.0], float(wavelength_um))
     except Exception:
         return {}
     finally:
@@ -1979,6 +1998,7 @@ def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict
                 system,
                 int(row_index),
                 thickness=float(getattr(current, "thickness", 0.0) or 0.0),
+                probe_origin=axis_root_origin(rows),
             )
             if traced_frame is not None:
                 frame_origin, frame_rotation = traced_frame

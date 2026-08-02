@@ -145,6 +145,53 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
             )
         except Exception as exc:
             notes.append(f"NOTE: trace check skipped ({type(exc).__name__}: {exc})")
+
+        # -- E: the two 2026-08-02 11:0x flags -----------------------------------------------
+        # flag_20260802_110437: the FOV plane / object-plane anchor must FOLLOW the station
+        # (surface 0's engine transform never carries the object's own lateral desp).
+        # flag_20260802_110629: after mirror + station drags, the follower builder's probe
+        # (launched nominally, it missed the moved diagonal) fell back to face+thickness and
+        # planted the Image row one mirror-to-image thickness low -- rays flew PAST the sensor.
+        try:
+            editor2 = KrakenLayoutEditor()
+            editor2.layout_files["station_probe2"] = SCENE
+            editor2.load_layout_by_name("station_probe2")
+            p8 = lambda: np.asarray(tree_mod.row_world_pose(editor2.rows, 8), dtype=float)
+            r8_0 = p8().copy()
+
+            def _sys():
+                system, _, _ = editor2._build_preview_system_rays_bundle(
+                    update_state=False, include_live_step_overlays=False
+                )
+                return system
+
+            editor2.translate_step_overlay("led", (10.45, 0.0, 0.0))
+            obj_ref = np.asarray(
+                editor2._surface_reference_world_point(0, system=_sys()), dtype=float
+            ).reshape(3)
+            check(
+                abs(float(obj_ref[0]) - 10.45) <= 1.0e-6,
+                f"E1: the object/FOV-plane anchor follows the station (x={obj_ref[0]:.3f}) -- "
+                f"it used to stay on the nominal axis while rays and axes moved",
+            )
+            editor2.translate_step_overlay("lens", (28.31, 0.0, 0.0))
+            editor2.translate_scene_row_pose_vector(7, (34.10, 0.0, 0.0))
+            _sys()
+            editor2.translate_step_overlay("led", (-33.63, 0.0, 0.0))
+            _sys()
+            moved = p8() - r8_0
+            check(
+                abs(float(moved[2])) <= 1.0e-3 and abs(float(moved[0]) - 34.10) <= 1.0e-3,
+                f"E2: through lens+mirror+station drags the Image row rides ONLY the mirror "
+                f"(delta {np.round(moved, 2).tolist()}) -- the nominal follower probe used to "
+                f"drop it one mirror-to-image thickness (44.12 mm) below the sensor",
+            )
+            try:
+                editor2.destroy()
+            except Exception:
+                pass
+        except Exception as exc:
+            notes.append(f"NOTE: flag-sequence check skipped ({type(exc).__name__}: {exc})")
     except Exception as exc:
         notes.append(f"SKIP: the scene could not be driven ({type(exc).__name__}: {exc})")
     finally:

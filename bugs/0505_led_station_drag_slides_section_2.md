@@ -102,3 +102,26 @@ needs the same `axis_root_origin` anchor — this is precisely the known "non-se
 pupil seam" (universal first-order reference), which this feature turns from a design note into
 the next required fix. Until it lands, the station slide is geometrically correct and fully
 drawn, but the traced rays vanish after a slide.
+
+## Live-test flags, 2026-08-02 11:0x — two more nominal-axis consumers, both closed
+
+`flag_20260802_110437` — *"drag LED to the right, the ray move correctly, but the FOV plane is
+not moving."* `_surface_reference_world_point(0)` reads surface 0's origin from the engine's
+transform chain, which STARTS at the object and so never carries the object row's own lateral
+desp — the FOV plane and object-plane actors stayed on the nominal axis. Row 0 now folds its
+lateral desp into both engine-derived reads (every other row's transform already carries its own).
+
+`flag_20260802_110629` — *"drag lens, RA mirror, left and right, then drag LED left, the ray goes
+pass the camera sensor."* The recording pinned it: the mirror drag kept the Image row put; the
+NEXT station drag jumped it z −5.08 → −49.2 = exactly one mirror→image thickness (44.12). The
+follower builder's exit-frame probes (`_trace_row_exit_frame`, `_branch_traced_row_frames`)
+launched `NsTrace([0,0,0], +z)` — after the station slide the nominal probe met the moved
+diagonal below the arm and never reached the mirror, so the builder fell back to face+thickness
+seating, planting the Image row one thickness low; the (correctly traced) rays then flew past
+the visible sensor. Both probes now launch from `axis_root_origin`.
+
+Verified through the exact recorded sequence with a full system rebuild per step: the object
+anchor follows the station (0 → 10.45 → −23.18), the Image row rides only the mirror
+(delta [34.1, 0, 0], z unchanged), and rays land at every stage (129/144/105/105/74 — the final
+74 matches the flag's termination count, now ON the sensor instead of past it). Guard: E1/E2 in
+the 0505 validator.
