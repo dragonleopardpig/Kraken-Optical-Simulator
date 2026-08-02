@@ -39,3 +39,27 @@ scenes, NOT yet general on this import path. Next: reproduce on this scene shape
 glue -> drag via BOTH carry and gizmo), then unify: make the leg slide use the SAME row-carry
 mechanism for the unfolded root leg (rows_along_leg on axis:root between the datums) instead of
 the name-matched thickness redirect, and route the carry commit through translate_step_overlay.
+
+## Update — C FIXED; A exhaustively chased, not reproducible on current code
+
+**C fixed.** Reproduced on the user's own `machine_vision_150mm_test.py`: the whole-body carry
+commits through `translate_step_overlay` PER FRAME, and the axial redirect's on-axis gate was
+machine-precision (1e-3) — the first frame's 0.2 mm lateral jitter poisoned the placement offset
+and every later axial increment slid the body off its optics (detached 23.4 mm over 40 frames).
+The gate now uses a physical 3 mm tolerance; the flag_20260621_142758 parked-off-the-beam
+protection is asserted intact. Guard: `validate_open3d_0508_unfolded_carry_keeps_lens_glued`,
+penta phase 409. So the answer to "is the fix general?": the folded row-carry was always
+projection-based and jitter-proof; the unfolded thickness redirect was the fragile one, and it is
+now jitter-proof too.
+
+**A not reproducible.** The recorded x,z,z,x LED sequence was replayed four ways — single-commit
+headless, per-frame carry-style commits, per-frame with live STEP overlay trace rows, and through
+the REAL inspector with `refresh_from_editor` + idle pumping between gestures — row 8 holds its
+correct station (17.72) in every one, on the exact build (36ddd3cd) that produced the flag.
+Remaining hypothesis: a mid-gesture ASYNC trace capture applied stale after the drag (the worker
+snapshot re-seating followers from a half-moved state) — inherently timing-dependent, invisible
+to synchronous replays. Needs a live re-test WITH recording active on current code; if it
+recurs, instrument `apply_async_trace_result` with a model-generation check and log the follower
+builder's `frame_source` at apply time.
+
+**B** remains by-design (bugs/0437) pending a product decision.

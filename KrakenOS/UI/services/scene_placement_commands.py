@@ -4327,13 +4327,21 @@ class ScenePlacementMixin:
         # off-axis BS sitting in the lens slot was adjusting the gap + rays when dragged).
         _cur_axis_off = np.asarray(self._step_axis_offset_xy(label), dtype=float).reshape(-1)
         _cur_place_off = np.asarray(self._step_placement_offset_xyz(label), dtype=float).reshape(-1)
+        # bugs/0508 (flag_20260802_132419 "drag lens STEP, surrogate not moving"): the lateral
+        # part of this gate was machine-precision (1e-3). A whole-body CARRY commits through here
+        # PER FRAME, and the first frame's sub-millimetre lateral jitter landed in the placement
+        # offset -- from frame 2 every axial increment failed the gate and slid the body off its
+        # optics. The gate's real job (flag_20260621_142758) is to keep a body PARKED OFF THE
+        # BEAM -- tens of millimetres aside -- from driving the optical distances; 3 mm is far
+        # above drag jitter and far below any deliberate park.
+        _ON_AXIS_LATERAL_TOL_MM = 3.0
         overlay_on_axis = (
             _cur_axis_off.size >= 2
             and _cur_place_off.size >= 2
-            and abs(float(_cur_axis_off[0])) <= 1e-3
-            and abs(float(_cur_axis_off[1])) <= 1e-3
-            and abs(float(_cur_place_off[0])) <= 1e-3
-            and abs(float(_cur_place_off[1])) <= 1e-3
+            and abs(float(_cur_axis_off[0])) <= _ON_AXIS_LATERAL_TOL_MM
+            and abs(float(_cur_axis_off[1])) <= _ON_AXIS_LATERAL_TOL_MM
+            and abs(float(_cur_place_off[0])) <= _ON_AXIS_LATERAL_TOL_MM
+            and abs(float(_cur_place_off[1])) <= _ON_AXIS_LATERAL_TOL_MM
         )
         # CAMERA <-> DETECTOR GLUE (item 1): the camera sensor is glued to the Image-row detector.
         # An AXIAL (+Z optical-axis) camera drag moves the DETECTOR -- the Image row, which is the
