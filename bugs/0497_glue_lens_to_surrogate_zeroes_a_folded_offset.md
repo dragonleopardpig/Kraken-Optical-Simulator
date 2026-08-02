@@ -182,18 +182,20 @@ Guard: `validate_open3d_0497_glue_restores_the_recorded_placement.py`, penta pha
 covers the round trip on purpose — bugs/0492 is this exact settings block, and the facade shadowing
 it fixed is what silently ate a key here before.
 
-Still open: the LED takes the same destructive zeroing path and wants the same treatment.
+## Status (2026-08-01, re-verified on `f134f555`)
 
-The LED takes the identical destructive path and still wants the same pass.
+**FIXED for the lens, exact.** The reference restore shipped (previous section), the
+`already_glued` short-circuit is expressed against the computed target (not "is the offset zero"),
+and the guard exists: `validate_open3d_0497_glue_restores_the_recorded_placement.py`, penta phase
+402 — residual 0.000000 mm, no stranding, save/reload round trip. The earlier "Guard it still
+needs / not written yet" note predated that section and is superseded.
 
-The `already_glued` short-circuit must go too, or be re-expressed against the computed target
-(`is the body already AT the target`) rather than against "is the offset zero" — otherwise the
-stranding survives the fix.
+**Semantics upgraded by bugs/0503:** the reference is now restored RELATIVE to the surrogate's
+datum midpoint as it sits at glue time (`step_glue_reference_datum_mid_xyz` persisted beside it) —
+after a bugs/0499 leg slide moved the rows, the absolute restore manufactured a 28.7 mm detach
+(flag_20260801_220951). Phase 402's B-section asserts the relative semantics; C3 covers the anchor
+round trip.
 
-The LED takes the identical destructive path and wants the same treatment on the same pass.
-
-## Guard it still needs
-
-Not written yet — the behaviour is not final while the 3.849 mm residual stands. When `k` is
-persisted at import, the guard should assert: the folded scene lands on the surrogate **at the
-CAD-exact pose**, a second invocation can still move it, and the unfolded case is unchanged.
+**Still open: the LED.** It takes the same destructive zeroing path
+(`glue_step_overlay_to_surrogate`'s generic branch) and wants the same
+reference-restore-plus-anchor treatment.
