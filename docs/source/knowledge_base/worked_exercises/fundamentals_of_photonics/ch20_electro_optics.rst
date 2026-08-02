@@ -9,23 +9,39 @@ In-text exercises
 
 .. rubric:: Exercise 20.1-1 — Directional-coupler spectral response
 
+**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+
+**Mathematical formulas used.**  The working uses :ref:`trigonometric and small-angle identities <fop-formula-trigonometry>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+
 Since :math:`V_0(\lambda)=V_0(\lambda_r)\lambda/\lambda_r`, holding
 :math:`V=V_0(\lambda_r)` gives coupling phase
 :math:`(\pi/2)(\lambda_r/\lambda)`.  Therefore
 
 .. math::
+   :label: fop-exercise-20-1-1-eq-1
 
    \boxed{\eta(\lambda)=\cos^2\!\left({\pi\lambda_r\over2\lambda}\right)}.
 
 It has a quadratic null at :math:`\lambda_r`; this expression directly
 generates the requested wavelength-detuning plot.
 
+**Check.**  Equation :eq:`fop-exercise-20-1-1-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
+
 .. rubric:: Exercise 20.2-1 — Longitudinal Kerr modulation
+
+**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+
+**Mathematical formulas used.**  The working uses :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 For eigenpolarization :math:`i`,
 :math:`n_i(E)\simeq n_i-s_i n_i^3E^2/2`.  With :math:`E=V/L`,
 
 .. math::
+   :label: fop-exercise-20-2-1-eq-1
 
    \phi_i=\phi_{i0}-{\pi s_i n_i^3\over\lambda_0 L}V^2,
    \qquad
@@ -38,7 +54,15 @@ replaced by the eigenpolarization difference for a retarder.
 End-of-chapter problems
 -----------------------
 
+**Check.**  Equation :eq:`fop-exercise-20-2-1-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
+
 .. rubric:: Problem 20.1-2 — GaAs phase-modulator speed
+
+**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+
+**Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 For a longitudinal cell,
 :math:`V_\pi=\lambda_0/(2rn^3)=\boxed{8.71\ \mathrm{kV}}` and the optical
@@ -47,14 +71,46 @@ capacitance is :math:`\epsilon A/L=\boxed{0.398\ \mathrm{pF}}`, so the
 50-ohm time constant is only :math:`19.9` ps.  Optical transit, not the RC
 circuit, is the limiting scale.
 
+**Numbered result.**  The principal result obtained in the working is
+
+.. math::
+   :label: fop-problem-20-1-2-result
+
+   \epsilon A/L=\boxed{0.398\ \mathrm{pF}}
+
+
+**Check.**  Equation :eq:`fop-problem-20-1-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
+
 .. rubric:: Problem 20.1-3 — Mach--Zehnder sensitivity
+
+**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+
+**Mathematical formulas used.**  The working uses :ref:`stationary-value condition <fop-formula-stationary>`, :ref:`product, quotient, and chain rules <fop-formula-product-chain>`, and :ref:`trigonometric and small-angle identities <fop-formula-trigonometry>`.
+
+**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Bias at quadrature, where
 :math:`\eta=[1+\cos(\pi V/V_\pi)]/2` has maximum slope.  Thus
 :math:`\boxed{|d\eta/dV|_{max}=\pi/(2V_\pi)=0.1571\ \mathrm{V^{-1}}}` for
 :math:`V_\pi=10` V.
 
+**Numbered result.**  The principal result obtained in the working is
+
+.. math::
+   :label: fop-problem-20-1-3-result
+
+   \boxed{|d\eta/dV|_{max}=\pi/(2V_\pi)=0.1571\ \mathrm{V^{-1}}}
+
+
+**Check.**  Equation :eq:`fop-problem-20-1-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
+
 .. rubric:: Problem 20.1-4 — Integrated strain sensor
+
+**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+
+**Mathematical formulas used.**  The working uses :ref:`product, quotient, and chain rules <fop-formula-product-chain>`, :ref:`integration identities <fop-formula-integration>`, and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Put the sensing and reference waveguides in a Mach--Zehnder and bias it at
 quadrature.  Strain produces :math:`\Delta\phi_s=k_0L(\partial n/\partial
@@ -64,7 +120,23 @@ then
 :math:`\boxed{\epsilon=n^3rV/[2d(\partial n/\partial\epsilon)]}`.  The null
 measurement removes source-power drift.
 
+**Numbered result.**  The principal result obtained in the working is
+
+.. math::
+   :label: fop-problem-20-1-4-result
+
+   \boxed{\epsilon=n^3rV/[2d(\partial n/\partial\epsilon)]}
+
+
+**Check.**  Equation :eq:`fop-problem-20-1-4-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiation of an antiderivative, or normalization of a definite integral, checks the integration step.
+
 .. rubric:: Problem 20.1-5 — Faraday intensity modulation
+
+**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+
+**Mathematical formulas used.**  The working uses :ref:`trigonometric and small-angle identities <fop-formula-trigonometry>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Place the rotator between linear polarizers.  If their relative angle is
 :math:`\alpha`, Malus' law gives
@@ -72,13 +144,45 @@ Place the rotator between linear polarizers.  If their relative angle is
 small field changes linear in output intensity; crossed polarizers instead
 make an on/off switch.
 
+**Numbered result.**  The principal result obtained in the working is
+
+.. math::
+   :label: fop-problem-20-1-5-result
+
+   \boxed{I_o/I_i=\cos^2[\alpha+V_B B(t)L]}
+
+
+**Check.**  Equation :eq:`fop-problem-20-1-5-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
+
 .. rubric:: Problem 20.2-2 — Poled-silica phase shift
+
+**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+
+**Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 For the stated axes and :math:`y` polarization, :math:`r_{13}` applies.
 Substitution in :math:`\Delta\phi=-\pi r n^3(V/d)L/\lambda` gives
 :math:`\boxed{\Delta\phi=-0.3058\ \mathrm{rad}}` (magnitude 17.5 degrees).
 
+**Numbered result.**  The principal result obtained in the working is
+
+.. math::
+   :label: fop-problem-20-2-2-result
+
+   \boxed{\Delta\phi=-0.3058\ \mathrm{rad}}
+
+
+**Check.**  Equation :eq:`fop-problem-20-2-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
+
 .. rubric:: Problem 20.2-3 — Cascaded KDP cells
+
+**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+
+**Mathematical formulas used.**  The working uses :ref:`trigonometric and small-angle identities <fop-formula-trigonometry>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 The longitudinal KDP geometry uses :math:`r_{63}` and ordinary index, giving
 :math:`\boxed{V_\pi=\lambda_0/(r_{63}n_o^3)=16.8\ \mathrm{kV}}` for one
@@ -87,7 +191,23 @@ crystal axes when electrode polarity reverses) so every retardation has the
 same sign.  Nine equal stages add phase, so
 :math:`\boxed{V_{\pi,9}=V_\pi/9=1.87\ \mathrm{kV}}`.
 
+**Numbered result.**  The principal result obtained in the working is
+
+.. math::
+   :label: fop-problem-20-2-3-result
+
+   \boxed{V_{\pi,9}=V_\pi/9=1.87\ \mathrm{kV}}
+
+
+**Check.**  Equation :eq:`fop-problem-20-2-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
+
 .. rubric:: Problem 20.2-4 — Push--pull reflective modulator
+
+**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+
+**Mathematical formulas used.**  The working uses :ref:`power and decibel conversions <fop-formula-power-decibels>`, :ref:`trigonometric and small-angle identities <fop-formula-trigonometry>`, and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Each arm makes two passes.  Equal and opposite voltages therefore give
 relative phase :math:`\Delta\phi=4\pi V/V_\pi`, where for a transverse cell
@@ -95,14 +215,46 @@ relative phase :math:`\Delta\phi=4\pi V/V_\pi`, where for a transverse cell
 :math:`\boxed{\eta=\cos^2(\Delta\phi/2)=\cos^2(2\pi V/V_\pi)}` (the other port
 has the complementary sine-squared response).
 
+**Numbered result.**  The principal result obtained in the working is
+
+.. math::
+   :label: fop-problem-20-2-4-result
+
+   \boxed{\eta=\cos^2(\Delta\phi/2)=\cos^2(2\pi V/V_\pi)}
+
+
+**Check.**  Equation :eq:`fop-problem-20-2-4-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Converting the final decibel value back to a linear power ratio checks the logarithm, sign, and accumulated loss budget.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
+
 .. rubric:: Problem 20.2-5 — Low-voltage LiNbO3 modulator
+
+**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+
+**Mathematical formulas used.**  The working uses :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Choose extraordinary polarization and field parallel to the optic axis to use
 the largest product :math:`r_{33}n_e^3`.  A push--pull Mach--Zehnder has
 :math:`V_\pi=\lambda_0d/[2r_{33}n_e^3L]`, hence
 :math:`\boxed{V_\pi=6.73\ \mathrm V}` for the specified active region.
 
+**Numbered result.**  The principal result obtained in the working is
+
+.. math::
+   :label: fop-problem-20-2-5-result
+
+   \boxed{V_\pi=6.73\ \mathrm V}
+
+
+**Check.**  Equation :eq:`fop-problem-20-2-5-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
+
 .. rubric:: Problem 20.2-6 — Electrically controlled walk-off
+
+**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+
+**Mathematical formulas used.**  The working uses :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>` and :ref:`trigonometric and small-angle identities <fop-formula-trigonometry>`.
+
+**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Without voltage, use the uniaxial extraordinary-index formula at 45 degrees;
 Snell-wavevector continuity gives the ordinary/extraordinary ray directions.
@@ -113,3 +265,5 @@ The lateral separation is :math:`d(\tan\rho_e-\tan\rho_o)` and retardation is
 shift.  The resulting controllable beam separation/retardation supports
 polarization switching, sensing, and beam steering.  (At the printed 30 V/m,
 the effect is extremely small; 30 V/micrometre would be device-scale.)
+
+**Check.**  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.

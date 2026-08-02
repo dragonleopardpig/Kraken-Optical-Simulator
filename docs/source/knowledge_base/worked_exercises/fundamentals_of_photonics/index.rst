@@ -13,6 +13,15 @@ decisive derivation or a reproducible construction.  When a question asks for
 a graph or numerical experiment, the solution specifies the function,
 parameters, and check needed to reproduce it.
 
+Each solution defines its local notation, names and links the mathematical
+identities it uses, shows numbered working where equations are involved, and
+ends with a verification.  The shared formula catalogue is available here:
+
+.. toctree::
+   :maxdepth: 1
+
+   mathematical_formula_reference
+
 Part I — Fundamentals
 ---------------------
 

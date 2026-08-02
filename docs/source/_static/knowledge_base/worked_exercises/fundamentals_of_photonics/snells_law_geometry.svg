@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800" role="img" aria-labelledby="title desc">
+  <title id="title">Geometry for deriving Snell's law from stationary optical path</title>
+  <desc id="desc">A ray travels from A in medium n1 to interface point P and then to B in medium n2. Vertical distances d1 and d2, horizontal distances x and d minus x, total horizontal distance d, angles theta1 and theta2, and the interface normal are labeled.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f7fafc}.upper{fill:#edf7ff}.lower{fill:#eefbf5}.interface{stroke:#235789;stroke-width:5}.normal{stroke:#61788a;stroke-width:2.5;stroke-dasharray:10 8}.ray{fill:none;stroke:#d9485f;stroke-width:6;stroke-linecap:round;stroke-linejoin:round}.guide{stroke:#8295a5;stroke-width:2;stroke-dasharray:6 6}.measure{stroke:#334e68;stroke-width:2.5;marker-start:url(#arrow);marker-end:url(#arrow)}.arc{fill:none;stroke:#9b51e0;stroke-width:3}.point{fill:#173f5f}.head{font:700 28px sans-serif;fill:#18324a}.label{font:22px sans-serif;fill:#243b53}.math{font:italic 24px serif;fill:#102a43}.small{font:18px sans-serif;fill:#486581}.medium{font:700 24px sans-serif;fill:#286f9e}.theta{font:italic 25px serif;fill:#7b2cbf}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z" fill="#334e68"/></marker>
+    <marker id="rayArrow" markerUnits="userSpaceOnUse" markerWidth="16" markerHeight="16" refX="13" refY="8" orient="auto"><path d="M0,0 L16,8 L0,16 Z" fill="#d9485f"/></marker>
+  </defs>
+  <rect class="bg" width="1200" height="800" rx="18"/>
+  <rect class="upper" x="30" y="70" width="1140" height="330"/>
+  <rect class="lower" x="30" y="400" width="1140" height="330"/>
+  <text class="head" x="55" y="48">Stationary optical path across one planar interface</text>
+  <line class="interface" x1="30" y1="400" x2="1170" y2="400"/>
+  <text class="medium" x="930" y="120">medium 1: n₁</text>
+  <text class="medium" x="55" y="700">medium 2: n₂</text>
+  <text class="small" x="920" y="388">planar interface</text>
+
+  <line class="guide" x1="170" y1="125" x2="170" y2="675"/>
+  <line class="guide" x1="590" y1="95" x2="590" y2="705"/>
+  <line class="guide" x1="1050" y1="125" x2="1050" y2="675"/>
+  <line class="normal" x1="590" y1="85" x2="590" y2="715"/>
+  <text class="small" x="606" y="92">surface normal</text>
+
+  <path class="ray" marker-end="url(#rayArrow)" d="M170 125 L590 400 L1050 675"/>
+  <circle class="point" cx="170" cy="125" r="8"/><circle class="point" cx="590" cy="400" r="8"/><circle class="point" cx="1050" cy="675" r="8"/>
+  <text class="label" x="135" y="108">A</text><text class="label" x="606" y="430">P(x)</text><text class="label" x="1065" y="655">B</text>
+
+  <path class="arc" d="M590 330 A70 70 0 0 0 531 362"/>
+  <path class="arc" d="M590 470 A70 70 0 0 1 650 437"/>
+  <text class="theta" x="525" y="322">θ₁</text><text class="theta" x="642" y="490">θ₂</text>
+
+  <line class="measure" x1="130" y1="125" x2="130" y2="400"/>
+  <text class="math" x="92" y="270">d₁</text>
+  <line class="measure" x1="1090" y1="400" x2="1090" y2="675"/>
+  <text class="math" x="1105" y="548">d₂</text>
+
+  <line class="measure" x1="170" y1="455" x2="590" y2="455"/>
+  <text class="math" x="370" y="489">x</text>
+  <line class="measure" x1="590" y1="545" x2="1050" y2="545"/>
+  <text class="math" x="788" y="580">d − x</text>
+  <line class="measure" x1="170" y1="750" x2="1050" y2="750"/>
+  <text class="math" x="602" y="785">d</text>
+
+  <text class="small" x="220" y="178">ℓ₁ = √(d₁² + x²)</text>
+  <text class="small" x="755" y="625">ℓ₂ = √(d₂² + (d − x)²)</text>
+</svg>
