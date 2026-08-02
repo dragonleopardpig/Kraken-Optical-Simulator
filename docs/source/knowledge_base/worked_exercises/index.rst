@@ -1,7 +1,7 @@
 Worked Exercise Solutions
 =========================
 
-This section contains four book-specific collections of textbook-style
+This section contains five book-specific collections of textbook-style
 exercises, plus a contributor guide and a compact worked example.  The aim is
 not only to obtain an answer, but to make each mathematical decision visible:
 what is known, which equation applies, how it is rearranged, how units are
@@ -25,6 +25,7 @@ own parent pages.
    photonics_essentials/index
    fundamentals_of_photonics/index
    hecht_optics_5e/index
+   siegman_lasers/index
 
 .. toctree::
    :maxdepth: 1
