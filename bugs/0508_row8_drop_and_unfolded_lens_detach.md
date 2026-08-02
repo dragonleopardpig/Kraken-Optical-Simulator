@@ -89,3 +89,26 @@ from ray landings or an axial reference ray), which would key on the BS lateral 
 NOMINAL axis — the same nominal-anchoring family as every 0505-era find. Next: trace
 `_system_transform_list`'s source attribute and find who writes the image slot between build and
 bundle return, with the one-line repro as the harness.
+
+## Update 3 — writer hunt narrowed to its last corner
+
+Additional exclusions, each by probe on the one-line repro (`rows[3].desp_x -= 23.4`):
+
+* per-surface TRANS_2A diff: ONLY slot 3 (the moved BS, expected) and slot 8 (the image) differ;
+  surfaces 4-7 identical -- no chain propagation, the image slot alone is rewritten;
+* `Prerequisites3SMath` (the core cumulative math) cannot produce it (AxisMove=0 everywhere);
+* `_apply_optical_solid_output_port_system_overrides_built` receives EMPTY override maps during
+  the real build (spied);
+* `_reconcile_folded_image_to_ray_convergence` STUBBED -- divergence unchanged;
+* threshold sweep: desp_x -12 fine, -23.4 broken -- the flip sits between 12 and 23.4 mm,
+  consistent with a REFERENCE RAY clearing vs missing the lens half-aperture (~14.1 mm);
+* the arithmetic signature: healthy image = mirror_z - designed_gap (53.8 - 58.88 = -5.08);
+  broken = mirror_z - (r7.thickness + designed_gap) (53.8 - 102.99 = -49.2) -- a DOUBLE-gap
+  advance, r7.thickness applied once more.
+
+Remaining candidates for the writer (next session, with the one-line repro as harness): whatever
+in `_build_preview_system_rays_bundle` between engine build and bundle return rewrites TRANS_2A
+slot -1 -- instrument by wrapping TRANS_2A in a write-logging list proxy, or bisect the builder's
+stages by stubbing (`_folded_sequential_trace_rows` variants, hard-stop/branch-detector spec
+surgery, `_apply_frozen...` solves). The gate is ray-reachability of a nominal-anchored reference
+(the same 0505 family) and the wrong branch advances the mirror-image gap twice.
