@@ -15443,6 +15443,10 @@ phase_409_unfolded_carry_keeps_lens_glued = _phase_from_standalone(
     409, "a per-frame axial lens carry keeps the surrogate attached on an UNFOLDED scene (0508)",
     "KrakenOS.UI.validate_open3d_0508_unfolded_carry_keeps_lens_glued",
     "unfolded_carry_keeps_lens_glued")
+phase_410_frozen_fold_thickness_stable = _phase_from_standalone(
+    410, "a frozen fold solid's thickness survives the reached-walk under BS/station slides (0508 A)",
+    "KrakenOS.UI.validate_open3d_0508_frozen_fold_thickness_stable",
+    "frozen_fold_thickness_stable")
 
 
 # ---------------------------------------------------------------------------
@@ -15899,6 +15903,7 @@ def main() -> int:
             phase_407_flip_attaches_optics,
             phase_408_led_station_drag_slides_section_2,
             phase_409_unfolded_carry_keeps_lens_glued,
+            phase_410_frozen_fold_thickness_stable,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

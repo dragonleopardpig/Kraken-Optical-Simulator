@@ -303,6 +303,46 @@ def _spec_face_folds_beam(spec: dict) -> bool:
     return False
 
 
+def _spec_is_baked_world_pose(spec: dict) -> bool:
+    """bugs/0508: True when this row's pose is a 0433 frozen/snapped BAKED WORLD POSE.
+
+    Same predicate the build path uses for the bugs/0448 tilt re-expression:
+    ``advanced.ScenePlacement`` carrying ``stay_put_freeze`` or
+    ``last_axis_to_axis_move``. Such a row's station math is authored -- the
+    off-beam machinery must never rewrite its thickness.
+    """
+    if not isinstance(spec, dict):
+        return False
+    placement = _advanced_surface_attrs_from_spec(spec).get("ScenePlacement")
+    return isinstance(placement, dict) and bool(
+        placement.get("stay_put_freeze") or placement.get("last_axis_to_axis_move")
+    )
+
+
+def _walk_launch_origin(specs: list) -> np.ndarray:
+    """bugs/0508: the reached-walk launch point = the OBJECT row's lateral station.
+
+    Mirrors ``axis_root_origin`` (nonseq_output_ports): the root leg is the line
+    the object emits, so an object slid laterally (an LED station drag moves the
+    object and the splitter together) launches the walk from its own lateral
+    position. Centred scenes return the nominal origin, byte-identical.
+    """
+    for spec in specs:
+        if not isinstance(spec, dict):
+            continue
+        if str(spec.get("surface", "") or "").strip().lower() != "object":
+            continue
+        return np.asarray(
+            (
+                float(spec.get("desp_x", 0.0) or 0.0),
+                float(spec.get("desp_y", 0.0) or 0.0),
+                0.0,
+            ),
+            dtype=float,
+        )
+    return np.zeros(3, dtype=float)
+
+
 def _spec_face_rotation(spec: dict):
     """bugs/0457: the rotation taking a face's LOCAL normal/centroid into WORLD.
 
@@ -353,11 +393,26 @@ def folded_beam_reached_mirror_fold_indices(row_specs: list[dict]) -> set[int]:
 
     specs = list(row_specs or [])
     reached: set[int] = set()
+    # bugs/0508: a fold solid on a 0433-frozen/breadcrumbed row is reached BY AUTHORSHIP.
+    # The frozen chain's stations were saved from a build that kept this thickness, so a
+    # walk verdict that zeroes it later corrupts every downstream baked row by exactly one
+    # thickness (the image lands a mirror->image gap low, "rays go pass the sensor"). The
+    # geometric walk stays the arbiter for free-placed solids only.
+    for index, spec in enumerate(specs):
+        if not isinstance(spec, dict):
+            continue
+        if not (_is_promoted_mirror_fold(spec) or _spec_face_folds_beam(spec)):
+            continue
+        if _spec_is_baked_world_pose(spec):
+            reached.add(index)
     # bugs/0457: walk BOTH legs -- a splitter folds one arm and transmits the other, and a
     # solid on EITHER arm is genuinely reached. Being "reached" only PRESERVES a spec, so a
     # false positive keeps a thickness rather than corrupting the chain.
+    # bugs/0508: the launch rides the OBJECT row's lateral station (axis_root_origin
+    # semantics) -- a station drag moves object+splitter together, and a walk pinned to the
+    # nominal (0,0,0) origin folds at the wrong point and loses mirrors the real beam hits.
     legs: list[tuple[np.ndarray, np.ndarray]] = [
-        (np.zeros(3, dtype=float), np.asarray((0.0, 0.0, 1.0), dtype=float))
+        (_walk_launch_origin(specs), np.asarray((0.0, 0.0, 1.0), dtype=float))
     ]
     guard = 0
     while legs and guard < 64:

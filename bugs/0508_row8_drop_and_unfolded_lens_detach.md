@@ -140,3 +140,55 @@ but resolves into fold-collapse or off-beam neutralization instead, both
 defensible. So the fix must target the shared fallback (double-count) / anchor
 the probe on `axis_root_origin`, NOT an AZ85-specific patch; the periscope
 shove configs make good contrast fixtures for the guard.
+
+## Update 4 -- A ROOT-CAUSED and FIXED: the off-beam reached-walk zeroed the frozen mirror
+
+The TRANS_2A "writer" was never a post-build rewriter. Stage bisection
+(`bugs/probe_0508a_writer_bisect.py`; spy prints land in the redirect capture ->
+read them back from `kraken_debug_latest.log`) showed the image already at
+-49.197 the moment `build_system` returned, with the override machinery
+producing ZERO overrides even with the system in hand. The double-advance is
+born in the SPECS: `neutralize_offbeam_inert_solids`, called at the top of
+`_build_system_from_specs`.
+
+Mechanism, measured (neutralizer sweep on the real scene):
+
+* healthy (BS desp 0 / -12): `folded_beam_reached_mirror_fold_indices` = {3, 7}
+  -> the RA mirror keeps its 44.119 mm row thickness;
+* broken (-23.4 / -40): the walk -- launched from the NOMINAL (0,0,0)->+Z --
+  folds at the SLID diagonal (axis hit at z = 53.8 - delta), so its reflect leg
+  runs |delta| high and misses the mirror-face centroid by |delta|*sqrt(2)
+  (33.1 mm at -23.4) > the sqrt(area)+2 = 27 mm hit radius -> mirror NOT
+  reached -> `axially_inert_offbeam_solid_spec` zeroes its thickness. On the
+  0448-inverted frozen leg (world = const - thickness) removing 44.12 mm of
+  station pushes the built image one mirror->image gap PAST the sensor:
+  -5.08 -> -49.20. Flip threshold |delta| > 27/sqrt(2) = 19.1 -- exactly the
+  measured 12-vs-23.4 bracket (the earlier "lens half-aperture ~14.1" guess
+  was wrong);
+* the live flags (131958 / 140514) hit the same gate via the 0505 STATION
+  drag: object+BS move together, the real beam still hits the mirror, but the
+  nominal-anchored walk loses it.
+
+Fix (`offbeam_optical_solid.py`), both halves in the shared gate:
+
+1. **reached-by-authorship** -- a fold solid on a 0433-frozen/breadcrumbed row
+   (`ScenePlacement.stay_put_freeze` / `last_axis_to_axis_move`, the same
+   predicate the 0448 build path uses) seeds the reached set. A frozen chain's
+   stations were AUTHORED with that thickness; zeroing it corrupts every
+   downstream baked row by exactly one thickness. The geometric walk stays the
+   arbiter for free-placed solids only.
+2. **station-anchored launch** -- `_walk_launch_origin` starts the walk at the
+   OBJECT row's lateral station (`axis_root_origin` semantics), so a station
+   drag keeps the walk's verdicts geometrically too. Centred scenes are
+   byte-identical.
+
+Verified: the one-line repro heals (built image -5.077 at desp -23.4 and -40;
+baseline and -12 byte-identical); the generality probe's periscope contrast
+configs (no breadcrumbs) are byte-identical pre/post fix -- the fold-collapse
+at -23.4 and the off-beam zeroing at -40 are both preserved. Guard
+`validate_open3d_0508_frozen_fold_thickness_stable` (penta phase 410):
+synthetic free-vs-breadcrumbed parked-fold contrast pair, real-scene
+thickness-stability under the one-line repro AND the station gesture, and a
+breadcrumb-STRIPPED walk check pinning the geometric re-anchor.
+
+**B** remains by-design (bugs/0437) pending a product decision.

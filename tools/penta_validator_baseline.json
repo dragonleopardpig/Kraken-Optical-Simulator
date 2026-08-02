@@ -409,7 +409,9 @@
     "405": "pass",
     "406": "pass",
     "407": "pass",
-    "408": "pass"
+    "408": "pass",
+    "409": "pass",
+    "410": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -819,6 +821,8 @@
     "405": "a leg slide flags the drawing rebuild; glue seats on the surrogate WHERE IT SITS (0503)",
     "406": "LED glue restores its recorded placement and carries the glued BS back (0504)",
     "407": "flipping the lens STEP keeps its optics on the surrogate datums (0500)",
-    "408": "dragging the glued LED slides the station -- the pure section-2 edit (0505)"
+    "408": "dragging the glued LED slides the station -- the pure section-2 edit (0505)",
+    "409": "a per-frame axial lens carry keeps the surrogate attached on an UNFOLDED scene (0508)",
+    "410": "a frozen fold solid's thickness survives the reached-walk under BS/station slides (0508 A)"
   }
 }
