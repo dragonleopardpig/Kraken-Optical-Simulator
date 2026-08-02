@@ -1398,7 +1398,7 @@ class LayoutPolylineDisplayMixin:
             self.append_debug(f"STEP glass-axial extraction failed: {exc}")
             return None
 
-    def _lens_step_display_front_z(self, front_face: str) -> float:
+    def _lens_step_display_front_z(self) -> float:
         """Axial pin (world z, pre placement-offset) for the lens STEP overlay.
 
         Default -- the Front Optical Vertex Datum, which pins the mechanical body
@@ -1413,6 +1413,16 @@ class LayoutPolylineDisplayMixin:
         the front -- so pinning the glass centre is ``target = datum_centre -
         delta``.  Any tilt rotates z out of the barrel axis and breaks that
         relation, so tilt falls back to the plain datum pin.
+
+        bugs/0500: the pin is FACE-INDEPENDENT -- always the UNFLIPPED (front =
+        axial max) registration. A flip no longer changes the pin; instead the
+        alignment applies ``flip_axial_shift`` in the barrel frame so the flip
+        mirrors the body about its GLASS-SPAN CENTRE (see the caller). The old
+        per-face pin only handled the untilted close-barrel branch; every
+        fallback (tilted -- which includes any lens on a folded arm -- and the
+        0377 real-barrel case) pinned the opposite MECHANICAL end where the
+        front face had been, landing the optical surfaces 3.5 mm off the datums
+        on the AZ85 barrel.
         """
         front_datum_z = self._lens_front_datum_z()
         if abs(float(getattr(self, "lens_step_rotation_x_deg", 0.0))) > 0.5:
@@ -1437,12 +1447,45 @@ class LayoutPolylineDisplayMixin:
         if glass_span <= 1e-6 or body_span > 1.6 * glass_span:
             return front_datum_z
         glass_center_u = 0.5 * (float(metrics["glass_lo"]) + float(metrics["glass_hi"]))
-        if str(front_face).strip().lower() == "min":
-            delta = glass_center_u - float(metrics["body_lo"])
-        else:
-            delta = float(metrics["body_hi"]) - glass_center_u
+        delta = float(metrics["body_hi"]) - glass_center_u
         datum_center_z = 0.5 * (front_datum_z + self._lens_rear_datum_z())
         return float(datum_center_z - delta)
+
+    def _lens_step_flip_axial_shift(self) -> float:
+        """bugs/0500: the barrel-frame shift that makes a FLIP mirror the body about its
+        GLASS-SPAN CENTRE instead of its leading mechanical face.
+
+        The alignment pins the leading face at ``target_front_z`` for either orientation, so a
+        bare flip keeps the mechanical slab in place and slides the GLASS inside it by the
+        overhang asymmetry -- on the ELS-85 barrel (front overhang 3.849 mm, rear 0.342 mm) the
+        optical surfaces landed 3.507 mm off the surrogate datums, exactly the misattachment the
+        user described ("make sure the front and rear surrogate lens correctly attach to the lens
+        STEP front and rear lens location"). Shifting the flipped body by
+
+            (body_hi - glass_centre) - (glass_centre - body_lo)
+
+        in its own axial frame puts the glass centre back on the unflipped station, so the
+        former REAR vertex lands on the FRONT datum and vice versa -- the mechanical ends swap
+        around the fixed optics, which is what a physical flip does. Applied in the ALIGNED
+        frame (before tilt/fold transforms), so it is correct on a tilted barrel and on a
+        folded arm. Zero when no glass block is detectable (nothing better derivable) or when
+        the barrel is not flipped.
+        """
+        if not bool(getattr(self, "lens_step_reverse_direction", False)):
+            return 0.0
+        if self.imported_lens_step_path is None:
+            return 0.0
+        metrics = self._step_optical_glass_axial_metrics(self.imported_lens_step_path)
+        if not metrics:
+            return 0.0
+        try:
+            body_lo = float(metrics["body_lo"])
+            body_hi = float(metrics["body_hi"])
+            glass_center = 0.5 * (float(metrics["glass_lo"]) + float(metrics["glass_hi"]))
+        except Exception:
+            return 0.0
+        shift = (body_hi - glass_center) - (glass_center - body_lo)
+        return float(shift) if np.isfinite(shift) else 0.0
 
     def _cad_mesh_aligned_to_optical_axis(
         self,
@@ -1458,6 +1501,7 @@ class LayoutPolylineDisplayMixin:
         axis_offset_xy: tuple[float, float] | None = None,
         placement_offset_xyz: tuple[float, float, float] | None = None,
         optical_axis_point_xyz: tuple[float, float, float] | None = None,
+        flip_axial_shift: float = 0.0,
     ):
         if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
             return None
@@ -1616,6 +1660,44 @@ class LayoutPolylineDisplayMixin:
             y_vals = aligned[:, 1].copy()
             aligned[:, 0] = (cos_a * x_vals) - (sin_a * y_vals)
             aligned[:, 1] = (sin_a * x_vals) + (cos_a * y_vals)
+        try:
+            flip_shift = float(flip_axial_shift)
+        except Exception:
+            flip_shift = 0.0
+        if abs(flip_shift) > 1e-9:
+            # bugs/0500: a flipped body is mirrored about its LEADING mechanical face, which by
+            # itself slides the asymmetric GLASS inside the slab -- on the ELS-85 barrel the
+            # optical surfaces landed 3.507 mm off the surrogate datums. This caller-supplied
+            # shift restores the glass-span centre to its unflipped station, so the flip swaps
+            # the mechanical ends around the fixed optics. It MUST be applied AFTER the x/y/roll
+            # rotations: they pivot about the bbox centre, which re-registers the slab and
+            # discards any pre-rotation axial offset (a mirrored slab has the same bbox, which is
+            # exactly why the bare flip left the bounds untouched and moved the glass). Composing
+            # the rotations onto the barrel axis +z keeps the shift along the barrel wherever it
+            # points; the fold transform applied outside then carries it onto a folded arm.
+            axial = np.array([0.0, 0.0, 1.0], dtype=float)
+            if abs(x_rotation) > 1e-9:
+                angle = np.deg2rad(x_rotation)
+                cos_a, sin_a = float(np.cos(angle)), float(np.sin(angle))
+                axial = np.array(
+                    [axial[0], cos_a * axial[1] - sin_a * axial[2], sin_a * axial[1] + cos_a * axial[2]],
+                    dtype=float,
+                )
+            if abs(y_rotation) > 1e-9:
+                angle = np.deg2rad(y_rotation)
+                cos_a, sin_a = float(np.cos(angle)), float(np.sin(angle))
+                axial = np.array(
+                    [cos_a * axial[0] + sin_a * axial[2], axial[1], -sin_a * axial[0] + cos_a * axial[2]],
+                    dtype=float,
+                )
+            if abs(roll) > 1e-9:
+                angle = np.deg2rad(roll)
+                cos_a, sin_a = float(np.cos(angle)), float(np.sin(angle))
+                axial = np.array(
+                    [cos_a * axial[0] - sin_a * axial[1], sin_a * axial[0] + cos_a * axial[1], axial[2]],
+                    dtype=float,
+                )
+            aligned[:, :3] += flip_shift * axial
         aligned[:, 2] += float(target_front_z)
         placement_offset = np.zeros(3, dtype=float)
         if placement_offset_xyz is not None:
@@ -1750,6 +1832,10 @@ class LayoutPolylineDisplayMixin:
         # auto guess (front = axial max) is wrong the user flips it once and it sticks.
         reverse = bool(getattr(self, "lens_step_reverse_direction", False))
         front_face = "min" if reverse else "max"
+        # bugs/0500: a flip mirrors about the leading mechanical face, which slides the GLASS by
+        # the overhang asymmetry; this barrel-frame shift puts the glass back on the datums so
+        # the flip swaps the mechanical ends around the fixed optics.
+        flip_shift = self._lens_step_flip_axial_shift()
         fold_transform = self._optical_axis_fold_world_transform_for_row(
             self._lens_front_datum_row_index()
         )
@@ -1797,7 +1883,10 @@ class LayoutPolylineDisplayMixin:
                 # bugs/0374: pin the optical GLASS-BLOCK centre on the surrogate
                 # datum-span centre (not the mechanical body face), so a flipped
                 # barrel does not jump off the surrogate. Display-only.
-                target_front_z=self._lens_step_display_front_z(front_face),
+                # bugs/0500: the pin is face-independent; the flip correction is
+                # flip_axial_shift, applied in the barrel frame.
+                target_front_z=self._lens_step_display_front_z(),
+                flip_axial_shift=flip_shift,
                 label="Lens STEP",
                 roll_deg=float(getattr(self, "lens_step_rotation_z_deg", 0.0)),
                 x_rotation_deg=float(getattr(self, "lens_step_rotation_x_deg", 0.0)),
