@@ -108,6 +108,10 @@ docs/_build/
 /attachment/*.step
 /attachment/*.STEP
 /attachment/__pycache__/
+# Filen sync bookkeeping: local trash plus the sync-exclusion config. Filen's
+# domain -- it syncs these itself; keep them out of git.
+/attachment/.filen.trash.local/
+/attachment/.filenignore
 # bugs/0021: generated CAD/STEP mesh cache. Lives under attachment/ so the user
 # syncs it (Filen) and a layout opened on another machine finds its body mesh,
 # but it is a derived artefact -- keep it out of git.
