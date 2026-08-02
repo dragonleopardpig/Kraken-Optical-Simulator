@@ -18,9 +18,10 @@ In-text exercises
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 129 — Exercise 23.1-1: Interconnection capacity.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`stationary-value condition <fop-formula-stationary>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 
@@ -54,9 +55,10 @@ every input is connected to every output, the maximum density is therefore
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 130 — Exercise 23.1-2: Separable logarithmic map.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`product, quotient, and chain rules <fop-formula-product-chain>`, :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>`, and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 
@@ -88,9 +90,10 @@ and likewise :math:`y'=\ln y`, which proves the map.
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 131 — Exercise 23.4-1: Bistable nonlinearities.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`stationary-value condition <fop-formula-stationary>`, :ref:`product, quotient, and chain rules <fop-formula-product-chain>`, and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 

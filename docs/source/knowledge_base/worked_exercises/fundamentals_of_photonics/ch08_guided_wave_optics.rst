@@ -18,9 +18,10 @@ In-text exercises
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 56 — Exercise 8.1-1: Modal power.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`integration identities <fop-formula-integration>`, :ref:`trigonometric and small-angle identities <fop-formula-trigonometry>`, and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 
@@ -52,9 +53,10 @@ normalization.
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 57 — Exercise 8.1-2: Multimode power.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`integration identities <fop-formula-integration>`, :ref:`trigonometric and small-angle identities <fop-formula-trigonometry>`, and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 
@@ -85,9 +87,10 @@ cross integral zero, leaving
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 58 — Exercise 8.2-1: Slab confinement.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`integration identities <fop-formula-integration>`, :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>`, and :ref:`trigonometric and small-angle identities <fop-formula-trigonometry>`.
 
@@ -120,9 +123,10 @@ therefore the largest confinement.
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 59 — Exercise 8.2-2: Asymmetric slab.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`trigonometric and small-angle identities <fop-formula-trigonometry>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 

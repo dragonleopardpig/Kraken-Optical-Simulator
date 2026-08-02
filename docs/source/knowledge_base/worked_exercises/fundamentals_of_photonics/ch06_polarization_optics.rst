@@ -18,9 +18,10 @@ In-text exercises
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 48 — Exercise 6.1-1: Measuring Stokes parameters.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 
@@ -53,9 +54,10 @@ right/left circular analyser vectors gives
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 49 — Exercise 6.1-2: Cascaded quarter-wave plates.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 
@@ -87,9 +89,10 @@ is unchanged apart from global phase.
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 50 — Exercise 6.1-3: Rotated polarizer.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`matrix multiplication and eigenvalue rules <fop-formula-matrices>`, :ref:`trigonometric and small-angle identities <fop-formula-trigonometry>`, and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 
@@ -121,9 +124,10 @@ is unchanged apart from global phase.
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 51 — Exercise 6.1-4: Normal polarization modes.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>`.
 
@@ -149,9 +153,10 @@ the retarder eigenvectors are its fast/slow linear axes, eigenvalues
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 52 — Exercise 6.2-1: Brewster window.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`trigonometric and small-angle identities <fop-formula-trigonometry>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 
@@ -182,9 +187,10 @@ angle, so TM reflection vanishes at both parallel faces.
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 53 — Exercise 6.2-2: Conductive reflector.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 
@@ -218,9 +224,10 @@ index is imaginary, so no net transmitted power exists and :math:`R=1`.
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 54 — Exercise 6.4-1: Optical rotatory power.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 

@@ -18,9 +18,10 @@ In-text exercises
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 62 — Exercise 10.1-1: Ring and bow-tie resonances.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 
@@ -53,9 +54,10 @@ offset, which can be absorbed into the integer for four mirrors.
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 63 — Exercise 10.1-2: One-metre Fabry–Perot.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`Fourier-transform and convolution identities <fop-formula-fourier>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 
@@ -87,9 +89,10 @@ enough for the high-finesse approximation.
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 64 — Exercise 10.2-1: Maximum stable length.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`stationary-value condition <fop-formula-stationary>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 
@@ -121,9 +124,10 @@ the marginal endpoints; the largest confined length is
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 65 — Exercise 10.2-2: Plano-concave cavity.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 
@@ -155,9 +159,10 @@ plane mirror, :math:`z_0=\sqrt{d(|R_2|-d)}`,
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 66 — Exercise 10.2-3: Confocal frequency comb.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 
@@ -191,9 +196,10 @@ produces two interleaved 249.83-MHz combs.
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 67 — Exercise 10.2-4: Confocal degeneracy.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 
@@ -224,9 +230,10 @@ absorbed into :math:`q`; odd changes shift the line by :math:`\nu_F/2`.
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 68 — Exercise 10.3-1: Two-dimensional mode density.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`product, quotient, and chain rules <fop-formula-product-chain>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 

@@ -18,9 +18,10 @@ In-text exercises
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 40 — Exercise 4.1-1: Binary Fresnel plate.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`Fourier-transform and convolution identities <fop-formula-fourier>`, :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>`, and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 
@@ -53,9 +54,10 @@ their amplitudes.
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 41 — Exercise 4.1-2: Gaussian propagation.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`Fourier-transform and convolution identities <fop-formula-fourier>`, :ref:`integration identities <fop-formula-integration>`, and :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>`.
 
@@ -88,9 +90,10 @@ same Gaussian integral and therefore the Chapter 3 beam.
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 42 — Exercise 4.2-1: Fresnel versus Fraunhofer range.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 
@@ -124,9 +127,10 @@ For :math:`a=0.02` m, :math:`b=0.01` m, and
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 43 — Exercise 4.2-2: Inverse transform.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`Fourier-transform and convolution identities <fop-formula-fourier>` and :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>`.
 
@@ -153,9 +157,10 @@ Fourier transform.
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 44 — Exercise 4.3-1: Rectangular aperture.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`Fourier-transform and convolution identities <fop-formula-fourier>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 
@@ -189,9 +194,10 @@ The transform of :math:`\operatorname{rect}(x/D_x)
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 45 — Exercise 4.3-2: Circular aperture.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`Fourier-transform and convolution identities <fop-formula-fourier>`, :ref:`integration identities <fop-formula-integration>`, and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 
@@ -224,9 +230,10 @@ zero is 3.8317, hence
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 46 — Exercise 4.3-3: Focused spot.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`integration identities <fop-formula-integration>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 

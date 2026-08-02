@@ -18,9 +18,10 @@ In-text exercise
    :align: center
    :width: 95%
 
-   The diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route.
-
+   **Figure 47 — Exercise 5.5-1: Dilute absorbing impurities.** The
+   diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route. Every
+   symbol in the variable strip is labeled on the model itself.
 
 **Step 2 — Mathematical formulas used.**  The working uses :ref:`common differential-equation solutions <fop-formula-odes>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 

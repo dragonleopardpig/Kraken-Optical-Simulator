@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800" role="img" aria-labelledby="title desc">
-  <title id="title">Geometry for deriving Snell's law from stationary optical path</title>
+  <title id="title">Figure 1 — Geometry for deriving Snell's law from stationary optical path</title>
   <desc id="desc">A ray travels from A in medium n1 to interface point P and then to B in medium n2. Vertical distances d1 and d2, horizontal distances x and d minus x, total horizontal distance d, angles theta1 and theta2, and the interface normal are labeled.</desc>
   <defs>
     <style>
@@ -11,7 +11,7 @@
   <rect class="bg" width="1200" height="800" rx="18"/>
   <rect class="upper" x="30" y="70" width="1140" height="330"/>
   <rect class="lower" x="30" y="400" width="1140" height="330"/>
-  <text class="head" x="55" y="48">Stationary optical path across one planar interface</text>
+  <text class="head" x="55" y="48">Figure 1 — Stationary optical path across one planar interface</text>
   <line class="interface" x1="30" y1="400" x2="1170" y2="400"/>
   <text class="medium" x="930" y="120">medium 1: n₁</text>
   <text class="medium" x="55" y="700">medium 2: n₂</text>

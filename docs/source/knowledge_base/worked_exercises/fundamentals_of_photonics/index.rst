@@ -17,11 +17,13 @@ Each solution defines its local notation, names and links the mathematical
 identities it uses, shows numbered working where equations are involved, and
 ends with a verification.  The shared formula catalogue is available here:
 
-All 131 boxed in-text exercises use an illustrated step-by-step presentation.
-Exercise 1.1-1 has a fully labeled geometrical construction; the remaining
-130 use a topic-specific SVG calculation map showing the inputs, physical
-model, output, variable legend, and independent check.  End-of-chapter
-problems retain the compact structured presentation.
+All 131 boxed in-text exercises use an illustrated step-by-step presentation
+and carry stable labels from **Figure 1** through **Figure 131**. Exercise
+1.1-1 has a fully labeled geometrical construction; the remaining 130 use a
+topic-specific SVG calculation map showing the inputs, physical model,
+output, variable legend, and independent check. Every symbol retained in a
+legend is also placed on the illustrated model. End-of-chapter problems
+retain the compact structured presentation.
 
 .. toctree::
    :maxdepth: 1

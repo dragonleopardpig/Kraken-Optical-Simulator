@@ -59,6 +59,40 @@ ENTRY_RE = re.compile(
 )
 EQUATION_LABEL_RE = re.compile(r"^   :label: (fop-[a-z0-9-]+)$", re.MULTILINE)
 
+EXPECTED_VISIBLE_VARIABLES = {
+    "ray": ("n₁", "n₂", "θ₁", "θ₂"),
+    "mirror": ("y", "θᵢ", "θᵣ", "R", "f"),
+    "lens": ("n", "y", "R₁", "R₂", "f"),
+    "refracting": ("n₁", "n₂", "θ₁", "θ₂", "y", "R", "z₁", "z₂"),
+    "cartesian_oval": ("n₁", "n₂", "y", "z", "z₁", "z₂"),
+    "tir": ("n=3.6", "θᵢ", "θᶜ=16.13°"),
+    "prism": ("d₀", "a", "n", "k₀", "kₓ", "θ"),
+    "grin": ("n₀", "d₀", "a", "ρ", "f"),
+    "matrix": ("A", "B", "C", "D", "y", "nθ", "y′", "nθ′", "d"),
+    "wave": ("A", "k", "λ", "I"),
+    "gaussian": ("W₀", "z₀", "q", "R"),
+    "fourier": ("g", "G", "fₓ", "fᵧ", "λf"),
+    "field": ("E", "H", "k", "ε"),
+    "polarization": ("Eₓ", "Eᵧ", "J", "S₀", "S₁", "S₂", "S₃"),
+    "multilayer": ("nᵢ", "dᵢ", "r", "t", "Λ"),
+    "waveguide": ("n₁", "n₂", "d", "a", "β", "V"),
+    "fiber": ("a", "NA", "β", "L"),
+    "resonator": ("L", "R₁", "R₂", "g₁", "g₂", "ν"),
+    "statistical": ("J", "g", "Tᶜ", "Δν"),
+    "quantum": ("hν", "p", "P", "σ"),
+    "atomic": ("Eᵢ", "ν", "Nᵢ", "T"),
+    "amplifier": ("Nᵢ", "Rₚ", "σ", "G"),
+    "laser": ("N", "g", "τ", "R", "P"),
+    "semiconductor": ("Eᶜ", "Eᵥ", "Fₙ", "Fₚ", "n", "p"),
+    "source": ("Eᵧ", "Fₙ", "Fₚ", "λ", "η"),
+    "detector": ("Φ", "η", "ℛ", "B", "i"),
+    "acousto": ("Λ", "f", "θᴮ", "D"),
+    "electro": ("V", "Vπ", "Δφ", "κ"),
+    "nonlinear": ("ω₁", "ω₂", "ω₃", "k₁", "k₂", "k₃", "χ⁽ⁿ⁾", "Δk"),
+    "pulse": ("T", "ζ", "Dν", "z"),
+    "interconnect": ("M", "L", "B", "λᵢ", "V"),
+}
+
 
 def fail(message: str) -> None:
     raise SystemExit(f"Fundamentals solutions validation failed: {message}")
@@ -78,6 +112,7 @@ def main() -> None:
     stepwise_exercises = 0
     illustrated_exercises = 0
     expected_exercise_svgs: set[str] = set()
+    expected_figure_number = 0
 
     for path in chapter_files:
         chapter = int(path.name[2:4])
@@ -110,6 +145,18 @@ def main() -> None:
             kind, id_chapter, section, item = entry.groups()
             identity = f"{kind} {id_chapter}.{section}-{item}"
 
+            if kind == "Exercise":
+                expected_figure_number += 1
+                expected_caption = (
+                    f"**Figure {expected_figure_number} — Exercise "
+                    f"{id_chapter}.{section}-{item}:"
+                )
+                if expected_caption not in body:
+                    fail(
+                        f"{identity} lacks stable caption Figure "
+                        f"{expected_figure_number}"
+                    )
+
             if "Definitions and setup." not in body and "Definitions and assumptions." not in body:
                 fail(f"{identity} has no definitions/setup block")
             if "Mathematical formulas used." not in body:
@@ -137,20 +184,54 @@ def main() -> None:
                 if not svg_path.is_file():
                     fail(f"{identity} illustration {svg_name} is missing")
                 try:
-                    ET.parse(svg_path)
+                    svg_tree = ET.parse(svg_path)
                 except ET.ParseError as error:
                     fail(f"{identity} illustration is invalid XML: {error}")
+                svg_root = svg_tree.getroot()
                 exercise_svg = svg_path.read_text(encoding="utf-8")
                 for required_svg_text in (
+                    f"Figure {expected_figure_number}",
                     f"Exercise {id_chapter}.{section}-{item}",
                     "GIVEN / DEFINITIONS",
                     "MODEL / OPERATION",
                     "RESULT / INTERPRETATION",
-                    "Variables —",
+                    "Variables labeled on model —",
                     "Independent check —",
                 ):
                     if required_svg_text not in exercise_svg:
                         fail(f"{identity} illustration omits {required_svg_text}")
+                if svg_root.get("data-figure") != str(expected_figure_number):
+                    fail(f"{identity} SVG carries the wrong figure number")
+                category = svg_root.get("data-category")
+                if category not in EXPECTED_VISIBLE_VARIABLES:
+                    fail(f"{identity} SVG has unknown category {category!r}")
+                variable_group = next(
+                    (
+                        element
+                        for element in svg_root.iter()
+                        if element.get("id") == "variable-labels"
+                    ),
+                    None,
+                )
+                if variable_group is None:
+                    fail(f"{identity} SVG has no variable-labels group")
+                visible_variable_text = " ".join(variable_group.itertext())
+                for variable in EXPECTED_VISIBLE_VARIABLES[category]:
+                    if variable not in visible_variable_text:
+                        fail(
+                            f"{identity} lists {variable} but does not label it "
+                            "on the model"
+                        )
+                if category in {"ray", "refracting"}:
+                    for ray_geometry in (
+                        'd="M480 205 L610 270 L738 315"',
+                        'd="M566 270 A44 44 0 0 1 571 250 M654 270 A44 44 0 0 1 651 285"',
+                    ):
+                        if ray_geometry not in exercise_svg:
+                            fail(
+                                f"{identity} refraction-angle regression: "
+                                f"missing {ray_geometry}"
+                            )
                 illustrated_exercises += 1
 
             # Every displayed equation must carry a Sphinx label immediately
@@ -184,6 +265,8 @@ def main() -> None:
             f"found {total_exercises} exercises and {total_problems} problems; "
             "expected 131 and 314"
         )
+    if expected_figure_number != 131:
+        fail(f"expected Figure 1 through Figure 131, ended at {expected_figure_number}")
 
     actual_exercise_svgs = {path.name for path in EXERCISE_ASSETS.glob("exercise_*.svg")}
     if actual_exercise_svgs != expected_exercise_svgs:
@@ -239,6 +322,7 @@ def main() -> None:
         if variable not in svg_text:
             fail(f"Exercise 1.1-1 geometry SVG omits variable {variable}")
     for geometry_fix in (
+        "Figure 1 — Geometry for deriving Snell's law",
         'markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" refX="12"',
         '<text class="label" x="620" y="370">P(x)</text>',
         '<path class="arc" d="M590 470 A70 70 0 0 0 650 437"/>',
@@ -276,7 +360,8 @@ def main() -> None:
         f"{len(found_ids)} structured worked solutions; "
         f"{numbered_entries} contain numbered equations "
         f"({len(found_equation_labels)} equation labels); "
-        f"{illustrated_exercises} remaining exercises have five-step SVG layouts."
+        f"{illustrated_exercises} remaining exercises have five-step SVG layouts; "
+        "Figures 1–131 have stable captions and on-model variable labels."
     )
 
 

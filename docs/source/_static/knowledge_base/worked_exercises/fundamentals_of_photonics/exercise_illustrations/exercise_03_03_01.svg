@@ -1,15 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc">
-  <title id="title">Exercise 3.3-1 — Incoherent donut beam</title>
-  <desc id="desc">Concept diagram for Exercise 3.3-1, Incoherent donut beam. The input, physical model, output, variables, and verification method are labeled.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc" data-category="gaussian" data-figure="39">
+  <title id="title">Figure 39 — Exercise 3.3-1: Incoherent donut beam</title>
+  <desc id="desc">Figure 39, a concept diagram for Exercise 3.3-1, Incoherent donut beam. The input, physical model, output, variables, and verification method are labeled.</desc>
   <defs>
     <style>
-      .bg{fill:#f7fafc}.card{fill:#fff;stroke:#b9c7d6;stroke-width:2}.band{fill:#eaf2f8}.head{font:700 27px sans-serif;fill:#18324a}.sub{font:18px sans-serif;fill:#486581}.tag{font:700 16px sans-serif;fill:#286f9e;letter-spacing:1px}.label{font:700 20px sans-serif;fill:#243b53;text-anchor:middle}.legend{font:18px sans-serif;fill:#334e68}.check{font:17px sans-serif;fill:#486581}.accent{fill:none;stroke:#d9485f;stroke-width:5;stroke-linecap:round;stroke-linejoin:round}.accent2{fill:none;stroke:#8b5cf6;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.optic{fill:none;stroke:#286f9e;stroke-width:5}.thin{fill:none;stroke:#61788a;stroke-width:3}.axis{fill:none;stroke:#8295a5;stroke-width:2}.point{fill:#173f5f}.iconbox{fill:#edf7ff;stroke:#286f9e;stroke-width:3}.opticfill{fill:#286f9e}.layer1{fill:#d9ecff;stroke:#286f9e;stroke-width:2}.layer2{fill:#e7f7ee;stroke:#2b7a78;stroke-width:2}.icontext{font:italic 22px serif;fill:#6d28d9}.flow{stroke:#334e68;stroke-width:3;marker-end:url(#arrow)}
+      .bg{fill:#f7fafc}.card{fill:#fff;stroke:#b9c7d6;stroke-width:2}.band{fill:#eaf2f8}.figureid{font:700 14px sans-serif;fill:#286f9e;letter-spacing:1.2px}.head{font:700 25px sans-serif;fill:#18324a}.sub{font:17px sans-serif;fill:#486581}.tag{font:700 16px sans-serif;fill:#286f9e;letter-spacing:1px}.label{font:700 20px sans-serif;fill:#243b53;text-anchor:middle}.legend{font:18px sans-serif;fill:#334e68}.check{font:17px sans-serif;fill:#486581}.accent{fill:none;stroke:#d9485f;stroke-width:5;stroke-linecap:round;stroke-linejoin:round}.accent2{fill:none;stroke:#8b5cf6;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.optic{fill:none;stroke:#286f9e;stroke-width:5}.thin{fill:none;stroke:#61788a;stroke-width:3}.axis{fill:none;stroke:#8295a5;stroke-width:2}.point{fill:#173f5f}.iconbox{fill:#edf7ff;stroke:#286f9e;stroke-width:3}.opticfill{fill:#286f9e}.layer1{fill:#d9ecff;stroke:#286f9e;stroke-width:2}.layer2{fill:#e7f7ee;stroke:#2b7a78;stroke-width:2}.icontext{font:italic 22px serif;fill:#6d28d9}.var{font:italic 20px serif;fill:#54278f;text-anchor:middle;paint-order:stroke;stroke:#fff;stroke-width:5px;stroke-linejoin:round}.smallvar{font-size:17px}.callout{fill:none;stroke:#54278f;stroke-width:2}.tick{fill:none;stroke:#54278f;stroke-width:2}.flow{stroke:#334e68;stroke-width:3;marker-end:url(#arrow)}
     </style>
     <marker id="arrow" markerUnits="userSpaceOnUse" markerWidth="13" markerHeight="13" refX="13" refY="6.5" orient="auto"><path d="M0,0 L13,6.5 L0,13 Z" fill="#334e68"/></marker>
   </defs>
   <rect class="bg" width="1200" height="560" rx="18"/>
-  <text class="head" x="55" y="48">Incoherent donut beam</text>
-  <text class="sub" x="55" y="78">Exercise 3.3-1 • illustrated calculation map</text>
+  <text class="figureid" x="55" y="25">FIGURE 39</text>
+  <text class="head" x="55" y="55">Incoherent donut beam</text>
+  <text class="sub" x="55" y="84">Exercise 3.3-1 • illustrated calculation map</text>
 
   <rect class="card" x="45" y="120" width="300" height="295" rx="16"/>
   <rect class="card" x="450" y="120" width="315" height="295" rx="16"/>
@@ -23,8 +24,9 @@
   <line class="flow" x1="345" y1="270" x2="440" y2="270"/>
   <line class="flow" x1="765" y1="270" x2="845" y2="270"/>
   <path class="accent" d="M480 185 Q600 265 738 205 M480 355 Q600 275 738 335"/><line class="axis" x1="480" y1="270" x2="738" y2="270"/><line class="thin" x1="600" y1="235" x2="600" y2="305"/>
+  <g id="variable-labels"><text class="var" x="575" y="225">W₀</text><text class="var" x="545" y="325">z₀</text><text class="var" x="620" y="300">q</text><text class="var" x="700" y="220">R</text></g>
 
   <rect class="band" x="45" y="440" width="1110" height="85" rx="12"/>
-  <text class="legend" x="65" y="474">Variables — W₀: waist • z₀: Rayleigh range • q: beam parameter • R: curvature</text>
+  <text class="legend" x="65" y="474">Variables labeled on model — W₀: waist • z₀: Rayleigh range • q: beam parameter • R: curvature</text>
   <text class="check" x="65" y="507">Independent check — waist limit, far-field divergence, and units</text>
 </svg>
