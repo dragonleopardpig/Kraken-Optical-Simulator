@@ -49,3 +49,22 @@ the 0437 seat move); the release commit's rebuild reconciles exact placement.
 Station/object rows still land at release on this path (far from the gesture;
 promote if flagged). Guard: live_actor_carry section C gained the arrow-drag
 contract.
+
+## Follow-up 2 — the STEP GIZMO drag (the lens surrogate's remaining lag)
+
+User: "LED + BS cube move together now, but the lens surrogate still not
+moving together with lens body." The remaining path was the STEP GIZMO arrow
+(`_apply_step_translate_drag_motion`): per-frame it moves ONLY the body actors
+and commits the model once at release -- the 0137 mirror rides the body move
+(which is why LED+BS looked right there) but the lens SURROGATE ROWS are not a
+mirror partner, and the 0514 breadcrumbs cannot exist mid-drag because nothing
+writes the model until release. New
+`_step_translate_live_follow_preview(label, delta)` derives what the release
+commit WILL slide -- the folded lens leg (`_lens_leg_slide_plan`, x-leg on
+AZ85) or the unfolded axial chain (front datum..end, gated on the 0508 C 3 mm
+on-axis band so a parked lens keeps a body-only preview), plus the LED's
+station members and glued sources -- and translates those actors by the
+matching component each frame. Verified model-side per scene
+(bugs breadcrumb probe): straight axial-z slides rows 3-8, folded x slides the
+leg rows 1-6, laterals stay body-only. Guard: live_actor_carry section C gained
+the gizmo contract. In-app eyeball owed (gizmo drag on the lens, both scenes).

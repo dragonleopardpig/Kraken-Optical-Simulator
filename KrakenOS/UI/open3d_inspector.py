@@ -4191,6 +4191,81 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         else:
             self.status_var.set(f"Placement {kind} drag S{row_index} {axis}: applied {applied_steps} snap step(s).")
 
+    def _step_translate_live_follow_preview(self, label: str, delta_xyz) -> int:
+        """bugs/0514: per-frame companion preview for the STEP GIZMO drag.
+
+        The gizmo path has NO model write until release, so the 0514 breadcrumbs do not
+        exist mid-drag -- derive what the release commit WILL slide (the folded lens leg
+        or the unfolded axial chain for the lens; the station members and glued sources
+        for the LED) and translate those actors by the matching component now. The
+        release commit's rebuild reconciles exact placement, so the preview only has to
+        be visually faithful, never authoritative."""
+        editor = self.editor
+        label = str(label or "").strip().lower()
+        try:
+            delta = np.asarray(delta_xyz, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return 0
+        if delta.size < 3 or not np.all(np.isfinite(delta)):
+            return 0
+        moved = 0
+        try:
+            if label == "lens":
+                try:
+                    offset = np.asarray(editor._step_placement_offset_xyz("lens"), dtype=float).reshape(3)
+                except Exception:
+                    offset = np.zeros(3)
+                plan = None
+                try:
+                    plan = editor._lens_leg_slide_plan()
+                except Exception:
+                    plan = None
+                if plan is not None and plan[2]:
+                    members, leg_dir, _folded = plan
+                    leg_dir = np.asarray(leg_dir, dtype=float).reshape(3)
+                    shift = leg_dir * float(np.dot(delta, leg_dir))
+                else:
+                    # the unfolded axial redirect only fires for an on-axis body (0508 C
+                    # 3 mm gate) -- a parked lens keeps a body-only preview.
+                    if float(np.hypot(offset[0], offset[1])) > 3.0:
+                        return 0
+                    datums = editor._lens_surrogate_datum_rows()
+                    if datums is None:
+                        return 0
+                    members = list(range(int(datums[0]), len(editor.rows)))
+                    shift = np.array([0.0, 0.0, float(delta[2])], dtype=float)
+                if float(np.linalg.norm(shift)) <= 1.0e-12:
+                    return 0
+                for index in members:
+                    moved += max(0, int(self._translate_row_actors(int(index), shift, render=False)))
+            elif label == "led":
+                try:
+                    plan = editor._led_station_slide_plan()
+                except Exception:
+                    plan = None
+                if plan is not None:
+                    members, _bs_row, leg_dir = plan
+                    leg_dir = np.asarray(leg_dir, dtype=float).reshape(3)
+                    shift = leg_dir * float(np.dot(delta, leg_dir))
+                    if float(np.linalg.norm(shift)) > 1.0e-12:
+                        for index in members:
+                            moved += max(0, int(self._translate_row_actors(int(index), shift, render=False)))
+                from KrakenOS.UI.scene_source_analysis import source_spec_bool as _sglue
+
+                for spec in editor._normalize_scene_source_specs(
+                    getattr(editor, "layout_scene_source_specs", []) or []
+                ):
+                    if _sglue(spec, "glued_to_led", False):
+                        moved += max(
+                            0,
+                            int(self._translate_source_actors(
+                                str(spec.get("source_id", "") or ""), delta, render=False
+                            )),
+                        )
+        except Exception:
+            return moved
+        return moved
+
     def _step_translate_state_from_current_pick(self) -> dict[str, object] | None:
         if self._picker is None or self._renderer is None or self._vtk_interactor is None:
             return None
@@ -4288,6 +4363,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         delta_xyz = axis_unit * float(mm_inc)
         if self._translate_step_overlay_actors(str(state.get("label", "")), delta_xyz) <= 0:
             return
+        # bugs/0514 follow-up: the STEP GIZMO drag previews actors and commits the model at
+        # release, so the lens SURROGATE rows (and the LED's station rows / glued sources)
+        # appeared only at mouse-up -- "the lens surrogate still not moving together with
+        # lens body". Preview them per frame; the release commit reconciles exactly.
+        if self._step_translate_live_follow_preview(str(state.get("label", "")), delta_xyz) > 0:
+            self.render()
         state["applied_delta_mm"] = float(state.get("applied_delta_mm", 0.0)) + float(mm_inc)
         self._update_step_translate_drag_overlay(state)
 

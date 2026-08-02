@@ -236,6 +236,29 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
             "per frame -- they would teleport at release again ('one after another')"
         )
         passed = False
+    try:
+        gizmo_src = inspect.getsource(Kraken3DInspector._apply_step_translate_drag_motion)
+        preview_src = inspect.getsource(Kraken3DInspector._step_translate_live_follow_preview)
+    except Exception as exc:
+        notes.append(f"FAIL (0514): step-gizmo live-follow sources unreadable: {exc!r}")
+        return False, notes
+    if "_step_translate_live_follow_preview" not in gizmo_src:
+        notes.append(
+            "FAIL (0514): the STEP GIZMO drag no longer previews companions per frame -- the "
+            "lens surrogate would wait for release again"
+        )
+        passed = False
+    if (
+        "_lens_leg_slide_plan" not in preview_src
+        or "_lens_surrogate_datum_rows" not in preview_src
+        or "_led_station_slide_plan" not in preview_src
+        or "glued_to_led" not in preview_src
+    ):
+        notes.append(
+            "FAIL (0514): the gizmo preview no longer derives the folded leg / unfolded chain / "
+            "station members / glued sources"
+        )
+        passed = False
 
     if verbose:
         notes.append(
