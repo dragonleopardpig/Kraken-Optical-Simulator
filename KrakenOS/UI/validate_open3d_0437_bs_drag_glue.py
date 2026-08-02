@@ -1,10 +1,16 @@
-"""bugs/0437 guard -- the BS<->LED glue is ASYMMETRIC (parent/child).
+"""bugs/0437 + 0508 B guard -- the BS<->LED glue layers.
 
-flag_20260726_110337: dragging the BS plate down carried the glued LED along,
-"effectively cancelling the BS plate move" (the old symmetric two-body glue
-resurfacing past the 0432 Alt-only suspend). Encodes BOTH directions:
+bugs/0437 (flag_20260726_110337) made the glue asymmetric at the CARRY level: an
+internal BS delta repositions the child inside the housing and never drags the
+LED. bugs/0508 B (flag_20260802_132302, user decision 2026-08-02) added the
+GESTURE level on top: a USER drag of the glued BS row is an ASSEMBLY move --
+routed through the LED translate so housing and BS move together -- while
+Alt-drag (``_suppress_optical_led_carry``) and internal callers
+(``record_history=False``) keep the 0437 child-seat move. Encodes all layers:
 
-  * a BS move (vector row drag, per-axis row drag) leaves the LED fixed;
+  * an internal BS move (vector row drag, record_history=False) leaves the LED fixed;
+  * a USER per-axis BS drag moves BS AND LED together (the assembly gesture);
+  * the same drag under the Alt suspend moves the BS alone;
   * an LED move (overlay drag, translation-change carry) still carries the BS.
 
 Run: python -m KrakenOS.UI.validate_open3d_0437_bs_drag_glue (needs a DISPLAY).
@@ -63,15 +69,27 @@ def run_checks() -> tuple[bool, list[str]]:
         led0, bs0 = led_offset(), bs_center(bs_row)
         app.translate_scene_row_pose_vector(bs_row, (0.0, 0.0, -9.0), record_history=False, sync_table=False)
         led1, bs1 = led_offset(), bs_center(bs_row)
-        note("BS-ALONE: vector BS drag moves the BS", abs(float(bs1[2] - bs0[2]) + 9.0) < 1e-9)
-        note("BS-ALONE: vector BS drag leaves the LED fixed", bool(np.allclose(led1, led0, atol=1e-9)),
+        note("INTERNAL (0437): vector BS delta moves the BS", abs(float(bs1[2] - bs0[2]) + 9.0) < 1e-9)
+        note("INTERNAL (0437): vector BS delta leaves the LED fixed", bool(np.allclose(led1, led0, atol=1e-9)),
              f"led_delta={np.round(led1 - led0, 6)}")
 
         app.translate_scene_row_pose(bs_row, "z", 2.5)
         led2, bs2 = led_offset(), bs_center(bs_row)
-        note("BS-ALONE: per-axis BS drag leaves the LED fixed", bool(np.allclose(led2, led1, atol=1e-9)),
-             f"led_delta={np.round(led2 - led1, 6)}")
-        note("BS-ALONE: per-axis BS drag moves the BS", abs(float(bs2[2] - bs1[2]) - 2.5) < 1e-9)
+        note("ASSEMBLY (0508 B): user per-axis BS drag moves the BS", abs(float(bs2[2] - bs1[2]) - 2.5) < 1e-6,
+             f"bs_dz={float(bs2[2] - bs1[2]):.6f}")
+        note("ASSEMBLY (0508 B): user per-axis BS drag carries the LED housing",
+             abs(float(led2[2] - led1[2]) - 2.5) < 1e-6, f"led_dz={float(led2[2] - led1[2]):.6f}")
+
+        app._suppress_optical_led_carry = True
+        try:
+            app.translate_scene_row_pose(bs_row, "z", -1.5)
+        finally:
+            app._suppress_optical_led_carry = False
+        led2b, bs2b = led_offset(), bs_center(bs_row)
+        note("ALT (0437 seat move): suspended per-axis BS drag moves the BS alone",
+             abs(float(bs2b[2] - bs2[2]) + 1.5) < 1e-9 and bool(np.allclose(led2b, led2, atol=1e-9)),
+             f"led_delta={np.round(led2b - led2, 6)}")
+        led2, bs2 = led2b, bs2b
 
         app.translate_step_overlay("led", (0.0, 0.0, 6.0), refresh=False, record_history=False)
         led3, bs3 = led_offset(), bs_center(bs_row)

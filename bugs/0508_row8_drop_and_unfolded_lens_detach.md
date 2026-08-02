@@ -192,3 +192,35 @@ thickness-stability under the one-line repro AND the station gesture, and a
 breadcrumb-STRIPPED walk check pinning the geometric re-anchor.
 
 **B** remains by-design (bugs/0437) pending a product decision.
+
+## Update 5 -- B IMPLEMENTED: the glued-BS drag is now the assembly/station gesture
+
+User decision 2026-08-02 ("Can we implement 0508 B?"): dragging the glued BS
+must move the assembly. Design: a USER drag of the glued BS row routes the whole
+delta through `translate_step_overlay("led", ...)` -- literally the same gesture
+as dragging the housing, so the 0505 atomic station write moves object rows +
+BS row + LED body together and the perpendicular remainder flows through the
+parent-side carry. Anything less than the full station move would re-create the
+0505 fold-point pathologies (BS+LED moving without the object slides the fold
+point along the incoming axis).
+
+Layering (all three coexist):
+* USER gesture (record_history=True, no suspend flags) -> ASSEMBLY move;
+* Alt-drag (`_suppress_optical_led_carry`) -> the 0437 child-seat move (BS
+  repositions inside the housing), unchanged;
+* internal callers (`record_history=False` -- including the station write
+  itself, which re-enters `translate_scene_row_pose_vector` for the BS row) ->
+  raw row move, no recursion; belt-and-braces `_bs_assembly_drag_active` guard.
+
+Implemented as early delegation at the TOP of both row-commit twins
+(`translate_scene_row_pose_vector`, scene_placement_commands.py; per-axis
+`translate_scene_row_pose`, optical_solid_workflow.py), getattr-defensive for
+the fake-editor guards. `_carry_glued_optical_led` keeps its 0437 asymmetry for
+internal deltas (docstring updated).
+
+Verified: headless equivalence on the real AZ85 BS scene -- a -18 mm x BS-row
+drag produces a model state IDENTICAL to `translate_step_overlay("led")` with
+the same delta (object row 0 + BS row 3 + LED body all -18, frozen chain
+untouched). Guard: `validate_open3d_0437_bs_drag_glue` REFINED in place (phase
+353 retitled): internal-vector = BS alone, user per-axis = BS+LED together,
+Alt-suspended = BS alone, LED-drag carry unchanged.

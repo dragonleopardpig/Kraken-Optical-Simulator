@@ -146,15 +146,19 @@ def run_checks() -> "tuple[bool, list[str]]":
     #    housing -- the glued LED must STAY PUT (a symmetric carry cancelled the
     #    relative move). The assembly direction lives in check E (LED-drag carries
     #    the BS).
+    #    bugs/0508 B note: the USER gesture on a real editor now routes through the LED
+    #    translate (the assembly move); this fake pins the INTERNAL layer, so the call
+    #    passes record_history=False -- the delegation is explicitly a user-gesture-only
+    #    behavior and internal deltas must keep the 0437 child-seat semantics.
     ed_d = _FakeEditor(has_optical_overlay=False, has_led=True, promoted_bs=True)
     ed_d._offsets["led"] = [1.0, 2.0, 3.0]
     ed_d.set_optical_led_glue(True)
-    ed_d.translate_scene_row_pose_vector(0, (10.0, 0.0, -4.0))
+    ed_d.translate_scene_row_pose_vector(0, (10.0, 0.0, -4.0), record_history=False)
     if not _approx(ed_d.rows[0].desp, (10.0, 0.0, -4.0)):
         failures.append(f"FAIL: BS row should move by the drag delta (got {ed_d.rows[0].desp})")
     if not _approx(ed_d._step_placement_offset_xyz("led"), (1.0, 2.0, 3.0)):
         failures.append(
-            f"FAIL (0437): dragging the BS must leave the glued LED where it is "
+            f"FAIL (0437): an internal BS delta must leave the glued LED where it is "
             f"(got {ed_d._step_placement_offset_xyz('led')}, expected unchanged (1,2,3))"
         )
 

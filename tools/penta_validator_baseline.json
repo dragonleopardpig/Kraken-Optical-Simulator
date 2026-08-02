@@ -767,7 +767,7 @@
     "350": "multi-select snap with a fold inside the selection (0433 C)",
     "351": "BS add is station-neutral -- nothing moves (0435)",
     "352": "rubber-band snap selection integrity (0436)",
-    "353": "BS drag moves the BS alone; LED drag carries the glued BS (0437)",
+    "353": "glued-BS drag moves the assembly, Alt/internal move the BS alone, LED drag carries (0437+0508B)",
     "354": "armed-snap highlight persists through rebuilds (0438)",
     "355": "snap lands at the clicked point on the axis (0439)",
     "356": "frozen fold mirror draws its pickable reflected-axis guide (0439)",

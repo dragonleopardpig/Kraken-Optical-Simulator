@@ -484,6 +484,42 @@ class ScenePlacementMixin:
             raise RuntimeError("3D placement translation vector is zero")
         row = self.rows[row_index]
         before = (float(row.desp_x), float(row.desp_y), float(row.desp_z))
+        # bugs/0508 B (flag_20260802_132302, user decision 2026-08-02): dragging the glued BS is
+        # an ASSEMBLY gesture -- route the whole delta through the LED translate so the
+        # illumination station moves exactly as if the housing had been dragged (the 0505 atomic
+        # station write: object rows + BS row + LED body; the perpendicular remainder via the
+        # parent-side carry). Gated to USER-level gestures only: the station write re-enters this
+        # method with record_history=False, an Alt-drag sets _suppress_optical_led_carry (the
+        # 0437 child-seat move stays available under Alt), and internal carries set their own
+        # flags. getattr-defensive: guards drive partial fake editors.
+        _bs_row_lookup = getattr(self, "_promoted_optical_solid_row_index", None)
+        _led_xlate = getattr(self, "translate_step_overlay", None)
+        if (
+            bool(record_history)
+            and callable(_bs_row_lookup)
+            and callable(_led_xlate)
+            and not getattr(self, "_bs_assembly_drag_active", False)
+            and not getattr(self, "_optical_led_carry_active", False)
+            and not getattr(self, "_suppress_optical_led_carry", False)
+            and not getattr(self, "_suppress_fold_slide_carry", False)
+            and bool(getattr(self, "_optical_led_glued", False))
+            and _bs_row_lookup("optical") == row_index
+        ):
+            self._bs_assembly_drag_active = True
+            try:
+                _led_xlate("led", tuple(float(v) for v in delta[:3]))
+            finally:
+                self._bs_assembly_drag_active = False
+            return {
+                "row_index": row_index,
+                "axis": "xyz",
+                "delta_mm": tuple(float(value) for value in delta[:3]),
+                "before_mm": before,
+                "after_mm": (float(row.desp_x), float(row.desp_y), float(row.desp_z)),
+                "scene_placement_settings": normalize_scene_placement_settings(
+                    dict(row.advanced or {}).get(SCENE_PLACEMENT_ADVANCED_ATTR, {})
+                ),
+            }
         # bugs/0485 rule 3: "if the user slide the elements that introduce a fold axis, then all
         # the snapped elements should follow the fold axis". Which elements those are has to be
         # read BEFORE the pose moves -- afterwards they are off the leg and no longer look like
@@ -4066,12 +4102,15 @@ class ScenePlacementMixin:
     def _carry_glued_optical_led(self, moved_label: str, applied) -> None:
         """Item 3 carry, ASYMMETRIC since bugs/0437: when the BS<->LED glue is active and the
         LED (the parent housing) moves, carry the glued BS by the same world delta so the
-        assembly moves as one.  A BS move carries NOTHING -- the BS is the child seated
-        inside the LED, and dragging it repositions it RELATIVE to the housing
+        assembly moves as one.  A BS move carries NOTHING here -- the BS is the child seated
+        inside the LED, and an internal BS delta repositions it RELATIVE to the housing
         (flag_20260726_110337: the symmetric carry "effectively cancelled the BS plate
-        move").  The beam splitter may be EITHER the 'optical' overlay OR a promoted
-        optical solid (bugs/0127); the LED is always an overlay.  Re-entrancy guarded so
-        the partner move never carries back."""
+        move").  Since bugs/0508 B the USER gesture on the glued BS row never reaches this
+        helper: translate_scene_row_pose / _vector intercept it and route the whole delta
+        through the LED translate (the assembly/station gesture); Alt-drag suspends that
+        and falls back to the child-seat move.  The beam splitter may be EITHER the
+        'optical' overlay OR a promoted optical solid (bugs/0127); the LED is always an
+        overlay.  Re-entrancy guarded so the partner move never carries back."""
         if getattr(self, "_optical_led_carry_active", False):
             return
         if not bool(getattr(self, "_optical_led_glued", False)):

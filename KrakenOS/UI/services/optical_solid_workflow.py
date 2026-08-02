@@ -955,6 +955,37 @@ class LayoutOpticalSolidWorkflowMixin:
             raise RuntimeError("3D placement translation step is zero or non-finite")
         row = self.rows[row_index]
         before = float(getattr(row, attr))
+        # bugs/0508 B: the placement-ARROW commit comes through this per-axis twin -- same
+        # assembly routing as translate_scene_row_pose_vector (dragging the glued BS moves
+        # the whole illumination station via the LED translate; Alt keeps the 0437 seat move).
+        _bs_row_lookup = getattr(self, "_promoted_optical_solid_row_index", None)
+        _led_xlate = getattr(self, "translate_step_overlay", None)
+        if (
+            callable(_bs_row_lookup)
+            and callable(_led_xlate)
+            and not getattr(self, "_bs_assembly_drag_active", False)
+            and not getattr(self, "_optical_led_carry_active", False)
+            and not getattr(self, "_suppress_optical_led_carry", False)
+            and not getattr(self, "_suppress_fold_slide_carry", False)
+            and bool(getattr(self, "_optical_led_glued", False))
+            and _bs_row_lookup("optical") == row_index
+        ):
+            vec = {"x": (delta, 0.0, 0.0), "y": (0.0, delta, 0.0), "z": (0.0, 0.0, delta)}[axis_key]
+            self._bs_assembly_drag_active = True
+            try:
+                _led_xlate("led", vec)
+            finally:
+                self._bs_assembly_drag_active = False
+            return {
+                "row_index": row_index,
+                "axis": axis_key,
+                "delta_mm": float(delta),
+                "before_mm": before,
+                "after_mm": float(getattr(row, attr)),
+                "scene_placement_settings": normalize_scene_placement_settings(
+                    dict(row.advanced or {}).get(SCENE_PLACEMENT_ADVANCED_ATTR, {})
+                ),
+            }
         # bugs/0485 rule 3, same hook as translate_scene_row_pose_vector -- this axis form is a
         # SECOND implementation of the same operation (it carries its own copy of the BS<->LED
         # glue block too), and the drag gizmo comes through here, so a carry wired only into the

@@ -15264,7 +15264,7 @@ def _phase_from_standalone(number: int, title: str, module_name: str, guard_labe
 
 
 phase_353_bs_drag_glue_asymmetric = _phase_from_standalone(
-    353, "BS drag moves the BS alone; LED drag carries the glued BS (0437)",
+    353, "glued-BS drag moves the assembly, Alt/internal move the BS alone, LED drag carries (0437+0508B)",
     "KrakenOS.UI.validate_open3d_0437_bs_drag_glue", "bs_drag_glue_asymmetric")
 phase_354_armed_highlight_persists = _phase_from_standalone(
     354, "armed-snap highlight persists through rebuilds (0438)",
