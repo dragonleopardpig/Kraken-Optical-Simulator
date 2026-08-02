@@ -63,3 +63,29 @@ recurs, instrument `apply_async_trace_result` with a model-generation check and 
 builder's `frame_source` at apply time.
 
 **B** remains by-design (bugs/0437) pending a product decision.
+
+## Update 2 — flag A cracked open: reproducible in ONE line, writer narrowed
+
+The 14:05 recurrence (`flag_20260802_140514`, build 9a7e5593) forced a re-examination, and the
+breakthrough: **my earlier "not reproducible" replays were green-washed — they asserted the MODEL
+rows, but the drawn row-8 actor and the traced rays follow the BUILT SYSTEM.** Measuring the
+system's image transform reproduces the flag exactly:
+
+    x,z,z,x LED sequence:  MODEL row8 z = 17.72 (correct)   SYSTEM image z = -26.4  (= 17.72 - 44.12)
+
+Bisected to a **one-line repro**: fresh load + `rows[3].desp_x -= 23.4` (the BS row alone, raw)
+flips the built image from -5.08 to **-49.2** — exactly one mirror→image thickness (44.12) low.
+The 0505 station write triggers it live because it legitimately moves the BS desp.
+
+Ruled OUT with probes: model rows (clean), `_serializable_specs_for_rows` (only row-3 desp_x
+differs), `_saved_promoted_step_native_trace_rows` (identical), trace mode (Non-Sequential
+Preview both configs, no folded synthesis, 0 fold records), the follower override applier
+(`_apply_optical_solid_output_port_system_overrides_built` spied during the real build — receives
+EMPTY maps in both configs). The exit-frame probe trace only *reports* the already-moved image.
+
+**Remaining suspect**: the image surface's post-trace finalization inside
+`_build_preview_system_rays_bundle` — the 0433/0495 hard-stop / branch-detector placement (fit
+from ray landings or an axial reference ray), which would key on the BS lateral pose vs the
+NOMINAL axis — the same nominal-anchoring family as every 0505-era find. Next: trace
+`_system_transform_list`'s source attribute and find who writes the image slot between build and
+bundle return, with the one-line repro as the harness.
