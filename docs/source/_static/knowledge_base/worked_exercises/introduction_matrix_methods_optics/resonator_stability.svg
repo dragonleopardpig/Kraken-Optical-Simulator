@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">Resonator half-trace stability and Gaussian eigenmode</title>
+  <desc id="desc">The left panel marks unstable, stable, and marginal regions on the matrix half-trace axis. The right panel shows a Gaussian mode fitted between two curved mirrors and the fixed-point ABCD relation.</desc>
+  <defs>
+    <linearGradient id="stable" x1="0" x2="1"><stop offset="0" stop-color="#72c6a3"/><stop offset="0.5" stop-color="#c9f2dc"/><stop offset="1" stop-color="#72c6a3"/></linearGradient>
+    <style>
+      .bg{fill:#f7fafc}.panel{fill:#fff;stroke:#b9c7d6;stroke-width:2}.head{font:700 23px sans-serif;fill:#18324a}.txt{font:17px sans-serif;fill:#334e68}.small{font:15px sans-serif;fill:#486581}.axis{stroke:#52697d;stroke-width:3}.tick{stroke:#52697d;stroke-width:2}.mirror{fill:none;stroke:#286f9e;stroke-width:7}.beam{fill:#e65f5c;fill-opacity:.16;stroke:#e65f5c;stroke-width:3}.waist{stroke:#e65f5c;stroke-width:2;stroke-dasharray:5 5}.eq{font:20px serif;fill:#173f5f}.bad{fill:#f5b7b1}.marginal{fill:#f4d35e}
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="520" rx="18"/>
+  <rect class="panel" x="30" y="30" width="540" height="460" rx="16"/>
+  <text class="head" x="60" y="72">Half-trace s = (A + D)/2</text>
+  <rect class="bad" x="70" y="168" width="120" height="42" rx="8"/><rect fill="url(#stable)" x="210" y="168" width="180" height="42"/><rect class="bad" x="410" y="168" width="120" height="42" rx="8"/>
+  <rect class="marginal" x="190" y="158" width="20" height="62" rx="5"/><rect class="marginal" x="390" y="158" width="20" height="62" rx="5"/>
+  <line class="axis" x1="70" y1="230" x2="530" y2="230"/>
+  <line class="tick" x1="200" y1="220" x2="200" y2="243"/><line class="tick" x1="300" y1="220" x2="300" y2="243"/><line class="tick" x1="400" y1="220" x2="400" y2="243"/>
+  <text class="txt" x="184" y="268">−1</text><text class="txt" x="293" y="268">0</text><text class="txt" x="396" y="268">+1</text>
+  <text class="txt" x="92" y="195">unstable</text><text class="txt" x="263" y="195">stable</text><text class="txt" x="432" y="195">unstable</text>
+  <text class="small" x="85" y="315">s &gt; 1: λ = exp(±τ)</text><text class="small" x="85" y="345">|s| &lt; 1: λ = exp(±iθ)</text><text class="small" x="85" y="375">|s| = 1: repeated ±1</text>
+  <text class="eq" x="85" y="425">cos θ = s,   sin θ = √(1 − s²)</text>
+
+  <rect class="panel" x="600" y="30" width="570" height="460" rx="16"/>
+  <text class="head" x="630" y="72">Physical fixed point q</text>
+  <line class="axis" x1="660" y1="250" x2="1110" y2="250"/>
+  <path class="mirror" d="M690 125 Q640 250 690 375"/><path class="mirror" d="M1080 125 Q1130 250 1080 375"/>
+  <path class="beam" d="M690 166 C815 205 940 224 1080 177 L1080 323 C940 276 815 295 690 334 Z"/>
+  <line class="waist" x1="885" y1="192" x2="885" y2="308"/>
+  <text class="small" x="660" y="408">mirror 1</text><text class="small" x="1022" y="408">mirror 2</text><text class="small" x="860" y="180">waist w₀</text>
+  <text class="eq" x="705" y="110">q = (Aq + B)/(Cq + D)</text>
+  <text class="eq" x="720" y="455">w₀² = − λ sinθ /(πC)</text>
+</svg>

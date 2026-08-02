@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600" role="img" aria-labelledby="title desc">
+  <title id="title">Aperture and field stops in the finder telescope exercise</title>
+  <desc id="desc">An objective, focal-plane diaphragm, eye lens, and observer pupil are shown with axial marginal rays and off-axis chief rays. Labels identify the objective as aperture stop, the eye lens as field stop, and the exit pupil eleven millimetres behind the eye lens.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f7fafc}.panel{fill:#fff;stroke:#b9c7d6;stroke-width:2}.axis{stroke:#7b8794;stroke-width:2;stroke-dasharray:7 6}.lens{fill:#d9effc;stroke:#286f9e;stroke-width:4}.stop{stroke:#18324a;stroke-width:8}.pupil{stroke:#2b7a78;stroke-width:6}.marginal{stroke:#e65f5c;stroke-width:3;fill:none}.chief{stroke:#d9822b;stroke-width:3;fill:none}.head{font:700 23px sans-serif;fill:#18324a}.txt{font:17px sans-serif;fill:#334e68}.small{font:15px sans-serif;fill:#486581}.tag{fill:#173f5f}.tagtext{font:700 14px sans-serif;fill:#fff;text-anchor:middle}.dim{stroke:#52697d;stroke-width:2;marker-start:url(#a);marker-end:url(#a)}
+    </style>
+    <marker id="a" markerWidth="7" markerHeight="7" refX="3.5" refY="3.5" orient="auto"><path d="M0,3.5 L7,0 L7,7 Z" fill="#52697d"/></marker>
+  </defs>
+  <rect class="bg" width="1200" height="600" rx="18"/>
+  <rect class="panel" x="30" y="30" width="1140" height="540" rx="16"/>
+  <text class="head" x="60" y="72">Finder telescope: stop, pupil, and field roles</text>
+  <line class="axis" x1="70" y1="300" x2="1130" y2="300"/>
+
+  <path class="lens" d="M280 130 Q225 300 280 470 Q335 300 280 130 Z"/>
+  <line class="stop" x1="280" y1="118" x2="280" y2="158"/><line class="stop" x1="280" y1="442" x2="280" y2="482"/>
+  <text class="txt" x="210" y="495">objective Ø30 mm</text><rect class="tag" x="206" y="510" width="148" height="28" rx="14"/><text class="tagtext" x="280" y="530">APERTURE STOP</text>
+
+  <line class="stop" x1="645" y1="230" x2="645" y2="275"/><line class="stop" x1="645" y1="325" x2="645" y2="370"/>
+  <text class="small" x="585" y="398">focal stop Ø6.5 mm</text>
+
+  <path class="lens" d="M900 190 Q865 300 900 410 Q935 300 900 190 Z"/>
+  <line class="stop" x1="900" y1="182" x2="900" y2="218"/><line class="stop" x1="900" y1="382" x2="900" y2="418"/>
+  <text class="txt" x="770" y="455">eye lens Ø5 mm</text><rect class="tag" x="840" y="475" width="120" height="28" rx="14"/><text class="tagtext" x="900" y="495">FIELD STOP</text>
+
+  <line class="pupil" x1="1025" y1="250" x2="1025" y2="350"/>
+  <text class="txt" x="965" y="385">exit pupil Ø3 mm</text><line class="dim" x1="903" y1="525" x2="1022" y2="525"/><text class="small" x="947" y="550">11 mm</text>
+  <line class="stop" x1="1090" y1="230" x2="1090" y2="370"/><text class="small" x="1015" y="405">eye pupil Ø4 mm</text>
+
+  <path class="marginal" d="M70 150 L280 150 L645 275 L900 276 L1025 280 L1090 282"/>
+  <path class="marginal" d="M70 450 L280 450 L645 325 L900 324 L1025 320 L1090 318"/>
+  <path class="chief" d="M70 215 L280 260 L645 300 L900 190 L1025 250 L1090 280"/>
+  <path class="chief" d="M70 385 L280 340 L645 300 L900 410 L1025 350 L1090 320"/>
+
+  <line x1="570" y1="105" x2="610" y2="105" class="marginal"/><text class="small" x="620" y="110">axial marginal rays set pupil throughput</text>
+  <line x1="940" y1="105" x2="980" y2="105" class="chief"/><text class="small" x="990" y="110">chief rays set field</text>
+</svg>

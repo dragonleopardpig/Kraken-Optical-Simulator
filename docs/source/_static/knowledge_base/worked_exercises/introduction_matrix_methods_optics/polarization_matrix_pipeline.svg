@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc">
+  <title id="title">Jones and Mueller polarization calculation pipelines</title>
+  <desc id="desc">Two parallel flows show a fully polarized Jones field and a general Stokes state passing through rotation, retarder, and polarizer matrices in rightmost-first order.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f7fafc}.lane{fill:#fff;stroke:#b9c7d6;stroke-width:2}.head{font:700 23px sans-serif;fill:#18324a}.txt{font:17px sans-serif;fill:#334e68}.small{font:15px sans-serif;fill:#486581}.box{fill:#eaf4fb;stroke:#286f9e;stroke-width:2}.ret{fill:#eef9f3;stroke:#2b7a78;stroke-width:2}.pol{fill:#fff4e6;stroke:#d9822b;stroke-width:2}.arrow{stroke:#e65f5c;stroke-width:3;fill:none}.eq{font:19px serif;fill:#173f5f}.badge{font:700 16px sans-serif;fill:#fff}.j{fill:#286f9e}.m{fill:#2b7a78}
+    </style>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#e65f5c"/></marker>
+  </defs>
+  <rect class="bg" width="1200" height="560" rx="18"/>
+  <text class="head" x="40" y="42">Two state spaces, one composition rule</text>
+
+  <rect class="lane" x="30" y="70" width="1140" height="205" rx="16"/>
+  <circle class="j" cx="66" cy="106" r="22"/><text class="badge" x="59" y="112">J</text>
+  <text class="head" x="100" y="114">Jones: complex field, fully polarized light</text>
+  <rect class="box" x="70" y="150" width="175" height="80" rx="12"/><text class="eq" x="95" y="184">E₁ = [Eₓ, Eᵧ]ᵀ</text><text class="small" x="100" y="213">2 complex entries</text>
+  <path class="arrow" marker-end="url(#arrow)" d="M245 190 L325 190"/>
+  <rect class="ret" x="325" y="145" width="180" height="90" rx="12"/><text class="txt" x="356" y="179">rotation R(θ)</text><text class="small" x="346" y="209">change device axes</text>
+  <path class="arrow" marker-end="url(#arrow)" d="M505 190 L585 190"/>
+  <rect class="ret" x="585" y="145" width="180" height="90" rx="12"/><text class="txt" x="621" y="179">retarder Jδ</text><text class="small" x="613" y="209">preserve intensity</text>
+  <path class="arrow" marker-end="url(#arrow)" d="M765 190 L845 190"/>
+  <rect class="pol" x="845" y="145" width="150" height="90" rx="12"/><text class="txt" x="873" y="179">polarizer Jp</text><text class="small" x="869" y="209">project field</text>
+  <path class="arrow" marker-end="url(#arrow)" d="M995 190 L1060 190"/>
+  <text class="eq" x="1065" y="184">E₂</text><text class="small" x="1035" y="215">I = E₂†E₂</text>
+
+  <rect class="lane" x="30" y="305" width="1140" height="225" rx="16"/>
+  <circle class="m" cx="66" cy="341" r="22"/><text class="badge" x="58" y="347">M</text>
+  <text class="head" x="100" y="349">Mueller: measurable Stokes state, including partial polarization</text>
+  <rect class="box" x="70" y="390" width="175" height="80" rx="12"/><text class="eq" x="94" y="424">S₁ = [I,Q,U,V]ᵀ</text><text class="small" x="99" y="453">4 real entries</text>
+  <path class="arrow" marker-end="url(#arrow)" d="M245 430 L325 430"/>
+  <rect class="ret" x="325" y="385" width="180" height="90" rx="12"/><text class="txt" x="350" y="419">rotation RM(θ)</text><text class="small" x="344" y="449">Q-U turn by 2θ</text>
+  <path class="arrow" marker-end="url(#arrow)" d="M505 430 L585 430"/>
+  <rect class="ret" x="585" y="385" width="180" height="90" rx="12"/><text class="txt" x="614" y="419">retarder Mδ</text><text class="small" x="607" y="449">rotate on Poincaré</text>
+  <path class="arrow" marker-end="url(#arrow)" d="M765 430 L845 430"/>
+  <rect class="pol" x="845" y="385" width="150" height="90" rx="12"/><text class="txt" x="868" y="419">polarizer Mp</text><text class="small" x="874" y="449">diattenuation</text>
+  <path class="arrow" marker-end="url(#arrow)" d="M995 430 L1060 430"/>
+  <text class="eq" x="1065" y="424">S₂</text><text class="small" x="1036" y="455">first entry = I</text>
+
+  <text class="small" x="880" y="510" text-anchor="middle">State₂ = Mₙ ··· M₂ M₁ State₁  (rightmost factor acts first)</text>
+</svg>

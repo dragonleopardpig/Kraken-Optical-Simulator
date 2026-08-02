@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650" role="img" aria-labelledby="title desc">
+  <title id="title">Eight common ray-transfer matrix situations</title>
+  <desc id="desc">A two-row gallery illustrates translation, refraction, reflection, a thin lens, principal-plane transfer, focal-plane transfer, conjugate imaging, and an afocal telescope.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f7fafc}.card{fill:#fff;stroke:#b9c7d6;stroke-width:2}.axis{stroke:#7b8794;stroke-width:2}.ray{fill:none;stroke:#e65f5c;stroke-width:3}.optic{fill:none;stroke:#286f9e;stroke-width:4}.plane{stroke:#286f9e;stroke-width:3;stroke-dasharray:7 6}.mirror{fill:none;stroke:#2b7a78;stroke-width:5}.head{font:700 20px sans-serif;fill:#18324a}.label{font:16px sans-serif;fill:#334e68}.matrix{font:17px monospace;fill:#173f5f}.num{fill:#173f5f}.numtext{font:700 17px sans-serif;fill:#fff;text-anchor:middle;dominant-baseline:middle}
+    </style>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#e65f5c"/></marker>
+  </defs>
+  <rect class="bg" width="1200" height="650" rx="18"/>
+  <text class="head" x="40" y="42">Ray vector (y, nθ)ᵀ — rightmost matrix acts first</text>
+
+  <g transform="translate(30 65)">
+    <rect class="card" width="270" height="250" rx="14"/><circle class="num" cx="25" cy="25" r="16"/><text class="numtext" x="25" y="25">1</text>
+    <text class="head" x="50" y="31">Translation</text><line class="axis" x1="22" y1="104" x2="248" y2="104"/>
+    <path class="ray" marker-end="url(#arrow)" d="M35 137 L235 72"/><line class="plane" x1="65" y1="68" x2="65" y2="145"/><line class="plane" x1="210" y1="68" x2="210" y2="145"/>
+    <text class="label" x="125" y="164">distance t, index n</text><text class="matrix" x="40" y="211">[ 1  t/n ]</text><text class="matrix" x="40" y="235">[ 0   1  ]</text>
+  </g>
+  <g transform="translate(320 65)">
+    <rect class="card" width="270" height="250" rx="14"/><circle class="num" cx="25" cy="25" r="16"/><text class="numtext" x="25" y="25">2</text>
+    <text class="head" x="50" y="31">Refraction</text><line class="axis" x1="22" y1="104" x2="248" y2="104"/>
+    <path class="optic" d="M135 61 Q165 104 135 147"/><path class="ray" marker-end="url(#arrow)" d="M30 139 L140 104 L238 79"/>
+    <text class="label" x="92" y="164">surface power P</text><text class="matrix" x="45" y="211">[ 1   0 ]</text><text class="matrix" x="45" y="235">[-P   1 ]</text>
+  </g>
+  <g transform="translate(610 65)">
+    <rect class="card" width="270" height="250" rx="14"/><circle class="num" cx="25" cy="25" r="16"/><text class="numtext" x="25" y="25">3</text>
+    <text class="head" x="50" y="31">Reflection</text><line class="axis" x1="22" y1="104" x2="248" y2="104"/>
+    <path class="mirror" d="M170 59 Q138 104 170 149"/><path class="ray" marker-end="url(#arrow)" d="M35 65 L161 104 L45 143"/>
+    <text class="label" x="64" y="164">curved mirror, radius r</text><text class="matrix" x="34" y="211">[ 1    0 ]</text><text class="matrix" x="34" y="235">[2n/r  1 ]</text>
+  </g>
+  <g transform="translate(900 65)">
+    <rect class="card" width="270" height="250" rx="14"/><circle class="num" cx="25" cy="25" r="16"/><text class="numtext" x="25" y="25">4</text>
+    <text class="head" x="50" y="31">Thin lens</text><line class="axis" x1="22" y1="104" x2="248" y2="104"/>
+    <path class="optic" d="M135 59 Q112 104 135 149 M135 59 Q158 104 135 149"/><path class="ray" marker-end="url(#arrow)" d="M25 73 L135 73 L235 133"/>
+    <text class="label" x="91" y="164">focal length f</text><text class="matrix" x="35" y="211">[ 1    0 ]</text><text class="matrix" x="35" y="235">[-1/f  1 ]</text>
+  </g>
+
+  <g transform="translate(30 340)">
+    <rect class="card" width="270" height="280" rx="14"/><circle class="num" cx="25" cy="25" r="16"/><text class="numtext" x="25" y="25">5</text>
+    <text class="head" x="50" y="31">Principal planes</text><line class="axis" x1="22" y1="110" x2="248" y2="110"/>
+    <line class="plane" x1="95" y1="65" x2="95" y2="155"/><line class="plane" x1="175" y1="65" x2="175" y2="155"/><path class="ray" marker-end="url(#arrow)" d="M28 73 L95 73 L175 139 L240 139"/>
+    <text class="label" x="74" y="180">equivalent lens action</text><text class="matrix" x="35" y="230">[ 1    0 ]</text><text class="matrix" x="35" y="254">[-1/f  1 ]</text>
+  </g>
+  <g transform="translate(320 340)">
+    <rect class="card" width="270" height="280" rx="14"/><circle class="num" cx="25" cy="25" r="16"/><text class="numtext" x="25" y="25">6</text>
+    <text class="head" x="50" y="31">Focal planes</text><line class="axis" x1="22" y1="110" x2="248" y2="110"/>
+    <line class="plane" x1="65" y1="65" x2="65" y2="155"/><line class="plane" x1="210" y1="65" x2="210" y2="155"/><path class="ray" marker-end="url(#arrow)" d="M25 145 L65 130 L210 73 L242 73"/>
+    <text class="label" x="84" y="180">height ↔ angle</text><text class="matrix" x="45" y="230">[ 0    f ]</text><text class="matrix" x="45" y="254">[-1/f  0 ]</text>
+  </g>
+  <g transform="translate(610 340)">
+    <rect class="card" width="270" height="280" rx="14"/><circle class="num" cx="25" cy="25" r="16"/><text class="numtext" x="25" y="25">7</text>
+    <text class="head" x="50" y="31">Conjugate image</text><line class="axis" x1="22" y1="110" x2="248" y2="110"/>
+    <line class="plane" x1="45" y1="62" x2="45" y2="158"/><line class="plane" x1="225" y1="62" x2="225" y2="158"/><path class="ray" d="M45 72 L132 110 L225 145 M45 72 L132 97 L225 145"/>
+    <text class="label" x="91" y="180">B = 0, image scale m</text><text class="matrix" x="35" y="230">[ m    0 ]</text><text class="matrix" x="35" y="254">[-1/f 1/m]</text>
+  </g>
+  <g transform="translate(900 340)">
+    <rect class="card" width="270" height="280" rx="14"/><circle class="num" cx="25" cy="25" r="16"/><text class="numtext" x="25" y="25">8</text>
+    <text class="head" x="50" y="31">Afocal system</text><line class="axis" x1="22" y1="110" x2="248" y2="110"/>
+    <path class="optic" d="M95 62 Q75 110 95 158 M95 62 Q115 110 95 158 M180 76 Q167 110 180 144 M180 76 Q193 110 180 144"/><path class="ray" marker-end="url(#arrow)" d="M25 78 L95 78 L180 135 L243 135"/>
+    <text class="label" x="80" y="180">C = 0, angular scale 1/m</text><text class="matrix" x="50" y="230">[m   0 ]</text><text class="matrix" x="50" y="254">[0  1/m]</text>
+  </g>
+</svg>
