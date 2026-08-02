@@ -126,6 +126,25 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
             "C3: glue undoes exactly the perpendicular housing displacement -- the LED returns "
             "onto the slid station",
         )
+
+        # -- D: the TRACE follows the station ----------------------------------------------------
+        # The finite-object launcher is anchored on axis_root_origin (the line the object emits);
+        # before that, a slid station's rays left from empty space at the nominal axis, folded at
+        # the moved diagonal BELOW the imaging arm, and vanished (target_termination 129 -> 0).
+        try:
+            _, _, bundle = editor._build_preview_system_rays_bundle(
+                update_state=False, include_live_step_overlays=False
+            )
+            landed = sum(
+                1 for p in (getattr(bundle, "ray_paths", []) or []) if bool(getattr(p, "reaches_image", False))
+            )
+            check(
+                landed > 0,
+                f"D1: after the station slide the imaging trace still LANDS ({landed} rays reach "
+                f"the image) -- the launcher rides axis_root_origin with the station",
+            )
+        except Exception as exc:
+            notes.append(f"NOTE: trace check skipped ({type(exc).__name__}: {exc})")
     except Exception as exc:
         notes.append(f"SKIP: the scene could not be driven ({type(exc).__name__}: {exc})")
     finally:

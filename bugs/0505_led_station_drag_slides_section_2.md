@@ -82,7 +82,19 @@ phase 408): LED +20 along the leg → object, LED and the FOLD POINT all +20 at 
 lens datums / mirror / image unmoved; s1 53.803 → 53.803, s2 93.701 → 73.701 — the pure
 section-2 edit. The drawn `axis:global` guide follows the station (screenshot-verified).
 
-**Remaining gap — the TRACE still launches from the nominal axis.** Measured live: after the +25
+**CLOSED (same day) — the TRACE now rides the station.** The finite-object world-family
+launcher (`_build_world_bundles_from_pupil_points`, the single choke point for the
+envelope/cone/sparse/sections sampling modes) anchors its launch origins AND pupil aim targets on
+`axis_root_origin` — a rigid bundle translation, identical directions, launched from the slid
+object. Measured after a +25 slide: `target_termination` 0 → 170 (pre-slide baseline 129; the
+shorter section 2 vignettes less), and the guard's display-free D1 counts 163 rays reaching the
+image. Snapshot-verified: the bundle leaves the moved fold corner at arm height, passes the lens,
+folds at the prism and lands in the camera. Remaining nominal-anchored launch builders (not
+exercised by this scene's mode): the 2D display-slice/full-pupil fans, the legacy default-cone
+builders, and the saved-layout script path (`source_x/y` settings) — give them the same one-line
+anchor when a scene hits them. Infinity-object launches have no station and are out of scope.
+
+Historical note (the gap as first measured): the TRACE still launched from the nominal axis. Measured live: after the +25
 station slide the imaging fan still leaves from x = 0, folds at the moved diagonal 25 mm below
 the arm, and `target_termination` collapses 129 → 0 (`no_next_intersection` 320 → 520). The
 launcher (`_default_nonseq_reference_bundles_from_settings` and the first-order/field aiming)

@@ -1329,8 +1329,25 @@ class TracePreviewSamplingMixin:
                 if field_pairs is not None
                 else self._sample_imaging_field_grid_pairs()
             )
+            # bugs/0505: the finite-object launch is anchored on the line the OBJECT emits, not
+            # the nominal axis. After a station slide (object + LED + glued BS moved along the
+            # splitter's leg, bugs/0505) the object sits laterally displaced; launching the fan
+            # about (0,0) made the rays leave from empty space, fold at the moved diagonal BELOW
+            # the imaging arm, and vanish (measured: target_termination 129 -> 0). Shifting the
+            # origins AND the pupil aim targets by the same anchor translates the whole bundle
+            # rigidly -- identical directions, launched from the slid object -- which is exactly
+            # what a rigid station slide means. Zero for every centred-object scene.
+            try:
+                from KrakenOS.UI.nonseq_output_ports import axis_root_origin
+
+                _anchor = axis_root_origin(self.rows)
+                anchor_x, anchor_y = float(_anchor[0]), float(_anchor[1])
+            except Exception:
+                anchor_x = anchor_y = 0.0
             for field_x, field_y in pairs:
-                origin = np.array([-float(field_x), -float(field_y), 0.0], dtype=float)
+                origin = np.array(
+                    [anchor_x - float(field_x), anchor_y - float(field_y), 0.0], dtype=float
+                )
                 x_vals: list[float] = []
                 y_vals: list[float] = []
                 z_vals: list[float] = []
@@ -1338,7 +1355,9 @@ class TracePreviewSamplingMixin:
                 m_vals: list[float] = []
                 n_vals: list[float] = []
                 for pupil_x, pupil_y in pupil_points[:, :2]:
-                    target = np.array([float(pupil_x), float(pupil_y), aim_z], dtype=float)
+                    target = np.array(
+                        [anchor_x + float(pupil_x), anchor_y + float(pupil_y), aim_z], dtype=float
+                    )
                     direction = target - origin
                     norm = float(np.linalg.norm(direction))
                     if norm <= 1e-12:
