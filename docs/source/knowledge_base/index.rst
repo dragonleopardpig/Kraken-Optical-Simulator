@@ -18,4 +18,3 @@ real sensor.
    eol_imaging_qualification/index
    step_overlay_promotion
    coaxial_led_dark_edges
-   worked_exercises/index
