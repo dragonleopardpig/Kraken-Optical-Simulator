@@ -20,3 +20,11 @@ subject areas):
 These four are IN the new baseline (the gate only blocks fresh PASS→FAIL flips), so this note is
 what keeps them tracked as regressions to root-cause rather than silently absorbed environment.
 Phase 10 (analytic lens selection not all-red), failing since July, now passes — fixed by the arc.
+
+## Update 2026-08-02 (post-0507)
+
+**Phase 382 RESOLVED as a side effect of the 0505/0507 station work** — the camera-seat guard
+measures against traced geometry, and the nominal-anchored follower probe / static launch aim
+were what had drifted it 0.1 mm. Full 408-phase run after `ebaaf226`: zero new failures, 373
+pass. Remaining from this arc: phases 0 (cascade axis segments) and 178/180 (diffuse double-pass
+detector draw-gating).

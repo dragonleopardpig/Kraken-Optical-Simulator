@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-08-02T02:02:51+00:00",
+  "generated_at": "2026-08-02T04:19:38+00:00",
   "phases": {
     "0": "fail",
     "1": "fail",
@@ -383,7 +383,7 @@
     "379": "pass",
     "380": "pass",
     "381": "pass",
-    "382": "fail",
+    "382": "pass",
     "383": "pass",
     "384": "pass",
     "385": "pass",
