@@ -38,6 +38,17 @@ guard's E-section pattern (system rebuild per step) is the harness; assert lande
 (~129-class, not 67) after a perpendicular housing drag, plus a tight-fan geometric check
 (ray direction spread at the box exit).
 
-## Status
+## Status — FIXED
 
-Root-caused to the aim depth; NOT fixed yet. Repro script + snapshot exist; fix next session.
+Deeper than first measured: ``_launch_reference_entrance_pupil_z`` returns None even on the
+UNSLID scene (sequential PupilCalc has always thrown on this BS layout — the known seam), so the
+aim was ALWAYS the static ``object_distance`` fallback; the drags just moved the geometry away
+from it. Fix: ``_geometric_reduced_stop_aim_z`` — the reduced object → fold → APERTURE-STOP
+distance measured from the same fold emissions the axes use — slots in between the (still
+preferred) first-order reference and the static fallback, gated to scenes with a fold before the
+stop so plain scenes are untouched.
+
+Measured: landed 129 (static aim, unslid) → **225** with the stop aim, and **225 → 225 → 225**
+through the perpendicular housing drag and a combined station drag — the fan is invariant under
+station motion, and the snapshot shows a tight bundle at the moved arm height through lens →
+prism → camera. Guard: F1 in the 0505 validator (perpendicular-drag landed parity).

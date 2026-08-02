@@ -755,6 +755,46 @@ class TracePreviewSamplingMixin:
             return radius
         return max(min(radius, float(aperture_radius)), 1e-6)
 
+    def _geometric_reduced_stop_aim_z(self) -> float | None:
+        """bugs/0507: the finite-object aim depth measured along the ACTUAL beam path.
+
+        On a beam-splitter scene ``_launch_reference_entrance_pupil_z`` has always thrown
+        (sequential PupilCalc cannot trace the BS -- the known first-order pupil seam), so the
+        world-bundle aim silently fell back to the STATIC ``object_distance`` row thickness.
+        That constant tracks nothing: a housing drag that slides the fold point along the
+        incoming axis (flag_20260802_112852 "broken rays") or a station/lens slide that changes
+        section 2 leaves the fan converging at the OLD depth, spraying after the fold.
+
+        Measure instead the reduced object -> aperture-stop distance along the beam:
+        |object -> fold point| + |fold point -> stop row|, all from the same fold emissions the
+        axes use. Aiming the fan at the STOP fills the pupil by construction. Returns None when
+        no fold sits between the object and the stop -- plain scenes keep the existing fallback
+        unchanged.
+        """
+        try:
+            from KrakenOS.UI.nonseq_output_ports import axis_fold_emissions
+
+            stop_index = self._pupil_surface_index_for_rows(self.rows)
+            if stop_index is None or int(stop_index) <= 0:
+                return None
+            emissions = axis_fold_emissions(self.rows) or {}
+            fold_rows = sorted(int(k) for k in emissions.keys() if 0 < int(k) < int(stop_index))
+            if not fold_rows:
+                return None
+            fold_origin = np.asarray(
+                emissions[fold_rows[0]]["origin"], dtype=float
+            ).reshape(3)
+            obj_pose = np.asarray(self._fold_carry_row_world_pose(0), dtype=float).reshape(3)
+            stop_pose = np.asarray(
+                self._fold_carry_row_world_pose(int(stop_index)), dtype=float
+            ).reshape(3)
+            reduced = float(np.linalg.norm(fold_origin - obj_pose)) + float(
+                np.linalg.norm(stop_pose - fold_origin)
+            )
+            return reduced if np.isfinite(reduced) and reduced > 1.0e-6 else None
+        except Exception:
+            return None
+
     def _launch_reference_entrance_pupil_z(self, system) -> float | None:
         """bugs/0100: world z of the FIRST-ORDER TRANSMISSIVE reference's entrance pupil.
 
@@ -1322,6 +1362,11 @@ class TracePreviewSamplingMixin:
             # not rows[0].thickness -- an in-path beam-splitter/plate promotion shrinks it to
             # object->cube, so the bundle converged ON the splitter instead of filling the lens pupil.
             aim_z = self._launch_reference_entrance_pupil_z(system)
+            if aim_z is None or not np.isfinite(aim_z):
+                # bugs/0507: on a BS scene the first-order reference has always thrown; aim at
+                # the aperture stop along the ACTUAL reduced path so the fan tracks fold/station
+                # motion instead of the static object_distance.
+                aim_z = self._geometric_reduced_stop_aim_z()
             if aim_z is None or not np.isfinite(aim_z):
                 aim_z = object_distance
             pairs = (

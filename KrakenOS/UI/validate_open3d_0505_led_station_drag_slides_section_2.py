@@ -192,6 +192,43 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
                 pass
         except Exception as exc:
             notes.append(f"NOTE: flag-sequence check skipped ({type(exc).__name__}: {exc})")
+
+        # -- F: bugs/0507 -- the launch aim tracks the fold (perpendicular housing drag) --------
+        # PupilCalc has always thrown on this BS scene, so the aim fell back to the STATIC
+        # object_distance; a housing drag that slides the fold point along the incoming axis left
+        # the fan converging at the old depth -- the flagged "broken rays". The geometric
+        # stop-aim (object -> fold -> aperture stop, from the emissions) must hold the landed
+        # count steady through the drag.
+        try:
+            editor3 = KrakenLayoutEditor()
+            editor3.layout_files["station_probe3"] = SCENE
+            editor3.load_layout_by_name("station_probe3")
+
+            def _landed3():
+                _, _, bundle = editor3._build_preview_system_rays_bundle(
+                    update_state=False, include_live_step_overlays=False
+                )
+                return sum(
+                    1
+                    for p in (getattr(bundle, "ray_paths", []) or [])
+                    if bool(getattr(p, "reaches_image", False))
+                )
+
+            base_landed = _landed3()
+            editor3.translate_step_overlay("led", (0.0, 0.0, 14.25))
+            perp_landed = _landed3()
+            check(
+                base_landed > 0 and perp_landed >= int(0.9 * base_landed),
+                f"F1: a perpendicular housing drag keeps the launch fan on the pupil "
+                f"({base_landed} -> {perp_landed} landed) -- the static-aim fallback sprayed it "
+                f"(flag_20260802_112852 'broken rays')",
+            )
+            try:
+                editor3.destroy()
+            except Exception:
+                pass
+        except Exception as exc:
+            notes.append(f"NOTE: aim-tracking check skipped ({type(exc).__name__}: {exc})")
     except Exception as exc:
         notes.append(f"SKIP: the scene could not be driven ({type(exc).__name__}: {exc})")
     finally:
