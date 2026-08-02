@@ -588,6 +588,13 @@ def load_design(design_id: int) -> tuple[str, list[dict[str, Any]], dict[str, An
     aperture_value = design["fno"] if design["fno"] is not None else design["stop_diameter"]
     settings = {
         "object_mode": "Infinity",
+        # Appendix B prints ordered sequential prescriptions.  In particular,
+        # its reflective systems use signed thicknesses to describe the folded
+        # optical path; they are not non-sequential world-space assemblies.
+        # Leaving this at Auto makes every Mirror row select NsTraceLoop, which
+        # can encounter the mirrors out of prescription order and draw a ray
+        # spray instead of the intended image-forming path.
+        "trace_mode": "Sequential",
         "display_orientation": "YZ",
         "projection_display_mode": "Full 3D",
         "wavelength": f"{design['wavelength_um']:.12g}",

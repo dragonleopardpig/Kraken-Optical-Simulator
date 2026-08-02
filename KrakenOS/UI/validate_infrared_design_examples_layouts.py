@@ -11,6 +11,8 @@ import KrakenOS as Kos
 
 from KrakenOS.UI.layout_editor import _build_system_from_specs
 from KrakenOS.UI.layout_library import discover_layouts, layout_menu_category, load_python_data
+from KrakenOS.UI.source_trace_helpers import build_saved_layout_rays
+from KrakenOS.UI.trace_intent import resolve_trace_intent
 from KrakenOS.common_optical_layouts._infrared_design_examples import (
     DESIGNS,
     OMITTED_SOURCE_DESIGNS,
@@ -22,6 +24,7 @@ LAYOUTS_DIR = Path(__file__).resolve().parents[1] / "common_optical_layouts"
 EXPECTED_IDS = set(range(1, 16))
 TITLE_PREFIX = "IDE B."
 ALLOWED_GLASS = {"AIR", "MIRROR", "AMTIR1", "GERMANIUM", "ZNSE", "ZNS_IR"}
+EXPECTED_REFLECTIVE_IDS = set(range(1, 8))
 
 
 def _require(condition: bool, message: str) -> None:
@@ -50,8 +53,62 @@ def _trace_reaches_image(surfaces: list[dict], wavelength_um: float) -> None:
     _require(math.isfinite(float(z[-1])), "terminal intercept is not finite")
 
 
+def _validate_reflective_preview(
+    design_id: int,
+    surfaces: list[dict],
+    settings: dict,
+) -> tuple[int, int]:
+    """Exercise the same multi-field ray builder used by saved/UI layouts."""
+
+    trace_intent = resolve_trace_intent(
+        surfaces,
+        settings,
+        requested=settings.get("trace_mode", "Auto"),
+        can_folded=False,
+        ns_trace_available=True,
+    )
+    _require(
+        trace_intent.active == "Sequential" and not trace_intent.use_nonseq,
+        f"reflective design {design_id} selected {trace_intent.active}",
+    )
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        system = _build_system_from_specs(
+            surfaces,
+            build=0,
+            apply_optical_solid_output_ports=False,
+        )
+        keeper = build_saved_layout_rays(system, surfaces, settings, Kos)
+
+    paths = list(getattr(keeper, "SURFACE", []) or [])
+    expected_paths = int(settings["field_count"]) * int(settings["ray_count"])
+    image_index = len(surfaces) - 1
+    image_hits = sum(
+        1
+        for path in paths
+        if len(path) and int(path[-1]) == image_index
+    )
+    _require(
+        len(paths) == expected_paths,
+        f"reflective design {design_id} preview launched {len(paths)}/{expected_paths} rays",
+    )
+    _require(
+        image_hits >= math.ceil(0.95 * len(paths)),
+        f"reflective design {design_id} reached Image on only {image_hits}/{len(paths)} rays",
+    )
+    return image_hits, len(paths)
+
+
 def main() -> None:
     _require(set(DESIGNS) == EXPECTED_IDS, "source catalog must contain designs 1-15")
+    reflective_ids = {
+        design_id
+        for design_id, design in DESIGNS.items()
+        if any(str(row["material"]).upper() == "MIRROR" for row in design["rows"])
+    }
+    _require(
+        reflective_ids == EXPECTED_REFLECTIVE_IDS,
+        f"reflective design inventory changed: {sorted(reflective_ids)}",
+    )
     wrappers = sorted(LAYOUTS_DIR.glob("ide_b_*.py"))
     _require(len(wrappers) == 15, f"expected 15 wrapper modules, found {len(wrappers)}")
 
@@ -61,6 +118,8 @@ def main() -> None:
 
     total_source_rows = 0
     total_ui_rows = 0
+    reflective_image_hits = 0
+    reflective_preview_rays = 0
     for design_id in sorted(EXPECTED_IDS):
         title, expected_surfaces, expected_settings, system_data = load_design(design_id)
         _require(title in discovery.layout_files, f"design {design_id} was not discovered")
@@ -75,6 +134,10 @@ def main() -> None:
         settings = info["settings"]
         _require(surfaces == expected_surfaces, f"design {design_id} wrapper changed its prescription")
         _require(settings == expected_settings, f"design {design_id} wrapper changed its settings")
+        _require(
+            settings.get("trace_mode") == "Sequential",
+            f"design {design_id} is not pinned to its printed sequential prescription",
+        )
         _require(surfaces[0]["surface"] == "Object", f"design {design_id} lacks an Object row")
         _require(surfaces[-1]["surface"] == "Image", f"design {design_id} lacks an Image row")
         _require(
@@ -87,6 +150,14 @@ def main() -> None:
             _require(float(row["diameter"]) > 0.0, f"design {design_id} has non-positive diameter")
             _require(str(row["glass"]) in ALLOWED_GLASS, f"design {design_id} has unknown glass {row['glass']}")
         _trace_reaches_image(surfaces, float(settings["wavelength"]))
+        if design_id in reflective_ids:
+            image_hits, preview_rays = _validate_reflective_preview(
+                design_id,
+                surfaces,
+                settings,
+            )
+            reflective_image_hits += image_hits
+            reflective_preview_rays += preview_rays
         total_source_rows += len(DESIGNS[design_id]["rows"])
         total_ui_rows += len(surfaces)
 
@@ -130,6 +201,7 @@ def main() -> None:
     print(
         "Infrared Design Examples layout validation passed: "
         f"designs=15, source_rows={total_source_rows}, ui_rows={total_ui_rows}, "
+        f"reflective_image_hits={reflective_image_hits}/{reflective_preview_rays}, "
         f"documented_omissions={len(OMITTED_SOURCE_DESIGNS)}"
     )
 
