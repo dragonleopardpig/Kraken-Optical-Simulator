@@ -247,7 +247,7 @@ META["tir"] = DiagramMeta(
     "high-index block and internal ray",
     "total internal reflection",
     "trapped reflected ray",
-    "n=3.6: block index • θᵢ: incidence angle • θᶜ=16.13°: critical angle",
+    "n=3.6: block index • nₒᵤₜ=1: outside index • θᵢ: incidence angle • θᶜ=16.13°: critical angle",
     "θᵢ>θᶜ gives no propagating transmitted ray",
 )
 META["prism"] = DiagramMeta(
@@ -263,6 +263,20 @@ META["grin"] = DiagramMeta(
     "focused output",
     "n₀: axial index • d₀: thickness • a: gradient constant • ρ: radius • f: focal length",
     "f=(n₀d₀a²)⁻¹, dimensions, and zero-gradient limit",
+)
+META["fiber_acceptance"] = DiagramMeta(
+    "external ray and fibre face",
+    "input refraction plus TIR",
+    "accepted guided ray",
+    "n₀: external index • n₁: core index • n₂: cladding index • θₐ: acceptance angle • θᵣ: axial ray angle • θᶜ: critical angle • NA: numerical aperture",
+    "the ray stays in n₁; sin θᶜ=n₂/n₁ and NA²=n₁²−n₂²",
+)
+META["grin_fiber_acceptance"] = DiagramMeta(
+    "external ray and GRIN fibre",
+    "graded-index confinement",
+    "accepted oscillating ray",
+    "n₀: axial index • a: gradient constant • aₑ: fibre radius • θ₀: launch angle • NA: numerical aperture",
+    "the ray remains within |y|≤aₑ and NA≃n₀aaₑ",
 )
 
 
@@ -316,6 +330,10 @@ def category_for(chapter: int, title: str) -> str:
             return "lens"
         if any(word in lower for word in ("matrix", "plates")):
             return "matrix"
+        if "graded-index fibre acceptance" in lower:
+            return "grin_fiber_acceptance"
+        if "fibre acceptance" in lower:
+            return "fiber_acceptance"
         if "fibre" in lower:
             return "waveguide"
     if chapter == 2 and "lens" in lower:
@@ -330,23 +348,25 @@ def category_for(chapter: int, title: str) -> str:
 def icon_markup(category: str) -> str:
     icons = {
         "ray": '<line class="optic" x1="610" y1="180" x2="610" y2="360"/><line class="axis" x1="475" y1="270" x2="740" y2="270" stroke-dasharray="8 7"/><path class="accent" d="M480 205 L610 270 L738 315"/><path class="accent2" d="M566 270 A44 44 0 0 1 571 250 M654 270 A44 44 0 0 1 651 285"/>',
-        "mirror": '<path class="optic" d="M690 185 Q625 270 690 355"/><path class="accent" d="M480 205 L675 270 L485 335"/><line class="axis" x1="475" y1="270" x2="735" y2="270"/><line class="thin" x1="675" y1="190" x2="675" y2="350" stroke-dasharray="8 7"/><path class="accent2" d="M630 270 A45 45 0 0 1 633 255 M630 270 A45 45 0 0 0 633 285"/>',
-        "lens": '<path class="accent" d="M482 235 L604 270 L700 305 L735 318"/><path class="optic" d="M604 188 Q570 270 604 352 M604 188 Q638 270 604 352"/><line class="axis" x1="475" y1="305" x2="735" y2="305"/><circle class="point" cx="700" cy="305" r="6"/>',
-        "refracting": '<path class="optic" d="M665 185 Q610 270 665 355"/><line class="axis" x1="475" y1="270" x2="740" y2="270" stroke-dasharray="8 7"/><path class="accent" d="M480 205 L610 270 L738 315"/><path class="accent2" d="M566 270 A44 44 0 0 1 571 250 M654 270 A44 44 0 0 1 651 285"/><line class="callout" x1="610" y1="270" x2="720" y2="270"/>',
+        "mirror": '<path class="optic" d="M690 185 Q625 270 690 355"/><line class="axis" x1="475" y1="270" x2="735" y2="270" stroke-dasharray="8 7"/><line class="thin" x1="625" y1="190" x2="625" y2="350" stroke-dasharray="8 7"/><path class="accent" d="M480 205 L625 270 L480 335"/><path class="accent2" d="M580 270 A45 45 0 0 1 584 252 M580 270 A45 45 0 0 0 584 288"/><line class="callout" x1="625" y1="270" x2="720" y2="270"/><circle class="point" cx="625" cy="270" r="6"/><circle class="point" cx="672" cy="270" r="4"/><circle class="point" cx="720" cy="270" r="5"/>',
+        "lens": '<path class="accent" d="M482 235 L604 270 L700 305 L735 318"/><path class="optic" d="M604 188 Q585 270 604 352 M604 188 Q623 270 604 352"/><line class="thin" x1="604" y1="185" x2="604" y2="355" stroke-dasharray="7 6"/><line class="axis" x1="475" y1="305" x2="735" y2="305"/><circle class="point" cx="604" cy="270" r="5"/><circle class="point" cx="700" cy="305" r="6"/>',
+        "refracting": '<path class="optic" d="M700 175 A95 95 0 0 0 605 270 A95 95 0 0 0 700 365"/><line class="axis" x1="475" y1="270" x2="740" y2="270" stroke-dasharray="8 7"/><line class="thin" x1="579" y1="201" x2="657" y2="245" stroke-dasharray="7 6"/><path class="accent" d="M480 223 L618 223 L738 262"/><path class="accent2" d="M573 223 A45 45 0 0 1 579 201 M660 247 A48 48 0 0 0 664 238"/><line class="callout" x1="618" y1="223" x2="700" y2="270"/><circle class="point" cx="618" cy="223" r="6"/><circle class="point" cx="700" cy="270" r="5"/>',
         "cartesian_oval": '<path class="optic" d="M660 185 C585 210 585 330 660 355"/><path class="accent" d="M480 270 L625 205 L730 270 M480 270 L610 270 L730 270 M480 270 L625 335 L730 270"/><line class="axis" x1="475" y1="270" x2="740" y2="270" stroke-dasharray="8 7"/><circle class="point" cx="480" cy="270" r="7"/><circle class="point" cx="730" cy="270" r="7"/>',
-        "tir": '<rect class="layer1" x="480" y="215" width="260" height="145"/><line class="optic" x1="480" y1="215" x2="740" y2="215"/><line class="axis" x1="610" y1="180" x2="610" y2="350" stroke-dasharray="8 7"/><path class="accent" d="M500 345 L610 215 L720 345"/><path class="accent2" d="M610 180 C640 190 680 190 720 180"/>',
+        "tir": '<rect class="layer1" x="480" y="215" width="260" height="145"/><line class="optic" x1="480" y1="215" x2="740" y2="215"/><line class="axis" x1="610" y1="180" x2="610" y2="350" stroke-dasharray="8 7"/><path class="accent" d="M500 345 L610 215 L720 345"/><path class="accent2" stroke-dasharray="8 6" d="M575 345 L610 215 H735"/><path class="accent2" d="M610 243 A28 28 0 0 1 603 242 M610 267 A52 52 0 0 1 577 255"/><circle class="point" cx="610" cy="215" r="6"/>',
         "prism": '<path class="layer1" d="M535 350 L585 185 L665 350 Z"/><path class="accent" d="M480 270 L560 270 L640 305 L738 330"/><line class="axis" x1="475" y1="270" x2="740" y2="270" stroke-dasharray="8 7"/><path class="accent2" d="M574 220 A36 36 0 0 1 604 225"/>',
         "grin": '<rect class="layer1" x="530" y="190" width="135" height="160"/><line class="axis" x1="475" y1="270" x2="740" y2="270" stroke-dasharray="8 7"/><path class="accent" d="M480 215 H530 C575 215 610 235 665 270 L720 270 M480 325 H530 C575 325 610 305 665 270"/><circle class="point" cx="720" cy="270" r="6"/>',
         "matrix": '<rect class="iconbox" x="520" y="205" width="75" height="75"/><path class="thin" d="M557 205 V280 M520 242 H595"/><rect class="iconbox" x="625" y="205" width="75" height="75"/><path class="thin" d="M662 205 V280 M625 242 H700"/><path class="accent" d="M595 242 H625"/>',
         "wave": '<path class="accent" d="M478 270 C505 210 535 330 565 270 S625 210 655 270 S715 330 738 270"/><line class="axis" x1="478" y1="270" x2="738" y2="270"/>',
         "gaussian": '<path class="accent" d="M480 185 Q600 265 738 205 M480 355 Q600 275 738 335"/><line class="axis" x1="480" y1="270" x2="738" y2="270"/><line class="thin" x1="600" y1="235" x2="600" y2="305"/>',
-        "fourier": '<rect class="opticfill" x="500" y="205" width="18" height="130"/><path class="optic" d="M590 185 Q550 270 590 355 M590 185 Q630 270 590 355"/><circle class="point" cx="710" cy="270" r="13"/><path class="accent" d="M478 230 L590 230 L710 270 M478 310 L590 310 L710 270"/>',
+        "fourier": '<rect class="opticfill" x="500" y="205" width="18" height="130"/><path class="optic" d="M590 185 Q550 270 590 355 M590 185 Q630 270 590 355"/><line class="thin" x1="590" y1="182" x2="590" y2="358" stroke-dasharray="7 6"/><circle class="point" cx="710" cy="270" r="13"/><path class="accent" d="M478 230 L590 230 L710 270 M478 310 L590 310 L710 270"/>',
         "field": '<path class="accent" d="M480 255 C510 190 540 320 570 255 S630 190 660 255 S710 320 738 255"/><path class="accent2" d="M480 290 C510 225 540 355 570 290 S630 225 660 290 S710 355 738 290"/>',
         "polarization": '<ellipse class="accent" cx="535" cy="270" rx="52" ry="82"/><line class="optic" x1="610" y1="185" x2="610" y2="355"/><path class="accent2" d="M665 315 L710 225 M665 225 L710 315"/>',
         "multilayer": '<rect class="layer1" x="520" y="185" width="45" height="170"/><rect class="layer2" x="565" y="185" width="45" height="170"/><rect class="layer1" x="610" y="185" width="45" height="170"/><rect class="layer2" x="655" y="185" width="45" height="170"/><path class="accent" d="M475 235 L520 270 L475 305 M520 270 H735"/>',
-        "waveguide": '<rect class="layer2" x="478" y="190" width="260" height="55"/><rect class="layer1" x="478" y="245" width="260" height="55"/><rect class="layer2" x="478" y="300" width="260" height="55"/><path class="accent" d="M480 270 C520 220 555 320 595 270 S670 220 735 270"/>',
+        "waveguide": '<rect class="layer2" x="478" y="190" width="260" height="55"/><rect class="layer1" x="478" y="245" width="260" height="55"/><rect class="layer2" x="478" y="300" width="260" height="55"/><path class="accent" d="M480 270 L530 248 L580 297 L630 248 L680 297 L735 270"/>',
+        "fiber_acceptance": '<rect class="layer2" x="565" y="195" width="170" height="40"/><rect class="layer1" x="565" y="235" width="170" height="70"/><rect class="layer2" x="565" y="305" width="170" height="40"/><line class="optic" x1="565" y1="195" x2="565" y2="345"/><line class="axis" x1="475" y1="270" x2="740" y2="270" stroke-dasharray="8 7"/><line class="thin" x1="700" y1="270" x2="700" y2="340" stroke-dasharray="7 6"/><path class="accent2" stroke-dasharray="8 6" d="M480 190 L565 250 M480 350 L565 290"/><path class="accent" d="M480 190 L565 250 L700 305 L735 291"/><path class="accent2" d="M530 250 A35 35 0 0 1 536 230 M600 250 A35 35 0 0 1 597 263 M700 275 A30 30 0 0 0 672 294"/><circle class="point" cx="565" cy="250" r="5"/><circle class="point" cx="700" cy="305" r="5"/>',
+        "grin_fiber_acceptance": '<rect class="layer2" x="550" y="205" width="185" height="130"/><rect class="layer1" x="550" y="220" width="185" height="100"/><line class="optic" x1="550" y1="205" x2="550" y2="335"/><line class="axis" x1="475" y1="270" x2="740" y2="270" stroke-dasharray="8 7"/><path class="accent2" stroke-dasharray="8 6" d="M480 205 L550 245 M480 335 L550 295"/><path class="accent" d="M480 205 L550 245 C590 220 610 320 650 295 S705 230 735 250"/>',
         "fiber": '<circle class="layer2" cx="610" cy="270" r="105"/><circle class="layer1" cx="610" cy="270" r="62"/><path class="accent" d="M492 270 L548 235 L610 300 L672 235 L728 270"/>',
-        "resonator": '<path class="optic" d="M500 185 Q535 270 500 355 M720 185 Q685 270 720 355"/><path class="accent" d="M510 245 L710 295 M710 295 L510 245"/><path class="accent2" d="M515 270 C545 230 575 310 605 270 S665 230 705 270"/>',
+        "resonator": '<path class="optic" d="M500 185 Q535 270 500 355 M720 185 Q685 270 720 355"/><path class="accent" d="M535 270 H685"/><path class="accent2" d="M540 270 C555 230 570 310 585 270 S615 230 630 270 S660 230 680 270"/><circle class="point" cx="535" cy="270" r="5"/><circle class="point" cx="685" cy="270" r="5"/>',
         "statistical": '<path class="axis" d="M480 335 H738 M500 350 V180"/><path class="accent" d="M500 335 C535 332 550 300 575 245 C600 185 635 185 660 245 C685 300 700 332 738 335"/><path class="accent2" d="M510 285 C540 245 570 325 600 275 S660 235 705 295"/>',
         "quantum": '<path class="accent" d="M480 270 H575 M595 250 L625 280 M595 280 L625 250 M625 265 L718 205 M625 265 L718 330"/><circle class="point" cx="480" cy="270" r="11"/><circle class="point" cx="718" cy="205" r="11"/><circle class="point" cx="718" cy="330" r="11"/>',
         "atomic": '<path class="thin" d="M500 335 H720 M525 270 H695 M550 205 H670"/><path class="accent" d="M570 325 V220"/><path class="accent2" d="M645 215 V260"/>',
@@ -370,9 +390,11 @@ VISIBLE_VARIABLES = {
     "lens": ("n", "y", "R₁", "R₂", "f"),
     "refracting": ("n₁", "n₂", "θ₁", "θ₂", "y", "R", "z₁", "z₂"),
     "cartesian_oval": ("n₁", "n₂", "y", "z", "z₁", "z₂"),
-    "tir": ("n=3.6", "θᵢ", "θᶜ=16.13°"),
+    "tir": ("n=3.6", "nₒᵤₜ=1", "θᵢ", "θᶜ=16.13°"),
     "prism": ("d₀", "a", "n", "k₀", "kₓ", "θ"),
     "grin": ("n₀", "d₀", "a", "ρ", "f"),
+    "fiber_acceptance": ("n₀", "n₁", "n₂", "θₐ", "θᵣ", "θᶜ", "NA"),
+    "grin_fiber_acceptance": ("n₀", "a", "aₑ", "θ₀", "NA"),
     "matrix": ("A", "B", "C", "D", "y", "nθ", "y′", "nθ′", "d"),
     "wave": ("A", "k", "λ", "I"),
     "gaussian": ("W₀", "z₀", "q", "R"),
@@ -404,13 +426,15 @@ def variable_markup(category: str) -> str:
 
     labels = {
         "ray": '<text class="var" x="505" y="190">n₁</text><text class="var" x="690" y="342">n₂ &gt; n₁</text><text class="var" x="548" y="245">θ₁</text><text class="var" x="670" y="300">θ₂</text>',
-        "mirror": '<line class="callout" x1="505" y1="270" x2="505" y2="214"/><text class="var" x="492" y="242">y</text><text class="var" x="625" y="245">θᵢ</text><text class="var" x="625" y="305">θᵣ</text><text class="var" x="706" y="205">R</text><text class="var" x="590" y="292">f</text>',
+        "mirror": '<line class="callout" x1="505" y1="270" x2="505" y2="216"/><text class="var" x="492" y="242">y</text><text class="var" x="566" y="247">θᵢ</text><text class="var" x="566" y="306">θᵣ</text><text class="var" x="680" y="255">R</text><text class="var" x="672" y="300">f</text><text class="annotation" x="650" y="195">tangent at P</text><text class="annotation" x="535" y="287">local normal</text>',
         "lens": '<line class="callout" x1="500" y1="305" x2="500" y2="240"/><text class="var" x="487" y="270">y</text><text class="var" x="607" y="230">n</text><text class="var" x="555" y="205">R₁</text><text class="var" x="650" y="205">R₂</text><line class="callout" x1="604" y1="335" x2="700" y2="335"/><path class="tick" d="M604 329 V341 M700 329 V341"/><text class="var" x="652" y="355">f</text>',
-        "refracting": '<text class="var" x="500" y="190">n₁</text><text class="var" x="700" y="342">n₂</text><text class="var" x="548" y="245">θ₁</text><text class="var" x="670" y="300">θ₂</text><line class="callout" x1="595" y1="270" x2="595" y2="330"/><text class="var" x="582" y="312">y</text><text class="var" x="690" y="260">R</text><text class="var smallvar" x="530" y="325">z₁</text><text class="var smallvar" x="710" y="325">z₂</text>',
+        "refracting": '<text class="var" x="500" y="205">n₁</text><text class="var" x="710" y="335">n₂</text><text class="var" x="565" y="190">θ₁</text><text class="var" x="683" y="230">θ₂</text><line class="callout" x1="605" y1="223" x2="605" y2="270"/><path class="tick" d="M599 223 H611 M599 270 H611"/><text class="var" x="592" y="252">y</text><text class="var" x="660" y="270">R</text><text class="var smallvar" x="530" y="292">z₁</text><text class="var smallvar" x="675" y="302">z₂</text><text class="annotation" x="625" y="203">P</text><text class="annotation" x="620" y="180">local normal PC</text><text class="annotation" x="718" y="285">C</text>',
         "cartesian_oval": '<text class="var" x="510" y="190">n₁</text><text class="var" x="700" y="190">n₂</text><text class="var" x="600" y="205">y</text><text class="var" x="645" y="335">z</text><text class="var smallvar" x="525" y="300">z₁</text><text class="var smallvar" x="700" y="300">z₂</text>',
-        "tir": '<text class="var" x="520" y="335">n=3.6</text><text class="var" x="575" y="260">θᵢ</text><text class="var" x="670" y="205">θᶜ=16.13°</text>',
+        "tir": '<text class="var" x="520" y="325">n=3.6</text><text class="var" x="515" y="200">nₒᵤₜ=1</text><text class="var" x="548" y="282">θᵢ&gt;θᶜ</text><text class="var" x="650" y="255">θᶜ=16.13°</text><line class="callout" x1="625" y1="252" x2="605" y2="243"/><text class="annotation" x="680" y="203">critical ray: θₜ=90°</text>',
         "prism": '<text class="var" x="555" y="335">d₀</text><text class="var" x="590" y="215">a</text><text class="var" x="600" y="300">n</text><text class="var" x="500" y="255">k₀</text><text class="var" x="690" y="315">kₓ</text><text class="var" x="710" y="350">θ</text>',
         "grin": '<text class="var" x="590" y="255">n₀</text><text class="var" x="595" y="345">d₀</text><text class="var" x="545" y="210">a</text><text class="var" x="640" y="220">ρ</text><text class="var" x="700" y="255">f</text>',
+        "fiber_acceptance": '<text class="var" x="500" y="335">n₀</text><text class="var" x="610" y="280">n₁</text><text class="var" x="610" y="220">n₂</text><text class="var" x="520" y="225">θₐ</text><text class="var" x="615" y="260">θᵣ</text><text class="var" x="675" y="280">θᶜ</text><text class="var" x="500" y="195">NA</text>',
+        "grin_fiber_acceptance": '<text class="var" x="585" y="270">n₀</text><text class="var" x="610" y="220">a</text><text class="var" x="720" y="315">aₑ</text><text class="var" x="520" y="230">θ₀</text><text class="var" x="500" y="195">NA</text>',
         "matrix": '<text class="var smallvar" x="539" y="233">A</text><text class="var smallvar" x="576" y="233">B</text><text class="var smallvar" x="539" y="268">C</text><text class="var smallvar" x="576" y="268">D</text><text class="var smallvar" x="642" y="233">A</text><text class="var smallvar" x="680" y="233">B</text><text class="var smallvar" x="642" y="268">C</text><text class="var smallvar" x="680" y="268">D</text><text class="var" x="490" y="190">y, nθ</text><text class="var" x="685" y="310">y′, nθ′</text><text class="var" x="610" y="225">d</text>',
         "wave": '<text class="var" x="500" y="220">A</text><text class="var" x="530" y="315">λ</text><text class="var" x="650" y="215">k →</text><text class="var" x="705" y="315">I</text>',
         "gaussian": '<text class="var" x="575" y="225">W₀</text><text class="var" x="545" y="325">z₀</text><text class="var" x="620" y="300">q</text><text class="var" x="700" y="220">R</text>',
@@ -420,7 +444,7 @@ def variable_markup(category: str) -> str:
         "multilayer": '<text class="var smallvar" x="535" y="210">nᵢ</text><text class="var smallvar" x="542" y="345">dᵢ</text><text class="var" x="485" y="225">r</text><text class="var" x="715" y="255">t</text><text class="var" x="620" y="180">Λ</text>',
         "waveguide": '<text class="var" x="495" y="230">n₂</text><text class="var" x="495" y="285">n₁</text><text class="var" x="715" y="230">n₂</text><text class="var" x="560" y="330">d, a</text><text class="var" x="650" y="255">β →</text><text class="var" x="700" y="330">V</text>',
         "fiber": '<line class="callout" x1="610" y1="270" x2="672" y2="270"/><text class="var" x="640" y="260">a</text><text class="var" x="505" y="210">NA</text><text class="var" x="680" y="225">β →</text><text class="var" x="700" y="330">L</text>',
-        "resonator": '<line class="callout" x1="510" y1="365" x2="710" y2="365"/><path class="tick" d="M510 359 V371 M710 359 V371"/><text class="var" x="610" y="355">L</text><text class="var" x="485" y="205">R₁</text><text class="var" x="710" y="205">R₂</text><text class="var smallvar" x="530" y="230">g₁</text><text class="var smallvar" x="685" y="230">g₂</text><text class="var" x="620" y="215">ν</text>',
+        "resonator": '<line class="callout" x1="535" y1="365" x2="685" y2="365"/><path class="tick" d="M535 359 V371 M685 359 V371"/><text class="var" x="610" y="355">L</text><text class="var" x="500" y="205">R₁</text><text class="var" x="720" y="205">R₂</text><text class="var smallvar" x="550" y="230">g₁</text><text class="var smallvar" x="670" y="230">g₂</text><text class="var" x="620" y="215">ν</text>',
         "statistical": '<text class="var" x="540" y="210">J</text><text class="var" x="635" y="205">g</text><text class="var" x="555" y="315">Tᶜ</text><text class="var" x="680" y="315">Δν</text>',
         "quantum": '<text class="var" x="500" y="255">hν</text><text class="var" x="545" y="255">p →</text><text class="var" x="690" y="190">P</text><text class="var" x="690" y="350">σ</text>',
         "atomic": '<text class="var" x="715" y="330">Eᵢ</text><text class="var" x="552" y="270">ν</text><text class="var" x="690" y="260">Nᵢ</text><text class="var" x="690" y="195">T</text>',
@@ -451,6 +475,19 @@ def svg_text_block(text: str, x: int, y: int, width: int = 24) -> str:
     return f'<text class="label" x="{x}">{spans}</text>'
 
 
+def svg_left_text_block(
+    text: str, css_class: str, x: int, y: int, width: int = 115
+) -> str:
+    """Return wrapped, left-aligned text for the legend/check band."""
+
+    lines = textwrap.wrap(text, width=width, break_long_words=False) or [text]
+    spans = "".join(
+        f'<tspan x="{x}" y="{y + index * 22}">{html.escape(line)}</tspan>'
+        for index, line in enumerate(lines)
+    )
+    return f'<text class="{css_class}" x="{x}">{spans}</text>'
+
+
 def svg_for(identity: str, title: str, category: str, figure_number: int) -> str:
     meta = META[category]
     safe_title = html.escape(title)
@@ -462,12 +499,18 @@ def svg_for(identity: str, title: str, category: str, figure_number: int) -> str
     given_text = svg_text_block(meta.given, 195, 285, 22)
     model_text = svg_text_block(meta.model, 607, 390, 27)
     result_text = svg_text_block(meta.result, 1005, 285, 22)
+    legend_text = svg_left_text_block(
+        f"Variables labeled on model — {meta.variables}", "legend", 65, 462
+    )
+    check_text = svg_left_text_block(
+        f"Independent check — {meta.check}", "check", 65, 522
+    )
     return f'''<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc" data-category="{category}" data-figure="{figure_number}">
   <title id="title">Figure {figure_number} — {html.escape(identity)}: {safe_title}</title>
   <desc id="desc">{safe_desc}</desc>
   <defs>
     <style>
-      .bg{{fill:#f7fafc}}.card{{fill:#fff;stroke:#b9c7d6;stroke-width:2}}.band{{fill:#eaf2f8}}.figureid{{font:700 14px sans-serif;fill:#286f9e;letter-spacing:1.2px}}.head{{font:700 25px sans-serif;fill:#18324a}}.sub{{font:17px sans-serif;fill:#486581}}.tag{{font:700 16px sans-serif;fill:#286f9e;letter-spacing:1px}}.label{{font:700 20px sans-serif;fill:#243b53;text-anchor:middle}}.legend{{font:18px sans-serif;fill:#334e68}}.check{{font:17px sans-serif;fill:#486581}}.accent{{fill:none;stroke:#d9485f;stroke-width:5;stroke-linecap:round;stroke-linejoin:round}}.accent2{{fill:none;stroke:#8b5cf6;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}}.optic{{fill:none;stroke:#286f9e;stroke-width:5}}.thin{{fill:none;stroke:#61788a;stroke-width:3}}.axis{{fill:none;stroke:#8295a5;stroke-width:2}}.point{{fill:#173f5f}}.iconbox{{fill:#edf7ff;stroke:#286f9e;stroke-width:3}}.opticfill{{fill:#286f9e}}.layer1{{fill:#d9ecff;stroke:#286f9e;stroke-width:2}}.layer2{{fill:#e7f7ee;stroke:#2b7a78;stroke-width:2}}.icontext{{font:italic 22px serif;fill:#6d28d9}}.var{{font:italic 20px serif;fill:#54278f;text-anchor:middle;paint-order:stroke;stroke:#fff;stroke-width:5px;stroke-linejoin:round}}.smallvar{{font-size:17px}}.callout{{fill:none;stroke:#54278f;stroke-width:2}}.tick{{fill:none;stroke:#54278f;stroke-width:2}}.flow{{stroke:#334e68;stroke-width:3;marker-end:url(#arrow)}}
+      .bg{{fill:#f7fafc}}.card{{fill:#fff;stroke:#b9c7d6;stroke-width:2}}.band{{fill:#eaf2f8}}.figureid{{font:700 14px sans-serif;fill:#286f9e;letter-spacing:1.2px}}.head{{font:700 25px sans-serif;fill:#18324a}}.sub{{font:17px sans-serif;fill:#486581}}.tag{{font:700 16px sans-serif;fill:#286f9e;letter-spacing:1px}}.label{{font:700 20px sans-serif;fill:#243b53;text-anchor:middle}}.legend{{font:16px sans-serif;fill:#334e68}}.check{{font:15px sans-serif;fill:#486581}}.accent{{fill:none;stroke:#d9485f;stroke-width:5;stroke-linecap:round;stroke-linejoin:round}}.accent2{{fill:none;stroke:#8b5cf6;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}}.optic{{fill:none;stroke:#286f9e;stroke-width:5}}.thin{{fill:none;stroke:#61788a;stroke-width:3}}.axis{{fill:none;stroke:#8295a5;stroke-width:2}}.point{{fill:#173f5f}}.iconbox{{fill:#edf7ff;stroke:#286f9e;stroke-width:3}}.opticfill{{fill:#286f9e}}.layer1{{fill:#d9ecff;stroke:#286f9e;stroke-width:2}}.layer2{{fill:#e7f7ee;stroke:#2b7a78;stroke-width:2}}.icontext{{font:italic 22px serif;fill:#6d28d9}}.var{{font:italic 20px serif;fill:#54278f;text-anchor:middle;paint-order:stroke;stroke:#fff;stroke-width:5px;stroke-linejoin:round}}.smallvar{{font-size:17px}}.annotation{{font:14px sans-serif;fill:#486581;text-anchor:middle;paint-order:stroke;stroke:#fff;stroke-width:4px}}.callout{{fill:none;stroke:#54278f;stroke-width:2}}.tick{{fill:none;stroke:#54278f;stroke-width:2}}.flow{{stroke:#334e68;stroke-width:3;marker-end:url(#arrow)}}
     </style>
     <marker id="arrow" markerUnits="userSpaceOnUse" markerWidth="13" markerHeight="13" refX="13" refY="6.5" orient="auto"><path d="M0,0 L13,6.5 L0,13 Z" fill="#334e68"/></marker>
   </defs>
@@ -490,9 +533,9 @@ def svg_for(identity: str, title: str, category: str, figure_number: int) -> str
   {icon_markup(category)}
   <g id="variable-labels">{variable_markup(category)}</g>
 
-  <rect class="band" x="45" y="440" width="1110" height="85" rx="12"/>
-  <text class="legend" x="65" y="474">Variables labeled on model — {html.escape(meta.variables)}</text>
-  <text class="check" x="65" y="507">Independent check — {html.escape(meta.check)}</text>
+  <rect class="band" x="45" y="430" width="1110" height="115" rx="12"/>
+  {legend_text}
+  {check_text}
 </svg>
 '''
 

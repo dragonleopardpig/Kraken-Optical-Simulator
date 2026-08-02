@@ -65,9 +65,11 @@ EXPECTED_VISIBLE_VARIABLES = {
     "lens": ("n", "y", "R₁", "R₂", "f"),
     "refracting": ("n₁", "n₂", "θ₁", "θ₂", "y", "R", "z₁", "z₂"),
     "cartesian_oval": ("n₁", "n₂", "y", "z", "z₁", "z₂"),
-    "tir": ("n=3.6", "θᵢ", "θᶜ=16.13°"),
+    "tir": ("n=3.6", "nₒᵤₜ=1", "θᵢ", "θᶜ=16.13°"),
     "prism": ("d₀", "a", "n", "k₀", "kₓ", "θ"),
     "grin": ("n₀", "d₀", "a", "ρ", "f"),
+    "fiber_acceptance": ("n₀", "n₁", "n₂", "θₐ", "θᵣ", "θᶜ", "NA"),
+    "grin_fiber_acceptance": ("n₀", "a", "aₑ", "θ₀", "NA"),
     "matrix": ("A", "B", "C", "D", "y", "nθ", "y′", "nθ′", "d"),
     "wave": ("A", "k", "λ", "I"),
     "gaussian": ("W₀", "z₀", "q", "R"),
@@ -91,6 +93,52 @@ EXPECTED_VISIBLE_VARIABLES = {
     "nonlinear": ("ω₁", "ω₂", "ω₃", "k₁", "k₂", "k₃", "χ⁽ⁿ⁾", "Δk"),
     "pulse": ("T", "ζ", "Dν", "z"),
     "interconnect": ("M", "L", "B", "λᵢ", "V"),
+}
+
+CATEGORY_GEOMETRY_TOKENS = {
+    "ray": (
+        'd="M480 205 L610 270 L738 315"',
+        'd="M566 270 A44 44 0 0 1 571 250 M654 270 A44 44 0 0 1 651 285"',
+    ),
+    "mirror": (
+        'd="M690 185 Q625 270 690 355"',
+        'x1="625" y1="190" x2="625" y2="350"',
+        'd="M480 205 L625 270 L480 335"',
+    ),
+    "lens": (
+        'x1="604" y1="185" x2="604" y2="355"',
+        'd="M482 235 L604 270 L700 305 L735 318"',
+    ),
+    "refracting": (
+        'd="M700 175 A95 95 0 0 0 605 270 A95 95 0 0 0 700 365"',
+        'd="M480 223 L618 223 L738 262"',
+        'cx="618" cy="223" r="6"',
+    ),
+    "tir": (
+        'd="M500 345 L610 215 L720 345"',
+        'd="M575 345 L610 215 H735"',
+        'd="M610 243 A28 28 0 0 1 603 242 M610 267 A52 52 0 0 1 577 255"',
+    ),
+    "fiber_acceptance": (
+        'd="M480 190 L565 250 L700 305 L735 291"',
+        'x="565" y="235" width="170" height="70"',
+        'x1="700" y1="270" x2="700" y2="340"',
+    ),
+    "grin_fiber_acceptance": (
+        'd="M480 205 L550 245 C590 220 610 320 650 295 S705 230 735 250"',
+    ),
+    "fourier": (
+        'x1="590" y1="182" x2="590" y2="358"',
+        'd="M478 230 L590 230 L710 270 M478 310 L590 310 L710 270"',
+    ),
+    "resonator": (
+        'd="M535 270 H685"',
+        'cx="535" cy="270" r="5"',
+        'cx="685" cy="270" r="5"',
+    ),
+    "waveguide": (
+        'd="M480 270 L530 248 L580 297 L630 248 L680 297 L735 270"',
+    ),
 }
 
 
@@ -222,16 +270,12 @@ def main() -> None:
                             f"{identity} lists {variable} but does not label it "
                             "on the model"
                         )
-                if category in {"ray", "refracting"}:
-                    for ray_geometry in (
-                        'd="M480 205 L610 270 L738 315"',
-                        'd="M566 270 A44 44 0 0 1 571 250 M654 270 A44 44 0 0 1 651 285"',
-                    ):
-                        if ray_geometry not in exercise_svg:
-                            fail(
-                                f"{identity} refraction-angle regression: "
-                                f"missing {ray_geometry}"
-                            )
+                for geometry_token in CATEGORY_GEOMETRY_TOKENS.get(category, ()):
+                    if geometry_token not in exercise_svg:
+                        fail(
+                            f"{identity} {category} geometry regression: "
+                            f"missing {geometry_token}"
+                        )
                 illustrated_exercises += 1
 
             # Every displayed equation must carry a Sphinx label immediately
@@ -324,9 +368,11 @@ def main() -> None:
     for geometry_fix in (
         "Figure 1 — Geometry for deriving Snell's law",
         'markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" refX="12"',
+        '<path class="ray" marker-end="url(#rayArrow)" d="M170 125 L590 400 L850 675"/>',
+        "medium 2: n₂ &gt; n₁ (illustrated case)",
         '<text class="label" x="620" y="370">P(x)</text>',
-        '<path class="arc" d="M590 470 A70 70 0 0 0 650 437"/>',
-        '<line class="measure" x1="590" y1="690" x2="1050" y2="690"/>',
+        '<path class="arc" d="M590 470 A70 70 0 0 0 638 451"/>',
+        '<line class="measure" x1="590" y1="690" x2="850" y2="690"/>',
         '<text class="small" x="250" y="135">ℓ₁ = √(d₁² + x²)</text>',
     ):
         if geometry_fix not in svg_text:
