@@ -68,7 +68,7 @@ EXPECTED_VISIBLE_VARIABLES = {
     "lens": ("n", "y", "R₁", "R₂", "f"),
     "refracting": ("n₁", "n₂", "θ₁", "θ₂", "y", "R", "z₁", "z₂"),
     "cartesian_oval": ("n₁", "n₂", "y", "z", "z₁", "z₂"),
-    "tir": ("n=3.6", "nₒᵤₜ=1", "θᵢ", "θᶜ=16.13°"),
+    "tir": ("n=3.6", "nₒᵤₜ=1", "θᵢ", "θᶜ=16.13°", "Ωᶜ", "ηₑₓₜ=11.81%"),
     "prism": ("d₀", "a", "n", "k₀", "kₓ", "θ"),
     "grin": ("n₀", "d₀", "a", "ρ", "f"),
     "fiber_acceptance": ("n₀", "n₁", "n₂", "θₐ", "θᵣ", "θᶜ", "NA"),
@@ -118,9 +118,9 @@ CATEGORY_GEOMETRY_TOKENS = {
         'cx="618" cy="223" r="6"',
     ),
     "tir": (
-        'd="M500 345 L610 215 L720 345"',
-        'd="M575 345 L610 215 H735"',
-        'd="M610 243 A28 28 0 0 1 603 242 M610 267 A52 52 0 0 1 577 255"',
+        'd="M610 315 L580 215 L640 215 Z"',
+        'd="M610 315 L580 215 M610 315 L640 215"',
+        'd="M610 315 L610 175 M520 345 L570 215 L650 345"',
     ),
     "fiber_acceptance": (
         'd="M480 190 L565 250 L700 305 L735 291"',
@@ -225,6 +225,15 @@ def main() -> None:
                 fail(f"{identity} has no worked derivation")
             if "Check.**" not in body and "Checks.**" not in body:
                 fail(f"{identity} has no verification block")
+            if identity == "Exercise 1.2-6":
+                for required_part in (
+                    "**(a) Escape cone and trapped rays.**",
+                    "**(b) Extracted-power fraction.**",
+                    "fop-exercise-1-2-6-extraction-fraction",
+                    r"\boxed{11.81\%}",
+                ):
+                    if required_part not in body:
+                        fail(f"{identity} omits {required_part}")
             structured_entries += 1
 
             if kind == "Exercise" and (id_chapter, section, item) != ("1", "1", "1"):
@@ -352,6 +361,7 @@ def main() -> None:
         "fop-formula-stationary",
         "fop-formula-fermat",
         "fop-formula-trigonometry",
+        "fop-formula-solid-angle",
         "fop-formula-fourier",
         "fop-formula-matrices",
         "fop-formula-vector-calculus",

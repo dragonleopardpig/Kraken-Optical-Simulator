@@ -341,7 +341,24 @@ gives
 Exercise 1.2-6 — Light trapped in a high-index block
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  A rectangular parallelepiped of
+refractive index :math:`n` is surrounded by air
+(:math:`n_{\mathrm{out}}=1`).  Light is generated isotropically inside it.
+We shall answer the two requested parts separately.
+
+* :math:`\theta_i` is a ray's incidence angle, measured from the outward
+  normal to the face that it reaches.
+* :math:`\theta_c` is the critical angle and therefore the half-angle of one
+  face's internal escape cone.  The cone's full apex angle is
+  :math:`2\theta_c`.
+* :math:`\Omega_c` is the solid angle of one escape cone.
+* :math:`P_{\mathrm{ext}}/P_{\mathrm{tot}}` is the fraction of the
+  isotropically generated power lying in all escape cones.
+
+The calculation uses ideal geometrical optics: the faces are perfectly
+parallel, and absorption, scattering, and Fresnel reflection below the
+critical angle are neglected.  Thus part (b) gives the maximum geometrical
+extraction fraction under the exercise's assumptions.
 
 .. _fop-exercise-1-2-6-illustration:
 
@@ -355,24 +372,106 @@ Exercise 1.2-6 — Light trapped in a high-index block
    result, variable meanings, and an independent verification route. Every
    symbol in the variable strip is labeled on the model itself.
 
-**Step 2 — Mathematical formulas used.**  The working uses :ref:`trigonometric and small-angle identities <fop-formula-trigonometry>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+**Step 2 — Mathematical formulas used.**  The working uses Snell's law and
+the :ref:`trigonometric identities <fop-formula-trigonometry>`, the
+:ref:`solid angle of a circular cone <fop-formula-solid-angle>`, and
+:ref:`algebraic rearrangement and limiting checks <fop-formula-algebra>`.
 
-**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+**Step 3 — Worked derivation.**
 
-Only rays within the internal escape cone
-:math:`\theta_c=\sin^{-1}(1/n)` leave a face; the rest undergo total internal
-reflection.  For GaAs, :math:`n=3.6`, so
-:math:`\boxed{\theta_c=16.13^\circ}` (a full cone of :math:`32.26^\circ`).
+**(a) Escape cone and trapped rays.**  At the limiting ray, the transmitted
+angle is :math:`\theta_t=90^\circ`.  Snell's law at an interior-to-air face
+therefore becomes
 
-**Step 4 — State the numbered result.**  The principal result obtained in the working is
+.. math::
+   :label: fop-exercise-1-2-6-critical-angle
+
+   n\sin\theta_c
+   =n_{\mathrm{out}}\sin 90^\circ
+   =1,
+   \qquad
+   \theta_c=\sin^{-1}\!\left(\frac{1}{n}\right).
+
+Rays with :math:`0\leq\theta_i<\theta_c` lie inside that face's escape cone
+and refract into air.  Rays with :math:`\theta_i>\theta_c` undergo total
+internal reflection.  In the ideal parallel-sided block, directions outside
+all six escape cones continue to reflect and remain trapped.  The equality
+:math:`\theta_i=\theta_c` is the limiting ray traveling along the surface.
+
+For GaAs, :math:`n=3.6`, so the cone half-angle and full apex angle are
+
+.. math::
+   :label: fop-exercise-1-2-6-gaas-cone
+
+   \theta_c
+   =\sin^{-1}\!\left(\frac{1}{3.6}\right)
+   =16.1276^\circ\simeq16.13^\circ,
+   \qquad
+   2\theta_c\simeq32.26^\circ.
+
+**(b) Extracted-power fraction.**  For an isotropic source, power per unit
+solid angle is constant.  Integrating over the circular cone about one face
+normal gives
+
+.. math::
+   :label: fop-exercise-1-2-6-one-cone
+
+   \Omega_c
+   =\int_0^{2\pi}\!\int_0^{\theta_c}
+      \sin\theta\,d\theta\,d\phi
+   =2\pi\left(1-\cos\theta_c\right).
+
+The six face normals occur in three opposite pairs and adjacent normals are
+separated by :math:`90^\circ`.  The condition :math:`n>\sqrt2` gives
+:math:`\theta_c<45^\circ`, so adjacent escape cones do not overlap.  Their
+solid angles can therefore be added without double counting:
+
+.. math::
+   :label: fop-exercise-1-2-6-extraction-fraction
+
+   \frac{P_{\mathrm{ext}}}{P_{\mathrm{tot}}}
+   =\frac{6\Omega_c}{4\pi}
+   =3\left(1-\cos\theta_c\right)
+   =3\left(1-\sqrt{1-\frac{1}{n^2}}\right).
+
+Here we used the positive root because
+:math:`0<\theta_c<90^\circ`.  Substitution for GaAs gives
+
+.. math::
+   :label: fop-exercise-1-2-6-gaas-extraction
+
+   \frac{P_{\mathrm{ext}}}{P_{\mathrm{tot}}}
+   =3\left(1-\sqrt{1-\frac{1}{3.6^2}}\right)
+   =0.1180639
+   \simeq\boxed{11.81\%}.
+
+**Step 4 — State the numbered results.**  Both requested answers are
 
 .. math::
    :label: fop-exercise-1-2-6-result
 
-   \boxed{\theta_c=16.13^\circ}
+   \begin{aligned}
+   &\boxed{\text{(a)}\quad
+      \theta_c=16.13^\circ\ \text{(half-angle)},\quad
+      2\theta_c=32.26^\circ},\\[6pt]
+   &\boxed{\text{(b)}\quad
+      \frac{P_{\mathrm{ext}}}{P_{\mathrm{tot}}}=11.81\%}.
+   \end{aligned}
 
+**Step 5 — Checks.**
 
-**Step 5 — Check.**  Equation :eq:`fop-exercise-1-2-6-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
+* Substitution gives
+  :math:`3.6\sin(16.1276^\circ)=1.00000`, as required for a critical ray at
+  a GaAs-air boundary.
+* One cone occupies :math:`\Omega_c=0.24727\ \mathrm{sr}`; six cones occupy
+  :math:`1.48364\ \mathrm{sr}`.  Dividing by
+  :math:`4\pi=12.56637\ \mathrm{sr}` again gives :math:`0.118064`.
+* Since :math:`3.6>\sqrt2`, the GaAs half-angle is less than
+  :math:`45^\circ`; hence the six-cone, no-overlap assumption is valid.
+* For large :math:`n`, the square-root expansion gives
+  :math:`P_{\mathrm{ext}}/P_{\mathrm{tot}}\simeq3/(2n^2)`.  At
+  :math:`n=3.6` this is :math:`0.1157`, close to the exact :math:`0.1181` and
+  of the expected small magnitude.
 
 Exercise 1.3-1 — A SELFOC slab as a lens
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

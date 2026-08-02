@@ -116,6 +116,27 @@ The first nonzero Taylor terms about :math:`x=0` are
 These approximations require a dimensionless :math:`|x|\ll1` (angles in
 radians).
 
+.. _fop-formula-solid-angle:
+
+Solid angle and circular cones
+------------------------------
+
+On a unit sphere, polar angle :math:`\theta` and azimuth :math:`\phi` give
+the differential solid angle :math:`d\Omega=\sin\theta\,d\theta\,d\phi`.
+The solid angle of a circular cone with half-angle :math:`\alpha` is therefore
+
+.. math::
+   :label: fop-formula-circular-cone-solid-angle
+
+   \Omega_{\mathrm{cone}}
+   =\int_0^{2\pi}\!\int_0^\alpha
+      \sin\theta\,d\theta\,d\phi
+   =2\pi(1-\cos\alpha).
+
+The full sphere contains :math:`4\pi` steradians.  For an isotropic source,
+the fraction of its power in any non-overlapping collection of directions is
+the collection's total solid angle divided by :math:`4\pi`.
+
 .. _fop-formula-exponentials:
 
 Exponentials, logarithms, and complex phasors

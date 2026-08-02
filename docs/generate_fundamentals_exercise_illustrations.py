@@ -245,11 +245,11 @@ META["cartesian_oval"] = DiagramMeta(
     "equal optical path for upper, axial, and lower rays",
 )
 META["tir"] = DiagramMeta(
-    "high-index block and internal ray",
-    "total internal reflection",
-    "trapped reflected ray",
-    "n=3.6: block index • nₒᵤₜ=1: outside index • θᵢ: incidence angle • θᶜ=16.13°: critical angle",
-    "θᵢ>θᶜ gives no propagating transmitted ray",
+    "isotropic light in an n=3.6 block",
+    "six escape cones; other rays undergo TIR",
+    "(a) θᶜ=16.13°; 2θᶜ=32.26° • (b) ηₑₓₜ=11.81%",
+    "n=3.6: block index • nₒᵤₜ=1: air • θᵢ: incidence angle • θᶜ=16.13°: cone half-angle • Ωᶜ: one-cone solid angle • ηₑₓₜ: extracted fraction",
+    "6Ωᶜ/(4π)=ηₑₓₜ; n>√2 makes the six cones disjoint",
 )
 META["prism"] = DiagramMeta(
     "axial plane wave and wedge",
@@ -362,7 +362,7 @@ def icon_markup(category: str) -> str:
         "lens": '<path class="accent" d="M482 235 L604 270 L700 305 L735 318"/><path class="optic" d="M604 188 Q585 270 604 352 M604 188 Q623 270 604 352"/><line class="thin" x1="604" y1="185" x2="604" y2="355" stroke-dasharray="7 6"/><line class="axis" x1="475" y1="305" x2="735" y2="305"/><circle class="point" cx="604" cy="270" r="5"/><circle class="point" cx="700" cy="305" r="6"/>',
         "refracting": '<path class="optic" d="M700 175 A95 95 0 0 0 605 270 A95 95 0 0 0 700 365"/><line class="axis" x1="475" y1="270" x2="740" y2="270" stroke-dasharray="8 7"/><line class="thin" x1="579" y1="201" x2="657" y2="245" stroke-dasharray="7 6"/><path class="accent" d="M480 223 L618 223 L738 262"/><path class="accent2" d="M573 223 A45 45 0 0 1 579 201 M660 247 A48 48 0 0 0 664 238"/><line class="callout" x1="618" y1="223" x2="700" y2="270"/><circle class="point" cx="618" cy="223" r="6"/><circle class="point" cx="700" cy="270" r="5"/>',
         "cartesian_oval": '<path class="optic" d="M660 185 C585 210 585 330 660 355"/><path class="accent" d="M480 270 L625 205 L730 270 M480 270 L610 270 L730 270 M480 270 L625 335 L730 270"/><line class="axis" x1="475" y1="270" x2="740" y2="270" stroke-dasharray="8 7"/><circle class="point" cx="480" cy="270" r="7"/><circle class="point" cx="730" cy="270" r="7"/>',
-        "tir": '<rect class="layer1" x="480" y="215" width="260" height="145"/><line class="optic" x1="480" y1="215" x2="740" y2="215"/><line class="axis" x1="610" y1="180" x2="610" y2="350" stroke-dasharray="8 7"/><path class="accent" d="M500 345 L610 215 L720 345"/><path class="accent2" stroke-dasharray="8 6" d="M575 345 L610 215 H735"/><path class="accent2" d="M610 243 A28 28 0 0 1 603 242 M610 267 A52 52 0 0 1 577 255"/><circle class="point" cx="610" cy="215" r="6"/>',
+        "tir": '<rect class="layer1" x="480" y="215" width="260" height="145"/><line class="optic" x1="480" y1="215" x2="740" y2="215"/><path class="layer2" opacity="0.48" d="M610 315 L580 215 L640 215 Z"/><line class="axis" x1="610" y1="175" x2="610" y2="345" stroke-dasharray="8 7"/><path class="accent2" stroke-dasharray="8 6" d="M610 315 L580 215 M610 315 L640 215"/><path class="accent" d="M610 315 L610 175 M520 345 L570 215 L650 345"/><path class="accent2" d="M610 280 A35 35 0 0 1 620 282"/><circle class="point" cx="610" cy="315" r="6"/>',
         "prism": '<path class="layer1" d="M535 350 L585 185 L665 350 Z"/><path class="accent" d="M480 270 L560 270 L640 305 L738 330"/><line class="axis" x1="475" y1="270" x2="740" y2="270" stroke-dasharray="8 7"/><path class="accent2" d="M574 220 A36 36 0 0 1 604 225"/>',
         "grin": '<rect class="layer1" x="530" y="190" width="135" height="160"/><line class="axis" x1="475" y1="270" x2="740" y2="270" stroke-dasharray="8 7"/><path class="accent" d="M480 215 H530 C575 215 610 235 665 270 L720 270 M480 325 H530 C575 325 610 305 665 270"/><circle class="point" cx="720" cy="270" r="6"/>',
         "matrix": '<rect class="iconbox" x="520" y="205" width="75" height="75"/><path class="thin" d="M557 205 V280 M520 242 H595"/><rect class="iconbox" x="625" y="205" width="75" height="75"/><path class="thin" d="M662 205 V280 M625 242 H700"/><path class="accent" d="M595 242 H625"/>',
@@ -400,7 +400,7 @@ VISIBLE_VARIABLES = {
     "lens": ("n", "y", "R₁", "R₂", "f"),
     "refracting": ("n₁", "n₂", "θ₁", "θ₂", "y", "R", "z₁", "z₂"),
     "cartesian_oval": ("n₁", "n₂", "y", "z", "z₁", "z₂"),
-    "tir": ("n=3.6", "nₒᵤₜ=1", "θᵢ", "θᶜ=16.13°"),
+    "tir": ("n=3.6", "nₒᵤₜ=1", "θᵢ", "θᶜ=16.13°", "Ωᶜ", "ηₑₓₜ=11.81%"),
     "prism": ("d₀", "a", "n", "k₀", "kₓ", "θ"),
     "grin": ("n₀", "d₀", "a", "ρ", "f"),
     "fiber_acceptance": ("n₀", "n₁", "n₂", "θₐ", "θᵣ", "θᶜ", "NA"),
@@ -440,7 +440,7 @@ def variable_markup(category: str) -> str:
         "lens": '<line class="callout" x1="500" y1="305" x2="500" y2="240"/><text class="var" x="487" y="270">y</text><text class="var" x="607" y="230">n</text><text class="var" x="555" y="205">R₁</text><text class="var" x="650" y="205">R₂</text><line class="callout" x1="604" y1="335" x2="700" y2="335"/><path class="tick" d="M604 329 V341 M700 329 V341"/><text class="var" x="652" y="355">f</text>',
         "refracting": '<text class="var" x="500" y="205">n₁</text><text class="var" x="710" y="335">n₂</text><text class="var" x="565" y="190">θ₁</text><text class="var" x="683" y="230">θ₂</text><line class="callout" x1="605" y1="223" x2="605" y2="270"/><path class="tick" d="M599 223 H611 M599 270 H611"/><text class="var" x="592" y="252">y</text><text class="var" x="660" y="270">R</text><text class="var smallvar" x="530" y="292">z₁</text><text class="var smallvar" x="675" y="302">z₂</text><text class="annotation" x="625" y="203">P</text><text class="annotation" x="620" y="180">local normal PC</text><text class="annotation" x="718" y="285">C</text>',
         "cartesian_oval": '<text class="var" x="510" y="190">n₁</text><text class="var" x="700" y="190">n₂</text><text class="var" x="600" y="205">y</text><text class="var" x="645" y="335">z</text><text class="var smallvar" x="525" y="300">z₁</text><text class="var smallvar" x="700" y="300">z₂</text>',
-        "tir": '<text class="var" x="520" y="325">n=3.6</text><text class="var" x="515" y="200">nₒᵤₜ=1</text><text class="var" x="548" y="282">θᵢ&gt;θᶜ</text><text class="var" x="650" y="255">θᶜ=16.13°</text><line class="callout" x1="625" y1="252" x2="605" y2="243"/><text class="annotation" x="680" y="203">critical ray: θₜ=90°</text>',
+        "tir": '<text class="var" x="700" y="245">n=3.6</text><text class="var" x="515" y="200">nₒᵤₜ=1</text><text class="var smallvar" x="660" y="285">θᶜ=16.13°</text><text class="var" x="625" y="255">Ωᶜ</text><text class="var smallvar" x="680" y="335">ηₑₓₜ=11.81%</text><text class="annotation" x="684" y="203">escape cone at one of 6 faces</text><text class="annotation" x="525" y="245">θᵢ&gt;θᶜ: TIR</text>',
         "prism": '<text class="var" x="555" y="335">d₀</text><text class="var" x="590" y="215">a</text><text class="var" x="600" y="300">n</text><text class="var" x="500" y="255">k₀</text><text class="var" x="690" y="315">kₓ</text><text class="var" x="710" y="350">θ</text>',
         "grin": '<text class="var" x="590" y="255">n₀</text><text class="var" x="595" y="345">d₀</text><text class="var" x="545" y="210">a</text><text class="var" x="640" y="220">ρ</text><text class="var" x="700" y="255">f</text>',
         "fiber_acceptance": '<text class="var" x="500" y="335">n₀</text><text class="var" x="610" y="280">n₁</text><text class="var" x="610" y="220">n₂</text><text class="var" x="520" y="225">θₐ</text><text class="var" x="615" y="260">θᵣ</text><text class="var" x="675" y="280">θᶜ</text><text class="var" x="500" y="195">NA</text>',

@@ -18,15 +18,15 @@
   <text class="tag" x="70" y="153">GIVEN / DEFINITIONS</text>
   <text class="tag" x="475" y="153">MODEL / OPERATION</text>
   <text class="tag" x="880" y="153">RESULT / INTERPRETATION</text>
-  <text class="label" x="195"><tspan x="195" y="272">high-index block and</tspan><tspan x="195" y="299">internal ray</tspan></text>
-  <text class="label" x="607"><tspan x="607" y="390">total internal reflection</tspan></text>
-  <text class="label" x="1005"><tspan x="1005" y="285">trapped reflected ray</tspan></text>
+  <text class="label" x="195"><tspan x="195" y="272">isotropic light in an</tspan><tspan x="195" y="299">n=3.6 block</tspan></text>
+  <text class="label" x="607"><tspan x="607" y="377">six escape cones; other</tspan><tspan x="607" y="404">rays undergo TIR</tspan></text>
+  <text class="label" x="1005"><tspan x="1005" y="258">(a) θᶜ=16.13°;</tspan><tspan x="1005" y="285">2θᶜ=32.26° • (b)</tspan><tspan x="1005" y="312">ηₑₓₜ=11.81%</tspan></text>
   <line class="flow" x1="345" y1="270" x2="440" y2="270"/>
   <line class="flow" x1="765" y1="270" x2="845" y2="270"/>
-  <rect class="layer1" x="480" y="215" width="260" height="145"/><line class="optic" x1="480" y1="215" x2="740" y2="215"/><line class="axis" x1="610" y1="180" x2="610" y2="350" stroke-dasharray="8 7"/><path class="accent" d="M500 345 L610 215 L720 345"/><path class="accent2" stroke-dasharray="8 6" d="M575 345 L610 215 H735"/><path class="accent2" d="M610 243 A28 28 0 0 1 603 242 M610 267 A52 52 0 0 1 577 255"/><circle class="point" cx="610" cy="215" r="6"/>
-  <g id="variable-labels"><text class="var" x="520" y="325">n=3.6</text><text class="var" x="515" y="200">nₒᵤₜ=1</text><text class="var" x="548" y="282">θᵢ&gt;θᶜ</text><text class="var" x="650" y="255">θᶜ=16.13°</text><line class="callout" x1="625" y1="252" x2="605" y2="243"/><text class="annotation" x="680" y="203">critical ray: θₜ=90°</text></g>
+  <rect class="layer1" x="480" y="215" width="260" height="145"/><line class="optic" x1="480" y1="215" x2="740" y2="215"/><path class="layer2" opacity="0.48" d="M610 315 L580 215 L640 215 Z"/><line class="axis" x1="610" y1="175" x2="610" y2="345" stroke-dasharray="8 7"/><path class="accent2" stroke-dasharray="8 6" d="M610 315 L580 215 M610 315 L640 215"/><path class="accent" d="M610 315 L610 175 M520 345 L570 215 L650 345"/><path class="accent2" d="M610 280 A35 35 0 0 1 620 282"/><circle class="point" cx="610" cy="315" r="6"/>
+  <g id="variable-labels"><text class="var" x="700" y="245">n=3.6</text><text class="var" x="515" y="200">nₒᵤₜ=1</text><text class="var smallvar" x="660" y="285">θᶜ=16.13°</text><text class="var" x="625" y="255">Ωᶜ</text><text class="var smallvar" x="680" y="335">ηₑₓₜ=11.81%</text><text class="annotation" x="684" y="203">escape cone at one of 6 faces</text><text class="annotation" x="525" y="245">θᵢ&gt;θᶜ: TIR</text></g>
 
   <rect class="band" x="45" y="430" width="1110" height="115" rx="12"/>
-  <text class="legend" x="65"><tspan x="65" y="462">Variables labeled on model — n=3.6: block index • nₒᵤₜ=1: outside index • θᵢ: incidence angle • θᶜ=16.13°: critical</tspan><tspan x="65" y="484">angle</tspan></text>
-  <text class="check" x="65"><tspan x="65" y="522">Independent check — θᵢ&gt;θᶜ gives no propagating transmitted ray</tspan></text>
+  <text class="legend" x="65"><tspan x="65" y="462">Variables labeled on model — n=3.6: block index • nₒᵤₜ=1: air • θᵢ: incidence angle • θᶜ=16.13°: cone half-angle •</tspan><tspan x="65" y="484">Ωᶜ: one-cone solid angle • ηₑₓₜ: extracted fraction</tspan></text>
+  <text class="check" x="65"><tspan x="65" y="522">Independent check — 6Ωᶜ/(4π)=ηₑₓₜ; n&gt;√2 makes the six cones disjoint</tspan></text>
 </svg>
