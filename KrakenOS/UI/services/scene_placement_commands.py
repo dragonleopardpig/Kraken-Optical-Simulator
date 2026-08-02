@@ -3440,6 +3440,15 @@ class ScenePlacementMixin:
         # and dropped the body at the origin (flag_20260801_195042). Seat it relatively instead.
         if label == "lens":
             return self._reset_lens_to_surrogate()
+        # bugs/0504: the LED was the last label on the destructive path (0497's open note). On the
+        # AZ85 scene its seated offset is [-8.93, 0, -29.15], so one glue click zeroed that and
+        # threw the housing ~30 mm off its seat -- and stranded it, since "already glued" meant
+        # "offset is zero". Restore the recorded placement when one exists; a body with no
+        # reference falls through to the legacy zeroing, where zero IS the unfolded auto station.
+        if label == "led":
+            reset = self._reset_led_to_reference()
+            if reset is not None:
+                return reset
         display = self._step_overlay_display_label(label)
         axis_off = self._step_axis_offset_xy(label)
         place_off = self._step_placement_offset_xyz(label)
@@ -3736,6 +3745,43 @@ class ScenePlacementMixin:
                 "(centred on the surrogate axis, datum aligned)."
             )
         return bool(moved)
+
+    def _reset_led_to_reference(self):
+        """bugs/0504: restore the LED's recorded placement instead of zeroing it.
+
+        Returns ``None`` when no reference is recorded (the caller falls back to the legacy
+        zeroing -- for an LED that reached the scene without one, zero IS the unfolded auto
+        station), ``False`` when already at the reference, ``True`` when it moved.
+
+        Unlike the lens, the LED's placement offset already rides ON a base transform that tracks
+        the object-distance machinery (``_led_step_z_translation``), so the recorded offset stays
+        meaningful when that base moves and no datum anchor is needed.
+
+        The restore must also carry the glued beam splitter BACK: the drag that displaced the LED
+        carried the BS along (asymmetric parent/child glue, bugs/0437), so a glue that moved only
+        the LED would tear the assembly the drag kept together.
+        """
+        reference = self._step_glue_reference_offset_xyz("led")
+        if reference is None:
+            return None
+        current = np.asarray(self._step_placement_offset_xyz("led"), dtype=float).reshape(3)
+        delta = np.asarray(reference, dtype=float).reshape(3) - current
+        if float(np.linalg.norm(delta)) <= 1.0e-9:
+            self.status_var.set("LED STEP is already glued (at its recorded placement).")
+            return False
+        self._begin_history_capture()
+        try:
+            self._set_step_placement_offset_xyz("led", tuple(float(v) for v in reference))
+            self._carry_glued_optical_led("led", delta)
+            # The carry may have moved a PROMOTED BS row -- flag the rebuild so a non-menu caller
+            # cannot leave the drawn row at its old station (the bugs/0503 lesson; the menu path's
+            # _apply_model_change consumes the marker anyway).
+            self._fold_carry_pending_rebuild = True
+            self._selected_step_label = "led"
+        finally:
+            self._commit_history_capture()
+        self.status_var.set("Glued LED STEP back to the placement it was set at.")
+        return True
 
     def _seat_lens_on_surrogate_geometry(self) -> bool:
         """bugs/0497 FALLBACK: seat the lens from the surrogate when no placement was recorded.

@@ -196,6 +196,5 @@ after a bugs/0499 leg slide moved the rows, the absolute restore manufactured a 
 (flag_20260801_220951). Phase 402's B-section asserts the relative semantics; C3 covers the anchor
 round trip.
 
-**Still open: the LED.** It takes the same destructive zeroing path
-(`glue_step_overlay_to_surrogate`'s generic branch) and wants the same
-reference-restore-plus-anchor treatment.
+**The LED: closed by bugs/0504.** It took the same destructive zeroing path; it now restores its
+recorded reference and carries the glued BS back with it (penta phase 406).
