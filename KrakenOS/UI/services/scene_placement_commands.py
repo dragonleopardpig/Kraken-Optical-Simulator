@@ -3919,6 +3919,8 @@ class ScenePlacementMixin:
         try:
             self._set_step_placement_offset_xyz("led", tuple(float(v) for v in reference))
             self._carry_glued_optical_led("led", delta)
+            # bugs/0512: the glue-restore carries the whole assembly back -- emitter included.
+            self._carry_glued_scene_sources(delta)
             # The carry may have moved a PROMOTED BS row -- flag the rebuild so a non-menu caller
             # cannot leave the drawn row at its old station (the bugs/0503 lesson; the menu path's
             # _apply_model_change consumes the marker anyway).
@@ -4175,6 +4177,9 @@ class ScenePlacementMixin:
             return
         if np.isfinite(dz) and abs(dz) > 1e-9:
             self._carry_glued_optical_led("led", (0.0, 0.0, dz))
+            # bugs/0512: the distance-dialog movers reposition the LED the same way -- the
+            # glued emitter rides the net z-shift too.
+            self._carry_glued_scene_sources((0.0, 0.0, dz))
 
     # --- imported-solid resize (drag a face to grow a dimension) ------------- #
     # The resize is stored as per-axis target extents in the solid's *native*
@@ -4487,6 +4492,9 @@ class ScenePlacementMixin:
                 self.translate_scene_row_pose_vector(
                     led_station_bs_row, station_shift, record_history=False, sync_table=False
                 )
+                # bugs/0512: the emitter belongs to the illumination station -- glued
+                # sources ride the atomic station write's leg component with it.
+                self._carry_glued_scene_sources(station_shift)
             finally:
                 self._suppress_fold_slide_carry = False
             if not bool(getattr(self, "headless", False)):
@@ -4544,6 +4552,11 @@ class ScenePlacementMixin:
         # remainder, or the BS would ride the leg component twice.
         carry_delta = applied if station_shift is None else applied - station_shift
         self._carry_glued_optical_led(label, carry_delta)
+        # bugs/0512: LED-glued illumination sources ride the housing. The station block above
+        # already gave them the leg component; this hands them the remainder, so their total is
+        # the LED body's full world delta -- independent of the BS<->LED glue flag.
+        if label == "led":
+            self._carry_glued_scene_sources(carry_delta)
         self._selected_step_label = label
         if record_history:
             self._commit_history_capture()

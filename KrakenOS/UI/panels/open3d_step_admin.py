@@ -1099,6 +1099,34 @@ class Open3DStepAdminPanel:
                 label="Scene Source Manager...",
                 command=lambda sid=source_id: self._open_scene_source_manager(sid),
             )
+            # bugs/0512: glue the emitter to the LED housing so the 0505 station slide and
+            # the 0508 B assembly drag carry the illumination source too (flag_20260802_204536).
+            try:
+                from KrakenOS.UI.scene_source_analysis import source_spec_bool as _src_bool
+
+                _specs = self.editor._normalize_scene_source_specs(
+                    getattr(self.editor, "layout_scene_source_specs", []) or []
+                )
+                _spec = next(
+                    (s for s in _specs if str(s.get("source_id", "") or "") == str(source_id)),
+                    None,
+                )
+            except Exception:
+                _spec = None
+            if _spec is not None:
+                _glued = _src_bool(_spec, "glued_to_led", False)
+                menu.add_command(
+                    label=("Unglue Source from LED" if _glued else "Glue Source to LED (move together)"),
+                    command=lambda sid=source_id, g=_glued: self.editor.update_scene_source_spec(
+                        sid,
+                        {"glued_to_led": (not g)},
+                        status=(
+                            "Unglued the source from the LED (free-placed)."
+                            if g
+                            else "Glued the source to the LED -- it rides the LED/BS assembly."
+                        ),
+                    ),
+                )
             menu.add_separator()
         # bugs/0405: the detector is the final "Image" row. Offer "remove defocus" from the browser
         # so the user does NOT have to HIDE the camera to right-click the detector occluded behind it

@@ -1113,6 +1113,8 @@ class SourceModelingMixin:
         "cone_deg", "ray_count", "power", "enabled",
         # bugs/0401: coaxial-illuminator edge profile (drives the object-plane footprint soft edge).
         "coaxial_edge_profile", "coaxial_penumbra_mm",
+        # bugs/0512: ride the LED housing (0505 station slide / 0508 B assembly drag).
+        "glued_to_led",
     )
 
     def update_scene_source_spec(
@@ -1191,6 +1193,52 @@ class SourceModelingMixin:
             status=f"Seated scene source {source_id} on the picked face.",
         )
 
+    def _carry_glued_scene_sources(self, delta) -> int:
+        """bugs/0512: shift every LED-glued illumination source by the LED's world delta.
+
+        The parametric emitter is a world-anchored spec, so the 0505 station slide and the
+        0508 B assembly drag moved the housing while the amber source stayed behind
+        (flag_20260802_204536 "dragged to BS, LED follows, but the Illumination source is
+        not followed"). A spec carrying ``glued_to_led`` rides every LED motion; a
+        free-placed source (illuminating from another angle) stays put. Specs are written
+        in place -- the CALLER owns the history capture and the rebuild, exactly like the
+        BS half of ``_carry_glued_optical_led``."""
+        try:
+            shift = np.asarray(delta, dtype=float).reshape(-1)[:3]
+        except Exception:
+            return 0
+        if shift.size < 3 or not np.all(np.isfinite(shift)) or not np.any(np.abs(shift) > 1e-12):
+            return 0
+        specs = [
+            dict(spec)
+            for spec in self._normalize_scene_source_specs(
+                getattr(self, "layout_scene_source_specs", []) or []
+            )
+        ]
+        moved = 0
+        for spec in specs:
+            if not source_spec_bool(spec, "glued_to_led", False):
+                continue
+            origin = np.asarray(
+                source_spec_vector(
+                    spec, ("origin",), ("source_x", "source_y", "source_z"), (0.0, 0.0, 0.0)
+                ),
+                dtype=float,
+            ).reshape(3)
+            new_origin = origin + shift
+            spec["origin"] = tuple(float(v) for v in new_origin)
+            for key, value in zip(("source_x", "source_y", "source_z"), new_origin):
+                if key in spec:
+                    spec[key] = float(value)
+            moved += 1
+        if moved:
+            self.layout_scene_source_specs = specs
+            try:
+                self._invalidate_preview_scene_trace()
+            except Exception:
+                pass
+        return moved
+
     def add_illumination_led_source(self, *, record_history: bool = True) -> str:
         """Add a new physical area-LED illumination source as a first-class scene source (bugs/0284) --
         the "Add Illumination Source (LED)" entry point behind the browser's Scene Sources group. The
@@ -1250,6 +1298,10 @@ class SourceModelingMixin:
             "cone_deg": cone,
             "ray_count": 2000,
             "power": 1.0,
+            # bugs/0512: an "Illumination Source (LED)" belongs to the housing it was
+            # seeded from -- new emitters ride the LED/BS assembly by default (right-click
+            # the source row to unglue for a free-placed angle).
+            "glued_to_led": True,
             "wavelength": float(self._current_wavelength()),
             "seed": 7,
         }

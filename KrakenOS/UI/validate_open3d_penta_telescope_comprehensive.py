@@ -15455,6 +15455,10 @@ phase_412_qe_object_locked = _phase_from_standalone(
     412, "Quick Estimation holds the object-locked LED+BS unit through a conjugate solve",
     "KrakenOS.UI.validate_open3d_qe_object_locked",
     "qe_object_locked")
+phase_413_source_glue_rides_led = _phase_from_standalone(
+    413, "a glued illumination source rides the LED/BS assembly drags (0512)",
+    "KrakenOS.UI.validate_open3d_0512_source_glue_rides_led",
+    "source_glue_rides_led")
 
 
 # ---------------------------------------------------------------------------
@@ -15914,6 +15918,7 @@ def main() -> int:
             phase_410_frozen_fold_thickness_stable,
             phase_411_reaching_leaf_detector_pin,
             phase_412_qe_object_locked,
+            phase_413_source_glue_rides_led,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
