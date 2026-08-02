@@ -112,3 +112,31 @@ slot -1 -- instrument by wrapping TRANS_2A in a write-logging list proxy, or bis
 stages by stubbing (`_folded_sequential_trace_rows` variants, hard-stop/branch-detector spec
 surgery, `_apply_frozen...` solves). The gate is ray-reachability of a nominal-anchored reference
 (the same 0505 family) and the wrong branch advances the mirror-image gap twice.
+
+## Generality probe (2026-08-02, `bugs/probe_0508a_generality.py`)
+
+Is A specific to `machine_vision_AZ85_RA_Mirror_BS.py`? One fresh process per
+config (fresh load + one raw desp edit + build), MODEL `row_world_pose` vs
+BUILT `TRANS_2A[-1]`:
+
+| scene | config | model image | built image |
+|---|---|---|---|
+| AZ85_BS | baseline | (229.93, 0, -5.08) | same |
+| AZ85_BS | `rows[3].desp_x -12` | held | same -- clean |
+| AZ85_BS | `rows[3].desp_x -23.4` | held | z = **-49.20** (the -44.12 double-advance) |
+| AZ85 periscope | baseline | (0, 0, 347.22) nominal | (275.32, 0, 71.90) folded |
+| AZ85 periscope | `rows[1].desp_x -23.4` | held | (0, 0, 347.22) -- fold COLLAPSED to the straight chain (beam misses the slid prism; defensible non-seq physics) |
+| AZ85 periscope | `rows[1].desp_y -23.4` | held | unchanged -- clean |
+| AZ85 periscope | `rows[1].desp_x -40` | held | (0, 0, 307.22) = straight - 40 -- the off-beam neutralizer zeroed the prism's 40 mm row (bugs/0074 axial inertness) |
+| 150mm GN straight | all 3 | -- | headless LOAD alone exceeded the 420 s cap; no data (and the signature is structurally precluded on a straight chain -- no fold walk, no mirror-thickness advance) |
+
+**Verdict: the SYMPTOM is specific, the MECHANISM is general.** The
+double-advance needs the AZ85-BS structural shape -- a BS-carried fold whose
+follower placement probe dies while the fold itself survives, so the
+face+thickness fallback walks the mirror row twice. The gate that decides
+which branch runs -- ray-reachability of a nominal-anchored reference -- is
+shared code: the periscope trips the SAME gate at the SAME kind of threshold
+but resolves into fold-collapse or off-beam neutralization instead, both
+defensible. So the fix must target the shared fallback (double-count) / anchor
+the probe on `axis_root_origin`, NOT an AZ85-specific patch; the periscope
+shove configs make good contrast fixtures for the guard.
