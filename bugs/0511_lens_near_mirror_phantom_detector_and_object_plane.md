@@ -61,3 +61,37 @@ one shared gate (trace health), two consumers.
    on a slid station (ride axis_root_origin; fall back to the last good mag or
    the straightened reference rather than suppressing), per the 0505 checklist
    ("every launch/probe/overlay must ride axis_root_origin").
+
+## FIXED — the waist-tightness gate (both symptoms, one change)
+
+Headless repro `bugs/probe_0511_lens_near_mirror.py` (replay: LED station -36.9,
+mirror row -22.5, lens +5 healthy / +24.2 broken) reproduced BOTH symptoms and
+overturned one theory: `sys_mag` = 1.152 in BOTH configs — the object plane was
+not a mag failure. The broken build's real difference: NO detector carried
+`focus_source == "reached_image"`, and `DetectorCoverageOverlayService`'s
+seating ladder keys on the pinned arm — with none, `add_overlays` drew ZERO
+actors (no object plate, no sensor rect).
+
+Measured discriminator on the imaging leaf (n=279, reach=225):
+
+* broken (lens ~143.6): fit z=23.1, inside the 0100 trust window
+  (behind -28 of to_image 73), rms_fit 3.84 vs rms_at_image 4.24 — ratio 0.91,
+  NOT a waist; the crossing slides with the lens position (23..36 observed);
+* healthy (lens ~124.4): fit z=45.7 lands OUTSIDE the window — pinned already.
+
+**Fix (`branch_detectors.py`):** inside the trust window, a forward convergence
+is trusted only when it is a genuine WAIST — transverse RMS at the fit <
+`_WAIST_TIGHTNESS_RATIO` (0.7) x the RMS at the reached image (new
+`_transverse_rms_at_plane`). A clipped bundle pins to the designed Image; a real
+per-branch focus (the dual-lens reflect-arm class the window protects, ratio ~0)
+stays trusted. Pinning restores the seating-ladder rung, so the coverage
+overlay draws again and the object plate rides the station — symptom B heals
+through A with no overlay-side change.
+
+Post-fix: broken config's detector = (207.43, 0, -5.08) `reached_image` ==
+the Image row; overlays 7 actors incl. the green plate at x[-46.9,-26.9];
+non-reaching leaves byte-identical; `beam_splitter_branch_detectors`,
+`detector_redundancy_drop`, `two_arm_display_fold` all green. Guard
+`validate_open3d_0511_reaching_leaf_detector_pin` = penta phase 411
+(synthetic clipped-vs-waist contrast pair with self-checked fixture regimes +
+the real-scene gesture replay asserting the pin AND the riding object plate).

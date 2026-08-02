@@ -395,6 +395,33 @@ def _closest_approach_point(origins: np.ndarray, directions: np.ndarray) -> tupl
     return point, True
 
 
+# bugs/0511: a trusted forward convergence must be a genuine WAIST -- markedly tighter
+# than the same bundle at the reached image. A clipped bundle's closest-approach point
+# (lens dragged near the fold mirror: the cone is cut at the mirror aperture) lands
+# inside the 0100 trust window while barely tighter than at the image the rays LAND on.
+_WAIST_TIGHTNESS_RATIO = 0.7
+
+
+def _transverse_rms_at_plane(
+    origins: np.ndarray, directions: np.ndarray, point: np.ndarray, normal: np.ndarray
+) -> float:
+    """RMS transverse spread of the ray bundle intersected with the plane at ``point``."""
+    n = np.asarray(normal, dtype=float).reshape(3)
+    P = np.asarray(point, dtype=float).reshape(3)
+    hits = []
+    for o, d in zip(origins, directions):
+        denom = float(np.dot(d, n))
+        if abs(denom) < 1.0e-9:
+            continue
+        t = float(np.dot(P - o, n) / denom)
+        hits.append(np.asarray(o, dtype=float) + np.asarray(d, dtype=float) * t)
+    if len(hits) < 2:
+        return float("nan")
+    pts = np.asarray(hits, dtype=float)
+    centroid = pts.mean(axis=0)
+    return float(np.sqrt(((pts - centroid) ** 2).sum(axis=1).mean()))
+
+
 def _existing_detector_half_dims(existing_targets: list | None) -> tuple[float, float] | None:
     for target in list(existing_targets or []):
         if not bool(getattr(target, "is_detector", False)):
@@ -598,6 +625,25 @@ def derive_branch_detectors(
                     and to_image > 1.0e-6
                     and -0.5 * to_image < behind < -1.0
                 )
+                if reliable_forward:
+                    # bugs/0511: the window alone is not enough -- a bundle CLIPPED by a
+                    # downstream aperture (lens dragged near the RA mirror; 225/279 rays
+                    # still LAND on the designed Image) has a closest-approach that slides
+                    # mid-leg WITH the lens position (measured z=23..36 for lens 143..151)
+                    # yet is barely tighter than at the image (rms 3.84 vs 4.24). A real
+                    # per-branch focus (the dual-lens reflect arm the window protects) is a
+                    # WAIST: markedly tighter than at the image. Trust the fit only when it
+                    # is; otherwise the plane the rays actually reach wins.
+                    rms_fit = _transverse_rms_at_plane(
+                        origins, directions, np.asarray(focus, dtype=float), mean_dir
+                    )
+                    rms_image = _transverse_rms_at_plane(origins, directions, ri, mean_dir)
+                    if (
+                        np.isfinite(rms_fit)
+                        and np.isfinite(rms_image)
+                        and rms_fit > _WAIST_TIGHTNESS_RATIO * rms_image
+                    ):
+                        reliable_forward = False
                 if not reliable_forward:
                     focus = ri
                     focus_source = "reached_image"
