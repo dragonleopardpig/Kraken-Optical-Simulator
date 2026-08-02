@@ -38,8 +38,8 @@ EXPECTED_COUNTS = {
     17: 7,
     18: 5,
 }
-RUBRIC_RE = re.compile(
-    r"^\.\. rubric:: Problem (\d+)\.(\d+)(?=\s|—)", re.MULTILINE
+PROBLEM_RE = re.compile(
+    r"^Problem (\d+)\.(\d+)(?=\s|—)[^\n]*\n\^+\n", re.MULTILINE
 )
 
 
@@ -56,7 +56,7 @@ def main() -> None:
     total = 0
     for path in chapter_files:
         chapter = int(path.name[2:4])
-        matches = RUBRIC_RE.findall(path.read_text(encoding="utf-8"))
+        matches = PROBLEM_RE.findall(path.read_text(encoding="utf-8"))
         if len(matches) != EXPECTED_COUNTS[chapter]:
             fail(
                 f"chapter {chapter} has {len(matches)} solutions, expected "

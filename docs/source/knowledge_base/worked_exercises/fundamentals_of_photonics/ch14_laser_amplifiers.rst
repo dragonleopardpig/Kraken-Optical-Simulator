@@ -264,7 +264,8 @@ End-of-chapter problems
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-14-5-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Problem 14.1-2 — Longer ruby rod
+Problem 14.1-2 — Longer ruby rod
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -285,7 +286,8 @@ End-of-chapter problems
 
 **Check.**  Equation :eq:`fop-problem-14-1-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Problem 14.1-3 — Nd:glass inversion
+Problem 14.1-3 — Nd:glass inversion
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -307,7 +309,8 @@ Table 14.3-1 peak cross section to obtain
 
 **Check.**  Equation :eq:`fop-problem-14-1-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Problem 14.1-4 — Broadband signal
+Problem 14.1-4 — Broadband signal
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -334,7 +337,8 @@ power ratio.
 
 **Check.**  Equation :eq:`fop-problem-14-1-4-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiation of an antiderivative, or normalization of a definite integral, checks the integration step.
 
-.. rubric:: Problem 14.2-4 — Why two-level pumping fails
+Problem 14.2-4 — Why two-level pumping fails
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -356,7 +360,8 @@ The pump drives upward and stimulated downward transitions at the same rate:
 
 **Check.**  Equation :eq:`fop-problem-14-2-4-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Problem 14.2-5 — Two simultaneous laser lines
+Problem 14.2-5 — Two simultaneous laser lines
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -382,7 +387,8 @@ line.
 
 **Check.**  Equation :eq:`fop-problem-14-2-5-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Problem 14.4-3 — Meaning of saturation flux
+Problem 14.4-3 — Meaning of saturation flux
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -405,7 +411,8 @@ to the saturation flux when the lower-level relaxation terms make
 
 **Check.**  Equation :eq:`fop-problem-14-4-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Problem 14.4-4 — Ruby and Nd:YAG saturation
+Problem 14.4-4 — Ruby and Nd:YAG saturation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -428,7 +435,8 @@ the tabulated cross sections before converting intensity.
 
 **Check.**  Equation :eq:`fop-problem-14-4-4-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Problem 14.4-5 — Saturated growth plot
+Problem 14.4-5 — Saturated growth plot
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -451,7 +459,8 @@ implicit relation for :math:`\phi_0/\phi_s=0.05`; saturation begins near
 
 **Check.**  Equation :eq:`fop-problem-14-4-5-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiation of an antiderivative, or normalization of a definite integral, checks the integration step.
 
-.. rubric:: Problem 14.4-6 — Hot two-level absorber
+Problem 14.4-6 — Hot two-level absorber
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -476,7 +485,8 @@ at one linewidth detuning insert the Lorentzian quarter-peak cross section.
 
 **Check.**  Equation :eq:`fop-problem-14-4-6-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Problem 14.4-7 — Measured saturated amplifier
+Problem 14.4-7 — Measured saturated amplifier
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -501,7 +511,8 @@ gain.
 
 **Check.**  Equation :eq:`fop-problem-14-4-7-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Problem 14.5-2 — Signal-to-ASE ratio
+Problem 14.5-2 — Signal-to-ASE ratio
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -524,7 +535,8 @@ falls from infinity and asymptotes to the input/spontaneous ratio.
 
 **Check.**  Equation :eq:`fop-problem-14-5-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Problem 14.5-3 — Amplified coherent-light statistics
+Problem 14.5-3 — Amplified coherent-light statistics
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

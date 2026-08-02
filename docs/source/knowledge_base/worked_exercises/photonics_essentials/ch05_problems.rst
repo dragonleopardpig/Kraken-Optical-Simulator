@@ -8,8 +8,11 @@ Thomas P. Pearsall, *Photonics Essentials: An Introduction with Experiments*
 (McGraw-Hill, 2003), Chapter 5, ``Photoconductivity``, Problems 5.1--5.6,
 printed page 100.
 
+Worked solutions
+----------------
+
 Problem 5.1: Carriers from a laser pulse
------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The pulse energy is
 
@@ -35,7 +38,7 @@ With complete absorption and one electron-hole pair per photon,
 The stated :math:`1\ \mathrm{cm^2}` area affects the density, not this total.
 
 Problem 5.2: Why photodiode gain cannot exceed one
---------------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The ideal energy sequence is
 
@@ -61,7 +64,7 @@ This statement excludes avalanche multiplication, which is a different
 high-field gain mechanism.
 
 Problem 5.3: Steady-state carrier concentration
-------------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The photon generation rate is
 
@@ -89,7 +92,7 @@ At steady state, excess population equals generation rate times lifetime:
    =\boxed{1.56\times10^{10}\ \mathrm{cm^{-3}}}.
 
 Problem 5.4: Photographic latent image
---------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The three energy-diagram stages can be summarized as follows.
 
@@ -118,7 +121,7 @@ metallic-silver grain.  Fixer then dissolves the unexposed AgBr.  The remaining
 silver distribution is the visible negative.
 
 Problem 5.5: Hole lifetime after sensitization
------------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 From Table 5.2,
 
@@ -151,7 +154,7 @@ so
 Sensitization lengthens the electron lifetime but shortens the hole lifetime.
 
 Problem 5.6: Reversed capture preference
------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Now :math:`s_{n2}=10^{-15}\ \mathrm{cm^2}` and
 :math:`s_{p2}=10^{-17}\ \mathrm{cm^2}`.  The type-2 center captures

@@ -8,8 +8,11 @@ Thomas P. Pearsall, *Photonics Essentials: An Introduction with Experiments*
 (McGraw-Hill, 2003), Chapter 4, ``Electrical Response Time of Diodes``,
 Problems 4.1--4.4, printed pages 75--76.
 
+Worked solutions
+----------------
+
 Problem 4.1: A 4 MHz fiber receiver
------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Silicon loses band-to-band response near :math:`1.1\ \mu\mathrm m`, whereas
 germanium still absorbs at :math:`1.3\ \mu\mathrm m`.  Of the two choices,
@@ -49,7 +52,7 @@ For example, :math:`-4\ \mathrm V` gives roughly :math:`C_D=1.35\ \mathrm{nF}`
 and leaves about :math:`0.24\ \mathrm{nF}` for parasitics.
 
 Problem 4.2: Junction capacitance
----------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 For a one-sided abrupt silicon junction under reverse-bias magnitude
 :math:`V_R`,
@@ -91,7 +94,7 @@ Thus every curve has slope :math:`1/2`; reverse bias shifts a curve downward
 by widening the depletion region.
 
 Problem 4.3: Built-in voltage from Table 4.1
---------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The area is constant, so multiplying :math:`1/C^2` by :math:`A^2` changes
 only the vertical scale and not the voltage-axis intercept.  A least-squares
@@ -119,7 +122,7 @@ Therefore,
    \boxed{V_{\mathrm{bi}}\approx0.76\ \mathrm V}.
 
 Problem 4.4: Area and response time
------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 For a device of thickness :math:`d`, resistivity :math:`\rho`, permittivity
 :math:`\epsilon`, and area :math:`A`,

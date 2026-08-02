@@ -450,7 +450,8 @@ End-of-chapter problems
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-2-6-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
 
-.. rubric:: Problem 2.2-3 — Spherical Helmholtz solution
+Problem 2.2-3 — Spherical Helmholtz solution
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -472,7 +473,8 @@ therefore :math:`(\nabla^2+k^2)U=0` away from the point source.
 
 **Check.**  Equation :eq:`fop-problem-2-2-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Problem 2.2-4 — Spherical-wave intensity
+Problem 2.2-4 — Spherical-wave intensity
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -494,7 +496,8 @@ Power conservation over a sphere gives
 
 **Check.**  Equation :eq:`fop-problem-2-2-4-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Problem 2.2-5 — Cylindrical wave
+Problem 2.2-5 — Cylindrical wave
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -518,7 +521,8 @@ length along the cylinder axis.
 
 **Check.**  Equation :eq:`fop-problem-2-2-5-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Problem 2.2-6 — Paraxial Helmholtz equation
+Problem 2.2-6 — Paraxial Helmholtz equation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -541,7 +545,8 @@ varying :math:`\partial_z^2A` term yields
 
 **Check.**  Equation :eq:`fop-problem-2-2-6-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Problem 2.2-7 — Conjugate waves
+Problem 2.2-7 — Conjugate waves
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -556,7 +561,8 @@ travels along :math:`-(\hat x+\hat y)/\sqrt2`; the conjugate of an outgoing
 
 **Check.**  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Problem 2.3-1 — Wavefronts in a SELFOC slab
+Problem 2.3-1 — Wavefronts in a SELFOC slab
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -571,7 +577,8 @@ and repeat with the pitch :math:`2\pi/a`.
 
 **Check.**  For a qualitative conclusion, test every absolute statement against the stated assumptions and at least one limiting case or counterexample.
 
-.. rubric:: Problem 2.4-7 — Spherical wave at a plane mirror
+Problem 2.4-7 — Spherical wave at a plane mirror
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  No new mathematical symbols are introduced.  Technical terms retain their chapter definitions, and each comparison is conditional on the wavelength, material, geometry, and operating assumptions stated below.
 
@@ -604,7 +611,8 @@ reflection coefficient multiplying its amplitude.
 
 **Check.**  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
 
-.. rubric:: Problem 2.4-8 — Optical path through layers
+Problem 2.4-8 — Optical path through layers
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -626,7 +634,8 @@ Ignoring interface reflections,
 
 **Check.**  Equation :eq:`fop-problem-2-4-8-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Problem 2.4-9 — Binary phase grating
+Problem 2.4-9 — Binary phase grating
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -651,7 +660,8 @@ vanish for the symmetric 50% duty cycle.
 
 **Check.**  Equation :eq:`fop-problem-2-4-9-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.
 
-.. rubric:: Problem 2.4-10 — Spherical mirror as a phase element
+Problem 2.4-10 — Spherical mirror as a phase element
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -674,7 +684,8 @@ phase for :math:`\boxed{f=-R/2}`.
 
 **Check.**  Equation :eq:`fop-problem-2-4-10-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Problem 2.5-4 — Standing wave
+Problem 2.5-4 — Standing wave
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -697,7 +708,8 @@ For equal counterpropagating fields,
 
 **Check.**  Equation :eq:`fop-problem-2-5-4-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
 
-.. rubric:: Problem 2.5-5 — Fringe visibility
+Problem 2.5-5 — Fringe visibility
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -719,7 +731,8 @@ For equal counterpropagating fields,
 
 **Check.**  Equation :eq:`fop-problem-2-5-5-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Problem 2.5-6 — Misaligned Michelson mirror
+Problem 2.5-6 — Misaligned Michelson mirror
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -735,7 +748,8 @@ mirror travel.
 
 **Check.**  For a qualitative conclusion, test every absolute statement against the stated assumptions and at least one limiting case or counterexample.
 
-.. rubric:: Problem 2.6-2 — Pulsed spherical wave
+Problem 2.6-2 — Pulsed spherical wave
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

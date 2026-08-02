@@ -263,7 +263,8 @@ End-of-chapter problems
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-10-3-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Problem 10.1-3 — Resonator with an etalon
+Problem 10.1-3 — Resonator with an etalon
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -285,7 +286,8 @@ length to 16.25 cm, giving :math:`\boxed{0.9224\ \mathrm{GHz}}`.
 
 **Check.**  Equation :eq:`fop-problem-10-1-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Problem 10.1-4 — Cleaved semiconductor cavity
+Problem 10.1-4 — Cleaved semiconductor cavity
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -310,7 +312,8 @@ micrometres.  The longitudinal order is :math:`q=2nd/\lambda=\boxed{929}`.
 
 **Check.**  Equation :eq:`fop-problem-10-1-4-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Problem 10.1-5 — Bragg-mirror etalon
+Problem 10.1-5 — Bragg-mirror etalon
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -334,7 +337,8 @@ includes penetration phase if the GaAs cavity thickness is specified.
 
 **Check.**  Equation :eq:`fop-problem-10-1-5-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Multiply the matrices independently in the stated input-to-output order and verify that every product has compatible dimensions.
 
-.. rubric:: Problem 10.1-6 — Measured spectral response
+Problem 10.1-6 — Measured spectral response
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -357,7 +361,8 @@ includes penetration phase if the GaAs cavity thickness is specified.
 
 **Check.**  Equation :eq:`fop-problem-10-1-6-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Problem 10.1-7 — Half-energy time
+Problem 10.1-7 — Half-energy time
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -380,7 +385,8 @@ The energy lifetime is :math:`\tau=\mathcal F/(2\pi\nu_F)`; therefore
 
 **Check.**  Equation :eq:`fop-problem-10-1-7-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Problem 10.2-5 — Convex mirrors
+Problem 10.2-5 — Convex mirrors
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -394,7 +400,8 @@ signed :math:`g` factors have a product strictly between zero and one.
 
 **Check.**  For a qualitative conclusion, test every absolute statement against the stated assumptions and at least one limiting case or counterexample.
 
-.. rubric:: Problem 10.2-6 — Lens inside plane mirrors
+Problem 10.2-6 — Lens inside plane mirrors
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -418,7 +425,8 @@ about the lens and wavefronts planar at the mirrors.
 
 **Check.**  Equation :eq:`fop-problem-10-2-6-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Multiply the matrices independently in the stated input-to-output order and verify that every product has compatible dimensions.
 
-.. rubric:: Problem 10.2-7 — Ray retracing
+Problem 10.2-7 — Ray retracing
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -440,7 +448,8 @@ after :math:`\boxed{3}` round trips.
 
 **Check.**  Equation :eq:`fop-problem-10-2-7-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Problem 10.2-8 — Unstable recurrence
+Problem 10.2-8 — Unstable recurrence
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -463,7 +472,8 @@ one, which is the exponential escape.
 
 **Check.**  Equation :eq:`fop-problem-10-2-8-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Multiply the matrices independently in the stated input-to-output order and verify that every product has compatible dimensions.
 
-.. rubric:: Problem 10.2-9 — Symmetric unstable cavity
+Problem 10.2-9 — Symmetric unstable cavity
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -487,7 +497,8 @@ The same recurrence plotted at 50 cm stays bounded while 65 cm grows.
 
 **Check.**  Equation :eq:`fop-problem-10-2-9-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Multiply the matrices independently in the stated input-to-output order and verify that every product has compatible dimensions.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Problem 10.2-10 — Gaussian standing wave
+Problem 10.2-10 — Gaussian standing wave
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -510,7 +521,8 @@ both matching mirror wavefronts yields
 
 **Check.**  Equation :eq:`fop-problem-10-2-10-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
 
-.. rubric:: Problem 10.2-11 — Sixteen-centimetre confocal cavity
+Problem 10.2-11 — Sixteen-centimetre confocal cavity
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -535,7 +547,8 @@ above; mirror-only distributed loss is
 
 **Check.**  Equation :eq:`fop-problem-10-2-11-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Problem 10.2-12 — One-percent diffraction aperture
+Problem 10.2-12 — One-percent diffraction aperture
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -558,7 +571,8 @@ keeps the scan-dependent interpolation auditable.
 
 **Check.**  Equation :eq:`fop-problem-10-2-12-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Problem 10.3-2 — Counts in 1-D, 2-D, and 3-D
+Problem 10.3-2 — Counts in 1-D, 2-D, and 3-D
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

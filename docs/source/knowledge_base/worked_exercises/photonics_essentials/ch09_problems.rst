@@ -12,8 +12,11 @@ The calculations follow the chapter's simple step-index and transform-limited
 pulse models.  Catalog values are rounded measurements and need not be
 mutually exact inputs to those models.
 
+Worked solutions
+----------------
+
 Problem 9.1: Corning SMF-28 estimates
--------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The normalized frequency is
 
@@ -65,7 +68,7 @@ useful consistency check, not a replacement for the manufacturer's measured
 cable cutoff.
 
 Problem 9.2: Material-dispersion distance
------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Bit periods
 ~~~~~~~~~~~
@@ -148,7 +151,7 @@ The result isolates **material** dispersion as requested; actual SMF-28 total
 chromatic dispersion also includes waveguide dispersion.
 
 Problem 9.3: Inferring Samsung fiber geometry
-----------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Numerical aperture
 ~~~~~~~~~~~~~~~~~~
@@ -244,7 +247,7 @@ Use the same linewidth model as Problem 9.2, now with the specified
    "40 Gbit/s", "12.5 ps", "0.738 km"
 
 Problem 9.4: WDM information bandwidth
----------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The frequency width of the 1530--1560 nm window is more accurate than treating
 all 30 nm as one constant wavelength conversion:

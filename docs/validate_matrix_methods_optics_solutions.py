@@ -28,10 +28,10 @@ ASSETS = (
 # problem set.  Appendix A contributes one extended illustrative problem.
 EXPECTED_COUNTS = {1: 0, 2: 12, 3: 6, 4: 8, 5: 0}
 CHAPTER_RE = re.compile(
-    r"^\.\. rubric:: Problem (\d+)\.(\d+)(?=\s|—)", re.MULTILINE
+    r"^Problem (\d+)\.(\d+)(?=\s|—)[^\n]*\n\^+\n", re.MULTILINE
 )
 APPENDIX_RE = re.compile(
-    r"^\.\. rubric:: Problem A\.(\d+)(?=\s|—)", re.MULTILINE
+    r"^Problem A\.(\d+)(?=\s|—)[^\n]*\n\^+\n", re.MULTILINE
 )
 EXPECTED_ASSETS = {
     "ray_matrix_elements.svg",

@@ -8,8 +8,11 @@ Thomas P. Pearsall, *Photonics Essentials: An Introduction with Experiments*
 (McGraw-Hill, 2003), Chapter 7, ``Lasers``, Problems 7.1--7.3,
 printed page 173.
 
+Worked solutions
+----------------
+
 Problem 7.1: Phase-shift oscillator experiment
------------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 This is a measurement exercise.  The result depends on transistor gain,
 component tolerances, potentiometer range, supply voltage, wiring
@@ -70,7 +73,7 @@ A positive-temperature-coefficient resistor therefore makes the frequency
 fall.  The sign must be reversed for a negative-temperature-coefficient part.
 
 Problem 7.2: Can spontaneous emission be zero?
------------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 No.  Setting the spontaneous-emission source term to zero does not produce a
 thresholdless laser.  It removes the photons that seed the resonant modes:
@@ -97,7 +100,7 @@ noise, but it neither removes cavity loss nor the population inversion needed
 to overcome it.
 
 Problem 7.3: GaAs laser threshold current density
---------------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 For an uncoated semiconductor-air facet,
 

@@ -192,7 +192,8 @@ End-of-chapter problems
 
 **Step 5 — Check.**  Equation :eq:`fop-exercise-12-2-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Problem 12.1-5 — Combining photon energies
+Problem 12.1-5 — Combining photon energies
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -215,7 +216,8 @@ micrometres.  (b) Sum-frequency energy gives
 
 **Check.**  Equation :eq:`fop-problem-12-1-5-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Problem 12.1-6 — Exponential radial beam
+Problem 12.1-6 — Exponential radial beam
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -237,7 +239,8 @@ therefore give :math:`\boxed{2.6424\times10^5}` on average.
 
 **Check.**  Equation :eq:`fop-problem-12-1-6-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiation of an antiderivative, or normalization of a definite integral, checks the integration step.
 
-.. rubric:: Problem 12.1-7 — Momentum comparisons
+Problem 12.1-7 — Momentum comparisons
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -259,7 +262,8 @@ at :math:`c/10` has :math:`2.73\times10^{-23}` kg m/s.
 
 **Check.**  Equation :eq:`fop-problem-12-1-7-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Problem 12.1-8 — Gaussian photon momentum
+Problem 12.1-8 — Gaussian photon momentum
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -282,7 +286,8 @@ the mean axial momentum is slightly below :math:`E/c`.
 
 **Check.**  Equation :eq:`fop-problem-12-1-8-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  For a probability result, verify the zero-to-one bounds; when a full distribution is present, also verify normalization and nonnegative variance.
 
-.. rubric:: Problem 12.1-9 — Ideal atom levitation
+Problem 12.1-9 — Ideal atom levitation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -305,7 +310,8 @@ reflection doubles momentum transfer and halves the rate to 15.2 photons/s.
 
 **Check.**  Equation :eq:`fop-problem-12-1-9-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Problem 12.1-10 — One cavity photon
+Problem 12.1-10 — One cavity photon
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -330,7 +336,8 @@ equal :math:`\pm\hbar k` outcomes.  Their product greatly exceeds
 
 **Check.**  Equation :eq:`fop-problem-12-1-10-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Problem 12.1-11 — Single-photon beating
+Problem 12.1-11 — Single-photon beating
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -355,7 +362,8 @@ interference.
 
 **Check.**  Equation :eq:`fop-problem-12-1-11-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
 
-.. rubric:: Problem 12.1-12 — Beamsplitter momentum
+Problem 12.1-12 — Beamsplitter momentum
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -378,7 +386,8 @@ the photon occupies their coherent superposition.
 
 **Check.**  Equation :eq:`fop-problem-12-1-12-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  For a probability result, verify the zero-to-one bounds; when a full distribution is present, also verify normalization and nonnegative variance.
 
-.. rubric:: Problem 12.2-2 — One photon per cycle
+Problem 12.2-2 — One photon per cycle
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -399,7 +408,8 @@ Photon rate is :math:`\nu` and photon energy :math:`h\nu`, so
 
 **Check.**  Equation :eq:`fop-problem-12-2-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
-.. rubric:: Problem 12.2-3 — Poisson moments
+Problem 12.2-3 — Poisson moments
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -422,7 +432,8 @@ that generating function once and twice gives
 
 **Check.**  Equation :eq:`fop-problem-12-2-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  For a probability result, verify the zero-to-one bounds; when a full distribution is present, also verify normalization and nonnegative variance.
 
-.. rubric:: Problem 12.2-4 — Weak coherent He--Ne beam
+Problem 12.2-4 — Weak coherent He--Ne beam
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -445,7 +456,8 @@ Total mean in 100 ns is :math:`PT/(hc/\lambda)=31.86`; inside :math:`W_0`,
 
 **Check.**  Equation :eq:`fop-problem-12-2-4-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  For a probability result, verify the zero-to-one bounds; when a full distribution is present, also verify normalization and nonnegative variance.
 
-.. rubric:: Problem 12.2-5 — Bose--Einstein counts
+Problem 12.2-5 — Bose--Einstein counts
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -467,7 +479,8 @@ Geometric-series sums give normalization, mean :math:`\bar n`, and variance
 
 **Check.**  Equation :eq:`fop-problem-12-2-5-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  For a probability result, verify the zero-to-one bounds; when a full distribution is present, also verify normalization and nonnegative variance.
 
-.. rubric:: Problem 12.2-6 — Negative-binomial limits
+Problem 12.2-6 — Negative-binomial limits
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -490,7 +503,8 @@ Set :math:`M=1` to recover the geometric distribution.  For fixed
 
 **Check.**  Equation :eq:`fop-problem-12-2-6-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  For a probability result, verify the zero-to-one bounds; when a full distribution is present, also verify normalization and nonnegative variance.
 
-.. rubric:: Problem 12.2-7 — Multimode thermal variance
+Problem 12.2-7 — Multimode thermal variance
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -513,7 +527,8 @@ bunching toward Poisson statistics.
 
 **Check.**  Equation :eq:`fop-problem-12-2-7-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  For a probability result, verify the zero-to-one bounds; when a full distribution is present, also verify normalization and nonnegative variance.
 
-.. rubric:: Problem 12.2-8 — Gamma-mixed Poisson process
+Problem 12.2-8 — Gamma-mixed Poisson process
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -536,7 +551,8 @@ distribution of Problem 12.2-6.
 
 **Check.**  Equation :eq:`fop-problem-12-2-8-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  For a probability result, verify the zero-to-one bounds; when a full distribution is present, also verify normalization and nonnegative variance.
 
-.. rubric:: Problem 12.2-9 — Doubly stochastic moments
+Problem 12.2-9 — Doubly stochastic moments
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -559,7 +575,8 @@ Conditional Poisson moments are :math:`E[n|W]=W` and
 
 **Check.**  Equation :eq:`fop-problem-12-2-9-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  For a probability result, verify the zero-to-one bounds; when a full distribution is present, also verify normalization and nonnegative variance.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Problem 12.2-10 — Partitioned coherent light
+Problem 12.2-10 — Partitioned coherent light
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -582,7 +599,8 @@ Poisson with mean/variance :math:`\boxed{R\bar n}`.
 
 **Check.**  Equation :eq:`fop-problem-12-2-10-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  For a probability result, verify the zero-to-one bounds; when a full distribution is present, also verify normalization and nonnegative variance.
 
-.. rubric:: Problem 12.2-11 — Partitioned thermal light
+Problem 12.2-11 — Partitioned thermal light
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -605,7 +623,8 @@ parts.
 
 **Check.**  Equation :eq:`fop-problem-12-2-11-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  For a probability result, verify the zero-to-one bounds; when a full distribution is present, also verify normalization and nonnegative variance.
 
-.. rubric:: Problem 12.2-12 — Absorber thinning
+Problem 12.2-12 — Absorber thinning
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -628,7 +647,8 @@ that mean under independent absorption.  A single photon survives thickness
 
 **Check.**  Equation :eq:`fop-problem-12-2-12-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  For a probability result, verify the zero-to-one bounds; when a full distribution is present, also verify normalization and nonnegative variance.
 
-.. rubric:: Problem 12.3-1 — Binomial light
+Problem 12.3-1 — Binomial light
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
@@ -653,7 +673,8 @@ Send an :math:`M`-photon number state through a beamsplitter of transmission
 
 **Check.**  Equation :eq:`fop-problem-12-3-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  For a probability result, verify the zero-to-one bounds; when a full distribution is present, also verify normalization and nonnegative variance.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
-.. rubric:: Problem 12.3-2 — Discrete-uniform source
+Problem 12.3-2 — Discrete-uniform source
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 

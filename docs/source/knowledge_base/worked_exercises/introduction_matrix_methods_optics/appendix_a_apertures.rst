@@ -4,7 +4,11 @@ Appendix A: Aperture Properties of Centered Systems
 Source: Gerrard and Burch, *Introduction to Matrix Methods in Optics* (1975),
 Appendix A.
 
-.. rubric:: Problem A.1 — Stops, pupils, windows, and field in a finder telescope
+Illustrative problem
+--------------------
+
+Problem A.1 — Stops, pupils, windows, and field in a finder telescope
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The finder has a 30-mm-diameter, 100-mm-focal-length objective and a
 5-mm-diameter, 10-mm-focal-length eye lens.  The lenses are confocal, with a

@@ -10,49 +10,57 @@ route, and an independent consistency check.
 End-of-chapter problems
 -----------------------
 
-.. rubric:: Problem 5.1 — atomic susceptibility, lineshape, and causality: derivation
+Problem 5.1 — atomic susceptibility, lineshape, and causality: derivation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Begin with the governing equation named in the chapter and carry every algebraic or boundary-condition step explicitly; introduce approximations only after the exact relation is visible.
 Solve the driven damped oscillator or two-level linear response for :math:`\chi(\omega)`, separate real and imaginary parts, and relate them to index and absorption/gain.  For time response, locate poles before closing the Fourier contour and use collision phase variance for dephasing.
 The Lorentzian area must be independent of linewidth, causal poles must give zero response before excitation, and gain must reverse sign when the population difference reverses.
 
-.. rubric:: Problem 5.2 — atomic susceptibility, lineshape, and causality: calculation
+Problem 5.2 — atomic susceptibility, lineshape, and causality: calculation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Convert the supplied data to one unit system, isolate the requested quantity symbolically, and retain guard digits until the final numerical evaluation.
 Solve the driven damped oscillator or two-level linear response for :math:`\chi(\omega)`, separate real and imaginary parts, and relate them to index and absorption/gain.  For time response, locate poles before closing the Fourier contour and use collision phase variance for dephasing.
 The Lorentzian area must be independent of linewidth, causal poles must give zero response before excitation, and gain must reverse sign when the population difference reverses.
 
-.. rubric:: Problem 5.3 — atomic susceptibility, lineshape, and causality: derivation
+Problem 5.3 — atomic susceptibility, lineshape, and causality: derivation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Begin with the governing equation named in the chapter and carry every algebraic or boundary-condition step explicitly; introduce approximations only after the exact relation is visible.
 Solve the driven damped oscillator or two-level linear response for :math:`\chi(\omega)`, separate real and imaginary parts, and relate them to index and absorption/gain.  For time response, locate poles before closing the Fourier contour and use collision phase variance for dephasing.
 The Lorentzian area must be independent of linewidth, causal poles must give zero response before excitation, and gain must reverse sign when the population difference reverses.
 
-.. rubric:: Problem 5.4 — atomic susceptibility, lineshape, and causality: derivation
+Problem 5.4 — atomic susceptibility, lineshape, and causality: derivation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Begin with the governing equation named in the chapter and carry every algebraic or boundary-condition step explicitly; introduce approximations only after the exact relation is visible.
 Solve the driven damped oscillator or two-level linear response for :math:`\chi(\omega)`, separate real and imaginary parts, and relate them to index and absorption/gain.  For time response, locate poles before closing the Fourier contour and use collision phase variance for dephasing.
 The Lorentzian area must be independent of linewidth, causal poles must give zero response before excitation, and gain must reverse sign when the population difference reverses.
 
-.. rubric:: Problem 5.5 — atomic susceptibility, lineshape, and causality: derivation
+Problem 5.5 — atomic susceptibility, lineshape, and causality: derivation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Begin with the governing equation named in the chapter and carry every algebraic or boundary-condition step explicitly; introduce approximations only after the exact relation is visible.
 Solve the driven damped oscillator or two-level linear response for :math:`\chi(\omega)`, separate real and imaginary parts, and relate them to index and absorption/gain.  For time response, locate poles before closing the Fourier contour and use collision phase variance for dephasing.
 The Lorentzian area must be independent of linewidth, causal poles must give zero response before excitation, and gain must reverse sign when the population difference reverses.
 
-.. rubric:: Problem 5.6 — atomic susceptibility, lineshape, and causality: derivation
+Problem 5.6 — atomic susceptibility, lineshape, and causality: derivation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Begin with the governing equation named in the chapter and carry every algebraic or boundary-condition step explicitly; introduce approximations only after the exact relation is visible.
 Solve the driven damped oscillator or two-level linear response for :math:`\chi(\omega)`, separate real and imaginary parts, and relate them to index and absorption/gain.  For time response, locate poles before closing the Fourier contour and use collision phase variance for dephasing.
 The Lorentzian area must be independent of linewidth, causal poles must give zero response before excitation, and gain must reverse sign when the population difference reverses.
 
-.. rubric:: Problem 5.7 — atomic susceptibility, lineshape, and causality: derivation
+Problem 5.7 — atomic susceptibility, lineshape, and causality: derivation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Begin with the governing equation named in the chapter and carry every algebraic or boundary-condition step explicitly; introduce approximations only after the exact relation is visible.
 Solve the driven damped oscillator or two-level linear response for :math:`\chi(\omega)`, separate real and imaginary parts, and relate them to index and absorption/gain.  For time response, locate poles before closing the Fourier contour and use collision phase variance for dephasing.
 The Lorentzian area must be independent of linewidth, causal poles must give zero response before excitation, and gain must reverse sign when the population difference reverses.
 
-.. rubric:: Problem 5.8 — atomic susceptibility, lineshape, and causality: derivation
+Problem 5.8 — atomic susceptibility, lineshape, and causality: derivation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Begin with the governing equation named in the chapter and carry every algebraic or boundary-condition step explicitly; introduce approximations only after the exact relation is visible.
 Solve the driven damped oscillator or two-level linear response for :math:`\chi(\omega)`, separate real and imaginary parts, and relate them to index and absorption/gain.  For time response, locate poles before closing the Fourier contour and use collision phase variance for dephasing.

@@ -7,7 +7,8 @@ Chapter II.  Distances below follow the book's reference-plane convention.
 Illustrative problems
 ---------------------
 
-.. rubric:: Problem 2.1 — Refraction by the end of a plastic rod
+Problem 2.1 — Refraction by the end of a plastic rod
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 For the air-to-plastic surface,
 
@@ -30,7 +31,8 @@ Imaging requires :math:`B=0`, which gives
 :math:`\boxed{1.0\ \mathrm{cm}}` inverted image.  The determinant remains
 unity.
 
-.. rubric:: Problem 2.2 — Imaging through a double-convex glass rod
+Problem 2.2 — Imaging through a double-convex glass rod
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Each surface has power :math:`P=(1.6-1)/0.024=25\ \mathrm{m^{-1}}`, and the
 reduced thickness is :math:`0.028/1.6=0.0175\ \mathrm m`.  The rod matrix is
@@ -52,7 +54,8 @@ Set :math:`B=0` in :math:`T(x,1)M_sT(0.08,1)`.  This gives
 The 2-cm object therefore produces a
 :math:`\boxed{0.780\ \mathrm{cm}}` inverted image beyond the second surface.
 
-.. rubric:: Problem 2.3 — Back focal distance of a spherical bead
+Problem 2.3 — Back focal distance of a spherical bead
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 For a 2-cm-diameter bead of index 1.4, both refracting surfaces have power
 :math:`40\ \mathrm{m^{-1}}`.  Thus
@@ -73,7 +76,8 @@ A parallel input has :math:`V_1=0`.  After an air gap :math:`x`, its height is
 
 beyond the bead.  Direct multiplication verifies :math:`AD-BC=1`.
 
-.. rubric:: Problem 2.4 — Lantern-slide projection
+Problem 2.4 — Lantern-slide projection
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The image is 20 times the 2-inch slide height.  With object and image
 distances :math:`u` and :math:`v`,
@@ -92,7 +96,8 @@ Hence :math:`u=0.5\ \mathrm{ft}=6\ \mathrm{in}` and
 The lens is therefore 6 inches from the slide; the conjugate distances add
 back to 10.5 feet.
 
-.. rubric:: Problem 2.5 — Positive and negative lens pair
+Problem 2.5 — Positive and negative lens pair
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Working in metres, use :math:`P_1=12.5\ \mathrm{D}`,
 :math:`P_2=-8.333\ \mathrm{D}`, and
@@ -106,7 +111,8 @@ The top-right element is :math:`B=0.12-x`; hence
 plane :math:`A=-1`, so the final image is inverted and has the same 3-cm
 height as the object.
 
-.. rubric:: Problem 2.6 — Longitudinal magnification
+Problem 2.6 — Longitudinal magnification
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 For a thin lens of power :math:`P`, the image condition from
 :math:`T(-V)R(P)T(U)` is
@@ -127,7 +133,8 @@ Thus longitudinal magnification is the square of lateral magnification.  Its
 nonnegative sign is consistent with nearby conjugate planes moving in the
 same longitudinal sense under the book's signed-distance convention.
 
-.. rubric:: Problem 2.7 — Minimum object-to-image distance
+Problem 2.7 — Minimum object-to-image distance
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 For real conjugates of a positive thin lens,
 :math:`1/u+1/v=1/f`.  Therefore
@@ -146,7 +153,8 @@ Consequently
 with equality only at :math:`u=v=2f`.  This is also the stationary point of
 the separation found by differentiating with respect to either conjugate.
 
-.. rubric:: Problem 2.8 — Cardinal points of a hemispherical lens
+Problem 2.8 — Cardinal points of a hemispherical lens
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Take the entrance plane surface as the first reference plane, translate a
 reduced distance :math:`r/n`, and refract at the spherical exit.  Reducing the
@@ -163,7 +171,8 @@ The result tends to infinite focal length as :math:`n\to1`, and the second
 principal point remains at the vertex because there is no propagation after
 the only powered surface.
 
-.. rubric:: Problem 2.9 — Cardinal points of a separated positive-negative pair
+Problem 2.9 — Cardinal points of a separated positive-negative pair
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The two-lens matrix is
 
@@ -180,7 +189,8 @@ second focus is :math:`-A/C=+10\ \mathrm{cm}` and the second principal plane is
 :math:`(1-A)/C=-10\ \mathrm{cm}`.  Each focus is 20 cm from its associated
 principal plane.
 
-.. rubric:: Problem 2.10 — Two-lens eyepiece and chromatic error
+Problem 2.10 — Two-lens eyepiece and chromatic error
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Multiplication gives
 
@@ -208,7 +218,8 @@ For lenses of the same glass, write :math:`P_i=(n-1)G_i` and set
 This removes chromatic change of magnification, but :math:`D=1-P_2t` still
 varies with index, so the eyepiece retains longitudinal color.
 
-.. rubric:: Problem 2.11 — Cardinal points across unequal exterior indices
+Problem 2.11 — Cardinal points across unequal exterior indices
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 In centimetres and inverse centimetres, the thick-lens matrix is
 
@@ -239,7 +250,8 @@ with :math:`n_1=1` and :math:`n_2=1.4`.  The cardinal data are
 The two nodal points coincide at the common center of curvature: 5 cm to the
 right of the first surface, equivalently 2 cm to the right of the second.
 
-.. rubric:: Problem 2.12 — Internally reflected glass sphere
+Problem 2.12 — Internally reflected glass sphere
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Construct the chain from refraction at the left surface, translation across
 the sphere, reflection at the right surface, return translation, and final

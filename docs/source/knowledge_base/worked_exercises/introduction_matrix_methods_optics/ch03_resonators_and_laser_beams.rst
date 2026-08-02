@@ -7,7 +7,8 @@ Chapter III.
 Illustrative problems
 ---------------------
 
-.. rubric:: Problem 3.1 — Recovering an unknown system matrix from focal-power tests
+Problem 3.1 — Recovering an unknown system matrix from focal-power tests
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Let the sealed system be :math:`M_0=(A_0,B_0;C_0,D_0)` and let weak lenses of
 powers :math:`P_1` and :math:`P_2` be attachable at its input and output.
@@ -37,7 +38,8 @@ Solving sequentially produces
 The independent check is :math:`A_0D_0-B_0C_0=1`; disagreement measures
 experimental or paraxial-model error.
 
-.. rubric:: Problem 3.2 — Sagittal separation and the optical invariant
+Problem 3.2 — Sagittal separation and the optical invariant
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Propagate both marginal ray vectors by the same translation matrix and solve
 for the plane where their heights agree.  Use the paraxial sag relation
@@ -52,7 +54,8 @@ Replacing one marginal ray by its diametrically opposite ray reverses the
 determinant and hence the sagittal ordering.  Physically, the wavefront that
 led at one equal-area crossing lags at the other.
 
-.. rubric:: Problem 3.3 — General round-trip matrix for a compound dye-laser cavity
+Problem 3.3 — General round-trip matrix for a compound dye-laser cavity
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Let :math:`M_0` transfer rays from the left mirror to the right mirror, and
 represent each mirror by :math:`R(P_i)`.  Write the outward chain first, then
@@ -71,7 +74,8 @@ Keeping the intermediate matrix in symbolic :math:`A_0,B_0,C_0,D_0` form is
 the shortest route; expanding numerical lens trains first obscures both
 checks.
 
-.. rubric:: Problem 3.4 — Stability range and output-wave curvature
+Problem 3.4 — Stability range and output-wave curvature
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Write the round-trip matrix immediately before the output mirror as
 :math:`(A_r,B_r;C_r,A_r)` and multiply by :math:`R(P_2)`.  The trace becomes
@@ -95,7 +99,8 @@ allowed value, the fixed-point solution for :math:`q` gives
 so the oscillating wavefront matches the output mirror.  At either stability
 endpoint the Gaussian solution becomes marginal.
 
-.. rubric:: Problem 3.5 — Short single-frequency carbon-dioxide laser
+Problem 3.5 — Short single-frequency carbon-dioxide laser
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 A parallel output requires a plane output mirror.  With cavity length
 :math:`L=0.5\ \mathrm m`, the round-trip trace condition
@@ -119,7 +124,8 @@ diameter is about 4 mm.  Allowing diffraction, alignment, wall-reflection, and
 discharge margins leads to the practical recommendation
 :math:`\boxed{10\ \mathrm{mm}}` for the tube or limiting diaphragm diameter.
 
-.. rubric:: Problem 3.6 — Internal-reflection focus inside a plano-convex lens
+Problem 3.6 — Internal-reflection focus inside a plano-convex lens
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Use refraction matrices :math:`R_1,R_2`, internal-reflection matrices
 :math:`R'_1,R'_2`, and the 1-cm glass translation :math:`T`.  Since the second

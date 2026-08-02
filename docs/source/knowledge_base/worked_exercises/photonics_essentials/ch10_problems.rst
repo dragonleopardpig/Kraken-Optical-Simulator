@@ -8,8 +8,11 @@ Thomas P. Pearsall, *Photonics Essentials: An Introduction with Experiments*
 (McGraw-Hill, 2003), Chapter 10, ``Measurements in Photonics``,
 Problems 10.1--10.3, printed pages 242--243.
 
+Worked solutions
+----------------
+
 Problem 10.1: Lock-in amplifier experiment
--------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 This is an experimental protocol, not a problem with one numerical answer.
 Do not invent the phase or noise readings.
@@ -56,7 +59,7 @@ noise and ambient-light offsets.  This direct comparison demonstrates why
 phase-sensitive detection can recover a small periodic signal.
 
 Problem 10.2: F-number and aperture angle
------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 For focal length :math:`f`, clear diameter :math:`D`, and f-number
 :math:`N=f/D`, the marginal-ray half-angle is
@@ -90,7 +93,7 @@ It decreases monotonically and is approximately :math:`1/N` radians for
 large f-number.
 
 Problem 10.3: Filling a screen through a slit
-----------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The book's figure places a :math:`2\ \mathrm{cm}` screen
 :math:`L=6\ \mathrm{cm}` behind the slit.  Place the lens so that the focused

@@ -9,25 +9,29 @@ solution route, and a physical verification.
 Section 20.2: Gaussian Beams And Abcd Matrices
 ----------------------------------------------
 
-.. rubric:: Problem 20.2.1 — Bilinear transforms for Gaussian beams in ABCD matrix systems
+Problem 20.2.1 — Bilinear transforms for Gaussian beams in ABCD matrix systems
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 List the supplied quantities in one unit system, isolate the requested variable symbolically, and retain guard digits until the final evaluation.
 Represent the beam by :math:`q^{-1}=R^{-1}-j\lambda/(\pi w^2)` and propagate it with :math:`q_2=(Aq_1+B)/(Cq_1+D)`; separate real and imaginary parts only at the end.
 Check that free propagation reproduces the Rayleigh-range formulas and that every computed spot size is real and positive.
 
-.. rubric:: Problem 20.2.2 — Mirror design specification for a small He-Ne laser—ABCD analysis
+Problem 20.2.2 — Mirror design specification for a small He-Ne laser—ABCD analysis
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Translate each performance requirement into an equality or inequality, solve the coupled constraints, and discard any root that violates a physical bound.
 Represent the beam by :math:`q^{-1}=R^{-1}-j\lambda/(\pi w^2)` and propagate it with :math:`q_2=(Aq_1+B)/(Cq_1+D)`; separate real and imaginary parts only at the end.
 Check that free propagation reproduces the Rayleigh-range formulas and that every computed spot size is real and positive.
 
-.. rubric:: Problem 20.2.3 — Tolerances on the mirror design specification
+Problem 20.2.3 — Tolerances on the mirror design specification
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Translate each performance requirement into an equality or inequality, solve the coupled constraints, and discard any root that violates a physical bound.
 Represent the beam by :math:`q^{-1}=R^{-1}-j\lambda/(\pi w^2)` and propagate it with :math:`q_2=(Aq_1+B)/(Cq_1+D)`; separate real and imaginary parts only at the end.
 Check that free propagation reproduces the Rayleigh-range formulas and that every computed spot size is real and positive.
 
-.. rubric:: Problem 20.2.4 — Focusing into a dielectric sample—ABCD analysis
+Problem 20.2.4 — Focusing into a dielectric sample—ABCD analysis
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 List the supplied quantities in one unit system, isolate the requested variable symbolically, and retain guard digits until the final evaluation.
 Represent the beam by :math:`q^{-1}=R^{-1}-j\lambda/(\pi w^2)` and propagate it with :math:`q_2=(Aq_1+B)/(Cq_1+D)`; separate real and imaginary parts only at the end.
@@ -36,7 +40,8 @@ Check that free propagation reproduces the Rayleigh-range formulas and that ever
 Section 20.4: Complex Paraxial Optics
 -------------------------------------
 
-.. rubric:: Problem 20.4.1 — Square root of an ABCD matrix
+Problem 20.4.1 — Square root of an ABCD matrix
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 List the supplied quantities in one unit system, isolate the requested variable symbolically, and retain guard digits until the final evaluation.
 Represent the beam by :math:`q^{-1}=R^{-1}-j\lambda/(\pi w^2)` and propagate it with :math:`q_2=(Aq_1+B)/(Cq_1+D)`; separate real and imaginary parts only at the end.
@@ -45,25 +50,29 @@ Check that free propagation reproduces the Rayleigh-range formulas and that ever
 Section 20.5: Complex Hermite-Gaussian Modes
 --------------------------------------------
 
-.. rubric:: Problem 20.5.1 — Verifying the cascading properties of complex ABCD matrices
+Problem 20.5.1 — Verifying the cascading properties of complex ABCD matrices
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Begin with the stated physical law, keep the derivation symbolic, and introduce each approximation only where its limiting condition is explicit.
 Represent the beam by :math:`q^{-1}=R^{-1}-j\lambda/(\pi w^2)` and propagate it with :math:`q_2=(Aq_1+B)/(Cq_1+D)`; separate real and imaginary parts only at the end.
 Check that free propagation reproduces the Rayleigh-range formulas and that every computed spot size is real and positive.
 
-.. rubric:: Problem 20.5.2 — Complex Gaussian eigenmode of a complex Gaussian duct
+Problem 20.5.2 — Complex Gaussian eigenmode of a complex Gaussian duct
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 List the supplied quantities in one unit system, isolate the requested variable symbolically, and retain guard digits until the final evaluation.
 Represent the beam by :math:`q^{-1}=R^{-1}-j\lambda/(\pi w^2)` and propagate it with :math:`q_2=(Aq_1+B)/(Cq_1+D)`; separate real and imaginary parts only at the end.
 Check that free propagation reproduces the Rayleigh-range formulas and that every computed spot size is real and positive.
 
-.. rubric:: Problem 20.5.3 — Biorthogonal modes in Gaussian ducts
+Problem 20.5.3 — Biorthogonal modes in Gaussian ducts
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 List the supplied quantities in one unit system, isolate the requested variable symbolically, and retain guard digits until the final evaluation.
 Represent the beam by :math:`q^{-1}=R^{-1}-j\lambda/(\pi w^2)` and propagate it with :math:`q_2=(Aq_1+B)/(Cq_1+D)`; separate real and imaginary parts only at the end.
 Check that free propagation reproduces the Rayleigh-range formulas and that every computed spot size is real and positive.
 
-.. rubric:: Problem 20.5.4 — Initial excitation of a complex Gaussian duct
+Problem 20.5.4 — Initial excitation of a complex Gaussian duct
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 List the supplied quantities in one unit system, isolate the requested variable symbolically, and retain guard digits until the final evaluation.
 Represent the beam by :math:`q^{-1}=R^{-1}-j\lambda/(\pi w^2)` and propagate it with :math:`q_2=(Aq_1+B)/(Cq_1+D)`; separate real and imaginary parts only at the end.

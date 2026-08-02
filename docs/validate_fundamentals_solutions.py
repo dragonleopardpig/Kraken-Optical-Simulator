@@ -51,13 +51,13 @@ EXPECTED_COUNTS = {
     24: (0, 10),
 }
 ITEM_RE = re.compile(
-    r"^(?:\.\. rubric:: )?(Exercise|Problem) "
-    r"(\d+)\.(\d+)-(\d+)\b[^\n]*\n(?:\^+\n)?",
+    r"^(Exercise|Problem) "
+    r"(\d+)\.(\d+)-(\d+)\b[^\n]*\n\^+\n",
     re.MULTILINE,
 )
 ENTRY_RE = re.compile(
-    r"^(?:\.\. rubric:: )?(Exercise|Problem) "
-    r"(\d+)\.(\d+)-(\d+)\b[^\n]*\n(?:\^+\n)?",
+    r"^(Exercise|Problem) "
+    r"(\d+)\.(\d+)-(\d+)\b[^\n]*\n\^+\n",
     re.MULTILINE,
 )
 EQUATION_LABEL_RE = re.compile(r"^   :label: (fop-[a-z0-9-]+)$", re.MULTILINE)
@@ -197,17 +197,13 @@ def main() -> None:
             identity = f"{kind} {id_chapter}.{section}-{item}"
 
             entry_lines = entry.group(0).splitlines()
-            if kind == "Exercise":
-                heading = entry_lines[0]
-                if (
-                    heading.startswith(".. rubric::")
-                    or len(entry_lines) != 2
-                    or set(entry_lines[1]) != {"^"}
-                    or len(entry_lines[1]) < len(heading)
-                ):
-                    fail(f"{identity} is not a third-level heading")
-            elif not entry_lines[0].startswith(".. rubric:: Problem"):
-                fail(f"{identity} is not a problem rubric")
+            heading = entry_lines[0]
+            if (
+                len(entry_lines) != 2
+                or set(entry_lines[1]) != {"^"}
+                or len(entry_lines[1]) != len(heading)
+            ):
+                fail(f"{identity} is not a third-level heading")
 
             if kind == "Exercise":
                 expected_figure_number += 1

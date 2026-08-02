@@ -34,8 +34,11 @@ Quick results
    "3.4", "The straight semilog segment implies an exponential law; the printed voltage scale gives an unphysical :math:`n\approx0.19`"
    "3.5", ":math:`P_D\approx9.21\ \mathrm{nW}`, :math:`\mathcal R=0.375\ \mathrm{A/W}`, :math:`I(1\ \mathrm m)=3.46\ \mathrm{nA}`"
 
+Worked solutions
+----------------
+
 Problem 3.1: Filtered photodiode spectrum
------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Paraphrase.**  Interpret a measured spectrum made with an incandescent
 source, a silicon filter, a monochromator, and an unknown Ge or Si detector.
@@ -73,7 +76,7 @@ could produce a false infrared response.  The silicon filter absorbs most of
 that visible light, strongly suppressing the artifact.
 
 Problem 3.2: Responsivity and quantum efficiency
-------------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 At :math:`1000\ \mathrm{nm}`, divide the measured current by incident power:
 
@@ -132,7 +135,7 @@ The abrupt cutoff is an idealization.  A measured silicon response rolls off
 as absorption becomes weak near the indirect band edge.
 
 Problem 3.3: Germanium dark current
------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 In reverse bias the curve is nearly horizontal about three vertical
 divisions below zero.  With :math:`5\times10^{-7}\ \mathrm{A/div}`,
@@ -153,7 +156,7 @@ Three features increase it:
   generation current.
 
 Problem 3.4: Forward characteristic and ideality factor
--------------------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 A straight line on a plot of :math:`\log_{10}I` against :math:`V` means
 
@@ -188,7 +191,7 @@ were :math:`0.50\ \mathrm V`, the same construction would give
 literal graph result and the apparent scale error.
 
 Problem 3.5: Free-space LED link
---------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The drawing labels the **full** cone angle as :math:`20^\circ`; its half-angle
 is :math:`\theta=10^\circ`.  At distance :math:`L`,

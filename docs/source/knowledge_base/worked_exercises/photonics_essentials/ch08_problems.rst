@@ -11,8 +11,11 @@ Problems 8.1--8.3, printed page 190.
 The book labels both of its final two exercises ``8.2``.  This page calls the
 last one **8.3**.
 
+Worked solutions
+----------------
+
 Problem 8.1: Band filling and wavelength chirp
------------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Let a current pulse be shorter than the recombination time.
 
@@ -53,7 +56,7 @@ wavelength:
    \boxed{\lambda(t)\ \text{chirps from shorter to longer wavelength}}.
 
 Problem 8.2: Delay with 90% threshold prebias
-----------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Equation 8.8 gives
 
@@ -81,7 +84,7 @@ For example,
    =69.3\ \mathrm{ps}.
 
 Problem 8.3: Other prebias levels
-----------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Repeat the same calculation:
 

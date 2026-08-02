@@ -132,8 +132,9 @@ EXPECTED_COUNTS = {
     (31, 6): 1,
     (31, 7): 4,
 }
-RUBRIC_RE = re.compile(
-    r"^\.\. rubric:: Problem (\d+)\.(\d+)\.(\d+)(?=\s|—)", re.MULTILINE
+PROBLEM_RE = re.compile(
+    r"^Problem (\d+)\.(\d+)\.(\d+)(?=\s|—)[^\n]*\n\^+\n",
+    re.MULTILINE,
 )
 
 
@@ -150,7 +151,7 @@ def main() -> None:
     identities: set[tuple[int, int, int]] = set()
     for path in chapter_files:
         chapter = int(path.name[2:4])
-        for id_chapter, section, item in RUBRIC_RE.findall(
+        for id_chapter, section, item in PROBLEM_RE.findall(
             path.read_text(encoding="utf-8")
         ):
             identity = (int(id_chapter), int(section), int(item))
@@ -175,8 +176,8 @@ def main() -> None:
         fail(f"found {len(identities)} problems, expected 394")
 
     chapter_23 = next(path for path in chapter_files if path.name.startswith("ch23_"))
-    if RUBRIC_RE.search(chapter_23.read_text(encoding="utf-8")):
-        fail("chapter 23 unexpectedly contains a problem rubric")
+    if PROBLEM_RE.search(chapter_23.read_text(encoding="utf-8")):
+        fail("chapter 23 unexpectedly contains a numbered problem")
 
     collection_index = (COLLECTION / "index.rst").read_text(encoding="utf-8")
     for path in chapter_files:

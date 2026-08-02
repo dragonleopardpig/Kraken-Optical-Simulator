@@ -314,12 +314,12 @@ def clean_title(title: str) -> str:
     return title
 
 
-def exercise_heading(
-    chapter: int, section: str, item: str, raw_title: str
+def entry_heading(
+    kind: str, chapter: int, section: str, item: str, raw_title: str
 ) -> str:
-    """Return a third-level reStructuredText heading for an exercise."""
+    """Return a third-level reStructuredText heading for a worked entry."""
 
-    title = f"Exercise {chapter}.{section}-{item} — {raw_title}"
+    title = f"{kind} {chapter}.{section}-{item} — {raw_title}"
     return f"{title}\n{'^' * len(title)}\n"
 
 
@@ -707,11 +707,9 @@ def transform_chapter(
                 )
             entry_changed = new_body != body
             body = new_body
-        entry_header = entry.group(0)
-        if kind == "Exercise":
-            entry_header = exercise_heading(
-                chapter, section, item, raw_title
-            )
+        entry_header = entry_heading(
+            kind, chapter, section, item, raw_title
+        )
         entry_changed = entry_changed or entry_header != entry.group(0)
         changed += entry_changed
         chunks.append(entry_header + body)

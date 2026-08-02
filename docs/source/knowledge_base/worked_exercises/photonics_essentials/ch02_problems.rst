@@ -31,8 +31,11 @@ Quick results
    "2.7", "Ideally, reflection and transmission; no band-to-band absorption"
    "2.8", "Frequency is unchanged; wavelength and speed both fall by :math:`1/n`"
 
+Worked solutions
+----------------
+
 Problem 2.1: Energy step across a p-n junction
-------------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Paraphrase.**  At equilibrium, the electron densities on the two sides are
 :math:`n_n=10^{18}\ \mathrm{cm^{-3}}` and
@@ -70,7 +73,7 @@ As a check, inserting :math:`0.838\ \mathrm{eV}` into Equation
 :math:`10^{-14}`.
 
 Problem 2.2: Photon-electron-phonon collision
----------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Paraphrase.**  A :math:`1\ \mathrm{eV}` photon transfers energy to an
 electron initially at rest.  A silicon phonon supplies the momentum balance.
@@ -187,7 +190,7 @@ momentum are thermally distributed, so a room-temperature collision does not
 have one unique initial value.
 
 Problem 2.3: Thermal electron wavelength in GaAs
--------------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Paraphrase.**  Use the GaAs electron effective mass
 :math:`m^*=0.065m_e` and thermal kinetic energy :math:`k_BT` to find its de
@@ -263,7 +266,7 @@ This large number illustrates what it means for a conduction electron to be
 delocalized over the crystal.
 
 Problem 2.4: Photon energy from wavelength
--------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Paraphrase.**  Derive the electron-volt photon-energy formula from
 :math:`E=hf` and :math:`c=f\lambda`.
@@ -307,7 +310,7 @@ Thus the convenient rounded relation is
    confirms the correct constant.
 
 Problem 2.5: Energy-wavelength conversion chart
-------------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Paraphrase.**  Construct aligned wavelength and photon-energy axes from
 :math:`200` to :math:`2000\ \mathrm{nm}`; mark blue, green, red, and the
@@ -350,7 +353,7 @@ Blue photons have more energy than red photons because blue has the shorter
 wavelength.
 
 Problem 2.6: From a sinusoidal wave to electron energy
--------------------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Part a: differentiate the wave.**  Start with
 
@@ -407,7 +410,7 @@ time-independent Schrödinger equation for a free particle.  A potential
 :math:`V(x)` adds a term :math:`V(x)\psi(x)` on the left.
 
 Problem 2.7: Sub-bandgap light incident on silicon
---------------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Paraphrase.**  Decide whether :math:`1240\ \mathrm{nm}` light is absorbed,
 reflected, or transmitted by a :math:`0.5\ \mathrm{mm}` silicon wafer whose
@@ -439,7 +442,7 @@ absorption.  Those mechanisms are outside the three-process idealization in
 the problem.
 
 Problem 2.8: What changes when light enters glass?
---------------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 **Paraphrase.**  Light crosses from air into glass of refractive index
 :math:`n=1.5`.  Determine whether its frequency, wavelength, or both change,

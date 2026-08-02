@@ -8,8 +8,11 @@ Thomas P. Pearsall, *Photonics Essentials: An Introduction with Experiments*
 (McGraw-Hill, 2003), Chapter 6, ``Light-Emitting Diodes``, Problems 6.1--6.6,
 printed pages 139--141.
 
+Worked solutions
+----------------
+
 Problem 6.1: Red LED turn-on
-----------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Figure 6.4 peaks at approximately :math:`700\ \mathrm{nm}`.  Therefore,
 
@@ -33,7 +36,7 @@ At :math:`77\ \mathrm K`:
 * nonradiative processes and series resistance may also change.
 
 Problem 6.2: Why forward bias emits efficiently
-------------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Forward bias does two essential things before substantial light and current
 appear:
@@ -49,7 +52,7 @@ separates and removes carriers, which is why it is useful for photodetection
 rather than efficient LED emission.
 
 Problem 6.3: Accepting an LED shipment
---------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Values must be read from the printed spectrum, so use appropriate precision:
 
@@ -93,7 +96,7 @@ adequate sampling plan.  One sample cannot establish the defect rate of
 500,000 devices.
 
 Problem 6.4: Traffic-light profitability
------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 This problem requires local quotations; the following is a reusable model
 and an illustrative calculation, not a claim about current prices in any
@@ -142,7 +145,7 @@ Example 6.3 obtained an eight-year affordable conversion price of about
 :math:`\$480` using its older energy and labor assumptions.
 
 Problem 6.5: LED bandwidth
----------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Equation 6.40 is
 
@@ -203,7 +206,7 @@ low-injection result is linear in :math:`B` and independent of drive current
 within that approximation.
 
 Problem 6.6: Green and amber traffic signals
----------------------------------------------
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 This question reflects the economics and LED technology at the time the book
 was written.
