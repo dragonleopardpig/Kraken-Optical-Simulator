@@ -9,11 +9,22 @@ In-text exercises
 
 .. rubric:: Exercise 10.1-1 — Ring and bow-tie resonances
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-10-1-1-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_10_01_01.svg
+   :alt: Illustrated calculation map for Exercise 10.1-1, Ring and bow-tie resonances
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Require total propagation plus mirror phase to equal :math:`2\pi q`.  For
 round-trip optical length :math:`L_o`,
@@ -21,7 +32,7 @@ round-trip optical length :math:`L_o`,
 :math:`\boxed{\nu_F=c/L_o}`; :math:`N_m=3,4` supplies the ring/bow-tie phase
 offset, which can be absorbed into the integer for four mirrors.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-10-1-1-result
@@ -29,22 +40,33 @@ offset, which can be absorbed into the integer for four mirrors.
    \boxed{\nu_F=c/L_o}
 
 
-**Check.**  Equation :eq:`fop-exercise-10-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-10-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
 .. rubric:: Exercise 10.1-2 — One-metre Fabry--Perot
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`Fourier-transform and convolution identities <fop-formula-fourier>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-10-1-2-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_10_01_02.svg
+   :alt: Illustrated calculation map for Exercise 10.1-2, One-metre Fabry–Perot
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`Fourier-transform and convolution identities <fop-formula-fourier>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 :math:`\nu_F=c/(2d)=149.90` MHz.  With
 :math:`\mathcal F=\pi(R_1R_2)^{1/4}/[1-\sqrt{R_1R_2}]=207.69`, the FWHM is
 :math:`\boxed{0.7217\ \mathrm{MHz}}`.  Loss per round trip is 1.51%, small
 enough for the high-finesse approximation.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-10-1-2-result
@@ -52,22 +74,33 @@ enough for the high-finesse approximation.
    \boxed{0.7217\ \mathrm{MHz}}
 
 
-**Check.**  Equation :eq:`fop-exercise-10-1-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-10-1-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
 .. rubric:: Exercise 10.2-1 — Maximum stable length
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`stationary-value condition <fop-formula-stationary>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-10-2-1-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_10_02_01.svg
+   :alt: Illustrated calculation map for Exercise 10.2-1, Maximum stable length
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`stationary-value condition <fop-formula-stationary>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Using :math:`g_i=1-d/|R_i|`, stability requires
 :math:`0<g_1g_2<1`.  For 0.50 and 1.00 m radii the stable intervals meet at
 the marginal endpoints; the largest confined length is
 :math:`\boxed{d<1.50\ \mathrm m}`.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-10-2-1-result
@@ -75,22 +108,33 @@ the marginal endpoints; the largest confined length is
    \boxed{d<1.50\ \mathrm m}
 
 
-**Check.**  Equation :eq:`fop-exercise-10-2-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-10-2-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
 .. rubric:: Exercise 10.2-2 — Plano-concave cavity
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-10-2-2-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_10_02_02.svg
+   :alt: Illustrated calculation map for Exercise 10.2-2, Plano-concave cavity
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 With :math:`g_1=1`, stability is :math:`0<d<|R_2|`.  The waist is at the
 plane mirror, :math:`z_0=\sqrt{d(|R_2|-d)}`,
 :math:`W_0^2=\lambda z_0/(\pi n)`, and
 :math:`W_2=W_0\sqrt{1+(d/z_0)^2}` at the curved mirror.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-10-2-2-result
@@ -98,15 +142,26 @@ plane mirror, :math:`z_0=\sqrt{d(|R_2|-d)}`,
    W_2=W_0\sqrt{1+(d/z_0)^2}
 
 
-**Check.**  Equation :eq:`fop-exercise-10-2-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-10-2-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
 .. rubric:: Exercise 10.2-3 — Confocal frequency comb
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-10-2-3-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_10_02_03.svg
+   :alt: Illustrated calculation map for Exercise 10.2-3, Confocal frequency comb
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 For :math:`d=0.30` m, :math:`\nu_F=c/(2d)=499.65` MHz and each increment of
 :math:`l+m+1` shifts a comb by :math:`\nu_F/2=249.83` MHz.  The frequencies
@@ -115,7 +170,7 @@ in the requested band are
 :math:`|\nu-5\times10^{14}|\leq2` GHz; enumerating the corresponding integers
 produces two interleaved 249.83-MHz combs.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-10-2-3-result
@@ -123,21 +178,32 @@ produces two interleaved 249.83-MHz combs.
    \nu=(q+(l+m+1)/2)\nu_F
 
 
-**Check.**  Equation :eq:`fop-exercise-10-2-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-10-2-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
 .. rubric:: Exercise 10.2-4 — Confocal degeneracy
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-10-2-4-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_10_02_04.svg
+   :alt: Illustrated calculation map for Exercise 10.2-4, Confocal degeneracy
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 The Gouy phase per half trip is :math:`\pi/2` in a confocal cavity, so
 :math:`\nu_{qlm}=[q+(l+m+1)/2]\nu_F`.  Even transverse-order changes are
 absorbed into :math:`q`; odd changes shift the line by :math:`\nu_F/2`.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-10-2-4-result
@@ -145,15 +211,26 @@ absorbed into :math:`q`; odd changes shift the line by :math:`\nu_F/2`.
    \nu_{qlm}=[q+(l+m+1)/2]\nu_F
 
 
-**Check.**  Equation :eq:`fop-exercise-10-2-4-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-10-2-4-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
 .. rubric:: Exercise 10.3-1 — Two-dimensional mode density
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`product, quotient, and chain rules <fop-formula-product-chain>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-10-3-1-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_10_03_01.svg
+   :alt: Illustrated calculation map for Exercise 10.3-1, Two-dimensional mode density
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`product, quotient, and chain rules <fop-formula-product-chain>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Count lattice points :math:`(q_x,q_y)` inside a quarter-circle in wavevector
 space and include two polarizations.  Differentiation gives
@@ -162,7 +239,7 @@ space and include two polarizations.  Differentiation gives
 End-of-chapter problems
 -----------------------
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-10-3-1-result
@@ -170,7 +247,7 @@ End-of-chapter problems
    \boxed{M_2(\nu)/A=2\pi\nu/c^2}
 
 
-**Check.**  Equation :eq:`fop-exercise-10-3-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-10-3-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
 .. rubric:: Problem 10.1-3 — Resonator with an etalon
 

@@ -9,11 +9,22 @@ In-text exercises
 
 .. rubric:: Exercise 14.1-1 — Ruby absorption and inversion
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-14-1-1-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_14_01_01.svg
+   :alt: Illustrated calculation map for Exercise 14.1-1, Ruby absorption and inversion
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Use Boltzmann :math:`N_2/N_1=e^{-hc/(\lambda kT)}` with
 :math:`N_1+N_2=N_a`; at 300 K the upper population is negligible, so
@@ -22,7 +33,7 @@ Use Boltzmann :math:`N_2/N_1=e^{-hc/(\lambda kT)}` with
 :math:`\boxed{N=0.5/\sigma_0}`, with :math:`\sigma_0` obtained from the
 Lorentzian lifetime formula in Sec. 13.3.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-14-1-1-result
@@ -30,21 +41,32 @@ Lorentzian lifetime formula in Sec. 13.3.
    \boxed{N=0.5/\sigma_0}
 
 
-**Check.**  Equation :eq:`fop-exercise-14-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-14-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
 .. rubric:: Exercise 14.2-1 — Optical pumping
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-14-2-1-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_14_02_01.svg
+   :alt: Illustrated calculation map for Exercise 14.2-1, Optical pumping
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Steady state gives :math:`N_2=R_2t_{sp}` and pump depletion
 :math:`R_2=(N_a-2N_2)W`.  Solving yields
 :math:`\boxed{N_2=N_at_{sp}W/(1+2t_{sp}W)}`; it approaches only :math:`N_a/2`.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-14-2-1-result
@@ -52,21 +74,32 @@ Steady state gives :math:`N_2=R_2t_{sp}` and pump depletion
    \boxed{N_2=N_at_{sp}W/(1+2t_{sp}W)}
 
 
-**Check.**  Equation :eq:`fop-exercise-14-2-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-14-2-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
 .. rubric:: Exercise 14.2-2 — Saturation time
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-14-2-2-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_14_02_02.svg
+   :alt: Illustrated calculation map for Exercise 14.2-2, Saturation time
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Insert the lifetime inequalities in the general expression for :math:`T_s`;
 all fast nonradiative/level-1 terms drop out, leaving
 :math:`\boxed{T_s\simeq t_{sp}}`.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-14-2-2-result
@@ -74,15 +107,26 @@ all fast nonradiative/level-1 terms drop out, leaving
    \boxed{T_s\simeq t_{sp}}
 
 
-**Check.**  Equation :eq:`fop-exercise-14-2-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-14-2-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
 .. rubric:: Exercise 14.2-3 — Three/four-level pump power
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-14-2-3-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_14_02_03.svg
+   :alt: Illustrated calculation map for Exercise 14.2-3, Three/four-level pump power
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Set the steady population-difference formulas to zero: the three-level system
 has a finite transparency threshold, while an ideal four-level system reaches
@@ -90,7 +134,7 @@ zero difference at zero pump.  Substitution of :math:`W=2/t_{sp}` and
 :math:`1/(2t_{sp})` gives :math:`N=N_a/3` in both; the three-level system
 requires four times the transition rate and correspondingly greater pump.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-14-2-3-result
@@ -98,21 +142,32 @@ requires four times the transition rate and correspondingly greater pump.
    N=N_a/3
 
 
-**Check.**  Equation :eq:`fop-exercise-14-2-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-14-2-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
 .. rubric:: Exercise 14.4-1 — Ruby saturation
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-14-4-1-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_14_04_01.svg
+   :alt: Illustrated calculation map for Exercise 14.4-1, Ruby saturation
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Evaluate :math:`\boxed{\phi_s(\nu_0)=1/[\sigma(\nu_0)T_s]}` using
 :math:`T_s=2t_{sp}` and Table 14.3-1; the corresponding intensity is
 :math:`\boxed{I_s=h\nu_0\phi_s}`.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-14-4-1-result
@@ -120,15 +175,26 @@ Evaluate :math:`\boxed{\phi_s(\nu_0)=1/[\sigma(\nu_0)T_s]}` using
    \boxed{I_s=h\nu_0\phi_s}
 
 
-**Check.**  Equation :eq:`fop-exercise-14-4-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-14-4-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
 .. rubric:: Exercise 14.4-2 — Saturation broadening
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`stationary-value condition <fop-formula-stationary>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-14-4-2-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_14_04_02.svg
+   :alt: Illustrated calculation map for Exercise 14.4-2, Saturation broadening
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`stationary-value condition <fop-formula-stationary>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Insert Lorentzian :math:`g(\nu)` in
 :math:`\gamma=\gamma_0/[1+\phi/\phi_s(\nu)]`.  Half maximum occurs at a
@@ -136,7 +202,7 @@ detuning enlarged by :math:`\sqrt{1+\phi/\phi_s(\nu_0)}`, so
 :math:`\boxed{\Delta\nu_{sat}=\Delta\nu
 \sqrt{1+\phi/\phi_s(\nu_0)}}`.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-14-4-2-result
@@ -145,15 +211,26 @@ detuning enlarged by :math:`\sqrt{1+\phi/\phi_s(\nu_0)}`, so
    \sqrt{1+\phi/\phi_s(\nu_0)}}
 
 
-**Check.**  Equation :eq:`fop-exercise-14-4-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-14-4-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
 .. rubric:: Exercise 14.5-1 — Amplified spontaneous emission
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-14-5-1-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_14_05_01.svg
+   :alt: Illustrated calculation map for Exercise 14.5-1, Amplified spontaneous emission
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Solve :math:`d\phi/dz=\gamma_0\phi+r_{sp}` with zero input:
 :math:`\boxed{\phi(d)=\phi_{sp}(e^{\gamma_0d}-1)}`.  For large gain a
@@ -163,7 +240,7 @@ Lorentzian exponent narrows near line centre by approximately
 End-of-chapter problems
 -----------------------
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-14-5-1-result
@@ -171,7 +248,7 @@ End-of-chapter problems
    \boxed{\phi(d)=\phi_{sp}(e^{\gamma_0d}-1)}
 
 
-**Check.**  Equation :eq:`fop-exercise-14-5-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-14-5-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
 .. rubric:: Problem 14.1-2 — Longer ruby rod
 

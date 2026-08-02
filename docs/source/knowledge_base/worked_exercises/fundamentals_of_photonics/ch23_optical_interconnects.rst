@@ -9,11 +9,22 @@ In-text exercises
 
 .. rubric:: Exercise 23.1-1 — Interconnection capacity
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`stationary-value condition <fop-formula-stationary>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-23-1-1-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_23_01_01.svg
+   :alt: Illustrated calculation map for Exercise 23.1-1, Interconnection capacity
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`stationary-value condition <fop-formula-stationary>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 An aperture of width :math:`a` contains :math:`Ba` independent grating
 samples in either transverse coordinate, hence :math:`(Ba)^2` independent
@@ -22,7 +33,7 @@ inputs consumes :math:`ML` cells, proving :math:`\boxed{ML\le(Ba)^2}`.  If
 every input is connected to every output, the maximum density is therefore
 :math:`\boxed{B^2=10^6\ \mathrm{interconnections/mm^2}}` for 1000 lines/mm.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-23-1-1-result
@@ -30,15 +41,26 @@ every input is connected to every output, the maximum density is therefore
    \boxed{B^2=10^6\ \mathrm{interconnections/mm^2}}
 
 
-**Check.**  Equation :eq:`fop-exercise-23-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-23-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
 .. rubric:: Exercise 23.1-2 — Separable logarithmic map
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`product, quotient, and chain rules <fop-formula-product-chain>`, :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>`, and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-23-1-2-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_23_01_02.svg
+   :alt: Illustrated calculation map for Exercise 23.1-2, Separable logarithmic map
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`product, quotient, and chain rules <fop-formula-product-chain>`, :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>`, and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Differentiate the proposed phase:
 
@@ -51,15 +73,28 @@ Differentiate the proposed phase:
 Equation (23.1-7) then gives :math:`x'=x+(\lambda d/2\pi)\phi_x=\ln x`
 and likewise :math:`y'=\ln y`, which proves the map.
 
-**Check.**  Equation :eq:`fop-exercise-23-1-2-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
+**Step 4 — Interpret the result.**  The final relation or conclusion in Step 3 is the requested result.  Read its sign, scale, or physical classification using the conventions fixed in Step 1.
+
+**Step 5 — Check.**  Equation :eq:`fop-exercise-23-1-2-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
 .. rubric:: Exercise 23.4-1 — Bistable nonlinearities
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`stationary-value condition <fop-formula-stationary>`, :ref:`product, quotient, and chain rules <fop-formula-product-chain>`, and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-23-4-1-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_23_04_01.svg
+   :alt: Illustrated calculation map for Exercise 23.4-1, Bistable nonlinearities
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`stationary-value condition <fop-formula-stationary>`, :ref:`product, quotient, and chain rules <fop-formula-product-chain>`, and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 For each candidate plot :math:`y(x)=x/\eta(x)` and locate folds from
 :math:`dy/dx=0`; two folds delimit a three-valued output interval.  Working
@@ -74,7 +109,7 @@ verifies the other four plots.
 End-of-chapter problems
 -----------------------
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-23-4-1-result
@@ -82,7 +117,7 @@ End-of-chapter problems
    \boxed{x=2,5}
 
 
-**Check.**  Equation :eq:`fop-exercise-23-4-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-23-4-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
 .. rubric:: Problem 23.1-3 — Conformal-map hologram
 

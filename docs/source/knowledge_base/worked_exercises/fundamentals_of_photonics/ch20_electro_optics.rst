@@ -9,11 +9,22 @@ In-text exercises
 
 .. rubric:: Exercise 20.1-1 — Directional-coupler spectral response
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`trigonometric and small-angle identities <fop-formula-trigonometry>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-20-1-1-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_20_01_01.svg
+   :alt: Illustrated calculation map for Exercise 20.1-1, Directional-coupler spectral response
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`trigonometric and small-angle identities <fop-formula-trigonometry>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Since :math:`V_0(\lambda)=V_0(\lambda_r)\lambda/\lambda_r`, holding
 :math:`V=V_0(\lambda_r)` gives coupling phase
@@ -27,15 +38,28 @@ Since :math:`V_0(\lambda)=V_0(\lambda_r)\lambda/\lambda_r`, holding
 It has a quadratic null at :math:`\lambda_r`; this expression directly
 generates the requested wavelength-detuning plot.
 
-**Check.**  Equation :eq:`fop-exercise-20-1-1-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
+**Step 4 — Interpret the result.**  The final relation or conclusion in Step 3 is the requested result.  Read its sign, scale, or physical classification using the conventions fixed in Step 1.
+
+**Step 5 — Check.**  Equation :eq:`fop-exercise-20-1-1-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
 .. rubric:: Exercise 20.2-1 — Longitudinal Kerr modulation
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-20-2-1-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_20_02_01.svg
+   :alt: Illustrated calculation map for Exercise 20.2-1, Longitudinal Kerr modulation
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 For eigenpolarization :math:`i`,
 :math:`n_i(E)\simeq n_i-s_i n_i^3E^2/2`.  With :math:`E=V/L`,
@@ -54,7 +78,9 @@ replaced by the eigenpolarization difference for a retarder.
 End-of-chapter problems
 -----------------------
 
-**Check.**  Equation :eq:`fop-exercise-20-2-1-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
+**Step 4 — Interpret the result.**  The final relation or conclusion in Step 3 is the requested result.  Read its sign, scale, or physical classification using the conventions fixed in Step 1.
+
+**Step 5 — Check.**  Equation :eq:`fop-exercise-20-2-1-eq-1` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
 .. rubric:: Problem 20.1-2 — GaAs phase-modulator speed
 

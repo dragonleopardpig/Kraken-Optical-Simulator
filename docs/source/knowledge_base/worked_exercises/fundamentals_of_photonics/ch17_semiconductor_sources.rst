@@ -9,18 +9,29 @@ In-text exercises
 
 .. rubric:: Exercise 17.1-1 — Pumped quasi-Fermi levels
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-17-1-1-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_17_01_01.svg
+   :alt: Illustrated calculation map for Exercise 17.1-1, Pumped quasi-Fermi levels
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 At zero temperature, state counting gives
 :math:`E_{Fc}-E_c=\hbar^2(3\pi^2\Delta n)^{2/3}/(2m_e)` and
 :math:`E_v-E_{Fv}=\hbar^2(3\pi^2\Delta p)^{2/3}/(2m_h)`; charge-pair injection
 sets :math:`\Delta n=\Delta p`.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-17-1-1-result
@@ -28,22 +39,33 @@ sets :math:`\Delta n=\Delta p`.
    \Delta n=\Delta p
 
 
-**Check.**  Equation :eq:`fop-exercise-17-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-17-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
 .. rubric:: Exercise 17.1-2 — Weak-injection spectrum
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-17-1-2-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_17_01_02.svg
+   :alt: Illustrated calculation map for Exercise 17.1-2, Weak-injection spectrum
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Replace electron and hole Fermi factors by Boltzmann tails.  Their product is
 :math:`e^{-(h\nu-E_g)/kT}`; multiplying the direct-gap joint DOS yields
 :math:`\boxed{r_{sp}\propto\sqrt{h\nu-E_g},
 e^{-(h\nu-E_g)/kT}}`.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-17-1-2-result
@@ -52,22 +74,33 @@ e^{-(h\nu-E_g)/kT}}`.
    e^{-(h\nu-E_g)/kT}}
 
 
-**Check.**  Equation :eq:`fop-exercise-17-1-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-17-1-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
 .. rubric:: Exercise 17.1-3 — LED peak and width
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`stationary-value condition <fop-formula-stationary>`, :ref:`product, quotient, and chain rules <fop-formula-product-chain>`, and :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>`.
+.. _fop-exercise-17-1-3-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_17_01_03.svg
+   :alt: Illustrated calculation map for Exercise 17.1-3, LED peak and width
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`stationary-value condition <fop-formula-stationary>`, :ref:`product, quotient, and chain rules <fop-formula-product-chain>`, and :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Differentiation gives :math:`h\nu_p=E_g+kT/2`.  Solve the two half-maximum
 roots of :math:`\sqrt{x}e^{-x/kT}`; their difference is proportional to
 :math:`kT`, and wavelength width is
 :math:`\Delta\lambda\simeq(\lambda_p^2/hc)\Delta E`.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-17-1-3-result
@@ -75,15 +108,26 @@ roots of :math:`\sqrt{x}e^{-x/kT}`; their difference is proportional to
    h\nu_p=E_g+kT/2
 
 
-**Check.**  Equation :eq:`fop-exercise-17-1-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-17-1-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
 .. rubric:: Exercise 17.1-4 — Planar LED extraction
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`trigonometric and small-angle identities <fop-formula-trigonometry>`.
+.. _fop-exercise-17-1-4-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_17_01_04.svg
+   :alt: Illustrated calculation map for Exercise 17.1-4, Planar LED extraction
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`trigonometric and small-angle identities <fop-formula-trigonometry>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Escape half-angle is :math:`\sin^{-1}(1/n)` and isotropic one-face fraction
 :math:`[1-\cos\theta_c]/2`.  Critical angles for GaAs, GaN, polymer are
@@ -94,7 +138,9 @@ planar TIR restriction for rays reaching it normally.
 End-of-chapter problems
 -----------------------
 
-**Check.**  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
+**Step 4 — Interpret the result.**  The final relation or conclusion in Step 3 is the requested result.  Read its sign, scale, or physical classification using the conventions fixed in Step 1.
+
+**Step 5 — Check.**  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
 
 .. rubric:: Problem 17.1-5 — LED widths from plots
 

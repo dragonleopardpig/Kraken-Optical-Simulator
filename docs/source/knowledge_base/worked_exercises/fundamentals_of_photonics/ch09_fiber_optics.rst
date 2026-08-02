@@ -9,11 +9,22 @@ In-text exercises
 
 .. rubric:: Exercise 9.3-1 — Optimum power-law profile
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`product, quotient, and chain rules <fop-formula-product-chain>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-9-3-1-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_09_03_01.svg
+   :alt: Illustrated calculation map for Exercise 9.3-1, Optimum power-law profile
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`product, quotient, and chain rules <fop-formula-product-chain>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Differentiate the modal propagation constant with respect to frequency,
 including :math:`n_1(\omega)` and :math:`\Delta(\omega)`, to obtain Eq.
@@ -21,7 +32,7 @@ including :math:`n_1(\omega)` and :math:`\Delta(\omega)`, to obtain Eq.
 :math:`\boxed{p_{opt}=2+P_s}` to first order (reducing to the parabolic
 :math:`p=2` profile when material parameters are wavelength independent).
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-9-3-1-result
@@ -29,15 +40,26 @@ including :math:`n_1(\omega)` and :math:`\Delta(\omega)`, to obtain Eq.
    \boxed{p_{opt}=2+P_s}
 
 
-**Check.**  Equation :eq:`fop-exercise-9-3-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-9-3-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
 
 .. rubric:: Exercise 9.3-2 — Rotated birefringent segments
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`matrix multiplication and eigenvalue rules <fop-formula-matrices>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-9-3-2-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_09_03_02.svg
+   :alt: Illustrated calculation map for Exercise 9.3-2, Rotated birefringent segments
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`matrix multiplication and eigenvalue rules <fop-formula-matrices>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Each half has polarization delay
 :math:`(N_y-N_x)(0.5\ \mathrm{km})/c=1.668` ns and chromatic broadening
@@ -51,7 +73,7 @@ first-order split.
 End-of-chapter problems
 -----------------------
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-9-3-2-result
@@ -59,7 +81,7 @@ End-of-chapter problems
    D L\Delta\lambda=500
 
 
-**Check.**  Equation :eq:`fop-exercise-9-3-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Multiply the matrices independently in the stated input-to-output order and verify that every product has compatible dimensions.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-9-3-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Multiply the matrices independently in the stated input-to-output order and verify that every product has compatible dimensions.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
 .. rubric:: Problem 9.1-1 — Source coupling
 

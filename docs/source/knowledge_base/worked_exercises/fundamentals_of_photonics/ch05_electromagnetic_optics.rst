@@ -9,11 +9,22 @@ In-text exercise
 
 .. rubric:: Exercise 5.5-1 — Dilute absorbing impurities
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`common differential-equation solutions <fop-formula-odes>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-5-5-1-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_05_05_01.svg
+   :alt: Illustrated calculation map for Exercise 5.5-1, Dilute absorbing impurities
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`common differential-equation solutions <fop-formula-odes>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 The host has :math:`\epsilon_r=n_0^2`; adding dilute susceptibility gives
 :math:`\epsilon_r=n_0^2+\chi'+j\chi''`.  Expanding
@@ -25,7 +36,7 @@ The host has :math:`\epsilon_r=n_0^2`; adding dilute susceptibility gives
 End-of-chapter problems
 -----------------------
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-5-5-1-result
@@ -33,7 +44,7 @@ End-of-chapter problems
    \boxed{\alpha=2k_0\kappa=k_0\chi''/n_0}
 
 
-**Check.**  Equation :eq:`fop-exercise-5-5-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiating the proposed solution and substituting it into the original differential equation verifies the functional form.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-5-5-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiating the proposed solution and substituting it into the original differential equation verifies the functional form.
 
 .. rubric:: Problem 5.1-1 — Gaussian electromagnetic pulse
 

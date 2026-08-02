@@ -9,18 +9,29 @@ In-text exercises
 
 .. rubric:: Exercise 11.1-1 — Coherence-time definitions
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`integration identities <fop-formula-integration>`, :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>`, and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-11-1-1-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_11_01_01.svg
+   :alt: Illustrated calculation map for Exercise 11.1-1, Coherence-time definitions
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`integration identities <fop-formula-integration>`, :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>`, and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Insert each supplied :math:`g(\tau)` in
 :math:`T_c=\int|g|^2d\tau`.  Both integrals return the parameter :math:`T_c`.
 At :math:`\tau=T_c`, the exponential magnitude has fallen to
 :math:`e^{-1/2}` and the Gaussian to :math:`e^{-\pi/2}`.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-11-1-1-result
@@ -28,22 +39,33 @@ At :math:`\tau=T_c`, the exponential magnitude has fallen to
    \tau=T_c
 
 
-**Check.**  Equation :eq:`fop-exercise-11-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiation of an antiderivative, or normalization of a definite integral, checks the integration step.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-11-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiation of an antiderivative, or normalization of a definite integral, checks the integration step.
 
 .. rubric:: Exercise 11.1-2 — Reciprocal equivalent widths
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`integration identities <fop-formula-integration>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-11-1-2-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_11_01_02.svg
+   :alt: Illustrated calculation map for Exercise 11.1-2, Reciprocal equivalent widths
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`integration identities <fop-formula-integration>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Parseval applied to the Wiener--Khinchin pair gives
 :math:`\int|G|^2d\tau=\int|S|^2d\nu`; dividing by :math:`G(0)^2=[\int S]^2`
 shows directly that the power-equivalent widths obey
 :math:`\boxed{T_c\Delta\nu_c=1}`.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-11-1-2-result
@@ -51,22 +73,33 @@ shows directly that the power-equivalent widths obey
    \boxed{T_c\Delta\nu_c=1}
 
 
-**Check.**  Equation :eq:`fop-exercise-11-1-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiation of an antiderivative, or normalization of a definite integral, checks the integration step.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-11-1-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiation of an antiderivative, or normalization of a definite integral, checks the integration step.
 
 .. rubric:: Exercise 11.1-3 — Mutual-coherence wave equations
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`expectation, variance, and probability identities <fop-formula-probability>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-11-1-3-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_11_01_03.svg
+   :alt: Illustrated calculation map for Exercise 11.1-3, Mutual-coherence wave equations
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`expectation, variance, and probability identities <fop-formula-probability>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Apply the wave operator to either field inside
 :math:`G=\langle U^*(\mathbf r_1,t)U(\mathbf r_2,t+\tau)\rangle`; linearity
 lets it pass through the average.  This gives the two Wolf equations, one in
 :math:`\mathbf r_1,-\tau` and one in :math:`\mathbf r_2,+\tau`.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-11-1-3-result
@@ -74,15 +107,26 @@ lets it pass through the average.  This gives the two Wolf equations, one in
    G=\langle U^*(\mathbf r_1,t)U(\mathbf r_2,t+\tau)\rangle
 
 
-**Check.**  Equation :eq:`fop-exercise-11-1-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  For a probability result, verify the zero-to-one bounds; when a full distribution is present, also verify normalization and nonnegative variance.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-11-1-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  For a probability result, verify the zero-to-one bounds; when a full distribution is present, also verify normalization and nonnegative variance.
 
 .. rubric:: Exercise 11.4-1 — Polarized plus unpolarized decomposition
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`Fourier-transform and convolution identities <fop-formula-fourier>` and :ref:`matrix multiplication and eigenvalue rules <fop-formula-matrices>`.
+.. _fop-exercise-11-4-1-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_11_04_01.svg
+   :alt: Illustrated calculation map for Exercise 11.4-1, Polarized plus unpolarized decomposition
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`Fourier-transform and convolution identities <fop-formula-fourier>` and :ref:`matrix multiplication and eigenvalue rules <fop-formula-matrices>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 An unpolarized coherency matrix contributes equal diagonal terms and no cross
 term; the rank-one polarized matrix supplies the remaining diagonal imbalance
@@ -92,7 +136,9 @@ and correlation.  Adding the stated intensities yields :math:`I_x,I_y` and
 End-of-chapter problems
 -----------------------
 
-**Check.**  Multiply the matrices independently in the stated input-to-output order and verify that every product has compatible dimensions.
+**Step 4 — Interpret the result.**  The final relation or conclusion in Step 3 is the requested result.  Read its sign, scale, or physical classification using the conventions fixed in Step 1.
+
+**Step 5 — Check.**  Multiply the matrices independently in the stated input-to-output order and verify that every product has compatible dimensions.
 
 .. rubric:: Problem 11.1-4 — Lorentzian LED spectrum
 

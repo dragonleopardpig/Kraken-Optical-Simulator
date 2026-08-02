@@ -9,11 +9,22 @@ In-text exercises
 
 .. rubric:: Exercise 4.1-1 — Binary Fresnel plate
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`Fourier-transform and convolution identities <fop-formula-fourier>`, :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>`, and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-4-1-1-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_04_01_01.svg
+   :alt: Illustrated calculation map for Exercise 4.1-1, Binary Fresnel plate
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`Fourier-transform and convolution identities <fop-formula-fourier>`, :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>`, and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Expand the binary radial phase in a Fourier series of its quadratic-phase
 coordinate.  Its constant term is an unfocused order; harmonics
@@ -21,7 +32,7 @@ coordinate.  Its constant term is an unfocused order; harmonics
 at :math:`\boxed{\infty,\ \pm f,\ \pm f/2,\ldots}`; Fourier coefficients set
 their amplitudes.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-4-1-1-result
@@ -29,15 +40,26 @@ their amplitudes.
    \boxed{\infty,\ \pm f,\ \pm f/2,\ldots}
 
 
-**Check.**  Equation :eq:`fop-exercise-4-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-4-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.
 
 .. rubric:: Exercise 4.1-2 — Gaussian propagation
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`Fourier-transform and convolution identities <fop-formula-fourier>`, :ref:`integration identities <fop-formula-integration>`, and :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>`.
+.. _fop-exercise-4-1-2-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_04_01_02.svg
+   :alt: Illustrated calculation map for Exercise 4.1-2, Gaussian propagation
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`Fourier-transform and convolution identities <fop-formula-fourier>`, :ref:`integration identities <fop-formula-integration>`, and :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Fourier transforming :math:`e^{-\rho^2/W_0^2}`, multiplying by the paraxial
 free-space transfer function, and transforming back gives
@@ -45,7 +67,7 @@ free-space transfer function, and transforming back gives
 :math:`q=z+j\pi W_0^2/\lambda`.  Convolution with the Fresnel kernel gives the
 same Gaussian integral and therefore the Chapter 3 beam.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-4-1-2-result
@@ -53,15 +75,26 @@ same Gaussian integral and therefore the Chapter 3 beam.
    q=z+j\pi W_0^2/\lambda
 
 
-**Check.**  Equation :eq:`fop-exercise-4-1-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-4-1-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.
 
 .. rubric:: Exercise 4.2-1 — Fresnel versus Fraunhofer range
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-4-2-1-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_04_02_01.svg
+   :alt: Illustrated calculation map for Exercise 4.2-1, Fresnel versus Fraunhofer range
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 For :math:`a=0.02` m, :math:`b=0.01` m, and
 :math:`\lambda=0.5\ \mathrm{\mu m}`, the Fresnel equality estimate is
@@ -70,7 +103,7 @@ For :math:`a=0.02` m, :math:`b=0.01` m, and
 :math:`a^2/(\lambda d)\ll1` and :math:`b^2/(\lambda d)\ll1`; the stricter is
 :math:`\boxed{d\gg800\ \mathrm m}`.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-4-2-1-result
@@ -78,15 +111,26 @@ For :math:`a=0.02` m, :math:`b=0.01` m, and
    \boxed{d\gg800\ \mathrm m}
 
 
-**Check.**  Equation :eq:`fop-exercise-4-2-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-4-2-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
 .. rubric:: Exercise 4.2-2 — Inverse transform
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`Fourier-transform and convolution identities <fop-formula-fourier>` and :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>`.
+.. _fop-exercise-4-2-2-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_04_02_02.svg
+   :alt: Illustrated calculation map for Exercise 4.2-2, Inverse transform
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`Fourier-transform and convolution identities <fop-formula-fourier>` and :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 The focal-plane relation samples :math:`F(\nu_x,\nu_y)` at
 :math:`(x,y)/(\lambda f)`.  Reversing focal-plane coordinates changes the
@@ -94,15 +138,28 @@ kernel from :math:`e^{-j2\pi\boldsymbol\nu\cdot\mathbf r}` to
 :math:`e^{+j2\pi\boldsymbol\nu\cdot\mathbf r}`, which is exactly the inverse
 Fourier transform.
 
-**Check.**  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.
+**Step 4 — Interpret the result.**  The final relation or conclusion in Step 3 is the requested result.  Read its sign, scale, or physical classification using the conventions fixed in Step 1.
+
+**Step 5 — Check.**  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.
 
 .. rubric:: Exercise 4.3-1 — Rectangular aperture
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`Fourier-transform and convolution identities <fop-formula-fourier>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-4-3-1-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_04_03_01.svg
+   :alt: Illustrated calculation map for Exercise 4.3-1, Rectangular aperture
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`Fourier-transform and convolution identities <fop-formula-fourier>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 The transform of :math:`\operatorname{rect}(x/D_x)
 \operatorname{rect}(y/D_y)` is
@@ -111,7 +168,7 @@ The transform of :math:`\operatorname{rect}(x/D_x)
 :math:`\nu_{x,y}=(x,y)/(\lambda d)` gives Eq. (4.3-6), with first zeros
 :math:`x=\pm\lambda d/D_x`, :math:`y=\pm\lambda d/D_y`.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-4-3-1-result
@@ -119,15 +176,26 @@ The transform of :math:`\operatorname{rect}(x/D_x)
    y=\pm\lambda d/D_y
 
 
-**Check.**  Equation :eq:`fop-exercise-4-3-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-4-3-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.
 
 .. rubric:: Exercise 4.3-2 — Circular aperture
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`Fourier-transform and convolution identities <fop-formula-fourier>`, :ref:`integration identities <fop-formula-integration>`, and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-4-3-2-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_04_03_02.svg
+   :alt: Illustrated calculation map for Exercise 4.3-2, Circular aperture
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`Fourier-transform and convolution identities <fop-formula-fourier>`, :ref:`integration identities <fop-formula-integration>`, and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 The polar Fourier integral gives
 :math:`2J_1(\pi D\rho/\lambda d)/(\pi D\rho/\lambda d)`.  Its first numerator
@@ -135,7 +203,7 @@ zero is 3.8317, hence
 :math:`\boxed{\rho_s=1.22\lambda d/D}` and
 :math:`\boxed{\theta_s=1.22\lambda/D}`.
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-4-3-2-result
@@ -143,15 +211,26 @@ zero is 3.8317, hence
    \boxed{\theta_s=1.22\lambda/D}
 
 
-**Check.**  Equation :eq:`fop-exercise-4-3-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-4-3-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Transform dimensions and the expected even/odd or conjugate symmetry provide an independent check on signs and scale factors.
 
 .. rubric:: Exercise 4.3-3 — Focused spot
 
-**Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
 
-**Mathematical formulas used.**  The working uses :ref:`integration identities <fop-formula-integration>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+.. _fop-exercise-4-3-3-illustration:
 
-**Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/exercise_illustrations/exercise_04_03_03.svg
+   :alt: Illustrated calculation map for Exercise 4.3-3, Focused spot
+   :align: center
+   :width: 95%
+
+   The diagram identifies the input quantities, physical operation, requested
+   result, variable meanings, and an independent verification route.
+
+
+**Step 2 — Mathematical formulas used.**  The working uses :ref:`integration identities <fop-formula-integration>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
 
 Replace propagation distance by focal length in the preceding result:
 :math:`\rho_s=1.22\lambda f/D`.  A Gaussian filling a clear diameter near
@@ -161,7 +240,7 @@ the differing radius definitions explain the numerical factor.
 End-of-chapter problems
 -----------------------
 
-**Numbered result.**  The principal result obtained in the working is
+**Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-4-3-3-result
@@ -169,7 +248,7 @@ End-of-chapter problems
    W'_0=\lambda f/(\pi W)\simeq0.637\lambda f/D
 
 
-**Check.**  Equation :eq:`fop-exercise-4-3-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiation of an antiderivative, or normalization of a definite integral, checks the integration step.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
+**Step 5 — Check.**  Equation :eq:`fop-exercise-4-3-3-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Differentiation of an antiderivative, or normalization of a definite integral, checks the integration step.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
 
 .. rubric:: Problem 4.1-3 — Harmonic propagation
 

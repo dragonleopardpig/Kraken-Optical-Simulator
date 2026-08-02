@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -10,6 +11,14 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE = REPO_ROOT / "docs" / "source"
 COLLECTION = (
     SOURCE / "knowledge_base" / "worked_exercises" / "fundamentals_of_photonics"
+)
+EXERCISE_ASSETS = (
+    SOURCE
+    / "_static"
+    / "knowledge_base"
+    / "worked_exercises"
+    / "fundamentals_of_photonics"
+    / "exercise_illustrations"
 )
 
 # Counts come from an OCR-normalized inventory of every boxed exercise and
@@ -66,6 +75,9 @@ def main() -> None:
     total_problems = 0
     structured_entries = 0
     numbered_entries = 0
+    stepwise_exercises = 0
+    illustrated_exercises = 0
+    expected_exercise_svgs: set[str] = set()
 
     for path in chapter_files:
         chapter = int(path.name[2:4])
@@ -95,17 +107,51 @@ def main() -> None:
                 else len(chapter_text)
             )
             body = chapter_text[entry.end() : entry_end]
-            identity = f"{entry.group(1)} {entry.group(2)}.{entry.group(3)}-{entry.group(4)}"
+            kind, id_chapter, section, item = entry.groups()
+            identity = f"{kind} {id_chapter}.{section}-{item}"
 
-            if "**Definitions" not in body:
+            if "Definitions and setup." not in body and "Definitions and assumptions." not in body:
                 fail(f"{identity} has no definitions/setup block")
-            if "**Mathematical formulas used.**" not in body:
+            if "Mathematical formulas used." not in body:
                 fail(f"{identity} has no mathematical-formula reference block")
-            if not ("**Worked derivation.**" in body or "**Step 1" in body):
+            if "Worked derivation." not in body and "**Step 1" not in body:
                 fail(f"{identity} has no worked derivation")
-            if not ("**Check.**" in body or "**Checks.**" in body):
+            if "Check.**" not in body and "Checks.**" not in body:
                 fail(f"{identity} has no verification block")
             structured_entries += 1
+
+            if kind == "Exercise" and (id_chapter, section, item) != ("1", "1", "1"):
+                for step in range(1, 6):
+                    if f"**Step {step} —" not in body:
+                        fail(f"{identity} omits explicit Step {step}")
+                stepwise_exercises += 1
+
+                svg_name = (
+                    f"exercise_{int(id_chapter):02d}_{int(section):02d}_"
+                    f"{int(item):02d}.svg"
+                )
+                expected_exercise_svgs.add(svg_name)
+                if svg_name not in body:
+                    fail(f"{identity} does not reference {svg_name}")
+                svg_path = EXERCISE_ASSETS / svg_name
+                if not svg_path.is_file():
+                    fail(f"{identity} illustration {svg_name} is missing")
+                try:
+                    ET.parse(svg_path)
+                except ET.ParseError as error:
+                    fail(f"{identity} illustration is invalid XML: {error}")
+                exercise_svg = svg_path.read_text(encoding="utf-8")
+                for required_svg_text in (
+                    f"Exercise {id_chapter}.{section}-{item}",
+                    "GIVEN / DEFINITIONS",
+                    "MODEL / OPERATION",
+                    "RESULT / INTERPRETATION",
+                    "Variables —",
+                    "Independent check —",
+                ):
+                    if required_svg_text not in exercise_svg:
+                        fail(f"{identity} illustration omits {required_svg_text}")
+                illustrated_exercises += 1
 
             # Every displayed equation must carry a Sphinx label immediately
             # after its directive.  Inline expressions are not equations and
@@ -137,6 +183,17 @@ def main() -> None:
         fail(
             f"found {total_exercises} exercises and {total_problems} problems; "
             "expected 131 and 314"
+        )
+
+    actual_exercise_svgs = {path.name for path in EXERCISE_ASSETS.glob("exercise_*.svg")}
+    if actual_exercise_svgs != expected_exercise_svgs:
+        missing = sorted(expected_exercise_svgs - actual_exercise_svgs)
+        extra = sorted(actual_exercise_svgs - expected_exercise_svgs)
+        fail(f"exercise illustration inventory mismatch; missing={missing}, extra={extra}")
+    if (stepwise_exercises, illustrated_exercises) != (130, 130):
+        fail(
+            "expected 130 remaining stepwise illustrated exercises, found "
+            f"{stepwise_exercises} stepwise and {illustrated_exercises} illustrated"
         )
 
     collection_index = (COLLECTION / "index.rst").read_text(encoding="utf-8")
@@ -181,6 +238,15 @@ def main() -> None:
     for variable in ("n₁", "n₂", "d₁", "d₂", "d − x", "θ₁", "θ₂", "P(x)"):
         if variable not in svg_text:
             fail(f"Exercise 1.1-1 geometry SVG omits variable {variable}")
+    for geometry_fix in (
+        'markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" refX="12"',
+        '<text class="label" x="620" y="370">P(x)</text>',
+        '<path class="arc" d="M590 470 A70 70 0 0 0 650 437"/>',
+        '<line class="measure" x1="590" y1="690" x2="1050" y2="690"/>',
+        '<text class="small" x="250" y="135">ℓ₁ = √(d₁² + x²)</text>',
+    ):
+        if geometry_fix not in svg_text:
+            fail(f"Exercise 1.1-1 geometry regression: missing {geometry_fix}")
     snell_text = chapter_files[0].read_text(encoding="utf-8")
     for required in (
         "snells_law_geometry.svg",
@@ -209,7 +275,8 @@ def main() -> None:
         f"{total_exercises} exercises + {total_problems} problems = "
         f"{len(found_ids)} structured worked solutions; "
         f"{numbered_entries} contain numbered equations "
-        f"({len(found_equation_labels)} equation labels)."
+        f"({len(found_equation_labels)} equation labels); "
+        f"{illustrated_exercises} remaining exercises have five-step SVG layouts."
     )
 
 
