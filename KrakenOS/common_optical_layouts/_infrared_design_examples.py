@@ -68,6 +68,9 @@ def d(
     image_diameter: float,
     image_radius: float = 0.0,
     wavelength_um: float = DESIGN_WAVELENGTH_UM,
+    object_display_distance_mm: float | None = None,
+    object_display_diameter_mm: float | None = None,
+    show_clipped_rays: bool = True,
     note: str = "",
     inferred_values: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -85,6 +88,13 @@ def d(
         "image_diameter": float(image_diameter),
         "image_radius": float(image_radius),
         "wavelength_um": float(wavelength_um),
+        "object_display_distance_mm": (
+            None if object_display_distance_mm is None else float(object_display_distance_mm)
+        ),
+        "object_display_diameter_mm": (
+            None if object_display_diameter_mm is None else float(object_display_diameter_mm)
+        ),
+        "show_clipped_rays": bool(show_clipped_rays),
         "note": str(note),
         "inferred_values": dict(inferred_values or {}),
     }
@@ -291,11 +301,14 @@ DESIGNS: dict[int, dict[str, Any]] = {
             r("ZnS front", -11.5083, 0.1, "ZNS_IR", diameter=1.0),
             r("ZnS back", 19.8665, 1.2960, diameter=1.0),
         ],
-        field_deg=15.0,
+        field_deg=10.0,
         fno=1.5,
         stop_diameter=1.0,
         surface_diameter=1.0,
         image_diameter=1.0,
+        object_display_distance_mm=5.0,
+        object_display_diameter_mm=3.0,
+        show_clipped_rays=False,
         note="The source explicitly states a 1 mm diameter and evaluates 8-12 um.",
     ),
     10: d(
@@ -310,11 +323,14 @@ DESIGNS: dict[int, dict[str, Any]] = {
             r("AMTIR-1 front", -98.7706, 0.1, "AMTIR1", diameter=1.0),
             r("AMTIR-1 back", 31.8018, 1.2984, diameter=1.0),
         ],
-        field_deg=15.0,
+        field_deg=10.0,
         fno=1.5,
         stop_diameter=1.0,
         surface_diameter=1.0,
         image_diameter=1.0,
+        object_display_distance_mm=5.0,
+        object_display_diameter_mm=3.0,
+        show_clipped_rays=False,
         note="The source explicitly states a 1 mm diameter and evaluates 8-12 um.",
     ),
     11: d(
@@ -329,11 +345,14 @@ DESIGNS: dict[int, dict[str, Any]] = {
             r("ZnS front", -1.4296, 0.1, "ZNS_IR", diameter=1.0),
             r("ZnS back", -1.4730, 1.2743, diameter=1.0),
         ],
-        field_deg=15.0,
+        field_deg=10.0,
         fno=1.5,
         stop_diameter=1.0,
         surface_diameter=1.0,
         image_diameter=1.0,
+        object_display_distance_mm=5.0,
+        object_display_diameter_mm=3.0,
+        show_clipped_rays=False,
         note="The source explicitly states a 1 mm diameter and evaluates 8-12 um.",
     ),
     12: d(
@@ -348,11 +367,14 @@ DESIGNS: dict[int, dict[str, Any]] = {
             r("ZnSe front", -1.3081, 0.1, "ZNSE", diameter=1.0),
             r("ZnSe back", -1.3562, 1.2793, diameter=1.0),
         ],
-        field_deg=15.0,
+        field_deg=10.0,
         fno=1.5,
         stop_diameter=1.0,
         surface_diameter=1.0,
         image_diameter=1.0,
+        object_display_distance_mm=5.0,
+        object_display_diameter_mm=3.0,
+        show_clipped_rays=False,
         note="The source explicitly states a 1 mm diameter and evaluates 8-12 um.",
     ),
     13: d(
@@ -475,8 +497,16 @@ def _surface_rows(design: dict[str, Any]) -> list[dict[str, Any]]:
             "surface": "Object",
             "name": "Object at infinity",
             "rc": 0.0,
-            "thickness": max(100.0, 2.0 * max_diameter),
-            "diameter": max(25.0, max_diameter),
+            "thickness": float(
+                design["object_display_distance_mm"]
+                if design.get("object_display_distance_mm") is not None
+                else max(100.0, 2.0 * max_diameter)
+            ),
+            "diameter": float(
+                design["object_display_diameter_mm"]
+                if design.get("object_display_diameter_mm") is not None
+                else max(25.0, max_diameter)
+            ),
             "glass": "AIR",
             "advanced": {
                 "Note": (
@@ -608,7 +638,7 @@ def load_design(design_id: int) -> tuple[str, list[dict[str, Any]], dict[str, An
         "field_count": "4",
         "spot_view_mode": "Grid",
         "image_diameter_mode": "Manual",
-        "show_clipped_rays": True,
+        "show_clipped_rays": bool(design["show_clipped_rays"]),
         "show_cardinals": False,
         "show_physical_distances": True,
         "analysis_mode": "none",
@@ -629,6 +659,8 @@ def load_design(design_id: int) -> tuple[str, list[dict[str, Any]], dict[str, An
         "wavelength_um": design["wavelength_um"],
         "f_number": design["fno"],
         "field_half_angle_deg": design["field_deg"],
+        "object_display_distance_mm": design["object_display_distance_mm"],
+        "object_display_diameter_mm": design["object_display_diameter_mm"],
         "source_rows": len(design["rows"]),
         "note": design["note"],
         "inferred_values": deepcopy(design["inferred_values"]),

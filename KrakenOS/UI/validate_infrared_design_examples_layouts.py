@@ -25,6 +25,7 @@ EXPECTED_IDS = set(range(1, 16))
 TITLE_PREFIX = "IDE B."
 ALLOWED_GLASS = {"AIR", "MIRROR", "AMTIR1", "GERMANIUM", "ZNSE", "ZNS_IR"}
 EXPECTED_REFLECTIVE_IDS = set(range(1, 8))
+EXPECTED_DOUBLET_IDS = set(range(9, 13))
 
 
 def _require(condition: bool, message: str) -> None:
@@ -53,10 +54,12 @@ def _trace_reaches_image(surfaces: list[dict], wavelength_um: float) -> None:
     _require(math.isfinite(float(z[-1])), "terminal intercept is not finite")
 
 
-def _validate_reflective_preview(
+def _validate_saved_preview(
     design_id: int,
     surfaces: list[dict],
     settings: dict,
+    *,
+    minimum_image_fraction: float,
 ) -> tuple[int, int]:
     """Exercise the same multi-field ray builder used by saved/UI layouts."""
 
@@ -69,7 +72,7 @@ def _validate_reflective_preview(
     )
     _require(
         trace_intent.active == "Sequential" and not trace_intent.use_nonseq,
-        f"reflective design {design_id} selected {trace_intent.active}",
+        f"design {design_id} selected {trace_intent.active}",
     )
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
         system = _build_system_from_specs(
@@ -89,11 +92,11 @@ def _validate_reflective_preview(
     )
     _require(
         len(paths) == expected_paths,
-        f"reflective design {design_id} preview launched {len(paths)}/{expected_paths} rays",
+        f"design {design_id} preview launched {len(paths)}/{expected_paths} rays",
     )
     _require(
-        image_hits >= math.ceil(0.95 * len(paths)),
-        f"reflective design {design_id} reached Image on only {image_hits}/{len(paths)} rays",
+        image_hits >= math.ceil(float(minimum_image_fraction) * len(paths)),
+        f"design {design_id} reached Image on only {image_hits}/{len(paths)} rays",
     )
     return image_hits, len(paths)
 
@@ -120,6 +123,8 @@ def main() -> None:
     total_ui_rows = 0
     reflective_image_hits = 0
     reflective_preview_rays = 0
+    doublet_image_hits = 0
+    doublet_preview_rays = 0
     for design_id in sorted(EXPECTED_IDS):
         title, expected_surfaces, expected_settings, system_data = load_design(design_id)
         _require(title in discovery.layout_files, f"design {design_id} was not discovered")
@@ -151,13 +156,39 @@ def main() -> None:
             _require(str(row["glass"]) in ALLOWED_GLASS, f"design {design_id} has unknown glass {row['glass']}")
         _trace_reaches_image(surfaces, float(settings["wavelength"]))
         if design_id in reflective_ids:
-            image_hits, preview_rays = _validate_reflective_preview(
+            image_hits, preview_rays = _validate_saved_preview(
                 design_id,
                 surfaces,
                 settings,
+                minimum_image_fraction=0.95,
             )
             reflective_image_hits += image_hits
             reflective_preview_rays += preview_rays
+        if design_id in EXPECTED_DOUBLET_IDS:
+            _require(
+                float(settings["field_value"]) == 10.0,
+                f"doublet design {design_id} exceeds Table B.4's 10-degree field",
+            )
+            _require(
+                float(surfaces[0]["thickness"]) == 5.0,
+                f"doublet design {design_id} lost its compact object-display gap",
+            )
+            _require(
+                float(surfaces[0]["diameter"]) == 3.0,
+                f"doublet design {design_id} lost its compact object-display diameter",
+            )
+            _require(
+                not bool(settings["show_clipped_rays"]),
+                f"doublet design {design_id} exposes clipped rim rays by default",
+            )
+            image_hits, preview_rays = _validate_saved_preview(
+                design_id,
+                surfaces,
+                settings,
+                minimum_image_fraction=1.0,
+            )
+            doublet_image_hits += image_hits
+            doublet_preview_rays += preview_rays
         total_source_rows += len(DESIGNS[design_id]["rows"])
         total_ui_rows += len(surfaces)
 
@@ -202,6 +233,7 @@ def main() -> None:
         "Infrared Design Examples layout validation passed: "
         f"designs=15, source_rows={total_source_rows}, ui_rows={total_ui_rows}, "
         f"reflective_image_hits={reflective_image_hits}/{reflective_preview_rays}, "
+        f"doublet_image_hits={doublet_image_hits}/{doublet_preview_rays}, "
         f"documented_omissions={len(OMITTED_SOURCE_DESIGNS)}"
     )
 
