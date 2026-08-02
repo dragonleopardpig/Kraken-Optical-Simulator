@@ -1398,8 +1398,11 @@ class LayoutPolylineDisplayMixin:
             self.append_debug(f"STEP glass-axial extraction failed: {exc}")
             return None
 
-    def _lens_step_display_front_z(self) -> float:
+    def _lens_step_display_front_z(self, front_face: "str | None" = None) -> float:
         """Axial pin (world z, pre placement-offset) for the lens STEP overlay.
+
+        ``front_face`` is accepted for backward compatibility and IGNORED -- since bugs/0500 the
+        pin is face-independent (see below); older callers/guards passed the face here.
 
         Default -- the Front Optical Vertex Datum, which pins the mechanical body
         front face there.  When the STEP's optical glass block can be located AND

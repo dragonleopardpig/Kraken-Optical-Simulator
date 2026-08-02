@@ -73,10 +73,20 @@ def run_checks() -> tuple[bool, list[str]]:
     if abs((rdz - fdz) - 39.52) > 1e-6:
         failures.append(f"stub datum span {rdz - fdz:.4f} != 39.52 (rear-datum accessor wrong)")
 
-    def _glass_center_world(face: str) -> float:
-        target = insp._lens_step_display_front_z(face)
-        delta = (metrics["body_hi"] - glass_center) if face == "max" else (glass_center - metrics["body_lo"])
-        return target + delta
+    def _glass_center_world(face: str, stub=None) -> float:
+        # bugs/0500: the pin is FACE-INDEPENDENT (the arg is accepted and ignored); a flip's
+        # correction is the separate barrel-frame shift _lens_step_flip_axial_shift, applied by
+        # the alignment on the "min" mapping. Model the pair exactly as the builder composes it.
+        stub = stub if stub is not None else insp
+        target = stub._lens_step_display_front_z(face)
+        if face == "max":
+            return target + (metrics["body_hi"] - glass_center)
+        stub.lens_step_reverse_direction = True
+        try:
+            shift = stub._lens_step_flip_axial_shift()
+        finally:
+            stub.lens_step_reverse_direction = False
+        return target + (glass_center - metrics["body_lo"]) + shift
 
     world_max = _glass_center_world("max")
     world_min = _glass_center_world("min")
@@ -98,6 +108,15 @@ def run_checks() -> tuple[bool, list[str]]:
         tilted = _stub(metrics, **kwargs)
         if abs(tilted._lens_step_display_front_z("max") - tilted._lens_front_datum_z()) > 1e-6:
             failures.append(f"tilt gate failed for {axis}: did not fall back to the front datum pin")
+        # bugs/0500: the FLIP must stay glass-invariant even under tilt -- which is exactly the
+        # branch the old per-face pin never covered (any lens on a folded arm is "tilted", and its
+        # flip landed the optics 3.507 mm off the datums on the AZ85 barrel).
+        t_max = _glass_center_world("max", tilted)
+        t_min = _glass_center_world("min", tilted)
+        if abs(t_max - t_min) > 1e-6:
+            failures.append(
+                f"bugs/0500 ({axis}): tilted flip not glass-invariant (max={t_max:.4f}, min={t_min:.4f})"
+            )
 
     # --- FALLBACK: no detectable glass -> plain datum pin --------------------------
     none_stub = _stub(None)
@@ -120,8 +139,10 @@ def run_checks() -> tuple[bool, list[str]]:
 
     # --- WIRING -------------------------------------------------------------------
     build_src = inspect.getsource(LayoutPolylineDisplayMixin._transformed_imported_lens_step_mesh)
-    if "target_front_z=self._lens_step_display_front_z(front_face)" not in build_src:
+    if "target_front_z=self._lens_step_display_front_z()" not in build_src:
         failures.append("the lens builder does not pin the overlay via _lens_step_display_front_z")
+    if "flip_axial_shift=flip_shift" not in build_src:
+        failures.append("bugs/0500: the lens builder does not wire the flip correction into the alignment")
     if "self._lens_rear_datum_z()" not in build_src:
         failures.append("the rear datum z is not in the lens overlay cache signature")
 

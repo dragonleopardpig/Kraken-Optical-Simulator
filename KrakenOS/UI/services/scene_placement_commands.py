@@ -3795,10 +3795,21 @@ class ScenePlacementMixin:
             self._set_step_axis_offset_xy("lens", (0.0, 0.0))
             target = self._lens_surrogate_seat_target()
             if target is None:
+                # bugs/0503 follow-through (penta phase 77): a lens with NO front/rear datum rows
+                # (a plain non-machine-vision layout) and no recorded reference must keep the
+                # ORIGINAL zeroing behaviour -- for such a lens the zero-offset default IS the
+                # auto-aligned station (bugs/0475's rationale). Refusing outright made it
+                # un-glueable: dragged once, it could never be recovered from the menu.
+                place_off = self._step_placement_offset_xyz("lens")
+                if all(abs(float(v)) <= 1e-9 for v in place_off):
+                    self.status_var.set("LENS STEP is already glued to its optical surrogate.")
+                    return False
+                self._set_step_placement_offset_xyz("lens", (0.0, 0.0, 0.0))
                 self.status_var.set(
-                    "Glue LENS to surrogate: no front/rear optical vertex datum to seat against."
+                    "Glued LENS STEP to its optical surrogate "
+                    "(centred on the optical axis, datum aligned)."
                 )
-                return False
+                return True
             current = self._step_body_world_center("lens")
             if current is not None:
                 gap = float(np.linalg.norm(np.asarray(current, dtype=float).reshape(3) - target))
