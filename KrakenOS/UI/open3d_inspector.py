@@ -4033,6 +4033,35 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             axis_unit = self._placement_axis_vector(axis)
             self._translate_placement_handle_actors(row_index, axis_unit * float(delta))
             self._translate_row_actors(row_index, axis_unit * float(delta))
+            # bugs/0514 follow-up ("they move together after glue, but one after another"):
+            # the ARROW drag previews with pure actor transforms and commits at release, so
+            # the glued LED + sources teleported at mouse-up while the BS tracked the arrow.
+            # Preview the PARTNERS with the same per-frame vector; the release commit's
+            # rebuild reconciles exact placement (Alt keeps the 0437 seat move).
+            if (
+                bool(getattr(self.editor, "_optical_led_glued", False))
+                and not bool(state.get("alt_suspend_glue", False))
+            ):
+                try:
+                    bs_row = self.editor._promoted_optical_solid_row_index("optical")
+                except Exception:
+                    bs_row = None
+                if bs_row is not None and int(bs_row) == int(row_index):
+                    preview = axis_unit * float(delta)
+                    self._mirror_glued_partner_actors("optical", preview)
+                    try:
+                        from KrakenOS.UI.scene_source_analysis import source_spec_bool as _sglue
+
+                        for _spec in self.editor._normalize_scene_source_specs(
+                            getattr(self.editor, "layout_scene_source_specs", []) or []
+                        ):
+                            if _sglue(_spec, "glued_to_led", False):
+                                self._translate_source_actors(
+                                    str(_spec.get("source_id", "") or ""), preview, render=False
+                                )
+                    except Exception:
+                        pass
+                    self.render()
             state["pending_translate_mm"] = float(state.get("pending_translate_mm", 0.0)) + float(delta)
             # Live leading-gap readout for the gizmo slide, matching the
             # imported-STEP drag and axis-slide mode (flag_20260604_111615_630).

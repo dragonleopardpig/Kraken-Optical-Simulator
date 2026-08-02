@@ -221,6 +221,21 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     if "_last_translate_row_shifts" not in applier_src or "_last_translate_source_shifts" not in applier_src:
         notes.append("FAIL (0514): the breadcrumb applier no longer reads both shift lists")
         passed = False
+    try:
+        arrow_src = inspect.getsource(Kraken3DInspector._apply_placement_drag_motion)
+    except Exception as exc:
+        notes.append(f"FAIL (0514): arrow-drag source unreadable: {exc!r}")
+        return False, notes
+    if (
+        "_mirror_glued_partner_actors" not in arrow_src
+        or "alt_suspend_glue" not in arrow_src
+        or "glued_to_led" not in arrow_src
+    ):
+        notes.append(
+            "FAIL (0514): the placement-ARROW drag no longer previews the glued LED + sources "
+            "per frame -- they would teleport at release again ('one after another')"
+        )
+        passed = False
 
     if verbose:
         notes.append(

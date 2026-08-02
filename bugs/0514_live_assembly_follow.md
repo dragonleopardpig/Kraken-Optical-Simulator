@@ -35,3 +35,17 @@ Guards: `validate_open3d_glue_live_actor_carry` section C pins the wiring
 reads both lists); 0512's A2b pins source breadcrumbs; phase 409's B3 pins the
 0513 rebuild marker. Live rendering itself is headless-unverifiable -- in-app
 eyeball owed on all three gestures.
+
+## Follow-up — the placement-ARROW drag was the remaining "one after another"
+
+User (post-0514): "they move together after glue, but one after another, they
+don't move together as an assembly live." The ARROW gizmo drag was the one
+gesture still unwired: it previews with pure actor transforms and commits the
+model ONCE at release, so the BS tracked the arrow while the LED + sources
+teleported at mouse-up -- sequential at human timescale. The arrow motion now
+previews the glued LED body (0137 mirror) + glued source glyphs with the same
+per-frame vector, gated on the glued BS row and `alt_suspend_glue` (Alt keeps
+the 0437 seat move); the release commit's rebuild reconciles exact placement.
+Station/object rows still land at release on this path (far from the gesture;
+promote if flagged). Guard: live_actor_carry section C gained the arrow-drag
+contract.
