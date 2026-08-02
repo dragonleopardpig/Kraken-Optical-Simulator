@@ -28,6 +28,19 @@ class _Ed:
         self.rows = rows
         self._optical_led_glued = glued
 
+    def _folded_conjugate_gaps_for_magnification(self, _magnification):
+        # d8f07c77 (folded FOV solve) routes _apply_conjugate_pair through the editor's
+        # folded conjugate first; this synthetic scene is STRAIGHT, so the real method
+        # would return None and the plain path under test runs. Mirror that here --
+        # the guard rotted for a month on this missing attr because it was not a
+        # marathon phase (registered as one alongside this fix).
+        return None
+
+    def apply_image_distance_frozen_aware(self, _image_distance):
+        # bugs/0478 frozen-fold image placement; False = "not a frozen scene, caller
+        # does the plain gap write" -- the real answer for this straight fixture.
+        return False
+
 
 class _QE:
     _apply_conjugate_pair = Q._apply_conjugate_pair
@@ -41,6 +54,24 @@ class _QE:
 
     def _conjugate_pair(self, _object_semi, _image_semi):
         return self._pair
+
+    def _resolve_image_gap_collision(self, _image_distance):
+        # bugs/0468's mirror-slide redistribution; ``None`` = "nothing needs doing",
+        # the real result on this straight synthetic scene (no fold mirror to hit).
+        return None
+
+    def _rebalance_image_leg_sections(self, _pre):
+        # bugs/0482's 50:50 fold-section share; "" = no fold split to rebalance.
+        return ""
+
+    def _rebalance_object_leg_sections(self, _pre, _pre_led_offset):
+        # the object-side sibling of the 0482 share; "" = no fold split to rebalance.
+        return ""
+
+    def _finish_solve_on_traced_focus(self):
+        # post-solve traced-focus refinement; "" = nothing to refine on this fake
+        # (no trace exists), leaving the plain conjugate write under test intact.
+        return ""
 
 
 def _object_to_lens(rows):

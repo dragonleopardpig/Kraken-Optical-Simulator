@@ -15451,6 +15451,10 @@ phase_411_reaching_leaf_detector_pin = _phase_from_standalone(
     411, "a reaching leaf's detector pins to the Image unless the fit is a true waist (0511)",
     "KrakenOS.UI.validate_open3d_0511_reaching_leaf_detector_pin",
     "reaching_leaf_detector_pin")
+phase_412_qe_object_locked = _phase_from_standalone(
+    412, "Quick Estimation holds the object-locked LED+BS unit through a conjugate solve",
+    "KrakenOS.UI.validate_open3d_qe_object_locked",
+    "qe_object_locked")
 
 
 # ---------------------------------------------------------------------------
@@ -15909,6 +15913,7 @@ def main() -> int:
             phase_409_unfolded_carry_keeps_lens_glued,
             phase_410_frozen_fold_thickness_stable,
             phase_411_reaching_leaf_detector_pin,
+            phase_412_qe_object_locked,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
