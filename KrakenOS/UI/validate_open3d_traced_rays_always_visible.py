@@ -183,21 +183,26 @@ def run_checks(*, trials: int = 12, seed: int = 20260605) -> tuple[bool, list[st
         _check(status == label, f"status maps {label!r} (got {status!r})")
         _check(visible is expected, f"{label} visible-by-default == {expected} (got {visible})")
 
-    # 1b. A deliberate fold keeps the ray visible regardless of where it ends
-    #     (bugs 0016 / 0018): a folded ray that ends up stopped/missed/escaped is
-    #     a real authored branch, not vignetting, so it survives clipped-OFF.
+    # 1b. bugs/0390 REFINED the 0016/0018 fold rule: a folded ray that then FAILED at a
+    #     real downstream element -- vignetted at an aperture (``stopped``) or missed an
+    #     existing detector's clear aperture (``missed_detector``) -- is a blocked stray,
+    #     not an authored branch, and hides with clipping OFF like any other miss (the
+    #     user's "broken stubs terminating mid-air at the stop" / mirror-2 spray flags).
+    #     A genuine branch with NOTHING to land on (``escaped``) is authored and stays.
+    #     (This guard asserted the pre-0390 "folds always survive" rule and silently
+    #     failed for a fortnight -- phase 25 was absorbed into the July re-cut as a fail.)
     folded_cases = {
-        "stopped": _folded_path("stop_clip"),
-        "missed_detector": _folded_path("missed_image"),
-        "escaped": _folded_path("no_next_intersection"),
+        "stopped": (_folded_path("stop_clip"), False),
+        "missed_detector": (_folded_path("missed_image"), False),
+        "escaped": (_folded_path("no_next_intersection"), True),
     }
-    for label, path in folded_cases.items():
+    for label, (path, expected) in folded_cases.items():
         status = ray_path_terminal_status_from_events(path)
         _check(status == label, f"folded {label!r} keeps its terminal status (got {status!r})")
         _check(ray_path_has_non_refractive_steering(path), f"folded {label} detected as a fold")
         _check(
-            ray_path_visible_without_clipping_from_events(path) is True,
-            f"folded {label} stays visible by default despite non-detector terminus",
+            ray_path_visible_without_clipping_from_events(path) is expected,
+            f"folded {label} visible-by-default == {expected} (the 0390 blocked-stray rule)",
         )
 
     # Sanity: a clean lens shows its rays by default and drops nothing.
