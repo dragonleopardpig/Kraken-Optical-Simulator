@@ -15,7 +15,14 @@ parameters, and check needed to reproduce it.
 
 Each solution defines its local notation, names and links the mathematical
 identities it uses, shows numbered working where equations are involved, and
-ends with a verification.  The shared formula catalogue is available here:
+ends with a verification.  The shared formula catalogue is available in
+:doc:`mathematical_formula_reference`.
+
+Each worked item initially shows a **Brief answer** for quick checking.  Use
+**Show detailed steps** directly below it to expand the definitions,
+illustration, derivation, numbered equations, and verification.  The toggle is
+independent for every exercise and problem, so only the solution currently
+being studied needs to remain open.
 
 All 131 boxed in-text exercises use an illustrated step-by-step presentation
 and carry stable labels from **Figure 1** through **Figure 131**. Exercise
