@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-08-02T04:19:38+00:00",
+  "generated_at": "2026-08-03T13:11:05+00:00",
   "phases": {
     "0": "pass",
     "1": "fail",
@@ -423,7 +423,8 @@
     "419": "pass",
     "420": "pass",
     "421": "pass",
-    "422": "pass"
+    "422": "pass",
+    "423": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -847,6 +848,7 @@
     "419": "a committed lens carry drag refocuses the image at the sensor (0520)",
     "420": "the launch matrix carries compulsory FOV-corner probe rays (0522)",
     "421": "an along-leg lens drag writes its section gaps -- the FOV follows (0524)",
-    "422": "the acceptance cone creases at the fold on a frozen scene (0525)"
+    "422": "the acceptance cone creases at the fold on a frozen scene (0525)",
+    "423": "the gizmo-arrow lens drag refocuses at the sensor (0528)"
   }
 }

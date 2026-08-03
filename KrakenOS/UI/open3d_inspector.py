@@ -4427,6 +4427,29 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception as exc:
             self.editor.append_debug(f"STEP translate commit failed for {label}: {exc}")
             return
+        refocus_note = ""
+        if label == "lens" and getattr(self.editor, "_last_translate_row_shifts", None):
+            # bugs/0528 (flag_20260803_203614 "FOV changed but the rays are defocus"): the
+            # GIZMO-ARROW lens drag is the SAME conjugate edit as the 0520 body-grab carry
+            # -- the commit above wrote the section gaps -- but only the carry finish ran
+            # the Solve-for-FOV refocus, so this path left the sensor at its old seat with
+            # the FOV readout describing the defocused state. Same snap, same note. The
+            # row-shift breadcrumbs gate it: a perpendicular arrow drag writes no rows
+            # (body-only, 0433 stay-put) and skips the snap entirely.
+            try:
+                if bool(self.editor.snap_detector_to_image_plane()):
+                    refocus_note = " Refocused at the sensor (Solve for FOV)."
+            except Exception as exc:
+                self.editor.append_debug(f"lens-drag Solve-for-FOV refocus failed: {exc}")
+            if refocus_note:
+                try:
+                    self.refresh_from_editor(force_retrace=True)
+                except Exception as exc:
+                    self.editor.append_debug(f"STEP translate refocus refresh failed: {exc}")
+                try:
+                    self._quick_estimation_service().update_readout()
+                except Exception:
+                    pass
         if not physics_requested:
             # bugs/0011: the persistent thickness dimensions span every
             # component (Object/Image rows plus any imported body), so the
@@ -4452,7 +4475,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     self.refresh_from_editor(force_retrace=False)
                 except Exception as exc:
                     self.editor.append_debug(f"STEP translate fallback refresh failed for {label}: {exc}")
-        self.status_var.set(f"{display} STEP moved {axis.upper()} {total_mm:+.4g} mm.")
+        self.status_var.set(f"{display} STEP moved {axis.upper()} {total_mm:+.4g} mm.{refocus_note}")
 
     # ------------------------------------------------------------------
     # bugs/0053: re-anchor a thickness/distance dimension endpoint onto a

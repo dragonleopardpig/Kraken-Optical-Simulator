@@ -15495,6 +15495,10 @@ phase_422_receiving_cone_folds_frozen = _phase_from_standalone(
     422, "the acceptance cone creases at the fold on a frozen scene (0525)",
     "KrakenOS.UI.validate_open3d_0525_receiving_cone_folds_frozen",
     "receiving_cone_folds_frozen")
+phase_423_gizmo_lens_drag_refocuses = _phase_from_standalone(
+    423, "the gizmo-arrow lens drag refocuses at the sensor (0528)",
+    "KrakenOS.UI.validate_open3d_0528_gizmo_lens_drag_refocuses",
+    "gizmo_lens_drag_refocuses")
 
 
 # ---------------------------------------------------------------------------
@@ -15964,6 +15968,7 @@ def main() -> int:
             phase_420_fov_corner_probes,
             phase_421_lens_drag_writes_sections,
             phase_422_receiving_cone_folds_frozen,
+            phase_423_gizmo_lens_drag_refocuses,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
