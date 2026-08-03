@@ -415,7 +415,8 @@
     "411": "pass",
     "412": "pass",
     "413": "pass",
-    "414": "pass"
+    "414": "pass",
+    "415": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -831,6 +832,7 @@
     "411": "a reaching leaf's detector pins to the Image unless the fit is a true waist (0511)",
     "412": "Quick Estimation holds the object-locked LED+BS unit through a conjugate solve",
     "413": "a glued illumination source rides the LED/BS assembly drags (0512)",
-    "414": "FOV solve and remove-defocus keep the camera body clear of the fold mirror (0515)"
+    "414": "FOV solve and remove-defocus keep the camera body clear of the fold mirror (0515)",
+    "415": "the first-order pupil reference survives a cube-BS mesh -- no geometric fallback (0516)"
   }
 }

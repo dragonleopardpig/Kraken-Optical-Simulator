@@ -809,7 +809,7 @@ class TracePreviewSamplingMixin:
         if system is None:
             return None
         try:
-            pupil_system, _pupil_rows, pupil_index = self._pupil_model_inputs(system, build_reference=True)
+            pupil_system, pupil_rows, pupil_index = self._pupil_model_inputs(system, build_reference=True)
             pupil = Kos.PupilCalc(
                 pupil_system,
                 pupil_index,
@@ -818,6 +818,25 @@ class TracePreviewSamplingMixin:
                 self._current_aperture_value(),
             )
             z = float(np.asarray(getattr(pupil, "PosPupInp", None), dtype=float).reshape(-1)[2])
+            if not np.isfinite(z):
+                return None
+            # bugs/0516 x bugs/0507: the reference is CENTRED, so its pupil depth is a SUM OF
+            # ROW THICKNESSES -- blind to a housing drag that moves the fold point by rewriting
+            # only world seats (the 0505 F1 perpendicular drag: landed fell 188 -> 162 when this
+            # constant replaced the measured fallback). The measured object -> fold -> stop path
+            # DOES track live geometry. Keep the reference's first-order content -- the pupil's
+            # OFFSET from the stop -- but anchor the aim on the measured reduced stop distance
+            # whenever a fold sits between the object and the stop (plain scenes: reduced is
+            # None, the reference z is already the world depth).
+            try:
+                reduced = self._geometric_reduced_stop_aim_z()
+                if reduced is not None and np.isfinite(reduced) and pupil_index:
+                    stop_station = float(
+                        sum(max(float(r.thickness), 0.0) for r in pupil_rows[: int(pupil_index)])
+                    )
+                    z = float(reduced) + (z - stop_station)
+            except Exception:
+                pass
             return z if np.isfinite(z) else None
         except Exception as exc:
             self._note_pupil_launch_fallback(exc)
@@ -1571,6 +1590,9 @@ class TracePreviewSamplingMixin:
                 )
         except Exception:
             where = ""
+        # bugs/0516: countable, so probes/guards can assert "no silent fallback" without
+        # scraping the debug log.
+        self._pupil_launch_fallback_count = int(getattr(self, "_pupil_launch_fallback_count", 0)) + 1
         try:
             self.append_debug(
                 f"[pupil] reference launch failed, geometric fallback: {repr(exc)[:200]}{where}\n"

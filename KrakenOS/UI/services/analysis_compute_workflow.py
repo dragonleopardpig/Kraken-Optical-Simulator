@@ -936,8 +936,54 @@ class AnalysisComputeWorkflowMixin:
                 build=1 if pupil_needs_geometry else 0,
                 apply_optical_solid_output_ports=False,
             )
+            if pupil_needs_geometry and not self._reference_transports_axial_ray(pupil_system):
+                # bugs/0516: keeping a promoted solid's MESH in the reference (bugs/0094,
+                # "the mesh pose matches the live pupil") presumes a straight-through trace
+                # of the mesh is straight. A parametric CUBE beam splitter breaks that: with
+                # the splitter coating stripped its internal 45-degree diagonal DEFLECTS the
+                # axial probe ray (measured exit slope ~0.5 on the frozen AZ85 cube), so
+                # PupilCalc's raykeeper came back empty and EVERY world-bundle launch on the
+                # scene silently degraded to the coarse geometric aim -- the visible "sparse
+                # rays" seam. When the mesh chain fails the axial-transparency test, rebuild
+                # the reference with ANALYTIC flat plates (glass + row thickness), which is
+                # what "first-order transmissive equivalent" means for such a solid.
+                for row in pupil_rows:
+                    advanced = dict(getattr(row, "advanced", None) or {})
+                    mesh = str(advanced.get("Solid_3d_stl", "None") or "None").strip()
+                    if mesh not in ("", "None", "none"):
+                        advanced["Solid_3d_stl"] = "None"
+                        row.advanced = advanced
+                        row.rc = 0.0
+                        row.k = 0.0
+                pupil_system = _build_system_from_specs(
+                    self._serializable_specs_for_rows(pupil_rows),
+                    build=0,
+                    apply_optical_solid_output_ports=False,
+                )
         pupil_surface_index = self._pupil_surface_index_for_rows(pupil_rows)
         return pupil_system, pupil_rows, pupil_surface_index
+
+    def _reference_transports_axial_ray(self, system) -> bool:
+        """bugs/0516: a first-order reference must TRANSPORT an axial probe ray -- straight
+        in, straight out. Test-trace one on-axis chief (vignetting ignored so diameters
+        don't vote) and accept the system only if the exit DIRECTION is still axial: a
+        tilted plate's lateral walk-off passes (direction unchanged), a cube diagonal's
+        TIR/deflection fails. Any trace failure fails the test."""
+        try:
+            system.IgnoreVignetting(1)
+            system.Trace([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], self._current_wavelength())
+            lmn = list(getattr(system, "LMN", []) or [])
+            if not lmn:
+                return False
+            n_final = float(np.asarray(lmn[-1], dtype=float).reshape(-1)[2])
+            return bool(np.isfinite(n_final) and n_final >= 0.999)
+        except Exception:
+            return False
+        finally:
+            try:
+                system.IgnoreVignetting(0)
+            except Exception:
+                pass
 
     def _start_progress_spinner(self) -> None:
         if self._spinner_after_id is not None:

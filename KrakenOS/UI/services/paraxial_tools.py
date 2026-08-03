@@ -325,7 +325,10 @@ class ParaxialToolsMixin:
                 from KrakenOS.UI.services.row_placement import is_world_placed
             except Exception:
                 return
-            return  # bugs/0465 A/B: centring disabled for this measurement
+            # bugs/0516: the 0470 measurement's "centring disabled" A/B return was left in
+            # (822f6259) -- since 2026-07-29 EVERY frozen-scene launch silently ran on the
+            # coarse geometric fallback (PupilCalc died exactly as this docstring predicts),
+            # which is the "sparse rays on frozen chains" the 0433 arc kept forecasting.
             if not is_world_placed(src_row):
                 return
             for attr in ("desp_x", "desp_y", "desp_z", "tilt_x", "tilt_y", "tilt_z"):
