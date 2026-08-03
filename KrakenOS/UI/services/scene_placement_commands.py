@@ -4716,32 +4716,17 @@ class ScenePlacementMixin:
             self._last_translate_row_shifts.append(
                 (list(lens_leg_members), tuple(float(v) for v in _shift))
             )
-            # bugs/0524 (flag_20260803_151917 "dragged the lens, the FOV is not changing"):
-            # the leg slide moved the lens in the WORLD (desps) but the SECTION GAPS never
-            # learned it, so the shared first order -- and the FOV readout -- stayed at the
-            # old conjugates (the 0478 prescription/world drift, measured: +8 mm slide,
-            # every thickness byte-identical). Write the drag through as the thickness edit
-            # it is (the user's drag = Solve-for-FOV principle): the gap BEFORE the lens
-            # block grows by the slide, the gap AFTER it (the lens -> fold near leg)
-            # shrinks -- stations past the block stay put, so the mirror and sensor hold.
-            # Infeasible (either gap would go negative): keep today's body-only slide and
-            # say so in the debug log rather than clamping silently.
-            _upstream = min(lens_leg_members) - 1
-            _downstream = max(lens_leg_members)
-            if _upstream >= 0 and _downstream < len(self.rows) - 1:
-                _up_new = float(self.rows[_upstream].thickness) + float(lens_leg_slide)
-                _down_new = float(self.rows[_downstream].thickness) - float(lens_leg_slide)
-                if np.isfinite(_up_new) and np.isfinite(_down_new) and _up_new > 0.0 and _down_new > 0.0:
-                    self.rows[_upstream].thickness = _up_new
-                    self.rows[_downstream].thickness = _down_new
-                else:
-                    try:
-                        self.append_debug(
-                            f"lens leg slide: section write-through skipped "
-                            f"(gaps would become {_up_new:.3g}/{_down_new:.3g} mm)"
-                        )
-                    except Exception:
-                        pass
+            # bugs/0524 -> bugs/0526: the first cut wrote the slide through to the two
+            # neighbouring section gaps so the FOV readout would follow. REVERTED
+            # (flag_20260803_162321 "haywire"): on a frozen chain those raw writes are NOT
+            # free knobs -- the upstream write shifted every downstream STATION, so the
+            # glued BS re-seated by the drag (a ghost second diagonal), and the near-leg
+            # gap row DERIVES the mirror's world leg (bugs/0478: world = const - thickness),
+            # so shrinking it re-seated the prism up the unfolded axis and the rays died at
+            # the stale stop. The write-through must ride the 0505-class atomic
+            # accompaniment (glue re-express + breadcrumb const re-bake) -- bugs/0526. Until
+            # then the leg slide moves the BODY+surrogate only, and the FOV readout lags
+            # (section write-through skipped by design).
             if not bool(getattr(self, "headless", False)):
                 try:
                     self._sync_table()

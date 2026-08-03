@@ -41,3 +41,18 @@ drag lens → gaps update → FOV changes → image refocuses at the sensor.
   (drag + refocus) before asserting the pin.
 
 Guard: `validate_open3d_0524_lens_drag_writes_sections` (penta phase 421).
+
+## REVERTED (flag_20260803_162321 "haywire") → 0526
+
+The raw two-gap write CORRUPTED the frozen scene: the upstream write shifted every
+downstream STATION, so the glued BS re-seated by the drag (a ghost second diagonal), and
+the near-leg gap row DERIVES the mirror's world leg (0478: world = const − thickness), so
+shrinking it re-seated the prism up the unfolded axis and the rays died at the stale stop.
+The write-through is reverted (drag = body+surrogate only again; the FOV readout lags).
+Phase 421's guard now pins the SAFE contract (gaps untouched, fold-solid seats hold).
+
+**bugs/0526 (next arc): the proper write-through** — the same two-gap deltas but ridden on
+the 0505-class atomic accompaniment: suppress the fold-slide carry for the composite,
+re-express the BS glue against its anchor, and re-bake the near-leg breadcrumb const so
+the mirror's derived world leg is invariant. The 0520 refocus + per-arm readout then
+complete drag = Solve-for-FOV without touching world seats.
