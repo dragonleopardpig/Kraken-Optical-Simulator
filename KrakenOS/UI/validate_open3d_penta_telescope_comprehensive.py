@@ -15487,6 +15487,10 @@ phase_420_fov_corner_probes = _phase_from_standalone(
     420, "the launch matrix carries compulsory FOV-corner probe rays (0522)",
     "KrakenOS.UI.validate_open3d_0522_fov_corner_probes",
     "fov_corner_probes")
+phase_421_lens_drag_writes_sections = _phase_from_standalone(
+    421, "an along-leg lens drag writes its section gaps -- the FOV follows (0524)",
+    "KrakenOS.UI.validate_open3d_0524_lens_drag_writes_sections",
+    "lens_drag_writes_sections")
 
 
 # ---------------------------------------------------------------------------
@@ -15954,6 +15958,7 @@ def main() -> int:
             phase_418_frozen_fov_solve_range,
             phase_419_lens_drag_refocuses,
             phase_420_fov_corner_probes,
+            phase_421_lens_drag_writes_sections,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

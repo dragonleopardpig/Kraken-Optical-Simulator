@@ -24,3 +24,20 @@ the station axis). The per-label axial-redirect machinery (0508B/0513,
 `_step_axial_redirect_latch`) is the natural home; today it serves the LED/BS labels. Once
 the rows learn the move, the 0520 refocus + QE readout complete the user's loop:
 drag lens → gaps update → FOV changes → image refocuses at the sensor.
+
+## FIXED (same day)
+
+- The leg-slide branch writes the drag through: gap BEFORE the lens block +slide, gap
+  AFTER it −slide (stations past the block hold — mirror and sensor stay). Infeasible
+  writes are skipped with a debug note; perpendicular drags stay body-only. Verified:
+  +8 mm slide → s_o 158.78→166.78, |m| 1.152→1.0393, FOV 28.28→31.35 — the readout follows,
+  and the 0520 commit refocus completes the loop.
+- `snap_detector_to_image_plane` gained a PARAXIAL-CONJUGATE fallback on frozen scenes:
+  when both ray measures fail (a clipped/heavily-slid bundle), place the sensor at
+  `f·s_o/(s_o−f)` off the shared first order (the 0519 world-frame delta). Measured on the
+  0511 lens-near-mirror replay: +51.52 mm with the 0515 camera-clear mirror slide, and the
+  imaging arm pins to the Image again.
+- The 0511 guard's A-replay now completes the gesture the way the product does since 0520
+  (drag + refocus) before asserting the pin.
+
+Guard: `validate_open3d_0524_lens_drag_writes_sections` (penta phase 421).

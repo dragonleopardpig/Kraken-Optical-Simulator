@@ -3463,6 +3463,30 @@ class ScenePlacementMixin:
                 delta = self._traced_bundle_best_focus_shift()
                 source = "best focus (traced bundle)"
             if delta is None:
+                # bugs/0524: on a clipped / heavily-slid frozen scene BOTH ray measures give
+                # up -- but the paraxial conjugate always knows the in-focus plane. The
+                # sensor's world move is ds_i = f*s_o/(s_o-f) - image_principal off the
+                # shared first order (H2 and the fold stay put through a conjugate change --
+                # the same delta the 0519 far-leg re-anchor uses). Aberration residuals stay
+                # (no traced refinement was possible), which still beats refusing outright:
+                # since 0524 a lens drag CHANGES the conjugates, so "not computable" would
+                # leave every such drag visibly defocused.
+                first = None
+                try:
+                    first = self._shared_first_order_reference()
+                except Exception:
+                    first = None
+                if isinstance(first, dict):
+                    _f = float(first.get("f", float("nan")))
+                    _s_o = float(first.get("object_principal", float("nan")))
+                    _s_i_now = float(first.get("image_principal", float("nan")))
+                    if (
+                        np.isfinite(_f) and np.isfinite(_s_o) and np.isfinite(_s_i_now)
+                        and _s_o > _f > 0.0
+                    ):
+                        delta = _f * _s_o / (_s_o - _f) - _s_i_now
+                        source = "paraxial conjugate (first order)"
+            if delta is None:
                 self.status_var.set("Snap detector: best focus is not computable for this frozen layout.")
                 return False
         elif image_z is not None:
@@ -4692,6 +4716,32 @@ class ScenePlacementMixin:
             self._last_translate_row_shifts.append(
                 (list(lens_leg_members), tuple(float(v) for v in _shift))
             )
+            # bugs/0524 (flag_20260803_151917 "dragged the lens, the FOV is not changing"):
+            # the leg slide moved the lens in the WORLD (desps) but the SECTION GAPS never
+            # learned it, so the shared first order -- and the FOV readout -- stayed at the
+            # old conjugates (the 0478 prescription/world drift, measured: +8 mm slide,
+            # every thickness byte-identical). Write the drag through as the thickness edit
+            # it is (the user's drag = Solve-for-FOV principle): the gap BEFORE the lens
+            # block grows by the slide, the gap AFTER it (the lens -> fold near leg)
+            # shrinks -- stations past the block stay put, so the mirror and sensor hold.
+            # Infeasible (either gap would go negative): keep today's body-only slide and
+            # say so in the debug log rather than clamping silently.
+            _upstream = min(lens_leg_members) - 1
+            _downstream = max(lens_leg_members)
+            if _upstream >= 0 and _downstream < len(self.rows) - 1:
+                _up_new = float(self.rows[_upstream].thickness) + float(lens_leg_slide)
+                _down_new = float(self.rows[_downstream].thickness) - float(lens_leg_slide)
+                if np.isfinite(_up_new) and np.isfinite(_down_new) and _up_new > 0.0 and _down_new > 0.0:
+                    self.rows[_upstream].thickness = _up_new
+                    self.rows[_downstream].thickness = _down_new
+                else:
+                    try:
+                        self.append_debug(
+                            f"lens leg slide: section write-through skipped "
+                            f"(gaps would become {_up_new:.3g}/{_down_new:.3g} mm)"
+                        )
+                    except Exception:
+                        pass
             if not bool(getattr(self, "headless", False)):
                 try:
                     self._sync_table()

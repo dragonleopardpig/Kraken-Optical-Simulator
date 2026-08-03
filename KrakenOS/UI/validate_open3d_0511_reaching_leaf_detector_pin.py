@@ -121,6 +121,12 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         editor.translate_step_overlay("led", (-36.9, 0.0, 0.0))
         editor.translate_scene_row_pose_vector(7, (-22.5, 0.0, 0.0))
         editor.translate_step_overlay("lens", (24.2, 0.0, 0.0))
+        # bugs/0524: an along-leg lens drag now WRITES its section gaps (the drag is a
+        # conjugate edit), and the interactive gesture ends with the Solve-for-FOV refocus
+        # (the 0520 commit hook). The raw translate alone leaves the scene legitimately
+        # defocused -- a state the user never sees since 0520 -- so complete the gesture
+        # the way the product does before asserting the pin.
+        editor.snap_detector_to_image_plane()
         system, rays, bundle = editor._build_preview_system_rays_bundle(update_state=True)
         img8 = np.asarray(tree_mod.row_world_pose(editor.rows, 8), dtype=float).reshape(-1)[:3]
         dets = [t for t in (getattr(bundle, "targets", []) or []) if getattr(t, "is_detector", False)]

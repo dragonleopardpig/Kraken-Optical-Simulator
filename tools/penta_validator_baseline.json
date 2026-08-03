@@ -421,7 +421,8 @@
     "417": "pass",
     "418": "pass",
     "419": "pass",
-    "420": "pass"
+    "420": "pass",
+    "421": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -843,6 +844,7 @@
     "417": "Quick Estimation answers PER ARM on a tagged two-arm scene (0518)",
     "418": "the FOV solve reaches large fields on a frozen fold -- 55x55 (0519)",
     "419": "a committed lens carry drag refocuses the image at the sensor (0520)",
-    "420": "the launch matrix carries compulsory FOV-corner probe rays (0522)"
+    "420": "the launch matrix carries compulsory FOV-corner probe rays (0522)",
+    "421": "an along-leg lens drag writes its section gaps -- the FOV follows (0524)"
   }
 }
