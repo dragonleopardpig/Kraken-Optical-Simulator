@@ -3402,9 +3402,20 @@ class ScenePlacementMixin:
         if float(np.linalg.norm(shift)) <= 1.0e-6:
             self.status_var.set("Camera already seated on the sensor.")
             return False
+        # bugs/0517: a branch-framed camera's placement offset lives in the STRAIGHT frame
+        # and reaches the world through the branch rotation -- write the world shift back
+        # through R^T or the seat diverges on a rotated arm. The Image-row fold path keeps
+        # its shipped raw-add behaviour.
+        offset_shift = shift
+        try:
+            branch_transform = self._camera_branch_world_transform()
+            if branch_transform is not None:
+                offset_shift = np.asarray(branch_transform, dtype=float)[:3, :3].T @ shift
+        except Exception:
+            offset_shift = shift
         try:
             offset = np.asarray(self._step_placement_offset_xyz(label), dtype=float).reshape(3)
-            self._set_step_placement_offset_xyz(label, tuple(offset + shift))
+            self._set_step_placement_offset_xyz(label, tuple(offset + offset_shift))
         except Exception as exc:
             self.status_var.set(f"Seat camera failed: {exc}")
             return False

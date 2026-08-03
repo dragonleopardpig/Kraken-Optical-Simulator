@@ -763,6 +763,30 @@ class LayoutSceneBundleDisplayMixin:
             # persistent "reflection still wrong at the hypotenuse". Trim each ray at its
             # retroreflection so it stops at the lens instead of plunging through the fold.
             self._truncate_folded_retroreflected_ray_tails(bundle)
+        # bugs/0517 (detector redesign B2, the off-axis remainder): remember each branch
+        # detector's WORLD frame so the camera STEP overlay can adopt its ASSIGNED branch's
+        # frame (_camera_branch_world_transform). Merge-only: auxiliary builds (a per-arm
+        # two-arm-fold part, an analysis sub-bundle) may carry no branch detectors and must
+        # not wipe the frames the camera display relies on.
+        try:
+            frames: dict[str, dict] = {}
+            for target in list(getattr(bundle, "targets", None) or []):
+                meta = getattr(target, "metadata", None) or {}
+                if not isinstance(meta, dict) or meta.get("target_source") != "branch_detector":
+                    continue
+                frames[str(meta.get("branch_path", ""))] = {
+                    "center": tuple(
+                        float(v) for v in np.asarray(target.center_world, dtype=float).reshape(-1)[:3]
+                    ),
+                    "normal": tuple(
+                        float(v) for v in np.asarray(target.normal_world, dtype=float).reshape(-1)[:3]
+                    ),
+                    "focus_source": str(meta.get("focus_source", "") or ""),
+                }
+            if frames:
+                self._branch_detector_world_frames = frames
+        except Exception:
+            pass
         return bundle
 
     def _suppress_blocked_reference_ray_stubs(self, bundle) -> int:

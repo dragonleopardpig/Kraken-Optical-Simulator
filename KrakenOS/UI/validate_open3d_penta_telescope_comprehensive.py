@@ -15467,6 +15467,10 @@ phase_415_pupil_reference_survives_cube_mesh = _phase_from_standalone(
     415, "the first-order pupil reference survives a cube-BS mesh -- no geometric fallback (0516)",
     "KrakenOS.UI.validate_open3d_0516_pupil_reference_survives_cube_mesh",
     "pupil_reference_survives_cube_mesh")
+phase_416_branch_camera_body_frame = _phase_from_standalone(
+    416, "a reflect-branch camera BODY adopts its branch detector's frame (0517)",
+    "KrakenOS.UI.validate_open3d_0517_branch_camera_body_frame",
+    "branch_camera_body_frame")
 
 
 # ---------------------------------------------------------------------------
@@ -15929,6 +15933,7 @@ def main() -> int:
             phase_413_source_glue_rides_led,
             phase_414_snap_and_solve_keep_camera_clear,
             phase_415_pupil_reference_survives_cube_mesh,
+            phase_416_branch_camera_body_frame,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

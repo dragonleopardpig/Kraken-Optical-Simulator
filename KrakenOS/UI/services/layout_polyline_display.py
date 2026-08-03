@@ -545,6 +545,57 @@ class LayoutPolylineDisplayMixin:
         transform[:3, 3] = center - rotation @ straight_anchor
         return transform
 
+    def _camera_branch_world_transform(self):
+        """bugs/0517 (detector-redesign B2, the off-axis remainder): world 4x4 carrying the
+        straight-axis camera overlay onto its ASSIGNED branch detector's frame.
+
+        The camera body has always ridden the sequential Image row's fold transform --
+        right for the transmit/image arm, wrong for a camera REGISTERED to a reflect
+        branch detector: the sensor plane lived on the reflect arm while the body sat on
+        the image arm. Same shape as ``_optical_axis_fold_world_transform_for_row``:
+        ``F(v) = C + R (v - S)`` with ``S`` the straight sensor anchor
+        ``(0, 0, image_plane_z)`` the aligned mesh is built around, ``C`` the branch
+        detector centre, ``R`` the minimal rotation carrying +Z onto the branch normal --
+        so the SENSOR lands on the detector and the body extends ``front_to_sensor``
+        upstream BY CONSTRUCTION, while the user's stored rotations/offsets stay their
+        own in-frame adjustments. ``None`` (today's Image-row path) when: no assignment;
+        several assignments (one body cannot serve two arms); the assigned arm reaches
+        the designed Image (the Image-row fold transform already frames that arm); or the
+        frame is unknown (untraced scene -- the stash survives auxiliary partial builds
+        by merge-only, see ``_build_scene_bundle``)."""
+        # __dict__ reads: on a Tk-widget subclass a missing attribute falls into tkinter's
+        # __getattr__, which recurses (the 0082 trap) instead of raising AttributeError.
+        assignments = self.__dict__.get("branch_detector_camera_assignments") or {}
+        if len(assignments) != 1:
+            return None
+        frames = self.__dict__.get("_branch_detector_world_frames") or {}
+        frame = frames.get(str(next(iter(assignments))))
+        if not isinstance(frame, dict):
+            return None
+        if str(frame.get("focus_source", "")) == "reached_image":
+            return None
+        try:
+            center = np.asarray(frame.get("center"), dtype=float).reshape(3)
+            normal = np.asarray(frame.get("normal"), dtype=float).reshape(3)
+        except Exception:
+            return None
+        norm = float(np.linalg.norm(normal))
+        if not (np.all(np.isfinite(center)) and np.isfinite(norm)) or norm <= 1.0e-9:
+            return None
+        normal = normal / norm
+        from KrakenOS.UI.services.scene_placement_commands import _rotation_between_directions
+
+        rotation = _rotation_between_directions((0.0, 0.0, 1.0), normal)
+        if rotation is None:
+            rotation = np.eye(3)
+        anchor = np.asarray(
+            (0.0, 0.0, float(self._camera_track_image_plane_z())), dtype=float
+        )
+        transform = np.eye(4, dtype=float)
+        transform[:3, :3] = rotation
+        transform[:3, 3] = center - rotation @ anchor
+        return transform
+
     @staticmethod
     def _fold_transform_signature(transform) -> tuple | None:
         if transform is None:
@@ -2003,9 +2054,13 @@ class LayoutPolylineDisplayMixin:
         if self.imported_camera_step_path is None:
             return None
         camera_front_z = self._camera_track_image_plane_z() - self._current_camera_front_to_sensor_mm()  # bugs/0220
-        fold_transform = self._optical_axis_fold_world_transform_for_row(
-            self._image_plane_row_index()
-        )
+        # bugs/0517: a camera assigned to a reflect BRANCH detector adopts that branch's
+        # world frame; every other camera keeps riding the Image row's fold transform.
+        fold_transform = self._camera_branch_world_transform()
+        if fold_transform is None:
+            fold_transform = self._optical_axis_fold_world_transform_for_row(
+                self._image_plane_row_index()
+            )
         signature = (
             self._step_overlay_stat_key(self.imported_camera_step_path),
             round(float(camera_front_z), 6),
