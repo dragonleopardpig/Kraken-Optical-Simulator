@@ -65,7 +65,10 @@ def run_checks() -> tuple[bool, list[str]]:
         redirect = qe._object_locked_redirect_row(obj_row)
         led_present = app._step_path_for_label("led") is not None
         glued = bool(getattr(app, "_optical_led_glued", False))
-        if led_present and not glued and redirect is not None:
+        # The 0453 contract is TOPOLOGY-over-bool: the redirect fires for the LED+BS unit
+        # whether or not the glue bool is set (the user's re-saved scene now loads
+        # glued=True, which is just as valid a positive config as the old glued=False).
+        if led_present and redirect is not None:
             obj_before = float(app.rows[obj_row].thickness)
             lens_before = float(app.rows[redirect].thickness)
             done, _msg = qe.fov_solve("object", "thickness", 23.0, 23.0)
@@ -84,12 +87,18 @@ def run_checks() -> tuple[bool, list[str]]:
                 f"REAL config unexpected (led={led_present} glued={glued} redirect={redirect}) -- skipped"
             )
 
+        # NEG means BOTH triggers absent: the fixture must FORCE the glue bool off too --
+        # inheriting the scene's saved glue state (True since the user's in-app re-save)
+        # left one trigger armed and the redirect legitimately fired.
         saved = app.imported_led_step_path
+        saved_glued = bool(getattr(app, "_optical_led_glued", False))
         app.imported_led_step_path = None
+        app._optical_led_glued = False
         try:
             no_led = qe._object_locked_redirect_row(obj_row)
         finally:
             app.imported_led_step_path = saved
+            app._optical_led_glued = saved_glued
         if no_led is None:
             notes.append("NEG = no LED + not glued -> redirect stands down")
         else:
