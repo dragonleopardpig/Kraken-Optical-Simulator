@@ -1927,6 +1927,76 @@ class QuickEstimationService:
             pass
         return state
 
+    def branch_states(self) -> dict[str, dict[str, Any]]:
+        """Detector redesign B3: per-imaging-arm first-order estimates.
+
+        On a TAGGED two-arm splitter scene (``advanced.Element.branch_selector`` arms, e.g.
+        the dual MV150/MV120 layout) the single-chain estimate answers for ONE arm at best;
+        each arm has its own lens, sensor and conjugates. Extract each arm's row chain
+        (``_branch_leaf_rows``), read its own 0297 first order
+        (``_first_order_reference_for_rows(unfold_branch_tilts=True)`` -- the folded arm's
+        tilts are placement, not prescription) and derive f / working distance /
+        magnification / per-arm sensor / object FOV. ``{}`` on non-two-arm scenes -- the
+        single-chain readout stands unchanged there."""
+        editor = self.editor
+        rows = list(getattr(editor, "rows", None) or [])
+        try:
+            from KrakenOS.UI.services.paraxial_tools import (
+                _branch_leaf_rows,
+                _scene_branch_selectors,
+            )
+
+            selectors = [s for s in _scene_branch_selectors(rows) if s]
+        except Exception:
+            return {}
+        if len(selectors) < 2:
+            return {}
+        out: dict[str, dict[str, Any]] = {}
+        for selector in selectors:
+            try:
+                leaf = _branch_leaf_rows(rows, selector)
+            except Exception:
+                continue
+            if len(leaf) < 3:
+                continue
+            first = None
+            try:
+                first = editor._first_order_reference_for_rows(leaf, unfold_branch_tilts=True)
+            except Exception:
+                first = None
+            if not isinstance(first, dict):
+                continue
+            state: dict[str, Any] = {
+                "focal_length": float(first["f"]),
+                "working_distance": None,
+                "magnification": None,
+                "sensor_semi": None,
+                "fov_semi": None,
+                "fov_full": None,
+            }
+            try:
+                state["working_distance"] = float(leaf[0].thickness)
+            except Exception:
+                pass
+            try:
+                diameter = float(getattr(leaf[-1], "diameter", 0.0) or 0.0)
+                state["sensor_semi"] = diameter / 2.0 if diameter > 0 else None
+            except Exception:
+                pass
+            f = float(first["f"])
+            s_o = float(first["object_principal"])
+            # The same conjugate magnification the single-chain readout uses (bugs/0222):
+            # m = f / (s_o - f), read at the Gaussian conjugate, magnitude convention.
+            if np.isfinite(f) and np.isfinite(s_o) and abs(s_o - f) > 1e-9 and f > 0 and s_o > f:
+                mag = f / (s_o - f)
+                state["magnification"] = float(mag)
+                sensor = state["sensor_semi"]
+                if sensor and abs(mag) > 1e-9:
+                    state["fov_semi"] = float(sensor) / abs(mag)
+                    state["fov_full"] = 2.0 * state["fov_semi"]
+            out[selector] = state
+        return out
+
     def format_readout(self, state: dict[str, Any] | None = None) -> dict[str, str]:
         """Human-readable strings for the panel, keyed by quantity + metrics."""
         if state is None:
@@ -2003,6 +2073,26 @@ class QuickEstimationService:
         else:
             focus = state.get("in_focus")
             out["focus"] = "in focus" if focus else ("out of focus" if focus is False else "--")
+        # Detector redesign B3: per-arm lines on a tagged two-arm scene. One compact line per
+        # imaging arm so the panel answers for BOTH sensors, not a single-chain blend.
+        try:
+            branches = self.branch_states()
+        except Exception:
+            branches = {}
+        if branches:
+            lines = []
+            for selector in sorted(branches):
+                bstate = branches[selector]
+                mag = bstate.get("magnification")
+                fov = bstate.get("fov_full")
+                lines.append(
+                    f"{selector}: f {_mm(bstate.get('focal_length'))}"
+                    + (f" | m {mag:.4g}x" if mag else "")
+                    + (f" | FOV {fov:.6g} mm" if fov else "")
+                )
+            out["branches"] = "\n".join(lines)
+        else:
+            out["branches"] = "--"
         return out
 
     def update_readout(self, state: dict[str, Any] | None = None) -> None:

@@ -1576,10 +1576,27 @@ class ParaxialToolsMixin:
 
         The magnification readout, the best-focus snap and the FOV solve all derive from these,
         so they cannot drift apart (bugs/0297)."""
+        return self._first_order_reference_for_rows(self.rows)
+
+    def _first_order_reference_for_rows(
+        self,
+        rows: "list[SurfaceRow]",
+        *,
+        unfold_branch_tilts: bool = False,
+    ) -> "dict | None":
+        """The 0297 first order for an ARBITRARY row chain (detector redesign B3).
+
+        ``rows=self.rows`` is the whole-layout shared reference, byte-identical to the old
+        ``_shared_first_order_reference`` body. A per-branch consumer passes ONE tagged
+        arm's ``_branch_leaf_rows`` chain with ``unfold_branch_tilts=True`` (the folded
+        reflect arm's tilts are placement, not prescription -- same rule as the per-leaf
+        pupil, DESIGN §5b) and gets that arm's own cardinals/conjugates."""
         try:
-            solve_rows = self.rows
-            if self._layout_needs_paraxial_reference(self.rows):
-                solve_rows, _last_source_index = self._paraxial_reference_rows_for_layout(self.rows)
+            solve_rows = rows
+            if self._layout_needs_paraxial_reference(rows):
+                solve_rows, _last_source_index = self._paraxial_reference_rows_for_layout(
+                    rows, unfold_branch_tilts=unfold_branch_tilts
+                )
             _a, _b, _c, _d, effl, ppa, ppp = self._exact_paraxial_solution_for_rows(solve_rows)
             h1_vertex_z, h2_vertex_z = self._paraxial_vertex_zs(solve_rows)
         except Exception:

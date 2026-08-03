@@ -417,7 +417,8 @@
     "413": "pass",
     "414": "pass",
     "415": "pass",
-    "416": "pass"
+    "416": "pass",
+    "417": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -835,6 +836,7 @@
     "413": "a glued illumination source rides the LED/BS assembly drags (0512)",
     "414": "FOV solve and remove-defocus keep the camera body clear of the fold mirror (0515)",
     "415": "the first-order pupil reference survives a cube-BS mesh -- no geometric fallback (0516)",
-    "416": "a reflect-branch camera BODY adopts its branch detector's frame (0517)"
+    "416": "a reflect-branch camera BODY adopts its branch detector's frame (0517)",
+    "417": "Quick Estimation answers PER ARM on a tagged two-arm scene (0518)"
   }
 }
