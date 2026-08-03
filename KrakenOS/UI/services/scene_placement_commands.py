@@ -4747,6 +4747,21 @@ class ScenePlacementMixin:
                     for _index in range(_upstream + 1, _downstream + 1):
                         _row = self.rows[_index]
                         _row.desp_z = float(_row.desp_z) - float(lens_leg_slide)
+                    # bugs/0527 (flag_20260803_170758 "the Lens STEP body detached"): the
+                    # lens overlay aligner pins to the datum STATIONS
+                    # (_lens_front/rear_datum_z), the one consumer inside the compensated
+                    # span that reads stations rather than poses -- the composite grew
+                    # those stations by the slide, so the body's straight-frame anchor
+                    # slid +z while the optics held. The persisted glue offset is the
+                    # calibrated free parameter against that anchor, so compensate it by
+                    # the same slide -- ON ``next_offset``, the value this very call
+                    # writes at the end (a direct setter write here would be clobbered by
+                    # it). Changing the ANCHOR's semantics instead would break every
+                    # saved scene's persisted offset.
+                    try:
+                        next_offset[2] = float(next_offset[2]) - float(lens_leg_slide)
+                    except Exception:
+                        pass
                 else:
                     try:
                         self.append_debug(

@@ -69,10 +69,33 @@ def run_checks() -> tuple[bool, list[str]]:
         gaps0 = [float(r.thickness) for r in app.rows]
         seats0 = {i: _pose(i) for i in (3, 7, 8)}
         fov0 = qe.current_state().get("fov_full")
+        body0 = None
+        try:
+            _mesh0 = app._transformed_imported_step_mesh_for_label("lens")
+            body0 = np.asarray(_mesh0.center, dtype=float) if _mesh0 is not None else None
+        except Exception:
+            body0 = None
+        front0 = _pose(1)
         app.translate_step_overlay("lens", (8.0, 0.0, 0.0))
         gaps1 = [float(r.thickness) for r in app.rows]
         seats1 = {i: _pose(i) for i in (3, 7, 8)}
         fov1 = qe.current_state().get("fov_full")
+        if body0 is not None:
+            # bugs/0527: the STEP body must ride the assembly -- its motion equals the
+            # front datum's motion (the aligner's station anchor is compensated on
+            # next_offset inside the composite).
+            try:
+                _mesh1 = app._transformed_imported_step_mesh_for_label("lens")
+                body1 = np.asarray(_mesh1.center, dtype=float) if _mesh1 is not None else None
+            except Exception:
+                body1 = None
+            if body1 is not None:
+                attach_err = float(np.linalg.norm((body1 - body0) - (_pose(1) - front0)))
+                if attach_err < 0.05:
+                    notes.append(f"REAL = the lens STEP body rides the assembly (error {attach_err:.4f} mm)")
+                else:
+                    notes.append(f"REAL the lens STEP body detached by {attach_err:.3f} mm (flag 170758)")
+                    ok = False
         deltas = [round(b - a, 3) for a, b in zip(gaps0, gaps1)]
         grew = [i for i, d in enumerate(deltas) if d > 0.5]
         shrank = [i for i, d in enumerate(deltas) if d < -0.5]
