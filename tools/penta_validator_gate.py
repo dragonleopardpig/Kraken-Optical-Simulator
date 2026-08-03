@@ -283,7 +283,18 @@ def main(argv: list[str] | None = None) -> int:
                     file=sys.stderr,
                 )
                 return 1
-            merged = dict(existing)
+            # bugs/0528 tooling: load_baseline returns bare status STRINGS while
+            # write_baseline expects {status, title} dicts -- merging them raw made
+            # every filtered --update-baseline crash on st["status"]. Re-hydrate the
+            # existing entries (titles from the stored payload) before merging.
+            try:
+                stored_titles = json.loads(args.baseline.read_text(encoding="utf-8")).get("titles", {})
+            except Exception:
+                stored_titles = {}
+            merged = {
+                num: {"status": status, "title": str(stored_titles.get(num, ""))}
+                for num, status in existing.items()
+            }
             merged.update(states)
             write_baseline(args.baseline, merged)
             print(
