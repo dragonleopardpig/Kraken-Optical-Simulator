@@ -1,4 +1,4 @@
-"""Add brief answers and expandable details to Fundamentals solutions."""
+"""Add brief solution steps and expandable details to Fundamentals items."""
 
 from __future__ import annotations
 
@@ -32,13 +32,53 @@ def _is_explicit_result(node: nodes.Node) -> bool:
     )
 
 
-def _brief_nodes(section: nodes.section) -> list[nodes.Node]:
-    content = list(section.children[1:])
-    check_index = next(
-        (index for index, child in enumerate(content) if _is_check(child)),
-        len(content),
+def _is_formula_marker(node: nodes.Node) -> bool:
+    marker = _leading_strong_text(node)
+    return marker.startswith(("Step 2", "Mathematical formulas used."))
+
+
+def _is_derivation_marker(node: nodes.Node) -> bool:
+    marker = _leading_strong_text(node)
+    return marker.startswith(("Step 3", "Worked derivation."))
+
+
+def _is_boilerplate(node: nodes.Node) -> bool:
+    return node.astext().startswith(
+        "The calculation is kept in symbolic form until the governing relation"
     )
 
+
+def _is_substantive(node: nodes.Node) -> bool:
+    return (
+        isinstance(
+            node,
+            (
+                nodes.paragraph,
+                nodes.math_block,
+                nodes.bullet_list,
+                nodes.enumerated_list,
+                nodes.table,
+            ),
+        )
+        and not _leading_strong_text(node)
+        and not _is_boilerplate(node)
+    )
+
+
+def _contains_boxed_math(node: nodes.Node) -> bool:
+    if isinstance(node, (nodes.math, nodes.math_block)):
+        return r"\boxed" in node.astext()
+    return any(
+        r"\boxed" in descendant.astext()
+        for descendant in node.findall(
+            lambda candidate: isinstance(candidate, (nodes.math, nodes.math_block))
+        )
+    )
+
+
+def _answer_nodes(
+    content: list[nodes.Node], check_index: int
+) -> list[nodes.Node]:
     result_index = next(
         (
             index
@@ -51,47 +91,91 @@ def _brief_nodes(section: nodes.section) -> list[nodes.Node]:
         explicit = [
             child
             for child in content[result_index + 1 : check_index]
-            if not isinstance(child, nodes.comment)
+            if _is_substantive(child)
         ]
         if explicit:
             return explicit
 
-    candidates = content[:check_index]
-    boxed_math = [
-        child
-        for child in candidates
-        if isinstance(child, nodes.math_block) and r"\boxed" in child.astext()
+    candidates = [
+        (index, child)
+        for index, child in enumerate(content[:check_index])
+        if _is_substantive(child)
     ]
-    if boxed_math:
-        return [boxed_math[-1]]
+    boxed = [entry for entry in candidates if _contains_boxed_math(entry[1])]
+    if boxed:
+        boxed_index, boxed_node = boxed[-1]
+        companion = next(
+            (
+                child
+                for index, child in candidates
+                if index > boxed_index and isinstance(child, nodes.paragraph)
+            ),
+            None,
+        )
+        return [boxed_node, *([companion] if companion is not None else [])]
 
+    return [candidates[-1][1]] if candidates else []
+
+
+def _decisive_nodes(candidates: list[nodes.Node]) -> list[nodes.Node]:
+    if len(candidates) <= 3:
+        return candidates
+
+    selected = [candidates[0], candidates[-1]]
     displayed_math = [
-        child for child in candidates if isinstance(child, nodes.math_block)
+        child for child in candidates[1:-1] if isinstance(child, nodes.math_block)
     ]
     if displayed_math:
-        return [displayed_math[-1]]
+        selected.append(displayed_math[-1])
+    positions = {id(child): index for index, child in enumerate(candidates)}
+    unique = {id(child): child for child in selected}.values()
+    return sorted(unique, key=lambda child: positions[id(child)])
 
-    substantive = [
-        child
-        for child in candidates
-        if isinstance(
-            child,
-            (nodes.paragraph, nodes.bullet_list, nodes.enumerated_list, nodes.table),
-        )
-        and not _leading_strong_text(child).startswith(
-            (
-                "Step 1",
-                "Step 2",
-                "Step 3",
-                "Step 4",
-                "Definitions and setup.",
-                "Definitions and assumptions.",
-                "Mathematical formulas used.",
-                "Worked derivation.",
-            )
-        )
-    ]
-    return substantive[-1:] or candidates[-1:]
+
+def _brief_parts(
+    section: nodes.section,
+) -> tuple[nodes.paragraph | None, list[nodes.Node], list[nodes.Node]]:
+    content = list(section.children[1:])
+    check_index = next(
+        (index for index, child in enumerate(content) if _is_check(child)),
+        len(content),
+    )
+    answer = _answer_nodes(content, check_index)
+    answer_ids = {id(child) for child in answer}
+
+    method = next(
+        (
+            child
+            for child in content[:check_index]
+            if _is_formula_marker(child)
+        ),
+        None,
+    )
+    derivation_index = next(
+        (
+            index
+            for index, child in enumerate(content[:check_index])
+            if _is_derivation_marker(child)
+        ),
+        None,
+    )
+    result_index = next(
+        (
+            index
+            for index, child in enumerate(content[:check_index])
+            if _is_explicit_result(child)
+        ),
+        check_index,
+    )
+    working = []
+    if derivation_index is not None:
+        working = [
+            child
+            for child in content[derivation_index + 1 : result_index]
+            if _is_substantive(child) and id(child) not in answer_ids
+        ]
+
+    return method, _decisive_nodes(working), answer
 
 
 def _sanitized_copy(node: nodes.Node) -> nodes.Node:
@@ -113,6 +197,31 @@ def _sanitized_copy(node: nodes.Node) -> nodes.Node:
     return clone
 
 
+def _brief_step(label: str, content: list[nodes.Node]) -> nodes.container:
+    step = nodes.container(classes=["fop-brief-step"])
+    step += nodes.paragraph(
+        "",
+        "",
+        nodes.strong("", label),
+        classes=["fop-brief-step-label"],
+    )
+    for content_node in content:
+        step += _sanitized_copy(content_node)
+    return step
+
+
+def _method_step(method: nodes.paragraph) -> nodes.container:
+    method_copy = _sanitized_copy(method)
+    leading = method_copy.children[0]
+    if isinstance(leading, nodes.strong):
+        leading.children = [nodes.Text("1. Method.")]
+        leading.children[0].parent = leading
+    method_copy["classes"].append("fop-brief-step-label")
+    step = nodes.container(classes=["fop-brief-step"])
+    step += method_copy
+    return step
+
+
 def _transform_solutions(app, doctree: nodes.document, docname: str) -> None:
     if not docname.startswith(COLLECTION_PREFIX):
         return
@@ -127,12 +236,21 @@ def _transform_solutions(app, doctree: nodes.document, docname: str) -> None:
         if not original:
             continue
 
+        method, working, answer = _brief_parts(section)
         brief = nodes.container(classes=["fop-brief-answer"])
         brief += nodes.paragraph(
-            "", "", nodes.strong("", "Brief answer")
+            "",
+            "",
+            nodes.strong("", "Brief solution"),
+            classes=["fop-brief-title"],
         )
-        for answer_node in _brief_nodes(section):
-            brief += _sanitized_copy(answer_node)
+        if method is not None:
+            brief += _method_step(method)
+        if working:
+            brief += _brief_step("2. Key step.", working)
+        if answer:
+            label = "3. Answer." if working else "2. Reasoning and answer."
+            brief += _brief_step(label, answer)
 
         detail_open = nodes.raw(
             "",

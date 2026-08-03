@@ -8,12 +8,30 @@
     box-shadow: 0 2px 8px rgba(62, 42, 15, 0.08);
 }
 
-.fop-brief-answer > p:first-child {
+.fop-brief-title {
     margin: 0 0 0.35rem;
     color: #70440d;
     font-size: 0.78rem;
     letter-spacing: 0.09em;
     text-transform: uppercase;
+}
+
+.fop-brief-step {
+    padding: 0.45rem 0 0.25rem;
+    border-top: 1px solid rgba(128, 82, 22, 0.14);
+}
+
+.fop-brief-step:first-of-type {
+    border-top: 0;
+}
+
+.fop-brief-step-label {
+    margin: 0 0 0.3rem;
+    color: #70440d;
+}
+
+.fop-brief-step > :last-child {
+    margin-bottom: 0;
 }
 
 .fop-brief-answer > :last-child {
