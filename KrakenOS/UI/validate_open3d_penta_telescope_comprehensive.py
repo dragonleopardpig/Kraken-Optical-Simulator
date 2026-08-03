@@ -15499,6 +15499,10 @@ phase_423_gizmo_lens_drag_refocuses = _phase_from_standalone(
     423, "the gizmo-arrow lens drag refocuses at the sensor (0528)",
     "KrakenOS.UI.validate_open3d_0528_gizmo_lens_drag_refocuses",
     "gizmo_lens_drag_refocuses")
+phase_424_lens_drag_single_undo = _phase_from_standalone(
+    424, "the lens drag+refocus gesture is ONE undo step (0529)",
+    "KrakenOS.UI.validate_open3d_0529_lens_drag_single_undo",
+    "lens_drag_single_undo")
 
 
 # ---------------------------------------------------------------------------
@@ -15969,6 +15973,7 @@ def main() -> int:
             phase_421_lens_drag_writes_sections,
             phase_422_receiving_cone_folds_frozen,
             phase_423_gizmo_lens_drag_refocuses,
+            phase_424_lens_drag_single_undo,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

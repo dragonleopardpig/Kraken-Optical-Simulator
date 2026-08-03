@@ -3945,10 +3945,6 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         transition = self.editor._open3d_step_state_service().carry_finish_transition(state)
         if transition is None:
             return
-        try:
-            self.editor._commit_history_capture()
-        except Exception:
-            pass
         # bugs/0513 M2: the gesture is over -- the sticky axial-redirect verdict dies with
         # it, so the NEXT drag re-evaluates from the body's actual pose (a parked body
         # keeps the plain move, the 409 C1 protection).
@@ -3967,11 +3963,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             # AT the sensor (the 0490/0515 traced-focus snap, resolver + frozen-aware +
             # adaptive) and let the FOV readout follow the new geometry. Other labels keep
             # the 0433 stay-put contract -- an LED/station/mirror drag is a layout gesture.
+            # bugs/0529: the snap runs BEFORE the carry's pending capture is committed --
+            # its inner begin no-ops against the open capture and its commit pushes the
+            # PRE-GESTURE snapshot, so drag + refocus land in ONE undo step ("Ctrl-z not
+            # going back": the first press only un-seated the sensor).
             try:
                 if bool(self.editor.snap_detector_to_image_plane()):
                     refocus_note = " Refocused at the sensor (Solve for FOV)."
             except Exception as exc:
                 self.editor.append_debug(f"lens-drag Solve-for-FOV refocus failed: {exc}")
+        try:
+            self.editor._commit_history_capture()
+        except Exception:
+            pass
         if transition.moved:
             try:
                 physics_requested = self.editor._open3d_trace_refresh_service().inspector_physics_requested(self)
@@ -4417,39 +4421,45 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             )
         except Exception:
             physics_requested = True
-        try:
-            self.editor.translate_step_overlay(
-                label,
-                (float(delta_xyz[0]), float(delta_xyz[1]), float(delta_xyz[2])),
-                refresh=physics_requested,
-                record_history=True,
-            )
-        except Exception as exc:
-            self.editor.append_debug(f"STEP translate commit failed for {label}: {exc}")
-            return
-        refocus_note = ""
-        if label == "lens" and getattr(self.editor, "_last_translate_row_shifts", None):
-            # bugs/0528 (flag_20260803_203614 "FOV changed but the rays are defocus"): the
-            # GIZMO-ARROW lens drag is the SAME conjugate edit as the 0520 body-grab carry
-            # -- the commit above wrote the section gaps -- but only the carry finish ran
-            # the Solve-for-FOV refocus, so this path left the sensor at its old seat with
-            # the FOV readout describing the defocused state. Same snap, same note. The
-            # row-shift breadcrumbs gate it: a perpendicular arrow drag writes no rows
-            # (body-only, 0433 stay-put) and skips the snap entirely.
+        # bugs/0529 (flag_20260804_073309 "Ctrl-z not going back to previous state"): the
+        # drag commit and the 0528 refocus each pushed their OWN history entry, so the
+        # first Ctrl-Z only un-seated the sensor (an ~18 mm move, invisible at scene zoom)
+        # and the drag looked un-undoable. The 0449 transaction groups the whole gesture
+        # -- translate + snap -- into ONE undo step (inner captures are suppressed).
+        with self.editor.history_transaction():
             try:
-                if bool(self.editor.snap_detector_to_image_plane()):
-                    refocus_note = " Refocused at the sensor (Solve for FOV)."
+                self.editor.translate_step_overlay(
+                    label,
+                    (float(delta_xyz[0]), float(delta_xyz[1]), float(delta_xyz[2])),
+                    refresh=physics_requested,
+                    record_history=True,
+                )
             except Exception as exc:
-                self.editor.append_debug(f"lens-drag Solve-for-FOV refocus failed: {exc}")
-            if refocus_note:
+                self.editor.append_debug(f"STEP translate commit failed for {label}: {exc}")
+                return
+            refocus_note = ""
+            if label == "lens" and getattr(self.editor, "_last_translate_row_shifts", None):
+                # bugs/0528 (flag_20260803_203614 "FOV changed but the rays are defocus"): the
+                # GIZMO-ARROW lens drag is the SAME conjugate edit as the 0520 body-grab carry
+                # -- the commit above wrote the section gaps -- but only the carry finish ran
+                # the Solve-for-FOV refocus, so this path left the sensor at its old seat with
+                # the FOV readout describing the defocused state. Same snap, same note. The
+                # row-shift breadcrumbs gate it: a perpendicular arrow drag writes no rows
+                # (body-only, 0433 stay-put) and skips the snap entirely.
                 try:
-                    self.refresh_from_editor(force_retrace=True)
+                    if bool(self.editor.snap_detector_to_image_plane()):
+                        refocus_note = " Refocused at the sensor (Solve for FOV)."
                 except Exception as exc:
-                    self.editor.append_debug(f"STEP translate refocus refresh failed: {exc}")
-                try:
-                    self._quick_estimation_service().update_readout()
-                except Exception:
-                    pass
+                    self.editor.append_debug(f"lens-drag Solve-for-FOV refocus failed: {exc}")
+                if refocus_note:
+                    try:
+                        self.refresh_from_editor(force_retrace=True)
+                    except Exception as exc:
+                        self.editor.append_debug(f"STEP translate refocus refresh failed: {exc}")
+                    try:
+                        self._quick_estimation_service().update_readout()
+                    except Exception:
+                        pass
         if not physics_requested:
             # bugs/0011: the persistent thickness dimensions span every
             # component (Object/Image rows plus any imported body), so the
