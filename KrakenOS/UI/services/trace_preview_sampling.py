@@ -1408,7 +1408,59 @@ class TracePreviewSamplingMixin:
                 anchor_x, anchor_y = float(_anchor[0]), float(_anchor[1])
             except Exception:
                 anchor_x = anchor_y = 0.0
-            for field_x, field_y in pairs:
+            field_launches: list[tuple[float, float, np.ndarray]] = [
+                (float(fx), float(fy), pupil_points) for fx, fy in pairs
+            ]
+            # bugs/0522 (user request 2026-08-03): COMPULSORY FOV-corner probes. A
+            # field_count=1 launch sampled only the FOV centre, so an obstruction clipping
+            # the field EDGE stayed invisible until the user raised the field count. When a
+            # rectangular imaging bound is active, launch a skeletal probe fan (chief + 4
+            # pupil-rim rays) from each FOV corner the field grid missed -- ~20 rays total,
+            # and anything between the object corners and the sensor that would clip the
+            # beam shows immediately as missing corner rays. The main fans keep the literal
+            # "Ray Count = N per field" contract (bugs/0095) untouched.
+            try:
+                _half = self._coupled_imaging_launch_half_extents()
+            except Exception:
+                _half = None
+            if _half is None:
+                # The rectangular coupled bound is absent on plain imaging scenes (the
+                # user's AZ85) -- fall back to the OBJECT-FOV rectangle (the registered
+                # sensor rectangle / |m|), the same numbers the drawn "FOV WxH" plate
+                # shows. No camera model or no finite magnification -> no probes, so
+                # penta/sequential scenes stay byte-identical.
+                try:
+                    _mag = self._current_finite_paraxial_magnification()
+                    _dims = self._current_camera_sensor_active_mm()
+                    if _mag is not None and _dims is not None and abs(float(_mag)) > 1e-9:
+                        _half = (
+                            float(_dims[0]) / abs(float(_mag)) / 2.0,
+                            float(_dims[1]) / abs(float(_mag)) / 2.0,
+                        )
+                except Exception:
+                    _half = None
+            if _half is not None:
+                _hx, _hy = float(_half[0]), float(_half[1])
+                if np.isfinite(_hx) and np.isfinite(_hy) and max(_hx, _hy) > 1e-9:
+                    _present = {(round(fx, 6), round(fy, 6)) for fx, fy, _pts in field_launches}
+                    try:
+                        _rim = float(
+                            np.max(np.linalg.norm(np.asarray(pupil_points[:, :2], dtype=float), axis=1))
+                        )
+                    except Exception:
+                        _rim = 0.0
+                    _probe = (
+                        np.asarray(
+                            [[0.0, 0.0], [_rim, 0.0], [-_rim, 0.0], [0.0, _rim], [0.0, -_rim]],
+                            dtype=float,
+                        )
+                        if _rim > 1e-9
+                        else np.asarray([[0.0, 0.0]], dtype=float)
+                    )
+                    for _cx, _cy in ((-_hx, -_hy), (_hx, -_hy), (-_hx, _hy), (_hx, _hy)):
+                        if (round(_cx, 6), round(_cy, 6)) not in _present:
+                            field_launches.append((float(_cx), float(_cy), _probe))
+            for field_x, field_y, launch_points in field_launches:
                 origin = np.array(
                     [anchor_x - float(field_x), anchor_y - float(field_y), 0.0], dtype=float
                 )
@@ -1418,7 +1470,7 @@ class TracePreviewSamplingMixin:
                 l_vals: list[float] = []
                 m_vals: list[float] = []
                 n_vals: list[float] = []
-                for pupil_x, pupil_y in pupil_points[:, :2]:
+                for pupil_x, pupil_y in launch_points[:, :2]:
                     target = np.array(
                         [anchor_x + float(pupil_x), anchor_y + float(pupil_y), aim_z], dtype=float
                     )

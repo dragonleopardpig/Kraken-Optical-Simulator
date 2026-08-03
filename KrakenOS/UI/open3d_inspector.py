@@ -3960,15 +3960,31 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._set_step_carry_cursor(False)
         self._open3d_carry_grip_service.clear(render=False)
         self._update_mode_badge()
+        refocus_note = ""
+        if transition.moved and transition.label == "lens":
+            # bugs/0520 (flag_20260803_140823, user principle): a LENS drag IS a conjugate
+            # edit -- "Solve for FOV": the drag pinned the lens position; refocus the image
+            # AT the sensor (the 0490/0515 traced-focus snap, resolver + frozen-aware +
+            # adaptive) and let the FOV readout follow the new geometry. Other labels keep
+            # the 0433 stay-put contract -- an LED/station/mirror drag is a layout gesture.
+            try:
+                if bool(self.editor.snap_detector_to_image_plane()):
+                    refocus_note = " Refocused at the sensor (Solve for FOV)."
+            except Exception as exc:
+                self.editor.append_debug(f"lens-drag Solve-for-FOV refocus failed: {exc}")
         if transition.moved:
             try:
                 physics_requested = self.editor._open3d_trace_refresh_service().inspector_physics_requested(self)
-                self.refresh_from_editor(force_retrace=physics_requested)
+                self.refresh_from_editor(force_retrace=physics_requested or bool(refocus_note))
             except Exception as exc:
                 self.editor.append_debug(f"STEP carry final refresh failed: {exc}")
             if transition.live_refresh_message:
                 self.schedule_live_refresh(transition.live_refresh_message, delay_ms=0)
-        self.status_var.set(transition.status)
+            try:
+                self._quick_estimation_service().update_readout()
+            except Exception:
+                pass
+        self.status_var.set(transition.status + refocus_note)
 
     def _apply_placement_drag_motion(self, dx: int | float, dy: int | float) -> None:
         state = self._placement_drag_state

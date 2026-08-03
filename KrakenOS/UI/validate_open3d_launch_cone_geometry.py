@@ -183,7 +183,12 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
     cone_bundles, _cone_count = editor._build_world_cone_bundles(radius, system=system)
     fan_bundles, _fan_count = editor._build_world_envelope_bundles(radius, system=system)
     cone_l_span, cone_m_span = _bundle_direction_spans(cone_bundles)
-    fan_l_span, fan_m_span = _bundle_direction_spans(fan_bundles)
+    # bugs/0522: the envelope build appends skeletal FOV-corner PROBE fans (chief + 4
+    # pupil-rim rays) on scenes with an object-FOV rectangle -- those deliberately span
+    # both axes. The flat-fan contract applies to the MAIN fans (the literal Ray Count
+    # bundles), so measure the span over those.
+    main_fan_bundles = [b for b in fan_bundles if len(np.asarray(b[0])) > 5] or fan_bundles
+    fan_l_span, fan_m_span = _bundle_direction_spans(main_fan_bundles)
     if not (cone_l_span > 1e-9 and cone_m_span > 1e-9):
         notes.append(
             f"FAIL: cone bundle directions are planar (L_span={cone_l_span:g}, M_span={cone_m_span:g})"
@@ -217,8 +222,33 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
         passed = False
     origins = {tuple(np.round(np.asarray(p.points_world, float)[0, :3], 4)) for p in paths
                if np.asarray(p.points_world, float).ndim == 2 and len(p.points_world)}
-    if origins and not all(abs(o[0]) < 1e-3 and abs(o[1]) < 1e-3 for o in origins):
-        notes.append(f"FAIL: field=1 cone launch origins not centred: {sorted(origins)}")
+    # bugs/0522: field=1 launches the centred fan PLUS compulsory FOV-corner probes. The
+    # centre must exist, and every non-centre origin must sit at one of the FOV corners
+    # (object-FOV rectangle = sensor / |m|); with no rectangle no strays are allowed.
+    _half = None
+    try:
+        _mag = editor._current_finite_paraxial_magnification()
+        _dims = editor._current_camera_sensor_active_mm()
+        if _mag and _dims and abs(float(_mag)) > 1e-9:
+            _half = (
+                float(_dims[0]) / abs(float(_mag)) / 2.0,
+                float(_dims[1]) / abs(float(_mag)) / 2.0,
+            )
+    except Exception:
+        _half = None
+    _centre_ok = any(abs(o[0]) < 1e-3 and abs(o[1]) < 1e-3 for o in origins)
+    _stray = [o for o in origins if not (abs(o[0]) < 1e-3 and abs(o[1]) < 1e-3)]
+    if _half is not None:
+        _hx, _hy = _half
+        _stray = [
+            o for o in _stray
+            if not (abs(abs(o[0]) - _hx) < 1e-2 and abs(abs(o[1]) - _hy) < 1e-2)
+        ]
+    if origins and (not _centre_ok or _stray):
+        notes.append(
+            f"FAIL: field=1 cone launch origins wrong (centre={_centre_ok}, "
+            f"non-corner strays={_stray}): {sorted(origins)}"
+        )
         passed = False
     # The traced cone paths spread in both transverse axes downstream.
     path_pts = [np.asarray(p.points_world, float) for p in paths

@@ -419,7 +419,9 @@
     "415": "pass",
     "416": "pass",
     "417": "pass",
-    "418": "pass"
+    "418": "pass",
+    "419": "pass",
+    "420": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -839,6 +841,8 @@
     "415": "the first-order pupil reference survives a cube-BS mesh -- no geometric fallback (0516)",
     "416": "a reflect-branch camera BODY adopts its branch detector's frame (0517)",
     "417": "Quick Estimation answers PER ARM on a tagged two-arm scene (0518)",
-    "418": "the FOV solve reaches large fields on a frozen fold -- 55x55 (0519)"
+    "418": "the FOV solve reaches large fields on a frozen fold -- 55x55 (0519)",
+    "419": "a committed lens carry drag refocuses the image at the sensor (0520)",
+    "420": "the launch matrix carries compulsory FOV-corner probe rays (0522)"
   }
 }
