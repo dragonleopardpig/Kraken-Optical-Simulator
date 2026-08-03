@@ -234,9 +234,35 @@ class TracePreviewSamplingMixin:
             return None
         return float(half_x), float(half_y)
 
-    def _sample_imaging_field_grid_pairs(self) -> list[tuple[float, float]]:
-        """Finite-object field pairs, using a rectangular coupled-illumination bound when active."""
+    def _imaging_fov_half_extents(self) -> "tuple[float, float] | None":
+        """The rectangular imaging field half-extents: the coupled-illumination bound when
+        active, else (bugs/0522/0523) the OBJECT-FOV rectangle -- the registered sensor
+        rectangle / |m|, the same numbers the drawn "FOV WxH" plate shows. None when the
+        scene has neither (no camera model / no finite magnification)."""
         half = self._coupled_imaging_launch_half_extents()
+        if half is not None:
+            return half
+        try:
+            mag = self._current_finite_paraxial_magnification()
+            dims = self._current_camera_sensor_active_mm()
+            if mag is not None and dims is not None and abs(float(mag)) > 1e-9:
+                return (
+                    float(dims[0]) / abs(float(mag)) / 2.0,
+                    float(dims[1]) / abs(float(mag)) / 2.0,
+                )
+        except Exception:
+            pass
+        return None
+
+    def _sample_imaging_field_grid_pairs(self) -> list[tuple[float, float]]:
+        """Finite-object field pairs over the rectangular imaging field.
+
+        bugs/0523 (flag_20260803_151719 "all the outer 3 rays should relocate to the 4
+        corner and 4 edges, simulating rays launching from maximum FOV"): the grid now
+        spans the OBJECT-FOV rectangle whenever one is known -- linspace endpoints put the
+        outer ring exactly ON the maximum field (a 3x3 grid = 4 corners + 4 edge midpoints
+        + centre). Scenes with no rectangle keep the radial layout."""
+        half = self._imaging_fov_half_extents()
         if half is None:
             return self._sample_field_grid_pairs(self._launch_field_radial_max())
         count = self._current_field_count()
@@ -1420,25 +1446,9 @@ class TracePreviewSamplingMixin:
             # beam shows immediately as missing corner rays. The main fans keep the literal
             # "Ray Count = N per field" contract (bugs/0095) untouched.
             try:
-                _half = self._coupled_imaging_launch_half_extents()
+                _half = self._imaging_fov_half_extents()
             except Exception:
                 _half = None
-            if _half is None:
-                # The rectangular coupled bound is absent on plain imaging scenes (the
-                # user's AZ85) -- fall back to the OBJECT-FOV rectangle (the registered
-                # sensor rectangle / |m|), the same numbers the drawn "FOV WxH" plate
-                # shows. No camera model or no finite magnification -> no probes, so
-                # penta/sequential scenes stay byte-identical.
-                try:
-                    _mag = self._current_finite_paraxial_magnification()
-                    _dims = self._current_camera_sensor_active_mm()
-                    if _mag is not None and _dims is not None and abs(float(_mag)) > 1e-9:
-                        _half = (
-                            float(_dims[0]) / abs(float(_mag)) / 2.0,
-                            float(_dims[1]) / abs(float(_mag)) / 2.0,
-                        )
-                except Exception:
-                    _half = None
             if _half is not None:
                 _hx, _hy = float(_half[0]), float(_half[1])
                 if np.isfinite(_hx) and np.isfinite(_hy) and max(_hx, _hy) > 1e-9:

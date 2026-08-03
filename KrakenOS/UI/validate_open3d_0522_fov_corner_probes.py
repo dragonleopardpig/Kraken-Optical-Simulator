@@ -28,10 +28,16 @@ def run_checks() -> tuple[bool, list[str]]:
     from KrakenOS.UI.services import trace_preview_sampling as _tps
 
     src = _inspect.getsource(_tps.TracePreviewSamplingMixin._build_world_bundles_from_pupil_points)
-    if "field_launches" in src and "_current_camera_sensor_active_mm" in src:
+    if "field_launches" in src and "_imaging_fov_half_extents" in src:
         notes.append("SOURCE = corner probes + the object-FOV fallback are wired")
     else:
         notes.append("SOURCE the 0522 corner-probe block is missing")
+        ok = False
+    grid_src = _inspect.getsource(_tps.TracePreviewSamplingMixin._sample_imaging_field_grid_pairs)
+    if "_imaging_fov_half_extents" in grid_src:
+        notes.append("SOURCE = the field grid spans the object-FOV rectangle (0523)")
+    else:
+        notes.append("SOURCE the 0523 rectangular field grid is missing")
         ok = False
 
     if not SCENE.exists():

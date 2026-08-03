@@ -163,6 +163,17 @@ class _LaunchEditor:
     def _sample_imaging_field_grid_pairs(self):
         return self._sampling._sample_imaging_field_grid_pairs(self)
 
+    def _imaging_fov_half_extents(self):
+        # bugs/0523: the grid resolves its rectangle through this helper now; the fake
+        # delegates like every other sampler shim (the qe_object_locked fixture lesson).
+        return self._sampling._imaging_fov_half_extents(self)
+
+    def _current_finite_paraxial_magnification(self):
+        return None
+
+    def _current_camera_sensor_active_mm(self):
+        return None
+
 
 def _check_launch_geometry(failures: list[str], notes: list[str]) -> None:
     editor = _LaunchEditor()
