@@ -11899,7 +11899,27 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     active_sources.add(int(source))
             except Exception:
                 continue
-        frozen_mirrors = [i for i in mirror_rows if i not in active_sources]
+        # bugs/0506 (phase 0 regression): "not an active fold source" alone is NOT a frozen
+        # signal -- on a penta cascade the geometric override walk is legitimately empty
+        # (system=None, no explicit ports), so EVERY prism classified "frozen" and sprayed
+        # single-reflection diagonal guides (wrong for a two-reflection penta), which the
+        # bugs/0464 supersede then treated as scene guides and wiped the correct traced
+        # chief-ray segments. The 0439 guide exists FOR the 0433 freeze/snap workflow, so
+        # require the row to actually BE frozen: a baked world pose breadcrumb
+        # (ScenePlacement.stay_put_freeze / last_axis_to_axis_move -- the same predicate
+        # the 0448 build path and the 0508 A reached-walk trust).
+        def _row_is_baked_world_pose(row) -> bool:
+            advanced = getattr(row, "advanced", None) or {}
+            placement = advanced.get("ScenePlacement") if isinstance(advanced, dict) else None
+            return isinstance(placement, dict) and bool(
+                placement.get("stay_put_freeze") or placement.get("last_axis_to_axis_move")
+            )
+
+        frozen_mirrors = [
+            i
+            for i in mirror_rows
+            if i not in active_sources and _row_is_baked_world_pose(rows[i])
+        ]
         if not frozen_mirrors:
             return []
         try:

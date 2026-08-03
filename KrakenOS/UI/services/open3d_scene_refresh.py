@@ -886,6 +886,16 @@ class Open3DSceneRefreshService:
             # bugs/0088: hard-stop -- the drawn ray never crosses a detector/Image
             # plane. Computed once per refresh from the scene's is_detector targets.
             detector_hard_stop_planes = KrakenLayoutEditor._detector_planes_for_hard_stop(scene_bundle, radius)
+            # bugs/0506: the 0459 hit_detector clip exemption is scene-aware -- with any
+            # diffuse-scatter path present, non-primary branches still clip (0184 rule).
+            try:
+                from KrakenOS.UI.scene_geometry import ray_paths_have_diffuse_scatter
+
+                scene_has_diffuse_scatter = bool(
+                    ray_paths_have_diffuse_scatter(list(getattr(scene_bundle, "ray_paths", []) or []))
+                )
+            except Exception:
+                scene_has_diffuse_scatter = False
             # bugs/0356: the flat LED plate is opaque -- drawn rays reflected toward the
             # LED terminate AT the plate (same clip contract as the detector planes).
             try:
@@ -922,6 +932,8 @@ class Open3DSceneRefreshService:
                     terminal_target=terminal_target,
                     terminal_direction=terminal_direction,
                     detector_planes=detector_hard_stop_planes,
+                    branch_path=str(getattr(ray_path, "branch_path", "") or ""),
+                    scene_has_diffuse_scatter=scene_has_diffuse_scatter,
                 )
                 if was_bounded:
                     bounded_ray_count += 1

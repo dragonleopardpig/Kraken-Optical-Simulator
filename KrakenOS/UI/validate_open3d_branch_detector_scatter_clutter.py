@@ -171,8 +171,12 @@ def _check_real_scene(notes: list[str]) -> bool:
             status = ray_path_terminal_status_from_events(path)
         except Exception:
             status = ""
+        # bugs/0506: thread the production kwargs -- the 0459 hit_detector exemption is
+        # branch/scene-aware, and the guard must measure what the display actually draws.
         bpts, _capped = bounded_ray_points_for_scene_display(
-            pts, center, radius, terminal_status=status, detector_planes=planes
+            pts, center, radius, terminal_status=status, detector_planes=planes,
+            branch_path=str(getattr(path, "branch_path", "") or ""),
+            scene_has_diffuse_scatter=True,
         )
         bpts = np.asarray(bpts, dtype=float)
         if bpts.ndim == 2 and bpts.shape[0] >= 1 and bpts.shape[1] >= 3:

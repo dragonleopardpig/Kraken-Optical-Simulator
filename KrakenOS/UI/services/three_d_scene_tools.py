@@ -3023,6 +3023,8 @@ class ThreeDSceneToolsMixin:
         terminal_target: SceneTarget3D | None = None,
         terminal_direction=None,
         detector_planes=None,
+        branch_path: str = "",
+        scene_has_diffuse_scatter: bool = False,
     ) -> tuple[np.ndarray, bool]:
         return bounded_ray_points_for_scene_display(
             points,
@@ -3032,6 +3034,8 @@ class ThreeDSceneToolsMixin:
             terminal_target=terminal_target,
             terminal_direction=terminal_direction,
             detector_planes=detector_planes,
+            branch_path=branch_path,
+            scene_has_diffuse_scatter=scene_has_diffuse_scatter,
         )
 
     @staticmethod

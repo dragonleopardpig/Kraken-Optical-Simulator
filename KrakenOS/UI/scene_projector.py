@@ -343,6 +343,7 @@ class SceneProjector2D:
         scene_center, scene_radius = scene_display_center_radius(bundle)
         targets_by_surface = _targets_by_trace_surface(bundle)
         detector_planes = detector_planes_for_hard_stop(bundle, scene_radius)
+        scene_has_diffuse_scatter = ray_paths_have_diffuse_scatter(bundle.ray_paths)
         for path in bundle.ray_paths:
             folded_pts = None
             if folded_display is not None and path.ray_index < len(folded_display):
@@ -366,6 +367,8 @@ class SceneProjector2D:
                     terminal_target=terminal_target,
                     terminal_direction=_terminal_display_direction_from_path(path),
                     detector_planes=detector_planes,
+                    branch_path=str(getattr(path, "branch_path", "") or ""),
+                    scene_has_diffuse_scatter=scene_has_diffuse_scatter,
                 )
                 if pts.shape[0] < 2:
                     continue
@@ -763,6 +766,8 @@ def bounded_ray_points_for_scene_display(
     terminal_target: object | None = None,
     terminal_direction: object | None = None,
     detector_planes: list[tuple[np.ndarray, np.ndarray, float]] | None = None,
+    branch_path: str = "",
+    scene_has_diffuse_scatter: bool = False,
 ) -> tuple[np.ndarray, bool]:
     try:
         pts = np.asarray(points, dtype=float)
@@ -786,6 +791,25 @@ def bounded_ray_points_for_scene_display(
     if not np.isfinite(scene_radius) or scene_radius <= 0.0:
         scene_radius = 1.0
     status = str(terminal_status or "").strip().lower()
+    # bugs/0506: is this ray on a branch whose synthesized detector is display-noise?
+    # (per-path diffuse-scatter / internal-bounce, or ANY non-primary branch once the
+    # scene has diffuse scatter -- the bugs/0184 rule). Such a branch is drawn BOUNDED:
+    # its hit_detector rays keep the hard-stop clip (no 0459 exemption) and its escaped
+    # rays keep only a short diagnostic stub instead of the full scene-radius tail
+    # (measured: the 15-ray leak escape tail ran to 318 mm past every plane's shrunken
+    # radial capture once 0464 sized the planes to their beams).
+    _bp = str(branch_path or "").strip()
+    _suppressed_branch = False
+    if _bp:
+        if scene_has_diffuse_scatter and _bp.lower() not in ("", "primary"):
+            _suppressed_branch = True
+        else:
+            try:
+                from KrakenOS.UI.services.branch_detectors import _branch_path_draw_suppressed
+
+                _suppressed_branch = _branch_path_draw_suppressed(_bp)
+            except Exception:
+                _suppressed_branch = False
     terminal_was_capped = False
     if status == "missed_detector" and terminal_target is not None and pts.shape[0] >= 2:
         display_point, terminal_was_capped = _display_detector_miss_point_on_plane(
@@ -802,6 +826,10 @@ def bounded_ray_points_for_scene_display(
         # but draw a scene-envelope tail long enough to show the output
         # direction without letting one distant miss dominate autoscale.
         max_terminal_length = max(75.0, min(scene_radius * 1.25, 600.0))
+        if _suppressed_branch:
+            # bugs/0506: a suppressed branch's escape is bounded -- a 75 mm stub shows
+            # the direction without the starburst (the 0182 bounding contract).
+            max_terminal_length = 75.0
         geometry_direction = _unit_vector_or_none(terminal_segment)
         direction = _unit_vector_or_none(terminal_direction)
         if direction is None:
@@ -838,8 +866,16 @@ def bounded_ray_points_for_scene_display(
     # plane at x=74.4 -- the beam visibly stopped just past the lens and never reached
     # the sensor, while the trace itself was correct the whole time
     # (flag_20260729_094555: traced_ray_max_x 243.04 vs drawn 85.4).
+    # bugs/0506 (phase 178/180 regression): the 0459 exemption must not extend to a
+    # DRAW-SUPPRESSED branch (diffuse scatter / internal bounce). Those leaves' synthesized
+    # detectors exist PRECISELY to bound the starburst (bugs/0182/0183) -- they draw no
+    # footprint, and their rays also terminate ``hit_detector`` (on their own far-parked
+    # plane), so the blanket exemption let the scatter spray run to its full flight
+    # (measured max|x,y| 318 vs the 150 bound). A suppressed branch clips at the FIRST
+    # plane crossed, exactly as before 0459; a clean imaging arm keeps the 0459 behaviour
+    # and draws all the way to its sensor.
     detector_clip_applied = False
-    if detector_planes and status != "hit_detector":
+    if detector_planes and (status != "hit_detector" or _suppressed_branch):
         pts, detector_clip_applied = _clip_polyline_at_detector_planes(pts, detector_planes)
         if detector_clip_applied:
             terminal_was_capped = True
