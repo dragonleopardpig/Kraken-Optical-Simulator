@@ -16111,6 +16111,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 fold_transform = self.editor._optical_axis_fold_world_transform_for_row(
                     self.editor._lens_front_datum_row_index()
                 )
+                if fold_transform is None:
+                    # bugs/0525: a 0433-frozen scene has no pose-override transform (the
+                    # freeze baked it away) but the fold is still there -- synthesize the
+                    # crease from the fold emissions so the cone bends at the splitter.
+                    fold_transform = self.editor._emission_fold_transform_for_receiving_cone()
                 mesh = self._crease_overlay_mesh_at_fold(mesh, fold_transform)
             except Exception as exc:
                 self.editor.append_debug(f"Receiving-cone fold skipped: {exc}")

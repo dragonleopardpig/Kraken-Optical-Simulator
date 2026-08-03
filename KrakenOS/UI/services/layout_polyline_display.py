@@ -545,6 +545,51 @@ class LayoutPolylineDisplayMixin:
         transform[:3, 3] = center - rotation @ straight_anchor
         return transform
 
+    def _emission_fold_transform_for_receiving_cone(self):
+        """bugs/0525 (flag_20260803_154133 "acceptance cone is not folded"): the crease
+        transform for a 0433-FROZEN scene.
+
+        The receiving-cone crease reads ``_optical_axis_fold_world_transform_for_row`` --
+        None once the freeze bakes the pose overrides away, so the cone ran straight down
+        the nominal axis through the splitter. The fold is still THERE: read it from the
+        axis fold emissions (the same source the axes/launcher use). The first fold between
+        the object and the lens front datum gives the hinge (its world origin, on the
+        nominal axis) and the outgoing leg; ``R`` maps the straight +Z onto that leg and
+        ``t = (I - R) @ origin`` makes the crease's fixed-point recovery land exactly on
+        the fold origin (a least-norm shift along the rotation axis cannot move the mirror
+        plane -- it is perpendicular to the plane normal). None when the scene has no such
+        fold: plain scenes keep the straight cone."""
+        try:
+            from KrakenOS.UI.nonseq_output_ports import axis_fold_emissions
+            from KrakenOS.UI.services.scene_placement_commands import (
+                _rotation_between_directions,
+            )
+
+            emissions = axis_fold_emissions(self.rows) or {}
+            # The FIRST fold from the object (smallest row key). No row-order gate against
+            # the lens: on the AZ85 the BS fold ROW (3) sorts after the front-datum row (1)
+            # even though it physically precedes the lens, and a fold the cone never
+            # reaches is harmless anyway (the crease's own downstream test no-ops it).
+            keys = sorted(int(k) for k in emissions.keys() if int(k) > 0)
+            if not keys:
+                return None
+            emission = emissions[keys[0]]
+            origin = np.asarray(emission["origin"], dtype=float).reshape(3)
+            out_dir = np.asarray(emission["direction"], dtype=float).reshape(3)
+            norm = float(np.linalg.norm(out_dir))
+            if not np.all(np.isfinite(origin)) or not np.isfinite(norm) or norm <= 1e-9:
+                return None
+            out_dir = out_dir / norm
+            rotation = _rotation_between_directions((0.0, 0.0, 1.0), out_dir)
+            if rotation is None:
+                return None  # straight-through: nothing to crease
+            transform = np.eye(4, dtype=float)
+            transform[:3, :3] = rotation
+            transform[:3, 3] = origin - rotation @ origin
+            return transform
+        except Exception:
+            return None
+
     def _camera_branch_world_transform(self):
         """bugs/0517 (detector-redesign B2, the off-axis remainder): world 4x4 carrying the
         straight-axis camera overlay onto its ASSIGNED branch detector's frame.
