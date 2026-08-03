@@ -4716,17 +4716,45 @@ class ScenePlacementMixin:
             self._last_translate_row_shifts.append(
                 (list(lens_leg_members), tuple(float(v) for v in _shift))
             )
-            # bugs/0524 -> bugs/0526: the first cut wrote the slide through to the two
-            # neighbouring section gaps so the FOV readout would follow. REVERTED
-            # (flag_20260803_162321 "haywire"): on a frozen chain those raw writes are NOT
-            # free knobs -- the upstream write shifted every downstream STATION, so the
-            # glued BS re-seated by the drag (a ghost second diagonal), and the near-leg
-            # gap row DERIVES the mirror's world leg (bugs/0478: world = const - thickness),
-            # so shrinking it re-seated the prism up the unfolded axis and the rays died at
-            # the stale stop. The write-through must ride the 0505-class atomic
-            # accompaniment (glue re-express + breadcrumb const re-bake) -- bugs/0526. Until
-            # then the leg slide moves the BODY+surrogate only, and the FOV readout lags
-            # (section write-through skipped by design).
+            # bugs/0526 (completing bugs/0524, flag_20260803_151917 "the FOV is not
+            # changing"): write the slide through to the section gaps WITH the station
+            # compensation the 0524 raw write lacked. EVERY row's pose -- breadcrumbed
+            # world rows included -- is ``station + desp_z`` (the 0433 freeze baked
+            # ``desp_z = world_z - station_at_freeze``), so a thickness write alone moves
+            # every downstream seat (flag_20260803_162321 "haywire": the glued BS
+            # ghost-re-seated by the drag and the prism left the beam). The atomic
+            # composite keeps every pose INVARIANT by construction:
+            #   * gap BEFORE the lens block += slide, gap AFTER it -= slide -- the first
+            #     order sees the conjugate change (s_o +d, s_i -d; the added/removed path
+            #     is air, so reduced == geometric);
+            #   * ``desp_z -= slide`` for every row strictly between the two written rows
+            #     -- their stations grew by the slide, the compensation cancels it, and
+            #     rows past the downstream write get a net-zero station shift, so the
+            #     mirror and sensor never learn anything happened;
+            #   * the glue needs no re-express: it derives from row poses, which are
+            #     invariant; the split's world legs change only through the intended
+            #     lens motion (the members' own leg-direction desp writes above).
+            # Infeasible (either gap would go negative): skip the WHOLE composite (body
+            # slide only, FOV readout lags) and say so in the debug log.
+            _upstream = min(lens_leg_members) - 1
+            _downstream = max(lens_leg_members)
+            if _upstream >= 0 and _downstream < len(self.rows) - 1:
+                _up_new = float(self.rows[_upstream].thickness) + float(lens_leg_slide)
+                _down_new = float(self.rows[_downstream].thickness) - float(lens_leg_slide)
+                if np.isfinite(_up_new) and np.isfinite(_down_new) and _up_new > 0.0 and _down_new > 0.0:
+                    self.rows[_upstream].thickness = _up_new
+                    self.rows[_downstream].thickness = _down_new
+                    for _index in range(_upstream + 1, _downstream + 1):
+                        _row = self.rows[_index]
+                        _row.desp_z = float(_row.desp_z) - float(lens_leg_slide)
+                else:
+                    try:
+                        self.append_debug(
+                            f"lens leg slide: section write-through skipped "
+                            f"(gaps would become {_up_new:.3g}/{_down_new:.3g} mm)"
+                        )
+                    except Exception:
+                        pass
             if not bool(getattr(self, "headless", False)):
                 try:
                     self._sync_table()
