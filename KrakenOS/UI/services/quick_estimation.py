@@ -1080,6 +1080,31 @@ class QuickEstimationService:
             return None
         object_distance = f * (1.0 + 1.0 / mag) - ppa
         image_distance = f * (1.0 + mag) + ppp
+        # bugs/0519 (flag_20260803_140636 "couldn't change FOV to 55x55"): on a 0433-FROZEN
+        # fold the straightened reference's LAST VERTEX is the prism placeholder sitting ON
+        # the image plane (its gap row is zero-length), so ``ppp ~ -(H2->image)`` and this
+        # formula measures the new gap from a zero-length anchor -- it crossed zero at
+        # m=0.546 and refused the solve ("the image distance would go negative") for a
+        # sensor move of just -10.8 mm. Re-anchor the infeasible regime on the WORLD far
+        # leg: H2 and the fold stay put through a conjugate change, so the sensor's world
+        # move is exactly ``ds_i = f(1+m) - image_principal``, and the downstream writers
+        # (the 0482 collision resolver + the 0478 frozen writer) already speak far-leg
+        # world terms. The previously-working regime (old value positive) is untouched, as
+        # is every unfrozen scene (no frozen split -> no re-anchor).
+        if np.isfinite(image_distance) and image_distance <= 1e-6:
+            try:
+                split = self.editor._folded_image_conjugate_split()
+            except Exception:
+                split = None
+            if isinstance(split, dict) and bool(split.get("frozen_world")):
+                first = None
+                try:
+                    first = self.editor._shared_first_order_reference()
+                except Exception:
+                    first = None
+                if isinstance(first, dict):
+                    d_img = float(first["f"]) * (1.0 + mag) - float(first["image_principal"])
+                    image_distance = float(split["far"]) + d_img
         if not (np.isfinite(object_distance) and np.isfinite(image_distance)
                 and object_distance > 1e-6 and image_distance > 1e-6):
             return None

@@ -15475,6 +15475,10 @@ phase_417_per_branch_quick_estimation = _phase_from_standalone(
     417, "Quick Estimation answers PER ARM on a tagged two-arm scene (0518)",
     "KrakenOS.UI.validate_open3d_0518_per_branch_quick_estimation",
     "per_branch_quick_estimation")
+phase_418_frozen_fov_solve_range = _phase_from_standalone(
+    418, "the FOV solve reaches large fields on a frozen fold -- 55x55 (0519)",
+    "KrakenOS.UI.validate_open3d_0519_frozen_fov_solve_range",
+    "frozen_fov_solve_range")
 
 
 # ---------------------------------------------------------------------------
@@ -15939,6 +15943,7 @@ def main() -> int:
             phase_415_pupil_reference_survives_cube_mesh,
             phase_416_branch_camera_body_frame,
             phase_417_per_branch_quick_estimation,
+            phase_418_frozen_fov_solve_range,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

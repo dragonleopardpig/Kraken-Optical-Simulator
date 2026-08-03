@@ -418,7 +418,8 @@
     "414": "pass",
     "415": "pass",
     "416": "pass",
-    "417": "pass"
+    "417": "pass",
+    "418": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -837,6 +838,7 @@
     "414": "FOV solve and remove-defocus keep the camera body clear of the fold mirror (0515)",
     "415": "the first-order pupil reference survives a cube-BS mesh -- no geometric fallback (0516)",
     "416": "a reflect-branch camera BODY adopts its branch detector's frame (0517)",
-    "417": "Quick Estimation answers PER ARM on a tagged two-arm scene (0518)"
+    "417": "Quick Estimation answers PER ARM on a tagged two-arm scene (0518)",
+    "418": "the FOV solve reaches large fields on a frozen fold -- 55x55 (0519)"
   }
 }
