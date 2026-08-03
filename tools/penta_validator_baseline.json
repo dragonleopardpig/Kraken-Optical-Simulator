@@ -414,7 +414,8 @@
     "410": "pass",
     "411": "pass",
     "412": "pass",
-    "413": "pass"
+    "413": "pass",
+    "414": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -829,6 +830,7 @@
     "410": "a frozen fold solid's thickness survives the reached-walk under BS/station slides (0508 A)",
     "411": "a reaching leaf's detector pins to the Image unless the fit is a true waist (0511)",
     "412": "Quick Estimation holds the object-locked LED+BS unit through a conjugate solve",
-    "413": "a glued illumination source rides the LED/BS assembly drags (0512)"
+    "413": "a glued illumination source rides the LED/BS assembly drags (0512)",
+    "414": "FOV solve and remove-defocus keep the camera body clear of the fold mirror (0515)"
   }
 }

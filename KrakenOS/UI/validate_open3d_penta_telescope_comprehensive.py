@@ -15459,6 +15459,10 @@ phase_413_source_glue_rides_led = _phase_from_standalone(
     413, "a glued illumination source rides the LED/BS assembly drags (0512)",
     "KrakenOS.UI.validate_open3d_0512_source_glue_rides_led",
     "source_glue_rides_led")
+phase_414_snap_and_solve_keep_camera_clear = _phase_from_standalone(
+    414, "FOV solve and remove-defocus keep the camera body clear of the fold mirror (0515)",
+    "KrakenOS.UI.validate_open3d_0515_snap_and_solve_keep_camera_clear",
+    "snap_and_solve_keep_camera_clear")
 
 
 # ---------------------------------------------------------------------------
@@ -15919,6 +15923,7 @@ def main() -> int:
             phase_411_reaching_leaf_detector_pin,
             phase_412_qe_object_locked,
             phase_413_source_glue_rides_led,
+            phase_414_snap_and_solve_keep_camera_clear,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

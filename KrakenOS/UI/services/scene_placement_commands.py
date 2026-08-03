@@ -3433,8 +3433,28 @@ class ScenePlacementMixin:
         if len(self.rows) < 3 or str(getattr(self.rows[-1], "surface", "") or "") != "Image":
             self.status_var.set("Snap detector: the layout has no final Image row to move.")
             return False
-        image_z = self._paraxial_image_plane_z()
-        if image_z is not None:
+        # bugs/0515 (B2/B4): on a 0433-FROZEN fold the paraxial plane and the station sum
+        # live in different frames (the 0478 station/world split), so their DIFFERENCE is
+        # off by a constant (measured 11.2 mm on the AZ85 BS scene) even with a safe write.
+        # A frozen scene uses the REAL-RAY best-focus SHIFT first -- a relative measure
+        # along the traced beam, immune to station/world offsets (the 0243-era snap's
+        # -8.5179 source).
+        _frozen_world = False
+        try:
+            _frozen_world = bool((self._folded_image_conjugate_split() or {}).get("frozen_world"))
+        except Exception:
+            _frozen_world = False
+        image_z = None if _frozen_world else self._paraxial_image_plane_z()
+        if _frozen_world:
+            delta = self._real_ray_best_focus_shift_for_rows()
+            source = "best focus (ray-traced, frozen world)"
+            if delta is None:
+                delta = self._traced_bundle_best_focus_shift()
+                source = "best focus (traced bundle)"
+            if delta is None:
+                self.status_var.set("Snap detector: best focus is not computable for this frozen layout.")
+                return False
+        elif image_z is not None:
             detector_z = sum(float(r.thickness) for r in self.rows[:-1])
             delta = float(image_z) - float(detector_z)
             source = "image plane"
@@ -3460,7 +3480,109 @@ class ScenePlacementMixin:
         gui = not bool(getattr(self, "headless", False))   # history/table sync are GUI-only
         if gui:
             self._begin_history_capture()
-        self.rows[-2].thickness = float(self.rows[-2].thickness) + delta  # last gap = image distance
+        # bugs/0515 (camera anti-crash item 2, design 2026-07-29): the raw last-gap write was
+        # the one image-distance writer with NO collision floor and NO frozen awareness --
+        # "remove defocus" could seat the sensor (and the camera body reaching past it)
+        # inside the fold mirror, and on a 0433-frozen fold the raw write moved the sensor
+        # the WRONG WAY (the 0478 inversion). Route it through the same machinery the FOV
+        # solve uses: the body-aware collision resolver redistributes the deficit into the
+        # lens->mirror leg (sliding the mirror preserves the conjugate; the two legs sum to
+        # the same total), and the frozen-aware writer places the sensor in world terms and
+        # carries the camera.
+        collision_note = ""
+
+        def _apply_gap_with_floor(target_gap: float) -> "tuple[bool, str]":
+            """Route one image-gap write through the body-aware collision resolver
+            (mirror-slide redistribution) and the frozen-aware sensor write."""
+            nonlocal collision_note
+            resolved = None
+            split_now = None
+            try:
+                from types import SimpleNamespace
+
+                from KrakenOS.UI.services.quick_estimation import QuickEstimationService
+
+                split_now = self._folded_image_conjugate_split()
+                resolved = QuickEstimationService(
+                    SimpleNamespace(editor=self)
+                )._resolve_image_gap_collision(target_gap)
+            except Exception:
+                resolved = None
+            if resolved is not None:
+                new_gap, near_row, near_delta, note = resolved
+                if new_gap is None:
+                    return False, str(note)
+                frozen_slide = False
+                if (
+                    isinstance(split_now, dict)
+                    and bool(split_now.get("frozen_world"))
+                    and near_row is not None
+                ):
+                    try:
+                        slid_ok, _slide_msg = self._apply_folded_image_split(
+                            "near", float(split_now["near"]) + float(near_delta)
+                        )
+                        frozen_slide = bool(slid_ok)
+                    except Exception:
+                        frozen_slide = False
+                if not frozen_slide and near_row is not None:
+                    self.rows[near_row].thickness = (
+                        float(self.rows[near_row].thickness) + float(near_delta)
+                    )
+                target_gap = float(new_gap)
+                collision_note = " (mirror slid to keep the camera body clear)"
+            if not self.apply_image_distance_frozen_aware(target_gap):
+                self.rows[-2].thickness = float(target_gap)
+            return True, ""
+
+        if not _frozen_world:
+            applied_ok, refusal = _apply_gap_with_floor(float(self.rows[-2].thickness) + float(delta))
+            if not applied_ok:
+                if gui:
+                    self._commit_history_capture()
+                self.status_var.set(f"Snap detector: {refusal}")
+                return False
+        else:
+            # bugs/0515 B2: TWO frozen-frame facts make a single shot impossible here.
+            # (1) The measured shift lives in the station-aligned frame, which the 0478
+            # split INVERTS relative to the leg length `split["far"]` -- applying it
+            # un-flipped diverges (measured: +86.8 mm runaway, camera into the prism).
+            # (2) The traced-bundle measure UNDER-measures an aberrated frozen bundle
+            # (8.8 mm reported for a ~16 mm true defocus). So: an ADAPTIVE corrective
+            # loop -- apply with the inverted-leg default sign, re-measure, FLIP the
+            # direction if the residual grew, stop when it is inside tolerance. Every
+            # application still rides the collision floor and the frozen-aware writer.
+            residual = float(delta)
+            direction = -1.0
+            previous_magnitude = None
+            for _iteration in range(5):
+                if abs(residual) <= 0.5:
+                    break
+                if previous_magnitude is not None and abs(residual) > previous_magnitude + 1e-6:
+                    direction = -direction
+                previous_magnitude = abs(residual)
+                try:
+                    split_now = self._folded_image_conjugate_split() or {}
+                    base_now = float(split_now.get("far", self.rows[-2].thickness))
+                except Exception:
+                    base_now = float(self.rows[-2].thickness)
+                iter_ok, refusal = _apply_gap_with_floor(base_now + direction * residual)
+                if not iter_ok:
+                    if _iteration == 0:
+                        if gui:
+                            self._commit_history_capture()
+                        self.status_var.set(f"Snap detector: {refusal}")
+                        return False
+                    break
+                try:
+                    measured = self._real_ray_best_focus_shift_for_rows()
+                    if measured is None:
+                        measured = self._traced_bundle_best_focus_shift()
+                except Exception:
+                    measured = None
+                if measured is None:
+                    break
+                residual = float(measured)
         if gui:
             try:
                 self._sync_table()
@@ -3468,7 +3590,10 @@ class ScenePlacementMixin:
                 pass
             self._commit_history_capture()
         self._invalidate_preview_scene_trace()
-        self.status_var.set(f"Snapped detector to {source} (moved {delta:+.4g} mm to best focus).")
+        self._fold_carry_pending_rebuild = True
+        self.status_var.set(
+            f"Snapped detector to {source} (moved {delta:+.4g} mm to best focus).{collision_note}"
+        )
         return True
 
     def glue_step_overlay_to_surrogate(self, label: str) -> bool:
