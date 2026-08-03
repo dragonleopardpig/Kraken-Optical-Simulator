@@ -56,3 +56,20 @@ barrel mid-drag instead of appearing at release) ships with bugs/0514.
 The M2 jitter cliff (one >3 mm lateral frame poisons the rest of the drag)
 remains REAL but was NOT the user's path (no lateral in either flag) -- kept
 open as a hardening item; fix direction unchanged (sticky per-gesture verdict).
+
+## M2 CLIFF CLOSED — the redirect verdict is sticky per gesture
+
+The 3 mm tolerance was a cliff: one drag frame past it parked the offset and
+every remaining frame of the gesture moved the body alone. Fix
+(`translate_step_overlay`): once a per-frame carry commit (record_history=False)
+fires the axial redirect, the verdict LATCHES for the rest of that gesture
+(`_step_axial_redirect_latch`, per label -- covers the lens AND camera
+branches); a discrete commit (record_history=True) clears its label, and the
+carry release clears all (`_clear_step_axial_redirect_latch` from
+`_finish_step_carry_drag`), so a drag STARTED on a parked body still moves the
+body alone (the flag_20260621_142758 / 409-C1 protection, re-verified).
+
+Measured: glue + one 4 mm jitter frame + 39 axial frames now HOLDS the gap
+(31.902 -> 31.902; pre-fix 55.302 = +23.4 detach). Phase 409's guard gained B4
+(the jitter-cliff case with explicit gesture-boundary clears); 0505/0512/0437/
+live-carry neighbors green.

@@ -4101,6 +4101,16 @@ class ScenePlacementMixin:
             pass
         return self._promoted_optical_solid_row_index("optical") is not None
 
+    def _clear_step_axial_redirect_latch(self, label: str | None = None) -> None:
+        """bugs/0513 M2: drop the per-gesture axial-redirect latch (carry release / new gesture)."""
+        latch_map = getattr(self, "_step_axial_redirect_latch", None)
+        if not isinstance(latch_map, dict):
+            return
+        if label is None:
+            latch_map.clear()
+        else:
+            latch_map.pop(str(label or "").strip().lower(), None)
+
     def _carry_glued_optical_led(self, moved_label: str, applied) -> None:
         """Item 3 carry, ASYMMETRIC since bugs/0437: when the BS<->LED glue is active and the
         LED (the parent housing) moves, carry the glued BS by the same world delta so the
@@ -4387,6 +4397,24 @@ class ScenePlacementMixin:
             and abs(float(_cur_place_off[0])) <= _ON_AXIS_LATERAL_TOL_MM
             and abs(float(_cur_place_off[1])) <= _ON_AXIS_LATERAL_TOL_MM
         )
+        # bugs/0513 (the M2 jitter CLIFF): the tolerance test alone is a cliff -- ONE drag
+        # frame with more than 3 mm of lateral jitter parks the offset past the gate, and
+        # every remaining frame of the SAME gesture then moves the body alone (measured:
+        # glue + one 4 mm frame + 39 axial frames = detached by exactly the axial sum).
+        # The verdict is therefore STICKY PER GESTURE: once a per-frame carry commit
+        # (record_history=False) fires the redirect, later frames of that gesture keep it
+        # regardless of accumulated jitter. A discrete commit (record_history=True) is its
+        # own gesture and clears the latch; the carry release clears it via
+        # _clear_step_axial_redirect_latch, so a drag STARTED on a parked body
+        # (flag_20260621_142758 / the 409 C1 protection) still moves the body alone.
+        _latch_map = getattr(self, "_step_axial_redirect_latch", None)
+        if not isinstance(_latch_map, dict):
+            _latch_map = {}
+            self._step_axial_redirect_latch = _latch_map
+        if record_history:
+            _latch_map.pop(label, None)
+        elif _latch_map.get(label):
+            overlay_on_axis = True
         # CAMERA <-> DETECTOR GLUE (item 1): the camera sensor is glued to the Image-row detector.
         # An AXIAL (+Z optical-axis) camera drag moves the DETECTOR -- the Image row, which is the
         # actual trace/analysis surface -- so the detector FOLLOWS the camera and the rays propagate
@@ -4468,6 +4496,9 @@ class ScenePlacementMixin:
             else:
                 lens_front_idx = None
         redirect_axial = abs(axial_to_detector) > 1e-9 or abs(axial_lens_slide) > 1e-9
+        if redirect_axial and not record_history:
+            # bugs/0513 M2: latch the verdict for the rest of this gesture's frames.
+            _latch_map[label] = True
         # bugs/0499: on a folded leg the rows were moved by their DESP, and a STEP body is anchored
         # to its row's z-STATION, not to desp (bugs/0456 -- which is why the fold carry has to
         # re-seat bodies explicitly). So the body still needs the FULL delta here: subtracting the

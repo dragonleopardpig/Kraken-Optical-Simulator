@@ -3949,6 +3949,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor._commit_history_capture()
         except Exception:
             pass
+        # bugs/0513 M2: the gesture is over -- the sticky axial-redirect verdict dies with
+        # it, so the NEXT drag re-evaluates from the body's actual pose (a parked body
+        # keeps the plain move, the 409 C1 protection).
+        try:
+            self.editor._clear_step_axial_redirect_latch()
+        except Exception:
+            pass
         self._step_carry_active_label = None
         self._set_step_carry_cursor(False)
         self._open3d_carry_grip_service.clear(render=False)

@@ -74,6 +74,21 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
             "slid ('surrogate not moving', flags 204748/210224)",
         )
 
+        # bugs/0513 M2 (the jitter CLIFF): ONE frame past the 3 mm gate must not poison the
+        # rest of the gesture -- the sticky per-gesture verdict keeps the redirect latched.
+        editor._clear_step_axial_redirect_latch()  # gesture boundary (the carry release's clear)
+        gap_m2_0 = body_z() - datum_z()
+        editor.translate_step_overlay("lens", (4.0, 0.0, 0.6), refresh=False, record_history=False)
+        for _ in range(39):
+            editor.translate_step_overlay("lens", (0.0, 0.0, 0.6), refresh=False, record_history=False)
+        gap_m2_1 = body_z() - datum_z()
+        check(
+            abs(gap_m2_1 - gap_m2_0) <= TOL,
+            f"B4 (0513 M2): a 4 mm jitter FRAME mid-gesture no longer detaches the unit "
+            f"(gap {gap_m2_0:.3f} -> {gap_m2_1:.3f}) -- pre-latch it detached by 23.4 mm",
+        )
+        editor._clear_step_axial_redirect_latch()  # gesture over before the park test
+
         # flag_20260621_142758 protection intact: a body PARKED off the beam keeps a plain move.
         editor.translate_step_overlay("lens", (25.0, 0.0, 0.0), refresh=False, record_history=False)
         parked_datum = datum_z()
