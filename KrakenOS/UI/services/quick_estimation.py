@@ -1773,6 +1773,7 @@ class QuickEstimationService:
         width: Any,
         height: Any = None,
         aspect: tuple[float, float] | None = None,
+        branch: str | None = None,
     ) -> tuple[bool, str]:
         """Drive the click-on-plane FOV popup.
 
@@ -1783,6 +1784,10 @@ class QuickEstimationService:
         (blank): the missing side is derived from ``aspect`` (the live sensor's
         width:height, default 4:3), so the user can fill just one box. The optical
         model is left in focus and the caller owns the retrace.
+
+        ``branch`` (detector redesign B3): on a tagged two-arm scene, route an
+        object/thickness solve to ONE arm (``branch_fov_solve``) -- that arm's sensor
+        sees the field, every other arm is re-focused at the shared new object gap.
         """
         if plane == "object":
             wh = self._sensor_wh(width, height, aspect)
@@ -1790,6 +1795,8 @@ class QuickEstimationService:
                 return False, "Enter a positive FOV width or height."
             obj_w, obj_h, obj_diag = wh
             semi = obj_diag / 2.0
+            if mode == "thickness" and branch:
+                return self.branch_fov_solve(branch, semi)
             if mode == "thickness":
                 sensor = self._sensor_semi()
                 if not sensor:
@@ -1926,6 +1933,129 @@ class QuickEstimationService:
         except Exception:
             pass
         return state
+
+    def _branch_solve_info(self, selector: str) -> dict[str, Any] | None:
+        """One tagged arm's solve ingredients: its private gap-row index, terminal row,
+        sensor semi and its own 0297 first order. None when the arm is not solvable."""
+        editor = self.editor
+        rows = list(getattr(editor, "rows", None) or [])
+        try:
+            from KrakenOS.UI.services.paraxial_tools import (
+                _branch_leaf_rows,
+                _row_branch_selector,
+            )
+        except Exception:
+            return None
+        arm_indices = [i for i, r in enumerate(rows) if _row_branch_selector(r) == str(selector)]
+        if len(arm_indices) < 2:
+            return None
+        leaf = _branch_leaf_rows(rows, selector)
+        if len(leaf) < 3:
+            return None
+        try:
+            first = editor._first_order_reference_for_rows(leaf, unfold_branch_tilts=True)
+        except Exception:
+            first = None
+        if not isinstance(first, dict):
+            return None
+        try:
+            diameter = float(getattr(rows[arm_indices[-1]], "diameter", 0.0) or 0.0)
+        except Exception:
+            diameter = 0.0
+        return {
+            "gap_row": arm_indices[-2],
+            "terminal_row": arm_indices[-1],
+            "first": first,
+            "sensor_semi": diameter / 2.0 if diameter > 0 else None,
+        }
+
+    def branch_fov_solve(self, selector: str, object_semi: Any = None) -> tuple[bool, str]:
+        """Detector redesign B3 (solve side): drive ONE tagged arm's sensor to see the
+        requested object field, keeping every OTHER arm in focus.
+
+        Physics on a tagged two-arm scene: the object gap is COMMON, each arm's
+        lens->detector gap is PRIVATE. The target arm's Gaussian pair comes off its own
+        first order (|m| = arm sensor semi / object semi, ``s_o = f(1+1/m)``,
+        ``s_i = f(1+m)``); the object-row write shifts EVERY arm's ``s_o`` by the same
+        delta, so each other arm is then RE-FOCUSED (``s_i' = f s_o'/(s_o'-f)``) through
+        its own private gap -- its magnification drifts, its focus does not. Delta-form
+        writes only: the interior (splitter gaps, folded entry decenters) is untouched.
+        The caller owns the retrace (same contract as ``fov_solve``)."""
+        editor = self.editor
+        rows = list(getattr(editor, "rows", None) or [])
+        try:
+            from KrakenOS.UI.services.paraxial_tools import _scene_branch_selectors
+
+            selectors = [s for s in _scene_branch_selectors(rows) if s]
+        except Exception:
+            selectors = []
+        selector = str(selector or "").strip()
+        if len(selectors) < 2 or selector not in selectors:
+            return False, "Per-arm solve needs a tagged two-arm scene and a valid arm."
+        if not rows or str(getattr(rows[0], "surface", "")) != "Object":
+            return False, "Per-arm solve needs a finite Object row."
+        semi = None
+        try:
+            semi = float(object_semi) if object_semi is not None else None
+        except (TypeError, ValueError):
+            semi = None
+        if semi is None:
+            semi = self._target_object_semi
+        if not semi or semi <= 0:
+            return False, "Set a target object field first (Set Target FOV)."
+        target = self._branch_solve_info(selector)
+        if target is None:
+            return False, f"Arm {selector!r} has no solvable first order."
+        sensor = target["sensor_semi"]
+        if not sensor:
+            return False, f"Arm {selector!r} has no sensor to fill."
+        f = float(target["first"]["f"])
+        mag = float(sensor) / float(semi)
+        if not (np.isfinite(f) and f > 0 and np.isfinite(mag) and mag > 1e-9):
+            return False, "Per-arm solve: degenerate magnification."
+        s_o_new = f * (1.0 + 1.0 / mag)
+        s_i_new = f * (1.0 + mag)
+        s_o_old = float(target["first"]["object_principal"])
+        s_i_old = float(target["first"]["image_principal"])
+        if s_o_new <= f + 1e-9:
+            return False, "FORBIDDEN: that field puts the object inside the focal point."
+        d_obj = s_o_new - s_o_old
+        writes: list[tuple[int, float]] = [
+            (0, float(rows[0].thickness) + d_obj),
+            (target["gap_row"], float(rows[target["gap_row"]].thickness) + (s_i_new - s_i_old)),
+        ]
+        notes = [f"{selector}: |m|={mag:.4g}"]
+        for other in selectors:
+            if other == selector:
+                continue
+            info = self._branch_solve_info(other)
+            if info is None:
+                notes.append(f"{other}: unsolvable, gap left alone")
+                continue
+            fb = float(info["first"]["f"])
+            s_ob = float(info["first"]["object_principal"]) + d_obj
+            if not (np.isfinite(fb) and fb > 0) or s_ob <= fb + 1e-9:
+                notes.append(f"{other}: virtual image, gap left alone")
+                continue
+            s_ib = fb * s_ob / (s_ob - fb)
+            writes.append(
+                (info["gap_row"], float(rows[info["gap_row"]].thickness) + (s_ib - float(info["first"]["image_principal"])))
+            )
+            notes.append(f"{other}: refocused")
+        for row_index, new_gap in writes:
+            if not np.isfinite(new_gap) or new_gap <= 0:
+                return False, (
+                    f"Per-arm solve infeasible: row {row_index} gap would become {new_gap:.4g} mm."
+                )
+        for row_index, new_gap in writes:
+            editor.rows[row_index].thickness = float(new_gap)
+        self.set_target_fov(float(semi))
+        return True, (
+            f"Solved arm {selector!r}: object {2.0 * float(semi):.6g} mm full fills its "
+            f"{2.0 * float(sensor):.6g} mm sensor (object gap {d_obj:+.4g} mm; "
+            + "; ".join(notes)
+            + ")."
+        )
 
     def branch_states(self) -> dict[str, dict[str, Any]]:
         """Detector redesign B3: per-imaging-arm first-order estimates.

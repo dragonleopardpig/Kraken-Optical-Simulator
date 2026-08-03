@@ -25,10 +25,22 @@ per-arm FOV."
 - `format_readout` gains a `branches` key (one compact line per arm); the Quick Estimation
   panel gains a "Per-arm" row. Untagged scenes show "--" and keep every other line untouched.
 
+## Solve side (same change set)
+
+`branch_fov_solve(selector, object_semi)` — drive ONE arm's sensor to the requested field,
+keeping every other arm in focus. Physics: the object gap is COMMON, each arm's
+lens→detector gap PRIVATE; the target arm's Gaussian pair comes off its own first order
+(`s_o = f(1+1/m)`, `s_i = f(1+m)`, `|m| = arm sensor semi / object semi`), the object-row
+delta shifts every arm's `s_o` equally, and each other arm is re-focused
+(`s_i' = f·s_o'/(s_o'−f)`) through its private gap — its magnification drifts, its focus
+does not. Delta-form writes only (splitter gaps / folded entry decenters untouched);
+infeasible fields (object inside focal point, negative gap) are refused whole.
+`fov_solve(..., branch=...)` routes an object/thickness solve to an arm.
+
 ## Remaining B3/C
 
-Per-branch SOLVE (target a chosen branch's detector in fov_solve / conjugate solve /
-optimization) and the spot-RMS focus refinement stay open; this piece is the read-side.
+Per-branch conjugate-solve UI (dialog arm picker), per-branch optimization targets, and the
+spot-RMS focus refinement stay open.
 
 ## Guard
 

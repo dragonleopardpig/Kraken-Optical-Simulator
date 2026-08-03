@@ -94,6 +94,36 @@ def run_checks() -> tuple[bool, list[str]]:
             notes.append(f"REAL two-arm scene reported {len(branches)} arm(s)")
             ok = False
 
+        # -- solve side: drive ONE arm's FOV, the other arm must stay in focus -----------
+        solved, solve_msg = qe.branch_fov_solve("reflect", 30.0)
+        if solved:
+            after = qe.branch_states()
+            reflect_semi = (after.get("reflect") or {}).get("fov_semi")
+            if reflect_semi is not None and abs(float(reflect_semi) - 30.0) <= 0.5:
+                notes.append(f"SOLVE = the reflect arm reaches the requested field (semi {reflect_semi:.3f})")
+            else:
+                notes.append(f"SOLVE reflect field wrong after solve ({reflect_semi})")
+                ok = False
+            for sel in sorted(after):
+                info = qe._branch_solve_info(sel)
+                f = float(info["first"]["f"])
+                s_o = float(info["first"]["object_principal"])
+                resid = f * s_o / (s_o - f) - float(info["first"]["image_principal"])
+                if abs(resid) <= 0.05:
+                    notes.append(f"SOLVE = arm {sel} in focus after the solve (residual {resid:+.4f} mm)")
+                else:
+                    notes.append(f"SOLVE arm {sel} left defocused ({resid:+.4f} mm)")
+                    ok = False
+        else:
+            notes.append(f"SOLVE branch_fov_solve failed: {solve_msg}")
+            ok = False
+        bad, _msg = qe.branch_fov_solve("nonsense", 30.0)
+        if not bad:
+            notes.append("NEG = an unknown arm is refused")
+        else:
+            notes.append("NEG an unknown arm was accepted")
+            ok = False
+
         app.layout_files["untagged"] = UNTAGGED
         app.load_layout_by_name("untagged")
         qe2 = QuickEstimationService(_Shim(app))
