@@ -11,7 +11,7 @@ extensions = [
     "sphinx_rtd_theme",
     "sphinx.ext.mathjax",
     "jupyterlite_sphinx",
-    "fundamentals_solution_toggle",
+    "worked_solution_toggle",
 ]
 templates_path = ["_templates"]
 exclude_patterns = [

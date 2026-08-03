@@ -12,6 +12,10 @@ The original prompts are not reproduced.  Read the numbered problem in the
 book, then use the corresponding entry here for the governing equation,
 solution route, and verification.
 
+Each problem initially shows a structured **Brief solution** containing its
+method, decisive step, and verification.  Use **Show detailed steps** to
+expand the original uninterrupted solution route.
+
 Foundations, beams, and resonators
 ----------------------------------
 

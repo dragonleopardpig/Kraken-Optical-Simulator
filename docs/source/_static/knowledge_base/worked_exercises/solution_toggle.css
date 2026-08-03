@@ -1,4 +1,4 @@
-.fop-brief-answer {
+.worked-brief-solution {
     margin: 0.9rem 0 0.75rem;
     padding: 0.9rem 1rem 0.75rem;
     border-left: 4px solid #a86b18;
@@ -8,7 +8,7 @@
     box-shadow: 0 2px 8px rgba(62, 42, 15, 0.08);
 }
 
-.fop-brief-title {
+.worked-brief-title {
     margin: 0 0 0.35rem;
     color: #70440d;
     font-size: 0.78rem;
@@ -16,36 +16,33 @@
     text-transform: uppercase;
 }
 
-.fop-brief-step {
+.worked-brief-step {
     padding: 0.45rem 0 0.25rem;
     border-top: 1px solid rgba(128, 82, 22, 0.14);
 }
 
-.fop-brief-step:first-of-type {
+.worked-brief-step:first-of-type {
     border-top: 0;
 }
 
-.fop-brief-step-label {
+.worked-brief-step-label {
     margin: 0 0 0.3rem;
     color: #70440d;
 }
 
-.fop-brief-step > :last-child {
+.worked-brief-step > :last-child,
+.worked-brief-solution > :last-child {
     margin-bottom: 0;
 }
 
-.fop-brief-answer > :last-child {
-    margin-bottom: 0;
-}
-
-.fop-solution-detail {
+.worked-solution-detail {
     margin: 0 0 1.6rem;
     border: 1px solid #d8c8a6;
     border-radius: 3px;
     background: #fffdf8;
 }
 
-.fop-solution-detail > summary {
+.worked-solution-detail > summary {
     padding: 0.72rem 0.95rem;
     color: #6b1d21;
     background: linear-gradient(90deg, #f8f1e3, #fffdf8);
@@ -55,40 +52,37 @@
     user-select: none;
 }
 
-.fop-solution-detail > summary:hover,
-.fop-solution-detail > summary:focus-visible {
+.worked-solution-detail > summary:hover,
+.worked-solution-detail > summary:focus-visible {
     color: #8b2026;
     background: #f5ead4;
 }
 
-.fop-solution-detail > summary:focus-visible {
+.worked-solution-detail > summary:focus-visible {
     outline: 3px solid rgba(52, 89, 149, 0.45);
     outline-offset: 2px;
 }
 
-.fop-solution-detail .fop-hide-label {
+.worked-solution-detail .worked-hide-label,
+.worked-solution-detail[open] .worked-show-label {
     display: none;
 }
 
-.fop-solution-detail[open] .fop-show-label {
-    display: none;
-}
-
-.fop-solution-detail[open] .fop-hide-label {
+.worked-solution-detail[open] .worked-hide-label {
     display: inline;
 }
 
-.fop-solution-detail-body {
+.worked-solution-detail-body {
     padding: 1rem 1.1rem 0.25rem;
     border-top: 1px solid #e5d8bd;
 }
 
 @media print {
-    .fop-solution-detail > summary {
+    .worked-solution-detail > summary {
         display: none;
     }
 
-    .fop-solution-detail > .fop-solution-detail-body {
+    .worked-solution-detail > .worked-solution-detail-body {
         display: block;
     }
 }

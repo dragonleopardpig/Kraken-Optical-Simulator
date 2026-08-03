@@ -11,6 +11,10 @@ substitution, units, and a check where useful.  Notes identify cases where the
 printed answer key conflicts with the question, the chapter text, or direct
 calculation.
 
+Each quiz item initially shows a **Brief solution** with its reasoning and
+answer.  Use **Show detailed steps** to expand the complete explanation,
+equations, checks, and any answer-key discrepancy notes.
+
 .. toctree::
    :maxdepth: 1
    :caption: Chapter Quiz Solutions

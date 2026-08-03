@@ -13,6 +13,10 @@ of the other collections, Siegman's book does not provide a selected-answer
 appendix, so the checks are derived from conservation laws, limiting cases, and
 self-consistency.
 
+Each problem initially shows a structured **Brief solution** containing its
+method, decisive step, and verification.  Use **Show detailed steps** to
+expand the original uninterrupted solution route.
+
 Basic laser physics
 -------------------
 

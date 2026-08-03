@@ -13,6 +13,10 @@ the book's marker for one of the 558 problems omitted from its selected
 answers.  For the other 273 problems, a compact result check is included when
 the printed answer could be extracted reliably.
 
+Each problem initially shows a structured **Brief solution** containing its
+method, decisive step, and verification.  Use **Show detailed steps** to
+expand the original uninterrupted solution route.
+
 Foundations
 -----------
 

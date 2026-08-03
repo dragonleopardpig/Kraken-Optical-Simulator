@@ -12,6 +12,10 @@ book, then use the corresponding derivation here.  The notation follows the
 book's reduced ray vector :math:`(y,V)^T=(y,nv)^T`; matrix chains act on the
 rightmost element first.
 
+Each numbered problem initially shows a **Brief solution** with the method,
+decisive matrix or equation, and answer.  Use **Show detailed steps** to
+expand the complete derivation and verification.
+
 The :doc:`reference_tables` page recreates the book's four principal summary
 tables as accessible Sphinx tables.  Its SVG diagrams are newly drawn for this
 documentation and emphasize composition order, stability, polarization flow,

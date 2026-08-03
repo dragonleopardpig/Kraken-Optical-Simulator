@@ -10,6 +10,10 @@ Source errors are identified rather than carried into later calculations.
 Problems that require laboratory measurements include a procedure, expected
 trend, and results table instead of invented observations.
 
+Each problem or review question initially shows a **Brief solution** with the
+method, decisive step, and answer.  Use **Show detailed steps** to expand the
+complete derivation, procedure, tables, figures, and verification.
+
 .. toctree::
    :maxdepth: 1
    :caption: Chapter Concepts
