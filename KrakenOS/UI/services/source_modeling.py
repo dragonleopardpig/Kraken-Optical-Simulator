@@ -2095,10 +2095,27 @@ class SourceModelingMixin:
     def _build_scene_source_bundles(self, wavelength: float) -> tuple[list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]], list[SceneSource3D]]:
         if not self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", [])):
             return [], []
+        # bugs/0542 (flags 124129 "don't enable emission ray tracing by default (any
+        # toggle?)" + 133543 "can we use this as toggle the entire illumination ray
+        # on/off?"): the 3D "Illum rays" checkbox is now the MASTER switch for
+        # illumination-role sources in the interactive preview. OFF (the default) keeps
+        # the imaging preview -- adding/seating an LED neither replaces it nor costs
+        # its trace; ON explicitly opts into the illumination fan. Headless (no
+        # inspector) keeps every source, so validators and analyses are unchanged.
+        show_illumination = True
+        inspector = getattr(self, "_three_d_inspector", None)
+        if inspector is not None:
+            try:
+                if inspector.winfo_exists():
+                    show_illumination = bool(inspector.show_source_illumination_rays_var.get())
+            except Exception:
+                show_illumination = True
         bundles = []
         sources = []
         for source in self._collect_scene_sources(wavelength=wavelength):
             if not bool(source.enabled) or not bool(source.physical):
+                continue
+            if not show_illumination and str(getattr(source, "role", "") or "") == "illumination":
                 continue
             if scene_source_spec_is_face_bound_marker(source):
                 # bugs/0266: a face-bound illumination marker must not be launched into the imaging

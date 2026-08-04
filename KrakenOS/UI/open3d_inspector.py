@@ -1434,6 +1434,21 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             return False
 
+    def _on_illumination_rays_toggled(self) -> None:
+        """bugs/0542: "Illum rays" now gates the illumination-source TRACE itself (the
+        user's master on/off), so a toggle must invalidate the cached preview and
+        retrace -- OFF returns the fast imaging-only preview immediately; ON opts into
+        the full illumination fan."""
+        try:
+            self.editor._invalidate_preview_scene_trace()
+        except Exception:
+            pass
+        try:
+            self.refresh_from_editor(force_retrace=True)
+        except Exception as exc:
+            self.editor.append_debug(f"Illumination-rays toggle retrace failed: {exc}")
+        self._on_scene_visibility_changed()
+
     def _cancel_live_refresh(self) -> None:
         self._open3d_live_refresh_service().cancel()
 
@@ -16474,6 +16489,27 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         Render-only; the classified+subsampled polylines and their signature cache live on the editor
         (``source_illumination_rays_overlay_spec``), so toggling is a cached-scene re-render (0166)."""
         if self._renderer is None or pv is None or scene_bundle is None:
+            return 0
+        # bugs/0542 (flag_20260804_133134 "transmitted ray not according to physics"):
+        # this fate overlay is the MV-150 COAXIAL analysis -- its rays only mean
+        # something for a source that couples to the imaging launch (LED -> BS ->
+        # object). On a free seated source it drew a dense green fan spraying
+        # up-right through the housing while its own label said "green 0" -- pure
+        # nonsense geometry. Skip unless a coupled coaxial source exists; the free
+        # source's real rays are already in the preview trace via the master gate.
+        try:
+            from KrakenOS.UI.scene_source_analysis import (
+                scene_source_spec_couples_to_imaging_launch as _couples,
+            )
+
+            has_coaxial = any(
+                _couples(source)
+                for source in self.editor._collect_scene_sources()
+                if bool(getattr(source, "enabled", True))
+            )
+        except Exception:
+            has_coaxial = True
+        if not has_coaxial:
             return 0
         try:
             spec = self.editor.source_illumination_rays_overlay_spec(system, scene_bundle)

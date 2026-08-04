@@ -72,3 +72,26 @@ thin plate) totally reflect -- correct physics for POLISHED edges, newly traceab
 0533. Real catalog plates have GROUND (matte) edges that absorb/scatter instead;
 flagging F001-F004 as Absorber/Mechanical models that and kills the chains -- offered to
 the user before touching their scene's physics.
+
+## 0542 (flags 133005/133134/133253/133342/133543 + "replace my eyeball" snapshots)
+
+- **Master toggle**: "Illum rays" now gates illumination-role sources in the preview
+  TRACE itself. OFF (default) = the fast imaging preview (6 s; a seated LED costs
+  nothing); ON = the illumination fan (~19 s). Toggling invalidates + retraces.
+- **Coaxial fate overlay gated**: it drew an MV-150 fan (with a self-contradicting
+  "green 0" label) on a free seated source; now it requires a source that couples to
+  the imaging launch.
+- **Radial bound on the miss projection**: the seated LED's strays crossed the folded
+  sensor plane within the 0530 travel bound but 2-8 sensor-halves off-centre -- the
+  REAL origin of the "transmitted ray not according to physics" phantom fan. Rejected
+  beyond 3x sensor-half (arm-known scenes; the 0018 harness keeps cos-guard-only).
+  Verified by before/after snapshots from the flag's own viewpoint: with the fan gone
+  the ON view shows the reflected arm left, the transmitted cone up, edge-TIR strays
+  outward -- all straight, honest tails.
+- **"not seating at floor" (133005)**: the area-weighted bin lands on the strongest
+  interior plate (z~100) -- likely the diffuser shelf, physically the right emitter
+  plane; for the exact bottom pick the floor's outer face from below and use
+  "Seat ... on This Face" (axis-snapped since 0541).
+- **"right click works only after toggling clipped" (133253)**: OPEN -- suspected
+  right-click dead zone while the async/selection trace swaps actors; needs a live
+  repro with the now-fast default preview.

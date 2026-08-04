@@ -15531,6 +15531,10 @@ phase_431_source_glyph_menu = _phase_from_standalone(
     431, "right-clicking the source glyph seats it on the LED floor (0537)",
     "KrakenOS.UI.validate_open3d_0537_source_glyph_menu",
     "source_glyph_menu")
+phase_432_illumination_rays_master_toggle = _phase_from_standalone(
+    432, "Illum rays is the master illumination switch; no fabricated fans (0542)",
+    "KrakenOS.UI.validate_open3d_0542_illumination_rays_master_toggle",
+    "illumination_rays_master_toggle")
 
 
 # ---------------------------------------------------------------------------
@@ -16009,6 +16013,7 @@ def main() -> int:
             phase_429_source_select_idempotent,
             phase_430_source_gizmo_usability,
             phase_431_source_glyph_menu,
+            phase_432_illumination_rays_master_toggle,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

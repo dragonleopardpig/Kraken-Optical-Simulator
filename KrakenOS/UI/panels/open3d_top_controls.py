@@ -117,7 +117,9 @@ class Open3DTopControlsPanel:
                 MenuCheckbutton("Illumination", self.inspector.show_source_illumination_var, self.inspector._on_scene_visibility_changed),
                 # The REAL traced LED->BS->object rays, green=reaches FOV / red=clipped at the
                 # foreshortened BS-exit stop (the 55*cos45~39 dark-edge mechanism, drawn directly).
-                MenuCheckbutton("Illum rays", self.inspector.show_source_illumination_rays_var, self.inspector._on_scene_visibility_changed),
+                # bugs/0542: ALSO the master switch for illumination-role sources in the
+                # interactive preview -- toggling must invalidate + retrace, not just re-render.
+                MenuCheckbutton("Illum rays", self.inspector.show_source_illumination_rays_var, self.inspector._on_illumination_rays_toggled),
                 # Additive full-surface EMISSION from a marked CAD/STL face (bugs/0267): the marked face
                 # floods its whole surface with traced rays, isolated from the imaging trace (0266).
                 MenuCheckbutton("Illum emission", self.inspector.show_illumination_marker_rays_var, self.inspector._on_scene_visibility_changed),

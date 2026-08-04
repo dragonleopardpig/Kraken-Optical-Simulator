@@ -3085,6 +3085,7 @@ _DETECTOR_MISS_MIN_AXIAL_COS = 0.17364817766693041  # cos(80 deg)
 # arms). Beyond that the crossing is a coincidence of plane geometry, not a near-miss.
 _DETECTOR_MISS_MAX_ARM_FACTOR = 3.0
 _DETECTOR_MISS_MAX_TRAVEL_HALF_FACTOR = 6.0
+_DETECTOR_MISS_MAX_RADIAL_HALF_FACTOR = 3.0
 
 
 def _detector_plane_miss_intersection(
@@ -3164,6 +3165,15 @@ def _detector_plane_miss_intersection(
                 _DETECTOR_MISS_MAX_TRAVEL_HALF_FACTOR * half,
             )
             if np.isfinite(max_travel) and distance > max_travel:
+                continue
+            # bugs/0542 (flag_20260804_133134 "transmitted ray not according to
+            # physics"): TRAVEL alone is not enough -- a seated LED's strays cross the
+            # folded sensor plane within the arm-scaled travel bound but land 2-8
+            # sensor-halves off-centre, and the projection drew them as a dense
+            # phantom fan into free space. A crossing that far off the sensor is not
+            # a near-miss anywhere; bound the radial too (arm-known scenes only, so
+            # the 0018 mechanism harness keeps its cos-guard-only contract).
+            if np.isfinite(half) and half > 1e-9 and radial > _DETECTOR_MISS_MAX_RADIAL_HALF_FACTOR * half:
                 continue
         local_x = float(np.dot(offset, tangent))
         local_y = float(np.dot(offset, bitangent))

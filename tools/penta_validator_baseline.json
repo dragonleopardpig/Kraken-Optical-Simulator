@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-08-04T03:26:13+00:00",
+  "generated_at": "2026-08-04T05:56:29+00:00",
   "phases": {
     "0": "pass",
     "1": "fail",
@@ -432,7 +432,8 @@
     "428": "pass",
     "429": "pass",
     "430": "pass",
-    "431": "pass"
+    "431": "pass",
+    "432": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -865,6 +866,7 @@
     "428": "the split's reflected child exits its own solid, refracted (0533)",
     "429": "selecting a scene source from the browser is idempotent (0535)",
     "430": "the source gizmo is usable: no vsync stall, hoverable, seatable (0536)",
-    "431": "right-clicking the source glyph seats it on the LED floor (0537)"
+    "431": "right-clicking the source glyph seats it on the LED floor (0537)",
+    "432": "Illum rays is the master illumination switch; no fabricated fans (0542)"
   }
 }
