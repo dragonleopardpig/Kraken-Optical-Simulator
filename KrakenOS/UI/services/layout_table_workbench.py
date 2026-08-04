@@ -755,9 +755,7 @@ class LayoutTableWorkbenchMixin:
         # bugs/0381: the rear datum must be the FIRST one AFTER this front datum -- a TIGHT
         # single-lens block -- not the LAST rear datum in the whole scene. The old
         # first-front/last-rear span swallowed everything between two lens blocks (or up to
-        # a later camera/mount "rear vertex"), so a swap spliced them away. Only the lens's
-        # own Blackbox/Aperture rows may sit inside the block; anything else (a promoted
-        # solid, another element) means this is NOT a clean lens block to swap.
+        # a later camera/mount "rear vertex"), so a swap spliced them away.
         rear = None
         for index in range(front + 1, len(rows)):
             if _is_datum(getattr(rows[index], "name", ""), "rear"):
@@ -765,11 +763,203 @@ class LayoutTableWorkbenchMixin:
                 break
         if rear is None or rear <= front:
             return None, None
-        for index in range(front + 1, rear):
-            name = (getattr(rows[index], "name", "") or "").strip().lower()
-            if "promoted" in name or "optical step solid" in name or name in ("object", "image"):
-                return None, None
+        preservable, blocking = self._imaging_lens_block_foreign_rows(rows, front, rear)
+        if blocking:
+            return None, None
+        if preservable and rear + 1 >= len(rows):
+            # Nothing follows the block, so the lifted rows would become the scene's LAST row
+            # and `_normalize_special_rows` would stamp the user's solid as the Image surface.
+            # Keep bugs/0381's never-wipe refusal for that degenerate shape.
+            return None, None
         return front, rear
+
+    @staticmethod
+    def _is_swap_preservable_block_row(row) -> bool:
+        """Is this block-interior row one the swap can LIFT OUT and re-seat rather than
+        splice away? (bugs/0546) A promoted optical solid (and the in-path AIR spacer that
+        trails one) is ABSOLUTELY placed -- ``axis_move`` 0, pose = ``station + desp_z`` --
+        so its row INDEX carries no geometry: re-seating it after the block with a desp_z
+        that absorbs the station delta leaves it exactly where the user put it."""
+        name = (getattr(row, "name", "") or "").strip().lower()
+        return "promoted" in name or "optical step solid" in name
+
+    @classmethod
+    def _imaging_lens_block_foreign_rows(cls, rows, front, rear):
+        """``(preservable, blocking)`` interior row indices of the lens block -- the rows
+        that are NOT part of the lens itself (bugs/0381, revised by bugs/0546).
+
+        * **preservable** -- a promoted optical solid the user parked inside the block.
+          ``_step_overlay_insert_index`` drops a promotion after the CURRENT SELECTION, so a
+          beam-splitter cube physically UPSTREAM of the lens routinely lands at a row index
+          between the two datums (flag_20260804_204450: the AZ85 + RA-mirror + BS scene). The
+          swap keeps these rows and re-seats them; they must not veto it.
+        * **blocking** -- an Object / Image row, i.e. the scene's own ends fell between two
+          datums. That span is not a lens block at all and there is nothing safe to splice.
+        """
+        preservable: list[int] = []
+        blocking: list[int] = []
+        for index in range(int(front) + 1, int(rear)):
+            row = rows[index]
+            name = (getattr(row, "name", "") or "").strip().lower()
+            if cls._is_swap_preservable_block_row(row):
+                preservable.append(index)
+            elif name in ("object", "image") or getattr(row, "surface", None) in ("Object", "Image"):
+                blocking.append(index)
+        return preservable, blocking
+
+    def _swap_preserved_block_rows(self, front, rear):
+        """Snapshot the block-interior rows a swap must KEEP, each paired with the ABSOLUTE
+        axial pose it holds right now (bugs/0546).
+
+        Every row's pose is ``station + desp_z`` (bugs/0526; the 0433 freeze baked
+        ``desp_z = world_z - station_at_freeze``), and the splice changes these rows' station
+        -- so record the invariant now and re-derive ``desp_z`` from it afterwards.
+
+        The lifted rows land AFTER the new rear datum, which also leaves a CLEAN block behind
+        for the next swap. Their fold-follower set (``build_optical_solid_output_port_pose_
+        overrides`` walks forward from a fold source) therefore no longer contains the lens's
+        own rows -- irrelevant for the reported case and for every beam splitter, which
+        bugs/0398 excludes from being a fold source at all (the flag's own diagnostics:
+        ``is_marked: true, is_fold_override: false, override_keys: []``)."""
+        stations = self._row_z_positions()
+        preserved: list[tuple[object, float]] = []
+        for index in range(int(front) + 1, int(rear)):
+            row = self.rows[index]
+            if not self._is_swap_preservable_block_row(row):
+                continue
+            station = float(stations[index]) if index < len(stations) else 0.0
+            preserved.append((row, station + float(getattr(row, "desp_z", 0.0) or 0.0)))
+        return preserved
+
+    def _swap_frozen_block_frame(self, front, rear):
+        """The WORLD frame the outgoing lens block was baked onto, or ``None`` when that block is
+        a plain sequential chain (bugs/0547).
+
+        On a 0433-frozen / axis-snapped scene every row's FINAL world placement lives in its
+        ``desp`` + ``tilt`` (``row_placement.WORLD``). The replacement block comes from a FRESH
+        single-lens surrogate whose rows are straight-axis (desp 0, tilt 0), so it lands on the
+        global +Z axis instead of the leg the user folded the lens onto -- flag_20260804_212159,
+        *"the surrogate is snapped to another axis"*: the surrogate rows stranded on the vertical
+        axis while the lens STEP (whose pose IS preserved, bugs/0381) stayed on the leg, and the
+        trace blew apart. The fold transform cannot supply this frame -- it is None on every
+        frozen scene -- so the direction is measured from the scene itself: front datum -> rear
+        datum.
+
+        Returns ``{origin, axis, tilt, placement}``."""
+        import numpy as np
+
+        from KrakenOS.UI.services import row_placement
+
+        rows = self.rows
+        front, rear = int(front), int(rear)
+        if not (0 <= front < rear < len(rows)):
+            return None
+        if not any(row_placement.is_world_placed(row) for row in rows[front:rear + 1]):
+            return None
+        stations = self._row_z_positions()
+
+        def _pose(index):
+            row = rows[index]
+            station = float(stations[index]) if index < len(stations) else 0.0
+            return np.asarray(
+                [float(row.desp_x), float(row.desp_y), station + float(row.desp_z)], dtype=float
+            )
+
+        origin = _pose(front)
+        axis = _pose(rear) - origin
+        length = float(np.linalg.norm(axis))
+        if length > 1.0e-9:
+            axis = axis / length
+        else:
+            # A zero-length block (both datums at one point): fall back to the baked tilt's own
+            # +Z, so the direction is still the LEG's and never the global axis.
+            from KrakenOS.UI.optical_solid_metadata import rotation_matrix_from_kraken_tilts
+
+            rotation = np.asarray(
+                rotation_matrix_from_kraken_tilts(
+                    float(rows[front].tilt_x), float(rows[front].tilt_y), float(rows[front].tilt_z)
+                ),
+                dtype=float,
+            )
+            axis = rotation[:, 2]
+            norm = float(np.linalg.norm(axis))
+            axis = axis / norm if norm > 1.0e-9 else np.asarray([0.0, 0.0, 1.0])
+        placement = (getattr(rows[front], "advanced", None) or {}).get("ScenePlacement")
+        return {
+            "origin": origin,
+            "axis": axis,
+            "tilt": (
+                float(rows[front].tilt_x),
+                float(rows[front].tilt_y),
+                float(rows[front].tilt_z),
+            ),
+            "placement": dict(placement) if isinstance(placement, dict) else {},
+        }
+
+    def _swap_apply_frozen_block_frame(self, frame, front, rear) -> None:
+        """Re-bake the replacement lens block onto the frame the outgoing block occupied
+        (bugs/0547).
+
+        Each new row keeps the surrogate's OWN axial spacing -- its station offset from the front
+        datum -- and is placed at ``origin + axis * offset`` carrying the block's baked tilt, so
+        the swapped lens lands on the SAME leg, at the SAME datum, facing the same way.
+        ``desp_z`` absorbs the station exactly as every world-placed row does (pose =
+        ``station + desp_z``), and the 0433 freeze breadcrumb is stamped on so the placement
+        survives the table round-trip (bugs/0441 flattens an Aperture's tilts without it)."""
+        if not frame:
+            return
+        import numpy as np
+
+        from KrakenOS.UI.services import row_placement
+
+        stations = self._row_z_positions()
+        front, rear = int(front), int(rear)
+        base = float(stations[front]) if front < len(stations) else 0.0
+        origin = np.asarray(frame["origin"], dtype=float)
+        axis = np.asarray(frame["axis"], dtype=float)
+        tilt_x, tilt_y, tilt_z = frame["tilt"]
+        placement = frame.get("placement") or {}
+        for index in range(front, min(rear + 1, len(self.rows))):
+            row = self.rows[index]
+            station = float(stations[index]) if index < len(stations) else 0.0
+            world = origin + axis * (station - base)
+            row.desp_x = float(world[0])
+            row.desp_y = float(world[1])
+            row.desp_z = float(world[2]) - station
+            row.tilt_x = float(tilt_x)
+            row.tilt_y = float(tilt_y)
+            row.tilt_z = float(tilt_z)
+            row.axis_move = 0.0
+            advanced = dict(getattr(row, "advanced", None) or {})
+            settings = dict(advanced.get("ScenePlacement") or {})
+            stamped = False
+            for key in row_placement.WORLD_PLACEMENT_KEYS:
+                if placement.get(key) is not None:
+                    settings[key] = placement[key]
+                    stamped = True
+            if stamped:
+                advanced["ScenePlacement"] = settings
+                row.advanced = advanced
+
+    def _swap_reseat_preserved_rows(self, preserved) -> None:
+        """Put every lifted block row back at the ABSOLUTE axial pose it held before the swap
+        (bugs/0546). The rows moved to just after the new rear datum, so their station changed
+        by the whole lens-block length; ``desp_z`` absorbs that delta exactly the way the
+        bugs/0526 composite does. Must run AFTER the rear-datum gap is written -- that write
+        is what settles the stations these rows now sit on."""
+        if not preserved:
+            return
+        stations = self._row_z_positions()
+        index_of = {id(row): index for index, row in enumerate(self.rows)}
+        for row, pose_z in preserved:
+            index = index_of.get(id(row))
+            if index is None:
+                continue
+            station = float(stations[index]) if index < len(stations) else 0.0
+            try:
+                row.desp_z = float(pose_z) - station
+            except Exception:
+                continue
 
     # Minimum mechanical clearance (mm) the auto-refocus keeps between the last optical
     # element and the sensor, so the sensor/camera can't be solved INTO it (bugs/0388).
@@ -1174,14 +1364,19 @@ class LayoutTableWorkbenchMixin:
         return "image" not in name
 
     @staticmethod
-    def _swap_downstream_gap(rows, rear_index, downstream_start_z):
+    def _swap_downstream_gap(rows, rear_index, downstream_start_z, extra_after: float = 0.0):
         """The new Rear Datum thickness that lands the first downstream row back at
         ``downstream_start_z`` (its pre-swap absolute z), or None if that would be negative
-        (the replacement lens is longer than the space to the downstream mount)."""
+        (the replacement lens is longer than the space to the downstream mount).
+
+        ``extra_after`` is the total thickness of rows the swap re-seated BETWEEN the rear
+        datum and that downstream row (bugs/0546: a promoted solid lifted out of the block).
+        Their thickness was already inside ``downstream_start_z``, so it must be discounted
+        here or the whole downstream arm walks by it."""
         new_rear_start = sum(
             float(getattr(r, "thickness", 0.0) or 0.0) for r in rows[: int(rear_index)]
         )
-        gap = float(downstream_start_z) - new_rear_start
+        gap = float(downstream_start_z) - new_rear_start - float(extra_after)
         return gap if gap >= 0.0 else None
 
     def _import_would_discard_scene(self) -> bool:
@@ -1250,6 +1445,15 @@ class LayoutTableWorkbenchMixin:
                 parent=parent,
             )
             return None
+        # bugs/0546: rows inside the block that are NOT the lens -- a promoted beam-splitter
+        # cube the user's selection parked there -- are LIFTED OUT and re-seated just after
+        # the swapped block, never spliced away. Their absolute pose is captured here and
+        # restored below once the new stations are settled.
+        preserved = self._swap_preserved_block_rows(front, rear)
+        # bugs/0547: on a 0433-frozen scene the outgoing block's desp/tilt ARE its world
+        # placement. Capture that frame so the replacement lands on the same leg instead of
+        # snapping back to the straight global axis.
+        frozen_frame = self._swap_frozen_block_frame(front, rear)
         if folder is None:
             folder = filedialog.askdirectory(
                 title="Swap Imaging Lens -- choose the replacement lens folder", parent=parent
@@ -1308,7 +1512,12 @@ class LayoutTableWorkbenchMixin:
             if self._swap_preserves_downstream(self.rows, rear) else None
         )
         self._begin_history_capture()
-        self.rows = list(self.rows[:front]) + list(new_block) + list(self.rows[rear + 1:])
+        self.rows = (
+            list(self.rows[:front])
+            + list(new_block)
+            + [row for row, _pose_z in preserved]
+            + list(self.rows[rear + 1:])
+        )
         self._apply_swapped_lens_step_settings(new_info.get("settings", {}))
         self._auto_assign_missing_elements(self.rows)
         self._normalize_special_rows()
@@ -1316,15 +1525,29 @@ class LayoutTableWorkbenchMixin:
         # datum thicknesses from the new lens and would otherwise re-collapse the arm). The
         # new Rear Datum's thickness is set so the first downstream row keeps its absolute
         # axial position -- fold mirror / camera / image stay put.
+        swap_front, swap_rear = self._imaging_lens_block_indices()
         if downstream_start_z is not None:
-            _swap_front, swap_rear = self._imaging_lens_block_indices()
             if swap_rear is not None and 0 <= swap_rear < len(self.rows):
-                gap = self._swap_downstream_gap(self.rows, swap_rear, downstream_start_z)
+                gap = self._swap_downstream_gap(
+                    self.rows,
+                    swap_rear,
+                    downstream_start_z,
+                    extra_after=sum(
+                        float(getattr(row, "thickness", 0.0) or 0.0) for row, _pose_z in preserved
+                    ),
+                )
                 if gap is not None:
                     try:
                         self.rows[swap_rear].thickness = float(gap)
                     except Exception:
                         pass
+        # Both of these run LAST, once the gap write above has settled every station -- a pose is
+        # `station + desp_z`, so desp_z can only be derived after the stations are final.
+        # bugs/0547: put the replacement block back on the frozen leg the old one occupied.
+        if frozen_frame is not None and swap_front is not None and swap_rear is not None:
+            self._swap_apply_frozen_block_frame(frozen_frame, swap_front, swap_rear)
+        # bugs/0546: the lifted rows go back to the exact absolute pose they held before.
+        self._swap_reseat_preserved_rows(preserved)
         self._sync_table()
         self.load_layouts()  # discover the new library surrogate (also insertable later)
         self._commit_history_capture()
@@ -1339,6 +1562,11 @@ class LayoutTableWorkbenchMixin:
             f"Swapped imaging lens -> {model.title} (EFL {model.effl:.4g} mm) in place; "
             "Object / beam splitter / LED / camera / FOV preserved."
         )
+        if preserved:
+            message += (
+                f" {len(preserved)} promoted solid row(s) sat inside the lens block and were "
+                "re-seated unmoved after it."
+            )
         self.status_var.set(message)
         self.append_progress(message)
         # bugs/0386: the 2D refresh here is a FULL system build + trace (~5s on a folded

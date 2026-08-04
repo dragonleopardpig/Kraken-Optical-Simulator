@@ -15535,6 +15535,14 @@ phase_432_illumination_rays_master_toggle = _phase_from_standalone(
     432, "Illum rays is the master illumination switch; no fabricated fans (0542)",
     "KrakenOS.UI.validate_open3d_0542_illumination_rays_master_toggle",
     "illumination_rays_master_toggle")
+phase_433_swap_keeps_inblock_solid = _phase_from_standalone(
+    433, "a promoted solid inside the lens block is re-seated by the swap, not a veto (0546)",
+    "KrakenOS.UI.validate_open3d_0546_swap_keeps_inblock_solid",
+    "swap_keeps_inblock_solid")
+phase_434_swap_keeps_frozen_leg = _phase_from_standalone(
+    434, "a swap re-bakes the replacement lens block onto the frozen leg (0547)",
+    "KrakenOS.UI.validate_open3d_0547_swap_keeps_frozen_leg",
+    "swap_keeps_frozen_leg")
 
 
 # ---------------------------------------------------------------------------
@@ -16014,6 +16022,8 @@ def main() -> int:
             phase_430_source_gizmo_usability,
             phase_431_source_glyph_menu,
             phase_432_illumination_rays_master_toggle,
+            phase_433_swap_keeps_inblock_solid,
+            phase_434_swap_keeps_frozen_leg,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

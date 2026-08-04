@@ -3,8 +3,11 @@
 Two defects behind the "after lens swap the whole scene is gone" flag:
   * ``_imaging_lens_block_indices`` spanned first-front -> LAST-rear, so a genuine swap on
     a two-lens / stray-"rear vertex" scene would splice away everything between. Now it
-    returns the TIGHT single block (first front -> its FIRST rear) and refuses a block that
-    contains a foreign element (a promoted solid / Object / Image).
+    returns the TIGHT single block (first front -> its FIRST rear) and refuses a block whose
+    interior holds a scene END (an Object / Image row -- that span is not a lens block).
+    bugs/0546 narrowed the veto: a PROMOTED SOLID inside the block no longer refuses the
+    swap, it is lifted out and re-seated unmoved (see
+    ``validate_open3d_0546_swap_keeps_inblock_solid``).
   * "Import Lens from Folder" REPLACES the whole scene (distinct from Swap, which keeps it),
     and the two sit next to each other in the menu. ``_import_would_discard_scene`` drives a
     confirmation so Import can't silently wipe a real assembly.
@@ -58,9 +61,28 @@ def run_checks() -> tuple[bool, list[str]]:
         if got != expected:
             failures.append(f"block({tag}): got {got}, expected {expected}")
 
-    # a foreign element inside the block -> refuse to swap (never wipe it)
-    if block(["Object", "Lens Front Datum", "Promoted OPTICAL STEP optical solid", "Lens Rear Datum", "Image"]) != (None, None):
-        failures.append("block(promoted inside): must return (None, None) so the swap can't wipe the solid")
+    # bugs/0546 REVISED this rule. A promoted solid inside the block used to veto the whole
+    # swap ("this scene has no imaging-lens surrogate to swap") -- but a promoted solid is
+    # ABSOLUTELY placed, so its row index says nothing about where it sits, and
+    # `_step_overlay_insert_index` routinely parks one between the datums. The swap now LIFTS
+    # it out and re-seats it after the block instead of refusing; the never-wipe guarantee is
+    # kept by `_swap_preserved_block_rows` / `_swap_reseat_preserved_rows`
+    # (validate_open3d_0546_swap_keeps_inblock_solid drives the real swap end to end).
+    inblock = ["Object", "Lens Front Datum", "Promoted OPTICAL STEP optical solid", "Lens Rear Datum", "Image"]
+    if block(inblock) != (1, 3):
+        failures.append(
+            f"block(promoted inside): must expose the block (1, 3) so the swap can run and PRESERVE "
+            f"the solid (bugs/0546); got {block(inblock)}"
+        )
+    preservable, blocking = _editor(inblock)._imaging_lens_block_foreign_rows(_editor(inblock).rows, 1, 3)
+    if preservable != [2] or blocking:
+        failures.append(
+            f"block(promoted inside): the solid must be classed PRESERVABLE, not blocking; got "
+            f"{preservable} / {blocking}"
+        )
+    # a scene END between the datums is not a lens block at all -> still refuse
+    if block(["Object", "Lens Front Datum", "Image", "Lens Rear Datum", "Image"]) != (None, None):
+        failures.append("block(scene end inside): an Object/Image row between the datums must still refuse")
     if block(["Object", "BS", "Image"]) != (None, None):
         failures.append("block(no lens): must return (None, None)")
     # a lone front datum with no matching rear -> no block (no wild splice)
@@ -249,7 +271,8 @@ def main() -> int:
         return 1
     print(
         "Lens-swap block-safety validation passed: the block detector returns the TIGHT "
-        "single lens block (refusing one that contains a foreign element), and Import warns "
+        "single lens block (refusing one whose interior holds a scene END, exposing one that "
+        "holds a promoted solid so the swap can preserve it -- bugs/0546), and Import warns "
         "before it would discard a real assembly (overlay / promoted solid)."
     )
     return 0

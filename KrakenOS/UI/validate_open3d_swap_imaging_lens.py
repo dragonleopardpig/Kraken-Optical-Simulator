@@ -13,8 +13,9 @@ Checks (headless, no VTK/tk):
   synthetic Object/BS/lens/Image scene, and returns (None,None) when there is no lens.
 - SPLICE (source contract): the swap builds `rows[:front] + new_block + rows[rear+1:]`
   -- keeps everything before/after the lens block, replaces only the block.
-- STEP REWIRE: `_apply_swapped_lens_step_settings` rewires the lens path/flip/offsets
-  from the new settings and does NOT touch camera/led/optical overlays.
+- STEP REWIRE: `_apply_swapped_lens_step_settings` rewires the lens STEP path + largest-
+  component flag from the new settings, PRESERVES the user's scene pose (bugs/0381), and
+  does NOT touch camera/led/optical overlays.
 - WIRING: the inspector delegates + rebuilds via `_apply_model_change` (no layout
   replacement / 0294 path); both menus offer "Swap Imaging Lens from Folder...".
 
@@ -64,21 +65,37 @@ def run_checks() -> tuple[bool, list[str]]:
         failures.append("a scene with no lens block must return (None, None)")
 
     # --- STEP REWIRE --------------------------------------------------------------
+    # bugs/0381 REVISED this contract, and this block had asserted the pre-0381 behaviour ever
+    # since (reading an attribute the rewire no longer sets, which on a bare stub recurses into
+    # Tk's __getattr__). A swap changes the LENS, not where the user put it:
+    # `_apply_swapped_lens_step_settings` rewires the STEP path + largest-component flag ONLY,
+    # and the scene POSE (rotation / axis offset / placement offset / flip) is PRESERVED so the
+    # swapped lens stays on the fold leg the user aligned it to.
     stub = object.__new__(KrakenLayoutEditor)
+    stub.imported_lens_step_path = "attachment/Lens/OLD/old.stp"
+    stub.lens_step_largest_component_only = True
+    stub.lens_step_reverse_direction = True             # the user flipped it
+    stub.lens_step_axis_offset_xy = [1.0, 2.0]          # ... and aligned it onto the fold leg
+    stub.lens_step_placement_offset_xyz = [3.0, 4.0, 5.0]
+    stub.lens_step_rotation_y_deg = 90.0
     stub._apply_swapped_lens_step_settings({
         "lens_step_path": "attachment/Lens/NEW/new.stp",
-        "lens_step_reverse_direction": True,
         "lens_step_largest_component_only": False,
-        "lens_step_axis_offset_xy": [1.0, 2.0],
-        "lens_step_placement_offset_xyz": [3.0, 4.0, 5.0],
-        "lens_step_rotation_y_deg": 90.0,
+        # the FRESH folder's DEFAULT (on-axis, unflipped) pose -- must not be applied over the
+        # user's alignment
+        "lens_step_reverse_direction": False,
+        "lens_step_axis_offset_xy": [0.0, 0.0],
+        "lens_step_placement_offset_xyz": [0.0, 0.0, 0.0],
+        "lens_step_rotation_y_deg": 0.0,
     })
     if stub.imported_lens_step_path is None or "new.stp" not in str(stub.imported_lens_step_path):
         failures.append("STEP rewire did not set imported_lens_step_path")
+    if stub.lens_step_largest_component_only is not False:
+        failures.append("STEP rewire did not carry the new folder's largest-component flag")
     if not stub.lens_step_reverse_direction:
-        failures.append("STEP rewire did not carry the flip flag")
+        failures.append("STEP rewire must PRESERVE the user's flip (bugs/0381), not reset it")
     if list(stub.lens_step_placement_offset_xyz) != [3.0, 4.0, 5.0] or abs(stub.lens_step_rotation_y_deg - 90.0) > 1e-6:
-        failures.append("STEP rewire did not carry offsets/rotations")
+        failures.append("STEP rewire must PRESERVE the user's scene pose (bugs/0381)")
 
     # --- SPLICE CONTRACT (source) -------------------------------------------------
     swap_src = inspect.getsource(KrakenLayoutEditor.swap_imaging_lens_from_folder)
