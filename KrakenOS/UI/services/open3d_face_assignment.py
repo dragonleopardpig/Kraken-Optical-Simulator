@@ -328,6 +328,34 @@ class Open3DFaceAssignmentService:
             target = None
         if target is not None and target.size >= 3 and float(np.dot(n, target[:3] - c[:3])) < 0.0:
             n = -n
+        # bugs/0541 (flags 130936 "auto seat still slanted" + 131019 "seat a surface:
+        # not functioning"): mesh-derived normals carry bracket/cluster noise (~7-10
+        # deg) and the panel then visibly tilts. A coaxial illuminator fires along the
+        # OPTICAL AXIS: when the resolved aim is within 20 deg of the object-leg axis,
+        # snap to it exactly. A deliberate wall seat (aim far off-axis) stays honest.
+        try:
+            from KrakenOS.UI.services import optical_axis_tree as _tree
+
+            obj_pose = np.asarray(
+                _tree.row_world_pose(self.editor.rows, 0), dtype=float
+            ).reshape(-1)[:3]
+            bs_row = self.editor._promoted_optical_solid_row_index("optical")
+            anchor = (
+                np.asarray(
+                    _tree.row_world_pose(self.editor.rows, int(bs_row)), dtype=float
+                ).reshape(-1)[:3]
+                if bs_row is not None
+                else None
+            )
+            if anchor is not None and np.all(np.isfinite(obj_pose)) and np.all(np.isfinite(anchor)):
+                leg = obj_pose - anchor
+                leg_norm = float(np.linalg.norm(leg))
+                if leg_norm > 1e-9:
+                    leg = leg / leg_norm
+                    if float(np.dot(n, leg)) >= float(np.cos(np.radians(20.0))):
+                        n = leg
+        except Exception:
+            pass
         # Delegate the write to the 0363 seat (spec keys + history + rebuild); the
         # pre-signed normal with aim_inward=False keeps the toward-splitter aim, and
         # the 0.5 mm standoff lifts the emitter off the PCB face.

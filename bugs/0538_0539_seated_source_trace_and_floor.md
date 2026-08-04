@@ -53,3 +53,22 @@ Renaming/greying those entries when no coaxial dataset exists is queued as UX po
    reflection inside the thin plate reaching its edge strips -- light-guide physics the
    0533 fix made traceable. The old view's impression came from the tilted aim plus
    display decimation of ~4600 paths.
+
+## 0541 (flags 130936 "auto seat still slanted" + 131019 "seat a surface: not functioning")
+
+Both seats produced visibly tilted panels: mesh-derived normals carry bracket/cluster
+noise (~7-10 deg), and the face-cluster normals of the coarse pick inherit draft angles.
+A coaxial illuminator fires along the OPTICAL AXIS -- both seat routes now snap the
+resolved aim to the object-leg axis when within 20 deg of it (exact: the AZ85 leg is
+(0.0022, 0, -1)); a deliberate far-off-axis wall seat keeps its honest face normal.
+
+## The TIR question ("why would the BS coating introduce TIR -- shouldn't it be Air?")
+
+Precisely right to challenge: the COATING never TIRs -- the deterministic splitter
+splits at any angle. The `reflect_tir@3` events happen at the plate's UNCOATED
+glass-to-air faces, overwhelmingly the four narrow EDGE strips: internal rays reaching
+them beyond the 41.1 deg critical angle (rim entries + split-reflect bounces along the
+thin plate) totally reflect -- correct physics for POLISHED edges, newly traceable since
+0533. Real catalog plates have GROUND (matte) edges that absorb/scatter instead;
+flagging F001-F004 as Absorber/Mechanical models that and kills the chains -- offered to
+the user before touching their scene's physics.
