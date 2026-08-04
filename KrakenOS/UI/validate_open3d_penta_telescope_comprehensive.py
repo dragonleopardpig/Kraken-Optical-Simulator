@@ -15511,6 +15511,14 @@ phase_426_splitter_rebounce_ghost = _phase_from_standalone(
     426, "the splitter re-bounce ghost hides with clipping OFF (0531)",
     "KrakenOS.UI.validate_open3d_0531_splitter_rebounce_ghost_hidden",
     "splitter_rebounce_ghost")
+phase_427_single_splitter_plane = _phase_from_standalone(
+    427, "a solid carries at most ONE splitter plane per direction (0532)",
+    "KrakenOS.UI.validate_open3d_0532_single_splitter_plane",
+    "single_splitter_plane")
+phase_428_split_child_exits_solid = _phase_from_standalone(
+    428, "the split's reflected child exits its own solid, refracted (0533)",
+    "KrakenOS.UI.validate_open3d_0533_split_child_exits_solid",
+    "split_child_exits_solid")
 
 
 # ---------------------------------------------------------------------------
@@ -15984,6 +15992,8 @@ def main() -> int:
             phase_424_lens_drag_single_undo,
             phase_425_clipped_ray_teleport,
             phase_426_splitter_rebounce_ghost,
+            phase_427_single_splitter_plane,
+            phase_428_split_child_exits_solid,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

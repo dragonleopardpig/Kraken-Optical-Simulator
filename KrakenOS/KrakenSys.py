@@ -4098,6 +4098,17 @@ class system():
                 # diagonal of the cube BS above.
                 if transition == "entry":
                     return None
+                # bugs/0533 (flag_20260804_082939 follow-up): the EXIT-face split is the
+                # mirror case -- the REFLECT child goes back INTO the glass and must be
+                # allowed to re-interact with this same row to exit through the entry
+                # face. The row-level skip killed that exit: the plate-BS ghost died
+                # 1.2 mm inside the glass (no exit refraction) and flew off 15-17 deg
+                # high instead of emerging parallel to the primary reflection (the
+                # classic laterally-offset plate ghost). The transmit child leaves the
+                # solid, where the origin nudge already prevents the zero-distance
+                # re-hit -- the same reasoning as the entry case above.
+                if transition == "exit":
+                    return None
         try:
             return int(surface_index)
         except Exception:
@@ -4592,11 +4603,21 @@ class system():
                                 "model": str(splitter_settings.get("split_mode", "")),
                                 "target_surface": -1,
                             }
+                            # bugs/0533 (second leg): the REFLECT child's media state must be
+                            # the incident state UNCHANGED -- a reflection never crosses the
+                            # boundary. Its spawn sign is +1 (refl_sign), so the media event
+                            # treated it as a TRANSMISSION and ran the face's exit/entry
+                            # transition: at an exit-face split the child's volume was popped
+                            # (medium AIR at the glass index), so the later real exit through
+                            # the entry face computed N == Np and NEVER REFRACTED -- the
+                            # plate-BS fold emerged 17 deg off instead of parallel. Pass a
+                            # reflection sign to the MEDIA event only; the trace SIGN below
+                            # keeps child_sign.
                             child_media_state, child_media_event = self.__NsRayMediaEvent(
                                 ray_state,
                                 face_override,
                                 child_n,
-                                child_sign,
+                                -1.0 if child_label == "reflect" else child_sign,
                                 media_out=Glass if child_label == "transmit" else ray_state.current_medium,
                                 diagnostic=incident_state_diagnostic,
                             )
