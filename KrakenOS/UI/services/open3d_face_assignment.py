@@ -190,14 +190,55 @@ class Open3DFaceAssignmentService:
             self.status_var.set("Seat on LED floor: degenerate object direction.")
             return
         axis = axis / norm
-        face_centers = []
-        for axis_index in range(3):
-            for side in (0, 1):
-                center = led_center.copy()
-                center[axis_index] = bounds[axis_index * 2 + side]
-                face_centers.append(center)
-        floor_center = min(face_centers, key=lambda c: float(np.dot(c - led_center, axis)))
-        self._seat_source_on_face_from_context(sid, floor_center, axis)
+        # bugs/0539 (flag_20260804_121808 "not snapping properly"): the first cut used
+        # the LED body's BOUNDING BOX far plane -- but the STEP includes the cable arch
+        # hanging under the housing, so the emitter seated at the CABLE's depth, floating
+        # below the box. The floor is the largest AREA-WEIGHTED planar concentration of
+        # mesh triangles on the far half (a floor plate carries big area; cables are
+        # thin): histogram the cell centroids' axial stations weighted by cell area and
+        # take the strongest 1 mm bin below the housing midpoint.
+        floor_center = None
+        try:
+            sized = mesh.compute_cell_sizes(length=False, area=True, volume=False)
+            areas = np.asarray(sized.cell_data["Area"], dtype=float).reshape(-1)
+            centers = np.asarray(mesh.cell_centers().points, dtype=float)
+            stations = centers[:, :3] @ axis
+            finite = np.isfinite(stations) & np.isfinite(areas)
+            stations = stations[finite]
+            areas = areas[finite]
+            centers = centers[finite]
+            mid = float(led_center @ axis)
+            far_half = stations < mid
+            if int(np.sum(far_half)) >= 3:
+                far_stations = stations[far_half]
+                far_areas = areas[far_half]
+                far_centers = centers[far_half]
+                lo = float(np.min(far_stations))
+                hi = float(np.max(far_stations))
+                bins = max(int(np.ceil(hi - lo)), 1)
+                indices = np.clip(((far_stations - lo) / max(hi - lo, 1e-9) * bins).astype(int), 0, bins - 1)
+                weights = np.bincount(indices, weights=far_areas, minlength=bins)
+                best_bin = int(np.argmax(weights))
+                in_bin = indices == best_bin
+                if float(np.sum(far_areas[in_bin])) > 0.0:
+                    station = float(
+                        np.average(far_stations[in_bin], weights=far_areas[in_bin])
+                    )
+                    lateral = far_centers[in_bin] - np.outer(far_stations[in_bin], axis)
+                    lateral_mean = np.average(lateral, axis=0, weights=far_areas[in_bin])
+                    floor_center = lateral_mean + axis * station
+        except Exception:
+            floor_center = None
+        if floor_center is None:
+            # Degenerate mesh: fall back to the bounding-box far plane.
+            face_centers = []
+            for axis_index in range(3):
+                for side in (0, 1):
+                    center = led_center.copy()
+                    center[axis_index] = bounds[axis_index * 2 + side]
+                    face_centers.append(center)
+            floor_center = min(face_centers, key=lambda c: float(np.dot(c - led_center, axis)))
+        self._seat_source_on_face_from_context(sid, np.asarray(floor_center, dtype=float), axis)
 
     def _seat_source_on_face_from_context(self, source_id: str, center, normal) -> None:
         """bugs/0536: seat an illumination source ON a picked STEP face.

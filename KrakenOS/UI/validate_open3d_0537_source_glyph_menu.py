@@ -118,24 +118,33 @@ def run_checks() -> tuple[bool, list[str]]:
             bounds = np.asarray(mesh.bounds, float).reshape(6)
             origin = np.asarray([float(spec[k]) for k in ("source_x", "source_y", "source_z")])
             direction = np.asarray([float(spec[k]) for k in ("source_l", "source_m", "source_n")])
-            on_far_plane = any(
-                abs(origin[i] - bounds[i * 2 + s]) <= 1.0
-                for i in range(3)
-                for s in (0, 1)
-            )
             from KrakenOS.UI.services import optical_axis_tree as _tree
 
             obj = np.asarray(_tree.row_world_pose(app.rows, 0), float).reshape(-1)[:3]
+            led_center = np.asarray(
+                [(bounds[0] + bounds[1]) / 2, (bounds[2] + bounds[3]) / 2, (bounds[4] + bounds[5]) / 2]
+            )
+            axis = obj - led_center
+            axis = axis / np.linalg.norm(axis)
+            inside = all(bounds[i * 2] - 1.0 <= origin[i] <= bounds[i * 2 + 1] + 1.0 for i in range(3))
+            far_half = float(np.dot(origin - led_center, axis)) < 0.0
+            # bugs/0539: the seat must land on the FLOOR PLATE, not the bounding-box far
+            # plane -- the STEP's cable arch extends past the housing, so the bbox
+            # extreme is the CABLE's depth (the "floating below the box" flag).
+            not_at_bbox_extreme = float(np.dot(origin - led_center, axis)) > float(
+                np.dot(np.array([led_center[0], led_center[1], bounds[5]]) - led_center, axis)
+            ) + 1.0 if axis[2] < 0 else True
             aims_at_object = float(np.dot(direction, obj - origin)) > 0.0
-            if on_far_plane and aims_at_object:
+            if inside and far_half and aims_at_object and not_at_bbox_extreme:
                 notes.append(
-                    f"REAL = auto seat lands on the LED bounding plane aiming at the object "
+                    f"REAL = auto seat lands on the housing floor plate aiming at the object "
                     f"(origin {np.round(origin, 1).tolist()})"
                 )
             else:
                 notes.append(
                     f"REAL auto seat wrong: origin {origin.tolist()} dir {direction.tolist()} "
-                    f"(far_plane={on_far_plane}, aims={aims_at_object})"
+                    f"(inside={inside}, far_half={far_half}, aims={aims_at_object}, "
+                    f"off_bbox={not_at_bbox_extreme})"
                 )
                 ok = False
     except Exception as exc:

@@ -1122,7 +1122,22 @@ class system():
             target_surface = int(surface_index)
         except Exception:
             return np.empty((0, 3), dtype=float)
-        for mesh_index in range(1, len(getattr(self, "EEE", []) or [])):
+        # bugs/0538 (live "it freezes now"): this gather converts every solid mesh's
+        # pyvista points to numpy PER RAY-HIT -- the media/internal-face checks call it
+        # constantly, and a seated 2000-ray illumination trace spent minutes inside it
+        # (py-spy: pyvista_ndarray.__new__ under __NsTraceHitMedia), reading as a
+        # frozen UI. The meshes are immutable during a trace: memoize per surface,
+        # keyed to the live EEE list identity so a rebuild naturally invalidates.
+        eee = getattr(self, "EEE", None)
+        cache = getattr(self, "_optical_solid_scene_points_cache", None)
+        if cache is None or getattr(self, "_optical_solid_scene_points_token", None) is not eee:
+            cache = {}
+            self._optical_solid_scene_points_cache = cache
+            self._optical_solid_scene_points_token = eee
+        cached = cache.get(target_surface)
+        if cached is not None:
+            return cached
+        for mesh_index in range(1, len(eee or [])):
             try:
                 if int(self.GlassOnSide[int(mesh_index)]) != target_surface:
                     continue
@@ -1133,9 +1148,9 @@ class system():
                 finite = mesh_points[np.all(np.isfinite(mesh_points[:, :3]), axis=1), :3]
                 if finite.size:
                     points.append(np.asarray(finite, dtype=float))
-        if not points:
-            return np.empty((0, 3), dtype=float)
-        return np.vstack(points)
+        result = np.vstack(points) if points else np.empty((0, 3), dtype=float)
+        cache[target_surface] = result
+        return result
 
     def __OpticalSolidFaceIsInternal(self, surface_index, face_override, hit_point=None):
         face = dict(face_override or {}) if isinstance(face_override, dict) else {}
