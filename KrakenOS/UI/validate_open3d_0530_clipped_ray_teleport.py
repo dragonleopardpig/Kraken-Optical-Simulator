@@ -88,7 +88,16 @@ def run_checks() -> tuple[bool, list[str]]:
             normal = normal / np.linalg.norm(normal)
             tangent = tangent - normal * float(np.dot(tangent, normal))
             tangent = tangent / max(float(np.linalg.norm(tangent)), 1e-12)
-            sensor_half = 16.3
+            # No hardcoded sensor size: derive the helper's own active half from an
+            # axial probe (radial ~0 always projects), so the POS/NEG margins track
+            # whatever detector the scene actually carries.
+            axial = _sb._detector_plane_miss_intersection(
+                rows, system, {detector_index}, center + normal * 30.0, -normal
+            )
+            if axial is None:
+                notes.append("SKIP: axial probe could not derive the detector half")
+                return ok, notes
+            sensor_half = float(axial["half"])
 
             # Non-target drawn tails must not END near the sensor (the teleport look).
             near = 0

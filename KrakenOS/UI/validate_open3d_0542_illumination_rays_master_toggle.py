@@ -111,7 +111,15 @@ def run_checks() -> tuple[bool, list[str]]:
             normal = normal / np.linalg.norm(normal)
             tangent = tangent - normal * float(np.dot(tangent, normal))
             tangent = tangent / max(float(np.linalg.norm(tangent)), 1e-12)
-            half = 16.3
+            # No hardcoded sensor size: derive the helper's own active half from an
+            # axial probe so the radial margins track the scene's actual detector.
+            axial = _sb._detector_plane_miss_intersection(
+                rows, system, {det}, center + normal * 30.0, -normal
+            )
+            if axial is None:
+                notes.append("SKIP: axial probe could not derive the detector half")
+                return ok, notes
+            half = float(axial["half"])
 
             def probe(radial_halves):
                 origin = center + normal * 30.0

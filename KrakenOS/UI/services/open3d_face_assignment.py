@@ -66,6 +66,12 @@ def _base_optical_axis_id(axis_id) -> str:
     return text[:index] if index != -1 else text
 
 
+# bugs/0543: the auto floor seat's "substantial plate" tolerance -- a bin must carry
+# at least this fraction of the peak per-bin area to count as a plate (cables and thin
+# brackets stay below it). A documented tolerance, not a scene constant.
+_LED_FLOOR_MIN_AREA_FRACTION = 0.15
+
+
 class Open3DFaceAssignmentService:
     """Handle Open 3D right-click face-function assignment workflows."""
 
@@ -221,13 +227,16 @@ class Open3DFaceAssignmentService:
                 # bugs/0543 (flag_20260804_142341 "still not snap to the floor for
                 # auto, not centered as well"): the STRONGEST bin favoured a mid
                 # shelf. The floor the user means is the BOTTOM-most substantial
-                # plate: take the FARTHEST bin carrying at least 15 % of the peak
-                # area (cables stay too thin to qualify), and centre the emitter on
-                # the HOUSING's lateral centre, not the plate's own area centroid.
+                # plate: take the FARTHEST bin carrying at least
+                # _LED_FLOOR_MIN_AREA_FRACTION of the peak area (cables stay too
+                # thin to qualify). The lateral centre comes from AUTHORED optical
+                # semantics when available -- the LED's clear-aperture OPENING is
+                # the port the emitter must sit under (a coaxial illuminator centres
+                # on its window, not on the connector-skewed bounding box).
                 peak = float(np.max(weights))
                 best_bin = None
                 for candidate in range(bins):
-                    if float(weights[candidate]) >= 0.15 * peak:
+                    if float(weights[candidate]) >= _LED_FLOOR_MIN_AREA_FRACTION * peak:
                         best_bin = int(candidate)
                         break
                 if best_bin is None:
@@ -237,7 +246,16 @@ class Open3DFaceAssignmentService:
                     station = float(
                         np.average(far_stations[in_bin], weights=far_areas[in_bin])
                     )
-                    lateral_center = led_center - axis * float(led_center @ axis)
+                    lateral_anchor = led_center
+                    try:
+                        ca_center, _ca_normal = self._clear_aperture_opening_center_normal("led")
+                        if ca_center is not None:
+                            candidate_anchor = np.asarray(ca_center, dtype=float).reshape(-1)[:3]
+                            if candidate_anchor.size >= 3 and np.all(np.isfinite(candidate_anchor)):
+                                lateral_anchor = candidate_anchor
+                    except Exception:
+                        pass
+                    lateral_center = lateral_anchor - axis * float(lateral_anchor @ axis)
                     floor_center = lateral_center + axis * station
                     # bugs/0540 (flag_20260804_124129 "still not seat correctly"): the
                     # first cut EMITTED TOWARD THE OBJECT CENTRE, tilting the panel
