@@ -124,13 +124,29 @@ def run_checks() -> tuple[bool, list[str]]:
             led_center = np.asarray(
                 [(bounds[0] + bounds[1]) / 2, (bounds[2] + bounds[3]) / 2, (bounds[4] + bounds[5]) / 2]
             )
-            axis = obj - led_center
+            # bugs/0545: the reference axis is the OBJECT LEG (object - splitter),
+            # the same optical axis the seat uses -- not the connector-skewed bbox.
+            anchor = led_center
+            try:
+                bs_row = app._promoted_optical_solid_row_index("optical")
+                if bs_row is not None:
+                    anchor = np.asarray(
+                        _tree.row_world_pose(app.rows, int(bs_row)), float
+                    ).reshape(-1)[:3]
+            except Exception:
+                anchor = led_center
+            axis = obj - anchor
             axis = axis / np.linalg.norm(axis)
             # bugs/0543: the floor = the BOTTOM-most substantial plate, centred on the
             # housing's lateral centre, emission snapped to the optical axis.
             inside = all(bounds[i * 2] - 2.0 <= origin[i] <= bounds[i * 2 + 1] + 2.0 for i in range(3))
             far_half = float(np.dot(origin - led_center, axis)) < 0.0
-            centered = abs(float(origin[1])) <= 2.0
+            # bugs/0545: centred = ON THE OPTICAL-AXIS LINE (distance from the leg
+            # through the object), not merely y=0 -- the bbox-tilted axis put the
+            # emitter 15 mm off the dashed axis while y stayed 0.
+            rel = origin - obj
+            lateral_off = float(np.linalg.norm(rel - axis * float(np.dot(rel, axis))))
+            centered = lateral_off <= 2.0
             aims_at_object = float(np.dot(direction, obj - origin)) > 0.0
             axis_snapped = float(np.dot(direction, axis)) >= float(np.cos(np.radians(2.0)))
             if inside and far_half and aims_at_object and centered and axis_snapped:

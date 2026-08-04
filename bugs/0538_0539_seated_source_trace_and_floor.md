@@ -122,3 +122,14 @@ connectors hang far outside it. AZ85: origin (-14.2, 0.0, 125.8) = the housing b
 plate under the port, centred, axis-aligned; verified by snapshot from the flag's own
 viewpoint. Flags 144601 ("no transmission") / 144647 were captured on the cable-seated
 build -- from there the cone misses the splitter; re-check after re-seating.
+
+## 0545 (flag_20260804_145416 "still not at the floor, still offset from center") — the saga's true root cause
+
+The search/centre axis was `object − LED-bbox-centre`: the connector-skewed bbox tilted
+it ~7°, so every station projection carried a ~15 mm lateral error — the constant
+"offset from center" through every previous round. The axis is now the OBJECT LEG
+(object − splitter pose), identical to the aim-snap's datum; the lateral centre is the
+axis line itself; and the seat sits on the bin's OBJECT-SIDE skin (the bin average sat
+mid-plate). AZ85: origin (−0.28, 0.0, 122.69) — on the optical axis to 0.3 mm, on the
+floor plate's interior skin, firing straight up; snapshot-verified from the flag's
+viewpoint. The guard now asserts distance-from-the-leg ≤ 2 mm (not merely y=0).

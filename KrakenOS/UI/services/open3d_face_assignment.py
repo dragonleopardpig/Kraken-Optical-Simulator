@@ -195,7 +195,25 @@ class Open3DFaceAssignmentService:
         if target is None or target.size < 3 or not np.all(np.isfinite(target[:3])):
             self.status_var.set("Seat on LED floor: could not resolve the object direction.")
             return
-        axis = target[:3] - led_center
+        # bugs/0545: the search axis must be the OPTICAL AXIS (the object leg,
+        # object - splitter), not object - bbox-centre -- the connector-skewed bbox
+        # tilted the axis ~7 deg and every station projection then carried a ~15 mm
+        # lateral error (the whole "offset from center" saga). Fall back to the
+        # bbox-centre direction only when no splitter exists.
+        anchor_for_axis = led_center
+        try:
+            bs_row = self.editor._promoted_optical_solid_row_index("optical")
+            if bs_row is not None:
+                from KrakenOS.UI.services import optical_axis_tree as _axis_tree
+
+                bs_pose = np.asarray(
+                    _axis_tree.row_world_pose(self.editor.rows, int(bs_row)), dtype=float
+                ).reshape(-1)[:3]
+                if bs_pose.size >= 3 and np.all(np.isfinite(bs_pose)):
+                    anchor_for_axis = bs_pose
+        except Exception:
+            anchor_for_axis = led_center
+        axis = target[:3] - anchor_for_axis
         norm = float(np.linalg.norm(axis))
         if norm <= 1e-9:
             self.status_var.set("Seat on LED floor: degenerate object direction.")
@@ -271,18 +289,15 @@ class Open3DFaceAssignmentService:
                     best_bin = int(np.argmax(weights))
                 in_bin = indices == best_bin
                 if float(np.sum(far_areas[in_bin])) > 0.0:
-                    station = float(
-                        np.average(far_stations[in_bin], weights=far_areas[in_bin])
-                    )
-                    lateral_anchor = led_center
-                    try:
-                        ca_center, _ca_normal = self._clear_aperture_opening_center_normal("led")
-                        if ca_center is not None:
-                            candidate_anchor = np.asarray(ca_center, dtype=float).reshape(-1)[:3]
-                            if candidate_anchor.size >= 3 and np.all(np.isfinite(candidate_anchor)):
-                                lateral_anchor = candidate_anchor
-                    except Exception:
-                        pass
+                    # bugs/0545 (flag_20260804_145416 "still not at the floor, still
+                    # offset from center"): (a) the bin AVERAGE sits mid-plate between
+                    # the floor's two skins -- seat on the OBJECT-SIDE skin (the bin's
+                    # station nearest the object) so the panel lies ON the interior
+                    # floor; (b) centre on the OPTICAL AXIS itself -- the authored
+                    # object-leg line -- not on bbox/CA proxies (the arrow must ride
+                    # the dashed axis a coaxial emitter belongs on).
+                    station = float(np.max(far_stations[in_bin]))
+                    lateral_anchor = target[:3] if target is not None else led_center
                     lateral_center = lateral_anchor - axis * float(lateral_anchor @ axis)
                     floor_center = lateral_center + axis * station
                     # bugs/0540 (flag_20260804_124129 "still not seat correctly"): the
