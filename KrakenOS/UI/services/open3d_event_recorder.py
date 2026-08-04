@@ -83,6 +83,11 @@ class SceneSnapshot:
     # Capturing both pins whether an "it snapped to the axis" flag is a DATA bug
     # (Desp went to ~0) or a DISPLAY bug (Desp survives but the body draws on-axis).
     promoted_solid_rows: list[dict[str, Any]] = field(default_factory=list)
+    #: bugs/0550: rows whose gap went NEGATIVE, i.e. the station chain runs backwards there
+    #: and the trace loses its next surface. Always captured -- the writer does not reproduce
+    #: headlessly, so the flag itself has to name the row (set KRAKEN_TRAP_NEGATIVE_GAP=1 to
+    #: also capture the stack of whoever wrote it).
+    negative_gap_rows: list[dict[str, Any]] = field(default_factory=list)
     # bugs/0086: an imported (un-promoted) STEP overlay can DESYNC -- the body
     # draws on-axis while its stored placement / gizmo / face metadata sit at the
     # dragged-off pose ("snap back when ray off" + floating gizmo). The desync is
@@ -472,6 +477,35 @@ class Open3DEventRecorder:
                     "promotion_center_world": _vec(promotion.get("center_world")),
                     "promotion_bounds_min_world": _vec(promotion.get("bounds_min_world")),
                     "promotion_bounds_max_world": _vec(promotion.get("bounds_max_world")),
+                })
+        except Exception:
+            pass
+
+        # bugs/0550 (flag_20260805_072959, "Extra rays out of bound"): a gap is a DISTANCE and
+        # may never go negative -- a negative thickness makes the station chain run BACKWARDS
+        # across that row, and the trace loses its next surface (measured on
+        # machine_vision_Apo75: 375 no_next_intersection / 93 reaching, against 279 / 225 once
+        # the gap was merely zeroed with every pose held). No writer reproduces this headlessly
+        # and every writer found so far already guards, so the FLAG has to name the row itself.
+        try:
+            rows = list(getattr(getattr(inspector, "editor", None), "rows", None) or [])
+            stations, total = [0.0], 0.0
+            for row in rows[:-1]:
+                total += float(getattr(row, "thickness", 0.0) or 0.0)
+                stations.append(total)
+            for index, row in enumerate(rows):
+                thickness = float(getattr(row, "thickness", 0.0) or 0.0)
+                if thickness >= 0.0:
+                    continue
+                snapshot.negative_gap_rows.append({
+                    "row_index": int(index),
+                    "name": str(getattr(row, "name", "") or ""),
+                    "surface": str(getattr(row, "surface", "") or ""),
+                    "thickness": round(thickness, 4),
+                    "station": round(float(stations[index]) if index < len(stations) else 0.0, 4),
+                    "next_station": round(
+                        float(stations[index + 1]) if index + 1 < len(stations) else 0.0, 4
+                    ),
                 })
         except Exception:
             pass

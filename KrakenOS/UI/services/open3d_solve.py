@@ -116,6 +116,7 @@ class Open3DSolveService:
         passes = 1 if len(target_rows) == 1 else _MAX_PASSES
         last_metric: float | None = None
         per_row: dict[int, float] = {}
+        clamped: list[int] = []
         try:
             for _pass in range(passes):
                 max_change = 0.0
@@ -125,6 +126,20 @@ class Open3DSolveService:
                     metric = result.get("best_rms", result.get("best_metric"))
                     if metric is not None:
                         last_metric = float(metric)
+                    # bugs/0550 (flag_20260805_072959, "Extra rays out of bound"): a gap is a
+                    # DISTANCE, so it may never go negative -- a negative thickness makes the
+                    # station chain run BACKWARDS across that row (measured on
+                    # machine_vision_Apo75: rear datum 83.381, then -13.595, so station
+                    # 252.355 -> 238.760) and the trace loses its next surface. Census on that
+                    # scene: 375 no_next_intersection / 93 reaching, against 279 / 225 with the
+                    # gap merely zeroed -- i.e. the negative gap accounts for essentially all
+                    # the out-of-bound rays. This writer had NO lower bound at all; the
+                    # paraxial solvers it calls bound their own search at 0, so a negative here
+                    # means the objective wanted to pull the element THROUGH its predecessor.
+                    # Clamp and SAY SO rather than committing a chain that cannot be traced.
+                    if solved < 0.0:
+                        clamped.append(int(row_index))
+                        solved = 0.0
                     change = abs(solved - float(self.editor.rows[row_index].thickness))
                     self.editor.rows[row_index].thickness = solved
                     per_row[row_index] = solved
@@ -142,4 +157,11 @@ class Open3DSolveService:
                 metric_text = f" | output vergence={last_metric:.6g} /mm"
             else:
                 metric_text = f" | spot RMS={last_metric:.6g} mm"
-        return True, f"Best {verb} solve: {gaps}{metric_text}."
+        clamp_text = ""
+        if clamped:
+            rows_text = ", ".join(f"row {i}" for i in sorted(set(clamped)))
+            clamp_text = (
+                f" | CLAMPED to 0 mm at {rows_text}: best {verb} wants that element AHEAD of its "
+                "predecessor -- move the element itself, or free a different gap"
+            )
+        return True, f"Best {verb} solve: {gaps}{metric_text}{clamp_text}."

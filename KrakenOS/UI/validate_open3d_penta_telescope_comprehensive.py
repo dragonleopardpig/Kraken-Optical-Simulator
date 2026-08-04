@@ -15539,6 +15539,10 @@ phase_433_swap_keeps_inblock_solid = _phase_from_standalone(
     433, "a promoted solid inside the lens block is re-seated by the swap, not a veto (0546)",
     "KrakenOS.UI.validate_open3d_0546_swap_keeps_inblock_solid",
     "swap_keeps_inblock_solid")
+phase_435_no_negative_gap = _phase_from_standalone(
+    435, "a Variable-thickness solve can never commit a negative gap (0550)",
+    "KrakenOS.UI.validate_open3d_0550_no_negative_gap",
+    "no_negative_gap")
 phase_434_swap_keeps_frozen_leg = _phase_from_standalone(
     434, "a swap re-bakes the replacement lens block onto the frozen leg (0547)",
     "KrakenOS.UI.validate_open3d_0547_swap_keeps_frozen_leg",
@@ -16024,6 +16028,7 @@ def main() -> int:
             phase_432_illumination_rays_master_toggle,
             phase_433_swap_keeps_inblock_solid,
             phase_434_swap_keeps_frozen_leg,
+            phase_435_no_negative_gap,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

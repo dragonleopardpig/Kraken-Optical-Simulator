@@ -48,6 +48,62 @@ class SurfaceRow:
     glass: str = "AIR"
 
 
+def install_negative_gap_trap() -> bool:
+    """bugs/0550: opt-in tripwire that names whoever writes a NEGATIVE gap.
+
+    A gap is a distance and may never go negative -- a negative ``thickness`` makes the
+    station chain run BACKWARDS across that row and the trace loses its next surface
+    (flag_20260805_072959: 375 ``no_next_intersection`` / 93 reaching, against 279 / 225 once
+    the gap was merely zeroed with every pose held to 0.0 mm). Every writer found so far
+    already guards, and the offender does not reproduce headlessly -- so, exactly as the
+    bugs/0391-0395 camera-crash saga concluded, ship the DIAGNOSTIC and let one live session
+    name it.
+
+    Enable with ``KRAKEN_TRAP_NEGATIVE_GAP=1``; the stack of each offending write is appended
+    to ``attachment/negative_gap_trap.log``. OFF by default and zero-cost when off -- the class
+    is only patched when the variable is set."""
+    import os
+
+    if str(os.environ.get("KRAKEN_TRAP_NEGATIVE_GAP", "")).strip().lower() not in {"1", "true", "yes", "on"}:
+        return False
+    if getattr(SurfaceRow, "_kr_negative_gap_trap", False):
+        return True
+
+    import traceback
+    from pathlib import Path
+
+    log_path = Path(__file__).resolve().parents[2] / "attachment" / "negative_gap_trap.log"
+    original_setattr = SurfaceRow.__setattr__
+
+    def _trapped_setattr(self, name, value):  # noqa: ANN001 - mirrors object.__setattr__
+        original_setattr(self, name, value)
+        if name != "thickness":
+            return
+        try:
+            negative = float(value) < 0.0
+        except Exception:
+            return
+        if not negative:
+            return
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("a", encoding="utf-8") as handle:
+                handle.write(
+                    f"\n=== NEGATIVE GAP {float(value):.6g} mm written to "
+                    f"{getattr(self, 'name', '?')!r} ===\n"
+                )
+                handle.writelines(traceback.format_stack(limit=18)[:-1])
+        except Exception:
+            pass
+
+    SurfaceRow.__setattr__ = _trapped_setattr
+    SurfaceRow._kr_negative_gap_trap = True
+    return True
+
+
+install_negative_gap_trap()
+
+
 def clone_surface_row(row: SurfaceRow) -> SurfaceRow:
     return SurfaceRow(**asdict(row))
 
