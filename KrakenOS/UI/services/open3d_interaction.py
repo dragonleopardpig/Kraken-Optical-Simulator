@@ -877,6 +877,12 @@ class Open3DInteractionService:
         # pick set, so hovering it never highlighted. Include it so it gets the
         # same gold hover affordance as the rotate/translate handles.
         handle_keys.update(set(getattr(self, "_actor_placement_move_map", {}) or {}))
+        # bugs/0536 (user: "hover the gizmo not highlighting the arrow, background
+        # STEP got highlighted instead"): the 0426 scene-source MOVE arrows were the
+        # next handle family missing from this set -- the 0019 lesson again. With
+        # them in the list the arrow gets the gold affordance and the face hover
+        # underneath stays quiet.
+        handle_keys.update(set(getattr(self, "_actor_source_move_map", {}) or {}))
         if not handle_keys:
             return None, None, -1
         pick_from_list = False
@@ -1306,6 +1312,18 @@ class Open3DInteractionService:
                         row_index, axis, _delta = placement_move
                         self.status_var.set(
                             f"S{int(row_index)} move handle: hold-drag {str(axis).upper()} to slide."
+                        )
+                        return
+                    source_move = self._actor_source_move_map.get(actor_key) if actor_key is not None else None
+                    if source_move is not None:
+                        # bugs/0536: the 0426 source arrows join the handle-hover family --
+                        # gold affordance on the arrow, no face highlight underneath.
+                        self._set_step_hover_outline(None, None)
+                        self._set_rotation_handle_hover(actor_key)
+                        self._update_hover_status("", render=False)
+                        source_id, axis, _delta = source_move
+                        self.status_var.set(
+                            f"Source {source_id} move handle: hold-drag {str(axis).upper()} to slide the LED."
                         )
                         return
                     self._set_rotation_handle_hover(None)

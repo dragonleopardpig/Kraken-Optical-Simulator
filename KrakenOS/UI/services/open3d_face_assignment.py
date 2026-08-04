@@ -81,6 +81,50 @@ class Open3DFaceAssignmentService:
             return
         setattr(self._inspector, name, value)
 
+    def _seat_source_on_face_from_context(self, source_id: str, center, normal) -> None:
+        """bugs/0536: seat an illumination source ON a picked STEP face.
+
+        Origin = the face centre plus a small standoff along the emission normal;
+        emission = the face normal with its sign chosen to aim INTO the housing
+        (toward the promoted splitter when one exists, else toward the object row) --
+        the outward CAD normal is the wrong hemisphere exactly half the time.
+        """
+        sid = str(source_id or "").strip()
+        try:
+            c = np.asarray(center, dtype=float).reshape(-1)[:3]
+            n = np.asarray(normal, dtype=float).reshape(-1)[:3]
+        except Exception:
+            c = n = np.asarray([], dtype=float)
+        norm = float(np.linalg.norm(n)) if n.size >= 3 else 0.0
+        if not sid or c.size < 3 or norm <= 1e-9 or not np.all(np.isfinite(c[:3])) or not np.isfinite(norm):
+            self.status_var.set("Seat source: no usable face under the cursor.")
+            return
+        n = n / norm
+        target = None
+        try:
+            from KrakenOS.UI.services import optical_axis_tree as _tree
+
+            bs_row = self.editor._promoted_optical_solid_row_index("optical")
+            if bs_row is not None:
+                target = np.asarray(
+                    _tree.row_world_pose(self.editor.rows, int(bs_row)), dtype=float
+                ).reshape(-1)[:3]
+            if target is None or target.size < 3 or not np.all(np.isfinite(target[:3])):
+                target = np.asarray(
+                    _tree.row_world_pose(self.editor.rows, 0), dtype=float
+                ).reshape(-1)[:3]
+        except Exception:
+            target = None
+        if target is not None and target.size >= 3 and float(np.dot(n, target[:3] - c[:3])) < 0.0:
+            n = -n
+        # Delegate the write to the 0363 seat (spec keys + history + rebuild); the
+        # pre-signed normal with aim_inward=False keeps the toward-splitter aim, and
+        # the 0.5 mm standoff lifts the emitter off the PCB face.
+        origin = c[:3] + n * 0.5
+        applied = self.editor.seat_scene_source_on_face(sid, origin, n, aim_inward=False)
+        if not applied:
+            self.status_var.set(f"Seat source: {sid} was not found in the scene sources.")
+
     def _show_surface_function_context_menu(self, event) -> str:
         le = _layout_module()
         STEP_OVERLAY_LABEL_SET = le.STEP_OVERLAY_LABEL_SET
@@ -413,6 +457,34 @@ class Open3DFaceAssignmentService:
                     picked_label, picked_center
                 ),
             )
+            # bugs/0536 (flag_20260804_102722 "snap it to the LED floor?"): the 0363
+            # "Seat {source} on This Face" glue existed only on PROMOTED-solid faces,
+            # so the LED housing floor -- a decoration STEP face, the one place the
+            # user actually wants the emitter -- never offered it. List it here too,
+            # with the emission aimed INTO the housing (toward the splitter) instead
+            # of 0363's blind -normal, so either side of the floor face works.
+            try:
+                _seat_normal = np.asarray(normal, dtype=float).reshape(-1)[:3].copy()
+            except Exception:
+                _seat_normal = np.asarray([], dtype=float)
+            if _seat_normal.size >= 3 and np.all(np.isfinite(_seat_normal[:3])):
+                try:
+                    _seat_sources = self.editor._drawable_scene_source_descriptors() or []
+                except Exception:
+                    _seat_sources = []
+                for _seat_source in _seat_sources:
+                    _seat_sid = str(getattr(_seat_source, "source_id", "") or "")
+                    if not _seat_sid:
+                        continue
+                    _seat_name = str(
+                        (getattr(_seat_source, "settings", {}) or {}).get("name", _seat_sid) or _seat_sid
+                    )
+                    menu.add_command(
+                        label=f"Seat {_seat_name} on This Face",
+                        command=lambda sid=_seat_sid, c=face_center[:3].copy(), n=_seat_normal.copy(): self._seat_source_on_face_from_context(
+                            sid, c, n
+                        ),
+                    )
             # bugs/0333: when the cursor is over a clear-aperture OPENING, offer a
             # center + normal snap that uses the OPENING's own centroid + normal (not
             # the recessed face behind the hole). Arms the axis-pick machine so the
