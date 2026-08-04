@@ -139,7 +139,23 @@ class Open3DFaceAssignmentService:
         The floor is unreachable by a plain right-click (the pick ray hits the outer
         wall first), so resolve it geometrically: the LED body's bounding face farthest
         OPPOSITE the object direction, emitting back toward the object (through the
-        splitter). The gizmo remains for fine adjustment."""
+        splitter). The gizmo remains for fine adjustment. Reports any failure through
+        status + debug (a silent Tk-callback death looked like "not functioning")."""
+        try:
+            self._seat_source_on_led_floor_auto_impl(source_id)
+        except Exception as exc:
+            message = str(exc).strip() or exc.__class__.__name__
+            self.status_var.set(f"Seat on LED floor failed: {message[:120]}")
+            try:
+                self.editor.append_debug(f"Seat on LED floor failed for {source_id}: {exc}")
+            except Exception:
+                pass
+
+    def _seat_source_on_led_floor_auto_impl(self, source_id: str) -> None:
+        self._debug_trace(
+            "seat_source_on_led_floor_invoke",
+            source_id=str(source_id),
+        )
         sid = str(source_id or "").strip()
         mesh = None
         try:
@@ -190,7 +206,26 @@ class Open3DFaceAssignmentService:
         emission = the face normal with its sign chosen to aim INTO the housing
         (toward the promoted splitter when one exists, else toward the object row) --
         the outward CAD normal is the wrong hemisphere exactly half the time.
+
+        bugs/0537 follow-up: a menu-command exception dies as a silent Tk callback
+        error ("right click seat still not functioning" with zero forensics), so the
+        whole body reports through status + debug instead of raising.
         """
+        try:
+            self._seat_source_on_face_impl(source_id, center, normal)
+        except Exception as exc:
+            message = str(exc).strip() or exc.__class__.__name__
+            self.status_var.set(f"Seat source failed: {message[:120]}")
+            try:
+                self.editor.append_debug(f"Seat source on face failed for {source_id}: {exc}")
+            except Exception:
+                pass
+
+    def _seat_source_on_face_impl(self, source_id: str, center, normal) -> None:
+        self._debug_trace(
+            "seat_source_on_face_invoke",
+            source_id=str(source_id),
+        )
         sid = str(source_id or "").strip()
         try:
             c = np.asarray(center, dtype=float).reshape(-1)[:3]
@@ -596,6 +631,15 @@ class Open3DFaceAssignmentService:
                             sid, c, n
                         ),
                     )
+                    # bugs/0537 follow-up: the floor itself is pick-unreachable (the ray
+                    # stops at the outer wall), so offer the AUTO floor seat on every
+                    # LED face menu as well -- whatever the user right-clicks, the goal
+                    # gesture is one entry away.
+                    if step_label == "led":
+                        menu.add_command(
+                            label=f"Seat {_seat_name} on the LED floor (auto)",
+                            command=lambda sid=_seat_sid: self._seat_source_on_led_floor_auto(sid),
+                        )
             # bugs/0333: when the cursor is over a clear-aperture OPENING, offer a
             # center + normal snap that uses the OPENING's own centroid + normal (not
             # the recessed face behind the hole). Arms the axis-pick machine so the

@@ -26,3 +26,18 @@ def line (its body was absorbed into the new method); restored.
 
 `validate_open3d_0537_source_glyph_menu.py` (penta phase 431): glyph menu wired before
 the dead-end (fake-picker drive) + the auto seat's far-plane/aim assertions.
+
+## Round 2 (flag_20260804_115107 "right click seat still not functioning", build a1ee867e)
+
+The matched-window replay of the recorded right-click (LED STEP F006, the housing wall)
+shows the menu WITH "Seat Illumination LED 1 on This Face", and invoking it seats the
+source correctly — the machinery works end-to-end headless; the live failure left no
+forensics (menu-entry clicks are not recorded, the logs rotate on inspector init, and a
+menu-command exception dies as a silent Tk callback error).
+
+Hardening + discoverability so the next attempt cannot be silent or missed:
+- both seat handlers wrap their bodies: any failure now prints "Seat ... failed: <reason>"
+  in the status bar AND the debug log, and `_debug_trace` records every invoke;
+- "Seat {name} on the LED floor (auto)" now appears in ALL THREE menus: the source
+  glyph's menu, every LED face menu, and the browser's source right-click (next to
+  "Edit Source…" — the place the user demonstrably works).

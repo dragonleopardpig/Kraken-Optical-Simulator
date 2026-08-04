@@ -1088,6 +1088,14 @@ class Open3DStepAdminPanel:
         if added_actions:
             menu.add_separator()
         if source_id is not None:
+            # bugs/0537 follow-up ("right click seat still not functioning"): the seat
+            # must be reachable from the place the user demonstrably works -- the
+            # browser row they used to CREATE the source. Auto-resolves the housing
+            # floor; no face pick involved.
+            menu.add_command(
+                label="Seat on the LED floor (auto)",
+                command=lambda sid=source_id: self.inspector._face_assignment_service()._seat_source_on_led_floor_auto(sid),
+            )
             # bugs/0363: the general 3D source element -- edit dims/aim/position in place.
             menu.add_command(
                 label="Edit Source…",
