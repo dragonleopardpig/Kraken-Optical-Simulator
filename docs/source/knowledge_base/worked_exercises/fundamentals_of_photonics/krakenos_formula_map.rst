@@ -496,6 +496,139 @@ numbers from *Photonics Essentials*, for which these teaching helpers were
 originally written; :eq:`fop-kraken-photodiode-iv` is the corresponding
 equation in *Fundamentals of Photonics*.
 
+Reverse audit: KrakenOS code outside this textbook
+--------------------------------------------------
+
+**Yes.** The map above starts with the PDF and asks whether KrakenOS has a
+matching implementation. The reverse question, starting with KrakenOS and
+looking for a formula in the PDF, exposes substantial code with no direct
+match. This is expected: the book develops photonics, whereas KrakenOS also
+has to construct, trace, assess, optimize, import, and display complete optical
+systems.
+
+The audit below covers the production Python packages under ``KrakenOS``.
+Examples, validation scripts, and tests are not counted as separate physics
+capabilities. A row marked **outside** means that no equation or algorithm
+corresponding to the KrakenOS implementation was found in this edition. It
+does not mean that the code contradicts the book or has no optical use.
+
+.. list-table:: KrakenOS capabilities with no direct formula match
+   :header-rows: 1
+   :widths: 20 32 48
+
+   * - Capability
+     - Principal code
+     - Relationship to the PDF
+   * - **Sequential and non-sequential trace orchestration**
+     - ``KrakenSys.py``, ``TraceLoopTool.py``, ``RayKeeper.py``, and
+       ``TraceEvents.py``
+     - The branch queue, reflected/transmitted child paths, nested-solid media
+       state, hit limits, stall rejection, terminal events, provenance, batch
+       execution, and saved trace records are **outside**. Snell, Fresnel,
+       attenuation, and OPL at each interaction remain direct textbook
+       matches; the software architecture joining those laws is not a book
+       formula.
+   * - **Engineering surfaces and exact intersections**
+     - ``MathShapesClass.py``, ``SurfTools.py``, ``HitOnSurf.py``,
+       ``InterNormalCalc.py``, ``MeshRayTrace.py``, ``UDA.py``, and
+       ``Prerequisites3D.py``
+     - The PDF includes an exercise about an aberration-free aspherical
+       imaging surface, but not KrakenOS' Zemax-style conic-polynomial sag,
+       axicon, user-function, sampled error-map, and Zernike sag conventions.
+       Its finite-difference normals, Newton intersection, arbitrary aperture,
+       triangle-mesh, STL, STEP/BREP-face, and face-identity algorithms are
+       **outside**.
+   * - **Diffuse and measured surface scatter**
+     - ``KrakenSys.py`` and ``scatter_backend.py``
+     - The PDF discusses Rayleigh scattering and describes an LED as
+       Lambertian, but it does not develop the implemented Lambertian,
+       cosine-lobe, Oren--Nayar, or pySCATMECH BRDF reflection models. The
+       deterministic scatter-child sampler and BRDF branch weighting are
+       **outside** this textbook.
+   * - **Optical-design aberration workflows**
+     - ``SeidelTool.py``, ``PupilTool.py``, ``PhaseCalc.py``,
+       ``SphericalPSFCalc.py``, ``WavefrontFit.py``, ``LibRMS.py``, and
+       ``PSFMap.py``
+     - Chapter 4 supports the general wavefront, pupil, PSF, and MTF ideas, but
+       it does not provide KrakenOS' Seidel sums, Zernike least-squares fit,
+       reference-sphere construction, pupil ray aiming, best-focus solve, or
+       wide-field map algorithms. The PDF's ``Zernike`` references are to the
+       Van Cittert--Zernike coherence theorem, not the optical-design Zernike
+       polynomial implementation.
+   * - **Captured-target MTF measurement**
+     - ``EdgeMTF.py`` and ``USAFMTF.py``
+     - MTF itself is a Chapter 4 match. Extracting an edge-spread function from
+       a slanted-edge camera image and fitting USAF-1951 three-bar regions are
+       **outside**: they are metrology and image-data reduction procedures,
+       not the book's pupil-to-OTF derivation.
+   * - **Lens optimization and manufacturing tolerance**
+     - ``Optimization/`` and ``UI/services/tolerance_modeling.py``
+     - Variables, bounds, weighted merit operands, invalid-trace penalties,
+       the pygmo backend, sensitivity reports, compensators, and Monte Carlo
+       manufacturing trials have no matching optical-design algorithm in the
+       PDF. Uses of the ordinary words *optimization* and *tolerance* in the
+       book concern individual physics problems, not these KrakenOS engines.
+   * - **Atmospheric refractivity and astronomical refraction**
+     - ``AstroAtmosphere/``
+     - Chapter 5 explains material dispersion, but the Barrell--Sears,
+       Ciddor, Edlen, Owens, Mathar, SLALIB, observatory-condition, zenith
+       refraction, and atmospheric-dispersion models are **outside** this PDF.
+   * - **Ray-source sampling and prescription infrastructure**
+     - ``SourceRand.py``, ``LensCat.py``, ``SystemTools.py``, and
+       ``SetupClass.py``
+     - Some chosen source distributions can represent radiation patterns
+       mentioned in the book. The solid-angle random sampler, pupil patterns,
+       glass and coating catalog readers, Zemax decoding, material lookup, and
+       prescription construction are software/data conventions with no direct
+       equation match.
+   * - **CAD workbench, UI, import/export, and acceleration**
+     - ``UI/``, ``Display.py``, and ``gpu_backend.py``
+     - Scene editing, Open3D interaction, CAD placement and promotion, camera
+       databases, reports, file persistence, layout import/export, plotting,
+       event recording, caches, and CPU/GPU array dispatch are **outside**.
+       They expose or accelerate models; they are not additional photonics
+       formulae.
+
+Related or derived, but not literal equations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A second group should not be labelled wholly outside. These functions combine
+or invert textbook relations, add empirical data, or implement a numerical
+estimator that the PDF does not state in the same form:
+
+.. list-table:: Derived engineering utilities
+   :header-rows: 1
+   :widths: 34 66
+
+   * - Code
+     - Why it is not a literal match
+   * - ``Abbe_refractive_correction`` in ``Physics/optics.py``
+     - Section 5.5 defines the Abbe number
+       :math:`V=(n_d-1)/(n_F-n_C)`. KrakenOS uses it in an added linear
+       wavelength estimate; that interpolation formula is not supplied by the
+       PDF.
+   * - ``required_source_log10_power`` and the slab inverse helpers in
+       ``Physics/photodiode.py``
+     - They rearrange the matched exponential absorption law and work in the
+       logarithmic domain, then combine it with empirical silicon optical
+       properties. They are useful engineering inverses, not separate
+       numbered textbook equations.
+   * - ``gaussian_mode_overlap`` in ``BranchField.py``
+     - It evaluates a normalized sampled inner product between a field and a
+       TEM00 target. The PDF develops complex fields and Gaussian modes, but
+       no identical mode-overlap utility was found.
+   * - ``CoatingFun`` in ``KrakenSys.py``
+     - It interpolates user-supplied angle/wavelength coating tables. Chapter
+       7 develops layered-media physics, but table interpolation is not a
+       multilayer transfer-matrix solver and cannot be assigned the chapter's
+       coating equations.
+
+The practical boundary is therefore **interaction physics versus simulator
+engineering**. A traced branch may use several directly matched equations,
+while the mechanisms that find its CAD hit, decide its next scene object,
+retain its media state, measure its image, and optimize the prescription are
+KrakenOS capabilities beyond this PDF.
+
 A short code-to-book workflow
 -----------------------------
 
