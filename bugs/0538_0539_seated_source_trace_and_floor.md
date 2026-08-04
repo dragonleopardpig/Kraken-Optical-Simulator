@@ -95,3 +95,18 @@ the user before touching their scene's physics.
 - **"right click works only after toggling clipped" (133253)**: OPEN -- suspected
   right-click dead zone while the async/selection trace swaps actors; needs a live
   repro with the now-fast default preview.
+
+## 0543 (flags 142341 / 142524 / 142623)
+
+- **"still not snap to the floor for auto, not centered"** -- the auto floor now takes
+  the BOTTOM-most bin carrying >= 15 % of the peak area (cables stay too thin to
+  qualify; the mid shelf no longer wins) and centres the emitter on the housing's
+  lateral centre: origin (-17.4, 0.0, 144.5) = the outer bottom plane, centred,
+  emission axis-snapped straight up. Guard updated (phase 431).
+- **"All rays now turn green"** -- NOT reproduced headless (source + toggle OFF keeps
+  the field palette: 124 green / 62 cyan / 62 orange over 9 field bundles). Needs a
+  recording on the next build if it persists.
+- **"snap to face only works after toggle clipped overlay" (142524) + "illumination
+  overlay rays seem clipped themselves" (142623)** -- OPEN. New clue: a RENDER-ONLY
+  visibility refresh re-arms the right-click, so the dead state lives in the
+  renderer/pick maps between the seat's rebuild and the next actor rebuild.

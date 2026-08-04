@@ -218,15 +218,27 @@ class Open3DFaceAssignmentService:
                 bins = max(int(np.ceil(hi - lo)), 1)
                 indices = np.clip(((far_stations - lo) / max(hi - lo, 1e-9) * bins).astype(int), 0, bins - 1)
                 weights = np.bincount(indices, weights=far_areas, minlength=bins)
-                best_bin = int(np.argmax(weights))
+                # bugs/0543 (flag_20260804_142341 "still not snap to the floor for
+                # auto, not centered as well"): the STRONGEST bin favoured a mid
+                # shelf. The floor the user means is the BOTTOM-most substantial
+                # plate: take the FARTHEST bin carrying at least 15 % of the peak
+                # area (cables stay too thin to qualify), and centre the emitter on
+                # the HOUSING's lateral centre, not the plate's own area centroid.
+                peak = float(np.max(weights))
+                best_bin = None
+                for candidate in range(bins):
+                    if float(weights[candidate]) >= 0.15 * peak:
+                        best_bin = int(candidate)
+                        break
+                if best_bin is None:
+                    best_bin = int(np.argmax(weights))
                 in_bin = indices == best_bin
                 if float(np.sum(far_areas[in_bin])) > 0.0:
                     station = float(
                         np.average(far_stations[in_bin], weights=far_areas[in_bin])
                     )
-                    lateral = far_centers[in_bin] - np.outer(far_stations[in_bin], axis)
-                    lateral_mean = np.average(lateral, axis=0, weights=far_areas[in_bin])
-                    floor_center = lateral_mean + axis * station
+                    lateral_center = led_center - axis * float(led_center @ axis)
+                    floor_center = lateral_center + axis * station
                     # bugs/0540 (flag_20260804_124129 "still not seat correctly"): the
                     # first cut EMITTED TOWARD THE OBJECT CENTRE, tilting the panel
                     # whenever the object is off-axis. A PCB emits along its own

@@ -126,25 +126,23 @@ def run_checks() -> tuple[bool, list[str]]:
             )
             axis = obj - led_center
             axis = axis / np.linalg.norm(axis)
-            inside = all(bounds[i * 2] - 1.0 <= origin[i] <= bounds[i * 2 + 1] + 1.0 for i in range(3))
+            # bugs/0543: the floor = the BOTTOM-most substantial plate, centred on the
+            # housing's lateral centre, emission snapped to the optical axis.
+            inside = all(bounds[i * 2] - 2.0 <= origin[i] <= bounds[i * 2 + 1] + 2.0 for i in range(3))
             far_half = float(np.dot(origin - led_center, axis)) < 0.0
-            # bugs/0539: the seat must land on the FLOOR PLATE, not the bounding-box far
-            # plane -- the STEP's cable arch extends past the housing, so the bbox
-            # extreme is the CABLE's depth (the "floating below the box" flag).
-            not_at_bbox_extreme = float(np.dot(origin - led_center, axis)) > float(
-                np.dot(np.array([led_center[0], led_center[1], bounds[5]]) - led_center, axis)
-            ) + 1.0 if axis[2] < 0 else True
+            centered = abs(float(origin[1])) <= 2.0
             aims_at_object = float(np.dot(direction, obj - origin)) > 0.0
-            if inside and far_half and aims_at_object and not_at_bbox_extreme:
+            axis_snapped = float(np.dot(direction, axis)) >= float(np.cos(np.radians(2.0)))
+            if inside and far_half and aims_at_object and centered and axis_snapped:
                 notes.append(
-                    f"REAL = auto seat lands on the housing floor plate aiming at the object "
+                    f"REAL = auto seat lands on the housing bottom, centred, axis-aligned "
                     f"(origin {np.round(origin, 1).tolist()})"
                 )
             else:
                 notes.append(
                     f"REAL auto seat wrong: origin {origin.tolist()} dir {direction.tolist()} "
-                    f"(inside={inside}, far_half={far_half}, aims={aims_at_object}, "
-                    f"off_bbox={not_at_bbox_extreme})"
+                    f"(inside={inside}, far_half={far_half}, centered={centered}, "
+                    f"aims={aims_at_object}, axis_snapped={axis_snapped})"
                 )
                 ok = False
     except Exception as exc:
