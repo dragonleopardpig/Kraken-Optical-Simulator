@@ -16,7 +16,9 @@ parameters, and check needed to reproduce it.
 Each solution defines its local notation, names and links the mathematical
 identities it uses, shows numbered working where equations are involved, and
 ends with a verification.  The shared formula catalogue is available in
-:doc:`mathematical_formula_reference`.
+:doc:`mathematical_formula_reference`.  The :doc:`krakenos_formula_map`
+connects the book's equations to their KrakenOS implementations and records
+the simulator's conventions and coverage limits.
 
 Each worked item initially shows a **Brief solution** containing the method,
 the decisive calculation step, and the answer.  Use **Show detailed steps**
@@ -37,6 +39,7 @@ retain the compact structured presentation.
    :maxdepth: 1
 
    mathematical_formula_reference
+   krakenos_formula_map
 
 Part I — Fundamentals
 ---------------------
