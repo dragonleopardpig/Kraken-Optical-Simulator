@@ -569,6 +569,29 @@ def ray_path_has_non_refractive_steering(path: Any) -> bool:
     return False
 
 
+def ray_path_is_splitter_rebounce_ghost(path: Any) -> bool:
+    """bugs/0531: True when two CONSECUTIVE surface events are splitter interactions on
+    the SAME surface -- the ray re-bounced inside the splitter it had just crossed
+    (e.g. ``S3/transmit -> S3/reflect``, the cube's ~25% double-bounce ghost arm)
+    without touching anything else in between. Distinct from the legitimate coaxial
+    double-pass (split -> scatter at the object -> split again, bugs/0184), whose second
+    splitter visit follows an intervening interaction and stays an authored branch.
+    """
+    previous_split_surface = None
+    for event in list(getattr(path, "events", []) or []):
+        if str(getattr(event, "event_kind", "") or "") != "surface":
+            continue
+        event_type = str(getattr(event, "event_type", "") or "").strip().lower()
+        surface = str(getattr(event, "surface_id", "") or "")
+        if event_type.startswith("split"):
+            if previous_split_surface is not None and previous_split_surface == surface:
+                return True
+            previous_split_surface = surface
+        else:
+            previous_split_surface = None
+    return False
+
+
 def ray_path_has_diffuse_scatter(path: Any) -> bool:
     """Return whether a ray path underwent a diffuse (non-deterministic) scatter.
 
@@ -653,6 +676,15 @@ def ray_path_visible_without_clipping_from_events(path: Any) -> bool:
         # NO detector to land on (escaped/``no_hit``) or one absorbed on a surface (a beam
         # dump) is authored and stays visible.
         if status in ("stopped", "missed_detector"):
+            return False
+        # bugs/0531 (flag_20260804_082939 "clipped overlays is off, still have spurious
+        # reflected beam"): a consecutive double interaction at the SAME splitter
+        # (``S3/transmit -> S3/reflect``, ~25% power) is the cube's internal re-bounce
+        # ghost, not an authored second path -- hide it with clipping OFF like any other
+        # stray. A ghost that DOES land on the detector is real veiling glare and stays
+        # (the hit_detector return above); the 0018 single-steer second path and the
+        # 0184 coaxial double-pass (split -> scatter -> split) are untouched.
+        if ray_path_is_splitter_rebounce_ghost(path):
             return False
         return True
     if status:

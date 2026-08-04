@@ -15507,6 +15507,10 @@ phase_425_clipped_ray_teleport = _phase_from_standalone(
     425, "escaped strays are not teleported onto a far detector plane (0530)",
     "KrakenOS.UI.validate_open3d_0530_clipped_ray_teleport",
     "clipped_ray_teleport")
+phase_426_splitter_rebounce_ghost = _phase_from_standalone(
+    426, "the splitter re-bounce ghost hides with clipping OFF (0531)",
+    "KrakenOS.UI.validate_open3d_0531_splitter_rebounce_ghost_hidden",
+    "splitter_rebounce_ghost")
 
 
 # ---------------------------------------------------------------------------
@@ -15979,6 +15983,7 @@ def main() -> int:
             phase_423_gizmo_lens_drag_refocuses,
             phase_424_lens_drag_single_undo,
             phase_425_clipped_ray_teleport,
+            phase_426_splitter_rebounce_ghost,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
