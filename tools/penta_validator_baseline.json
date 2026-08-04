@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-08-04T01:34:53+00:00",
+  "generated_at": "2026-08-04T02:20:53+00:00",
   "phases": {
     "0": "pass",
     "1": "fail",
@@ -429,7 +429,8 @@
     "425": "pass",
     "426": "pass",
     "427": "pass",
-    "428": "pass"
+    "428": "pass",
+    "429": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -859,6 +860,7 @@
     "425": "escaped strays are not teleported onto a far detector plane (0530)",
     "426": "the splitter re-bounce ghost hides with clipping OFF (0531)",
     "427": "a solid carries at most ONE splitter plane per direction (0532)",
-    "428": "the split's reflected child exits its own solid, refracted (0533)"
+    "428": "the split's reflected child exits its own solid, refracted (0533)",
+    "429": "selecting a scene source from the browser is idempotent (0535)"
   }
 }

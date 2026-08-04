@@ -16385,6 +16385,23 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         sid = str(source_id or "").strip()
         if not sid:
             return False
+        # bugs/0535 (live report "add LED source, drag seems freezed"): every full
+        # refresh REBUILDS the browser tree, whose programmatic re-selection fires a
+        # deferred <<TreeviewSelect>> (the 0049 mechanism) that lands back here AFTER
+        # the _refreshing guard has cleared -- and this method ran refresh_from_editor
+        # unconditionally, so selecting a source self-armed an endless ~3.4 s
+        # refresh loop that swallowed every drag. Re-selecting the CURRENT source
+        # with its gizmo already up is a no-op.
+        already_selected = (
+            str(getattr(self, "_selected_source_id", "") or "") == sid
+            and getattr(self, "_placement_handle_selected_row_index", None) is None
+        )
+        try:
+            already_selected = already_selected and bool(self._show_rotation_handles())
+        except Exception:
+            already_selected = False
+        if already_selected:
+            return True
         self._selected_source_id = sid
         self._placement_handle_selected_row_index = None  # a source gizmo and a row gizmo never coexist
         try:
