@@ -705,6 +705,23 @@ class LayoutOpticalSolidWorkflowMixin:
             return OPTICAL_SOLID_FACE_PORT_INTERACTION
         return OPTICAL_SOLID_FACE_PORT_DEFAULT
 
+    @staticmethod
+    def _optical_solid_face_records_parallel(
+        face: dict[str, object], target: dict[str, object]
+    ) -> bool:
+        """bugs/0532: parallel normals regardless of plane offset — the plate's two
+        large faces; a coincident pair is handled by the share-plane test instead."""
+        try:
+            a = np.asarray(face.get("normal", (0.0, 0.0, 1.0)), dtype=float).reshape(-1)[:3]
+            b = np.asarray(target.get("normal", (0.0, 0.0, 1.0)), dtype=float).reshape(-1)[:3]
+            na = float(np.linalg.norm(a))
+            nb = float(np.linalg.norm(b))
+            if na <= 1e-9 or nb <= 1e-9:
+                return False
+            return abs(float(np.dot(a / na, b / nb))) >= 0.999
+        except Exception:
+            return False
+
     def assign_optical_solid_face_function(
         self,
         row_index: int,
@@ -768,6 +785,26 @@ class LayoutOpticalSolidWorkflowMixin:
                 elif record_face_id:
                     related_face_ids.append(record_face_id)
                 record = updated
+            elif (
+                function == "Beam Splitter"
+                and str(record.get("function", "") or "") == "Beam Splitter"
+                and self._optical_solid_face_records_parallel(record, target_record)
+            ):
+                # bugs/0532: ONE splitter plane per direction -- assigning the coating to
+                # this plane demotes a stale flag on the PARALLEL-but-distinct plane (the
+                # plate's other large face; the pre-0445 arbitrary pick left one behind,
+                # and both faces splitting 50/50 turned the plate into a lossy etalon).
+                # The user's LATEST choice wins here; the read-time normalizer only heals
+                # legacy data. Coincident planes (the cube's cemented diagonal pair) are
+                # the same_physical_face branch above; crossed planes (X-cube) don't
+                # match the parallel test.
+                record["function"] = OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT
+                record["role"] = _legacy_role_from_optical_solid_face_function(
+                    OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT
+                )
+                record = normalize_optical_solid_face_record(record)
+                if record_face_id:
+                    related_face_ids.append(f"{record_face_id} (stale splitter demoted)")
             updated_faces.append(record)
         # Preserve the "direct" provenance markers so the next metadata read
         # takes the _direct_indexed_optical_solid_face_metadata fast path,

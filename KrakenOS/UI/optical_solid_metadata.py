@@ -549,12 +549,99 @@ def normalize_optical_solid_face_metadata(
         if not isinstance(item, dict):
             continue
         output_virtual_planes.append(normalize_optical_solid_virtual_plane_record(item))
+    _demote_parallel_duplicate_splitter_planes(output_faces)
     return {
         "version": 1,
         "source_stl": str(source_stl or (value.get("source_stl", "") if isinstance(value, dict) else "")),
         "faces": output_faces,
         "virtual_planes": output_virtual_planes,
     }
+
+
+def _demote_parallel_duplicate_splitter_planes(faces: list[dict[str, object]]) -> None:
+    """bugs/0532: a solid carries at most ONE splitter PLANE per direction.
+
+    The AZ85 plate BS reached the trace with BOTH large faces flagged "Beam Splitter"
+    (a stale flag from the pre-0445 arbitrary pick surviving a later re-flag), so every
+    glass interface split 50/50 -- the trace became a lossy etalon: a ~25 % double-bounce
+    ghost band, multi-bounce chains, and a transmit dump at 25 % instead of ~48 %.
+
+    A physical plate has ONE coated plane. When two flagged planes are PARALLEL but
+    NON-COPLANAR (offsets differ beyond tolerance = distinct physical surfaces), keep the
+    0445-preferred one -- the object-facing plane (raw normal . +Z < 0), then the larger
+    area -- and demote the rest to Transmit/Port. Deliberately untouched: a COINCIDENT
+    pair (the cube's cemented diagonal: same plane, opposite normals) and CROSSED planes
+    (an X-cube's two diagonals are not parallel).
+    """
+    flagged: list[tuple[int, dict[str, object], np.ndarray, float]] = []
+    extent = 1.0
+    for index, face in enumerate(faces):
+        if not isinstance(face, dict):
+            continue
+        try:
+            area = float(face.get("area_mm2", 0.0) or 0.0)
+        except Exception:
+            area = 0.0
+        if area > 0.0:
+            extent = max(extent, float(np.sqrt(area)))
+        if str(face.get("function", "") or "") != "Beam Splitter":
+            continue
+        normal = np.asarray(face.get("normal", (0.0, 0.0, 1.0)), dtype=float).reshape(-1)[:3]
+        norm = float(np.linalg.norm(normal))
+        if normal.size < 3 or not np.isfinite(norm) or norm <= 1e-9:
+            continue
+        normal = normal / norm
+        try:
+            offset = float(face.get("plane_offset_mm", 0.0) or 0.0)
+        except Exception:
+            offset = 0.0
+        flagged.append((index, face, normal, offset))
+    if len(flagged) < 2:
+        return
+    tolerance = max(extent * 2.0e-4, 0.02)
+    # Group coincident planes (one physical surface, e.g. the cemented diagonal pair).
+    units: list[list[tuple[int, dict[str, object], np.ndarray, float]]] = []
+    for entry in flagged:
+        _idx, _face, normal, offset = entry
+        placed = False
+        for unit in units:
+            u_normal, u_offset = unit[0][2], unit[0][3]
+            aligned = abs(float(np.dot(normal, u_normal)))
+            signed = float(np.dot(normal, u_normal))
+            canonical_offset = offset if signed >= 0.0 else -offset
+            if aligned >= 0.999 and abs(canonical_offset - u_offset) <= tolerance:
+                unit.append(entry)
+                placed = True
+                break
+        if not placed:
+            units.append([entry])
+    if len(units) < 2:
+        return
+    remaining = list(units)
+    while remaining:
+        seed = remaining.pop(0)
+        parallel_group = [seed]
+        for unit in list(remaining):
+            if abs(float(np.dot(seed[0][2], unit[0][2]))) >= 0.999:
+                parallel_group.append(unit)
+                remaining.remove(unit)
+        if len(parallel_group) < 2:
+            continue
+
+        def _unit_key(unit):
+            object_facing = any(float(entry[2][2]) < 0.0 for entry in unit)
+            area = max(float(entry[1].get("area_mm2", 0.0) or 0.0) for entry in unit)
+            return (1 if object_facing else 0, area)
+
+        keeper = max(parallel_group, key=_unit_key)
+        for unit in parallel_group:
+            if unit is keeper:
+                continue
+            for _idx, face, _n, _o in unit:
+                face["function"] = OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT
+                face["role"] = legacy_role_from_optical_solid_face_function(
+                    OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT
+                )
 
 
 def auto_assign_optical_solid_face_roles(records: list[dict[str, object]]) -> list[dict[str, object]]:
