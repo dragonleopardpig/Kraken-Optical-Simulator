@@ -3080,6 +3080,11 @@ def _terminal_direction_for_detector_miss(path: RayPath3D, terminal_event: RayEv
 # within this cone of the detector normal (|cos| >= cos(80 deg)) before
 # projecting; otherwise it stays escaped with its sane traced length.
 _DETECTOR_MISS_MIN_AXIAL_COS = 0.17364817766693041  # cos(80 deg)
+# bugs/0530: a detector-plane MISS projection is a plausible local continuation only
+# within a few final-arm lengths of the detector (with a sensor-scale floor for tiny
+# arms). Beyond that the crossing is a coincidence of plane geometry, not a near-miss.
+_DETECTOR_MISS_MAX_ARM_FACTOR = 3.0
+_DETECTOR_MISS_MAX_TRAVEL_HALF_FACTOR = 6.0
 
 
 def _detector_plane_miss_intersection(
@@ -3137,6 +3142,29 @@ def _detector_plane_miss_intersection(
         if active_height <= 1e-12:
             active_height = override_h if override_h > 1e-12 else diameter
         half = 0.5 * max(active_width, active_height)
+        # bugs/0530 (flag_20260804_073933 "enabled clipped overlay, rays not make
+        # sense"): only accept the crossing as a MISS when the ray could plausibly have
+        # continued there -- within a few final-arm lengths of this detector (sensor-
+        # scale floor). On the folded AZ85 scene every escaped lens/BS stray had a
+        # forward crossing with the folded sensor plane 155-220 mm away (the real
+        # prism->sensor arm is 44 mm), so "Show clipped rays" drew 225 chords
+        # teleporting through free space into the camera body. Those rays keep their
+        # honest no_next_intersection terminal instead.
+        arm_gap = 0.0
+        if 0 < detector_index < len(rows):
+            try:
+                arm_gap = abs(float(getattr(rows[detector_index - 1], "thickness", 0.0) or 0.0))
+            except Exception:
+                arm_gap = 0.0
+        if arm_gap > 1e-9:
+            # The gate needs a KNOWN final arm; rows without thickness data (the 0018
+            # mechanism harness, degenerate stubs) stay on the cos-guard alone.
+            max_travel = max(
+                _DETECTOR_MISS_MAX_ARM_FACTOR * arm_gap,
+                _DETECTOR_MISS_MAX_TRAVEL_HALF_FACTOR * half,
+            )
+            if np.isfinite(max_travel) and distance > max_travel:
+                continue
         local_x = float(np.dot(offset, tangent))
         local_y = float(np.dot(offset, bitangent))
         candidate = {

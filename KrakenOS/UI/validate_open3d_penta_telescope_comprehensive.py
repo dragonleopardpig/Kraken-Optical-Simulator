@@ -15503,6 +15503,10 @@ phase_424_lens_drag_single_undo = _phase_from_standalone(
     424, "the lens drag+refocus gesture is ONE undo step (0529)",
     "KrakenOS.UI.validate_open3d_0529_lens_drag_single_undo",
     "lens_drag_single_undo")
+phase_425_clipped_ray_teleport = _phase_from_standalone(
+    425, "escaped strays are not teleported onto a far detector plane (0530)",
+    "KrakenOS.UI.validate_open3d_0530_clipped_ray_teleport",
+    "clipped_ray_teleport")
 
 
 # ---------------------------------------------------------------------------
@@ -15974,6 +15978,7 @@ def main() -> int:
             phase_422_receiving_cone_folds_frozen,
             phase_423_gizmo_lens_drag_refocuses,
             phase_424_lens_drag_single_undo,
+            phase_425_clipped_ray_teleport,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
