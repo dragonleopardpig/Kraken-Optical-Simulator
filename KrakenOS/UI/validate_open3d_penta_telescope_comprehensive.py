@@ -15527,6 +15527,10 @@ phase_430_source_gizmo_usability = _phase_from_standalone(
     430, "the source gizmo is usable: no vsync stall, hoverable, seatable (0536)",
     "KrakenOS.UI.validate_open3d_0536_source_gizmo_usability",
     "source_gizmo_usability")
+phase_431_source_glyph_menu = _phase_from_standalone(
+    431, "right-clicking the source glyph seats it on the LED floor (0537)",
+    "KrakenOS.UI.validate_open3d_0537_source_glyph_menu",
+    "source_glyph_menu")
 
 
 # ---------------------------------------------------------------------------
@@ -16004,6 +16008,7 @@ def main() -> int:
             phase_428_split_child_exits_solid,
             phase_429_source_select_idempotent,
             phase_430_source_gizmo_usability,
+            phase_431_source_glyph_menu,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

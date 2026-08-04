@@ -81,6 +81,108 @@ class Open3DFaceAssignmentService:
             return
         setattr(self._inspector, name, value)
 
+    def _maybe_show_scene_source_menu(self, event) -> bool:
+        """bugs/0537: a right-click ON a scene-source glyph opens the source's menu.
+
+        The glyph is not a CAD face, so the face-function menu never appeared and the
+        seat command looked broken ("right click seat LED 1 is not working" -- the
+        recording shows one right-click on the amber emitter plate, then nothing).
+        """
+        if self._picker is None or self._renderer is None or self._vtk_interactor is None:
+            return False
+        try:
+            self._vtk_interactor.SetEventInformationFlipY(int(event.x), int(event.y), 0, 0, chr(0), 0, None)
+            x, y = self._vtk_interactor.GetEventPosition()
+            self._picker.Pick(x, y, 0.0, self._renderer)
+            actor_key = self._actor_key(self._picker.GetActor())
+        except Exception:
+            return False
+        if actor_key is None:
+            return False
+        sid = ""
+        for source_id, keys in (getattr(self, "_source_actor_map", {}) or {}).items():
+            try:
+                if actor_key in (keys or []):
+                    sid = str(source_id)
+                    break
+            except Exception:
+                continue
+        if not sid:
+            return False
+        name = sid
+        try:
+            for descriptor in (self.editor._drawable_scene_source_descriptors() or []):
+                if str(getattr(descriptor, "source_id", "")) == sid:
+                    name = str(
+                        (getattr(descriptor, "settings", {}) or {}).get("name", sid) or sid
+                    )
+                    break
+        except Exception:
+            pass
+        menu = tk.Menu(self, tearoff=False)
+        menu.add_command(label=f"Source {name}", state="disabled")
+        menu.add_separator()
+        menu.add_command(
+            label="Seat on the LED floor (auto)",
+            command=lambda s=sid: self._seat_source_on_led_floor_auto(s),
+        )
+        menu.add_command(
+            label="Select (raise move gizmo)",
+            command=lambda s=sid: self.select_scene_source_from_admin(s),
+        )
+        self._popup_scene_component_menu(menu, event)
+        return True
+
+    def _seat_source_on_led_floor_auto(self, source_id: str) -> None:
+        """bugs/0537: seat a source on the LED housing's FLOOR without face-picking.
+
+        The floor is unreachable by a plain right-click (the pick ray hits the outer
+        wall first), so resolve it geometrically: the LED body's bounding face farthest
+        OPPOSITE the object direction, emitting back toward the object (through the
+        splitter). The gizmo remains for fine adjustment."""
+        sid = str(source_id or "").strip()
+        mesh = None
+        try:
+            mesh = self.editor._transformed_imported_step_mesh_for_label("led")
+        except Exception:
+            mesh = None
+        if mesh is None:
+            self.status_var.set("Seat on LED floor: no LED STEP is imported.")
+            return
+        try:
+            bounds = np.asarray(mesh.bounds, dtype=float).reshape(6)
+            led_center = np.asarray(
+                [(bounds[0] + bounds[1]) / 2.0, (bounds[2] + bounds[3]) / 2.0, (bounds[4] + bounds[5]) / 2.0]
+            )
+        except Exception:
+            self.status_var.set("Seat on LED floor: the LED mesh bounds are unavailable.")
+            return
+        try:
+            from KrakenOS.UI.services import optical_axis_tree as _tree
+
+            target = np.asarray(
+                _tree.row_world_pose(self.editor.rows, 0), dtype=float
+            ).reshape(-1)[:3]
+        except Exception:
+            target = None
+        if target is None or target.size < 3 or not np.all(np.isfinite(target[:3])):
+            self.status_var.set("Seat on LED floor: could not resolve the object direction.")
+            return
+        axis = target[:3] - led_center
+        norm = float(np.linalg.norm(axis))
+        if norm <= 1e-9:
+            self.status_var.set("Seat on LED floor: degenerate object direction.")
+            return
+        axis = axis / norm
+        face_centers = []
+        for axis_index in range(3):
+            for side in (0, 1):
+                center = led_center.copy()
+                center[axis_index] = bounds[axis_index * 2 + side]
+                face_centers.append(center)
+        floor_center = min(face_centers, key=lambda c: float(np.dot(c - led_center, axis)))
+        self._seat_source_on_face_from_context(sid, floor_center, axis)
+
     def _seat_source_on_face_from_context(self, source_id: str, center, normal) -> None:
         """bugs/0536: seat an illumination source ON a picked STEP face.
 
@@ -165,6 +267,15 @@ class Open3DFaceAssignmentService:
             pass
         context = self._right_click_pick_context(event)
         if context is None:
+            # bugs/0537 (flag_20260804_110017 "right click seat LED 1 is not working"):
+            # right-clicking the SOURCE GLYPH itself -- the natural gesture -- is not a
+            # CAD face, so the face menu silently dead-ended. Offer the source's own
+            # menu (auto floor seat + select) before giving up.
+            try:
+                if self._maybe_show_scene_source_menu(event):
+                    return "break"
+            except Exception:
+                pass
             self._debug_trace(
                 "right_click_no_context",
                 x=getattr(event, "x", None),
