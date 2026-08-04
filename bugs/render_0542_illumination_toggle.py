@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 SCENE = Path("attachment/machine_vision_AZ85_RA_Mirror_BS.py")
-FLAG = Path("attachment/recorded_bug_repros/flag_20260804_133134_306/state.json")
+FLAG = Path("attachment/recorded_bug_repros/flag_20260804_144415_900/state.json")
 
 
 def main(out_prefix: str) -> int:

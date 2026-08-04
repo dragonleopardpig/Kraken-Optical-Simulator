@@ -70,6 +70,11 @@ def _base_optical_axis_id(axis_id) -> str:
 # at least this fraction of the peak per-bin area to count as a plate (cables and thin
 # brackets stay below it). A documented tolerance, not a scene constant.
 _LED_FLOOR_MIN_AREA_FRACTION = 0.15
+# bugs/0544: the floor search is restricted to the column under the optical port; the
+# column radius is this fraction of the housing's largest extent. A documented
+# tolerance -- wide enough for any interior floor plate, narrow enough to exclude
+# cable arches and connector bodies hanging off the housing side.
+_LED_FLOOR_COLUMN_EXTENT_FRACTION = 0.35
 
 
 class Open3DFaceAssignmentService:
@@ -215,6 +220,29 @@ class Open3DFaceAssignmentService:
             centers = centers[finite]
             mid = float(led_center @ axis)
             far_half = stations < mid
+            # bugs/0544 (flag_20260804_144415 "this time, the illuminator seat at the
+            # cable"): the connectors at the cable's end are chunky enough to pass the
+            # area threshold, so "farthest substantial bin" landed on them. The floor
+            # the emitter sits on is the plate IN THE COLUMN UNDER THE OPTICAL PORT --
+            # restrict cells to that column (anchored on the authored clear-aperture
+            # centre, falling back to the housing centre) before binning; the cable
+            # and connectors hang far outside it.
+            lateral_anchor0 = led_center
+            try:
+                ca_center0, _ca_n0 = self._clear_aperture_opening_center_normal("led")
+                if ca_center0 is not None:
+                    cand0 = np.asarray(ca_center0, dtype=float).reshape(-1)[:3]
+                    if cand0.size >= 3 and np.all(np.isfinite(cand0)):
+                        lateral_anchor0 = cand0
+            except Exception:
+                pass
+            rel = centers[:, :3] - lateral_anchor0
+            lateral_off = np.linalg.norm(rel - np.outer(rel @ axis, axis), axis=1)
+            extents = np.asarray(
+                [bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4]]
+            )
+            column_radius = _LED_FLOOR_COLUMN_EXTENT_FRACTION * float(np.max(extents))
+            far_half = far_half & (lateral_off <= column_radius)
             if int(np.sum(far_half)) >= 3:
                 far_stations = stations[far_half]
                 far_areas = areas[far_half]

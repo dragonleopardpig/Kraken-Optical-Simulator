@@ -110,3 +110,15 @@ the user before touching their scene's physics.
   overlay rays seem clipped themselves" (142623)** -- OPEN. New clue: a RENDER-ONLY
   visibility refresh re-arms the right-click, so the dead state lives in the
   renderer/pick maps between the seat's rebuild and the next actor rebuild.
+
+## 0544 (flag_20260804_144415 "this time, the illuminator seat at the cable")
+
+The bottom-most-substantial-bin rule overshot: the connectors at the cable's end carry
+enough area to qualify, so "farthest bin" landed on them. The missing physics: the floor
+is the plate IN THE COLUMN UNDER THE OPTICAL PORT. The search now restricts cells to
+that column (anchored on the authored clear-aperture centre, radius =
+_LED_FLOOR_COLUMN_EXTENT_FRACTION x the housing extent) before binning -- cables and
+connectors hang far outside it. AZ85: origin (-14.2, 0.0, 125.8) = the housing bottom
+plate under the port, centred, axis-aligned; verified by snapshot from the flag's own
+viewpoint. Flags 144601 ("no transmission") / 144647 were captured on the cable-seated
+build -- from there the cone misses the splitter; re-check after re-seating.
