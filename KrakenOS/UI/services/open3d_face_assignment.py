@@ -227,6 +227,39 @@ class Open3DFaceAssignmentService:
                     lateral = far_centers[in_bin] - np.outer(far_stations[in_bin], axis)
                     lateral_mean = np.average(lateral, axis=0, weights=far_areas[in_bin])
                     floor_center = lateral_mean + axis * station
+                    # bugs/0540 (flag_20260804_124129 "still not seat correctly"): the
+                    # first cut EMITTED TOWARD THE OBJECT CENTRE, tilting the panel
+                    # whenever the object is off-axis. A PCB emits along its own
+                    # normal. The bin's raw mean normal is a trap: the floor plate's
+                    # two skins carry OPPOSITE normals that cancel, leaving wall
+                    # residue. Keep only plate-like cells (|n . axis| >= 0.7),
+                    # sign-align them toward the object, then area-average.
+                    try:
+                        normals_mesh = mesh.compute_normals(
+                            cell_normals=True, point_normals=False, inplace=False
+                        )
+                        cell_normals = np.asarray(
+                            normals_mesh.cell_data["Normals"], dtype=float
+                        )[finite][far_half][in_bin]
+                        lengths = np.linalg.norm(cell_normals, axis=1)
+                        valid = lengths > 1e-9
+                        unit_normals = cell_normals[valid] / lengths[valid][:, None]
+                        alignment = unit_normals @ axis
+                        plate_like = np.abs(alignment) >= 0.7
+                        if int(np.sum(plate_like)) >= 1:
+                            aligned = unit_normals[plate_like] * np.sign(
+                                alignment[plate_like]
+                            )[:, None]
+                            mean_normal = np.average(
+                                aligned,
+                                axis=0,
+                                weights=far_areas[in_bin][valid][plate_like],
+                            )
+                            n_len = float(np.linalg.norm(mean_normal))
+                            if n_len > 1e-9 and np.all(np.isfinite(mean_normal)):
+                                axis = mean_normal / n_len
+                    except Exception:
+                        pass
         except Exception:
             floor_center = None
         if floor_center is None:

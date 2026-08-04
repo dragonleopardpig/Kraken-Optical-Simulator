@@ -1305,7 +1305,10 @@ class SourceModelingMixin:
             "radius_y": float(half_y),
             "radius": float(max(half_x, half_y)),
             "cone_deg": cone,
-            "ray_count": 2000,
+            # bugs/0540: 2000 made every preview refresh a minutes-long trace; 500 keeps
+            # analysis-grade sampling available (Edit Source...) while the preview cap
+            # keeps the interactive trace snappy.
+            "ray_count": 500,
             "power": 1.0,
             # bugs/0512: an "Illumination Source (LED)" belongs to the housing it was
             # seeded from -- new emitters ride the LED/BS assembly by default (right-click
@@ -1896,6 +1899,16 @@ class SourceModelingMixin:
         settings = dict(source.settings or {})
         model = str(source.model or settings.get("source_model", "Collimated disk source"))
         ray_count = max(1, int(source.ray_count))
+        # bugs/0540 (flag_20260804_124129 "super long tracing of 2000 rays ... any
+        # toggle?"): the INTERACTIVE preview must stay interactive -- a seated 2000-ray
+        # LED turned every selection refresh into a ~2 min synchronous trace. The
+        # preview launches a capped subset (override per source via `preview_ray_cap`);
+        # analysis passes (illumination heatmap, coverage) build their own full-count
+        # launches from the spec and are unaffected.
+        preview_cap = int(
+            self._source_spec_float(settings, ("preview_ray_cap",), 200.0, minimum=1.0)
+        )
+        ray_count = min(ray_count, max(1, preview_cap))
         radius = self._source_spec_float(settings, ("radius", "source_radius", "launch_radius"), 1.0, minimum=0.0)
         origin = np.asarray(source.origin, dtype=float)
         direction = np.asarray(source.direction, dtype=float)

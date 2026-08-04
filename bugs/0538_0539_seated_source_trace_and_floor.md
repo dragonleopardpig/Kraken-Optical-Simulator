@@ -30,3 +30,26 @@ Not a bug in the toggle: "Illumination" / "Illum rays" are the MV-150 COAXIAL ov
 seated source there is no coupled-coaxial dataset, so they draw nothing. Toggling the
 SOURCE itself on/off = the browser row's hide/unhide or Edit Source... -> enabled.
 Renaming/greying those entries when no coaxial dataset exists is queued as UX polish.
+
+## 0540 (flag_20260804_124129, three asks)
+
+1. **"super long tracing of 2000 rays ... any toggle?"** -- the interactive preview now
+   launches a CAPPED subset per source (`preview_ray_cap`, default 200; override per
+   source spec) and a new LED defaults to ray_count 500 instead of 2000: the seated-
+   source preview trace dropped 127 s -> ~26 s (the remainder is the real TIR-chain
+   physics; async deferral stays queued). The on/off toggle exists today: the browser
+   row's hide/unhide, or Edit Source... -> enabled.
+2. **"still not seat correctly ... select a surface and snap to it"** -- the auto seat
+   emitted TOWARD THE OBJECT CENTRE (tilted whenever the object is off-axis). It now
+   emits along the FLOOR PLATE'S OWN NORMAL: plate-like cells only (|n.axis| >= 0.7 --
+   the two skins' opposite normals cancel in a raw mean, leaving wall residue),
+   sign-aligned toward the object, area-averaged. And the pick-a-surface flow the user
+   asked for already exists: right-click any reachable face (the outer floor from below
+   works) -> "Seat {source} on This Face".
+3. **"all reflected at the BS, nothing transmitted"** -- transmission IS there: the
+   census shows both split_transmit families continuing to the object and the reflected
+   arm (which folds -x, mirroring the imaging fold -- the leftward fan in the flag).
+   The chains `refraction@3 | split | reflect_tir@3 | split ...` are REAL total internal
+   reflection inside the thin plate reaching its edge strips -- light-guide physics the
+   0533 fix made traceable. The old view's impression came from the tilted aim plus
+   display decimation of ~4600 paths.
