@@ -95,6 +95,17 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         panel_build = ""
     if 'tag_configure("hidden"' not in panel_build:
         notes.append("FAIL: browser tree does not configure the hidden grey-out tag")
+    # bugs/0560: the tag is computed at INSERT time, so a hide that does not rebuild the tree
+    # leaves the row un-greyed while the element is gone from 3-D ("some hidden elements are not
+    # grayed out in the right panel browser"). Only the display-key path used to refresh.
+    import inspect as _inspect
+
+    set_hidden_src = _inspect.getsource(Open3DStepAdminPanel._set_element_hidden)
+    if "self.refresh()" not in set_hidden_src:
+        notes.append(
+            "FAIL: _set_element_hidden must rebuild the browser so the grey-out tag is "
+            "recomputed -- it is the one place every hide/unhide funnels through (bugs/0560)"
+        )
         passed = False
     if not hasattr(Open3DStepAdminPanel, "_item_hidden_tag"):
         notes.append("FAIL: browser missing _item_hidden_tag")

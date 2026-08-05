@@ -523,6 +523,17 @@ class LayoutImportExportMixin:
         try:
             info = _load_python_data(Path(path))
             self.rows = self._normalized_rows_copy([self._row_from_layout_item(item) for item in info["surfaces"]])
+            # bugs/0559: heal a negative gap saved before bugs/0550, pose-preservingly.
+            _healed = self._heal_negative_gaps_on_load(self.rows)
+            if _healed:
+                _text = ", ".join(f"S{h['row_index']} ({h['name']}) {h['thickness']:+g} mm" for h in _healed)
+                try:
+                    self.append_debug(
+                        f"Repaired {len(_healed)} negative gap(s) saved in this layout: {_text}. "
+                        "Nothing moved (the gap is returned through desp_z); re-save to persist."
+                    )
+                except Exception:
+                    pass
         except Exception:
             surfaces = self._extract_surfaces_from_example(Path(path))
             self.rows = self._normalized_rows_copy(
@@ -1143,6 +1154,47 @@ class LayoutImportExportMixin:
                 and LayoutImportExportMixin._surface_attr_differs_from_default(surface, Kos.surf(), attr)
             },
         )
+
+    @staticmethod
+    def _heal_negative_gaps_on_load(rows) -> list[dict]:
+        """Repair a NEGATIVE gap saved into a layout, without moving anything (bugs/0559).
+
+        A gap is a distance and may never be negative -- it makes the station chain run
+        BACKWARDS across that row, and every consumer that walks stations then sees an
+        inconsistent chain. bugs/0550 stopped one being CREATED, but a file already written with
+        one stays broken on every load: flag_20260805_130111 loads
+        ``machine_vision_Apo75.py`` and the flag still reports
+        ``row 6 thickness -13.5949, station 252.3548 -> next_station 238.7598``. The visible
+        symptom was the user's "can't change to FOV 55x55 and 40x40, sure not possible?" -- the
+        conjugate solve was refusing an inconsistent chain, so the FOV was never the problem.
+
+        The repair is pose-preserving by construction: zero the gap and give the same amount back
+        through ``desp_z`` on every downstream row, since a pose is ``station + desp_z``
+        (bugs/0526). Nothing moves -- verified drift 0.0 mm by the 0550 diagnostic, which uses
+        exactly this arithmetic. Returns what was healed so the caller can say so out loud rather
+        than silently rewriting the user's file."""
+        healed: list[dict] = []
+        for index, row in enumerate(list(rows)):
+            try:
+                thickness = float(getattr(row, "thickness", 0.0) or 0.0)
+            except Exception:
+                continue
+            if thickness >= 0.0:
+                continue
+            healed.append(
+                {
+                    "row_index": int(index),
+                    "name": str(getattr(row, "name", "") or ""),
+                    "thickness": round(thickness, 4),
+                }
+            )
+            row.thickness = 0.0
+            for follower in rows[index + 1:]:
+                try:
+                    follower.desp_z = float(getattr(follower, "desp_z", 0.0) or 0.0) + thickness
+                except Exception:
+                    continue
+        return healed
 
     @classmethod
     def _row_from_layout_item(cls, item: dict) -> SurfaceRow:

@@ -219,6 +219,68 @@ def _check_near_leg_spill(failures: list[str]) -> None:
         )
 
 
+def _check_load_heal(failures: list[str]) -> None:
+    """bugs/0559: a negative gap SAVED before bugs/0550 must be healed on load, pose-preservingly.
+
+    0550 stopped one being created; a file already written with one stayed broken on every load.
+    flag_20260805_130111 loads machine_vision_Apo75.py and still reports
+    ``row 6 thickness -13.5949, station 252.3548 -> next_station 238.7598``, and the user's
+    "can't change to FOV 55x55 and 40x40, sure not possible?" was the conjugate solve refusing
+    that inconsistent chain -- the FOV was never the problem."""
+    from types import SimpleNamespace
+
+    from KrakenOS.UI.services.layout_import_export import LayoutImportExportMixin as M
+
+    def _rows():
+        return [
+            SimpleNamespace(name="Object", thickness=118.97, desp_z=0.0),
+            SimpleNamespace(name="Rear Datum", thickness=83.381, desp_z=0.0),
+            SimpleNamespace(name="Promoted OPTICAL STEP optical solid", thickness=-13.5949, desp_z=-197.896),
+            SimpleNamespace(name="mirror", thickness=72.519, desp_z=-184.438),
+        ]
+
+    def _stations(rows):
+        out, total = [0.0], 0.0
+        for row in rows[:-1]:
+            total += float(row.thickness)
+            out.append(total)
+        return out
+
+    rows = _rows()
+    before = [s + r.desp_z for s, r in zip(_stations(rows), rows)]
+    healed = M._heal_negative_gaps_on_load(rows)
+    after = [s + r.desp_z for s, r in zip(_stations(rows), rows)]
+
+    if not healed or healed[0]["row_index"] != 2:
+        failures.append(f"heal: the negative row must be reported, got {healed}")
+    if any(float(r.thickness) < 0.0 for r in rows):
+        failures.append("heal: a negative gap survived the load repair")
+    stations = _stations(rows)
+    if stations != sorted(stations):
+        failures.append(f"heal: the station chain still runs backwards ({stations})")
+    drift = max(abs(a - b) for a, b in zip(before, after))
+    if drift > 1e-9:
+        failures.append(
+            f"heal: the repair MOVED geometry by {drift:.4g} mm -- it must return the gap through "
+            "desp_z so every pose is invariant (bugs/0526)"
+        )
+
+    # A healthy layout must be untouched.
+    clean = [
+        SimpleNamespace(name="a", thickness=10.0, desp_z=1.0),
+        SimpleNamespace(name="b", thickness=20.0, desp_z=2.0),
+    ]
+    if M._heal_negative_gaps_on_load(clean):
+        failures.append("heal: a layout with no negative gap must report nothing healed")
+    if [r.thickness for r in clean] != [10.0, 20.0] or [r.desp_z for r in clean] != [1.0, 2.0]:
+        failures.append("heal: a healthy layout must be left byte-identical")
+
+    import inspect as _inspect
+
+    if "_heal_negative_gaps_on_load" not in _inspect.getsource(M.open_layout):
+        failures.append("heal: open_layout must run the repair (bugs/0559)")
+
+
 def run_checks() -> tuple[bool, list[str]]:
     failures: list[str] = []
     try:
@@ -230,6 +292,7 @@ def run_checks() -> tuple[bool, list[str]]:
     _check_flag_field(failures)
     _check_tripwire_opt_in(failures)
     _check_near_leg_spill(failures)
+    _check_load_heal(failures)
     return (not failures), failures
 
 

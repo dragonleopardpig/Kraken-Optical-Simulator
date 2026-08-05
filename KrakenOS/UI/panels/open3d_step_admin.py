@@ -985,6 +985,18 @@ class Open3DStepAdminPanel:
             inspector.status_var.set(("Hid " if hidden else "Unhid ") + "the selected scene element.")
         else:
             return
+        # bugs/0560: the grey-out tag is computed at INSERT time by `_item_hidden_tag`, so a
+        # hide that does not rebuild the tree leaves the row black while the element is gone
+        # from the 3-D view -- the user's "some hidden elements are not grayed out in the right
+        # panel browser". Only the display-key path refreshed (via `_on_scene_visibility_changed`);
+        # `set_scene_rows_hidden` / `set_step_label_hidden` / `set_source_hidden` each update
+        # their hidden set, toggle the actors and render, but none of them touch the browser.
+        # Refresh here instead of in each of them: this is the ONE place every hide/unhide from
+        # the browser funnels through, so a future fifth path cannot forget it.
+        try:
+            self.refresh()
+        except Exception:
+            pass
         self.refresh()  # re-tag the tree so hidden items grey out
 
     def _iter_descendant_iids(self, iid: str):
