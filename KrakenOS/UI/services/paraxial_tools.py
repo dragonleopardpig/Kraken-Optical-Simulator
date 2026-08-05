@@ -1395,6 +1395,39 @@ class ParaxialToolsMixin:
             "LED+BS slid, chain repackaged)."
         )
 
+    def _apply_near_leg_delta(self, near_gap_row: int, delta: float, gap_start: int) -> bool:
+        """Add ``delta`` to the near image leg without driving any gap NEGATIVE (bugs/0550).
+
+        The near leg is ``sum(thickness[gap_start:mirror_row])``, so the delta may be spread over
+        ANY row in that span -- the split's own arithmetic only reads the SUM. The historical
+        write went straight into ``mirror_row - 1`` ("the last leg INTO the mirror"), which was
+        safe only because that row used to be the lens Rear Vertex Datum carrying 80-100 mm.
+        bugs/0546 re-seats a promoted solid (an absolutely placed ELEMENT whose gap is 0) to just
+        after the lens block -- i.e. directly ahead of the mirror -- so the same write produced a
+        negative gap: the station chain then ran BACKWARDS across that row and the trace lost its
+        next surface (flag_20260805_072959, 375 of 558 paths ``no_next_intersection``).
+
+        A negative gap here is never physical, and unlike the mirror's OWN gap to the sensor
+        (which bugs/0297 shows may legitimately go negative on a best-focus seat) this leg is a
+        plain distance. So absorb what the row can take and SPILL the remainder to the preceding
+        gap rows in the span, walking back to ``gap_start``. The leg total is preserved exactly.
+
+        Returns True when the whole delta was placed, False when the span cannot absorb it (the
+        caller then reports the constraint as out of range rather than writing a broken chain)."""
+        rows = self.rows
+        index = int(near_gap_row)
+        remaining = float(delta)
+        floor = max(int(gap_start), 0)
+        while index >= floor and 0 <= index < len(rows):
+            current = float(getattr(rows[index], "thickness", 0.0) or 0.0)
+            applied = max(current + remaining, 0.0)
+            rows[index].thickness = applied
+            remaining -= applied - current
+            if abs(remaining) <= 1e-9:
+                return True
+            index -= 1
+        return abs(remaining) <= 1e-9
+
     def _apply_frozen_image_split(
         self, split: "dict", near_new: float, far_new: float, delta: float
     ) -> "tuple[bool, str]":
@@ -1418,7 +1451,15 @@ class ParaxialToolsMixin:
         # Prescription bookkeeping first (stations shift), then world re-bake.
         ng, fg = int(split["near_gap_row"]), int(split["far_gap_row"])
         if 0 <= ng < len(rows) and 0 <= fg < len(rows):
-            rows[ng].thickness = float(rows[ng].thickness) + float(delta)
+            # bugs/0550: spread the near-leg delta across its span rather than forcing it into
+            # `mirror_row - 1`, which after bugs/0546 can be a zero-gap promoted solid and would
+            # go NEGATIVE (the unfrozen branch below refuses that case outright; this frozen
+            # branch had no guard at all, and it is the one a swap's auto-refocus takes).
+            if not self._apply_near_leg_delta(ng, float(delta), int(split.get("gap_start", 0))):
+                return False, (
+                    f"Constraint out of range: the lens rear -> mirror leg cannot absorb "
+                    f"{delta:+.4g} mm without a negative gap."
+                )
             rows[fg].thickness = float(rows[fg].thickness) - float(delta)
         self._rebake_frozen_row_world_center(mirror_row, mirror_target)
         self._rebake_frozen_row_world_center(image_row, sensor_target)
@@ -1801,6 +1842,10 @@ class ParaxialToolsMixin:
             "mirror_row": int(mirror_row),
             "near_gap_row": int(mirror_row - 1),          # last leg INTO the mirror
             "far_gap_row": int(mirror_row),               # the mirror's own gap to the sensor
+            # bugs/0550: the near leg is a SUM over `th[gap_start:mirror_row]`, so the delta may
+            # be spread over ANY of those rows -- carry the span so the applier can spill past a
+            # row that cannot absorb it (see `_apply_near_leg_delta`).
+            "gap_start": int(gap_start),
             "near_min": float(body),
             "far_min": float(body),
         }

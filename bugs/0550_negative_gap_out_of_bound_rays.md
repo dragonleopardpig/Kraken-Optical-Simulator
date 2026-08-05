@@ -39,6 +39,49 @@ while compensating `desp_z` on every downstream row so **no pose moves by even a
 The residual (fewer reaching, more stop vignetting) is expected physics: a 75 mm lens at FOV
 23×23 where an 85 mm lens ran 20×20.
 
+## ROOT CAUSE (proven from the trap log)
+
+The user reported the strays appear **as soon as the lens is swapped, before any FOV change**,
+and ran a session with `KRAKEN_TRAP_NEGATIVE_GAP=1`. That log (609 trapped writes, every one the
+already-persisted −13.5949 — i.e. the negative being *propagated* by row clones and paraxial
+reference copies, not created) carried one signature that is a real write path:
+
+```
+quick_estimation.py:1504 _rebalance_image_leg_sections
+  <- quick_estimation.py:1607 _rebalance_split_sections
+  <- paraxial_tools.py:1859  _apply_folded_image_split
+  <- paraxial_tools.py:1421  _apply_frozen_image_split
+```
+
+`_folded_image_conjugate_split` picks its near-leg write target **positionally**:
+
+```python
+"near_gap_row": int(mirror_row - 1),   # last leg INTO the mirror
+```
+
+* **Before bugs/0546** `mirror_row - 1` was the lens **Rear Optical Vertex Datum**, carrying
+  80–100 mm — a −13.6 mm delta stayed comfortably positive.
+* **After bugs/0546** it is the **re-seated promoted BS row, thickness 0.0** →
+  `0.0 + (−13.595) = −13.595`.
+
+And the write happens in `_apply_frozen_image_split` with **no negativity guard at all**, while
+the unfrozen branch immediately below it explicitly refuses that case. The frozen branch is the
+one a swap takes: `_swap_auto_refocus_to_best_focus()` runs at the end of every swap and is a
+**headless no-op** (folded solve → live-only), which is exactly why the headless swap
+reproduction left `rows[6] = 0.0` and the live one goes negative.
+
+## Fix (root)
+
+`near` is `sum(thickness[gap_start:mirror_row])` — a SUM over a span — so the delta may be
+placed on ANY row in that span without changing what the split reads. `_apply_near_leg_delta`
+absorbs what `mirror_row - 1` can take and **spills the remainder back** through the span to
+`gap_start`; the leg total is preserved exactly, no row goes negative, and a delta the whole
+span genuinely cannot absorb is REFUSED (constraint out of range) rather than written as a chain
+that cannot be traced. The split now publishes `gap_start` so the applier knows the span.
+
+Deliberately NOT clamped: the mirror's OWN gap to the sensor (`far_gap_row == mirror_row`), which
+bugs/0297 shows may legitimately go negative on a best-focus seat.
+
 ## Why the gap could go negative here
 
 `bd3b86d1` (bugs/0546) re-seats a promoted solid that sat inside the lens block to just after
@@ -58,14 +101,14 @@ clamps to 0 and **says so** in the status message ("CLAMPED to 0 mm at row N: be
 that element AHEAD of its predecessor — move the element itself, or free a different gap")
 rather than silently flooring or committing an untraceable chain.
 
-## Diagnostic (the offender is not yet named)
+## Diagnostic (this is what named the offender)
 
 Every other gap writer found already guards its negative case
 (`scene_placement_commands` `gap_row`, the paraxial near/far gap writers, the bugs/0526
 composite, the swap's own `_swap_downstream_gap`), the flagged session had **no recording
 active**, and the solve bails headlessly ("No detector hit data for best-image solve target") —
-so the writer in *this* flag is not proven. Per the bugs/0391-0395 lesson (*when headless repro
-is impossible, ship the DIAGNOSTIC first*), two things now make the next occurrence name itself:
+so the writer could not be named by inspection. Per the bugs/0391-0395 lesson (*when headless
+repro is impossible, ship the DIAGNOSTIC first*), two things name it instead:
 
 * **`negative_gap_rows` in the flag** — always captured; every negative-gap row with its name,
   thickness, station and next station.
@@ -74,19 +117,26 @@ is impossible, ship the DIAGNOSTIC first*), two things now make the next occurre
   `attachment/negative_gap_trap.log`. Off by default, and the class is only patched when the
   variable is set, so it costs nothing normally.
 
-Run one live session with the trap set, repeat the workflow, and the log names the writer.
+One live session with the trap set named the writer (see ROOT CAUSE above). Keep both: the flag
+field costs nothing, and the tripwire is the fastest way to pin the next one.
 
 ## Guard
 
-`KrakenOS/UI/validate_open3d_0550_no_negative_gap.py` (penta phase 435) drives the REAL
-`Open3DSolveService.solve` with only the optimiser's answer stubbed: a negative solve lands at 0
-and reports the clamp, a positive solve is written through untouched with no clamp reported, the
-recorder snapshot carries `negative_gap_rows`, and the tripwire stays off without its
-environment variable.
+`KrakenOS/UI/validate_open3d_0550_no_negative_gap.py` (penta phase 435):
+
+* **NEAR-LEG SPILL (the root cause)** — a −13.595 mm delta onto a zero-gap `mirror_row - 1`
+  spills to the preceding gap row: no row negative, leg total moved by exactly the delta, the
+  mirror's own gap untouched; a delta larger than the whole span is refused and leaves nothing
+  negative behind; and the frozen split must route through the spill rather than writing raw.
+  Non-vacuity checked by restoring the raw write — 3 assertions fire.
+* **CLAMP** — the REAL `Open3DSolveService.solve` with only the optimiser's answer stubbed: a
+  negative solve lands at 0 and reports the clamp, a positive one is written through untouched.
+* **FLAG / TRIPWIRE** — the snapshot carries `negative_gap_rows`; the tripwire stays off without
+  its environment variable.
 
 ## Open
 
-The root violation is still upstream of the clamp: on a **frozen** scene, element positions live
-in `desp` (world terms), and moving the mirror by writing its preceding gap contradicts the
-durable bugs/0448/0478 rule — *place image-side geometry in WORLD terms, never by assigning a
-gap*. The clamp stops the damage; the world-aware fix waits on the tripwire naming the writer.
+`_apply_frozen_image_split` still does its bookkeeping through gap rows before re-baking world
+centres. That is legitimate here (it re-bakes the mirror, sensor and camera in world terms right
+after), but the prescription-vs-world split remains the standing hazard behind bugs/0448/0478 —
+worth a pass that expresses the whole frozen image leg in world terms.

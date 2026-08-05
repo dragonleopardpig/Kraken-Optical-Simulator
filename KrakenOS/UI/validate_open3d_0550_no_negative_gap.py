@@ -155,6 +155,70 @@ def _check_tripwire_opt_in(failures: list[str]) -> None:
             os.environ["KRAKEN_TRAP_NEGATIVE_GAP"] = saved
 
 
+def _check_near_leg_spill(failures: list[str]) -> None:
+    """bugs/0550 ROOT CAUSE: the image split writes its near leg into ``mirror_row - 1`` ("the
+    last leg INTO the mirror"). That was safe only while that row was the lens Rear Vertex Datum
+    carrying 80-100 mm; bugs/0546 re-seats a ZERO-gap promoted solid there, so the same write
+    went negative. The near leg is a SUM over its span, so the delta must SPILL to the preceding
+    gap rows instead -- leg total preserved, no row negative."""
+    from KrakenOS.UI.services.paraxial_tools import ParaxialToolsMixin as M
+
+    editor = object.__new__(M)
+    # gap_start=1 (last lens surface), mirror at 3 -> near span = rows 1..2, near = 83.381 + 0.0
+    editor.rows = [
+        _Row("Object", 118.97, "Object"),
+        _Row("Rear Optical Vertex Datum", 83.381),
+        _Row("Promoted OPTICAL STEP optical solid", 0.0),  # bugs/0546 re-seat, mirror_row - 1
+        _Row("Promoted OPTICAL STEP optical solid", 72.519),
+        _Row("Image", 0.0, "Image"),
+    ]
+    near_before = sum(float(r.thickness) for r in editor.rows[1:3])
+    delta = -13.595
+    if not editor._apply_near_leg_delta(2, delta, 1):
+        failures.append("near-leg: the span can absorb -13.595 mm (83.381 available) but reported failure")
+        return
+    negative = [i for i, r in enumerate(editor.rows) if float(r.thickness) < 0.0]
+    if negative:
+        failures.append(
+            f"near-leg: rows {negative} went NEGATIVE -- the delta must spill to the preceding "
+            "gap row, not force `mirror_row - 1` below zero (bugs/0550)"
+        )
+    near_after = sum(float(r.thickness) for r in editor.rows[1:3])
+    if abs((near_after - near_before) - delta) > 1e-9:
+        failures.append(
+            f"near-leg: the leg total must move by exactly {delta} mm; "
+            f"got {near_after - near_before}"
+        )
+    if abs(float(editor.rows[3].thickness) - 72.519) > 1e-9:
+        failures.append("near-leg: the spill must not touch the mirror's own gap")
+
+    # A delta the span genuinely cannot absorb must be REFUSED, not written as a broken chain.
+    editor.rows = [
+        _Row("Object", 118.97, "Object"),
+        _Row("Rear Optical Vertex Datum", 5.0),
+        _Row("Promoted OPTICAL STEP optical solid", 0.0),
+        _Row("Promoted OPTICAL STEP optical solid", 72.519),
+        _Row("Image", 0.0, "Image"),
+    ]
+    if editor._apply_near_leg_delta(2, -50.0, 1):
+        failures.append("near-leg: a delta larger than the whole span must be refused")
+    if any(float(r.thickness) < 0.0 for r in editor.rows):
+        failures.append("near-leg: even a refused delta must leave no negative gap behind")
+
+    # The split must publish the span so the applier can spill at all.
+    import inspect as _inspect
+
+    source = _inspect.getsource(M._folded_image_conjugate_split)
+    if '"gap_start"' not in source:
+        failures.append("near-leg: the image split must publish `gap_start` for the spill span")
+    frozen = _inspect.getsource(M._apply_frozen_image_split)
+    if "_apply_near_leg_delta" not in frozen:
+        failures.append(
+            "near-leg: the FROZEN split (the branch a swap's auto-refocus takes) must route its "
+            "near-leg write through the spill, not write `mirror_row - 1` raw"
+        )
+
+
 def run_checks() -> tuple[bool, list[str]]:
     failures: list[str] = []
     try:
@@ -165,6 +229,7 @@ def run_checks() -> tuple[bool, list[str]]:
     _check_no_false_clamp(failures)
     _check_flag_field(failures)
     _check_tripwire_opt_in(failures)
+    _check_near_leg_spill(failures)
     return (not failures), failures
 
 
