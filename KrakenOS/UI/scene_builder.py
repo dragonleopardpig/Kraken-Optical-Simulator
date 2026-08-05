@@ -967,6 +967,10 @@ def build_scene_bundle(
     field_count: int = 1,
     ray_count_per_field: int = 5,
     field_colors: list[str] | None = None,
+    # bugs/0558: the launch's own per-source-ray field identity, recorded by
+    # _trace_preview_bundles. Exact for ragged bundles and never stale; the
+    # ray_count_per_field division is only the fallback when it is absent.
+    field_index_by_source_ray: "list[int] | None" = None,
     folded_geometry: Any | None = None,
     row_polylines_fn: Callable | None = None,
     surface_meshes_fn: Callable | None = None,
@@ -1755,8 +1759,11 @@ def _build_ray_paths(
             field_index=field_index,
             wavelength=float(wavelengths[ray_index]) if ray_index < len(wavelengths) else None,
             color=_field_display_color(
-                colors, int(source_ray_index) // max(ray_count_per_field, 1)
-            ),  # bugs/0555: the ray's TRUE field group, not the clamped index
+                colors,
+                _launch_field_group(
+                    field_index_by_source_ray, source_ray_index, ray_count_per_field
+                ),
+            ),  # bugs/0555/0558: the LAUNCH's own field, never the clamped index
             points_world=points_world,
             surface_ids=surface_ids,
             reaches_image=reaches_image,
@@ -4624,6 +4631,26 @@ def _has_off_axis_geometry(rows: list) -> bool:
         ):
             return True
     return False
+
+
+def _launch_field_group(field_index_by_source_ray, source_ray_index, ray_count_per_field) -> int:
+    """Which FIELD a ray belongs to (bugs/0558).
+
+    Prefers the mapping the LAUNCH recorded -- one bundle per field, so it is exact even when
+    fields carry different ray counts (this launch appends corner probes to some). Falls back to
+    the historical ``source_ray_index // ray_count_per_field`` division only when no mapping was
+    recorded, e.g. a caller that never went through ``_trace_preview_bundles``."""
+    try:
+        index = int(source_ray_index)
+    except Exception:
+        return 0
+    if field_index_by_source_ray is not None:
+        try:
+            if 0 <= index < len(field_index_by_source_ray):
+                return int(field_index_by_source_ray[index])
+        except Exception:
+            pass
+    return index // max(int(ray_count_per_field), 1)
 
 
 def _field_display_color(colors: list[str], raw_field_index: int) -> str:

@@ -442,6 +442,21 @@ class TracePreviewService:
             bundle_sources = replay_call.get("bundle_sources")
         bundle_lengths = [int(len(np.asarray(bundle[0]))) for bundle in bundles]
         total_rays = int(sum(bundle_lengths))
+        # bugs/0558: the LAUNCH knows which field each ray belongs to -- one bundle per field --
+        # and that identity was being thrown away here, then RECONSTRUCTED downstream as
+        # `source_ray_index // ray_count_per_field`. That division is wrong twice over: it needs
+        # a display-side count (`_preview_field_ray_count`, seeded differently by a fresh .py load
+        # than by Trace Now -> flag_20260805_121454 "2 ray colors only" vs _121547 "normal
+        # again"), and it assumes UNIFORM rays per field, which this launch violates whenever it
+        # appends corner probes to some fields. Record the real mapping instead; it is exact for
+        # ragged bundles and cannot go stale, because it is produced by the same call that traces.
+        try:
+            field_by_source_ray: list[int] = []
+            for bundle_index, length in enumerate(bundle_lengths):
+                field_by_source_ray.extend([int(bundle_index)] * max(int(length), 0))
+            self.editor._preview_field_index_by_source_ray = field_by_source_ray
+        except Exception:
+            pass
         status = "ok"
         trace_state: dict[str, object] | None = None
         open3d_timing_event(

@@ -665,6 +665,9 @@ class LayoutSceneBundleDisplayMixin:
             field_count=field_count,
             ray_count_per_field=max(1, self._preview_field_ray_count),
             field_colors=self._field_colors(field_count),
+            # bugs/0558: hand the builder the field identity the LAUNCH recorded, so ray colour
+            # cannot disagree with the trace that produced the rays.
+            field_index_by_source_ray=getattr(self, "_preview_field_index_by_source_ray", None),
             folded_geometry=folded_geometry,
             row_polylines_fn=self._row_layout_polylines,
             surface_meshes_fn=(

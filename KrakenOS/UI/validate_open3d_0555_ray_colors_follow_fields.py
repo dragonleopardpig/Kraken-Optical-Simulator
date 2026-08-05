@@ -42,6 +42,46 @@ from __future__ import annotations
 import inspect
 
 
+def _check_launch_mapping(failures: list[str]) -> None:
+    """bugs/0558: the LAUNCH's own field identity beats reconstructing it by division.
+
+    flag_20260805_121454 ("fresh load .py file, 2 ray colors only") vs _121547 ("after clicking
+    Trace now: rays colour become normal") -- IDENTICAL traces (558 paths, ray_count 31, same
+    census) but 2 ray actors vs 8. bugs/0555 removed the clamp (1 colour -> 2); the remainder is
+    that the grouping still divided by ``_preview_field_ray_count``, a DISPLAY-side number seeded
+    differently by a fresh .py load than by Trace Now. The division is also wrong in principle:
+    the launch appends corner probes to some fields, so rays-per-field is RAGGED."""
+    from KrakenOS.UI.scene_builder import _launch_field_group as group
+
+    ragged = [0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2]   # 3, then 5 (corner probes), then 3
+    mapped = [group(ragged, i, 4) for i in range(len(ragged))]
+    if mapped != ragged:
+        failures.append(f"launch mapping: expected {ragged}, got {mapped}")
+    divided = [group(None, i, 4) for i in range(len(ragged))]
+    if divided == ragged:
+        failures.append(
+            "launch mapping: the division reproduced the ragged grouping, so this fixture no "
+            "longer demonstrates why the mapping is needed"
+        )
+    # The fallback must still work when no launch recorded a mapping.
+    if [group(None, i, 4) for i in range(8)] != [0, 0, 0, 0, 1, 1, 1, 1]:
+        failures.append("launch mapping: the division fallback changed for uniform fields")
+    # A short/garbage mapping must not throw or mis-index.
+    if group([0, 0], 9, 4) != 2:
+        failures.append("launch mapping: an out-of-range index must fall back to the division")
+
+    import inspect as _inspect
+
+    from KrakenOS.UI.services import trace_preview
+
+    src = _inspect.getsource(trace_preview.TracePreviewService._trace_preview_bundles)
+    if "_preview_field_index_by_source_ray" not in src:
+        failures.append(
+            "launch mapping: _trace_preview_bundles must record the field identity -- it is the "
+            "documented choke point every sampling path funnels through (bugs/0558)"
+        )
+
+
 def run_checks() -> tuple[bool, list[str]]:
     failures: list[str] = []
     try:
@@ -94,6 +134,7 @@ def run_checks() -> tuple[bool, list[str]]:
     if "_field_display_color(" not in source:
         failures.append("source: the per-path colour must route through _field_display_color")
 
+    _check_launch_mapping(failures)
     return (not failures), failures
 
 
