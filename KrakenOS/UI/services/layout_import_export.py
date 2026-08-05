@@ -1275,6 +1275,55 @@ class LayoutImportExportMixin:
         for index, row in enumerate(self.rows[1:-1], start=1):
             if self._is_open3d_promoted_optical_solid_row(row):
                 row.axis_move = 0.0
+                # bugs/0564: a promoted solid is ABSOLUTELY placed, so its chain gap is pure
+                # bookkeeping -- and after bugs/0546 re-seats it at `mirror_row - 1` it is the row
+                # every "adjust the gap before the mirror" writer targets. Starting from a ZERO
+                # gap, the slightest push drives it negative, and a negative gap runs the station
+                # chain BACKWARDS: every pose after it (`station + desp_z`) shifts, which is how
+                # the user got "the RA mirror is not centered to optical axis", "Lens also off
+                # axis", and finally a scene that traced NOTHING (row 6 = -195.88, 0 ray actors).
+                # Three separate writers produced -13.59, -3.85 and -195.88 there, so clamping
+                # each writer in turn does not converge. Repair it HERE, where every mutation
+                # already passes: hand the negative back to the nearest preceding rows that can
+                # absorb it.
+                #
+                # SCOPE, stated honestly: when the upstream rows CAN absorb it the leg total --
+                # and therefore every pose -- is invariant (measured on the -3.85 case:
+                # 83.381 -> 79.529, total unchanged). When they cannot (the -195.88 wreck, where
+                # the whole 83.4 mm leg is not enough) the gap is still zeroed, so the chain stays
+                # traceable, but geometry HAS moved and the shortfall is reported rather than
+                # applied silently. The object gap (row 0) is deliberately not raided. This is
+                # damage control for a corrupt chain, not a cure for whatever wrote it -- the
+                # -195.88 case came from a snap that had already moved the lens onto the LED.
+                try:
+                    gap = float(row.thickness)
+                except Exception:
+                    gap = 0.0
+                if gap < 0.0:
+                    remaining = gap
+                    row.thickness = 0.0
+                    for previous in range(index - 1, 0, -1):
+                        try:
+                            available = float(self.rows[previous].thickness)
+                        except Exception:
+                            continue
+                        if available <= 0.0:
+                            continue
+                        take = min(available, -remaining)
+                        self.rows[previous].thickness = available - take
+                        remaining += take
+                        if remaining >= -1.0e-9:
+                            break
+                    if remaining < -1.0e-9:
+                        # Nothing upstream could absorb it; the gap is still zeroed (never
+                        # negative), and the shortfall is surfaced instead of silently applied.
+                        try:
+                            self.append_debug(
+                                f"Row S{index} carried a negative gap {gap:.4g} mm; "
+                                f"{-remaining:.4g} mm could not be absorbed upstream."
+                            )
+                        except Exception:
+                            pass
             if row.surface == "Aperture":
                 if not row.name or row.name in {"Surface", "Standard"}:
                     row.name = "Aperture"
