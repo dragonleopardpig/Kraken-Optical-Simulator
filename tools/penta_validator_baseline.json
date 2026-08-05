@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-08-04T23:54:07+00:00",
+  "generated_at": "2026-08-05T02:11:59+00:00",
   "phases": {
     "0": "pass",
     "1": "fail",
@@ -436,7 +436,8 @@
     "432": "pass",
     "433": "pass",
     "434": "pass",
-    "435": "pass"
+    "435": "pass",
+    "436": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -873,6 +874,7 @@
     "432": "Illum rays is the master illumination switch; no fabricated fans (0542)",
     "433": "a promoted solid inside the lens block is re-seated by the swap, not a veto (0546)",
     "434": "a swap re-bakes the replacement lens block onto the frozen leg (0547)",
-    "435": "a Variable-thickness solve can never commit a negative gap (0550)"
+    "435": "a Variable-thickness solve can never commit a negative gap (0550)",
+    "436": "an escaped ray's display tail is bounded to the scene, not 1.25x radius (0551)"
   }
 }

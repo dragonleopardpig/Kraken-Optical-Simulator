@@ -757,6 +757,14 @@ def _clip_polyline_at_detector_planes(
     return pts, False
 
 
+#: bugs/0551: how far an ESCAPED ray's DISPLAY tail may run, as a fraction of the scene
+#: envelope radius. Scene-RELATIVE by construction -- there is no absolute millimetre bound
+#: here, so a 10 mm micro-objective and a 2 m telescope both get a tail proportionate to
+#: themselves, and the 75 mm floor below still protects small scenes (0.40 only starts to
+#: bind above a ~188 mm radius, i.e. exactly the large scenes where 1.25 ran off the frame).
+_ESCAPED_TAIL_SCENE_RADIUS_FACTOR = 0.40
+
+
 def bounded_ray_points_for_scene_display(
     points: object,
     center: np.ndarray,
@@ -825,7 +833,17 @@ def bounded_ray_points_for_scene_display(
         # Escaped rays are display diagnostics.  Keep the full trace metadata,
         # but draw a scene-envelope tail long enough to show the output
         # direction without letting one distant miss dominate autoscale.
-        max_terminal_length = max(75.0, min(scene_radius * 1.25, 600.0))
+        #
+        # bugs/0551 (flag_20260805_081647 / _081811, "still have unbounded rays"): the factor
+        # was 1.25, which on the swapped AZ85 scene drew every escape ~375 mm -- past the
+        # prism, past the camera and clean off the frame, while the TRACE stopped at 237 mm.
+        # That tail is EXTENDED beyond the traced stub (see below), so what the user was
+        # judging as stray light was display scaffolding, not physics. Measured on that scene
+        # from the flag's own camera: 1.25 -> drawn max x 375.1; 0.40 -> 233.6, with the beam,
+        # the fold and the camera bundle pixel-identical. Anything at or below ~0.40 gives the
+        # same picture there (the drawn extent falls back to the scene geometry), so 0.40 is
+        # the largest value that fixes it -- the direction cue survives, the starburst does not.
+        max_terminal_length = max(75.0, min(scene_radius * _ESCAPED_TAIL_SCENE_RADIUS_FACTOR, 600.0))
         if _suppressed_branch:
             # bugs/0506: a suppressed branch's escape is bounded -- a 75 mm stub shows
             # the direction without the starburst (the 0182 bounding contract).
