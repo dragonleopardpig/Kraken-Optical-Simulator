@@ -491,6 +491,28 @@ class ParaxialToolsMixin:
                 has_rotating_fold = True
                 break
         if not has_rotating_fold:
+            # bugs/0567: on a 0433-FROZEN scene ``_optical_axis_fold_world_transform_for_row``
+            # returns None for EVERY row -- the freeze bakes world poses and drops the fold
+            # transform -- so the loop above sees no fold and this guard hands the FOLDED mesh
+            # rows to PupilCalc, precisely what bugs/0194 built it to prevent. PupilCalc then
+            # throws ``IndexError: index 0 is out of bounds for axis 0 with size 0`` on the
+            # mirror's 90-degree internal reflection, the caller's blanket except returns None,
+            # and the frozen snap's ADAPTIVE corrective loop breaks after a single application --
+            # leaving the residual defocus the user sees ("solve for FOV 55x55, ray still defocus
+            # at the sensor", flag_20260805_164242).
+            #
+            # The breadcrumb detector needs no transform: a promoted optical solid carrying a
+            # MIRROR face is a rotating fold by construction. It also keeps bugs/0173 intact --
+            # a straight-through beam-splitter cube carries Beam Splitter faces, not Mirror ones,
+            # so it still reports no fold and keeps its mesh.
+            #
+            # This is the FOURTH consumer of the frozen fold-transform to need this fallback
+            # (0517 camera frame, 0519 solve gate, 0525 cone crease).
+            try:
+                has_rotating_fold = bool(self._promoted_mirror_fold_row_indices())
+            except Exception:
+                has_rotating_fold = False
+        if not has_rotating_fold:
             return None
         offbeam_rows = self._offbeam_promoted_mirror_rows(rows)
         equivalent: list[SurfaceRow] = []
@@ -539,7 +561,22 @@ class ParaxialToolsMixin:
                 equivalent.append(flat)
                 replaced = True
             else:
-                equivalent.append(SurfaceRow(**asdict(row)))
+                plain = SurfaceRow(**asdict(row))
+                # bugs/0567: on a 0433-FROZEN scene EVERY row carries a baked WORLD placement,
+                # not just the promoted solids -- the lens block here keeps tilt (0, -90, -180)
+                # and desp (82.04, 0, -64.69). Stripping only the solids left a chain that is
+                # 90 degrees off axis and decentred by ~130 mm, so the SEQUENTIAL trace this
+                # equivalent exists to feed lost every ray and PupilCalc threw on empty
+                # direction cosines. Unfolding is rigid: drop the placement here too and keep
+                # the axial gaps, which is what "straight equivalent" already promised.
+                # Only WORLD-placed rows are touched, so a genuinely decentred sequential
+                # element on an unfrozen scene keeps its decenter.
+                from KrakenOS.UI.services import row_placement as _row_placement
+
+                if _row_placement.is_world_placed(row):
+                    plain.tilt_x = plain.tilt_y = plain.tilt_z = 0.0
+                    plain.desp_x = plain.desp_y = plain.desp_z = 0.0
+                equivalent.append(plain)
         return equivalent if replaced else None
 
     def _with_rows_swapped(self, rows: list[SurfaceRow], compute):

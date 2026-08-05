@@ -15551,6 +15551,10 @@ phase_441_snap_near_leg_never_negative = _phase_from_standalone(
     441, "the detector snap's mirror-slide never drives a gap negative (0566)",
     "KrakenOS.UI.validate_open3d_0566_snap_near_leg_never_negative",
     "snap_near_leg_never_negative")
+phase_442_frozen_straight_equivalent = _phase_from_standalone(
+    442, "the straight equivalent works on a frozen scene, so best focus is measurable (0567)",
+    "KrakenOS.UI.validate_open3d_0567_frozen_straight_equivalent",
+    "frozen_straight_equivalent")
 phase_438_sensor_anchor_frozen_aware = _phase_from_standalone(
     438, "Normal to Sensor aims at the real sensor on a frozen scene (0556)",
     "KrakenOS.UI.validate_open3d_0556_sensor_anchor_frozen_aware",
@@ -16059,6 +16063,7 @@ def main() -> int:
             phase_439_row_pose_resolver,
             phase_440_model_designation_lens,
             phase_441_snap_near_leg_never_negative,
+            phase_442_frozen_straight_equivalent,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
