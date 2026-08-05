@@ -50,6 +50,39 @@ def _poses(app):
     ]
 
 
+def _drawn_ray_bounds(insp):
+    """The DRAWN extent of every line prop -- the recorder's `ray_actor_bounds` equivalent."""
+    lo = [float("inf")] * 3
+    hi = [float("-inf")] * 3
+    biggest = []
+    try:
+        props = insp._renderer.GetViewProps()
+        props.InitTraversal()
+        for _ in range(int(props.GetNumberOfItems())):
+            prop = props.GetNextProp()
+            try:
+                if not bool(prop.GetVisibility()):
+                    continue
+                mapper = prop.GetMapper()
+                data = mapper.GetInput() if mapper is not None else None
+                if data is None or int(getattr(data, "GetNumberOfLines", lambda: 0)()) <= 0:
+                    continue
+                b = [float(v) for v in prop.GetBounds()]
+                if any(b[i] > b[i + 1] for i in (0, 2, 4)):
+                    continue
+                biggest.append([round(v, 1) for v in b])
+                for axis in range(3):
+                    lo[axis] = min(lo[axis], b[2 * axis])
+                    hi[axis] = max(hi[axis], b[2 * axis + 1])
+            except Exception:
+                continue
+    except Exception:
+        return None, []
+    if lo[0] == float("inf"):
+        return None, []
+    return [lo[0], hi[0], lo[1], hi[1], lo[2], hi[2]], sorted(biggest, key=lambda b: -b[1])[:6]
+
+
 def _census(insp):
     bundle = insp.__dict__.get("_current_scene_bundle")
     paths = list(getattr(bundle, "ray_paths", None) or [])
@@ -94,7 +127,11 @@ def main() -> int:
                 negative.append(index)
 
         total, census, far_x = _census(insp)
-        print(f"\nAS SAVED:  {total} paths, far x = {far_x}")
+        drawn, big = _drawn_ray_bounds(insp)
+        print(f"\nAS SAVED:  {total} paths, TRACED far x = {far_x}")
+        print(f"           DRAWN line bounds = {[round(v,1) for v in (drawn or [])]}")
+        for b in big:
+            print(f"             actor {b}")
         for reason, count in sorted(census.items(), key=lambda kv: -kv[1]):
             print(f"    {count:>5}  {reason or '(none)'}")
 
