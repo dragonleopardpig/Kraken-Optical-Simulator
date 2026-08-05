@@ -1754,7 +1754,9 @@ def _build_ray_paths(
             source_weight=float(source_weight) if source_weight is not None else None,
             field_index=field_index,
             wavelength=float(wavelengths[ray_index]) if ray_index < len(wavelengths) else None,
-            color=colors[field_index % len(colors)],
+            color=_field_display_color(
+                colors, int(source_ray_index) // max(ray_count_per_field, 1)
+            ),  # bugs/0555: the ray's TRUE field group, not the clamped index
             points_world=points_world,
             surface_ids=surface_ids,
             reaches_image=reaches_image,
@@ -4622,6 +4624,28 @@ def _has_off_axis_geometry(rows: list) -> bool:
         ):
             return True
     return False
+
+
+def _field_display_color(colors: list[str], raw_field_index: int) -> str:
+    """Colour for a ray's TRUE field group, never collapsed by a stale field count (bugs/0555).
+
+    ``field_index`` is clamped to ``field_count - 1`` for its own bookkeeping, and the palette is
+    sized from the same count -- which the 3-D display takes from the CACHED
+    ``_preview_field_bundle_count`` (falling back to ``_current_field_count()``, which returns 1
+    whenever field sampling is not flagged active). When that cache is stale the count collapses
+    to 1, ``_default_field_colors`` returns the single ``#39FF14``, and
+    ``colors[field_index % 1]`` paints EVERY ray bright green -- the user's "sometimes the rays
+    become all green ... click Trace Now and the colour becomes normal again"
+    (flag_20260805_115527 / _115638: identical 558-path censuses, 1 merged ray actor vs 8).
+
+    The ray's own group index is the truth, so index by that and widen the palette when it runs
+    short. A genuinely single-field scene still gets ``#39FF14`` because its group index is 0."""
+    if raw_field_index < 0:
+        raw_field_index = 0
+    if colors and raw_field_index < len(colors):
+        return colors[raw_field_index]
+    palette = _default_field_colors(max(raw_field_index + 1, 2))
+    return palette[raw_field_index % len(palette)]
 
 
 def _default_field_colors(count: int) -> list[str]:

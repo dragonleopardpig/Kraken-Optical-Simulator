@@ -15539,6 +15539,14 @@ phase_433_swap_keeps_inblock_solid = _phase_from_standalone(
     433, "a promoted solid inside the lens block is re-seated by the swap, not a veto (0546)",
     "KrakenOS.UI.validate_open3d_0546_swap_keeps_inblock_solid",
     "swap_keeps_inblock_solid")
+phase_438_sensor_anchor_frozen_aware = _phase_from_standalone(
+    438, "Normal to Sensor aims at the real sensor on a frozen scene (0556)",
+    "KrakenOS.UI.validate_open3d_0556_sensor_anchor_frozen_aware",
+    "sensor_anchor_frozen_aware")
+phase_437_ray_colors_follow_fields = _phase_from_standalone(
+    437, "a ray's colour follows its true field group, never collapsing to green (0555)",
+    "KrakenOS.UI.validate_open3d_0555_ray_colors_follow_fields",
+    "ray_colors_follow_fields")
 phase_436_escape_tail_bounded = _phase_from_standalone(
     436, "an escaped ray's display tail runs to the scene envelope exit (0551, 0553)",
     "KrakenOS.UI.validate_open3d_0551_escape_tail_bounded",
@@ -16034,6 +16042,8 @@ def main() -> int:
             phase_434_swap_keeps_frozen_leg,
             phase_435_no_negative_gap,
             phase_436_escape_tail_bounded,
+            phase_437_ray_colors_follow_fields,
+            phase_438_sensor_anchor_frozen_aware,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

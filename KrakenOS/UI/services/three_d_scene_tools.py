@@ -3704,8 +3704,21 @@ class ThreeDSceneToolsMixin:
         binned the source's own launch events. The sensor's pose is an IMAGING property (bugs/0266: the
         illumination must never move the conjugates), so it comes from the final Image row: on-axis at
         the cumulative-thickness plane, sensor dims resolving through ``_detector_target_half_extent``
-        (incl. the bugs/0276 vendor-camera override). Axial prescription assumed -- folded scenes carry
-        real detector targets in their bundles and never reach this fallback."""
+        (incl. the bugs/0276 vendor-camera override).
+
+        bugs/0556: the old code ASSUMED an axial prescription -- ``center_world=(0, 0, z_plane)``,
+        ``normal_world=(0, 0, 1)`` -- on the stated grounds that "folded scenes carry real detector
+        targets in their bundles and never reach this fallback". That is false on a 0433-FROZEN
+        scene whose arms have not converged: every detector target is a default-distance PARK, so
+        the resolver falls through to here and the anchor lands on the straight axis. Measured from
+        flag_20260805_120322 ("click Normal to Sensor, overlay show nothing"): the camera aimed at
+        (-0.47, 0.06, 134.03) -- x on the global axis, z the image row's STATION -- while the sensor
+        actually sits at (193.4, 0, 10.2). The parallel scale was right (12.44, a 23x23 sensor), so
+        the view framed 194 mm of empty space.
+
+        The row's own pose is the truth on either kind of scene: ``(desp_x, desp_y, station +
+        desp_z)`` with the orientation from its tilts. On an unfrozen row (desp 0, tilt 0) that
+        reduces EXACTLY to the old axial values, so straight scenes are unchanged."""
         rows = list(getattr(self, "rows", []) or [])
         image_index = None
         for index in range(len(rows) - 1, -1, -1):
@@ -3720,6 +3733,36 @@ class ThreeDSceneToolsMixin:
             return None
         from KrakenOS.UI.scene_geometry import SceneTarget3D
 
+        # bugs/0556: read the row's WORLD pose. A frozen row carries its final placement in
+        # desp + tilt, so the axial assumption puts the anchor ~194 mm away from the sensor.
+        row = rows[image_index]
+        center = np.asarray((0.0, 0.0, z_plane), dtype=float)
+        normal = np.asarray((0.0, 0.0, 1.0), dtype=float)
+        tangent = np.asarray((0.0, 1.0, 0.0), dtype=float)
+        try:
+            desp = np.asarray(
+                (float(row.desp_x), float(row.desp_y), float(row.desp_z)), dtype=float
+            )
+            tilts = np.asarray(
+                (float(row.tilt_x), float(row.tilt_y), float(row.tilt_z)), dtype=float
+            )
+            if np.any(np.abs(desp) > 1e-9) or np.any(np.abs(tilts) > 1e-9):
+                stations = self._row_z_positions()
+                station = float(stations[image_index]) if image_index < len(stations) else 0.0
+                center = np.asarray(
+                    (desp[0], desp[1], station + desp[2]), dtype=float
+                )
+                from KrakenOS.UI.optical_solid_metadata import rotation_matrix_from_kraken_tilts
+
+                rotation = np.asarray(
+                    rotation_matrix_from_kraken_tilts(*(float(v) for v in tilts)), dtype=float
+                )
+                if rotation.shape == (3, 3) and np.all(np.isfinite(rotation)):
+                    normal = rotation[:, 2]
+                    tangent = rotation[:, 1]
+        except Exception:
+            pass
+
         return SceneTarget3D(
             target_id=f"illumination-anchor:image-row:{image_index}",
             name=str(getattr(rows[image_index], "name", "") or "Image"),
@@ -3727,9 +3770,9 @@ class ThreeDSceneToolsMixin:
             row_index=int(image_index),
             trace_surface=int(image_index),
             surface="Image",
-            center_world=np.asarray((0.0, 0.0, z_plane), dtype=float),
-            normal_world=np.asarray((0.0, 0.0, 1.0), dtype=float),
-            tangent_world=np.asarray((0.0, 1.0, 0.0), dtype=float),
+            center_world=center,
+            normal_world=normal,
+            tangent_world=tangent,
             diameter=float(getattr(rows[image_index], "diameter", 0.0) or 0.0),
             is_detector=True,
         )
