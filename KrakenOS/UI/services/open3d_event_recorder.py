@@ -98,6 +98,11 @@ class SceneSnapshot:
     # the placement was cleared (offset ~0).
     step_overlay_poses: dict[str, Any] = field(default_factory=dict)
     show_rays: bool = False
+    #: bugs/0553: the ray-VISIBILITY toggles. Without these a flag saying "rays stop half way"
+    #: cannot be told apart from the user having Show Clipped Rays ON -- where drawing a
+    #: vignetted stub that ends at the aperture stop is the CORRECT, requested behaviour.
+    show_clipped_rays: bool | None = None
+    show_terminal_diagnostics: bool | None = None
     # Diagnostics for the "3D shows a fan, not a cone" report (bug 0038/0040):
     # which sampling mode the live 3D actually chose and why (committed tag,
     # transient, cached-bundle mode, the 3D/2D mode the editor wants, and the
@@ -769,6 +774,22 @@ class Open3DEventRecorder:
             snapshot.show_rays = bool(inspector.show_rays_var.get())
         except Exception:
             pass
+        # bugs/0553: which rays the user asked to SEE. "Rays stop half way before the mirror"
+        # is expected when Show Clipped Rays is ON (a vignetted ray legitimately ends at the
+        # stop) and a defect when it is OFF, and the flag could not previously tell them apart.
+        for attr, field_name in (
+            ("show_clipped_rays_var", "show_clipped_rays"),
+            ("show_terminal_diagnostics_var", "show_terminal_diagnostics"),
+        ):
+            for owner in (inspector, getattr(inspector, "editor", None)):
+                var = getattr(owner, attr, None) if owner is not None else None
+                if var is None:
+                    continue
+                try:
+                    setattr(snapshot, field_name, bool(var.get()))
+                    break
+                except Exception:
+                    continue
 
         # Sampling-mode diagnostics for the "fan, not cone" report.
         try:

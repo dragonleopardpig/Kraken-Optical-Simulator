@@ -41,7 +41,14 @@ What the swap changed is the *number and direction* of escapes — `no_next_inte
 279 → 337 and `missed_image` 0 → 59 — so many more of those tails now point +x, straight past
 the prism.
 
-## Fix
+## Fix — SUPERSEDED by bugs/0553
+
+> **This fix regressed.** `0.40 ×` landed below the 75 mm floor on this very scene, so strays
+> were amputated in mid-air short of the prism — flag_20260805_101116 / _101430, *"some rays
+> stop half way before touching the RA mirror"*. The diagnosis below (the tail is display
+> scaffolding, extended past the traced stub) is correct and still stands; the REMEDY was not.
+> bugs/0553 replaces the tuned constant with the scene-envelope exit, which satisfies both
+> flags. Read `bugs/0553_escape_tail_scene_envelope.md` for the shipped behaviour.
 
 `1.25` → `_ESCAPED_TAIL_SCENE_RADIUS_FACTOR = 0.40`, a named module constant.
 

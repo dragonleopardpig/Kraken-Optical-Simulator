@@ -15540,7 +15540,7 @@ phase_433_swap_keeps_inblock_solid = _phase_from_standalone(
     "KrakenOS.UI.validate_open3d_0546_swap_keeps_inblock_solid",
     "swap_keeps_inblock_solid")
 phase_436_escape_tail_bounded = _phase_from_standalone(
-    436, "an escaped ray's display tail is bounded to the scene, not 1.25x radius (0551)",
+    436, "an escaped ray's display tail runs to the scene envelope exit (0551, 0553)",
     "KrakenOS.UI.validate_open3d_0551_escape_tail_bounded",
     "escape_tail_bounded")
 phase_435_no_negative_gap = _phase_from_standalone(

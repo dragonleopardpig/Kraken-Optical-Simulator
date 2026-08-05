@@ -757,12 +757,52 @@ def _clip_polyline_at_detector_planes(
     return pts, False
 
 
-#: bugs/0551: how far an ESCAPED ray's DISPLAY tail may run, as a fraction of the scene
-#: envelope radius. Scene-RELATIVE by construction -- there is no absolute millimetre bound
-#: here, so a 10 mm micro-objective and a 2 m telescope both get a tail proportionate to
-#: themselves, and the 75 mm floor below still protects small scenes (0.40 only starts to
-#: bind above a ~188 mm radius, i.e. exactly the large scenes where 1.25 ran off the frame).
-_ESCAPED_TAIL_SCENE_RADIUS_FACTOR = 0.40
+#: bugs/0553: an ESCAPED ray's DISPLAY tail is bounded by the SCENE GEOMETRY, not by a tuned
+#: fraction of it. These two only clamp the geometric answer at the extremes: a stray already
+#: outside the envelope still shows its direction (floor), and a pathological envelope cannot
+#: produce an endless line (cap). Scene-relative by construction, so a 10 mm micro-objective
+#: and a 2 m telescope each get a tail proportionate to themselves.
+_ESCAPED_TAIL_MIN_MM = 75.0
+_ESCAPED_TAIL_MAX_MM = 600.0
+
+
+def _scene_exit_distance(point, terminal_direction, terminal_segment, center, scene_radius) -> float:
+    """How far a stray must run from ``point`` to LEAVE the scene envelope (bugs/0553).
+
+    The envelope is the sphere (``center``, ``scene_radius``) that
+    :func:`scene_display_center_radius` builds from the surface meshes, curves and targets --
+    the real geometry, never the rays themselves. Solving for the forward sphere exit gives a
+    tail that reaches the far side of the scene and stops: a stray crossing toward the fold
+    prism visibly traverses it (no mid-air amputation INSIDE the scene), and nothing is drawn
+    into empty space beyond the scene.
+
+    Clamped to ``[_ESCAPED_TAIL_MIN_MM, _ESCAPED_TAIL_MAX_MM]``. The floor also covers the
+    degenerate cases -- a stray already outside the envelope, or one aimed away from it, where
+    there is no forward exit to solve for."""
+    direction = _unit_vector_or_none(terminal_direction)
+    if direction is None:
+        direction = _unit_vector_or_none(terminal_segment)
+    if direction is None:
+        return _ESCAPED_TAIL_MIN_MM
+    try:
+        origin = np.asarray(point, dtype=float).reshape(3)
+        centre = np.asarray(center, dtype=float).reshape(3)
+        radius = float(scene_radius)
+    except Exception:
+        return _ESCAPED_TAIL_MIN_MM
+    if not (np.all(np.isfinite(origin)) and np.all(np.isfinite(centre)) and np.isfinite(radius)):
+        return _ESCAPED_TAIL_MIN_MM
+    # |origin + t*d - centre| = radius, solved forward (t >= 0).
+    offset = origin - centre
+    b = float(np.dot(offset, direction))
+    c = float(np.dot(offset, offset) - radius * radius)
+    discriminant = b * b - c
+    if not np.isfinite(discriminant) or discriminant <= 0.0:
+        return _ESCAPED_TAIL_MIN_MM  # never meets the envelope
+    exit_distance = -b + float(np.sqrt(discriminant))
+    if not np.isfinite(exit_distance) or exit_distance <= 0.0:
+        return _ESCAPED_TAIL_MIN_MM  # the envelope is behind it
+    return float(min(max(exit_distance, _ESCAPED_TAIL_MIN_MM), _ESCAPED_TAIL_MAX_MM))
 
 
 def bounded_ray_points_for_scene_display(
@@ -834,16 +874,30 @@ def bounded_ray_points_for_scene_display(
         # but draw a scene-envelope tail long enough to show the output
         # direction without letting one distant miss dominate autoscale.
         #
-        # bugs/0551 (flag_20260805_081647 / _081811, "still have unbounded rays"): the factor
-        # was 1.25, which on the swapped AZ85 scene drew every escape ~375 mm -- past the
-        # prism, past the camera and clean off the frame, while the TRACE stopped at 237 mm.
-        # That tail is EXTENDED beyond the traced stub (see below), so what the user was
-        # judging as stray light was display scaffolding, not physics. Measured on that scene
-        # from the flag's own camera: 1.25 -> drawn max x 375.1; 0.40 -> 233.6, with the beam,
-        # the fold and the camera bundle pixel-identical. Anything at or below ~0.40 gives the
-        # same picture there (the drawn extent falls back to the scene geometry), so 0.40 is
-        # the largest value that fixes it -- the direction cue survives, the starburst does not.
-        max_terminal_length = max(75.0, min(scene_radius * _ESCAPED_TAIL_SCENE_RADIUS_FACTOR, 600.0))
+        # bugs/0553: the tail runs until the stray LEAVES THE SCENE ENVELOPE -- the distance
+        # from its last point to where it exits the sphere (``center``, ``scene_radius``) --
+        # floored at 75 mm and capped at 600 mm.
+        #
+        # Two flags, one root cause. A FIXED FRACTION of the radius has no relationship to
+        # where the scene's geometry actually is, so it is wrong in both directions:
+        #   * 1.25 -> flag_20260805_081647/_081811 "still have unbounded rays": every escape
+        #     drew ~375 mm on the swapped AZ85 scene, past the prism and off the frame, while
+        #     the TRACE stopped at 237 mm.
+        #   * 0.40 (the bugs/0551 attempt) -> flag_20260805_101116/_101430 "some rays stop half
+        #     way before touching the RA mirror": measured, that factor sat BELOW the 75 mm
+        #     floor on this scene (0.40 and the 75 mm stub rendered byte-identical drawn
+        #     extents, 233.586), a 3x shortening, so strays were amputated in mid-air short of
+        #     the prism they were crossing toward.
+        # The sphere exit is the quantity both flags were really asking for: a stray aimed
+        # across the scene visibly traverses it (nothing stops in mid-air INSIDE the scene),
+        # and none is drawn beyond the scene it belongs to.
+        # Measured from ``pts[-2]``: ``max_terminal_length`` is the length of the whole TERMINAL
+        # SEGMENT below (it is compared against ``terminal_length`` and the extension subtracts
+        # that), so solving the exit from the segment's START lands the drawn end exactly ON the
+        # envelope rather than one traced-stub short of it.
+        max_terminal_length = _scene_exit_distance(
+            pts[-2], terminal_direction, terminal_segment, center, scene_radius
+        )
         if _suppressed_branch:
             # bugs/0506: a suppressed branch's escape is bounded -- a 75 mm stub shows
             # the direction without the starburst (the 0182 bounding contract).
