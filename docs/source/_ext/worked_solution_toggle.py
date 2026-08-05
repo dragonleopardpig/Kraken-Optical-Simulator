@@ -303,6 +303,82 @@ def _split_paragraph_lines(paragraph: nodes.paragraph) -> list[nodes.paragraph]:
     return [line for line in lines if line.astext().strip()]
 
 
+def _split_derivation_sentences(
+    paragraph: nodes.paragraph,
+) -> list[nodes.paragraph]:
+    """Turn a compact derivation paragraph into readable labeled steps.
+
+    Inline math is kept as a single docutils node; only text nodes are split at
+    sentence boundaries, so the rendered equations and cross-references remain
+    intact.
+    """
+    segments: list[list[nodes.Node]] = [[]]
+    for child in paragraph.children:
+        if not isinstance(child, nodes.Text):
+            segments[-1].append(child.deepcopy())
+            continue
+        parts = re.split(
+            r"(?<=[.!?;])\s+(?=[A-Z0-9\\])|(?<=,)\s+(?=[A-Za-z])",
+            str(child),
+        )
+        for index, part in enumerate(parts):
+            if part:
+                segments[-1].append(nodes.Text(part))
+            if index < len(parts) - 1:
+                segments.append([])
+
+    result: list[nodes.paragraph] = []
+    for index, children in enumerate(segments, 1):
+        if not any(child.astext().strip() for child in children):
+            continue
+        step = nodes.paragraph(classes=["worked-detail-step"])
+        step += nodes.strong("", f"Detailed step {index}. ")
+        for child in children:
+            step += child
+        result.append(step)
+    return result
+
+
+def _expand_compact_fundamentals_detail(section: nodes.section) -> None:
+    """Expand one-paragraph Step 3 derivations before building the brief."""
+    check_index = next(
+        (index for index, child in enumerate(section.children) if _is_check(child)),
+        len(section.children),
+    )
+    derivation_index = next(
+        (
+            index
+            for index, child in enumerate(section.children[:check_index])
+            if _is_derivation_marker(child)
+        ),
+        None,
+    )
+    if derivation_index is None:
+        return
+    result_index = next(
+        (
+            index
+            for index, child in enumerate(section.children[derivation_index + 1 : check_index], derivation_index + 1)
+            if _is_explicit_result(child)
+        ),
+        check_index,
+    )
+    candidates = [
+        child
+        for child in section.children[derivation_index + 1 : result_index]
+        if _is_fundamentals_content(child)
+    ]
+    if len(candidates) != 1 or not isinstance(candidates[0], nodes.paragraph):
+        return
+    expanded = _split_derivation_sentences(candidates[0])
+    if len(expanded) <= 1:
+        return
+    original_index = section.children.index(candidates[0])
+    section.children[original_index : original_index + 1] = expanded
+    for child in expanded:
+        child.parent = section
+
+
 def _sanitized_copy(node: nodes.Node) -> nodes.Node:
     clone = node.deepcopy()
     for descendant in clone.findall(include_self=True):
@@ -476,6 +552,7 @@ def _transform_solutions(app, doctree: nodes.document, docname: str) -> None:
             continue
         content = list(section.children[1:])
         if profile == "fundamentals":
+            _expand_compact_fundamentals_detail(section)
             brief = _fundamentals_brief(section)
         elif profile == "route":
             brief = _route_brief(content)
