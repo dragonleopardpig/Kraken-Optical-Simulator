@@ -557,6 +557,32 @@ class Open3DEventRecorder:
                         pose["axis_anchor"] = None
                 except Exception:
                     pass
+                if label == "lens":
+                    # bugs/0568: how far the lens BODY's optical (CAD barrel) axis sits off the
+                    # surrogate's own axis. "The lens STEP is not centered" is otherwise only
+                    # visible by eye, and the placement numbers alone cannot show it -- they mean
+                    # different things for different bodies.
+                    try:
+                        import numpy as _np
+
+                        body = editor._lens_step_overlay_axis_world_line()
+                        axis = editor._lens_surrogate_optical_axis_line()
+                        if body is not None and axis is not None:
+                            gap = _np.asarray(axis[0], dtype=float) - _np.asarray(body[0], dtype=float)
+                            gap = gap - float(_np.dot(gap, axis[1])) * _np.asarray(axis[1], dtype=float)
+                            pose["optical_axis_offset_mm"] = round(float(_np.linalg.norm(gap)), 4)
+                            pose["optical_axis_tilt_deg"] = round(
+                                float(
+                                    _np.degrees(
+                                        _np.arccos(
+                                            min(1.0, max(-1.0, abs(float(_np.dot(body[1], axis[1])))))
+                                        )
+                                    )
+                                ),
+                                4,
+                            )
+                    except Exception:
+                        pass
                 if label == "optical":
                     try:
                         _rows, records = editor._live_step_overlay_trace_rows()

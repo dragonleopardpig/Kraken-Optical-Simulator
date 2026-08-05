@@ -164,16 +164,19 @@ def _check_detection(failures: list[str]) -> None:
         )
 
 
-def _run_real_swap(new_block_thicknesses, scene=None, rows=None):
+def _run_real_swap(new_block_thicknesses, scene=None, rows=None, editor=None, settings=None):
     """Drive the REAL ``swap_imaging_lens_from_folder`` with the file I/O stubbed out.
 
     Only the side effects (folder import, layout write/read, table sync, history, refocus,
     2D refresh) are faked -- every row-surgery decision is the shipped code's. ``rows`` takes a
-    prebuilt row list (bugs/0547's frozen scene builds its own baked desp/tilt)."""
+    prebuilt row list (bugs/0547's frozen scene builds its own baked desp/tilt); ``editor``
+    takes a prebuilt editor (bugs/0568 needs one carrying lens-STEP overlay state) and
+    ``settings`` the replacement lens's settings block (its STEP path)."""
     from KrakenOS.UI.services import layout_table_workbench as ltw
     from KrakenOS.UI.surface_table_model import SurfaceRow
 
-    editor = _editor(_scene_rows(scene) if rows is None else rows)
+    if editor is None:
+        editor = _editor(_scene_rows(scene) if rows is None else rows)
 
     new_surfaces = [SurfaceRow(name="Object", surface="Object", thickness=0.0, glass="AIR")]
     for name, thickness in new_block_thicknesses:
@@ -200,7 +203,10 @@ def _run_real_swap(new_block_thicknesses, scene=None, rows=None):
     ltw.import_lens_folder = lambda folder: model
     ltw.render_surrogate_layout_source = lambda m: "# stub"
     ltw.LAYOUTS_DIR = _StubLayoutsDir()
-    ltw._load_python_data = lambda destination: {"surfaces": new_surfaces, "settings": {}}
+    ltw._load_python_data = lambda destination: {
+        "surfaces": new_surfaces,
+        "settings": dict(settings or {}),
+    }
     ltw.messagebox = SimpleNamespace(
         showerror=lambda *a, **k: errors.append(a[1] if len(a) > 1 else ""),
         showinfo=lambda *a, **k: None,

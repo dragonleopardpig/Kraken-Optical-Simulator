@@ -1565,6 +1565,20 @@ class LayoutTableWorkbenchMixin:
             self._swap_apply_frozen_block_frame(frozen_frame, swap_front, swap_rear)
         # bugs/0546: the lifted rows go back to the exact absolute pose they held before.
         self._swap_reseat_preserved_rows(preserved)
+        # bugs/0568: the overlay's PRESERVED placement numbers (bugs/0381) only mean what they
+        # meant for the body they were set for -- the alignment's rotation pivots are the MESH's
+        # own bounding box and the axial datum pin is redirected sideways by a 90/270 deg overlay
+        # rotation -- so a barrel of a different length or mount lands OFF the optical axis
+        # (7.255 mm on the flagged AZ85 ELS-85 -> PYRITE swap). Preserve the SEAT, not the
+        # numbers: re-centre the new body on the surrogate axis, transversely only, so the axial
+        # registration this swap just settled is untouched.
+        try:
+            self._swap_lens_axis_centring = self.center_lens_body_on_surrogate_axis(
+                context="swap", record_history=False
+            )
+        except Exception as exc:
+            self._swap_lens_axis_centring = None
+            self.append_debug(f"swap lens-axis centring skipped: {exc}")
         self._sync_table()
         self.load_layouts()  # discover the new library surrogate (also insertable later)
         self._commit_history_capture()
@@ -1583,6 +1597,14 @@ class LayoutTableWorkbenchMixin:
             message += (
                 f" {len(preserved)} promoted solid row(s) sat inside the lens block and were "
                 "re-seated unmoved after it."
+            )
+        # bugs/0568: say when the new body had to be re-centred, so a swap that moved the
+        # overlay sideways is visible rather than silent.
+        centring = self.__dict__.get("_swap_lens_axis_centring") or {}
+        if centring.get("moved"):
+            message += (
+                f" Lens STEP re-centred on the optical axis "
+                f"({float(centring.get('before_mm', 0.0)):.2f} mm off, no axial shift)."
             )
         # bugs/0566: say so when the lens could NOT be brought to focus, rather than reporting a
         # clean swap over a defocused scene.

@@ -138,11 +138,48 @@ def run_checks() -> tuple[bool, list[str]]:
         failures.append("bugs/0377 gate too tight: a close barrel (body ~ glass) must still be re-centred (0374)")
 
     # --- WIRING -------------------------------------------------------------------
+    # Asserted through the VALUES the builder feeds the alignment, not by string-matching its
+    # source: bugs/0568 moved that assembly into `_lens_step_alignment_params` (so the
+    # optical-axis probe cannot drift from the drawn body) and a source assertion would have
+    # called a correct refactor a regression -- the bugs/0531 lesson, assert behaviour.
+    wired = _stub(metrics)
+    wired.lens_step_reverse_direction = True  # exercise the flip branch
+    wired.lens_step_rotation_z_deg = 0.0
+    wired.lens_step_largest_component_only = True
+    wired.lens_step_axis_offset_xy = (0.0, 0.0)
+    wired.lens_step_placement_offset_xyz = (0.0, 0.0, 0.0)
+    wired.lens_step_resize = None
+    wired._step_primary_cylinder_axis = lambda path: None  # type: ignore[attr-defined]
+    wired._step_primary_cylinder_axis_point = lambda path: None  # type: ignore[attr-defined]
+    wired._step_overlay_resize_active = lambda label: False  # type: ignore[attr-defined]
+    wired._step_axis_offset_xy = lambda label: (0.0, 0.0)  # type: ignore[attr-defined]
+    wired._step_placement_offset_xyz = lambda label: (0.0, 0.0, 0.0)  # type: ignore[attr-defined]
+    params = wired._lens_step_alignment_params()
+    if params is None:
+        failures.append("the lens builder assembles no alignment parameters at all")
+    else:
+        if abs(float(params.get("target_front_z", 0.0)) - wired._lens_step_display_front_z()) > 1e-9:
+            failures.append("the lens builder does not pin the overlay via _lens_step_display_front_z")
+        if abs(float(params.get("flip_axial_shift", 0.0)) - wired._lens_step_flip_axial_shift()) > 1e-9:
+            failures.append(
+                "bugs/0500: the lens builder does not wire the flip correction into the alignment"
+            )
+        if abs(float(params.get("flip_axial_shift", 0.0))) <= 1e-9:
+            failures.append(
+                "bugs/0500: the flip correction is zero for a FLIPPED asymmetric barrel "
+                "(non-vacuity: the check above would pass on two zeros)"
+            )
+        accepted = set(
+            inspect.signature(
+                LayoutPolylineDisplayMixin._cad_mesh_aligned_to_optical_axis
+            ).parameters
+        )
+        unusable = {key for key in params if key not in accepted} - {"largest_component"}
+        if unusable:
+            failures.append(
+                f"the lens alignment parameters carry keys the alignment cannot take: {sorted(unusable)}"
+            )
     build_src = inspect.getsource(LayoutPolylineDisplayMixin._transformed_imported_lens_step_mesh)
-    if "target_front_z=self._lens_step_display_front_z()" not in build_src:
-        failures.append("the lens builder does not pin the overlay via _lens_step_display_front_z")
-    if "flip_axial_shift=flip_shift" not in build_src:
-        failures.append("bugs/0500: the lens builder does not wire the flip correction into the alignment")
     if "self._lens_rear_datum_z()" not in build_src:
         failures.append("the rear datum z is not in the lens overlay cache signature")
 

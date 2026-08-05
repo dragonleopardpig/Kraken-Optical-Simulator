@@ -1925,16 +1925,18 @@ class LayoutPolylineDisplayMixin:
     def _transformed_imported_lens_step_mesh(self):
         if self.imported_lens_step_path is None:
             return None
+        # The cache signature stays on the CHEAP attribute reads: the alignment inputs
+        # themselves (cylinder axis, glass metrics) are derived from these plus the STEP
+        # identity, and deriving them here would pay for an OCC/disk lookup on every call
+        # the cache is meant to answer for free (bugs/0166).
         largest = bool(getattr(self, "lens_step_largest_component_only", True))
         # bugs/0373: the persisted flip re-pins the opposite barrel end at the front
         # datum. A mechanical lens STEP does not encode the optical front, so when the
         # auto guess (front = axial max) is wrong the user flips it once and it sticks.
-        reverse = bool(getattr(self, "lens_step_reverse_direction", False))
-        front_face = "min" if reverse else "max"
         # bugs/0500: a flip mirrors about the leading mechanical face, which slides the GLASS by
-        # the overhang asymmetry; this barrel-frame shift puts the glass back on the datums so
-        # the flip swaps the mechanical ends around the fixed optics.
-        flip_shift = self._lens_step_flip_axial_shift()
+        # the overhang asymmetry; the barrel-frame flip shift (see the params below) puts the
+        # glass back on the datums so the flip swaps the mechanical ends around the fixed optics.
+        reverse = bool(getattr(self, "lens_step_reverse_direction", False))
         fold_transform = self._optical_axis_fold_world_transform_for_row(
             self._lens_front_datum_row_index()
         )
@@ -1956,47 +1958,169 @@ class LayoutPolylineDisplayMixin:
         )
 
         def build():
+            params = self._lens_step_alignment_params()
+            if params is None:
+                return None
             allow_slow_import = not self._open3d_step_cache_warmup_active()
             mesh = self._load_step_mesh(
                 self.imported_lens_step_path,
-                largest_component=largest,
+                largest_component=bool(params.pop("largest_component")),
                 allow_slow_import=allow_slow_import,
             )
             if mesh is None:
                 return None
             mesh = self._apply_step_overlay_resize(mesh, "lens")
-            cylinder_axis = self._step_primary_cylinder_axis(self.imported_lens_step_path)
-            # Centre the lens barrel on the optical axis using the CAD cylinder
-            # axis location, not the bbox midpoint an asymmetric mount skews
-            # (bugs/0077).  The axis point is in the STEP-native frame, so only
-            # apply it when the mesh has NOT been resized into a different frame.
-            optical_axis_point = None
-            if cylinder_axis is not None and not self._step_overlay_resize_active("lens"):
-                optical_axis_point = self._step_primary_cylinder_axis_point(
-                    self.imported_lens_step_path
-                )
-            aligned = self._cad_mesh_aligned_to_optical_axis(
-                mesh,
-                source_axis=cylinder_axis if cylinder_axis is not None else "pca0",
-                front_face=front_face,
-                # bugs/0374: pin the optical GLASS-BLOCK centre on the surrogate
-                # datum-span centre (not the mechanical body face), so a flipped
-                # barrel does not jump off the surrogate. Display-only.
-                # bugs/0500: the pin is face-independent; the flip correction is
-                # flip_axial_shift, applied in the barrel frame.
-                target_front_z=self._lens_step_display_front_z(),
-                flip_axial_shift=flip_shift,
-                label="Lens STEP",
-                roll_deg=float(getattr(self, "lens_step_rotation_z_deg", 0.0)),
-                x_rotation_deg=float(getattr(self, "lens_step_rotation_x_deg", 0.0)),
-                y_rotation_deg=float(getattr(self, "lens_step_rotation_y_deg", 0.0)),
-                axis_offset_xy=self._step_axis_offset_xy("lens"),
-                placement_offset_xyz=self._step_placement_offset_xyz("lens"),
-                optical_axis_point_xyz=optical_axis_point,
-            )
+            aligned = self._cad_mesh_aligned_to_optical_axis(mesh, **params)
             return self._mesh_with_world_transform(aligned, fold_transform)
 
         return self._cached_transformed_step_overlay("lens", signature, build)
+
+    def _lens_step_alignment_params(self) -> "dict | None":
+        """Every input :meth:`_cad_mesh_aligned_to_optical_axis` needs to place the lens
+        STEP overlay (plus ``largest_component`` for the mesh load), in ONE place.
+
+        Two consumers: the displayed body above and the optical-axis probe below
+        (bugs/0568).  A probe that re-derived any of these by hand would start answering
+        for a body other than the one on screen the moment one of them changed.
+        """
+        source_path = self.imported_lens_step_path
+        if source_path is None:
+            return None
+        cylinder_axis = self._step_primary_cylinder_axis(source_path)
+        # Centre the lens barrel on the optical axis using the CAD cylinder
+        # axis location, not the bbox midpoint an asymmetric mount skews
+        # (bugs/0077).  The axis point is in the STEP-native frame, so only
+        # apply it when the mesh has NOT been resized into a different frame.
+        optical_axis_point = None
+        if cylinder_axis is not None and not self._step_overlay_resize_active("lens"):
+            optical_axis_point = self._step_primary_cylinder_axis_point(source_path)
+        # bugs/0373: the persisted flip re-pins the opposite barrel end at the front datum.
+        reverse = bool(getattr(self, "lens_step_reverse_direction", False))
+        return {
+            "largest_component": bool(getattr(self, "lens_step_largest_component_only", True)),
+            "source_axis": cylinder_axis if cylinder_axis is not None else "pca0",
+            "front_face": "min" if reverse else "max",
+            # bugs/0374: pin the optical GLASS-BLOCK centre on the surrogate
+            # datum-span centre (not the mechanical body face), so a flipped
+            # barrel does not jump off the surrogate. Display-only.
+            # bugs/0500: the pin is face-independent; the flip correction is
+            # flip_axial_shift, applied in the barrel frame.
+            "target_front_z": self._lens_step_display_front_z(),
+            "flip_axial_shift": self._lens_step_flip_axial_shift(),
+            "label": "Lens STEP",
+            "roll_deg": float(getattr(self, "lens_step_rotation_z_deg", 0.0)),
+            "x_rotation_deg": float(getattr(self, "lens_step_rotation_x_deg", 0.0)),
+            "y_rotation_deg": float(getattr(self, "lens_step_rotation_y_deg", 0.0)),
+            "axis_offset_xy": self._step_axis_offset_xy("lens"),
+            "placement_offset_xyz": self._step_placement_offset_xyz("lens"),
+            "optical_axis_point_xyz": optical_axis_point,
+        }
+
+    def _lens_step_overlay_axis_world_line(self):
+        """``(point, direction)`` of the lens STEP overlay's OPTICAL axis -- the CAD barrel
+        cylinder axis -- where the overlay is CURRENTLY placed.  ``None`` when the body has
+        no derivable barrel axis (bugs/0568).
+
+        MEASURED, never re-derived: two points that lie ON the CAD cylinder axis are pushed
+        through the very same alignment the displayed body gets, so this cannot disagree with
+        what is drawn.  They sit at 25% / 75% of the body's axial span, strictly inside every
+        quantity the alignment reads off the point cloud -- the bbox midpoint and the axial
+        extremes are unreachable from the inside, and the centroid shift cancels (the
+        alignment subtracts it from both the cloud and the axis point) -- so probing moves the
+        displayed body by exactly nothing.
+
+        Frame: the PLACEMENT frame.  The display fold is deliberately NOT applied, because
+        that is the frame ``lens_step_placement_offset_xyz`` translates in and the frame
+        :func:`row_placement.world_pose` answers in for the surrogate rows, so the two lines
+        are directly comparable.  On a 0433-frozen scene the fold transform is None anyway
+        (the durable frozen-fold gate).
+
+        ``None`` -- never a guess -- when there is no OCC cylinder axis for this STEP, or when
+        a resize has taken the mesh out of the STEP-native frame the axis point lives in.
+        """
+        params = self._lens_step_alignment_params()
+        if params is None:
+            return None
+        axis_point = params.get("optical_axis_point_xyz")
+        source_axis = params.get("source_axis")
+        if axis_point is None or isinstance(source_axis, str):
+            return None
+        _load_3d_backends()
+        if pv is None:
+            return None
+        try:
+            axis = np.asarray(source_axis, dtype=float).reshape(3)
+            axis_norm = float(np.linalg.norm(axis))
+            if not np.isfinite(axis_norm) or axis_norm <= 1.0e-12:
+                return None
+            axis = axis / axis_norm
+            point = np.asarray(axis_point, dtype=float).reshape(3)
+            mesh = self._load_step_mesh(
+                self.imported_lens_step_path,
+                largest_component=bool(params.pop("largest_component")),
+                # Same cost policy as the display build: never force a slow OCC->STL
+                # conversion on the main thread during the STEP-cache warm-up. No mesh
+                # means no answer (None), which every caller already treats as "leave the
+                # body alone" -- far better than a stall inside a flag capture.
+                allow_slow_import=not self._open3d_step_cache_warmup_active(),
+            )
+            if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
+                return None
+            points = np.asarray(mesh.points, dtype=float)
+            span = (points - point) @ axis
+            low, high = float(np.min(span)), float(np.max(span))
+            probes = np.vstack(
+                [point + axis * (low + fraction * (high - low)) for fraction in (0.25, 0.75)]
+            )
+            probed = self._cad_mesh_aligned_to_optical_axis(
+                pv.PolyData(np.vstack([points, probes])), **params
+            )
+            if probed is None:
+                return None
+            seated = np.asarray(probed.points, dtype=float)[-2:]
+            if seated.shape != (2, 3) or not np.all(np.isfinite(seated)):
+                return None
+            direction = seated[1] - seated[0]
+            length = float(np.linalg.norm(direction))
+            if length <= 1.0e-9:
+                return None
+            return seated[0], direction / length
+        except Exception as exc:
+            self.append_debug(f"Lens STEP optical-axis probe unavailable: {exc}")
+            return None
+
+    def _lens_surrogate_optical_axis_line(self):
+        """``(point, direction)`` of the lens SURROGATE's optical axis: the line through its
+        Front and Rear Optical Vertex Datum rows, with the datum-span MIDPOINT as the point.
+
+        Read through the ONE row-pose resolver (bugs/0557), so it is the real leg on a
+        0433-frozen scene and the straight-equivalent on a sequential one -- the same frame
+        :meth:`_lens_step_overlay_axis_world_line` reports in.  ``None`` when the two datums
+        are not both locatable or sit on top of each other.
+        """
+        front = self._lens_datum_row_index("front")
+        rear = self._lens_datum_row_index("rear")
+        if front is None or rear is None or int(front) == int(rear):
+            return None
+        try:
+            from KrakenOS.UI.services import row_placement
+
+            front_pose = np.asarray(
+                row_placement.world_pose(self, int(front)).position, dtype=float
+            ).reshape(3)
+            rear_pose = np.asarray(
+                row_placement.world_pose(self, int(rear)).position, dtype=float
+            ).reshape(3)
+        except Exception as exc:
+            self.append_debug(f"Lens surrogate optical axis unavailable: {exc}")
+            return None
+        if not (np.all(np.isfinite(front_pose)) and np.all(np.isfinite(rear_pose))):
+            return None
+        direction = rear_pose - front_pose
+        length = float(np.linalg.norm(direction))
+        if length <= 1.0e-9:
+            return None
+        return 0.5 * (front_pose + rear_pose), direction / length
 
     def _transformed_imported_optical_step_mesh(self):
         if self.imported_optical_step_path is None:

@@ -4123,6 +4123,153 @@ class ScenePlacementMixin:
         self.status_var.set("Glued LED STEP back to the placement it was set at.")
         return True
 
+    def center_lens_body_on_surrogate_axis(
+        self,
+        *,
+        feature_center_xyz=None,
+        context: str = "",
+        record_history: bool = True,
+    ) -> "dict | None":
+        """Put the lens STEP body back ON its surrogate's optical axis, WITHOUT moving it
+        along that axis (bugs/0568).
+
+        Two things make the lens overlay drift sideways off the surrogate:
+
+        * a SWAP preserves the overlay's placement NUMBERS (bugs/0381 -- "a swap changes the
+          lens, not where the user put it"), but those numbers only mean what they meant for
+          the body they were set for: the alignment's x/y rotations pivot about the MESH's own
+          bounding box, so a barrel of a different length or with a different mount/screw boss
+          seats itself somewhere else.  Measured on the flagged AZ85 swap (ELS-85 -> PYRITE
+          45-85): 7.255 mm off the leg, of which 5.111 mm is the body change and 3.220 mm the
+          datum pin, which a 270 deg overlay rotation redirects sideways.
+        * "Center Picked Face -> Optical Axis" moves the body in ALL THREE axes, so it also
+          slides the barrel ALONG the axis and separates it from the surrogate the user has
+          already positioned (user report, 2026-08-05).
+
+        The correction is therefore purely TRANSVERSE: the component along the surrogate's own
+        axis is dropped, so the axial registration -- the datum pin (bugs/0374) or wherever the
+        user placed the body -- is preserved exactly.
+
+        The body point is the CAD BARREL AXIS (the cylinder the optics live in) when the STEP
+        yields one, which needs no pick at all and is immune to the mount/screw boss that skews
+        a bounding box; ``feature_center_xyz`` (a picked face/edge centre) overrides it for a
+        body whose axis cannot be extracted.
+
+        Returns a diagnostics dict (``moved``, ``before_mm``, ``after_mm``, ``delta``,
+        ``tilt_deg``, ``source``) or ``None`` when the geometry is not derivable -- in which
+        case NOTHING is moved, because a guess here is a body flung off the scene.
+        """
+        if self._step_path_for_label("lens") is None:
+            return None
+        surrogate = self._lens_surrogate_optical_axis_line()
+        if surrogate is None:
+            self.append_debug(
+                "Center lens body: the surrogate's Front/Rear Optical Vertex Datums are not "
+                "both locatable, so there is no axis to centre on -- lens left alone."
+            )
+            return None
+        axis_point, axis_direction = surrogate
+        source = "picked_feature"
+        body_point = None
+        body_direction = axis_direction
+        if feature_center_xyz is not None:
+            try:
+                candidate = np.asarray(feature_center_xyz, dtype=float).reshape(-1)[:3]
+                if candidate.size >= 3 and np.all(np.isfinite(candidate[:3])):
+                    body_point = candidate[:3]
+            except Exception:
+                body_point = None
+        if body_point is None:
+            body_line = self._lens_step_overlay_axis_world_line()
+            if body_line is None:
+                self.append_debug(
+                    "Center lens body: no CAD barrel axis for this lens STEP and no picked "
+                    "feature -- lens left alone."
+                )
+                return None
+            body_point, body_direction = body_line
+            source = "cad_barrel_axis"
+        delta = np.asarray(axis_point, dtype=float) - np.asarray(body_point, dtype=float)
+        # Drop the component along the SURROGATE axis: that is literally "do not shift it
+        # along the optical axis", and it stays well defined even when the body is tilted.
+        delta = delta - float(np.dot(delta, axis_direction)) * np.asarray(axis_direction, dtype=float)
+        before = float(np.linalg.norm(delta))
+        cosine = abs(float(np.dot(np.asarray(body_direction, dtype=float), axis_direction)))
+        tilt_deg = float(np.degrees(np.arccos(min(1.0, max(-1.0, cosine)))))
+        diagnostics = {
+            "context": str(context or ""),
+            "source": source,
+            "before_mm": round(before, 6),
+            "tilt_deg": round(tilt_deg, 6),
+            "delta": tuple(float(v) for v in delta),
+            "moved": False,
+        }
+        if not np.all(np.isfinite(delta)) or before <= 1.0e-9:
+            self.append_debug(
+                f"Center lens body ({source}): already on the surrogate axis "
+                f"(offset {before:.4f} mm) -- nothing to do."
+            )
+            return diagnostics
+        captured = False
+        if record_history:
+            try:
+                self._begin_history_capture()
+                captured = True
+            except Exception:
+                captured = False
+        try:
+            current = np.asarray(self._step_placement_offset_xyz("lens"), dtype=float).reshape(3)
+            corrected = current + delta
+            self._set_step_placement_offset_xyz("lens", tuple(float(v) for v in corrected))
+            # bugs/0497 / bugs/0503: the glue REFERENCE is what "Glue STEP to Surrogate"
+            # restores, so leaving it on the old placement would let one glue click undo this
+            # correction. Re-record it (with the datum anchor it is expressed against) exactly
+            # as a flip does.
+            self._set_step_glue_reference_offset_xyz("lens", corrected)
+            try:
+                mid = self._lens_surrogate_datum_mid_world()
+                if mid is not None:
+                    self._set_step_glue_reference_datum_mid("lens", mid)
+            except Exception:
+                pass
+        finally:
+            if captured:
+                try:
+                    self._commit_history_capture()
+                except Exception:
+                    pass
+        # Re-MEASURE rather than trust the algebra -- the same probe the display uses.
+        after = before
+        try:
+            moved_line = self._lens_step_overlay_axis_world_line()
+            if moved_line is not None and source == "cad_barrel_axis":
+                residual = np.asarray(axis_point, dtype=float) - moved_line[0]
+                residual = residual - float(np.dot(residual, axis_direction)) * np.asarray(
+                    axis_direction, dtype=float
+                )
+                after = float(np.linalg.norm(residual))
+            elif source == "picked_feature":
+                after = 0.0
+        except Exception:
+            pass
+        diagnostics["moved"] = True
+        diagnostics["after_mm"] = round(float(after), 6)
+        self.append_debug(
+            "Center lens body on surrogate axis | {ctx}source={source} | off-axis "
+            "{before:.4f} -> {after:.4f} mm | transverse delta "
+            "({dx:.4f}, {dy:.4f}, {dz:.4f}) mm | body-vs-axis tilt {tilt:.3f} deg".format(
+                ctx=f"context={context} | " if context else "",
+                source=source,
+                before=before,
+                after=float(after),
+                dx=float(delta[0]),
+                dy=float(delta[1]),
+                dz=float(delta[2]),
+                tilt=tilt_deg,
+            )
+        )
+        return diagnostics
+
     def _seat_lens_on_surrogate_geometry(self) -> bool:
         """bugs/0497 FALLBACK: seat the lens from the surrogate when no placement was recorded.
 

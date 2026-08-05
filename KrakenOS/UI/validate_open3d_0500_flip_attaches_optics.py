@@ -55,8 +55,28 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         editor.layout_files["flip_probe"] = SCENE
         editor.load_layout_by_name("flip_probe")
 
-        r1 = float(np.asarray(tree_mod.row_world_pose(editor.rows, 1), dtype=float)[0])
-        r6 = float(np.asarray(tree_mod.row_world_pose(editor.rows, 6), dtype=float)[0])
+        # SCENE is the user's LIVE file, so nothing about it may be hardcoded: they edit it in
+        # the app between runs. On 2026-08-05 it came back with the datums at rows 1/5 (a
+        # promoted BS row moved) and with the barrel saved FLIPPED, which turned this guard red
+        # on a clean tree without a line of shipped code changing. Read the datum rows through
+        # the same accessor the overlay anchors on, and normalise the orientation first.
+        front_row = editor._lens_datum_row_index("front")
+        rear_row = editor._lens_datum_row_index("rear")
+        if front_row is None or rear_row is None:
+            notes.append("SKIP: the scene carries no Front/Rear Optical Vertex Datum pair")
+            return ok, notes
+        if bool(getattr(editor, "lens_step_reverse_direction", False)):
+            editor.toggle_imported_lens_step_direction()
+        # ... and start from a GLUED state. The live file's glue reference was recorded before
+        # the user last moved the lens, so a glue click there legitimately moves the body --
+        # with or without a flip. The contract under test ("a flip does not disturb the
+        # registration") is only observable from a glued start.
+        editor._set_step_glue_reference_offset_xyz("lens", editor._step_placement_offset_xyz("lens"))
+        _mid = editor._lens_surrogate_datum_mid_world()
+        if _mid is not None:
+            editor._set_step_glue_reference_datum_mid("lens", _mid)
+        r1 = float(np.asarray(tree_mod.row_world_pose(editor.rows, int(front_row)), dtype=float)[0])
+        r6 = float(np.asarray(tree_mod.row_world_pose(editor.rows, int(rear_row)), dtype=float)[0])
 
         def overhangs():
             mesh = editor._transformed_imported_lens_step_mesh()
@@ -70,9 +90,11 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         )
         f0, rr0 = overhangs()
         check(
-            f0 > rr0 + 1.0,
+            abs(f0 - rr0) > 1.0,
             f"A2: the barrel is asymmetric about its glass (front overhang {f0:.3f} vs rear "
-            f"{rr0:.3f} mm) -- the asymmetry that made the broken flip visible",
+            f"{rr0:.3f} mm) -- the asymmetry that made the broken flip visible. Which END is the "
+            f"long one depends on how the user has the barrel mounted in the live scene, so only "
+            f"the asymmetry itself (what makes the swap below observable) is asserted",
         )
 
         check(
@@ -80,12 +102,33 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
             "B1: the flip toggle acts on the imported lens",
         )
         f1, rr1 = overhangs()
+        # The contract is "the body is MIRRORED ABOUT ITS GLASS-SPAN CENTRE", asserted directly
+        # rather than through the overhangs-swap shorthand. The shorthand is only equivalent when
+        # the glass centre happens to sit exactly on the datum-span midpoint, which is true of a
+        # freshly glued lens and NOT of one the user has since dragged (on the live scene the two
+        # are 0.203 mm apart, so the shorthand read as a 0.406 mm flip error that is not one).
+        lo0, hi0 = r1 - f0, r6 + rr0
+        lo1, hi1 = r1 - f1, r6 + rr1
+        pivot_a, pivot_b = 0.5 * (lo1 + hi0), 0.5 * (hi1 + lo0)
         check(
-            abs(f1 - rr0) <= SWAP_TOL and abs(rr1 - f0) <= SWAP_TOL,
-            f"B2: after the flip the overhangs SWAP about the UNMOVED datums "
-            f"({f1:.3f}/{rr1:.3f} vs expected {rr0:.3f}/{f0:.3f}) -- the former rear vertex sits "
-            f"on the FRONT datum and vice versa, i.e. the optics stay attached",
+            abs(pivot_a - pivot_b) <= SWAP_TOL,
+            f"B2a: the flip is a pure MIRRORING about ONE point ({pivot_a:.6f} vs "
+            f"{pivot_b:.6f} mm) -- the mechanical ends swap, nothing slides",
         )
+        glass = editor._step_optical_glass_axial_metrics(editor.imported_lens_step_path) or {}
+        if glass:
+            centre_to_lo = 0.5 * (float(glass["glass_lo"]) + float(glass["glass_hi"])) - float(glass["body_lo"])
+            centre_to_hi = float(glass["body_hi"]) - 0.5 * (float(glass["glass_lo"]) + float(glass["glass_hi"]))
+            measured = 0.5 * (pivot_a + pivot_b) - lo0
+            check(
+                min(abs(measured - centre_to_lo), abs(measured - centre_to_hi)) <= SWAP_TOL,
+                f"B2b: and that point IS the GLASS-SPAN CENTRE ({measured:.3f} mm from the body's "
+                f"leading end; the CAD glass centre sits {centre_to_lo:.3f} / {centre_to_hi:.3f} mm "
+                f"from its two ends) -- i.e. the optics stay on the datums, the barrel turns round "
+                f"them",
+            )
+        else:
+            notes.append("SKIP: no glass metrics for this lens STEP -- B2b not run")
         check(
             editor.glue_step_overlay_to_surrogate("lens") is False,
             "B3: glue after a flip reports already-glued -- the flip does not disturb the "

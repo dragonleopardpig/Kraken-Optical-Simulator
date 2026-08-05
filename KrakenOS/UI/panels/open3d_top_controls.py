@@ -224,6 +224,9 @@ class Open3DTopControlsPanel:
                 MenuCommand("Snap STEP Surface-Center Normal->Optical Axis", self.inspector.snap_selected_step_normal_to_optical_axis),
                 MenuCommand("Snap STEP Pick-Point Normal->Optical Axis", self.inspector.snap_selected_step_pick_point_normal_to_optical_axis),
                 MenuCommand("Center STEP Surface->Optical Axis", self.inspector.center_selected_step_surface_to_optical_axis),
+                # bugs/0568: the lens-only twin -- transverse ONLY, so the barrel comes onto the
+                # surrogate axis without sliding along it (the item above moves all three axes).
+                MenuCommand("Center Lens Body->Surrogate Axis (no axial shift)", self.inspector.center_lens_body_on_surrogate_axis),
                 MenuCommand("Glue STEP to Surrogate", self.inspector.glue_selected_step_to_surrogate),
                 MenuCommand("Obj->LED", self.editor.start_led_object_edge_pick),
                 MenuCommand("Export STEP", self.editor.export_3d_step),

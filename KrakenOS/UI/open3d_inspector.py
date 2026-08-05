@@ -7628,6 +7628,39 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             "Hold the promoted solid to move it; use right-click face assignment or Faces before tracing final physics."
         )
 
+    def center_lens_body_on_surrogate_axis(self) -> None:
+        """CAD-menu twin of the right-click "Center Lens Body -> Surrogate Axis (no axial
+        shift)" (bugs/0568).  Brings the lens barrel's OPTICAL axis onto the surrogate's, and
+        moves it in no other direction -- unlike "Center STEP Surface->Optical Axis", which
+        translates in all three and so slides the body off the surrogate along the axis."""
+        try:
+            result = self.editor.center_lens_body_on_surrogate_axis(context="cad_menu")
+        except Exception as exc:
+            self.status_var.set(f"Center Lens Body -> Surrogate Axis failed: {exc}")
+            self.editor.append_debug(f"Center lens body on surrogate axis failed: {exc}")
+            return
+        if result is None:
+            self.status_var.set(
+                "Center Lens Body -> Surrogate Axis needs an imported lens STEP with a CAD "
+                "barrel axis and a Front/Rear Optical Vertex Datum pair."
+            )
+            return
+        if result.get("moved"):
+            self.status_var.set(
+                "Lens STEP centred on the surrogate optical axis: "
+                f"{float(result.get('before_mm', 0.0)):.3f} -> {float(result.get('after_mm', 0.0)):.3f} mm "
+                "off-axis, no shift along the axis."
+            )
+            try:
+                self._apply_model_change()
+            except Exception as exc:
+                self.editor.append_debug(f"Center lens body refresh failed: {exc}")
+        else:
+            self.status_var.set(
+                f"Lens STEP is already on the surrogate optical axis "
+                f"({float(result.get('before_mm', 0.0)):.3f} mm off)."
+            )
+
     def glue_selected_step_to_surrogate(self) -> None:
         """Re-apply the automatic optical-surrogate glue to the selected STEP
         overlay (clear manual drags so a lens re-centres on its CAD cylinder axis

@@ -15575,6 +15575,10 @@ phase_434_swap_keeps_frozen_leg = _phase_from_standalone(
     434, "a swap re-bakes the replacement lens block onto the frozen leg (0547)",
     "KrakenOS.UI.validate_open3d_0547_swap_keeps_frozen_leg",
     "swap_keeps_frozen_leg")
+phase_443_lens_body_centred_on_axis = _phase_from_standalone(
+    443, "a swapped lens body stays centred on the optical axis, with no axial shift (0568)",
+    "KrakenOS.UI.validate_open3d_0568_lens_body_centred_on_axis",
+    "lens_body_centred_on_axis")
 
 
 # ---------------------------------------------------------------------------

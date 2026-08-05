@@ -778,6 +778,18 @@ class Open3DFaceAssignmentService:
                     picked_label, picked_center
                 ),
             )
+            # bugs/0568 (user report 2026-08-05): the centre above -- like the edge->axis pick --
+            # moves the body in ALL THREE axes, so on a LENS it also slides the barrel ALONG the
+            # optical axis and separates it from the surrogate the user has already positioned.
+            # The lens wants the transverse half only, and it does not need a second pick: the
+            # CAD barrel axis says where the optics are (a picked face is the fallback).
+            if step_label == "lens":
+                menu.add_command(
+                    label="Center Lens Body -> Surrogate Axis (no axial shift)",
+                    command=lambda picked_center=face_center[:3].copy(): self._center_lens_body_on_surrogate_axis_from_context(
+                        picked_center
+                    ),
+                )
             # bugs/0536 (flag_20260804_102722 "snap it to the LED floor?"): the 0363
             # "Seat {source} on This Face" glue existed only on PROMOTED-solid faces,
             # so the LED housing floor -- a decoration STEP face, the one place the
@@ -1667,6 +1679,58 @@ class Open3DFaceAssignmentService:
             self.refresh_from_editor(force_retrace=True)
         except Exception as exc:
             self.editor.append_debug(f"Open 3D face->axis center refresh failed: {exc}")
+
+    def _center_lens_body_on_surrogate_axis_from_context(self, face_center_world=None) -> None:
+        """Right-click "Center Lens Body -> Surrogate Axis (no axial shift)" (bugs/0568).
+
+        The transverse half of the face centre: the barrel comes onto the surrogate's optical
+        axis and does NOT slide along it, so the axial registration the user (or the datum pin)
+        already set survives. Prefers the CAD barrel axis -- no second pick needed -- and only
+        falls back to the picked face centre when the STEP yields no cylinder axis.
+        """
+        le = _layout_module()
+        _short_error_message = le._short_error_message
+        self._debug_trace(
+            "center_lens_body_on_surrogate_axis_from_context",
+            point_world=self._debug_vector(face_center_world),
+        )
+        try:
+            result = self.editor.center_lens_body_on_surrogate_axis(context="right_click")
+            if result is None and face_center_world is not None:
+                result = self.editor.center_lens_body_on_surrogate_axis(
+                    feature_center_xyz=face_center_world, context="right_click_face"
+                )
+        except Exception as exc:
+            self.status_var.set(f"Center Lens Body -> Surrogate Axis failed: {_short_error_message(exc)}")
+            self.editor.append_debug(f"Open 3D lens body->surrogate axis centre failed: {exc}")
+            return
+        if result is None:
+            self.status_var.set(
+                "Center Lens Body -> Surrogate Axis: no lens surrogate axis / barrel axis to "
+                "centre on -- the lens was left where it is."
+            )
+            return
+        if result.get("moved"):
+            self.status_var.set(
+                "Lens STEP centred on the surrogate optical axis: "
+                f"{float(result.get('before_mm', 0.0)):.3f} -> {float(result.get('after_mm', 0.0)):.3f} mm "
+                "off-axis, no shift along the axis."
+            )
+        else:
+            self.status_var.set(
+                f"Lens STEP is already on the surrogate optical axis "
+                f"({float(result.get('before_mm', 0.0)):.3f} mm off)."
+            )
+        # Same guard as the face->axis centre: drop the STEP selection so the refresh does not
+        # re-add the rotation handles.
+        try:
+            self.editor._selected_step_label = None
+        except Exception:
+            pass
+        try:
+            self.refresh_from_editor(force_retrace=True)
+        except Exception as exc:
+            self.editor.append_debug(f"Open 3D lens body centre refresh failed: {exc}")
 
     def _clear_aperture_opening_center_normal(self, label: str):
         """World ``(center, normal)`` of a STEP overlay's clear-aperture OPENING.
