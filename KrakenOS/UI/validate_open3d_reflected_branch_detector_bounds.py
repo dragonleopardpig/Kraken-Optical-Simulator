@@ -30,7 +30,8 @@ reflected branch from ``missed_image`` (drawn) to ``no_next_intersection`` ->
 ``escaped``, which the 3D display filter hides when "Show Clipped Rays" is OFF (the
 user's setting). The fold is a real second path, so the display filter now keeps an
 *escaped* ray visible when it underwent non-refractive steering (reflect / split /
-mirror / TIR); only an un-folded escaped ray (vignetted) stays hidden.
+mirror / TIR). bugs/0554 REVISED the display half: visibility now follows whether the ray
+REACHES A SENSOR, so an escaped fold hides and an arm that lands on its own camera shows.
 
 Invariants asserted here (all headless / display-free):
 
@@ -183,9 +184,18 @@ def _display_filter_checks(check) -> None:
         ray_path_has_non_refractive_steering(reflected),
         "a reflected branch path is recognized as non-refractive steering (fold)",
     )
+    # bugs/0554: reaching a sensor is the criterion, not folding. An escaped fold lands on
+    # nothing, so by the user's definition of a clipped ray it HIDES with clipping OFF.
     check(
-        ray_path_visible_without_clipping_from_events(reflected),
-        "an escaped+folded branch (beam-splitter 2nd path) stays VISIBLE with Show Clipped Rays OFF",
+        not ray_path_visible_without_clipping_from_events(reflected),
+        "an escaped+folded branch lands on nothing -> HIDDEN with Show Clipped Rays OFF (bugs/0554)",
+    )
+    # ... and the case bugs/0016/0018 actually existed to protect: a splitter arm that carries
+    # its own lens + camera REACHES that sensor, so it stays visible.
+    landed = _fake_path(["reflect", "refract"], "hit_detector")
+    check(
+        ray_path_visible_without_clipping_from_events(landed),
+        "a splitter arm that reaches its own camera stays VISIBLE with clipping OFF (bugs/0554)",
     )
 
     # A genuinely clipped ray: only refractions, then escapes past the last lens.

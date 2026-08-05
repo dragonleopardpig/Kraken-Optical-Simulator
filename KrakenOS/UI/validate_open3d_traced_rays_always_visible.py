@@ -183,18 +183,20 @@ def run_checks(*, trials: int = 12, seed: int = 20260605) -> tuple[bool, list[st
         _check(status == label, f"status maps {label!r} (got {status!r})")
         _check(visible is expected, f"{label} visible-by-default == {expected} (got {visible})")
 
-    # 1b. bugs/0390 REFINED the 0016/0018 fold rule: a folded ray that then FAILED at a
-    #     real downstream element -- vignetted at an aperture (``stopped``) or missed an
-    #     existing detector's clear aperture (``missed_detector``) -- is a blocked stray,
-    #     not an authored branch, and hides with clipping OFF like any other miss (the
-    #     user's "broken stubs terminating mid-air at the stop" / mirror-2 spray flags).
-    #     A genuine branch with NOTHING to land on (``escaped``) is authored and stays.
-    #     (This guard asserted the pre-0390 "folds always survive" rule and silently
-    #     failed for a fortnight -- phase 25 was absorbed into the July re-cut as a fail.)
+    # 1b. bugs/0554 -- the user's definition, 2026-08-05: "a clipped ray is any ray not
+    #     reaching the sensor. So if the transmitted path of a BS has a lens and camera, the
+    #     rays must be shown." Folding is no longer a licence to be visible; ARRIVING is.
+    #     bugs/0016/0018 had kept every steered ray visible so a splitter's authored 2nd path
+    #     would show when it had no detector to land on, and bugs/0390 then carved out the
+    #     ones that failed downstream. Both approximated the intent through the MECHANISM
+    #     (did it fold?) instead of the OUTCOME (did it get anywhere?) -- and on a splitter
+    #     scene, where the BS folds EVERY ray, that covered 305 escaped fragments rather than
+    #     one authored branch. So ALL THREE folded failures now hide; the authored 2nd path
+    #     is preserved by the case below, where the arm reaches its own camera.
     folded_cases = {
         "stopped": (_folded_path("stop_clip"), False),
         "missed_detector": (_folded_path("missed_image"), False),
-        "escaped": (_folded_path("no_next_intersection"), True),
+        "escaped": (_folded_path("no_next_intersection"), False),
     }
     for label, (path, expected) in folded_cases.items():
         status = ray_path_terminal_status_from_events(path)
@@ -202,8 +204,22 @@ def run_checks(*, trials: int = 12, seed: int = 20260605) -> tuple[bool, list[st
         _check(ray_path_has_non_refractive_steering(path), f"folded {label} detected as a fold")
         _check(
             ray_path_visible_without_clipping_from_events(path) is expected,
-            f"folded {label} visible-by-default == {expected} (the 0390 blocked-stray rule)",
+            f"folded {label} visible-by-default == {expected} (bugs/0554: reaching the sensor "
+            "is the criterion, not folding)",
         )
+
+    # 1c. bugs/0554, the positive half: a folded arm that DOES reach a sensor -- a BS transmit
+    #     path with its own lens and camera -- stays visible. This is what bugs/0016/0018 was
+    #     really protecting, now expressed as the outcome rather than the mechanism.
+    landed = _folded_path("hit_detector")
+    _check(
+        ray_path_has_non_refractive_steering(landed),
+        "a splitter arm that lands on its own camera is still recognised as folded",
+    )
+    _check(
+        ray_path_visible_without_clipping_from_events(landed),
+        "a folded arm that REACHES its sensor stays visible with clipping OFF (bugs/0554)",
+    )
 
     # Sanity: a clean lens shows its rays by default and drops nothing.
     base = _trace(_lens_rows())
@@ -226,10 +242,11 @@ def run_checks(*, trials: int = 12, seed: int = 20260605) -> tuple[bool, list[st
 
     # 3. Beam splitter: BOTH branches are real light paths. The transmit branch
     #    reaches the sensor; the reflect branch is a deliberate fold that leaves
-    #    the system ("escaped"). A fold is not vignetting clutter, so per bugs/0018
-    #    ("where is the beam splitter 2nd path ray?") it stays VISIBLE by default —
-    #    only an *un-folded* escaped ray (pure vignetting) is gated behind Show
-    #    Clipped Rays, and that case is the predicate check in section 1.
+    #    the system ("escaped"). bugs/0554 -- the user's definition: "a clipped ray is
+    #    any ray not reaching the sensor". The escaped reflect branch lands on nothing,
+    #    so with clipping OFF it HIDES while the transmit branch (which reaches the
+    #    detector) stays. Turning clipping ON still renders every traced path -- that
+    #    is the no-silent-drop invariant, checked below and in section 4.
     bs = _trace(_lens_rows("Beam Splitter", 4))
     _check(
         bs["statuses"].get("escaped", 0) > 0 and bs["statuses"].get("hit_detector", 0) > 0,
@@ -241,9 +258,14 @@ def run_checks(*, trials: int = 12, seed: int = 20260605) -> tuple[bool, list[st
         f"escaped={bs['statuses'].get('escaped', 0)})",
     )
     _check(
-        0 < bs["off"] == bs["on"] == bs["paths"],
-        f"folded reflect branch stays visible by default, never dropped "
-        f"(off={bs['off']} on={bs['on']} paths={bs['paths']})",
+        bs["on"] == bs["paths"] > 0,
+        f"clipped ON still renders EVERY traced path -- no silent drop "
+        f"(on={bs['on']} paths={bs['paths']})",
+    )
+    _check(
+        0 < bs["off"] < bs["on"],
+        f"clipped OFF keeps the detector-reaching branch and drops the escaped fold "
+        f"(off={bs['off']} on={bs['on']}) -- bugs/0554",
     )
 
     # 4. No silent drop across a random-element sweep: every traced ray is

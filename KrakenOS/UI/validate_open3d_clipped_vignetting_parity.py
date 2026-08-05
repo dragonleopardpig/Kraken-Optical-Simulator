@@ -92,12 +92,14 @@ def _synthetic_paths():
         # fold at the mirror then clip the F/4.5 aperture stop (drawn as "broken" stubs at the
         # stop), and illumination rays that fold at mirror 1, skip the wider-than-aperture
         # mirror 2, and spray past it (folded display scores them ``missed_detector``). A real
-        # beam-splitter 2nd path never lands here -- it hits its detector (``hit_detector``),
-        # is ``absorbed``, or escapes with no detector to land on (``escaped_folded``), all
-        # still kept visible.
+        # bugs/0554 -- the user's definition: "a clipped ray is any ray not reaching the
+        # sensor". A folded branch that ESCAPES lands on nothing, so it is clipped and hides
+        # like any other stray. The beam-splitter 2nd path is not lost by this: an arm that
+        # carries its own lens + camera reaches THAT sensor (``hit_detector``) and stays
+        # visible because it arrives somewhere, not because it bounced.
         ("stopped_folded", _path(4, [_fold(), _terminal("aperture_stop")]), False),
         ("missed_folded", _path(6, [_fold(), _terminal("missed_detector")]), False),
-        ("escaped_folded", _path(5, [_fold(), _terminal("no_hit")]), True),
+        ("escaped_folded", _path(5, [_fold(), _terminal("no_hit")]), False),  # bugs/0554
     ]
 
 

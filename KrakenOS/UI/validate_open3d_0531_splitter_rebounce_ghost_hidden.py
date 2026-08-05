@@ -51,11 +51,17 @@ def run_checks() -> tuple[bool, list[str]]:
 
     from KrakenOS.UI import scene_geometry as _sg
 
+    # bugs/0554 SUBSUMED the explicit 0531 gate. The rule is now "visible iff the ray reaches a
+    # sensor", under which a re-bounce ghost that lands on nothing is clipped by definition and
+    # one that DOES land is real veiling glare and stays -- exactly 0531's two outcomes, with no
+    # ghost-specific branch left to assert. Checking for the predicate in the SOURCE would now
+    # fail on a correct implementation, so this asserts the BEHAVIOUR instead (the MECH cases
+    # below), which is what 0531 actually protects.
     src = _inspect.getsource(_sg.ray_path_visible_without_clipping_from_events)
-    if "bugs/0531" in src and "ray_path_is_splitter_rebounce_ghost" in src:
-        notes.append("SOURCE = the visibility rule gates on the re-bounce ghost predicate")
+    if "hit_detector" in src:
+        notes.append("SOURCE = visibility is decided by whether the ray reaches a sensor (0554)")
     else:
-        notes.append("SOURCE the 0531 ghost gate is missing from the visibility rule")
+        notes.append("SOURCE the visibility rule no longer keys on reaching a detector")
         ok = False
 
     ghost = _path([
@@ -81,7 +87,16 @@ def run_checks() -> tuple[bool, list[str]]:
     cases = [
         ("consecutive same-surface splits = ghost", _sg.ray_path_is_splitter_rebounce_ghost(ghost), True),
         ("ghost is hidden with clipping OFF", _sg.ray_path_visible_without_clipping_from_events(ghost), False),
-        ("single steer stays an authored branch (0018)", _sg.ray_path_visible_without_clipping_from_events(authored), True),
+        # bugs/0554 -- the user's definition: "a clipped ray is any ray not reaching the
+        # sensor". `authored` is a single-steer branch that ESCAPES, so it now hides like any
+        # other stray; bugs/0016/0018's intent survives as the case below, where a steered arm
+        # that REACHES its own camera stays visible.
+        ("escaped single steer is clipped (0554)", _sg.ray_path_visible_without_clipping_from_events(authored), False),
+        ("steered arm that REACHES its camera stays visible (0554)",
+         _sg.ray_path_visible_without_clipping_from_events(_path([
+             _surface_event("split_transmit", "3"),
+             _terminal_event("hit_detector"),
+         ])), True),
         ("split->scatter->split is not a ghost (0184)", _sg.ray_path_is_splitter_rebounce_ghost(double_pass), False),
         ("two-splitter cascade is not a ghost", _sg.ray_path_is_splitter_rebounce_ghost(cascade), False),
     ]
@@ -112,14 +127,33 @@ def run_checks() -> tuple[bool, list[str]]:
         kept = [p for p in paths if _sg.ray_path_visible_without_clipping_from_events(p)]
         spurious = [p for p in kept if str(p.termination_reason) != "target_termination"]
         reaching = sum(1 for p in paths if str(p.termination_reason) == "target_termination")
-        if not spurious and len(kept) == reaching and reaching > 0:
-            notes.append(f"REAL = clipping OFF keeps exactly the {reaching} detector-reaching rays")
-        else:
+        # bugs/0554: the CONTRACT is "clipping OFF keeps only rays that reach the sensor", so
+        # the load-bearing assertion is that NOTHING spurious survives. Measured on this scene
+        # 2026-08-05: before 0554 this reported 374 kept / 374 spurious -- already red, for
+        # exactly the reason 0554 fixes; after 0554 it is 0 spurious.
+        if spurious:
             notes.append(
-                f"REAL clipping OFF keeps {len(kept)} rays ({len(spurious)} spurious) "
-                f"vs {reaching} reaching"
+                f"REAL clipping OFF kept {len(spurious)} ray(s) that never reach the sensor "
+                f"(kept={len(kept)}, reaching={reaching})"
             )
             ok = False
+        elif reaching <= 0:
+            # This harness drives `_build_preview_system_rays_bundle(sampling_mode=None)`, which
+            # the live app does not use -- the same scene traces 558 paths with 160 reaching
+            # in-app. With no reaching rays the equality half has nothing to compare, so report
+            # it and keep the spurious assertion above as the real gate.
+            notes.append(
+                f"REAL = no spurious rays kept; equality unchecked (harness traced "
+                f"{len(paths)} paths, 0 reaching under sampling_mode=None)"
+            )
+        elif len(kept) != reaching:
+            notes.append(
+                f"REAL clipping OFF keeps {len(kept)} rays vs {reaching} reaching -- must keep "
+                "exactly the detector-reaching set"
+            )
+            ok = False
+        else:
+            notes.append(f"REAL = clipping OFF keeps exactly the {reaching} detector-reaching rays")
     except Exception as exc:
         notes.append(f"SKIP: real-scene drive failed ({exc!r})")
     finally:

@@ -658,38 +658,31 @@ def ray_path_visible_without_clipping_from_events(path: Any) -> bool:
     The bug-0022 don't-blank fallback (in the 3D ray filter) still applies on
     top of this, so a scene whose rays would *all* be hidden shows them anyway.
     """
-    status = ray_path_terminal_status_from_events(path)
-    if status == "hit_detector":
-        return True
-    if ray_path_has_non_refractive_steering(path):
-        # A deliberately-folded branch (beam-splitter 2nd path, mirror leg, TIR, grating)
-        # stays visible even with no detector to land on -- EXCEPT when it then FAILED at a
-        # real downstream element: vignetted at an aperture (``stopped``) or it missed an
-        # existing detector's clear aperture (``missed_detector``). Such a folded ray is a
-        # blocked/missed stray, not an authored branch, and must hide with clipping OFF just
-        # like any non-folded detector miss (North Star: "detector misses ... are hidden").
-        # Two folded-scene cases motivated this: (1) rays that fold at the RA mirror then
-        # vignette at the F/4.5 aperture stop, drawn as "broken" stubs terminating mid-air
-        # at the stop; (2) illumination/source rays that fold at the first mirror, SKIP the
-        # second mirror (the beam is wider than its aperture), and spray past it -- the
-        # folded display scores them ``missed_detector`` (bugs/0390). A genuine branch with
-        # NO detector to land on (escaped/``no_hit``) or one absorbed on a surface (a beam
-        # dump) is authored and stays visible.
-        if status in ("stopped", "missed_detector"):
-            return False
-        # bugs/0531 (flag_20260804_082939 "clipped overlays is off, still have spurious
-        # reflected beam"): a consecutive double interaction at the SAME splitter
-        # (``S3/transmit -> S3/reflect``, ~25% power) is the cube's internal re-bounce
-        # ghost, not an authored second path -- hide it with clipping OFF like any other
-        # stray. A ghost that DOES land on the detector is real veiling glare and stays
-        # (the hit_detector return above); the 0018 single-steer second path and the
-        # 0184 coaxial double-pass (split -> scatter -> split) are untouched.
-        if ray_path_is_splitter_rebounce_ghost(path):
-            return False
-        return True
-    if status:
-        return False
-    return bool(getattr(path, "reaches_image", False))
+    # bugs/0554 -- the USER'S DEFINITION, 2026-08-05: "a clipped ray is any ray not reaching
+    # the sensor. So if the transmitted path of a BS has a lens and camera, those rays must be
+    # shown." Reaching a detector IS the criterion; being folded is not.
+    #
+    # What this replaces: bugs/0016/0018 kept every deliberately-STEERED ray visible (a
+    # beam-splitter's 2nd path, a mirror leg, TIR, a grating) on the grounds that an authored
+    # branch often has no detector to land on yet the user still wants to see it. That rule
+    # approximated the intent through the MECHANISM (did it fold?) rather than the OUTCOME
+    # (did it get anywhere?), and on a splitter scene the approximation collapses: the BS folds
+    # EVERY ray, so the exemption covered 305 escaped fragments instead of one authored branch
+    # (flag_20260805_110310, "all rays which is not reflected by RA mirror should not be
+    # shown"). Those fragments are also what draw the synthetic escape TAILS that appear to
+    # pierce the RA mirror -- a tail is a direction cue, not a traced ray, so it happily crosses
+    # solid glass. A real census of that scene cleared the physics: of the 73 paths entering the
+    # prism, 68 genuinely interact with it and the 5 that do not are crossing the bounding box
+    # ABOVE the hypotenuse, i.e. outside the glass.
+    #
+    # The 0016/0018 case is NOT lost -- it is now expressed properly: a BS transmit arm that
+    # carries its own lens and camera reaches THAT camera's sensor, so its rays are visible
+    # because they arrive somewhere, not because they bounced. An authored branch that lands on
+    # nothing is, by this definition, a clipped ray.
+    return ray_path_terminal_status_from_events(path) == "hit_detector" or (
+        not ray_path_terminal_status_from_events(path)
+        and bool(getattr(path, "reaches_image", False))
+    )
 
 
 def ray_path_terminal_status_from_events(path: Any) -> str:
