@@ -3450,6 +3450,10 @@ class ScenePlacementMixin:
         # A frozen scene uses the REAL-RAY best-focus SHIFT first -- a relative measure
         # along the traced beam, immune to station/world offsets (the 0243-era snap's
         # -8.5179 source).
+        # bugs/0566: a refusal here must survive to the CALLER. The lens swap calls this and
+        # then overwrites status_var with its own success line, so a refused refocus used to
+        # leave the lens silently defocused with no explanation on screen.
+        self._snap_detector_refusal = ""
         _frozen_world = False
         try:
             _frozen_world = bool((self._folded_image_conjugate_split() or {}).get("frozen_world"))
@@ -3561,9 +3565,35 @@ class ScenePlacementMixin:
                     except Exception:
                         frozen_slide = False
                 if not frozen_slide and near_row is not None:
-                    self.rows[near_row].thickness = (
-                        float(self.rows[near_row].thickness) + float(near_delta)
-                    )
+                    # bugs/0566: this near-leg write must NEVER drive a gap negative. It used to
+                    # add near_delta straight into rows[near_row], which was safe only while that
+                    # row was the lens Rear Vertex Datum carrying 80-100 mm. bugs/0546 re-seats a
+                    # promoted solid (an absolutely placed ELEMENT whose gap is 0) directly ahead
+                    # of the mirror, so a lens swap resolving a camera-body collision wrote
+                    # 0 - 51.2548 -> a NEGATIVE gap. The station chain then runs backwards and
+                    # slides every downstream row off the folded leg by exactly that amount: the
+                    # user's "Swap lens introduce lens and other element off axis", measured as
+                    # the RA mirror leaving z=54.3214 for z=3.0666 while the lens block stayed on
+                    # the leg. A mirror already AT the gap cannot slide further toward it.
+                    #
+                    # bugs/0550 built _apply_near_leg_delta for this exact failure on this exact
+                    # row; this was simply a second call site that kept the raw write. It absorbs
+                    # what the row can take and spills the rest back through the leg (the split's
+                    # arithmetic reads only the SUM, so the leg total is preserved), and reports
+                    # failure when the span cannot absorb it -- at which point refusing beats
+                    # writing a chain that renders nothing.
+                    gap_start = 1
+                    if isinstance(split_now, dict):
+                        try:
+                            gap_start = int(split_now.get("gap_start", 1))
+                        except Exception:
+                            gap_start = 1
+                    if not self._apply_near_leg_delta(int(near_row), float(near_delta), gap_start):
+                        return False, (
+                            "the camera body needs the fold mirror to slide "
+                            f"{abs(float(near_delta)):.1f} mm further than the lens-to-mirror leg "
+                            "can give; move the camera or the mirror first."
+                        )
                 target_gap = float(new_gap)
                 collision_note = " (mirror slid to keep the camera body clear)"
             if not self.apply_image_distance_frozen_aware(target_gap):
@@ -3575,6 +3605,7 @@ class ScenePlacementMixin:
             if not applied_ok:
                 if gui:
                     self._commit_history_capture()
+                self._snap_detector_refusal = str(refusal)
                 self.status_var.set(f"Snap detector: {refusal}")
                 return False
         else:
@@ -3606,6 +3637,7 @@ class ScenePlacementMixin:
                     if _iteration == 0:
                         if gui:
                             self._commit_history_capture()
+                        self._snap_detector_refusal = str(refusal)
                         self.status_var.set(f"Snap detector: {refusal}")
                         return False
                     break

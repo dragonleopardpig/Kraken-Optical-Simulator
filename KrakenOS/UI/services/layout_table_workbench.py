@@ -1307,11 +1307,18 @@ class LayoutTableWorkbenchMixin:
         if len(rows) < 3 or str(getattr(rows[-1], "surface", "") or "") != "Image":
             return
         gap_index = len(rows) - 2
+        self._swap_refocus_note = ""
         try:
             moved = self.snap_detector_to_image_plane()
         except Exception:
             return
         if not moved:
+            # bugs/0566: a REFUSED refocus is a real result the user must see. With a longer
+            # replacement lens best focus can need the fold mirror to slide further than its
+            # incoming leg allows (measured: 51.2548 mm wanted, a 0 mm leg to give it), so the
+            # snap correctly refuses -- but the swap then overwrites status_var with its own
+            # success line and the lens is left silently defocused.
+            self._swap_refocus_note = str(self.__dict__.get("_snap_detector_refusal", "") or "")
             return
         try:
             gap = float(getattr(rows[gap_index], "thickness", 0.0) or 0.0)
@@ -1577,6 +1584,14 @@ class LayoutTableWorkbenchMixin:
                 f" {len(preserved)} promoted solid row(s) sat inside the lens block and were "
                 "re-seated unmoved after it."
             )
+        # bugs/0566: say so when the lens could NOT be brought to focus, rather than reporting a
+        # clean swap over a defocused scene.
+        # Read via __dict__, NOT getattr with a default: a Tk widget's __getattr__ delegates to
+        # self.tk and RECURSES on a missing attribute, so the default is never reached (it blew
+        # the 0546/0547 guards' stub editor with RecursionError).
+        refocus_note = str(self.__dict__.get("_swap_refocus_note", "") or "")
+        if refocus_note:
+            message += f" NOT refocused: {refocus_note}"
         self.status_var.set(message)
         self.append_progress(message)
         # bugs/0386: the 2D refresh here is a FULL system build + trace (~5s on a folded
