@@ -281,6 +281,44 @@ def _check_load_heal(failures: list[str]) -> None:
         failures.append("heal: open_layout must run the repair (bugs/0559)")
 
 
+def _check_near_leg_read(failures: list[str]) -> None:
+    """bugs/0562: the collision resolver must READ the lens->mirror leg as its SPAN SUM.
+
+    bugs/0550 fixed the WRITE (spill the delta across the span) but left the READ single-row:
+    ``near_now = rows[near_gap_row].thickness`` with ``near_gap_row = mirror_row - 1``. That was
+    safe only while that row was the lens Rear Vertex Datum carrying the whole leg; bugs/0546
+    re-seats a promoted solid there with a ZERO gap, so the resolver read 0 while the real leg was
+    83.4 mm and refused every snap -- "I can't even solve for FOV 35x35 now". The user's own
+    refusal message is the proof: "would leave only -22.04 mm from the lens" is exactly
+    ``0 - deficit``."""
+    import inspect as _inspect
+
+    from KrakenOS.UI.services.quick_estimation import QuickEstimationService as Q
+
+    src = _inspect.getsource(Q._resolve_image_gap_collision)
+    if 'near_now = float(self.editor.rows[near_row].thickness)' in src:
+        failures.append(
+            "near-leg read: the resolver still reads ONE row as the lens->mirror leg -- after "
+            "bugs/0546 that row is a zero-gap promoted solid, so every snap refuses (bugs/0562)"
+        )
+    if 'split.get("near"' not in src:
+        failures.append(
+            "near-leg read: the leg must come from the split's own span sum (`near`), which is "
+            "what _folded_image_conjugate_split computes"
+        )
+
+    # The arithmetic the fix restores, stated as the outcome the user sees.
+    floor, gap, near_min = 28.98, 6.936, 12.5
+    deficit = floor - gap
+    if (0.0 - deficit) >= near_min:
+        failures.append("near-leg read: fixture no longer demonstrates the zero-leg refusal")
+    if (83.381 - deficit) < near_min:
+        failures.append(
+            "near-leg read: with the true 83.4 mm leg the mirror slide must FIT (it leaves "
+            f"{83.381 - deficit:.4g} mm, minimum {near_min})"
+        )
+
+
 def run_checks() -> tuple[bool, list[str]]:
     failures: list[str] = []
     try:
@@ -293,6 +331,7 @@ def run_checks() -> tuple[bool, list[str]]:
     _check_tripwire_opt_in(failures)
     _check_near_leg_spill(failures)
     _check_load_heal(failures)
+    _check_near_leg_read(failures)
     return (not failures), failures
 
 

@@ -989,7 +989,15 @@ class QuickEstimationService:
             split = self.editor._folded_image_conjugate_split()
             near_row = int(split["near_gap_row"])
             near_min = float(split.get("near_min", 0.0) or 0.0)
-            near_now = float(self.editor.rows[near_row].thickness)
+            # bugs/0562: the lens->mirror leg is a SUM over its span -- `_folded_image_conjugate_split`
+            # computes `near = sum(th[gap_start:mirror_row])` -- not the single row at
+            # `mirror_row - 1`. Reading one row was safe only while that row was the lens Rear
+            # Vertex Datum carrying the whole leg; bugs/0546 re-seats a promoted solid there with a
+            # ZERO gap, so this read returned 0 while the real leg was 83.4 mm, and the resolver
+            # concluded there was no room to slide the mirror. Symptom: "I can't even solve for FOV
+            # 35x35 now" and a refusal quoting "would leave only -22.04 mm from the lens" -- that
+            # -22.04 is exactly `0 - deficit`, the giveaway that the leg read as zero.
+            near_now = float(split.get("near", self.editor.rows[near_row].thickness))
         except Exception:
             return (None, None, 0.0, (
                 f"That field needs a {gap:.4g} mm mirror->sensor gap, below the {floor:.4g} mm "
@@ -998,10 +1006,36 @@ class QuickEstimationService:
         deficit = float(floor) - gap
         near_new = near_now - deficit
         if near_new < near_min - 1.0e-6:
+            # bugs/0561: state the MOVE, not just the target gap. The old wording quoted the
+            # required mirror->sensor distance, which the user cannot relate to what they see --
+            # "I see plenty of room from camera edge to mirror", and they were right: on the
+            # flagged scene the camera's top face sat 25.7 mm clear of the mirror. What the
+            # message failed to say is how far the sensor must TRAVEL to reach best focus
+            # (49.90 -> 6.94 mm, i.e. ~43 mm toward the mirror) and that the camera body would
+            # end up INSIDE the prism. Quote the travel and the resulting overlap so the refusal
+            # is checkable against the picture.
+            try:
+                far_now = float(split.get("far", float("nan")))
+            except Exception:
+                far_now = float("nan")
+            travel = ""
+            if far_now == far_now:  # not NaN
+                # NB this is the shortfall against the FLOOR, which carries a clearance margin
+                # on top of the physical extents -- so it is stated as "past the clearance floor",
+                # not as raw mesh overlap, which is smaller by that margin.
+                shortfall = float(floor) - gap
+                travel = (
+                    f" That is {abs(far_now - gap):.4g} mm of sensor travel toward the mirror "
+                    f"from the present {far_now:.4g} mm gap, ending {shortfall:.4g} mm past the "
+                    f"clearance floor."
+                )
             return (None, None, 0.0, (
-                f"That field needs a {gap:.4g} mm mirror->sensor gap (floor {floor:.4g} mm), and "
-                f"sliding the mirror to make room would leave only {near_new:.4g} mm from the "
-                f"lens (minimum {near_min:.4g} mm). Use a smaller field."
+                f"Best focus needs a {gap:.4g} mm mirror->sensor gap, below the {floor:.4g} mm "
+                f"body-clearance floor (the mirror's own half-extent plus how far the camera "
+                f"body reaches back behind its sensor).{travel} Sliding the mirror to compensate would "
+                f"leave only {near_new:.4g} mm from the lens (minimum {near_min:.4g} mm), so the "
+                "defocus cannot be removed at this field. Use a smaller field, or move the "
+                "mirror further from the lens first."
             ))
         return (
             float(floor),
