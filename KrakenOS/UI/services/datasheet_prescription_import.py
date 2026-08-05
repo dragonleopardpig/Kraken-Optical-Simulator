@@ -343,6 +343,54 @@ def _first_float(text: str, pattern: str) -> float | None:
     return value if math.isfinite(value) else None
 
 
+def model_designation_cardinals(text: str) -> tuple[float | None, float | None]:
+    """Focal length and F-number recovered from a vendor MODEL DESIGNATION (bugs/0565).
+
+    Some vendors ship a CAD **drawing title block** rather than a spec table.  AZURE
+    Photonics' ``ELS-85 4.5V16K_specification.pdf`` is one: its labels and its values live in
+    separate text runs, so the flattened extraction reads
+
+        ``...(Focal Length)F.O.V(DxVxH)...26mmD85mmELS-85/4.5V16Kg10-4141.85mm4.5Manual...``
+
+    -- every label is orphaned from its number and no ``Focal length`` pattern can pair them.
+    The designation itself, though, is unambiguous: ``ELS-85/4.5`` is the vendor's own name for
+    an 85 mm f/4.5 lens, and the hand-built ``machine_vision_AZ85_RA_Mirror`` surrogate for this
+    exact folder uses precisely 85 mm with an ``Aperture Stop F/4.5`` of diameter
+    18.8889 = 85/4.5.
+
+    Two things keep this from becoming number-soup, because the same flattened text also
+    contains decoys like ``10-4141.85mm``:
+
+    * the token must be ``LETTERS-<number>/<number>`` -- a bare ``F/4.5`` or a date-like
+      ``10-41`` cannot match; and
+    * the focal length must be CORROBORATED by the same number appearing as ``<n>mm``
+      elsewhere in the sheet (here ``D85mm``, the orphaned Focal Length value).
+
+    Without corroboration this returns ``None`` and the caller refuses exactly as before -- a
+    wrong prescription is far worse than a clear "cannot derive the lens optics".
+    """
+    if not text:
+        return None, None
+    # No ``\b`` before the series letters: the flattened title-block text GLUES the designation
+    # onto the previous value ("...26mmD85mmELS-85/4.5..."), so there is no word boundary there.
+    # Anchor on the uppercase run instead.
+    pattern = r"(?<![A-Z])([A-Z]{2,5})-(\d{1,4}(?:\.\d+)?)\s*/\s*(\d{1,2}(?:\.\d+)?)"
+    for match in re.finditer(pattern, text):
+        raw_focal, raw_fno = match.group(2), match.group(3)
+        try:
+            focal, fno = float(raw_focal), float(raw_fno)
+        except (TypeError, ValueError):
+            continue
+        if not (math.isfinite(focal) and math.isfinite(fno)):
+            continue
+        if not (1.0 <= focal <= 2000.0 and 0.5 <= fno <= 64.0):
+            continue
+        if re.search(rf"{re.escape(raw_focal)}\s*mm", text) is None:
+            continue
+        return focal, fno
+    return None, None
+
+
 def parse_datasheet_cardinals(path: str | Path) -> DatasheetCardinals | None:
     """Scrape first-order cardinals from a vendor datasheet PDF.
 
@@ -364,6 +412,11 @@ def parse_datasheet_cardinals(path: str | Path) -> DatasheetCardinals | None:
         effl = _first_float(
             text, r"(?i)focal\s+len\w*\s*f?['’]?\s*[\[(]\s*mm\s*[\])]\s*(-?\d+\.?\d*)"
         )
+    designation_fno: float | None = None
+    if effl is None:
+        # bugs/0565: LAST resort -- a drawing title block whose labels and values were
+        # delaminated by the flattened text extraction. See model_designation_cardinals.
+        effl, designation_fno = model_designation_cardinals(text)
     if effl is None or not (math.isfinite(effl) and abs(effl) > 1e-6):
         return None
 
@@ -390,6 +443,10 @@ def parse_datasheet_cardinals(path: str | Path) -> DatasheetCardinals | None:
     # anchor on the sigma glyph (U+03A3), the only one in the table.
     cardinals.span = _first_float(text, r"Σ\s*(-?\d[\d.]*)")
     cardinals.fno = _first_float(text, r"F/(\d+\.?\d*)\s*\.\.\.\s*F/")
+    if cardinals.fno is None:
+        # bugs/0565: the designation carries the aperture too ("ELS-85/4.5"), and it is the
+        # only F-number a drawing title block exposes to the flattened text.
+        cardinals.fno = designation_fno
     cardinals.image_circle = _first_float(text, r"Max\.\s*sensor size\s*\[mm\]\s*(\d[\d.]*)")
     if cardinals.image_circle is None:
         # bugs/0371: "image circle max. (mm) 82" spelling.

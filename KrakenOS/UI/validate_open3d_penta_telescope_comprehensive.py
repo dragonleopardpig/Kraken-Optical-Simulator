@@ -15543,6 +15543,10 @@ phase_439_row_pose_resolver = _phase_from_standalone(
     439, "one resolver answers 'where is this row' -- consumers stop re-deriving it (0557)",
     "KrakenOS.UI.validate_open3d_0557_row_pose_resolver",
     "row_pose_resolver")
+phase_440_model_designation_lens = _phase_from_standalone(
+    440, "a vendor drawing title block still yields the lens (0565)",
+    "KrakenOS.UI.validate_open3d_0565_model_designation_lens",
+    "model_designation_lens")
 phase_438_sensor_anchor_frozen_aware = _phase_from_standalone(
     438, "Normal to Sensor aims at the real sensor on a frozen scene (0556)",
     "KrakenOS.UI.validate_open3d_0556_sensor_anchor_frozen_aware",
@@ -16049,6 +16053,7 @@ def main() -> int:
             phase_437_ray_colors_follow_fields,
             phase_438_sensor_anchor_frozen_aware,
             phase_439_row_pose_resolver,
+            phase_440_model_designation_lens,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
