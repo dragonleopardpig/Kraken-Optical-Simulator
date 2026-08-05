@@ -88,7 +88,13 @@ e^{-k\rho^2/z_0}`, a circular Gaussian.
 Exercise 2.4-1 — Thin prism
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Let :math:`x` be measured upward from the
+apex of the inverted prism, as in textbook Fig. 2.4-6.  The local glass
+thickness is :math:`d(x)`, the small apex angle is :math:`\alpha`, the largest
+thickness is :math:`d_0`, and the refractive index is :math:`n`.  Thus
+:math:`d(x)=\alpha x` within the thin-prism approximation, with
+:math:`d_0=\alpha x_{\max}`.  The free-space wavenumber is
+:math:`k_0=2\pi/\lambda_0`; the incident plane wave travels along :math:`+z`.
 
 .. _fop-exercise-2-4-1-illustration:
 
@@ -97,30 +103,99 @@ Exercise 2.4-1 — Thin prism
    :align: center
    :width: 95%
 
-   **Figure 19 — Exercise 2.4-1: Thin prism.** The
-   diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route. Every
-   symbol in the variable strip is labeled on the model itself.
+   **Figure 19 — Exercise 2.4-1: Thin prism.**  The thickness
+   :math:`d(x)=\alpha x` grows toward :math:`+x`; therefore, with the book's
+   :math:`e^{-j\boldsymbol k\cdot\boldsymbol r}` convention, the output
+   wavevector has :math:`k_x>0`.  The diagram labels the apex angle,
+   thickness, wavevectors, and resulting positive deflection.
 
-**Step 2 — Mathematical formulas used.**  The working uses :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>`, :ref:`trigonometric and small-angle identities <fop-formula-trigonometry>`, and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+**Step 2 — Mathematical formulas used.**  The governing phase law is the
+variable-thickness-plate transmittance in textbook Eq. (2.4-5), printed p. 53.
+The result is checked against the thin-prism ray law in textbook Eq. (1.2-7),
+printed p. 11.  The algebra uses :ref:`phasor identities
+<fop-formula-exponentials>` and :ref:`small-angle identities
+<fop-formula-trigonometry>`.
 
-**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+**Step 3 — Worked derivation.**  At height :math:`x`, the ray crosses glass of
+thickness :math:`d(x)` and air of thickness :math:`d_0-d(x)`.  Neglecting
+surface reflection, the two propagation factors multiply:
 
-With :math:`d(x)=d_0-ax`, the phase plate law
-:math:`t=e^{-jk_0[n d(x)+d_0-d(x)]}` gives
-:math:`t=h_0e^{-j(n-1)k_0ax}`.  Multiplying an axial plane wave adds transverse
-wavevector :math:`k_x=(n-1)k_0a`; hence
-:math:`\boxed{\theta\simeq(n-1)a}`, identical to the small-angle ray result.
+.. math::
+   :label: fop-exercise-2-4-1-layer-product
+
+   t(x,y)
+   \simeq e^{-jnk_0d(x)}e^{-jk_0[d_0-d(x)]}.
+
+Factor out the phase accumulated across the reference thickness,
+:math:`h_0=e^{-jk_0d_0}`.  This gives exactly the form of textbook
+Eq. (2.4-5):
+
+.. math::
+   :label: fop-exercise-2-4-1-phase-law
+
+   t(x,y)\simeq h_0e^{-j(n-1)k_0d(x)}.
+
+For the inverted prism, its sloping face gives
+
+.. math::
+   :label: fop-exercise-2-4-1-thickness
+
+   d(x)=x\tan\alpha\simeq\alpha x,
+
+so the prism transmittance is a linear phase ramp:
+
+.. math::
+   :label: fop-exercise-2-4-1-transmittance
+
+   t(x,y)\simeq h_0e^{-j(n-1)k_0\alpha x}.
+
+Immediately after the prism, an incident axial plane wave therefore has the
+form
+
+.. math::
+   :label: fop-exercise-2-4-1-output-wave
+
+   U_{\mathrm{out}}(x,z)
+   =U_0h_0e^{-j(k_xx+k_zz)},
+   \qquad k_x=(n-1)k_0\alpha.
+
+Because the output propagates in air, :math:`|\boldsymbol k|=k_0`.  If
+:math:`\theta` is measured from :math:`+z` toward :math:`+x`, then
+
+.. math::
+   :label: fop-exercise-2-4-1-angle-exact
+
+   \sin\theta=\frac{k_x}{k_0}=(n-1)\alpha.
+
+Finally, :math:`\sin\theta\simeq\theta` for a thin paraxial prism, so
+
+.. math::
+   :label: fop-exercise-2-4-1-angle-paraxial
+
+   \theta\simeq(n-1)\alpha.
+
+This is the same magnitude and direction as the ray-optics result in textbook
+Eq. (1.2-7).
 
 **Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-2-4-1-result
 
-   \boxed{\theta\simeq(n-1)a}
+   \boxed{t(x,y)\simeq h_0e^{-j(n-1)k_0\alpha x}},
+   \qquad
+   \boxed{\theta\simeq(n-1)\alpha}
 
 
-**Step 5 — Check.**  Equation :eq:`fop-exercise-2-4-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
+**Step 5 — Check.**  The phase exponent is dimensionless because
+:math:`k_0x` is dimensionless and :math:`n-1` and :math:`\alpha` are
+dimensionless.  Setting :math:`\alpha=0` or :math:`n=1` removes the phase ramp
+and gives zero deflection.  Since :math:`d(x)` grows toward :math:`+x`, the
+coefficient of :math:`x` in the book's
+:math:`e^{-j\boldsymbol k\cdot\boldsymbol r}` convention gives
+:math:`k_x>0`, agreeing with the upward deflection in textbook Fig. 2.4-6.
+Equation
+:eq:`fop-exercise-2-4-1-result` also reproduces the ray result (1.2-7).
 
 Exercise 2.4-2 — Double-convex lens
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

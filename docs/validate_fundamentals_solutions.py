@@ -69,7 +69,7 @@ EXPECTED_VISIBLE_VARIABLES = {
     "refracting": ("n₁", "n₂", "θ₁", "θ₂", "y", "R", "z₁", "z₂"),
     "cartesian_oval": ("n₁", "n₂", "y", "z", "z₁", "z₂"),
     "tir": ("n=3.6", "nₒᵤₜ=1", "θᵢ", "θᶜ=16.13°", "Ωᶜ", "ηₑₓₜ=11.81%"),
-    "prism": ("d₀", "a", "n", "k₀", "kₓ", "θ"),
+    "prism": ("d₀", "d(x)", "α", "x", "n", "k₀", "kₓ", "θ"),
     "grin": ("n₀", "d₀", "a", "ρ", "f"),
     "fiber_acceptance": ("n₀", "n₁", "n₂", "θₐ", "θᵣ", "θᶜ", "NA"),
     "grin_fiber_acceptance": ("n₀", "a", "aₑ", "θ₀", "NA"),
@@ -121,6 +121,10 @@ CATEGORY_GEOMETRY_TOKENS = {
         'd="M610 315 L580 215 L640 215 Z"',
         'd="M610 315 L580 215 M610 315 L640 215"',
         'd="M610 315 L610 175 M520 345 L570 215 L650 345"',
+    ),
+    "prism": (
+        'd="M535 350 L535 185 L665 185 Z"',
+        'd="M480 270 L598 270 L660 245 L738 220"',
     ),
     "fiber_acceptance": (
         'd="M480 190 L565 250 L700 305 L735 291"',
@@ -231,6 +235,15 @@ def main() -> None:
                     "**(b) Extracted-power fraction.**",
                     "fop-exercise-1-2-6-extraction-fraction",
                     r"\boxed{11.81\%}",
+                ):
+                    if required_part not in body:
+                        fail(f"{identity} omits {required_part}")
+            if identity == "Exercise 2.4-1":
+                for required_part in (
+                    "textbook Eq. (2.4-5)",
+                    "textbook Eq. (1.2-7)",
+                    r"d(x)=\alpha x",
+                    r"k_x=(n-1)k_0\alpha",
                 ):
                     if required_part not in body:
                         fail(f"{identity} omits {required_part}")
