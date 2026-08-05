@@ -81,6 +81,28 @@ def _check_launch_mapping(failures: list[str]) -> None:
             "documented choke point every sampling path funnels through (bugs/0558)"
         )
 
+    # WIRING. The mapping is consumed deep inside `_build_ray_paths`, several frames below the
+    # `build_scene_bundle` signature that accepts it. Shipping it on the outer signature alone
+    # raised `NameError: name 'field_index_by_source_ray' is not defined` on the user's very next
+    # plot refresh -- the helper was unit-tested in isolation while the CALL PATH was not. Assert
+    # the whole chain: declared where it is used, and passed from where it arrives.
+    from KrakenOS.UI import scene_builder as _sb
+
+    if "field_index_by_source_ray" not in _inspect.signature(_sb._build_ray_paths).parameters:
+        failures.append(
+            "wiring: _build_ray_paths USES field_index_by_source_ray, so it must DECLARE it -- "
+            "otherwise every scene-bundle build raises NameError (bugs/0558)"
+        )
+    if "field_index_by_source_ray" not in _inspect.signature(_sb.build_scene_bundle).parameters:
+        failures.append("wiring: build_scene_bundle must accept field_index_by_source_ray")
+    if "field_index_by_source_ray=field_index_by_source_ray" not in _inspect.getsource(
+        _sb.build_scene_bundle
+    ):
+        failures.append(
+            "wiring: build_scene_bundle must PASS field_index_by_source_ray down to "
+            "_build_ray_paths -- accepting it and dropping it is silently the old behaviour"
+        )
+
 
 def run_checks() -> tuple[bool, list[str]]:
     failures: list[str] = []

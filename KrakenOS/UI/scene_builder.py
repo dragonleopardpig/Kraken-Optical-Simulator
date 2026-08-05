@@ -1094,6 +1094,7 @@ def build_scene_bundle(
         detector_surface_indices=detector_surface_indices,
         allow_target_plane_contact=allow_target_plane_contact,
         detector_active_dims_overrides=detector_active_dims_overrides,
+        field_index_by_source_ray=field_index_by_source_ray,
     )
     if folded_ray_display_paths is not None and elements:
         _sync_folded_terminal_events(
@@ -1634,6 +1635,8 @@ def _build_ray_paths(
     detector_surface_indices: set[int] | None = None,
     allow_target_plane_contact: bool = False,
     detector_active_dims_overrides: dict[int, tuple[float, float]] | None = None,
+    # bugs/0558: the launch's own per-source-ray field identity (see _launch_field_group).
+    field_index_by_source_ray: "list[int] | None" = None,
 ) -> list[RayPath3D]:
     if rays is None:
         return []
