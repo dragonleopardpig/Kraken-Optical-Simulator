@@ -498,6 +498,20 @@ class LayoutTableWorkbenchMixin:
             loaded_rows = [self._row_from_surface(surface, index, len(surfaces)) for index, surface in enumerate(surfaces)]
 
         loaded_rows = self._normalized_rows_copy(loaded_rows)
+        # bugs/0563: `load_layout_by_name` builds its rows itself and never goes through
+        # `open_layout`, so the bugs/0559 heal placed there never ran on the path the app
+        # actually uses -- a layout loaded by name kept its saved negative gap. Measured on
+        # attachment/machine_vision_Apo75.py: after load, row 6 was still -13.5949.
+        _healed = self._heal_negative_gaps_on_load(loaded_rows)
+        if _healed:
+            _text = ", ".join(f"S{h['row_index']} ({h['name']}) {h['thickness']:+g} mm" for h in _healed)
+            try:
+                self.append_debug(
+                    f"Repaired {len(_healed)} negative gap(s) saved in this layout: {_text}. "
+                    "Nothing moved (the gap is returned through desp_z); re-save to persist."
+                )
+            except Exception:
+                pass
         self._auto_assign_missing_elements(loaded_rows)
         replace_existing = self._is_empty_starter_rows(self.rows)
         append_to_existing = (

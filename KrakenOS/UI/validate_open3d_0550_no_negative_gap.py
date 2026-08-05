@@ -279,6 +279,16 @@ def _check_load_heal(failures: list[str]) -> None:
 
     if "_heal_negative_gaps_on_load" not in _inspect.getsource(M.open_layout):
         failures.append("heal: open_layout must run the repair (bugs/0559)")
+    # bugs/0563: EVERY load path must heal. `load_layout_by_name` builds its rows itself and
+    # never calls open_layout, so the 0559 heal silently did nothing on the path the app uses --
+    # measured: Apo75 still carried -13.5949 after load.
+    from KrakenOS.UI.services.layout_table_workbench import LayoutTableWorkbenchMixin as W
+
+    if "_heal_negative_gaps_on_load" not in _inspect.getsource(W.load_layout_by_name):
+        failures.append(
+            "heal: load_layout_by_name must run the repair too -- it does NOT go through "
+            "open_layout, and it is the path the app uses (bugs/0563)"
+        )
 
 
 def _check_near_leg_read(failures: list[str]) -> None:
