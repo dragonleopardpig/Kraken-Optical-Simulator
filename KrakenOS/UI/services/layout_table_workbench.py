@@ -856,14 +856,10 @@ class LayoutTableWorkbenchMixin:
             return None
         if not any(row_placement.is_world_placed(row) for row in rows[front:rear + 1]):
             return None
-        stations = self._row_z_positions()
-
+        # bugs/0557: one resolver answers "where is this row", instead of each consumer
+        # re-deriving station + desp for itself (the mistake behind 0517/0519/0525/0547/0556).
         def _pose(index):
-            row = rows[index]
-            station = float(stations[index]) if index < len(stations) else 0.0
-            return np.asarray(
-                [float(row.desp_x), float(row.desp_y), station + float(row.desp_z)], dtype=float
-            )
+            return np.asarray(row_placement.world_pose(self, int(index)).position, dtype=float)
 
         origin = _pose(front)
         axis = _pose(rear) - origin

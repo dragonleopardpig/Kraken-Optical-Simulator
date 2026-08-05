@@ -3733,13 +3733,16 @@ class ThreeDSceneToolsMixin:
             return None
         from KrakenOS.UI.scene_geometry import SceneTarget3D
 
-        # bugs/0556: read the row's WORLD pose. A frozen row carries its final placement in
-        # desp + tilt, so the axial assumption puts the anchor ~194 mm away from the sensor.
+        # bugs/0556 + bugs/0557: ask THE resolver where the row is, instead of assuming the
+        # straight axis. A frozen row carries its final placement in desp + tilt, and the axial
+        # assumption put this anchor ~194 mm from the sensor (empty "Normal to Sensor" view).
         row = rows[image_index]
         center = np.asarray((0.0, 0.0, z_plane), dtype=float)
         normal = np.asarray((0.0, 0.0, 1.0), dtype=float)
         tangent = np.asarray((0.0, 1.0, 0.0), dtype=float)
         try:
+            from KrakenOS.UI.services import row_placement
+
             desp = np.asarray(
                 (float(row.desp_x), float(row.desp_y), float(row.desp_z)), dtype=float
             )
@@ -3747,17 +3750,10 @@ class ThreeDSceneToolsMixin:
                 (float(row.tilt_x), float(row.tilt_y), float(row.tilt_z)), dtype=float
             )
             if np.any(np.abs(desp) > 1e-9) or np.any(np.abs(tilts) > 1e-9):
-                stations = self._row_z_positions()
-                station = float(stations[image_index]) if image_index < len(stations) else 0.0
-                center = np.asarray(
-                    (desp[0], desp[1], station + desp[2]), dtype=float
-                )
-                from KrakenOS.UI.optical_solid_metadata import rotation_matrix_from_kraken_tilts
-
-                rotation = np.asarray(
-                    rotation_matrix_from_kraken_tilts(*(float(v) for v in tilts)), dtype=float
-                )
-                if rotation.shape == (3, 3) and np.all(np.isfinite(rotation)):
+                position, rotation, _space = row_placement.world_frame(self, image_index)
+                if position is not None and np.all(np.isfinite(position)):
+                    center = np.asarray(position, dtype=float)
+                if rotation is not None:
                     normal = rotation[:, 2]
                     tangent = rotation[:, 1]
         except Exception:

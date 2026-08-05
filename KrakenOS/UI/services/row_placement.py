@@ -128,3 +128,58 @@ def scene_placement_summary(editor: Any) -> dict:
     """``{row_index: space}`` for a whole scene — what the audit and Step 2 consume."""
     rows = list(getattr(editor, "rows", []) or [])
     return {index: placement_space(row) for index, row in enumerate(rows)}
+
+
+def rotation_matrix(row: Any) -> "np.ndarray | None":
+    """The row's orientation as a 3x3 world rotation, or None when it carries no tilts.
+
+    Columns are the row's local axes in world coordinates, so ``rotation[:, 2]`` is its normal
+    and ``rotation[:, 1]`` its height (bitangent) — the two a detector/plane consumer needs."""
+    tilts = row_tilts(row)
+    if tilts is None:
+        return None
+    try:
+        from KrakenOS.UI.optical_solid_metadata import rotation_matrix_from_kraken_tilts
+
+        matrix = np.asarray(
+            rotation_matrix_from_kraken_tilts(*(float(v) for v in tilts)), dtype=float
+        )
+    except Exception:
+        return None
+    if matrix.shape != (3, 3) or not np.all(np.isfinite(matrix)):
+        return None
+    return matrix
+
+
+def world_pose(editor: Any, row_index: int) -> Pose:
+    """**The** resolver: where row ``row_index`` actually is, in world coordinates.
+
+    bugs/0557 — Step 2 of ``docs/design_row_placement_space.md``, for the consumers that do not
+    need the folded-display frame.
+
+    * A **WORLD** row (the 0433 freeze / axis snap / a promoted solid) already carries its final
+      placement, so its numbers ARE the answer.
+    * A **SEQUENTIAL** row returns the straight-equivalent pose. The display fold is NOT applied
+      here yet — that is the unfinished half of Step 2, blocked on locating the producer of the
+      drawn folded geometry (two candidate sites eliminated by measurement, see the design doc).
+      The ``space`` field says which you got, so a caller can never silently mistake one for the
+      other, and a caller needing the fold must still apply its own.
+
+    Why this exists: FIVE consumers have now hand-rolled "where is this row really" and each got
+    it wrong on a frozen scene — the branch camera frame (0517), the FOV solve gate (0519), the
+    acceptance-cone crease (0525), the lens-swap block placement (0547), and the Normal-to-Sensor
+    anchor (0556, which aimed 194 mm off the sensor and drew an empty view). Every one of them
+    assumed the straight axis while the row carried its placement in ``desp`` + ``tilt``."""
+    return prescription_pose(editor, row_index)
+
+
+def world_frame(editor: Any, row_index: int) -> "tuple[np.ndarray, np.ndarray | None, str]":
+    """``(position, rotation_3x3_or_None, space)`` — :func:`world_pose` plus the orientation
+    matrix, which is what a plane/detector consumer needs (normal = column 2, height = column 1).
+
+    Keeping this beside the resolver is deliberate: a consumer that derives a normal from tilts
+    by hand is exactly how bugs/0556 ended up hardcoding ``(0, 0, 1)`` for a flipped sensor."""
+    pose = world_pose(editor, row_index)
+    rows = list(getattr(editor, "rows", []) or [])
+    row = rows[int(row_index)] if 0 <= int(row_index) < len(rows) else None
+    return pose.position, (rotation_matrix(row) if row is not None else None), pose.space
