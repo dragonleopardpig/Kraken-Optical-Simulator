@@ -15599,6 +15599,10 @@ phase_448_solve_makes_room_at_the_fold = _phase_from_standalone(
     448, "a solve that needs more leg MAKES ROOM at the fold and then runs (0573)",
     "KrakenOS.UI.validate_open3d_0573_solve_makes_room_at_the_fold",
     "solve_makes_room_at_the_fold")
+phase_449_solve_carries_the_lens_body = _phase_from_standalone(
+    449, "a solve carries the lens BODY with its surrogate, and focuses in the world frame (0574/0575/0576)",
+    "KrakenOS.UI.validate_open3d_0574_solve_carries_the_lens_body",
+    "solve_carries_the_lens_body")
 
 
 # ---------------------------------------------------------------------------

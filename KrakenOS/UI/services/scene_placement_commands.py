@@ -3461,11 +3461,36 @@ class ScenePlacementMixin:
             _frozen_world = False
         image_z = None if _frozen_world else self._paraxial_image_plane_z()
         if _frozen_world:
-            delta = self._real_ray_best_focus_shift_for_rows()
-            source = "best focus (ray-traced, frozen world)"
+            # bugs/0576 (flag_20260806_182735 "rays defocus at sensor"): these two were the other
+            # way round. bugs/0515 reached for the straight-equivalent measure first, believing it
+            # "immune to station/world offsets" -- but it traces
+            # _folded_optical_solid_straight_equivalent_rows, which keeps the THICKNESSES and drops
+            # the placement, and on a 0433-frozen fold the prescription is not the scene. The
+            # bugs/0571 compensated slide grows the lens block's stations and cancels them again
+            # past the block, and this scene's BS is authored after the lens rows while sitting
+            # 180 mm upstream in world, so the straight equivalent's lens->sensor spacing is
+            # 148.5 mm where the real path is 76.9 mm.
+            #
+            # Measured on the user's Apo75 -> PYRITE scene by SCANNING the sensor along its leg
+            # and reading the real traced spot RMS at each stop
+            # (bugs/probe_0576_best_focus_frame.py), against the as-loaded Apo75 as a control:
+            #
+            #   state          true best focus     straight equivalent      traced bundle
+            #   flag 1 (ctrl)  -2.17 mm off        -36.67                   -0.0006
+            #   flag 2 (swap)  -69.25 mm off        3.06e-14                -71.04
+            #   flag 3 (solve) -60.02 mm off        5.70e-16                -57.43
+            #
+            # The straight-equivalent measure reported "already in focus" to 14 decimal places on
+            # a scene 69 mm out, so the snap declined to move and the swap/solve both left the
+            # sensor where they found it. The traced bundle is right in all three states because
+            # it walks the rays that actually traced, through the real fold. Prefer it, and keep
+            # the straight equivalent as the fallback for when no bundle is measurable (a headless
+            # run with no inspector, or fewer than 4 axial rays reaching the detector).
+            delta = self._traced_bundle_best_focus_shift()
+            source = "best focus (traced bundle, world frame)"
             if delta is None:
-                delta = self._traced_bundle_best_focus_shift()
-                source = "best focus (traced bundle)"
+                delta = self._real_ray_best_focus_shift_for_rows()
+                source = "best focus (ray-traced, straight equivalent)"
             if delta is None:
                 # bugs/0524: on a clipped / heavily-slid frozen scene BOTH ray measures give
                 # up -- but the paraxial conjugate always knows the in-focus plane. The
@@ -3672,10 +3697,14 @@ class ScenePlacementMixin:
                         self.status_var.set(f"Snap detector: {refusal}")
                         return False
                     break
+                # bugs/0576: re-measure in the SAME frame the loop was seeded in, or the adaptive
+                # flip compares two different quantities. The straight equivalent read ~0 here
+                # (5.7e-16 on a scene 60 mm out of focus), so the loop exited after one pass
+                # believing it had converged -- the "rays defocus at sensor" the flag reports.
                 try:
-                    measured = self._real_ray_best_focus_shift_for_rows()
+                    measured = self._traced_bundle_best_focus_shift()
                     if measured is None:
-                        measured = self._traced_bundle_best_focus_shift()
+                        measured = self._real_ray_best_focus_shift_for_rows()
                 except Exception:
                     measured = None
                 if measured is None:
