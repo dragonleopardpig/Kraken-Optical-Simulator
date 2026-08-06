@@ -1389,13 +1389,6 @@ class QuickEstimationService:
                 # (bugs/0478), and the row this branch would otherwise write is the one the
                 # distance is measured FROM, not a leg that may be stretched. Move the sensor
                 # along its own leg by the solved correction; the mirror stays exactly put.
-                image_handled = False
-                try:
-                    image_handled = bool(
-                        self.editor.shift_image_distance_frozen_aware(float(folded["image_delta"]))
-                    )
-                except Exception:
-                    image_handled = False
                 obj_row = self._gap_row_for_delta(rows, og)
                 img_row_write = self._folded_image_leg_write_row(ig)
                 if obj_row is None or img_row_write is None:
@@ -1447,6 +1440,72 @@ class QuickEstimationService:
                     refusal = str(self.editor.__dict__.get("_lens_leg_slide_refusal", "") or "")
                     if refusal:
                         return False, f"FOV out of range on this fold: {refusal}"
+                # bugs/0575 (flag_20260806_182735, "rays defocus at sensor"): the image write has
+                # to happen AFTER the object move, and it has to be re-measured once it has.
+                #
+                # ``image_delta`` is an absolute z correction in the shared first-order frame, and
+                # _folded_conjugate_gaps_for_magnification's docstring calls it "invariant" under
+                # the object move. That was true when the object move was ``rows[0].thickness +=
+                # d``, which grows EVERY downstream station -- H' and the image plane together, so
+                # the correction between them does not change. Since bugs/0571 the object move is
+                # the compensated leg slide, which deliberately leaves rows past the lens block
+                # untouched (``rows[downstream].thickness -= d`` cancels the growth): H' still
+                # gains d, the sensor's station gains nothing, so the true correction is now
+                # ``image_delta + d`` and the old number is short by exactly the slide. Measured:
+                # the finisher's residual after the slide was +28.4622 mm, the slide to 4 dp.
+                #
+                # Rather than hardcode that coupling, re-solve the conjugate on the scene as it
+                # now stands: the object is already placed, so the fresh object_delta comes back
+                # ~0 and the fresh image_delta is exactly the remaining correction. Self-checking,
+                # and it also absorbs whatever the bugs/0573 fold-arm slide did on the way here.
+                if object_slid is not None or arm_slid is not None:
+                    try:
+                        refreshed = self.editor._folded_conjugate_gaps_for_magnification(is_f / os_f)
+                    except Exception:
+                        refreshed = None
+                    if isinstance(refreshed, dict):
+                        self.editor.append_debug(
+                            "folded solve: image delta re-measured after the object move "
+                            "{was:+.4f} -> {now:+.4f} mm (object delta left {left:+.4f})".format(
+                                was=float(folded["image_delta"]),
+                                now=float(refreshed["image_delta"]),
+                                left=float(refreshed["object_delta"]),
+                            )
+                        )
+                        folded = refreshed
+                image_handled = False
+                try:
+                    image_handled = bool(
+                        self.editor.shift_image_distance_frozen_aware(float(folded["image_delta"]))
+                    )
+                except Exception:
+                    image_handled = False
+                # bugs/0575: a frozen fold that REFUSED must not fall through to the plain
+                # prescription write below -- that write runs backwards on a frozen fold
+                # (bugs/0478), so an impossible request came out as a full-strength move in the
+                # wrong direction. On the user's Apo75 -> PYRITE scene the solve asked for a
+                # -10.29 mm mirror->sensor leg, the writer correctly refused, and the fallback
+                # then drove the sensor +42.94 mm the wrong way.
+                #
+                # But a hard refusal here would be refusing on the wrong number. The target comes
+                # from _shared_first_order_reference, whose image_z is a STATION sum -- the very
+                # frame bugs/0576 measured as not-this-scene on a frozen fold (it reported a 60 mm
+                # defocus as 5.7e-16). So when the paraxial image target is out of reach, DEFER:
+                # write nothing here and let the traced-focus finisher below place the sensor,
+                # which it does in world off the rays that actually traced. That is also the
+                # user's own principle -- pin the section, refocus at the sensor, and let the FOV
+                # readout follow -- so the object slide sets the conjugate and focus does the rest.
+                image_deferred = False
+                if not image_handled:
+                    image_refusal = str(
+                        self.editor.__dict__.get("_frozen_image_write_refusal", "") or ""
+                    )
+                    if image_refusal:
+                        image_deferred = True
+                        self.editor.append_debug(
+                            "folded solve: paraxial image write deferred to the traced focus "
+                            f"({image_refusal})"
+                        )
                 obj_changes = (
                     []
                     if object_slid is not None
@@ -1457,7 +1516,7 @@ class QuickEstimationService:
                 )
                 img_changes = (
                     []
-                    if image_handled
+                    if (image_handled or image_deferred)   # bugs/0575
                     else self._distribute_folded_gap_delta(
                         rows, img_row_write, float(folded["image_delta"]),
                         self._folded_conjugate_spill_row(img_row_write, "image"),
@@ -1507,6 +1566,17 @@ class QuickEstimationService:
                         f"{float(arm_slid['distance']):+.4g} mm along the leg."
                     )
                 )
+                if image_deferred:
+                    # bugs/0575: the object conjugate was written and the sensor was placed by
+                    # FOCUS rather than by the paraxial target, so quoting the target's |m| would
+                    # be quoting a number the scene does not have. Say what actually happened and
+                    # let the FOV readout report the field that resulted.
+                    return True, (
+                        f"Solved (folded): object->lens {folded['object_distance']:.6g} mm. The "
+                        f"paraxial sensor plane was out of this fold's reach, so the sensor was "
+                        f"placed at the traced focus instead -- read the FOV box for the field "
+                        f"that actually results.{room_note}{focus_note}"
+                    )
                 if image_handled:
                     # Report what was actually applied: on a frozen fold the image side is a
                     # WORLD move of the sensor, not the gap-row sum ``image_distance`` quotes.

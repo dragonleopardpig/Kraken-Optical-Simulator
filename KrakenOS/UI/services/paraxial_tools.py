@@ -1542,7 +1542,16 @@ class ParaxialToolsMixin:
         plain prescription write -- whenever the scene is not frozen, has no image-side fold,
         or the geometry cannot be read. A straight (unfolded) scene has no inversion and must
         keep its existing behaviour.
+
+        bugs/0575: False alone is ambiguous, and the ambiguity is dangerous. "Not a frozen
+        scene" and "frozen, but you asked for a leg this fold cannot hold" both returned it,
+        and the caller read both as the first -- so an impossible request fell through to the
+        very plain write this method exists to prevent, at full inverted strength. When the
+        scene IS frozen (i.e. the split and geometry read cleanly) every refusal now leaves the
+        numbers in ``_frozen_image_write_refusal``; when it is not frozen that stays empty. The
+        caller keys on the string, never on the bool alone.
         """
+        self._frozen_image_write_refusal = ""
         try:
             split = self._folded_image_conjugate_split()
         except Exception:
@@ -1555,12 +1564,23 @@ class ParaxialToolsMixin:
             return False
         if geometry is None:
             return False
+        # Past this point the scene IS a frozen image-side fold, so a refusal is a real
+        # infeasibility and must never be mistaken for "unfolded, use the plain write".
         try:
             far_new = float(image_distance)
             near_new = float(geometry["near"])
         except Exception:
+            self._frozen_image_write_refusal = "the requested image distance is not a number."
             return False
-        if not np.isfinite(far_new) or far_new <= 0.0 or not np.isfinite(near_new):
+        if not np.isfinite(far_new) or not np.isfinite(near_new):
+            self._frozen_image_write_refusal = "the image leg geometry is not finite."
+            return False
+        if far_new <= 0.0:
+            self._frozen_image_write_refusal = (
+                f"that field wants the sensor {abs(far_new):.4g} mm BEHIND the fold mirror "
+                f"(a mirror->sensor leg of {far_new:.4g} mm) -- move the camera closer to the "
+                f"mirror, or pin a segment."
+            )
             return False
         # The world leg is DERIVED from the gap row (station + desp), so the whole fix is to
         # write the gap that yields the wanted world leg -- not to re-bake the sensor's world
@@ -1578,10 +1598,18 @@ class ParaxialToolsMixin:
             far_gap_row = int(split["far_gap_row"])
             gap_now = float(self.rows[far_gap_row].thickness)
         except Exception:
+            # bugs/0575: still a frozen scene, so still not safe to fall through to the plain
+            # write -- say so rather than let the caller read this as "unfolded".
+            self._frozen_image_write_refusal = "this fold's image gap row could not be read."
             return False
         const = gap_now + float(geometry["far"])
         gap_new = const - far_new
         if not np.isfinite(gap_new) or gap_new < 0.0:
+            self._frozen_image_write_refusal = (
+                f"that field wants a mirror->sensor leg of {far_new:.4g} mm, but this fold's "
+                f"leg budget is {const:.4g} mm -- slide the fold mirror (and the camera behind "
+                f"it) along the leg first, or pin a segment."
+            )
             return False
         self.rows[far_gap_row].thickness = gap_new
         return True
@@ -1599,8 +1627,10 @@ class ParaxialToolsMixin:
         form that is right in both frames.
 
         Returns True when it handled the write, False when the scene has no frozen image-side
-        fold -- the caller then keeps its plain prescription write.
+        fold -- the caller then keeps its plain prescription write. bugs/0575: on a frozen
+        scene a refusal also leaves its numbers in ``_frozen_image_write_refusal``.
         """
+        self._frozen_image_write_refusal = ""
         try:
             split = self._folded_image_conjugate_split()
             if not isinstance(split, dict):
@@ -1614,8 +1644,12 @@ class ParaxialToolsMixin:
             far_now = float(geometry["far"])
             shift = float(delta)
         except (TypeError, ValueError, KeyError):
+            # bugs/0575: the geometry read cleanly, so this IS a frozen scene -- a caller must
+            # not read this False as "unfolded, do the plain write".
+            self._frozen_image_write_refusal = "this fold's image leg could not be measured."
             return False
         if not (np.isfinite(far_now) and np.isfinite(shift)):
+            self._frozen_image_write_refusal = "the image leg correction is not finite."
             return False
         return bool(self.apply_image_distance_frozen_aware(far_now + shift))
 
