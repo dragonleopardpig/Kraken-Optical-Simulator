@@ -15579,6 +15579,10 @@ phase_443_lens_body_centred_on_axis = _phase_from_standalone(
     443, "a swapped lens body stays centred on the optical axis, with no axial shift (0568)",
     "KrakenOS.UI.validate_open3d_0568_lens_body_centred_on_axis",
     "lens_body_centred_on_axis")
+phase_444_fov_solve_keeps_the_fold = _phase_from_standalone(
+    444, "a folded FOV solve moves the sensor, never the fold mirror or a station-neutral row (0569)",
+    "KrakenOS.UI.validate_open3d_0569_fov_solve_keeps_the_fold",
+    "fov_solve_keeps_the_fold")
 
 
 # ---------------------------------------------------------------------------

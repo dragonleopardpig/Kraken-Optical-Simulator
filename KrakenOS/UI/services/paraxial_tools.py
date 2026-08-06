@@ -1571,6 +1571,39 @@ class ParaxialToolsMixin:
         self.rows[far_gap_row].thickness = gap_new
         return True
 
+    def shift_image_distance_frozen_aware(self, delta: float) -> bool:
+        """bugs/0569: move the sensor by ``delta`` ALONG its folded leg, mirror unmoved.
+
+        :meth:`apply_image_distance_frozen_aware` takes an ABSOLUTE mirror->sensor leg. The
+        folded conjugate solve does not have one: it produces an axial CORRECTION in the shared
+        first-order frame (``image_delta``), while its ``image_distance`` is a sum of GAP ROWS
+        measured from wherever ``gap_start`` landed -- a different quantity in different units.
+        Feeding that absolute into the world-terms writer moved the sensor by the wrong amount;
+        feeding the correction into the gap row moved it the wrong WAY (a frozen fold's gap row
+        runs backwards, bugs/0478). Adding the correction to the MEASURED world leg is the one
+        form that is right in both frames.
+
+        Returns True when it handled the write, False when the scene has no frozen image-side
+        fold -- the caller then keeps its plain prescription write.
+        """
+        try:
+            split = self._folded_image_conjugate_split()
+            if not isinstance(split, dict):
+                return False
+            geometry = self._frozen_image_fold_world_geometry(split)
+        except Exception:
+            return False
+        if geometry is None:
+            return False
+        try:
+            far_now = float(geometry["far"])
+            shift = float(delta)
+        except (TypeError, ValueError, KeyError):
+            return False
+        if not (np.isfinite(far_now) and np.isfinite(shift)):
+            return False
+        return bool(self.apply_image_distance_frozen_aware(far_now + shift))
+
     def _folded_object_conjugate_split(self) -> "dict | None":
         """Split the object distance c at the OBJECT-side RA-mirror fold centre.
 

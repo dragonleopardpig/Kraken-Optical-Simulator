@@ -1205,6 +1205,60 @@ class QuickEstimationService:
         far = int(split.get("far_gap_row", -1))
         return far if (far >= 0 and far != int(primary_row)) else None
 
+    @staticmethod
+    def _row_is_station_neutral(row) -> bool:
+        """bugs/0435: a promoted solid marked STATION-NEUTRAL spans no distance on the imaging
+        axis -- its thickness is pinned at 0 and its body is placed absolutely. Its row index is
+        not its geometry either (bugs/0546: a beam splitter glued to the LED routinely lands
+        AFTER the lens block). So its thickness is not a gap and no solve may write to it: every
+        station-fed consumer downstream -- the pinned mirror pose, the sequential Image, the
+        camera glued to it -- moves by whatever is written there."""
+        advanced = getattr(row, "advanced", None)
+        if not isinstance(advanced, dict):
+            return False
+        promotion = advanced.get("StepOverlayPromotion")
+        return bool(isinstance(promotion, dict) and promotion.get("station_neutral"))
+
+    def _gap_row_for_delta(self, rows, candidate) -> "int | None":
+        """The nearest row AT OR BEFORE ``candidate`` whose thickness is a real axial gap.
+
+        bugs/0569: the folded solve's ``image_gap_row`` says where the image distance is
+        MEASURED from, and on the reported scene that is the promoted beam-splitter row --
+        station-neutral, and physically upstream of the lens. Writing the leg correction there
+        pushed the RA mirror and the sensor 54 mm along the chain, off the beam ("camera and RA
+        mirror misplaced"). Walk back to a row that can actually hold a distance.
+        """
+        index = int(candidate)
+        while 0 <= index < len(rows) and self._row_is_station_neutral(rows[index]):
+            index -= 1
+        return index if 0 <= index < len(rows) else None
+
+    def _folded_image_leg_write_row(self, measured_from_row) -> "int | None":
+        """The row whose thickness IS the mirror->sensor leg -- the one a conjugate correction
+        may stretch without moving anything but the sensor.
+
+        bugs/0569: the solve's ``image_gap_row`` is where the image distance is MEASURED from
+        (it walks back off the fold mirror so the distance runs from the last LENS surface).
+        Writing there stretches the leg BEFORE the mirror instead, so the mirror -- and the
+        camera glued behind it -- slide off the beam. The fold split already names the right
+        row; fall back to the last gap before the Image, and only then to a walk-back.
+        """
+        rows = getattr(self.editor, "rows", None) or []
+        if not rows:
+            return None
+        try:
+            split = self.editor._folded_image_conjugate_split()
+        except Exception:
+            split = None
+        if isinstance(split, dict):
+            far = int(split.get("far_gap_row", -1))
+            if 0 <= far < len(rows) and not self._row_is_station_neutral(rows[far]):
+                return far
+        last_gap = len(rows) - 2
+        if 0 <= last_gap < len(rows) and not self._row_is_station_neutral(rows[last_gap]):
+            return last_gap
+        return self._gap_row_for_delta(rows, measured_from_row)
+
     def _distribute_folded_gap_delta(self, rows, primary_row, delta, spill_row):
         """Apply ``delta`` (a change to a folded conjugate's leg TOTAL) to ``rows[primary_row]``.
         If that drives the primary leg negative, spill the overflow onto ``spill_row`` (the fold's
@@ -1246,13 +1300,34 @@ class QuickEstimationService:
                 # underflows and the solve silently no-ops -- even though the far leg has ample
                 # room. Spill any overflow onto the fold's OTHER leg (slide the mirror), exactly
                 # what the old error told the user to do by hand.
+                # bugs/0569 (flag_20260806_074148, "swapped lens, changed FOV, solve for
+                # thickness, camera and RA mirror misplaced"): on a FROZEN image-side fold the
+                # sensor is placed in WORLD terms -- the gap row after the mirror runs backwards
+                # (bugs/0478), and the row this branch would otherwise write is the one the
+                # distance is measured FROM, not a leg that may be stretched. Move the sensor
+                # along its own leg by the solved correction; the mirror stays exactly put.
+                image_handled = False
+                try:
+                    image_handled = bool(
+                        self.editor.shift_image_distance_frozen_aware(float(folded["image_delta"]))
+                    )
+                except Exception:
+                    image_handled = False
+                obj_row = self._gap_row_for_delta(rows, og)
+                img_row_write = self._folded_image_leg_write_row(ig)
+                if obj_row is None or img_row_write is None:
+                    return False, "No usable object/image gap row for the folded solve."
                 obj_changes = self._distribute_folded_gap_delta(
-                    rows, og, float(folded["object_delta"]),
-                    self._folded_conjugate_spill_row(og, "object"),
+                    rows, obj_row, float(folded["object_delta"]),
+                    self._folded_conjugate_spill_row(obj_row, "object"),
                 )
-                img_changes = self._distribute_folded_gap_delta(
-                    rows, ig, float(folded["image_delta"]),
-                    self._folded_conjugate_spill_row(ig, "image"),
+                img_changes = (
+                    []
+                    if image_handled
+                    else self._distribute_folded_gap_delta(
+                        rows, img_row_write, float(folded["image_delta"]),
+                        self._folded_conjugate_spill_row(img_row_write, "image"),
+                    )
                 )
                 if obj_changes is None or img_changes is None:
                     return False, (
@@ -1267,9 +1342,28 @@ class QuickEstimationService:
                 # global +Z -- carry it (and any free-placed camera) back onto the beam.
                 from KrakenOS.UI.nonseq_output_ports import carry_free_placed_followers_after_fold
                 carry_free_placed_followers_after_fold(rows, changes)
+                # bugs/0569: the FOLDED branch returns early, so it never reached the bugs/0490
+                # finisher the plain branch ends with -- the solve landed the PARAXIAL plane and
+                # left the traced focus wherever the real-ray aberration and the BS/prism glass
+                # paths put it. That is the "solve for FOV, ray still defocus at the sensor"
+                # complaint (0567's flag), on the very branch a folded scene always takes.
+                focus_note = ""
+                try:
+                    focus_note = str(self._finish_solve_on_traced_focus() or "")
+                except Exception as exc:
+                    focus_note = f" Focus snap skipped ({type(exc).__name__}: {exc})."
+                if image_handled:
+                    # Report what was actually applied: on a frozen fold the image side is a
+                    # WORLD move of the sensor, not the gap-row sum ``image_distance`` quotes.
+                    return True, (
+                        f"Solved (folded): object->lens {folded['object_distance']:.6g} mm; the "
+                        f"sensor moved {float(folded['image_delta']):+.4g} mm along its folded leg "
+                        f"(the fold mirror stayed put) (|m|={folded['magnitude']:.4g}).{focus_note}"
+                    )
                 return True, (
                     f"Solved (folded): object->lens {folded['object_distance']:.6g} mm, "
-                    f"lens->sensor {folded['image_distance']:.6g} mm (|m|={folded['magnitude']:.4g})."
+                    f"lens->sensor {folded['image_distance']:.6g} mm "
+                    f"(|m|={folded['magnitude']:.4g}).{focus_note}"
                 )
         pair = self._conjugate_pair(object_semi, image_semi)
         if pair is None:
