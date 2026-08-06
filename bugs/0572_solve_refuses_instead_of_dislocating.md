@@ -60,6 +60,24 @@ The fold mirror (and the camera behind it) has to travel that far along the leg 
 now says exactly that, with the number, so the user can do it — by dragging the mirror, or by
 pinning a segment.
 
+**The OPTICS are not the limit here.** Deriving the scene's own first order from its rows (two
+thin lenses f = 149.403 either side of the stop, separation 36.604 → f = **85.130 mm**,
+ppa = +22.68, ppp = −115.81 measured from the last vertex, which is the BS plate 93.9 mm past the
+lens):
+
+| field | \|m\| | image distance | verdict |
+|---|---|---|---|
+| 35×35 | 0.6583 | **+25.355 mm** | optically fine |
+| 55×55 | 0.4189 | **+4.977 mm** | optically fine |
+| 63×63 | 0.3657 | +0.448 mm | at the edge |
+| 66×66 | 0.3491 | −0.967 mm | past it — the sensor would sit inside the optics |
+
+So this lens + sensor reaches about **63.9 mm square** before the image distance goes negative
+(|m*| = 0.3604). 55×55 is inside that at 86 % of the ceiling: **what stops it is the machine's
+length, not the lens.** (Derivation independently reproduced two ways — a read-only source
+analysis and the arithmetic above — and both land on the app's own logged numbers, +72.8008 and
++146.6984 mm.)
+
 ## Guard — phase 447 `validate_open3d_0572_solve_never_dislocates_when_the_leg_is_full`
 
 * **A pure**: the room measure is block-end → fold-centre minus half-aperture (45.729 on the real
@@ -78,3 +96,10 @@ snap's adaptive loop cannot verify its own move — so a solve that DOES fit sti
 residual. And the natural completion of this fix is to *make* the room automatically: slide the
 fold mirror and the camera along the leg by the shortfall, then run the solve. The refusal already
 names the exact distance, which is the input that feature needs.
+
+**Found while mapping this, not fixed:** the bugs/0519 "infeasible regime re-anchors on the world
+far leg" branch (`quick_estimation.py`, the `far + f(1+m) − image_principal` re-anchor) is
+algebraically a **no-op** on any scene whose trailing gap is non-zero — `image_total − image_principal`
+already equals `ppp` there, so the re-anchor reproduces the number it replaced. That is a second,
+latent "recurrence": phase 418 asserts a mechanism that cannot bite on this topology. Worth its own
+turn, with a scene where the trailing gap IS zero to tell the two apart.
