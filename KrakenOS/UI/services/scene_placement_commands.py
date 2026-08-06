@@ -3628,8 +3628,32 @@ class ScenePlacementMixin:
                 target_gap = float(new_gap)
                 collision_note = " (mirror slid to keep the camera body clear)"
             if not self.apply_image_distance_frozen_aware(target_gap):
+                # bugs/0577: on a FROZEN fold this fallback is the runaway's ENGINE, not a
+                # safety net. The frozen writer refuses when the requested leg is out of the
+                # fold's reach; writing it raw into the gap row then (a) moves the sensor the
+                # wrong way, bugs/0478, and (b) GROWS the leg budget ``const = gap + far``, so
+                # the next iteration's target is larger still. Measured on the user's ELS-85
+                # swap: five passes took the leg 17 -> 2178 mm and const 90 -> 5219 mm. A
+                # refusal is not a hint to write it anyway. Unfolded scenes have no inversion
+                # and keep the raw write (the refusal string is empty there).
+                refusal = str(getattr(self, "_frozen_image_write_refusal", "") or "")
+                if refusal:
+                    return False, refusal
                 self.rows[-2].thickness = float(target_gap)
             return True, ""
+
+        def _row_snapshot():
+            """bugs/0577: everything the loop's writers can move -- the gap row AND the
+            collision resolver's mirror slide, which writes desp across the arm."""
+            return [
+                (float(r.thickness), float(r.desp_x), float(r.desp_y), float(r.desp_z))
+                for r in self.rows
+            ]
+
+        def _restore_row_snapshot(snapshot) -> None:
+            for row, (thickness, dx, dy, dz) in zip(self.rows, snapshot):
+                row.thickness = thickness
+                row.desp_x, row.desp_y, row.desp_z = dx, dy, dz
 
         if not _frozen_world:
             applied_ok, refusal = _apply_gap_with_floor(float(self.rows[-2].thickness) + float(delta))
@@ -3650,9 +3674,22 @@ class ScenePlacementMixin:
             # loop -- apply with the inverted-leg default sign, re-measure, FLIP the
             # direction if the residual grew, stop when it is inside tolerance. Every
             # application still rides the collision floor and the frozen-aware writer.
+            #
+            # bugs/0577 (flag_20260806_210424, "solve for FOV 23x23" -> the sensor 2.5 m away):
+            # the loop could DIVERGE and nothing stopped it. The adaptive flip above fires
+            # correctly when the residual grows -- and the bugs/0570 negative-leg flip below
+            # then flips it straight BACK, because moving toward the mirror would take the leg
+            # negative. The direction is pinned and the error roughly doubles every pass:
+            # measured on the user's ELS-85 swap, residual -129 -> -197 -> -333 -> -603 -> -1145,
+            # ending with a 2178 mm leg on a machine whose whole budget was 90 mm. So keep the
+            # BEST state seen and put it back the instant a pass makes things worse. A refocus
+            # that cannot improve the scene must leave it exactly as it found it.
             residual = float(delta)
             direction = -1.0
             previous_magnitude = None
+            best_snapshot = _row_snapshot()
+            best_magnitude = abs(float(delta))
+            diverged = False
             for _iteration in range(5):
                 if abs(residual) <= 0.5:
                     break
@@ -3710,6 +3747,28 @@ class ScenePlacementMixin:
                 if measured is None:
                     break
                 residual = float(measured)
+                # bugs/0577: the divergence guard. Improvement is the ONLY licence to keep the
+                # pass; anything else and the best state seen goes back.
+                if abs(residual) < best_magnitude - 1.0e-6:
+                    best_magnitude = abs(residual)
+                    best_snapshot = _row_snapshot()
+                    continue
+                self.append_debug(
+                    "snap detector iter {i}: residual {res:+.4f} did not beat {best:+.4f} -- "
+                    "reverting to the best state and stopping (bugs/0577)".format(
+                        i=int(_iteration), res=float(residual), best=float(best_magnitude),
+                    )
+                )
+                _restore_row_snapshot(best_snapshot)
+                diverged = True
+                break
+            if diverged and best_magnitude > 0.5:
+                # Nothing was achieved and the scene is back where it started -- say so, rather
+                # than let the caller report a focus that did not happen.
+                self._snap_detector_refusal = (
+                    f"best focus could not be reached from here (residual {best_magnitude:.4g} mm "
+                    f"and every correction made it worse) -- the scene was left untouched."
+                )
         # bugs/0571: whatever moved above, the glued LED+BS unit does not travel with it.
         self.restore_glued_illumination_unit_world_poses(_illumination_poses)
         if gui:
