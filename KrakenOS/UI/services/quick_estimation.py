@@ -1233,6 +1233,78 @@ class QuickEstimationService:
             index -= 1
         return index if 0 <= index < len(rows) else None
 
+    def _glued_illumination_unit_rows(self) -> "list[int]":
+        """Rows whose bodies are the FIXED coaxial illumination unit -- the beam splitter glued
+        into the LED housing (bugs/0570).
+
+        ``_object_locked_redirect_row`` already knows this unit must not move when the object
+        distance changes, but it finds it POSITIONALLY (the row right after the object gap).
+        bugs/0546 established that a promoted solid's row index is not its geometry: on the
+        user's scene the BS is glued to the LED, physically upstream of everything, and its row
+        sits at index 6 -- after the whole lens block. So the redirect never fired, the object
+        delta went into row 0, and every WORLD-placed row downstream slid with it while the LED
+        body (an overlay at an absolute offset) stayed: *"the BS plate is shifted down. It
+        happened after FOV solve"* -- measured, the plate left its housing by exactly the
+        28.462 mm the object gap grew.
+
+        Identified by MARKER instead: a promoted solid that is station-neutral (bugs/0435) or
+        flagged a beam splitter, in a scene that has an LED body or the LED glue set.
+        """
+        rows = list(getattr(self.editor, "rows", None) or [])
+        if not rows:
+            return []
+        led_present = False
+        try:
+            led_present = self.editor._step_path_for_label("led") is not None
+        except Exception:
+            led_present = False
+        if not (led_present or bool(getattr(self.editor, "_optical_led_glued", False))):
+            return []
+        unit: list[int] = []
+        for index, row in enumerate(rows):
+            advanced = getattr(row, "advanced", None)
+            promotion = advanced.get("StepOverlayPromotion") if isinstance(advanced, dict) else None
+            if not isinstance(promotion, dict):
+                continue
+            if promotion.get("station_neutral") or promotion.get("beam_splitter"):
+                unit.append(index)
+        return unit
+
+    def _hold_glued_illumination_unit(self, rows, delta: float) -> "list[int]":
+        """Keep the glued LED+BS unit at its world pose across an object-gap write of ``delta``.
+
+        A WORLD-placed row's pose is ``station + desp_z`` (bugs/0526), so when the object gap
+        cannot be redirected -- the frozen row order puts the BS after the lens, where no single
+        gap write can move the lens while holding the splitter -- the unit is held by taking the
+        slide back out of its own placement.  Returns the rows it held.
+        """
+        try:
+            shift = float(delta)
+        except (TypeError, ValueError):
+            return []
+        if abs(shift) <= 1.0e-9:
+            return []
+        from KrakenOS.UI.services import row_placement
+
+        held: list[int] = []
+        for index in self._glued_illumination_unit_rows():
+            if not (0 <= index < len(rows)):
+                continue
+            row = rows[index]
+            # A promoted solid is ABSOLUTELY placed -- ``axis_move`` 0, pose = station + desp_z
+            # (bugs/0546) -- whether or not it also carries a 0433 freeze breadcrumb, and that
+            # is the whole condition for the compensation to be exact. Gating on the breadcrumb
+            # alone missed the flagged scene's beam splitter, which carries none.
+            absolutely_placed = abs(float(getattr(row, "axis_move", 0.0) or 0.0)) <= 1e-9
+            if not (absolutely_placed or row_placement.is_world_placed(row)):
+                continue
+            try:
+                row.desp_z = float(row.desp_z) - shift
+            except Exception:
+                continue
+            held.append(int(index))
+        return held
+
     def _folded_image_leg_write_row(self, measured_from_row) -> "int | None":
         """The row whose thickness IS the mirror->sensor leg -- the one a conjugate correction
         may stretch without moving anything but the sensor.
@@ -1337,6 +1409,17 @@ class QuickEstimationService:
                 changes = obj_changes + img_changes
                 for row_index, applied in changes:
                     rows[row_index].thickness = float(rows[row_index].thickness) + applied
+                # bugs/0570: the object write slides every WORLD-placed row downstream of it,
+                # and the LED housing is NOT one of them (it is an overlay at an absolute
+                # offset), so the beam splitter glued inside it walks out of its own housing.
+                # The plain branch avoids this by redirecting the write; when the row order
+                # makes that impossible, hold the unit in place instead.
+                held_rows: list[int] = []
+                if obj_row == 0 and self._object_locked_redirect_row(0) is None:
+                    object_applied = sum(
+                        float(applied) for row_index, applied in obj_changes if int(row_index) == 0
+                    )
+                    held_rows = self._hold_glued_illumination_unit(rows, object_applied)
                 # bugs/0236: the image-leg delta extends the beam along the first fold's
                 # reflected direction, but a free-placed trailing mirror is pinned along
                 # global +Z -- carry it (and any free-placed camera) back onto the beam.

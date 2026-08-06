@@ -75,6 +75,44 @@ def mirror_fold_face_normal(advanced: Any) -> np.ndarray | None:
     return None
 
 
+def splitter_fold_face_normal(advanced: Any) -> "np.ndarray | None":
+    """World normal of the promoted solid's BEAM SPLITTER face, or None (bugs/0570).
+
+    The twin of :func:`mirror_fold_face_normal`.  A splitter does not only transmit: its
+    REFLECT branch carries a full beam, and on the user's coaxial scenes that branch is the
+    imaging axis (``axis:global:split``).  A walk that only bends at Mirror faces therefore
+    believes every element on that branch is parked off to the side.
+    """
+    if not isinstance(advanced, dict):
+        return None
+    metadata = advanced.get("OpticalSolidFaces")
+    if not metadata:
+        return None
+    try:
+        from KrakenOS.UI.optical_solid_metadata import normalize_optical_solid_face_metadata
+
+        normalized = normalize_optical_solid_face_metadata(metadata)
+    except Exception:
+        return None
+    for face in normalized.get("faces", []) or []:
+        if str(face.get("function", "")) != "Beam Splitter":
+            continue
+        normal = face.get("normal")
+        if normal is None:
+            continue
+        try:
+            vec = np.asarray(normal, dtype=float).reshape(-1)[:3]
+        except Exception:
+            continue
+        if vec.size < 3 or not np.all(np.isfinite(vec)):
+            continue
+        norm = float(np.linalg.norm(vec))
+        if norm <= 1e-9:
+            continue
+        return vec / norm
+    return None
+
+
 def _reflect(direction: np.ndarray, normal: np.ndarray) -> np.ndarray:
     d = np.asarray(direction, dtype=float).reshape(-1)[:3]
     n = np.asarray(normal, dtype=float).reshape(-1)[:3]
@@ -328,41 +366,94 @@ def offbeam_free_placed_mirror_row_indices(specs: list[dict]) -> set[int]:
     specs = list(specs or [])
     if any(str(spec.get("surface", "")) == "Mirror" for spec in specs):
         return set()
-    ray_origin = np.asarray((0.0, 0.0, -1.0e9), dtype=float)
-    ray_dir = np.asarray((0.0, 0.0, 1.0), dtype=float)
+    # bugs/0570 (flag_20260806_102150 "solve FOV partialy works, rays still defocus at sensor"
+    # + flag_20260806_102258 "right click defocus not working"): the walk used to carry ONE leg
+    # and bend it only at Mirror faces, so on a coaxial LED+BS scene -- where the imaging axis
+    # IS the splitter's reflect branch (``axis:global:split``) -- the in-path RA mirror at
+    # x=193 sat 193 mm off the straight +Z leg and was declared "parked clear". Its row is the
+    # mirror->sensor gap, so the straight equivalent then ZEROED the whole image leg
+    # (bugs/0224's inert-mirror rule) and ``_real_ray_best_focus_shift_for_rows`` returned the
+    # SAME 54.593 mm with the sensor 40 mm nearer, unmoved or 40 mm further -- a measurement
+    # that cannot be a residual, which is why the frozen snap's adaptive loop just walked the
+    # sensor around and "remove defocus" never landed.
+    #
+    # A splitter carries a full beam on BOTH branches, so track a small SET of legs: a mirror
+    # is off-beam only when it misses every one of them.
+    legs: list[tuple[np.ndarray, np.ndarray]] = [
+        (np.asarray((0.0, 0.0, -1.0e9), dtype=float), np.asarray((0.0, 0.0, 1.0), dtype=float))
+    ]
+    max_legs = 8
     offbeam: set[int] = set()
-    for idx, spec in enumerate(specs):
-        if not _is_promoted_mirror_fold(spec):
-            continue
-        advanced = spec.get("advanced")
-        local_normal = mirror_fold_face_normal(advanced) if isinstance(advanced, dict) else None
-        center = promoted_mirror_world_center(specs, idx)
-        if local_normal is None or center is None:
-            continue
+
+    def _hit(leg, center, radius):
+        origin, direction = leg
+        to_center = center - origin
+        along = float(np.dot(to_center, direction))
+        if along <= 1e-6:
+            return None
+        perpendicular = float(np.linalg.norm(to_center - along * direction))
+        return along if perpendicular <= radius else None
+
+    def _advance(leg, center, normal):
+        """The leg reflected off a plane through ``center`` with ``normal``."""
+        origin, direction = leg
+        point = origin
+        denominator = float(np.dot(direction, normal))
+        if abs(denominator) > 1e-12:
+            distance = float(np.dot(center - origin, normal) / denominator)
+            if np.isfinite(distance) and distance > 0.0:
+                point = origin + direction * distance
+        return (point, _unit(_reflect(direction, normal)))
+
+    def _world_normal(spec, local_normal):
         rotation = rotation_matrix_from_kraken_tilts(
             _spec_get(spec, "tilt_x"), _spec_get(spec, "tilt_y"), _spec_get(spec, "tilt_z")
         )
         normal = np.asarray(local_normal, dtype=float).reshape(3) @ np.asarray(rotation, dtype=float).T
         n_norm = float(np.linalg.norm(normal))
         if n_norm <= 1e-9 or not np.all(np.isfinite(normal)):
+            return None
+        return normal / n_norm
+
+    for idx, spec in enumerate(specs):
+        advanced = spec.get("advanced")
+        advanced = advanced if isinstance(advanced, dict) else None
+        center = promoted_mirror_world_center(specs, idx)
+        if center is None:
             continue
-        normal = normal / n_norm
         center = np.asarray(center, dtype=float).reshape(3)
-        # transverse extent: the mirror's own footprint (generous -- a partially clipped
+        # transverse extent: the solid's own footprint (generous -- a partially clipped
         # mirror still folds; the flagged parked prism missed the leg by >100 mm)
         radius = max(float(_spec_get(spec, "diameter", 0.0)), 5.0)
-        to_center = center - ray_origin
-        along = float(np.dot(to_center, ray_dir))
-        perpendicular = float(np.linalg.norm(to_center - along * ray_dir))
-        if along <= 1e-6 or perpendicular > radius:
-            offbeam.add(int(idx))
-            continue  # the leg passes it by -- ray unchanged
-        denominator = float(np.dot(ray_dir, normal))
-        if abs(denominator) > 1e-12:
-            distance = float(np.dot(center - ray_origin, normal) / denominator)
-            if np.isfinite(distance) and distance > 0.0:
-                ray_origin = ray_origin + ray_dir * distance
-        ray_dir = _unit(_reflect(ray_dir, normal))
+
+        if _is_promoted_mirror_fold(spec):
+            local_normal = mirror_fold_face_normal(advanced) if advanced else None
+            normal = _world_normal(spec, local_normal) if local_normal is not None else None
+            if normal is None:
+                continue
+            hit_index = None
+            for leg_index, leg in enumerate(legs):
+                if _hit(leg, center, radius) is not None:
+                    hit_index = leg_index
+                    break
+            if hit_index is None:
+                offbeam.add(int(idx))
+                continue  # every leg passes it by -- rays unchanged
+            legs[hit_index] = _advance(legs[hit_index], center, normal)
+            continue
+
+        # A promoted BEAM SPLITTER: the transmitted leg carries on, and the reflected branch
+        # becomes a leg of its own.
+        local_normal = splitter_fold_face_normal(advanced) if advanced else None
+        normal = _world_normal(spec, local_normal) if local_normal is not None else None
+        if normal is None:
+            continue
+        for leg in list(legs):
+            if len(legs) >= max_legs:
+                break
+            if _hit(leg, center, radius) is None:
+                continue
+            legs.append(_advance(leg, center, normal))
     return offbeam
 
 

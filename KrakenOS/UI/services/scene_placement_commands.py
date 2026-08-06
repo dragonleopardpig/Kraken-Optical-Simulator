@@ -3632,7 +3632,30 @@ class ScenePlacementMixin:
                     base_now = float(split_now.get("far", self.rows[-2].thickness))
                 except Exception:
                     base_now = float(self.rows[-2].thickness)
+                # bugs/0570 (flag_20260806_102258 "right click defocus not working", and the
+                # same snap is what the FOV solve's finisher calls -- flag_20260806_102150
+                # "solve FOV partialy works, rays still defocus at sensor"): the DEFAULT sign
+                # is a guess, and on the Pyrite85 BS scene it is the wrong one. It aimed the
+                # sensor at a far leg of 44.076 - 54.593 = -10.5 mm, i.e. straight THROUGH the
+                # fold mirror, so the camera-body resolver refused ("the fold mirror needs to
+                # slide 39.5 mm further than the lens-to-mirror leg can give") and the loop
+                # bailed on iteration 0 -- before the adaptive flip it was built around ever
+                # ran. A leg that would go NEGATIVE is not a near miss, it is proof of the
+                # sign, so decide it here instead of spending the attempt.
+                if base_now + direction * residual <= 0.0 < base_now - direction * residual:
+                    direction = -direction
                 iter_ok, refusal = _apply_gap_with_floor(base_now + direction * residual)
+                # bugs/0570: this loop is the one place a "remove defocus" can silently do the
+                # wrong thing (it converged onto the far side of the fold mirror before the
+                # frame mix-up was found), and it is not reproducible without the numbers.
+                self.append_debug(
+                    "snap detector iter {i}: base(world far)={base:.4f} residual={res:+.4f} "
+                    "dir={dir:+.0f} -> target far {target:.4f} | ok={ok} {why}".format(
+                        i=int(_iteration), base=float(base_now), res=float(residual),
+                        dir=float(direction), target=float(base_now + direction * residual),
+                        ok=bool(iter_ok), why=str(refusal or ""),
+                    )
+                )
                 if not iter_ok:
                     if _iteration == 0:
                         if gui:

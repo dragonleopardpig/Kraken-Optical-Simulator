@@ -15583,6 +15583,10 @@ phase_444_fov_solve_keeps_the_fold = _phase_from_standalone(
     444, "a folded FOV solve moves the sensor, never the fold mirror or a station-neutral row (0569)",
     "KrakenOS.UI.validate_open3d_0569_fov_solve_keeps_the_fold",
     "fov_solve_keeps_the_fold")
+phase_445_bs_branch_reaches_the_mirror = _phase_from_standalone(
+    445, "the splitter's reflect branch is on-beam, and its glued BS holds through a solve (0570)",
+    "KrakenOS.UI.validate_open3d_0570_bs_branch_reaches_the_mirror",
+    "bs_branch_reaches_the_mirror")
 
 
 # ---------------------------------------------------------------------------
