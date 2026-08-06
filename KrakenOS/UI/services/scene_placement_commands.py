@@ -4152,8 +4152,10 @@ class ScenePlacementMixin:
             conjugate change (s_o + d, s_i - d; the swapped path is air, so reduced == geometric);
           * cancels the station growth with ``desp_z -= slide`` for the rows in between, so the
             mirror and the sensor never learn anything happened;
-          * compensates the lens overlay's placement offset by the same slide, because the body
-            aligner pins to the datum STATIONS (bugs/0527) which the composite just grew.
+          * carries the lens overlay's placement offset ALONG THE LEG so the body follows its
+            surrogate, and then compensates that same offset in z because the body aligner pins
+            to the datum STATIONS (bugs/0527) which the composite just grew. Both terms, or the
+            barrel stays pinned while the optics walk (bugs/0574).
 
         Returns a dict describing what it did, or None when the scene has no fold leg for the
         lens or the two gaps could not absorb the slide (the caller then keeps its own path).
@@ -4217,9 +4219,27 @@ class ScenePlacementMixin:
         for index in range(upstream + 1, downstream + 1):
             row = self.rows[index]
             row.desp_z = float(row.desp_z) - amount
-        # bugs/0527: the lens overlay's aligner pins to the datum STATIONS, which just grew.
+        # The lens overlay needs BOTH terms, and each one answers a different question.
+        #
+        #   CARRY  -- ``offset += direction * amount``: the body rides its own leg. A fold leg's
+        #             position lives in ``desp`` (bugs/0499) and the overlay's axial pin
+        #             ``_lens_front_datum_z`` reads STATIONS only, never desp, so this offset is
+        #             the ONLY channel through which the barrel can follow its surrogate.
+        #   CANCEL -- ``offset[2] -= amount`` (bugs/0527): the composite just grew the datum
+        #             stations the aligner pins to, and that growth is always along world +z
+        #             (layout_polyline_display: ``aligned[:,2] += target_front_z`` is applied
+        #             after the rotations), so it is transverse to a +x leg and must be undone.
+        #
+        # bugs/0574 (flag_20260806_182735 "lens body detached from surrogate"): bugs/0571 lifted
+        # this composite out of the drag but took only the CANCEL with it -- in a drag the carry
+        # IS the cursor delta (``next_offset = current + applied``, translate_step_overlay), so
+        # there was nothing that looked liftable. The solve therefore wrote a bare -amount, which
+        # cancelled the station growth exactly and pinned the barrel: measured on the user's
+        # Apo75 -> PYRITE scene, a 23x23 solve slid rows 1..5 by +28.4622 mm in world X while the
+        # lens body's bounds came back BIT-IDENTICAL. Write what the drag writes.
         try:
-            offset = list(self._step_placement_offset_xyz("lens"))
+            offset = np.asarray(self._step_placement_offset_xyz("lens"), dtype=float).reshape(3)
+            offset = offset + shift
             offset[2] = float(offset[2]) - amount
             self._set_step_placement_offset_xyz("lens", tuple(float(v) for v in offset))
         except Exception:
