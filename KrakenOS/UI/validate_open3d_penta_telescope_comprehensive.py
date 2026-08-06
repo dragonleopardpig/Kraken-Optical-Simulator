@@ -15587,6 +15587,10 @@ phase_445_bs_branch_reaches_the_mirror = _phase_from_standalone(
     445, "the splitter's reflect branch is on-beam, and its glued BS holds through a solve (0570)",
     "KrakenOS.UI.validate_open3d_0570_bs_branch_reaches_the_mirror",
     "bs_branch_reaches_the_mirror")
+phase_446_solve_slides_the_lens_along_its_leg = _phase_from_standalone(
+    446, "an object solve slides the LENS along its leg, not the machine along the stations (0571)",
+    "KrakenOS.UI.validate_open3d_0571_solve_slides_the_lens_along_its_leg",
+    "solve_slides_the_lens_along_its_leg")
 
 
 # ---------------------------------------------------------------------------

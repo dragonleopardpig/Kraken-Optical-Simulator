@@ -1212,12 +1212,13 @@ class QuickEstimationService:
         not its geometry either (bugs/0546: a beam splitter glued to the LED routinely lands
         AFTER the lens block). So its thickness is not a gap and no solve may write to it: every
         station-fed consumer downstream -- the pinned mirror pose, the sequential Image, the
-        camera glued to it -- moves by whatever is written there."""
-        advanced = getattr(row, "advanced", None)
-        if not isinstance(advanced, dict):
-            return False
-        promotion = advanced.get("StepOverlayPromotion")
-        return bool(isinstance(promotion, dict) and promotion.get("station_neutral"))
+        camera glued to it -- moves by whatever is written there.
+
+        bugs/0571: delegates to the ONE definition in ``paraxial_tools`` -- the leg walks there
+        need the same predicate, and two copies would grow two behaviours."""
+        from KrakenOS.UI.services.paraxial_tools import row_is_station_neutral
+
+        return bool(row_is_station_neutral(row))
 
     def _gap_row_for_delta(self, rows, candidate) -> "int | None":
         """The nearest row AT OR BEFORE ``candidate`` whose thickness is a real axial gap.
@@ -1303,6 +1304,16 @@ class QuickEstimationService:
             except Exception:
                 continue
             held.append(int(index))
+        if held:
+            # bugs/0571: this compensation is only correct when the row's STATION moved by the
+            # same amount in the same write. It is invisible otherwise -- say it out loud.
+            try:
+                self.editor.append_debug(
+                    f"hold illumination unit: rows {held} desp_z -= {shift:+.4f} mm "
+                    f"(object gap write)"
+                )
+            except Exception:
+                pass
         return held
 
     def _folded_image_leg_write_row(self, measured_from_row) -> "int | None":
@@ -1389,9 +1400,29 @@ class QuickEstimationService:
                 img_row_write = self._folded_image_leg_write_row(ig)
                 if obj_row is None or img_row_write is None:
                     return False, "No usable object/image gap row for the folded solve."
-                obj_changes = self._distribute_folded_gap_delta(
-                    rows, obj_row, float(folded["object_delta"]),
-                    self._folded_conjugate_spill_row(obj_row, "object"),
+                # bugs/0571 (flag_20260806_125028 "swapped lens, elements dislocate"): on a frozen
+                # FOLD the object distance cannot be changed by writing rows[0].thickness. A row's
+                # pose is station + desp_z, so that write slides every downstream WORLD row along
+                # +Z -- and the lens, the fold mirror and the sensor live on the splitter's +X leg.
+                # Measured: a 23x23 solve moved all three 28.462 mm off the leg and no ray reached
+                # the sensor. Move the LENS along its own leg instead, with the bugs/0526
+                # compensated write-through, which is the same composite a lens DRAG uses (the
+                # user's principle: a drag and a solve are the same gesture from opposite ends).
+                object_slid = None
+                try:
+                    object_slid = self.editor.slide_lens_block_along_its_leg(
+                        float(folded["object_delta"])
+                    )
+                except Exception as exc:
+                    self.editor.append_debug(f"lens leg slide unavailable: {exc}")
+                    object_slid = None
+                obj_changes = (
+                    []
+                    if object_slid is not None
+                    else self._distribute_folded_gap_delta(
+                        rows, obj_row, float(folded["object_delta"]),
+                        self._folded_conjugate_spill_row(obj_row, "object"),
+                    )
                 )
                 img_changes = (
                     []

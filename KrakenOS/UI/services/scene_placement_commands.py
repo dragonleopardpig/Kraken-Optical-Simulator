@@ -3519,6 +3519,12 @@ class ScenePlacementMixin:
         gui = not bool(getattr(self, "headless", False))   # history/table sync are GUI-only
         if gui:
             self._begin_history_capture()
+        # bugs/0571: every write below changes STATIONS (the image gap, and the collision
+        # resolver's mirror slide, which spills into the lens->mirror leg), and a promoted
+        # solid's pose is station + desp_z -- so the beam splitter glued into the LED housing
+        # rides along and leaves it. Measure the unit's world seat here and put it back at the
+        # end; that is writer-agnostic, which matters because three different writers can run.
+        _illumination_poses = self.glued_illumination_unit_world_poses()
         # bugs/0515 (camera anti-crash item 2, design 2026-07-29): the raw last-gap write was
         # the one image-distance writer with NO collision floor and NO frozen awareness --
         # "remove defocus" could seat the sensor (and the camera body reaching past it)
@@ -3603,6 +3609,7 @@ class ScenePlacementMixin:
         if not _frozen_world:
             applied_ok, refusal = _apply_gap_with_floor(float(self.rows[-2].thickness) + float(delta))
             if not applied_ok:
+                self.restore_glued_illumination_unit_world_poses(_illumination_poses)  # bugs/0571
                 if gui:
                     self._commit_history_capture()
                 self._snap_detector_refusal = str(refusal)
@@ -3658,6 +3665,7 @@ class ScenePlacementMixin:
                 )
                 if not iter_ok:
                     if _iteration == 0:
+                        self.restore_glued_illumination_unit_world_poses(_illumination_poses)  # 0571
                         if gui:
                             self._commit_history_capture()
                         self._snap_detector_refusal = str(refusal)
@@ -3673,6 +3681,8 @@ class ScenePlacementMixin:
                 if measured is None:
                     break
                 residual = float(measured)
+        # bugs/0571: whatever moved above, the glued LED+BS unit does not travel with it.
+        self.restore_glued_illumination_unit_world_poses(_illumination_poses)
         if gui:
             try:
                 self._sync_table()
@@ -3961,6 +3971,140 @@ class ScenePlacementMixin:
         except Exception:
             return None
         return members, direction, segment_id != "axis:root"
+
+    def glued_illumination_unit_world_poses(self) -> "dict[int, float]":
+        """bugs/0571: ``{row: world z}`` of the glued LED+BS illumination unit, for holding it
+        across a write that changes stations.
+
+        A promoted solid's pose is ``station + desp_z``, so ANY thickness write upstream of it
+        moves it -- the object gap, a near-leg mirror slide, a collision redistribution. Rather
+        than teach every writer, callers measure before and call
+        :meth:`restore_glued_illumination_unit_world_poses` after.
+        """
+        try:
+            from types import SimpleNamespace
+
+            from KrakenOS.UI.services.quick_estimation import QuickEstimationService
+
+            rows = list(getattr(self, "rows", None) or [])
+            unit = QuickEstimationService(SimpleNamespace(editor=self))._glued_illumination_unit_rows()
+        except Exception:
+            return {}
+        poses: dict[int, float] = {}
+        stations = self._row_z_positions()
+        for index in unit:
+            if 0 <= index < len(rows) and index < len(stations):
+                poses[int(index)] = float(stations[index]) + float(getattr(rows[index], "desp_z", 0.0) or 0.0)
+        return poses
+
+    def restore_glued_illumination_unit_world_poses(self, poses: "dict[int, float]") -> "list[int]":
+        """Put the illumination unit back at the world z it held before a station-changing write
+        (bugs/0571). Returns the rows it had to move."""
+        if not poses:
+            return []
+        rows = list(getattr(self, "rows", None) or [])
+        stations = self._row_z_positions()
+        moved: list[int] = []
+        for index, before in poses.items():
+            if not (0 <= int(index) < len(rows) and int(index) < len(stations)):
+                continue
+            row = rows[int(index)]
+            now = float(stations[int(index)]) + float(getattr(row, "desp_z", 0.0) or 0.0)
+            drift = float(before) - now
+            if abs(drift) <= 1.0e-9:
+                continue
+            row.desp_z = float(getattr(row, "desp_z", 0.0) or 0.0) + drift
+            moved.append(int(index))
+        if moved:
+            self.append_debug(
+                f"illumination unit held across a station write: rows {moved} re-anchored"
+            )
+        return moved
+
+    def slide_lens_block_along_its_leg(self, slide: float) -> "dict | None":
+        """bugs/0571: move the lens block along its OWN fold leg by ``slide`` mm, keeping every
+        other pose invariant -- the bugs/0524+0526 compensated composite, extracted so the FOV
+        SOLVE can use the same one the drag does.
+
+        The solve used to change the object distance by writing ``rows[0].thickness``. On a
+        0433-frozen folded scene that is the wrong axis: a row's pose is ``station + desp_z``, so
+        a thickness write slides every downstream WORLD row along +Z -- while the lens, the fold
+        mirror and the sensor actually live on the splitter's +X leg. Measured on the user's
+        Pyrite85 BS scene, a 23x23 solve after a lens swap moved the lens block, the RA mirror and
+        the sensor 28.462 mm in +Z, straight off the leg (0 of 558 rays reached the sensor) --
+        "swapped lens, elements dislocate" (flag_20260806_125028).
+
+        The composite instead:
+          * translates the block's rows by ``slide`` along the leg direction (a fold leg's
+            position lives in ``desp``, not in a thickness -- bugs/0499);
+          * writes ``gap before += slide`` / ``gap after -= slide`` so the FIRST ORDER sees the
+            conjugate change (s_o + d, s_i - d; the swapped path is air, so reduced == geometric);
+          * cancels the station growth with ``desp_z -= slide`` for the rows in between, so the
+            mirror and the sensor never learn anything happened;
+          * compensates the lens overlay's placement offset by the same slide, because the body
+            aligner pins to the datum STATIONS (bugs/0527) which the composite just grew.
+
+        Returns a dict describing what it did, or None when the scene has no fold leg for the
+        lens or the two gaps could not absorb the slide (the caller then keeps its own path).
+        """
+        try:
+            amount = float(slide)
+        except (TypeError, ValueError):
+            return None
+        if not np.isfinite(amount) or abs(amount) <= 1.0e-9:
+            return None
+        plan = self._lens_leg_slide_plan()
+        if plan is None or not plan[2]:
+            return None  # not on a fold leg: the plain thickness write is already right
+        members, direction, _folded = plan
+        members = [int(index) for index in members]
+        if not members:
+            return None
+        upstream = min(members) - 1
+        downstream = max(members)
+        if not (0 <= upstream and downstream < len(self.rows) - 1):
+            return None
+        up_new = float(self.rows[upstream].thickness) + amount
+        down_new = float(self.rows[downstream].thickness) - amount
+        if not (np.isfinite(up_new) and np.isfinite(down_new)) or up_new <= 0.0 or down_new <= 0.0:
+            self.append_debug(
+                f"lens leg slide {amount:+.4f} mm refused: the section gaps would become "
+                f"{up_new:.3g}/{down_new:.3g} mm"
+            )
+            return None
+        shift = np.asarray(direction, dtype=float).reshape(3) * amount
+        for index in members:
+            row = self.rows[index]
+            row.desp_x = float(row.desp_x) + float(shift[0])
+            row.desp_y = float(row.desp_y) + float(shift[1])
+            row.desp_z = float(row.desp_z) + float(shift[2])
+        self.rows[upstream].thickness = up_new
+        self.rows[downstream].thickness = down_new
+        for index in range(upstream + 1, downstream + 1):
+            row = self.rows[index]
+            row.desp_z = float(row.desp_z) - amount
+        # bugs/0527: the lens overlay's aligner pins to the datum STATIONS, which just grew.
+        try:
+            offset = list(self._step_placement_offset_xyz("lens"))
+            offset[2] = float(offset[2]) - amount
+            self._set_step_placement_offset_xyz("lens", tuple(float(v) for v in offset))
+        except Exception:
+            pass
+        self.append_debug(
+            "lens leg slide {amount:+.4f} mm along {dir} | rows {members} | gaps "
+            "{up}:{up_new:.4f} {down}:{down_new:.4f}".format(
+                amount=amount, dir=np.round(direction, 4).tolist(), members=members,
+                up=upstream, up_new=up_new, down=downstream, down_new=down_new,
+            )
+        )
+        self._fold_carry_pending_rebuild = True
+        return {
+            "slide": float(amount),
+            "members": members,
+            "direction": tuple(float(v) for v in np.asarray(direction, dtype=float).reshape(3)),
+            "upstream_row": int(upstream),
+            "downstream_row": int(downstream),
+        }
 
     def _lens_surrogate_seat_target(self):
         """bugs/0497: where the lens BODY belongs, wherever its surrogate actually sits.

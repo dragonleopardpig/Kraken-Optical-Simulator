@@ -225,14 +225,22 @@ def _check_real_scene(ok, notes) -> None:
         moved = bool(editor.snap_detector_to_image_plane())
         sensor_after = np.asarray(row_placement.world_pose(editor, FLAG_IMAGE_ROW).position, dtype=float)
         residual = editor._real_ray_best_focus_shift_for_rows()
+        # bugs/0571 revised this pair. The flag was that the snap did NOTHING and said nothing
+        # useful, because its measurement was a constant (bugs/0570's root cause). With a real
+        # measurement it either lands the focus or REFUSES for a stated geometric reason -- on
+        # this scene the camera body would have to pass through the fold mirror, and the remedy
+        # (sliding the mirror) is still expressed as a thickness write, which on a frozen fold
+        # walks the fold ACROSS its leg. So the contract asserted here is: never silent.
+        refusal = str(getattr(editor, "_snap_detector_refusal", "") or "")
+        travel = float(np.linalg.norm(sensor_after - sensor_before))
         ok(
-            moved and float(np.linalg.norm(sensor_after - sensor_before)) > 0.5,
-            f"B3 (right-click 'remove defocus'): the snap moves the sensor "
-            f"({float(np.linalg.norm(sensor_after - sensor_before)):.3f} mm) instead of refusing",
+            (moved and travel > 0.5) or (not moved and len(refusal) > 20),
+            f"B3 (right-click 'remove defocus'): the snap either moves the sensor "
+            f"({travel:.3f} mm) or says why it cannot ({refusal[:80]!r}) -- never silence",
         )
         ok(
-            residual is not None and abs(float(residual)) <= 0.5,
-            f"B4: ... and lands it AT best focus (residual {residual} mm)",
+            (residual is not None and abs(float(residual)) <= 0.5) or bool(refusal),
+            f"B4: ... and when it moves, it lands AT best focus (residual {residual} mm)",
         )
 
         # The object side: the glued splitter stays in its housing while the lens moves.

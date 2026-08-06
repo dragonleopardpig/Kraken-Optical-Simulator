@@ -92,6 +92,21 @@ def _row_is_promoted_mirror_fold(row) -> bool:
     return bool(_optical_solid_faces_have_mirror_fold(advanced.get("OpticalSolidFaces")))
 
 
+def row_is_station_neutral(row) -> bool:
+    """A promoted solid marked STATION-NEUTRAL (bugs/0435): its thickness is pinned at 0 because
+    it spans no distance on the imaging axis, and its body is placed absolutely.
+
+    THE one definition -- ``QuickEstimationService._row_is_station_neutral`` delegates here
+    (bugs/0568's lesson: a predicate with two copies grows two behaviours). Such a row is not a
+    gap, so no leg span may end on it and no solve may write a distance into it.
+    """
+    advanced = getattr(row, "advanced", None)
+    if not isinstance(advanced, dict):
+        return False
+    promotion = advanced.get("StepOverlayPromotion")
+    return bool(isinstance(promotion, dict) and promotion.get("station_neutral"))
+
+
 def _transmissive_reference_row(row) -> SurfaceRow:
     """Straight-through (transmit) first-order equivalent of a non-seq optical solid, for
     the *sequential* pupil/paraxial trace. KEEP its geometry -- the mesh ``Solid_3d_stl``
@@ -1882,6 +1897,17 @@ class ParaxialToolsMixin:
             return None
         # The image gap starts at the last LENS surface -- walk back through any trailing fold
         # mirror (a fold the beam passes THROUGH), matching ``_paraxial_total_image_gap``.
+        # bugs/0571 measured, and DELIBERATELY not changed: the row before the mirror here is
+        # STATION-NEUTRAL (the promoted BS glued to the LED, thickness pinned at 0 by bugs/0435),
+        # so the near leg's span is a single 0 mm row and a camera-body collision cannot be
+        # redistributed -- "the fold mirror needs to slide N mm further than the lens-to-mirror
+        # leg can give" while the real leg is the 43 mm of the row before it. Widening the span
+        # to include that row DOES unblock the remedy, but ``_apply_near_leg_delta`` applies it as
+        # a THICKNESS write, and on a frozen fold that moves the mirror and the sensor ACROSS
+        # their leg (measured on a 40x40 solve: the mirror left z 54.291 for 110.8). The remedy
+        # has to be expressed in WORLD terms first (as ``_apply_folded_image_split`` does with
+        # ``_rebake_frozen_row_world_center``); until then the honest refusal beats a fold that
+        # walks off the beam.
         gap_start = int(last_src)
         while gap_start > 1 and _row_is_promoted_mirror_fold(rows[gap_start]):
             gap_start -= 1
