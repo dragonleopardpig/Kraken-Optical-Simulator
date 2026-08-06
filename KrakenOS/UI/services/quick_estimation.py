@@ -1416,6 +1416,17 @@ class QuickEstimationService:
                 except Exception as exc:
                     self.editor.append_debug(f"lens leg slide unavailable: {exc}")
                     object_slid = None
+                # bugs/0572 (the user's Apo75 -> PYRITE 85 experiment, 35x35 then 55x55): when the
+                # slide is REFUSED there is no safe fallback on a fold leg. Writing the object gap
+                # instead is precisely the bugs/0571 dislocation -- measured, the 55x55 solve
+                # after a 35x35 one moved the lens block 73.9 mm ACROSS its leg (z 54.283 ->
+                # 128.18) because the first solve had spent the lens-to-fold room. Refuse, and say
+                # what has to move; a solve that silently dislocates the machine is worse than one
+                # that does not run.
+                if object_slid is None and abs(float(folded["object_delta"])) > 1.0e-6:
+                    refusal = str(self.editor.__dict__.get("_lens_leg_slide_refusal", "") or "")
+                    if refusal:
+                        return False, f"FOV out of range on this fold: {refusal}"
                 obj_changes = (
                     []
                     if object_slid is not None

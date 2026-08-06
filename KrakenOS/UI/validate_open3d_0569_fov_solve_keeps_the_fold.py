@@ -262,13 +262,16 @@ def _check_real_scene(ok, notes) -> None:
 
         # NON-VACUITY: a different field must genuinely re-solve, or C2-C4 would pass on a
         # machine that never moves at all.
+        # bugs/0572: 40x40 no longer FITS on this scene -- the lens would have to pass the fold
+        # mirror, and the solve now refuses with the numbers instead of dislocating the machine.
+        # Use a field the lens-to-fold leg can actually hold as the non-vacuity lever.
         live_before = snapshot()
-        solved_wide, wide_message = qe.fov_solve("object", "thickness", 40.0, 40.0)
+        solved_wide, wide_message = qe.fov_solve("object", "thickness", 24.0, 24.0)
         live_after = snapshot()
         sensor_moved = float(np.linalg.norm(live_after["image"] - live_before["image"]))
         ok(
             bool(solved_wide) and sensor_moved > 1.0,
-            f"C5 (non-vacuity): a 40x40 solve really does re-place the sensor "
+            f"C5 (non-vacuity): a field that FITS (24x24) really does re-place the sensor "
             f"({sensor_moved:.3f} mm) -- {wide_message[-70:]}",
         )
         ok(

@@ -4021,6 +4021,39 @@ class ScenePlacementMixin:
             )
         return moved
 
+    def _lens_leg_room_to_fold(self, direction, members) -> "float | None":
+        """bugs/0572: how far the lens block may still slide along its leg before it reaches the
+        fold that terminates that leg -- measured from the block's LAST row to the fold mirror's
+        world centre, minus the mirror's own half-aperture.
+
+        None when there is no fold ahead of it (an unbounded leg), which is the caller's cue that
+        only the section gaps constrain the slide.
+        """
+        try:
+            from KrakenOS.UI.services import row_placement
+
+            folds = [int(i) for i in self._promoted_mirror_fold_row_indices()]
+        except Exception:
+            return None
+        if not folds or not members:
+            return None
+        last = int(max(members))
+        ahead = [f for f in folds if f > last]
+        if not ahead:
+            return None
+        mirror_row = int(min(ahead))
+        try:
+            unit = np.asarray(direction, dtype=float).reshape(3)
+            unit = unit / max(float(np.linalg.norm(unit)), 1.0e-12)
+            block_end = np.asarray(row_placement.world_pose(self, last).position, dtype=float)
+            fold_centre = np.asarray(row_placement.world_pose(self, mirror_row).position, dtype=float)
+        except Exception:
+            return None
+        along = float(np.dot(fold_centre - block_end, unit))
+        clearance = 0.5 * float(getattr(self.rows[mirror_row], "diameter", 0.0) or 0.0)
+        room = along - clearance
+        return float(room) if np.isfinite(room) else None
+
     def slide_lens_block_along_its_leg(self, slide: float) -> "dict | None":
         """bugs/0571: move the lens block along its OWN fold leg by ``slide`` mm, keeping every
         other pose invariant -- the bugs/0524+0526 compensated composite, extracted so the FOV
@@ -4053,6 +4086,7 @@ class ScenePlacementMixin:
             return None
         if not np.isfinite(amount) or abs(amount) <= 1.0e-9:
             return None
+        self._lens_leg_slide_refusal = ""
         plan = self._lens_leg_slide_plan()
         if plan is None or not plan[2]:
             return None  # not on a fold leg: the plain thickness write is already right
@@ -4064,9 +4098,29 @@ class ScenePlacementMixin:
         downstream = max(members)
         if not (0 <= upstream and downstream < len(self.rows) - 1):
             return None
+        # bugs/0572 (the user's Apo75 -> PYRITE experiment): the room for this slide is the
+        # lens->fold leg, and it is SPENT by each solve -- 35x35 consumed 72.8 mm of it, leaving
+        # 21 mm, so the next solve (55x55) needed 73.9 mm, could not have it, and the caller fell
+        # back to the raw object write that dislocates the whole machine. That is the "recurrence"
+        # they reported. Refuse with the numbers instead, and say what has to move.
+        room = self._lens_leg_room_to_fold(direction, members)
+        if room is not None and amount > float(room) + 1.0e-6:
+            self._lens_leg_slide_refusal = (
+                f"that field needs the lens {amount:.4g} mm further from the object, but only "
+                f"{float(room):.4g} mm of the lens-to-fold leg is left -- slide the fold mirror "
+                f"(and the camera behind it) {amount - float(room):.4g} mm along the leg first, "
+                f"or pin a segment."
+            )
+            self.append_debug(f"lens leg slide {amount:+.4f} mm refused: {self._lens_leg_slide_refusal}")
+            return None
         up_new = float(self.rows[upstream].thickness) + amount
         down_new = float(self.rows[downstream].thickness) - amount
         if not (np.isfinite(up_new) and np.isfinite(down_new)) or up_new <= 0.0 or down_new <= 0.0:
+            self._lens_leg_slide_refusal = (
+                f"that field needs the lens {amount:.4g} mm further from the object, which would "
+                f"leave the section gaps at {up_new:.4g} / {down_new:.4g} mm -- move the fold "
+                f"mirror (and the camera behind it) along the leg first, or pin a segment."
+            )
             self.append_debug(
                 f"lens leg slide {amount:+.4f} mm refused: the section gaps would become "
                 f"{up_new:.3g}/{down_new:.3g} mm"

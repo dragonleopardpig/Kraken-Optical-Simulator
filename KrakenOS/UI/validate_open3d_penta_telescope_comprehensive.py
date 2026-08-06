@@ -15591,6 +15591,10 @@ phase_446_solve_slides_the_lens_along_its_leg = _phase_from_standalone(
     446, "an object solve slides the LENS along its leg, not the machine along the stations (0571)",
     "KrakenOS.UI.validate_open3d_0571_solve_slides_the_lens_along_its_leg",
     "solve_slides_the_lens_along_its_leg")
+phase_447_solve_refuses_instead_of_dislocating = _phase_from_standalone(
+    447, "a solve the lens-to-fold leg cannot hold REFUSES with the numbers, and moves nothing (0572)",
+    "KrakenOS.UI.validate_open3d_0572_solve_never_dislocates_when_the_leg_is_full",
+    "solve_refuses_instead_of_dislocating")
 
 
 # ---------------------------------------------------------------------------
