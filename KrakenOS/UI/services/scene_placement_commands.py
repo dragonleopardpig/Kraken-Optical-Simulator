@@ -4054,6 +4054,84 @@ class ScenePlacementMixin:
         room = along - clearance
         return float(room) if np.isfinite(room) else None
 
+    def slide_fold_arm_along_leg(self, distance: float) -> "dict | None":
+        """bugs/0573: MAKE ROOM -- slide the fold arm (the fold mirror, everything after it, and
+        the camera body glued to the sensor) ``distance`` mm along the lens's leg.
+
+        bugs/0572 taught the solve to refuse when the lens cannot travel far enough before it
+        reaches the fold, and to name the shortfall. This is the operation that answers it: the
+        machine is too SHORT for the field, so lengthen it at the fold rather than dislocate it.
+
+        The bookkeeping is the bugs/0526 composite again, one section further down:
+          * translate the arm's rows by ``distance`` along the leg -- their positions live in
+            ``desp`` (bugs/0499), not in a thickness;
+          * grow the lens->fold gap row by the same amount, so the row frame records the leg that
+            just opened up (this is also what gives the subsequent lens slide its room);
+          * cancel that station growth with ``desp_z -= distance`` for every row after it, so
+            nothing else in the scene moves -- notably the station-neutral beam splitter, which
+            sits between them and belongs to the illumination unit, not to the arm.
+
+        Returns a dict describing the move, or None when the scene has no fold arm to slide.
+        """
+        try:
+            amount = float(distance)
+        except (TypeError, ValueError):
+            return None
+        if not np.isfinite(amount) or abs(amount) <= 1.0e-9:
+            return None
+        plan = self._lens_leg_slide_plan()
+        if plan is None or not plan[2]:
+            return None
+        members, direction, _folded = plan
+        members = [int(index) for index in members]
+        if not members:
+            return None
+        try:
+            folds = [int(i) for i in self._promoted_mirror_fold_row_indices()]
+        except Exception:
+            folds = []
+        ahead = [f for f in folds if f > int(max(members))]
+        if not ahead:
+            return None
+        mirror_row = int(min(ahead))
+        gap_row = int(max(members))
+        rows = self.rows
+        if not (0 <= gap_row < mirror_row < len(rows)):
+            return None
+        unit = np.asarray(direction, dtype=float).reshape(3)
+        unit = unit / max(float(np.linalg.norm(unit)), 1.0e-12)
+        shift = unit * amount
+        for index in range(mirror_row, len(rows)):
+            row = rows[index]
+            row.desp_x = float(row.desp_x) + float(shift[0])
+            row.desp_y = float(row.desp_y) + float(shift[1])
+            row.desp_z = float(row.desp_z) + float(shift[2])
+        rows[gap_row].thickness = float(rows[gap_row].thickness) + amount
+        for index in range(gap_row + 1, len(rows)):
+            rows[index].desp_z = float(rows[index].desp_z) - amount
+        # The camera body is glued to the sensor, and its overlay is placed absolutely -- it does
+        # not ride a row. Carry it by the same vector so the arm moves as one piece.
+        try:
+            if self._step_path_for_label("camera") is not None:
+                offset = np.asarray(self._step_placement_offset_xyz("camera"), dtype=float).reshape(3)
+                self._set_step_placement_offset_xyz("camera", tuple(float(v) for v in (offset + shift)))
+        except Exception:
+            pass
+        self.append_debug(
+            "fold arm slide {amount:+.4f} mm along {dir} | rows {first}..{last} | lens->fold gap "
+            "row {gap} -> {gap_new:.4f}".format(
+                amount=amount, dir=np.round(unit, 4).tolist(), first=mirror_row,
+                last=len(rows) - 1, gap=gap_row, gap_new=float(rows[gap_row].thickness),
+            )
+        )
+        self._fold_carry_pending_rebuild = True
+        return {
+            "distance": float(amount),
+            "direction": tuple(float(v) for v in unit),
+            "mirror_row": mirror_row,
+            "gap_row": gap_row,
+        }
+
     def slide_lens_block_along_its_leg(self, slide: float) -> "dict | None":
         """bugs/0571: move the lens block along its OWN fold leg by ``slide`` mm, keeping every
         other pose invariant -- the bugs/0524+0526 compensated composite, extracted so the FOV
@@ -4087,6 +4165,7 @@ class ScenePlacementMixin:
         if not np.isfinite(amount) or abs(amount) <= 1.0e-9:
             return None
         self._lens_leg_slide_refusal = ""
+        self._lens_leg_slide_shortfall = 0.0
         plan = self._lens_leg_slide_plan()
         if plan is None or not plan[2]:
             return None  # not on a fold leg: the plain thickness write is already right
@@ -4105,6 +4184,7 @@ class ScenePlacementMixin:
         # they reported. Refuse with the numbers instead, and say what has to move.
         room = self._lens_leg_room_to_fold(direction, members)
         if room is not None and amount > float(room) + 1.0e-6:
+            self._lens_leg_slide_shortfall = float(amount) - float(room)
             self._lens_leg_slide_refusal = (
                 f"that field needs the lens {amount:.4g} mm further from the object, but only "
                 f"{float(room):.4g} mm of the lens-to-fold leg is left -- slide the fold mirror "

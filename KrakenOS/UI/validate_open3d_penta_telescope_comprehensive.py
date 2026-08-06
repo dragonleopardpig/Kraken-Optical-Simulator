@@ -15595,6 +15595,10 @@ phase_447_solve_refuses_instead_of_dislocating = _phase_from_standalone(
     447, "a solve the lens-to-fold leg cannot hold REFUSES with the numbers, and moves nothing (0572)",
     "KrakenOS.UI.validate_open3d_0572_solve_never_dislocates_when_the_leg_is_full",
     "solve_refuses_instead_of_dislocating")
+phase_448_solve_makes_room_at_the_fold = _phase_from_standalone(
+    448, "a solve that needs more leg MAKES ROOM at the fold and then runs (0573)",
+    "KrakenOS.UI.validate_open3d_0573_solve_makes_room_at_the_fold",
+    "solve_makes_room_at_the_fold")
 
 
 # ---------------------------------------------------------------------------

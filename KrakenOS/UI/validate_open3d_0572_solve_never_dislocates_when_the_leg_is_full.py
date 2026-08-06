@@ -24,10 +24,11 @@ Checks:
 - A PURE: ``_lens_leg_room_to_fold`` measures block-end -> fold centre minus the mirror's own
   half-aperture, and returns None when no fold terminates the leg (an unbounded leg is bounded by
   the section gaps alone).
-- B REAL SCENE (skip-if-absent, Tk/Xvfb): the user's exact sequence. Both fields refuse; the
-  refusal names the shortfall AND what to move; and every element -- lens, beam splitter, fold
-  mirror, sensor -- is byte-for-byte where it was. Non-vacuity: the same solve on a field that
-  DOES fit still moves the lens.
+- B REAL SCENE (skip-if-absent, Tk/Xvfb): the user's exact sequence WITH ROOM-MAKING DISABLED
+  (bugs/0573 makes the room automatically now -- phase 448 guards that; what this bug owns is the
+  fallback contract when it cannot). Both fields refuse; the refusal names the shortfall AND what
+  to move; and every element -- lens, beam splitter, fold mirror, sensor -- is byte-for-byte where
+  it was. Non-vacuity: the same solve on a field that DOES fit still moves the lens.
 
 Run:  xvfb-run -a .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_0572_solve_never_dislocates_when_the_leg_is_full
 """
@@ -131,6 +132,11 @@ def _check_real_scene(ok, notes) -> None:
                 for index in range(len(editor.rows))
             ]
 
+        # bugs/0573 now MAKES the room (slides the fold mirror + camera by the shortfall) and the
+        # solve succeeds -- that is guarded by phase 448. What has no other home, and is what this
+        # bug is about, is the case where room-making is NOT available: there must still be no
+        # dislocating fallback. Disable it for this section and check the refusal contract.
+        editor.slide_fold_arm_along_leg = lambda distance: None
         qe = QuickEstimationService(SimpleNamespace(editor=editor))
         for field in (35.0, 55.0):
             before = snapshot()
@@ -154,7 +160,8 @@ def _check_real_scene(ok, notes) -> None:
                 f"(the pre-fix 55x55 threw the lens block 73.9 mm across its leg)",
             )
 
-        # NON-VACUITY: a field that fits still solves and still moves the lens along the leg.
+        # NON-VACUITY: a field that fits still solves and still moves the lens along the leg --
+        # with room-making still disabled, so this is the plain in-range path.
         before = snapshot()
         solved, message = qe.fov_solve("object", "thickness", 24.0, 24.0)
         after = snapshot()

@@ -1420,9 +1420,29 @@ class QuickEstimationService:
                 # slide is REFUSED there is no safe fallback on a fold leg. Writing the object gap
                 # instead is precisely the bugs/0571 dislocation -- measured, the 55x55 solve
                 # after a 35x35 one moved the lens block 73.9 mm ACROSS its leg (z 54.283 ->
-                # 128.18) because the first solve had spent the lens-to-fold room. Refuse, and say
-                # what has to move; a solve that silently dislocates the machine is worse than one
-                # that does not run.
+                # 128.18) because the first solve had spent the lens-to-fold room.
+                #
+                # bugs/0573: and when the shortfall is only ROOM, make it -- the optics reach these
+                # fields (image distance +25.4 mm at 35x35, +5.0 mm at 55x55 on that scene; the
+                # ceiling is ~63.9 mm square), the MACHINE is too short. So lengthen it at the
+                # fold: slide the fold mirror, everything behind it and the camera body along the
+                # leg by the shortfall, then take the slide the solve actually asked for.
+                arm_slid = None
+                if object_slid is None and abs(float(folded["object_delta"])) > 1.0e-6:
+                    shortfall = float(self.editor.__dict__.get("_lens_leg_slide_shortfall", 0.0) or 0.0)
+                    if shortfall > 1.0e-6:
+                        try:
+                            arm_slid = self.editor.slide_fold_arm_along_leg(shortfall + 1.0)
+                        except Exception as exc:
+                            self.editor.append_debug(f"fold arm slide unavailable: {exc}")
+                            arm_slid = None
+                        if arm_slid is not None:
+                            try:
+                                object_slid = self.editor.slide_lens_block_along_its_leg(
+                                    float(folded["object_delta"])
+                                )
+                            except Exception:
+                                object_slid = None
                 if object_slid is None and abs(float(folded["object_delta"])) > 1.0e-6:
                     refusal = str(self.editor.__dict__.get("_lens_leg_slide_refusal", "") or "")
                     if refusal:
@@ -1477,18 +1497,29 @@ class QuickEstimationService:
                     focus_note = str(self._finish_solve_on_traced_focus() or "")
                 except Exception as exc:
                     focus_note = f" Focus snap skipped ({type(exc).__name__}: {exc})."
+                # bugs/0573: a machine that had to be lengthened says so -- the fold mirror and
+                # the camera really did move, and the user must know by how much.
+                room_note = (
+                    ""
+                    if arm_slid is None
+                    else (
+                        f" Made room first: the fold mirror and the camera moved "
+                        f"{float(arm_slid['distance']):+.4g} mm along the leg."
+                    )
+                )
                 if image_handled:
                     # Report what was actually applied: on a frozen fold the image side is a
                     # WORLD move of the sensor, not the gap-row sum ``image_distance`` quotes.
                     return True, (
                         f"Solved (folded): object->lens {folded['object_distance']:.6g} mm; the "
                         f"sensor moved {float(folded['image_delta']):+.4g} mm along its folded leg "
-                        f"(the fold mirror stayed put) (|m|={folded['magnitude']:.4g}).{focus_note}"
+                        f"(the fold mirror stayed put) (|m|={folded['magnitude']:.4g})."
+                        f"{room_note}{focus_note}"
                     )
                 return True, (
                     f"Solved (folded): object->lens {folded['object_distance']:.6g} mm, "
                     f"lens->sensor {folded['image_distance']:.6g} mm "
-                    f"(|m|={folded['magnitude']:.4g}).{focus_note}"
+                    f"(|m|={folded['magnitude']:.4g}).{room_note}{focus_note}"
                 )
         pair = self._conjugate_pair(object_semi, image_semi)
         if pair is None:
