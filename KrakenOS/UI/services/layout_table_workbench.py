@@ -1320,10 +1320,26 @@ class LayoutTableWorkbenchMixin:
             # success line and the lens is left silently defocused.
             self._swap_refocus_note = str(self.__dict__.get("_snap_detector_refusal", "") or "")
             return
+        # bugs/0578: on a 0433-FROZEN fold the gap row runs BACKWARDS (world leg = const -
+        # thickness, bugs/0478), so the raw thickness bumps below move the camera TOWARD the
+        # mirror -- the floor meant to push it clear pulled it 20.9 mm INTO the collision
+        # (measured on the ELS-85 replay: far 32.03 -> 11.12). This was catalogued as latent in
+        # bugs/0575 and fired the moment bugs/0578's make-room floored the gap row at 0. On a
+        # frozen scene express both bumps in WORLD via the frozen-aware writer, whose make-room
+        # lengthens the machine when the budget cannot book the clearance.
+        _frozen_split = None
         try:
-            gap = float(getattr(rows[gap_index], "thickness", 0.0) or 0.0)
+            _frozen_split = self._folded_image_conjugate_split()
         except Exception:
-            return
+            _frozen_split = None
+        _frozen = isinstance(_frozen_split, dict) and bool(_frozen_split.get("frozen_world"))
+        if _frozen:
+            gap = float(_frozen_split["far"])          # the WORLD mirror->sensor leg
+        else:
+            try:
+                gap = float(getattr(rows[gap_index], "thickness", 0.0) or 0.0)
+            except Exception:
+                return
         limited = False
         # (1) cheap floor (clearance + flange depth), applied first so the mesh deficit below
         #     is measured at the floored position.
@@ -1331,7 +1347,10 @@ class LayoutTableWorkbenchMixin:
         if gap < floor:
             gap = float(floor)
             try:
-                rows[gap_index].thickness = gap
+                if _frozen:
+                    self.apply_image_distance_frozen_aware(gap)
+                else:
+                    rows[gap_index].thickness = gap
             except Exception:
                 return
             limited = True
@@ -1349,7 +1368,10 @@ class LayoutTableWorkbenchMixin:
         if deficit and deficit > 1e-6:
             gap += float(deficit)
             try:
-                rows[gap_index].thickness = gap
+                if _frozen:
+                    self.apply_image_distance_frozen_aware(gap)
+                else:
+                    rows[gap_index].thickness = gap
             except Exception:
                 return
             limited = True

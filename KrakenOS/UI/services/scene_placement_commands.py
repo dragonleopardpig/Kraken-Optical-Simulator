@@ -3640,6 +3640,11 @@ class ScenePlacementMixin:
                 if refusal:
                     return False, refusal
                 self.rows[-2].thickness = float(target_gap)
+            # bugs/0578: when the frozen writer had to lengthen the machine to book this leg,
+            # the user must hear it -- the camera really moved.
+            note = str(getattr(self, "_frozen_image_make_room_note", "") or "")
+            if note:
+                collision_note = note
             return True, ""
 
         def _row_snapshot():
@@ -3763,12 +3768,34 @@ class ScenePlacementMixin:
                 diverged = True
                 break
             if diverged and best_magnitude > 0.5:
-                # Nothing was achieved and the scene is back where it started -- say so, rather
-                # than let the caller report a focus that did not happen.
+                entry_magnitude = abs(float(delta))
+                # bugs/0578 measured the dishonest epilogue: iteration 0 moved the sensor
+                # 103 mm, re-measured WORSE, correctly reverted -- and the code below then
+                # reported "Snapped detector to best focus (moved +103.1 mm)". A revert must
+                # report as one. Partial improvement (some pass beat the seed before the loop
+                # went sour) keeps the best state and says exactly how far it got.
+                self.restore_glued_illumination_unit_world_poses(_illumination_poses)  # 0571
+                if gui:
+                    try:
+                        self._sync_table()
+                    except Exception:
+                        pass
+                    self._commit_history_capture()
+                self._invalidate_preview_scene_trace()
+                self._fold_carry_pending_rebuild = True
+                if best_magnitude < entry_magnitude - 1.0e-6:
+                    self.status_var.set(
+                        f"Snapped detector partway to {source}: residual {entry_magnitude:.4g} "
+                        f"-> {best_magnitude:.4g} mm (further correction made it worse)."
+                        f"{collision_note}"
+                    )
+                    return True
                 self._snap_detector_refusal = (
                     f"best focus could not be reached from here (residual {best_magnitude:.4g} mm "
                     f"and every correction made it worse) -- the scene was left untouched."
                 )
+                self.status_var.set(f"Snap detector: {self._snap_detector_refusal}")
+                return False
         # bugs/0571: whatever moved above, the glued LED+BS unit does not travel with it.
         self.restore_glued_illumination_unit_world_poses(_illumination_poses)
         if gui:

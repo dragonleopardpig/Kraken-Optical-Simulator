@@ -1580,11 +1580,16 @@ class QuickEstimationService:
                 if image_handled:
                     # Report what was actually applied: on a frozen fold the image side is a
                     # WORLD move of the sensor, not the gap-row sum ``image_distance`` quotes.
+                    # bugs/0578: and when the writer lengthened the machine to book the leg,
+                    # say so -- the camera really moved.
+                    image_room_note = str(
+                        self.editor.__dict__.get("_frozen_image_make_room_note", "") or ""
+                    )
                     return True, (
                         f"Solved (folded): object->lens {folded['object_distance']:.6g} mm; the "
                         f"sensor moved {float(folded['image_delta']):+.4g} mm along its folded leg "
                         f"(the fold mirror stayed put) (|m|={folded['magnitude']:.4g})."
-                        f"{room_note}{focus_note}"
+                        f"{image_room_note}{room_note}{focus_note}"
                     )
                 return True, (
                     f"Solved (folded): object->lens {folded['object_distance']:.6g} mm, "

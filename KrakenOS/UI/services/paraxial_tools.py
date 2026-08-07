@@ -1634,6 +1634,7 @@ class ParaxialToolsMixin:
         caller keys on the string, never on the bool alone.
         """
         self._frozen_image_write_refusal = ""
+        self._frozen_image_make_room_note = ""
         try:
             split = self._folded_image_conjugate_split()
         except Exception:
@@ -1686,11 +1687,62 @@ class ParaxialToolsMixin:
             return False
         const = gap_now + float(geometry["far"])
         gap_new = const - far_new
+        if np.isfinite(gap_new) and gap_new < 0.0:
+            # bugs/0578 (flags 073242 "changed FOV without constraint defocus at sensor" and
+            # 073438 "remove defocus not working"): a leg the budget cannot book is a MACHINE
+            # LENGTH problem, not an optics problem -- the optics reach the field, the fold's
+            # exit leg is too short. bugs/0573 already makes room on the OBJECT side by sliding
+            # the fold arm; this is its image-side mirror: floor the gap row at zero and move
+            # the sensor (and the camera body glued behind it) the remainder down the exit leg
+            # IN WORLD, the fold mirror staying put. Afterwards ``const == far_new`` exactly, so
+            # the prescription and the world agree tightly -- no 0478-style stale-gap drift.
+            #
+            # The user's own pin wins over the remedy (bugs/0489): a pinned sensor leg means
+            # "I put this here", so the honest refusal stands until they unpin it.
+            pins = getattr(self, "_axis_section_pins_state", None)
+            pinned = isinstance(pins, dict) and pins.get("image_far") is not None
+            if not pinned:
+                extra = float(far_new) - const
+                # bugs/0581: the gap write below shifts stations -- hold the glued
+                # illumination unit across the bookkeeping, and capture the camera BEFORE the
+                # write (bugs/0456: it is station-anchored, so the edit drags it and a plain
+                # offset shift would double-count).
+                _illumination_poses = None
+                try:
+                    _illumination_poses = self.glued_illumination_unit_world_poses()
+                except Exception:
+                    _illumination_poses = None
+                camera_current = self._step_body_world_center("camera")
+                sensor_target = (
+                    np.asarray(geometry["c_m"], dtype=float)
+                    + float(far_new) * np.asarray(geometry["out_dir"], dtype=float)
+                )
+                camera_delta = sensor_target - np.asarray(geometry["c_i"], dtype=float)
+                camera_target = None if camera_current is None else camera_current + camera_delta
+                self.rows[far_gap_row].thickness = 0.0
+                self._rebake_frozen_row_world_center(int(geometry["image_row"]), sensor_target)
+                if camera_target is not None:
+                    self._seat_step_body_world_center("camera", camera_target)
+                if _illumination_poses is not None:
+                    try:
+                        self.restore_glued_illumination_unit_world_poses(_illumination_poses)
+                    except Exception:
+                        pass
+                self._frozen_image_make_room_note = (
+                    f" Made room on the image side: the sensor and the camera moved "
+                    f"{extra:+.4g} mm further down the fold leg (the fold mirror stayed put)."
+                )
+                self.append_debug(
+                    f"image make-room: far {float(geometry['far']):.4f} -> {far_new:.4f} mm, "
+                    f"budget {const:.4f} -> {far_new:.4f}; gap row {far_gap_row} floored at 0 "
+                    f"(bugs/0578)"
+                )
+                return True
         if not np.isfinite(gap_new) or gap_new < 0.0:
             self._frozen_image_write_refusal = (
                 f"that field wants a mirror->sensor leg of {far_new:.4g} mm, but this fold's "
-                f"leg budget is {const:.4g} mm -- slide the fold mirror (and the camera behind "
-                f"it) along the leg first, or pin a segment."
+                f"leg budget is {const:.4g} mm and the sensor leg is pinned -- unpin it, or "
+                f"slide the fold mirror (and the camera behind it) along the leg first."
             )
             return False
         self.rows[far_gap_row].thickness = gap_new
@@ -1713,6 +1765,7 @@ class ParaxialToolsMixin:
         scene a refusal also leaves its numbers in ``_frozen_image_write_refusal``.
         """
         self._frozen_image_write_refusal = ""
+        self._frozen_image_make_room_note = ""
         try:
             split = self._folded_image_conjugate_split()
             if not isinstance(split, dict):
