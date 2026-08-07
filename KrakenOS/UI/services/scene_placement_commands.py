@@ -4042,8 +4042,9 @@ class ScenePlacementMixin:
         target lifted the whole leg in Z for a drag along X. A folded leg has to be slid the way the
         fold carry slides one: translate the rows.
 
-        Returns the surrogate's own rows (those on the datum leg between the front and rear datums
-        inclusive), that leg's direction, and whether it is a fold leg rather than the root.
+        Returns the surrogate's own rows (every row between the front and rear datums
+        inclusive, by IDENTITY -- bugs/0584 -- excluding parked promoted solids, bugs/0546),
+        the datum leg's direction, and whether it is a fold leg rather than the root.
         """
         datums = self._lens_surrogate_datum_rows()
         if datums is None:
@@ -4072,11 +4073,18 @@ class ScenePlacementMixin:
         segment_id = str(by_row[front].segment_id)
         if str(by_row[rear].segment_id) != segment_id:
             return None
-        low, high = sorted((float(by_row[front].s), float(by_row[rear].s)))
+        # bugs/0584 (flag_20260807_110323 "dragged the lens forward, 1pcs of lens surrogate
+        # remain stuck in RA mirror"): membership used to be the rows whose axis-tree arclength
+        # fell inside the [front.s, rear.s] window -- so a lens row displaced past the fold
+        # point (the overlapped state bugs/0583 fixes the cause of) silently FELL OUT, and the
+        # drag write-through moved rows [1, 2, 3, 5] while row 4 stayed inside the prism. The
+        # datums' segment decides the leg DIRECTION; membership is by IDENTITY: between the
+        # datums every row is the lens's own, except a parked promoted solid (bugs/0546), which
+        # is an independent element the swap lifts out and a drag must not carry.
         members = [
             index
-            for index in axis_tree.rows_along_leg(snaps, segment_id)
-            if low - 1.0e-9 <= float(by_row[index].s) <= high + 1.0e-9
+            for index in range(int(front), int(rear) + 1)
+            if not self._is_swap_preservable_block_row(self.rows[index])
         ]
         segment = tree.get(segment_id)
         if segment is None or not members:
@@ -4166,7 +4174,27 @@ class ScenePlacementMixin:
             return None
         along = float(np.dot(fold_centre - block_end, unit))
         clearance = 0.5 * float(getattr(self.rows[mirror_row], "diameter", 0.0) or 0.0)
+        # bugs/0583 (flag_20260807_104943 "the lens crashed to RA mirror"): the room was
+        # measured from the rear DATUM, but the lens BARREL extends past it -- on the PYRITE
+        # body ~7 mm -- so a make-room that stopped 1 mm short of the aperture parked the
+        # barrel INSIDE the prism. When a lens STEP body is present, charge its overhang past
+        # the datum plus a real mechanical margin (the camera's clearance constant); without a
+        # body the datum-to-aperture measure IS the geometry and the formula is unchanged
+        # (which also keeps the bugs/0572 pure-stub arithmetic exact).
+        body_overhang = 0.0
+        try:
+            mesh = self._transformed_imported_step_mesh_for_label("lens")
+            if mesh is not None:
+                lo_s, hi_s = self._aabb_corner_projection_range(
+                    np.asarray(mesh.bounds, dtype=float), unit
+                )
+                if hi_s is not None:
+                    body_overhang = max(0.0, float(hi_s) - float(np.dot(block_end, unit)))
+        except Exception:
+            body_overhang = 0.0
         room = along - clearance
+        if body_overhang > 0.0:
+            room -= body_overhang + float(getattr(self, "_SWAP_REFOCUS_MIN_CLEARANCE_MM", 2.0))
         return float(room) if np.isfinite(room) else None
 
     def slide_fold_arm_along_leg(self, distance: float) -> "dict | None":
@@ -4297,7 +4325,12 @@ class ScenePlacementMixin:
         # tearing the surrogate apart (desp written for members only, station cancel for the
         # whole span). A hole between the datums is proof the scene is inconsistent, not a
         # licence to move what remains: refuse with the numbers instead.
-        missing = [i for i in range(min(members), max(members) + 1) if i not in set(members)]
+        # bugs/0584: a parked promoted solid (bugs/0546) is a LEGITIMATE hole -- it is not the
+        # lens and must not be carried. Only a missing lens row proves inconsistency.
+        missing = [
+            i for i in range(min(members), max(members) + 1)
+            if i not in set(members) and not self._is_swap_preservable_block_row(self.rows[i])
+        ]
         if missing:
             self._lens_leg_slide_refusal = (
                 f"the lens block is not contiguous on its leg (row(s) {missing} between the "

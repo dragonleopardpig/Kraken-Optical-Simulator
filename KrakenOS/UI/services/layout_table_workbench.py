@@ -1714,6 +1714,29 @@ class LayoutTableWorkbenchMixin:
         except Exception as exc:
             self._swap_lens_axis_centring = None
             self.append_debug(f"swap lens-axis centring skipped: {exc}")
+        # bugs/0583 (flag_20260807_105146 "swapped lens ELS85" -> the block inside the RA
+        # mirror, and flag_105355's 35x35 refused on the overlapped state): a LONGER
+        # replacement block keeps the front datum, so its rear -- and the barrel past it --
+        # can land inside the fold mirror the world bracket just faithfully held in place.
+        # The machine is too short for the new lens: make the room the bugs/0573 way, sliding
+        # the fold arm (mirror + everything behind it + the camera body) down the leg by the
+        # deficit. The body-aware room measure charges the barrel overhang + clearance.
+        clearance_note = ""
+        try:
+            plan = self._lens_leg_slide_plan()
+            if plan is not None and plan[2]:
+                _members, _direction, _ = plan
+                room = self._lens_leg_room_to_fold(_direction, _members)
+                if room is not None and float(room) < 0.0:
+                    slid = self.slide_fold_arm_along_leg(-float(room))
+                    if slid:
+                        clearance_note = (
+                            f" The replacement lens is longer than the room to the fold mirror:"
+                            f" the mirror and the camera moved {-float(room):+.4g} mm along the"
+                            f" leg to clear it."
+                        )
+        except Exception as exc:
+            self.append_debug(f"swap fold-clearance skipped: {exc}")
         self._sync_table()
         self.load_layouts()  # discover the new library surrogate (also insertable later)
         self._commit_history_capture()
@@ -1726,7 +1749,7 @@ class LayoutTableWorkbenchMixin:
             self.append_debug(f"swap auto-refocus skipped: {exc}")
         message = (
             f"Swapped imaging lens -> {model.title} (EFL {model.effl:.4g} mm) in place; "
-            "Object / beam splitter / LED / camera / FOV preserved."
+            "Object / beam splitter / LED / camera / FOV preserved." + clearance_note
         )
         if preserved:
             message += (
