@@ -951,6 +951,113 @@ class LayoutTableWorkbenchMixin:
                 advanced["ScenePlacement"] = settings
                 row.advanced = advanced
 
+    def _swap_world_capture(self, front, rear):
+        """Stage (c) of ``bugs/DESIGN_world_authority_settle.md``: capture the WORLD pose of
+        everything the swap must not move, keyed by row OBJECT (splices renumber, objects
+        survive) -- every row after the outgoing block's front datum (the replaced lens rows
+        vanish and drop out of the id-map naturally), the camera body, and the glued
+        illumination unit.
+
+        The swap's three station-arithmetic preservations (the bugs/0383 downstream anchor,
+        the 0546 preserved-row reseat, the 0547 frozen block frame) each protect one slice of
+        this and each has sheared when its assumptions broke (0581: a normaliser erased the
+        bookkeeping and the follower carry dragged the mirror into the lens; a replacement
+        lens longer than the downstream space makes the 0383 anchor return None and the whole
+        arm silently shifts). The bracket protects the INVARIANT: whatever the machinery does,
+        the settle half verifies every captured pose and re-bakes any drift.
+
+        Returns None when the scene has no preserved downstream (a bare lens's image is
+        SUPPOSED to follow the new back focal distance, bugs/0383)."""
+        try:
+            if not self._swap_preserves_downstream(self.rows, rear):
+                return None
+        except Exception:
+            return None
+        import numpy as np
+
+        from KrakenOS.UI.services import row_placement
+
+        capture = {"rows": [], "camera": None, "illumination": None}
+        for index in range(int(front) + 1, len(self.rows)):
+            row = self.rows[index]
+            try:
+                pose = np.asarray(row_placement.world_pose(self, index).position, dtype=float)
+            except Exception:
+                continue
+            capture["rows"].append((row, pose))
+        try:
+            capture["camera"] = self._step_body_world_center("camera")
+        except Exception:
+            capture["camera"] = None
+        try:
+            capture["illumination"] = self.glued_illumination_unit_world_poses()
+        except Exception:
+            capture["illumination"] = None
+        return capture
+
+    def _swap_world_settle(self, capture) -> None:
+        """The bracket's settle half (stage c): verify every captured world pose after the
+        swap machinery has run, re-bake any row that drifted, re-seat the camera body, restore
+        the illumination unit, and assert the books came out legal. Runs BEFORE the auto
+        refocus, which is the one mover with a licence to change the image side afterwards.
+
+        On a swap where the legacy mechanisms did their job every drift is 0.0 and this writes
+        nothing -- the sweep is the guard, not the mechanism. Every correction it does make is
+        debug-logged with the number: a firing sweep is a legacy mechanism failing, and stage
+        (d) deletes those mechanisms once the sweep has proven it covers them."""
+        if not capture:
+            return
+        import numpy as np
+
+        from KrakenOS.UI.services import row_placement
+
+        index_of = {id(row): index for index, row in enumerate(self.rows)}
+        for row, target in capture["rows"]:
+            index = index_of.get(id(row))
+            if index is None:
+                continue  # a replaced lens row -- gone by design
+            try:
+                current = np.asarray(row_placement.world_pose(self, index).position, dtype=float)
+            except Exception:
+                continue
+            drift = float(np.linalg.norm(current - target))
+            if drift > 1.0e-6:
+                self.append_debug(
+                    f"swap settle: row {index} ({str(getattr(row, 'name', '') or '')[:24]}) "
+                    f"drifted {drift:.4f} mm through the splice -- re-baked to its world pose "
+                    f"(stage c)"
+                )
+                try:
+                    self._rebake_frozen_row_world_center(index, target)
+                except Exception:
+                    pass
+        if capture.get("camera") is not None:
+            try:
+                current = self._step_body_world_center("camera")
+                if current is not None:
+                    drift = float(np.linalg.norm(np.asarray(current) - np.asarray(capture["camera"])))
+                    if drift > 1.0e-6:
+                        self.append_debug(
+                            f"swap settle: the camera body drifted {drift:.4f} mm -- re-seated (stage c)"
+                        )
+                        self._seat_step_body_world_center("camera", capture["camera"])
+            except Exception:
+                pass
+        if capture.get("illumination") is not None:
+            try:
+                self.restore_glued_illumination_unit_world_poses(capture["illumination"])
+            except Exception:
+                pass
+        bad = [
+            index for index, row in enumerate(self.rows)
+            if float(getattr(row, "thickness", 0.0) or 0.0) < -1.0e-6
+        ]
+        if bad:
+            self.append_debug(
+                f"swap settle: ILLEGAL books at exit, negative thickness at row(s) {bad} -- "
+                f"file a bug, the settle contract promises legality"
+            )
+
     def _swap_reseat_preserved_rows(self, preserved) -> None:
         """Put every lifted block row back at the ABSOLUTE axial pose it held before the swap
         (bugs/0546). The rows moved to just after the new rear datum, so their station changed
@@ -1550,6 +1657,8 @@ class LayoutTableWorkbenchMixin:
             sum(float(getattr(r, "thickness", 0.0) or 0.0) for r in self.rows[:rear + 1])
             if self._swap_preserves_downstream(self.rows, rear) else None
         )
+        # Stage (c) of bugs/DESIGN_world_authority_settle.md: the world bracket's capture half.
+        world_capture = self._swap_world_capture(front, rear)
         self._begin_history_capture()
         self.rows = (
             list(self.rows[:front])
@@ -1587,6 +1696,10 @@ class LayoutTableWorkbenchMixin:
             self._swap_apply_frozen_block_frame(frozen_frame, swap_front, swap_rear)
         # bugs/0546: the lifted rows go back to the exact absolute pose they held before.
         self._swap_reseat_preserved_rows(preserved)
+        # Stage (c): the world bracket's settle half -- verify every captured pose, re-bake any
+        # drift the machinery above produced, and assert the books are legal. Runs before the
+        # auto-refocus below, the one mover licensed to change the image side afterwards.
+        self._swap_world_settle(world_capture)
         # bugs/0568: the overlay's PRESERVED placement numbers (bugs/0381) only mean what they
         # meant for the body they were set for -- the alignment's rotation pivots are the MESH's
         # own bounding box and the axial datum pin is redirected sideways by a 90/270 deg overlay
