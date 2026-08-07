@@ -4263,6 +4263,24 @@ class ScenePlacementMixin:
         members = [int(index) for index in members]
         if not members:
             return None
+        # bugs/0582 (found replaying flag_20260807 once 0580's poison was removed): the plan's
+        # leg filter can silently DROP an interior lens row. Measured: after a swap-refocus had
+        # parked the fold mirror inside the lens block (bugs/0581), row 4 sat past the fold
+        # point, fell off the arclength test, and the composite slid rows [1, 2, 3, 5] --
+        # tearing the surrogate apart (desp written for members only, station cancel for the
+        # whole span). A hole between the datums is proof the scene is inconsistent, not a
+        # licence to move what remains: refuse with the numbers instead.
+        missing = [i for i in range(min(members), max(members) + 1) if i not in set(members)]
+        if missing:
+            self._lens_leg_slide_refusal = (
+                f"the lens block is not contiguous on its leg (row(s) {missing} between the "
+                f"datums fell off the fold leg) -- the scene geometry is inconsistent; move the "
+                f"fold mirror clear of the lens (or reload the layout) first."
+            )
+            self.append_debug(
+                f"lens leg slide refused: members {members} skip row(s) {missing} (bugs/0582)"
+            )
+            return None
         upstream = min(members) - 1
         downstream = max(members)
         if not (0 <= upstream and downstream < len(self.rows) - 1):

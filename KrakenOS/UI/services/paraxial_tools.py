@@ -1471,6 +1471,13 @@ class ParaxialToolsMixin:
         remaining = float(delta)
         floor = max(int(gap_start), 0)
         while index >= floor and 0 <= index < len(rows):
+            # bugs/0581: never book the delta in a STATION-NEUTRAL row (the glued BS,
+            # thickness pinned at 0 by bugs/0435). A write there survives only until the next
+            # swap's normaliser re-pins it, and the evaporating bookkeeping shears every
+            # follower behind it. bugs/0569's doctrine, applied to this spreader.
+            if row_is_station_neutral(rows[index]):
+                index -= 1
+                continue
             current = float(getattr(rows[index], "thickness", 0.0) or 0.0)
             applied = max(current + remaining, 0.0)
             rows[index].thickness = applied
@@ -1493,6 +1500,37 @@ class ParaxialToolsMixin:
         mirror_row = int(geometry["mirror_row"])
         image_row = int(geometry["image_row"])
         mirror_target = geometry["c_m"] + delta * geometry["in_dir"]
+        # bugs/0581 (found replaying flag_20260807 with the 0580 poison removed): the split's
+        # ``near_min`` floor measures from ``near_gap_row`` -- on this scene the station-neutral
+        # BS, 328 mm away -- so "keep the mirror clear of the lens" was checked against an
+        # obstacle at the FAR END of the leg and the swap-refocus collision resolver happily
+        # parked the mirror INSIDE the lens block (measured: mirror x 334.4 -> 281.8 with the
+        # lens rear datum at 283.7). The real invariant: the mirror may not land within its own
+        # half-aperture of ANY upstream row on its incoming leg. Check the TARGET against every
+        # genuinely-upstream row, in world, and refuse with the numbers (the bugs/0572 idiom).
+        try:
+            in_dir = geometry["in_dir"]
+            c_r = geometry["c_m"] - float(geometry["near"]) * in_dir
+            s_mirror = float(geometry["near"])
+            s_target = s_mirror + float(delta)
+            body = 0.5 * float(getattr(rows[mirror_row], "diameter", 0.0) or 0.0)
+            nearest_s = None
+            nearest_row = None
+            for r in range(1, mirror_row):
+                if float(getattr(rows[r], "diameter", 0.0) or 0.0) <= 0.0:
+                    continue
+                centre = self._split_row_world_center(r)
+                s_r = float(np.dot(np.asarray(centre, dtype=float) - c_r, in_dir))
+                if 1.0e-6 < s_r < s_mirror - 1.0e-6 and (nearest_s is None or s_r > nearest_s):
+                    nearest_s, nearest_row = s_r, r
+            if nearest_s is not None and s_target < nearest_s + body - 1.0e-6:
+                return False, (
+                    f"Safe gap: that slide puts the fold mirror {nearest_s + body - s_target:.4g} mm "
+                    f"into row {nearest_row} ({str(getattr(rows[nearest_row], 'name', '') or '')[:30]}) "
+                    f"on its incoming leg -- move that element (or the camera) first."
+                )
+        except Exception:
+            pass
         sensor_target = mirror_target + float(far_new) * geometry["out_dir"]
         camera_delta = sensor_target - geometry["c_i"]
         # bugs/0456: the camera body's target is captured BEFORE the gap edit below --
@@ -1500,23 +1538,67 @@ class ParaxialToolsMixin:
         # double-count (rows and body then move opposite ways).
         camera_current = self._step_body_world_center("camera")
         camera_target = None if camera_current is None else camera_current + camera_delta
-        # Prescription bookkeeping first (stations shift), then world re-bake.
+        # Prescription bookkeeping first (stations shift), then world re-bake. The mirror and
+        # the sensor are re-baked below -- but every OTHER station-anchored element between the
+        # span and the mirror rides the raw station shift. bugs/0581: with the near span now
+        # walking past the station-neutral BS (its own thickness is pinned by bugs/0435), the
+        # bookkeeping lands upstream of it and the BS's STATION grows by the delta -- measured,
+        # the glued BS slid +47.58 mm out of its LED housing and the trace died (0 of 558).
+        # This is exactly the hazard bugs/0571 documented ("the remedy has to be expressed in
+        # WORLD terms first"): hold the glued illumination unit across the bookkeeping with the
+        # same writer-agnostic bracket snap_detector_to_image_plane uses.
+        _illumination_poses = None
+        try:
+            _illumination_poses = self.glued_illumination_unit_world_poses()
+        except Exception:
+            _illumination_poses = None
         ng, fg = int(split["near_gap_row"]), int(split["far_gap_row"])
         if 0 <= ng < len(rows) and 0 <= fg < len(rows):
+            # bugs/0580 (flag_20260807_073042 "changed FOV with one constraint works" -- it did
+            # NOT): the far row's write below was raw, so a pin whose mirror slide exceeded the
+            # far row's booked thickness wrote a NEGATIVE frozen gap (measured: 47.5815 - 52.6084
+            # = -5.0269) while the world re-bake made the scene LOOK right. A negative frozen gap
+            # is the known off-axis poison: it detonates at the next writer that touches these
+            # rows -- the user's ELS-85 swap redistributed it as raw thickness and shoved the RA
+            # prism 5.03 mm ACROSS its leg (flag 073438 "lens and RA mirror off optical axis"),
+            # and the rubber-band repair on that state killed the trace outright (flag 074450).
+            #
+            # The world targets are already right -- only the BOOKKEEPING must stay legal. Floor
+            # the far row at zero and conserve the pair sum by sending only what the far row can
+            # give through the near-span spreader: stations past ``fg`` see an unchanged sum, and
+            # the mirror/sensor rows are re-baked in world below either way.
+            far_now = float(rows[fg].thickness)
+            far_gap_new = far_now - float(delta)
+            near_delta = float(delta)
+            if far_gap_new < 0.0:
+                near_delta = far_now
+                far_gap_new = 0.0
+                self.append_debug(
+                    f"image split: far gap row {fg} floored at 0 (was booking "
+                    f"{far_now - float(delta):+.4f}); near span absorbs {near_delta:+.4f} "
+                    f"of the {float(delta):+.4f} mm slide (bugs/0580)"
+                )
             # bugs/0550: spread the near-leg delta across its span rather than forcing it into
             # `mirror_row - 1`, which after bugs/0546 can be a zero-gap promoted solid and would
             # go NEGATIVE (the unfrozen branch below refuses that case outright; this frozen
             # branch had no guard at all, and it is the one a swap's auto-refocus takes).
-            if not self._apply_near_leg_delta(ng, float(delta), int(split.get("gap_start", 0))):
+            if not self._apply_near_leg_delta(ng, near_delta, int(split.get("gap_start", 0))):
                 return False, (
                     f"Constraint out of range: the lens rear -> mirror leg cannot absorb "
-                    f"{delta:+.4g} mm without a negative gap."
+                    f"{near_delta:+.4g} mm without a negative gap."
                 )
-            rows[fg].thickness = float(rows[fg].thickness) - float(delta)
+            rows[fg].thickness = far_gap_new
         self._rebake_frozen_row_world_center(mirror_row, mirror_target)
         self._rebake_frozen_row_world_center(image_row, sensor_target)
         if camera_target is not None:
             self._seat_step_body_world_center("camera", camera_target)
+        # bugs/0581: whatever the bookkeeping above did to the stations, the glued BS + LED
+        # unit does not travel with it (the bugs/0571 bracket).
+        if _illumination_poses is not None:
+            try:
+                self.restore_glued_illumination_unit_world_poses(_illumination_poses)
+            except Exception:
+                pass
         return True, (
             f"Image distance split: lens rear->mirror {near_new:.4g} mm, "
             f"mirror->sensor {far_new:.4g} mm (total {near_new + far_new:.4g} mm; "
@@ -1944,6 +2026,16 @@ class ParaxialToolsMixin:
         # walks off the beam.
         gap_start = int(last_src)
         while gap_start > 1 and _row_is_promoted_mirror_fold(rows[gap_start]):
+            gap_start -= 1
+        # bugs/0581: ALSO walk back over STATION-NEUTRAL rows (the glued BS, thickness pinned at
+        # 0 by bugs/0435). With the walk stopping AT the BS, the near span was that single pinned
+        # row -- so a pin's near-leg bookkeeping landed in a thickness the next swap's normaliser
+        # ZEROES, and the bugs/0236 follower carry then dragged the fold mirror back by exactly
+        # the evaporated amount, into the lens block (measured: mirror x 334.4 -> 281.8 with the
+        # lens rear datum at 283.7). Walking past them makes the lens Rear Datum's gap the span's
+        # durable home, which is bugs/0569's doctrine: no conjugate write lands on a
+        # station-neutral row.
+        while gap_start > 1 and row_is_station_neutral(rows[gap_start]):
             gap_start -= 1
         image_row = next(
             (i for i in range(len(rows) - 1, -1, -1) if str(getattr(rows[i], "surface", "")) == "Image"),

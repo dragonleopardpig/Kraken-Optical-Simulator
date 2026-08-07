@@ -15603,6 +15603,10 @@ phase_449_solve_carries_the_lens_body = _phase_from_standalone(
     449, "a solve carries the lens BODY with its surrogate, and focuses in the world frame (0574/0575/0576)",
     "KrakenOS.UI.validate_open3d_0574_solve_carries_the_lens_body",
     "solve_carries_the_lens_body")
+phase_450_pinned_solve_survives_swap = _phase_from_standalone(
+    450, "a pinned solve books LEGAL gaps and the next swap keeps every element on its leg (0580/0581/0582)",
+    "KrakenOS.UI.validate_open3d_0580_pinned_solve_survives_swap",
+    "pinned_solve_survives_swap")
 
 
 # ---------------------------------------------------------------------------
