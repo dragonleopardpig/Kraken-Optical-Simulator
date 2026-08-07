@@ -1497,22 +1497,79 @@ class ParaxialToolsMixin:
         if geometry is None:
             return False, "Image split: the frozen fold geometry is unavailable."
         rows = self.rows
+        mirror_target = geometry["c_m"] + delta * geometry["in_dir"]
+        sensor_target = mirror_target + float(far_new) * geometry["out_dir"]
+        ng, fg = int(split["near_gap_row"]), int(split["far_gap_row"])
+        near_delta = float(delta)
+        far_gap_new = None
+        if 0 <= fg < len(rows):
+            # bugs/0580 (flag_20260807_073042 "changed FOV with one constraint works" -- it did
+            # NOT): the far row's write used to be raw, so a pin whose mirror slide exceeded the
+            # far row's booked thickness wrote a NEGATIVE frozen gap (measured: 47.5815 - 52.6084
+            # = -5.0269) while the world re-bake made the scene LOOK right. A negative frozen gap
+            # is the known off-axis poison. The world targets are already right -- only the
+            # BOOKKEEPING must stay legal: floor the far row at zero and conserve the pair sum by
+            # sending only what the far row can give through the near-span spreader.
+            far_now = float(rows[fg].thickness)
+            far_gap_new = far_now - float(delta)
+            if far_gap_new < 0.0:
+                near_delta = far_now
+                far_gap_new = 0.0
+                self.append_debug(
+                    f"image split: far gap row {fg} floored at 0 (was booking "
+                    f"{far_now - float(delta):+.4f}); near span absorbs {near_delta:+.4f} "
+                    f"of the {float(delta):+.4f} mm slide (bugs/0580)"
+                )
+        ok, msg = self._settle_image_fold_world(
+            split, geometry,
+            mirror_target=mirror_target, sensor_target=sensor_target,
+            near_delta=near_delta, far_gap_new=far_gap_new,
+        )
+        if not ok:
+            return False, msg
+        return True, (
+            f"Image distance split: lens rear->mirror {near_new:.4g} mm, "
+            f"mirror->sensor {far_new:.4g} mm (total {near_new + far_new:.4g} mm; "
+            "mirror slid along its leg, sensor + camera re-seated)."
+        )
+
+    def _settle_image_fold_world(
+        self, split: "dict", geometry: "dict", *,
+        mirror_target, sensor_target, near_delta: float, far_gap_new: "float | None",
+    ) -> "tuple[bool, str]":
+        """The image fold's SETTLE -- stage (b) of ``bugs/DESIGN_world_authority_settle.md``,
+        the first writer where world pose is authoritative and the prescription is derived.
+
+        The contract, owned here so no caller can forget a clause again:
+
+        (i)   the mirror and the sensor land at their WORLD targets exactly (re-baked); the
+              camera body follows the sensor's world delta;
+        (ii)  everything not targeted keeps its world pose -- the glued illumination unit is
+              held across the bookkeeping (bugs/0571/0581) and the camera is captured BEFORE
+              the gap edit (bugs/0456: it is station-anchored, so the edit drags it and a
+              plain offset shift would double-count);
+        (iii) the caller passes LEGAL bookkeeping (``near_delta`` legalized by the bugs/0580
+              pair-sum floor; ``far_gap_new`` >= 0 or None to leave the far row alone), the
+              near delta is spread by the station-neutral-skipping spreader (bugs/0550/0581),
+              and legality is asserted at exit -- a "works" flag can carry poison (0580), so
+              LOOKS-right is never trusted to be IS-right;
+        (iv)  a mirror target inside a genuinely-upstream row refuses with the numbers
+              (bugs/0581, the 0572 idiom) and nothing is written.
+        """
+        rows = self.rows
         mirror_row = int(geometry["mirror_row"])
         image_row = int(geometry["image_row"])
-        mirror_target = geometry["c_m"] + delta * geometry["in_dir"]
-        # bugs/0581 (found replaying flag_20260807 with the 0580 poison removed): the split's
-        # ``near_min`` floor measures from ``near_gap_row`` -- on this scene the station-neutral
-        # BS, 328 mm away -- so "keep the mirror clear of the lens" was checked against an
-        # obstacle at the FAR END of the leg and the swap-refocus collision resolver happily
-        # parked the mirror INSIDE the lens block (measured: mirror x 334.4 -> 281.8 with the
-        # lens rear datum at 283.7). The real invariant: the mirror may not land within its own
-        # half-aperture of ANY upstream row on its incoming leg. Check the TARGET against every
-        # genuinely-upstream row, in world, and refuse with the numbers (the bugs/0572 idiom).
+        mirror_target = np.asarray(mirror_target, dtype=float).reshape(3)
+        sensor_target = np.asarray(sensor_target, dtype=float).reshape(3)
+        # (iv) Safe-gap: the mirror may not land within its own half-aperture of ANY
+        # genuinely-upstream row on its incoming leg. bugs/0581: the split's near_min floor
+        # measured from the station-neutral BS 328 mm away, so the swap-refocus collision
+        # resolver parked the mirror INSIDE the lens block (x 334.4 -> 281.8, lens rear 283.7).
         try:
-            in_dir = geometry["in_dir"]
-            c_r = geometry["c_m"] - float(geometry["near"]) * in_dir
+            in_dir = np.asarray(geometry["in_dir"], dtype=float).reshape(3)
+            c_r = np.asarray(geometry["c_m"], dtype=float).reshape(3) - float(geometry["near"]) * in_dir
             s_mirror = float(geometry["near"])
-            s_target = s_mirror + float(delta)
+            s_target = float(np.dot(mirror_target - c_r, in_dir))
             body = 0.5 * float(getattr(rows[mirror_row], "diameter", 0.0) or 0.0)
             nearest_s = None
             nearest_row = None
@@ -1531,79 +1588,53 @@ class ParaxialToolsMixin:
                 )
         except Exception:
             pass
-        sensor_target = mirror_target + float(far_new) * geometry["out_dir"]
-        camera_delta = sensor_target - geometry["c_i"]
-        # bugs/0456: the camera body's target is captured BEFORE the gap edit below --
-        # it is station-anchored, so the edit drags it and a plain offset shift would
-        # double-count (rows and body then move opposite ways).
+        # (ii) capture BEFORE any bookkeeping.
         camera_current = self._step_body_world_center("camera")
-        camera_target = None if camera_current is None else camera_current + camera_delta
-        # Prescription bookkeeping first (stations shift), then world re-bake. The mirror and
-        # the sensor are re-baked below -- but every OTHER station-anchored element between the
-        # span and the mirror rides the raw station shift. bugs/0581: with the near span now
-        # walking past the station-neutral BS (its own thickness is pinned by bugs/0435), the
-        # bookkeeping lands upstream of it and the BS's STATION grows by the delta -- measured,
-        # the glued BS slid +47.58 mm out of its LED housing and the trace died (0 of 558).
-        # This is exactly the hazard bugs/0571 documented ("the remedy has to be expressed in
-        # WORLD terms first"): hold the glued illumination unit across the bookkeeping with the
-        # same writer-agnostic bracket snap_detector_to_image_plane uses.
+        camera_target = (
+            None
+            if camera_current is None
+            else camera_current + (sensor_target - np.asarray(geometry["c_i"], dtype=float))
+        )
         _illumination_poses = None
         try:
             _illumination_poses = self.glued_illumination_unit_world_poses()
         except Exception:
             _illumination_poses = None
+        # (iii) legal bookkeeping.
         ng, fg = int(split["near_gap_row"]), int(split["far_gap_row"])
-        if 0 <= ng < len(rows) and 0 <= fg < len(rows):
-            # bugs/0580 (flag_20260807_073042 "changed FOV with one constraint works" -- it did
-            # NOT): the far row's write below was raw, so a pin whose mirror slide exceeded the
-            # far row's booked thickness wrote a NEGATIVE frozen gap (measured: 47.5815 - 52.6084
-            # = -5.0269) while the world re-bake made the scene LOOK right. A negative frozen gap
-            # is the known off-axis poison: it detonates at the next writer that touches these
-            # rows -- the user's ELS-85 swap redistributed it as raw thickness and shoved the RA
-            # prism 5.03 mm ACROSS its leg (flag 073438 "lens and RA mirror off optical axis"),
-            # and the rubber-band repair on that state killed the trace outright (flag 074450).
-            #
-            # The world targets are already right -- only the BOOKKEEPING must stay legal. Floor
-            # the far row at zero and conserve the pair sum by sending only what the far row can
-            # give through the near-span spreader: stations past ``fg`` see an unchanged sum, and
-            # the mirror/sensor rows are re-baked in world below either way.
-            far_now = float(rows[fg].thickness)
-            far_gap_new = far_now - float(delta)
-            near_delta = float(delta)
-            if far_gap_new < 0.0:
-                near_delta = far_now
-                far_gap_new = 0.0
-                self.append_debug(
-                    f"image split: far gap row {fg} floored at 0 (was booking "
-                    f"{far_now - float(delta):+.4f}); near span absorbs {near_delta:+.4f} "
-                    f"of the {float(delta):+.4f} mm slide (bugs/0580)"
-                )
-            # bugs/0550: spread the near-leg delta across its span rather than forcing it into
-            # `mirror_row - 1`, which after bugs/0546 can be a zero-gap promoted solid and would
-            # go NEGATIVE (the unfrozen branch below refuses that case outright; this frozen
-            # branch had no guard at all, and it is the one a swap's auto-refocus takes).
-            if not self._apply_near_leg_delta(ng, near_delta, int(split.get("gap_start", 0))):
+        if not (0 <= ng < len(rows) and 0 <= fg < len(rows)):
+            return False, "Image split gap rows are unavailable."
+        if abs(float(near_delta)) > 1.0e-12:
+            if not self._apply_near_leg_delta(ng, float(near_delta), int(split.get("gap_start", 0))):
                 return False, (
                     f"Constraint out of range: the lens rear -> mirror leg cannot absorb "
-                    f"{near_delta:+.4g} mm without a negative gap."
+                    f"{float(near_delta):+.4g} mm without a negative gap."
                 )
-            rows[fg].thickness = far_gap_new
+        if far_gap_new is not None:
+            rows[fg].thickness = max(float(far_gap_new), 0.0)
+        # (i) world re-bake to the exact targets; the camera follows the sensor.
         self._rebake_frozen_row_world_center(mirror_row, mirror_target)
         self._rebake_frozen_row_world_center(image_row, sensor_target)
         if camera_target is not None:
             self._seat_step_body_world_center("camera", camera_target)
-        # bugs/0581: whatever the bookkeeping above did to the stations, the glued BS + LED
-        # unit does not travel with it (the bugs/0571 bracket).
+        # (ii) whatever the bookkeeping did to the stations, the glued BS + LED unit does not
+        # travel with it (the bugs/0571 bracket).
         if _illumination_poses is not None:
             try:
                 self.restore_glued_illumination_unit_world_poses(_illumination_poses)
             except Exception:
                 pass
-        return True, (
-            f"Image distance split: lens rear->mirror {near_new:.4g} mm, "
-            f"mirror->sensor {far_new:.4g} mm (total {near_new + far_new:.4g} mm; "
-            "mirror slid along its leg, sensor + camera re-seated)."
-        )
+        # (iii) exit assertion -- never silent.
+        bad = [
+            index for index, row in enumerate(rows)
+            if float(getattr(row, "thickness", 0.0) or 0.0) < -1.0e-6
+        ]
+        if bad:
+            self.append_debug(
+                f"settle image fold: ILLEGAL books at exit, negative thickness at row(s) {bad} "
+                f"-- file a bug, this contract promises legality"
+            )
+        return True, ""
 
     def apply_image_distance_frozen_aware(self, image_distance: float) -> bool:
         """bugs/0478: place a solved image distance in WORLD terms on a frozen scene.
@@ -1703,31 +1734,18 @@ class ParaxialToolsMixin:
             pinned = isinstance(pins, dict) and pins.get("image_far") is not None
             if not pinned:
                 extra = float(far_new) - const
-                # bugs/0581: the gap write below shifts stations -- hold the glued
-                # illumination unit across the bookkeeping, and capture the camera BEFORE the
-                # write (bugs/0456: it is station-anchored, so the edit drags it and a plain
-                # offset shift would double-count).
-                _illumination_poses = None
-                try:
-                    _illumination_poses = self.glued_illumination_unit_world_poses()
-                except Exception:
-                    _illumination_poses = None
-                camera_current = self._step_body_world_center("camera")
                 sensor_target = (
                     np.asarray(geometry["c_m"], dtype=float)
                     + float(far_new) * np.asarray(geometry["out_dir"], dtype=float)
                 )
-                camera_delta = sensor_target - np.asarray(geometry["c_i"], dtype=float)
-                camera_target = None if camera_current is None else camera_current + camera_delta
-                self.rows[far_gap_row].thickness = 0.0
-                self._rebake_frozen_row_world_center(int(geometry["image_row"]), sensor_target)
-                if camera_target is not None:
-                    self._seat_step_body_world_center("camera", camera_target)
-                if _illumination_poses is not None:
-                    try:
-                        self.restore_glued_illumination_unit_world_poses(_illumination_poses)
-                    except Exception:
-                        pass
+                ok, _msg = self._settle_image_fold_world(
+                    split, geometry,
+                    mirror_target=geometry["c_m"], sensor_target=sensor_target,
+                    near_delta=0.0, far_gap_new=0.0,
+                )
+                if not ok:
+                    self._frozen_image_write_refusal = _msg
+                    return False
                 self._frozen_image_make_room_note = (
                     f" Made room on the image side: the sensor and the camera moved "
                     f"{extra:+.4g} mm further down the fold leg (the fold mirror stayed put)."
@@ -1745,7 +1763,22 @@ class ParaxialToolsMixin:
                 f"slide the fold mirror (and the camera behind it) along the leg first."
             )
             return False
-        self.rows[far_gap_row].thickness = gap_new
+        # In-budget: the same settle, sensor-only. The gap booking lands on ``const - far_new``
+        # (the bugs/0478 both-frames-agree value) and the re-bake writes the world it derives to
+        # -- identical pose, but clauses (ii)/(iii) now protect this path too instead of relying
+        # on station-derivation dragging the right things by luck.
+        sensor_target = (
+            np.asarray(geometry["c_m"], dtype=float)
+            + float(far_new) * np.asarray(geometry["out_dir"], dtype=float)
+        )
+        ok, _msg = self._settle_image_fold_world(
+            split, geometry,
+            mirror_target=geometry["c_m"], sensor_target=sensor_target,
+            near_delta=0.0, far_gap_new=float(gap_new),
+        )
+        if not ok:
+            self._frozen_image_write_refusal = _msg
+            return False
         return True
 
     def shift_image_distance_frozen_aware(self, delta: float) -> bool:
