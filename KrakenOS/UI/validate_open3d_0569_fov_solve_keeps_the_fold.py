@@ -209,6 +209,9 @@ def _check_real_scene(ok, notes) -> None:
                 # is world-placed), so the invariant the image side owes is that the fold does
                 # not move against the optics it folds.
                 "mirror_vs_lens": pose(FLAG_MIRROR_ROW) - pose(FLAG_LENS_REAR_ROW),
+                # bugs/0574-0578: a FIELD change is an object-conjugate change, so the lens is
+                # the primary witness that the machine really re-solved (see C5).
+                "lens": pose(FLAG_LENS_REAR_ROW),
             }
 
         ok(
@@ -269,10 +272,22 @@ def _check_real_scene(ok, notes) -> None:
         solved_wide, wide_message = qe.fov_solve("object", "thickness", 24.0, 24.0)
         live_after = snapshot()
         sensor_moved = float(np.linalg.norm(live_after["image"] - live_before["image"]))
+        # This lever watched the SENSOR, and bugs/0574-0578 changed which part moves. A field
+        # change is primarily an OBJECT-conjugate change, so what must move is the LENS. It read
+        # 36.049 mm of sensor motion pre-arc only because the preceding 23x23 solve left the
+        # sensor DEFOCUSED and this step inherited the correction -- the very "rays defocus at
+        # sensor" defect 0574-0578 fixed. Now each solve focuses as it goes (measured: the 23x23
+        # moves the sensor -36.67 mm, exactly as its own message reports), so the incremental
+        # 23 -> 24 mm step needs the lens to slide 3.25 mm and the sensor only 0.125 mm -- and
+        # the message agrees with the world to four decimals. Assert the MACHINE re-solved, with
+        # the lens as the primary witness; C2/C3/C6 still hold the real 0569 invariants (nothing
+        # written to the station-neutral row, the fold never pushed ACROSS its leg).
+        lens_moved = float(np.linalg.norm(live_after["lens"] - live_before["lens"]))
+        arm_moved = float(np.linalg.norm(live_after["mirror"] - live_before["mirror"]))
         ok(
-            bool(solved_wide) and sensor_moved > 1.0,
-            f"C5 (non-vacuity): a field that FITS (24x24) really does re-place the sensor "
-            f"({sensor_moved:.3f} mm) -- {wide_message[-70:]}",
+            bool(solved_wide) and max(sensor_moved, arm_moved, lens_moved) > 1.0,
+            f"C5 (non-vacuity): a field that FITS (24x24) really re-solves the machine "
+            f"(lens {lens_moved:.3f} mm, sensor {sensor_moved:.3f} mm, arm {arm_moved:.3f} mm)",
         )
         ok(
             abs(live_after["bs"]) < 1e-9
