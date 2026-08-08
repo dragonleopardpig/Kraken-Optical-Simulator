@@ -78,7 +78,13 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
             f"(real-mesh deficit {deficit(editor):.3f} mm; the flagged crash buried it 5.3 mm)",
         )
         check(
-            "camera carried" in str(message) or "re-seated" in str(message),
+            any(k in str(message) for k in (
+                "camera carried", "re-seated",
+                # bugs/0588: this field now takes the FOLDED branch, whose messages carry the
+                # same semantic -- the sensor placed along its leg in world, the camera riding
+                # (B4 measures the ride for real: sensor and camera move identically).
+                "along its folded leg", "Made room first", "the camera moved",
+            )),
             "A3: the solve reports the frozen world re-seat + camera carry (glued companions ride)",
         )
     finally:

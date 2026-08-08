@@ -1409,6 +1409,15 @@ class QuickEstimationService:
                 except Exception as exc:
                     self.editor.append_debug(f"lens leg slide unavailable: {exc}")
                     object_slid = None
+                    # bugs/0588 review: an exception AFTER the slide cleared its refusal channel
+                    # used to leave it EMPTY, so the honest-refusal return below was skipped and
+                    # the full object delta fell to the raw station write -- the 0571 dislocation
+                    # mechanism, through the back door. A crashed slide is a refusal.
+                    if not str(self.editor.__dict__.get("_lens_leg_slide_refusal", "") or ""):
+                        self.editor._lens_leg_slide_refusal = (
+                            f"the lens-leg slide failed ({type(exc).__name__}: {exc}) -- "
+                            f"nothing was moved."
+                        )
                 # bugs/0572 (the user's Apo75 -> PYRITE 85 experiment, 35x35 then 55x55): when the
                 # slide is REFUSED there is no safe fallback on a fold leg. Writing the object gap
                 # instead is precisely the bugs/0571 dislocation -- measured, the 55x55 solve
@@ -1473,6 +1482,21 @@ class QuickEstimationService:
                             )
                         )
                         folded = refreshed
+                # bugs/0588 review (temporal hole, pre-existing): frozen_world is established
+                # at gate time, but the writer re-reads the geometry AFTER the slides -- if that
+                # mid-flight read fails it returns False with an EMPTY refusal, which the code
+                # below used to read as "unfolded, do the plain write" and booked a large
+                # negative delta into a BACKWARDS frozen gap row (bugs/0478). Snapshot the
+                # frozen verdict here: a frozen scene whose image write comes back empty-refusal
+                # DEFERS to the traced-focus finisher, never the raw write.
+                frozen_at_entry = False
+                try:
+                    _split_now = self.editor._folded_image_conjugate_split()
+                    frozen_at_entry = bool(
+                        isinstance(_split_now, dict) and _split_now.get("frozen_world")
+                    )
+                except Exception:
+                    frozen_at_entry = False
                 image_handled = False
                 try:
                     image_handled = bool(
@@ -1500,6 +1524,15 @@ class QuickEstimationService:
                     image_refusal = str(
                         self.editor.__dict__.get("_frozen_image_write_refusal", "") or ""
                     )
+                    if not image_refusal and frozen_at_entry:
+                        # bugs/0588 review: the scene WAS frozen when this solve started, so an
+                        # empty refusal here means the writer's mid-flight geometry read failed,
+                        # not that the scene is unfolded. Defer -- the finisher places the
+                        # sensor in world off the rays that actually traced.
+                        image_refusal = (
+                            "the frozen image geometry could not be re-read after the object "
+                            "move (deferring the sensor to the traced focus)."
+                        )
                     if image_refusal:
                         image_deferred = True
                         self.editor.append_debug(

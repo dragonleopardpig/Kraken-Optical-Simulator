@@ -2034,11 +2034,37 @@ class ParaxialToolsMixin:
         image_delta = (float(first_order["h2_z"]) + f * (1.0 + m)) - float(first_order["image_z"])
         object_distance = float(object_total) + object_delta
         image_distance = float(image_total) + image_delta
-        if not (
-            np.isfinite(object_distance) and np.isfinite(image_distance)
-            and object_distance > 1e-6 and image_distance > 1e-6
-        ):
+        if not (np.isfinite(object_distance) and np.isfinite(image_distance)
+                and object_distance > 1e-6):
             return None
+        if image_distance <= 1e-6:
+            # bugs/0588 (flag_20260808_211659 "changing FOV to 55x55 is forbidden. It should be
+            # allowed" -- the FOURTH recurrence of this refusal): a non-positive STATION-FRAME
+            # image distance used to bail this whole branch to None, so the solve fell back to
+            # the plain conjugate and 0466's "largest field ~80%" refusal -- BYPASSING the
+            # entire 0571-0583 machinery (lens-leg slide, 0573 fold-arm make-room, 0575
+            # re-measure/defer, 0578 image-side make-room) that exists precisely to make such
+            # fields reachable. Each prior fix (0466 AZ85, 0572/0573 PYRITE, 0578 ELS-85)
+            # opened one door; this gate was the door that stayed shut, and it only opens on
+            # the AS-LOADED lens because a swap changes the gaps enough to keep the sum
+            # positive. On a FROZEN fold this row-sum is a station-frame quantity anyway
+            # (bugs/0576: the frame is not the scene) -- a negative value means "the machine is
+            # currently too short", which is a MAKE-ROOM request, not an infeasibility. Let the
+            # folded branch run and place the image side in world; an unfrozen scene keeps the
+            # old bail, where the raw gap distribution really would book negative rows.
+            frozen_world = False
+            try:
+                _img_split = self._folded_image_conjugate_split()
+                frozen_world = bool(isinstance(_img_split, dict) and _img_split.get("frozen_world"))
+            except Exception:
+                frozen_world = False
+            if not frozen_world:
+                return None
+            self.append_debug(
+                f"folded gate: station-frame image distance {image_distance:.4f} <= 0 on a "
+                f"frozen fold -- proceeding to the make-room machinery instead of bailing to "
+                f"the plain refusal (bugs/0588)"
+            )
         return {
             "object_distance": float(object_distance),
             "image_distance": float(image_distance),

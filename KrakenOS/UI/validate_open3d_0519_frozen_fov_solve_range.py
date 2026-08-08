@@ -72,7 +72,11 @@ def run_checks() -> tuple[bool, list[str]]:
             else:
                 notes.append(f"REAL solve accepted but FOV wrong (diag {fov}, |m|={mag})")
                 ok = False
-            if "snapped to the traced focus" in msg:
+            # bugs/0588: this scene/field used to fall to the PLAIN branch (whose note says
+            # "snapped to the traced focus"); the folded branch's finisher says "Snapped the
+            # detector to the traced focus." -- same semantic, richer route (make-room + slide).
+            # Match the SEMANTIC, either branch's phrasing.
+            if "snapped to the traced focus" in msg or "snapped the detector to the traced focus" in msg.lower():
                 notes.append("REAL = the finisher landed the traced focus")
             else:
                 notes.append(f"REAL no traced-focus snap in: {msg[-120:]}")

@@ -142,6 +142,29 @@ def _check_real_scene(ok, notes) -> None:
         editor = KrakenLayoutEditor()
         editor.layout_files["apo75"] = SCENE
         editor.load_layout_by_name("apo75")
+
+        # bugs/0588 (flag_20260808_211659, the FOURTH recurrence of the large-field refusal):
+        # the AS-LOADED lens is its own door. B below solves 35/55 AFTER a swap -- and a swap
+        # changes the gaps enough that the folded branch's station-frame image-distance sum
+        # stays positive. On the as-loaded Apo75 the 55x55 sum goes NEGATIVE (-7.86), and an
+        # old feasibility gate bailed the whole folded branch to None, so the solve fell back
+        # to the plain conjugate and 0466's "largest field ~80%" refusal -- bypassing the very
+        # machinery B proves works. The INVARIANT (guard it, not the instance): a physically
+        # reachable field must solve on ANY lens state, before or after any swap -- the machine
+        # makes room, it does not forbid.
+        qe0 = QuickEstimationService(SimpleNamespace(editor=editor))
+        solved0, message0 = qe0.fov_solve("object", "thickness", 55.0, 55.0)
+        ok(bool(solved0),
+           f"B-1 (bugs/0588): 55x55 solves on the AS-LOADED lens, no swap first "
+           f"({str(message0)[:80]})")
+        ok(bool(solved0) and "Made room" in str(message0),
+           "B-2 (bugs/0588): ... and it made room at the fold rather than refusing")
+        # Fresh editor for the swap sequence B was written against.
+        editor.destroy()
+        editor = KrakenLayoutEditor()
+        editor.layout_files["apo75"] = SCENE
+        editor.load_layout_by_name("apo75")
+
         ok(editor.swap_imaging_lens_from_folder(str(LENS_FOLDER), refresh=False) is not None,
            "B0: the swap to PYRITE 45-85 runs")
 

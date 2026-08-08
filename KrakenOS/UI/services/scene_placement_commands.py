@@ -4307,10 +4307,12 @@ class ScenePlacementMixin:
             amount = float(slide)
         except (TypeError, ValueError):
             return None
-        if not np.isfinite(amount) or abs(amount) <= 1.0e-9:
-            return None
+        # bugs/0588 review: clear the refusal channel BEFORE any early return, so no caller
+        # can ever read a STALE refusal from a prior call.
         self._lens_leg_slide_refusal = ""
         self._lens_leg_slide_shortfall = 0.0
+        if not np.isfinite(amount) or abs(amount) <= 1.0e-9:
+            return None
         plan = self._lens_leg_slide_plan()
         if plan is None or not plan[2]:
             return None  # not on a fold leg: the plain thickness write is already right
