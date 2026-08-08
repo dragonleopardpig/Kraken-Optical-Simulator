@@ -115,7 +115,7 @@ def _run_case(lens_dir: Path, camera_dir: Path | None) -> dict:
 
     res = {
         "lens": lens_dir.name, "camera": "(scene)" if camera_dir is None else camera_dir.name,
-        "swap": "-", "attach": "-", "attach_swap": "-", "rays_before": -1, "rays_after_swap": -1,
+        "swap": "-", "camera_swap": "n/a", "attach": "-", "attach_swap": "-", "rays_before": -1, "rays_after_swap": -1,
         "rays_after_solve": -1, "sensor_z": float("nan"), "solve": "-", "notes": "",
     }
     app = None
@@ -127,9 +127,19 @@ def _run_case(lens_dir: Path, camera_dir: Path | None) -> dict:
         res["rays_before"] = _ray_hits(app)
 
         if camera_dir is not None:
+            # bugs/0586: replace_camera_from_folder RETURNS None on a declined import (it no
+            # longer hangs on a modal). Record that, or a row reads as a camera swap that never
+            # happened -- BC-GM25M12X1/X4 have no scrapeable sensor size and came back looking
+            # identical to a success.
             try:
-                app.replace_camera_from_folder(str(camera_dir), refresh_open_3d=False)
+                imported = app.replace_camera_from_folder(str(camera_dir), refresh_open_3d=False)
+                res["camera_swap"] = "ok" if imported is not None else "declined"
+                if imported is None:
+                    res["notes"] += (
+                        f"camera DECLINED: {str(app.status_var.get())[:90]}; "
+                    )
             except Exception as exc:
+                res["camera_swap"] = f"RAISED {type(exc).__name__}"
                 res["notes"] += f"camera swap raised {type(exc).__name__}: {str(exc)[:50]}; "
 
         b0, d0 = _body_centre(app), _datum_mid(app)
@@ -215,7 +225,7 @@ def _run_case_subprocess(lens_dir: Path, camera_dir: Path | None, timeout_s: int
         cmd += ["--camera", str(camera_dir)]
     base = {
         "lens": lens_dir.name, "camera": "(scene)" if camera_dir is None else camera_dir.name,
-        "swap": "-", "attach": "-", "attach_swap": "-", "rays_before": -1,
+        "swap": "-", "camera_swap": "n/a", "attach": "-", "attach_swap": "-", "rays_before": -1,
         "rays_after_swap": -1, "rays_after_solve": -1, "sensor_z": float("nan"),
         "solve": "-", "notes": "",
     }

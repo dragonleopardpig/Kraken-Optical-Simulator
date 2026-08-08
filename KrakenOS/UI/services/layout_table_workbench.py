@@ -821,6 +821,34 @@ class LayoutTableWorkbenchMixin:
                 blocking.append(index)
         return preservable, blocking
 
+    def _report_folder_import_failure(self, title, message, parent, *, interactive: bool) -> None:
+        """bugs/0586: report a folder-import failure WITHOUT blocking a programmatic caller.
+
+        Both vendor-folder importers ended their ``except`` with ``messagebox.showerror(...)``.
+        That is right for a user who picked a folder from the menu, and fatal for anyone calling
+        the API with an explicit folder: a modal dialog with nobody to dismiss it waits forever.
+        Measured: every one of the six "hanging" folders in bugs/0579 -- DCX, DCV50mm, both
+        aspherized sets, ball_lens, cylinder_lens_rectangle -- actually FAILS in 0.1-0.3 s with
+        "surrogate needs a positive, finite effective focal length"; the 900 s timeouts were this
+        dialog. The camera half of that sweep could never run at all for the same reason
+        (BC-GM25M12X1/X4 have no scrapeable sensor size). It also read as a slow datasheet-PDF
+        parse for a whole session, because a timeout was diagnosed without a stack.
+
+        ``interactive`` is decided by the caller from whether IT opened the folder dialog: every
+        GUI entry point calls these with no ``folder`` and lets ``askdirectory`` supply one, so
+        an explicitly-passed folder is by construction a programmatic call.
+        """
+        try:
+            self.append_debug(f"{title}: {message}")
+        except Exception:
+            pass
+        try:
+            self.status_var.set(f"{title}: {str(message).splitlines()[-1][:160]}")
+        except Exception:
+            pass
+        if interactive:
+            messagebox.showerror(title, message, parent=parent)
+
     def _swap_preserved_block_rows(self, front, rear):
         """Snapshot the block-interior rows a swap must KEEP, each paired with the ABSOLUTE
         axial pose it holds right now (bugs/0546).
@@ -1577,6 +1605,10 @@ class LayoutTableWorkbenchMixin:
         lens to swap / build failure.
         """
         parent = dialog_parent if dialog_parent is not None else self
+        # bugs/0586: an explicitly-passed folder means a PROGRAMMATIC caller -- every GUI entry
+        # point omits it and lets askdirectory below supply one. Modal error dialogs are for the
+        # former only; for the latter they hang forever (bugs/0579's "900 s" folders).
+        interactive = folder is None
         self._commit_pending_table_edit()
         try:
             self._read_rows_from_table()
@@ -1584,11 +1616,11 @@ class LayoutTableWorkbenchMixin:
             pass
         front, rear = self._imaging_lens_block_indices()
         if front is None:
-            messagebox.showerror(
+            self._report_folder_import_failure(
                 "Swap Imaging Lens",
                 "This scene has no imaging-lens surrogate (Front/Rear Vertex Datum) to swap.\n\n"
                 "Use Add Imaging Lens to add one first.",
-                parent=parent,
+                parent, interactive=interactive,
             )
             return None
         # bugs/0546: rows inside the block that are NOT the lens -- a promoted beam-splitter
@@ -1616,18 +1648,18 @@ class LayoutTableWorkbenchMixin:
                 [self._row_from_layout_item(item) for item in new_info["surfaces"]]
             )
         except Exception as exc:
-            messagebox.showerror(
+            self._report_folder_import_failure(
                 "Swap Imaging Lens",
                 f"Could not build a surrogate from this folder:\n\n{folder}\n\n{exc}",
-                parent=parent,
+                parent, interactive=interactive,
             )
             return None
         new_front, new_rear = self._imaging_lens_block_indices(new_rows)
         if new_front is None:
-            messagebox.showerror(
+            self._report_folder_import_failure(
                 "Swap Imaging Lens",
                 "The imported lens has no Front/Rear Vertex Datum block to swap in.",
-                parent=parent,
+                parent, interactive=interactive,
             )
             return None
         raw_block = new_rows[new_front:new_rear + 1]
@@ -1806,6 +1838,9 @@ class LayoutTableWorkbenchMixin:
         success, or ``None`` when cancelled or the record could not be built.
         """
         parent = dialog_parent if dialog_parent is not None else self
+        # bugs/0586: see _report_folder_import_failure -- an explicit folder is a
+        # programmatic call, and must never be answered with a modal dialog.
+        interactive = folder is None
         if folder is None:
             folder = filedialog.askdirectory(
                 title="Import Vendor Camera from Folder", parent=parent
@@ -1824,17 +1859,29 @@ class LayoutTableWorkbenchMixin:
             # distance only in the mechanical drawing (BC-OM25M = 12 mm), so ask the
             # user for it here -- before persist -- when it could not be scraped, so
             # the sensor / image plane snaps to its true axial location.
-            self._prompt_camera_flange_distance(imported, parent)
+            # bugs/0586: this PROMPTS when the datasheet lacks the flange distance
+            # (bugs/0309) -- another modal that would hang a programmatic caller. Skip it
+            # there; the record keeps its scraped value and only the axial snap is skipped,
+            # exactly as a user pressing Cancel would leave it.
+            if interactive:
+                self._prompt_camera_flange_distance(imported, parent)
+            else:
+                try:
+                    self.append_debug(
+                        f"camera import: flange-distance prompt skipped for '{imported.name}' "
+                        f"(non-interactive caller, bugs/0586)"
+                    )
+                except Exception:
+                    pass
             write_imported_camera(imported.name, imported.record)
             # Fold the just-written record into the live CAMERA_DATABASE so the
             # STEP import below reverse-resolves it (no app restart needed).
             refresh_imported_cameras()
         except Exception as exc:
-            messagebox.showerror(
+            self._report_folder_import_failure(
                 "Import Vendor Camera",
-                "Could not import a camera from this folder:\n\n"
-                f"{folder}\n\n{exc}",
-                parent=parent,
+                f"Could not import a camera from this folder:\n\n{folder}\n\n{exc}",
+                parent, interactive=interactive,
             )
             return None
         # Import the vendor STEP as the camera body.  Because the sensor is now a

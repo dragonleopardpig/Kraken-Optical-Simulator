@@ -1,4 +1,13 @@
-# 0579 — four vendor lens folders HANG the swap (open)
+# 0579 — four vendor lens folders HANG the swap (RESOLVED by bugs/0586 — see the correction)
+
+> **CORRECTION (2026-08-07).** The diagnosis below — "the datasheet-PDF route hangs" — is WRONG.
+> Called without a GUI, every one of these folders fails in **0.1–0.3 s** with
+> `ValueError: surrogate needs a positive, finite effective focal length`. The 900-second
+> timeouts were a **modal error dialog** (`messagebox.showerror`) reporting that failure to
+> nobody. Root cause and fix: `bugs/0586_modal_dialog_blocks_api.md`. The signature reasoning
+> below (no `.zmx`, no prescription dump → the PDF route) correctly identified *which* folders
+> fail and *why they fail to import*; it was the HANG it explained wrongly, because the
+> diagnosis was made from a timeout without ever obtaining a stack.
 
 Found while answering the user's objective — "let the user change the imaging lens as will, and
 change the camera as will" — by sweeping the vendor folders instead of chasing one flagged
