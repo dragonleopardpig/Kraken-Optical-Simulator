@@ -16100,6 +16100,19 @@ def main() -> int:
             phase_440_model_designation_lens,
             phase_441_snap_near_leg_never_negative,
             phase_442_frozen_straight_equivalent,
+            # bugs/0587: 443-451 were DEFINED but never added here, so nine guards -- the whole
+            # 0568-0584 folded-swap/solve family -- had never run in a marathon. They passed
+            # standalone, which is exactly why it went unnoticed: the gate reported on a suite
+            # that silently excluded them. A phase that is not in this list does not exist.
+            phase_443_lens_body_centred_on_axis,
+            phase_444_fov_solve_keeps_the_fold,
+            phase_445_bs_branch_reaches_the_mirror,
+            phase_446_solve_slides_the_lens_along_its_leg,
+            phase_447_solve_refuses_instead_of_dislocating,
+            phase_448_solve_makes_room_at_the_fold,
+            phase_449_solve_carries_the_lens_body,
+            phase_450_pinned_solve_survives_swap,
+            phase_451_body_clearance_and_block_integrity,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

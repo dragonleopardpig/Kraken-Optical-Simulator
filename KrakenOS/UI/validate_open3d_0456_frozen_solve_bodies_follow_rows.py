@@ -73,6 +73,13 @@ def run_checks() -> tuple[bool, list[str]]:
     try:
         obj_src = _inspect.getsource(_Mixin._apply_frozen_bs_object_split)
         img_src = _inspect.getsource(_Mixin._apply_frozen_image_split)
+        # bugs/0585: the image applier now delegates its world work to the stage-(b) settle
+        # (bugs/DESIGN_world_authority_settle.md), so the absolute seat lives one call-hop down.
+        # Follow the delegation rather than grepping one function's body -- the INVARIANT is
+        # "the frozen appliers seat bodies absolutely", not "this exact function contains the
+        # call". (Phase 435 needed the same correction for the near-leg spill.)
+        if "_settle_image_fold_world" in img_src:
+            img_src += _inspect.getsource(_Mixin._settle_image_fold_world)
     except Exception as exc:
         return True, [f"SKIP: frozen appliers unavailable ({exc!r})"]
     if "_seat_step_body_world_center" in obj_src and "_seat_step_body_world_center" in img_src:
