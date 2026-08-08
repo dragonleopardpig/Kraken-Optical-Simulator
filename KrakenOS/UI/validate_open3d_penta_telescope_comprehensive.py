@@ -15607,6 +15607,10 @@ phase_450_pinned_solve_survives_swap = _phase_from_standalone(
     450, "a pinned solve books LEGAL gaps and the next swap keeps every element on its leg (0580/0581/0582)",
     "KrakenOS.UI.validate_open3d_0580_pinned_solve_survives_swap",
     "pinned_solve_survives_swap")
+phase_451_body_clearance_and_block_integrity = _phase_from_standalone(
+    451, "the lens BARREL stays clear of the fold mirror, and a drag cannot tear the block (0583/0584)",
+    "KrakenOS.UI.validate_open3d_0583_body_clearance_and_block_integrity",
+    "body_clearance_and_block_integrity")
 
 
 # ---------------------------------------------------------------------------

@@ -52,6 +52,15 @@ class _Stub:
     def _frozen_image_fold_world_geometry(self, split):
         return self._geometry
 
+    # bugs/0580-0584 routed this writer through the stage-(b) settle
+    # (bugs/DESIGN_world_authority_settle.md). Bind the REAL one rather than faking it, so this
+    # guard keeps exercising the actual write path instead of a look-alike that could drift
+    # away from it.
+    from KrakenOS.UI.services.paraxial_tools import ParaxialToolsMixin as _Mixin
+
+    _settle_image_fold_world = _Mixin._settle_image_fold_world
+    del _Mixin
+
 
 def _bind():
     from KrakenOS.UI.services.paraxial_tools import ParaxialToolsMixin
@@ -86,9 +95,28 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     bad = _Stub(split=SPLIT, geometry=GEO)
     check(fn(bad, 0.0) is False and bad.rows[7].thickness == PRE_SOLVE_ROW7, "A3: a non-positive image distance is refused")
     check(fn(bad, float("nan")) is False and bad.rows[7].thickness == PRE_SOLVE_ROW7, "A4: a non-finite image distance is refused")
+    # A5: an image distance the fold's gap budget cannot book.
+    #
+    # bugs/0578 CHANGED this contract deliberately, and this guard was written before it. A leg
+    # beyond the budget is a MACHINE LENGTH problem, not an optics one: unpinned, the writer now
+    # makes the room (floor the gap at zero, move the sensor + camera down the exit leg in
+    # world) instead of refusing. Refusing is still correct in the two cases below, and both are
+    # asserted so the change cannot silently widen further:
+    #   * the user PINNED the sensor leg (bugs/0489 -- "I put this here" wins over the remedy);
+    #   * there is no WORLD geometry to move the sensor with, so the room cannot be made
+    #     honestly (this stub's (near, far)-only GEO -- bugs/0478's original contract).
+    no_world = _Stub(split=SPLIT, geometry=GEO)
     check(
-        fn(_Stub(split=SPLIT, geometry=GEO), 1.0e6) is False,
-        "A5: an image distance that would need a NEGATIVE gap is refused, not written",
+        fn(no_world, 1.0e6) is False and no_world.rows[7].thickness == PRE_SOLVE_ROW7,
+        "A5: a leg the budget cannot book, with no world geometry to make room in, is refused "
+        "and NOT written",
+    )
+    pinned = _Stub(split=SPLIT, geometry=GEO)
+    pinned._axis_section_pins_state = {"image_far": 30.0}
+    check(
+        fn(pinned, 1.0e6) is False and pinned.rows[7].thickness == PRE_SOLVE_ROW7,
+        "A5b (bugs/0578 + 0489): a PINNED sensor leg refuses rather than making room -- the "
+        "user's pin wins over the remedy",
     )
 
     # --- B. the frozen write: the gap that YIELDS the wanted world leg -------

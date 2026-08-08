@@ -1555,17 +1555,29 @@ class ParaxialToolsMixin:
               LOOKS-right is never trusted to be IS-right;
         (iv)  a mirror target inside a genuinely-upstream row refuses with the numbers
               (bugs/0581, the 0572 idiom) and nothing is written.
+
+        ``mirror_target``/``sensor_target`` may be None when the caller has no WORLD geometry
+        to aim at -- ``_frozen_image_fold_world_geometry`` is documented to return only
+        ``near``/``far`` for some callers, and bugs/0478's own contract is a pure gap write in
+        exactly that case. Stage (b) originally demanded the full dict and raised
+        ``KeyError('c_m')`` on those callers: a silently TIGHTENED input contract, caught by
+        phase 386's stub. With no targets the settle does clauses (ii)/(iii) only -- legal
+        books, held illumination -- and skips the world re-bake it cannot aim.
         """
         rows = self.rows
-        mirror_row = int(geometry["mirror_row"])
-        image_row = int(geometry["image_row"])
-        mirror_target = np.asarray(mirror_target, dtype=float).reshape(3)
-        sensor_target = np.asarray(sensor_target, dtype=float).reshape(3)
+        world = mirror_target is not None and sensor_target is not None
+        mirror_row = int(geometry.get("mirror_row", split.get("mirror_row", -1)))
+        image_row = int(geometry.get("image_row", len(rows) - 1))
+        if world:
+            mirror_target = np.asarray(mirror_target, dtype=float).reshape(3)
+            sensor_target = np.asarray(sensor_target, dtype=float).reshape(3)
         # (iv) Safe-gap: the mirror may not land within its own half-aperture of ANY
         # genuinely-upstream row on its incoming leg. bugs/0581: the split's near_min floor
         # measured from the station-neutral BS 328 mm away, so the swap-refocus collision
         # resolver parked the mirror INSIDE the lens block (x 334.4 -> 281.8, lens rear 283.7).
         try:
+            if not world:
+                raise KeyError("no world geometry")
             in_dir = np.asarray(geometry["in_dir"], dtype=float).reshape(3)
             c_r = np.asarray(geometry["c_m"], dtype=float).reshape(3) - float(geometry["near"]) * in_dir
             s_mirror = float(geometry["near"])
@@ -1589,22 +1601,32 @@ class ParaxialToolsMixin:
         except Exception:
             pass
         # (ii) capture BEFORE any bookkeeping.
-        camera_current = self._step_body_world_center("camera")
-        camera_target = (
-            None
-            if camera_current is None
-            else camera_current + (sensor_target - np.asarray(geometry["c_i"], dtype=float))
-        )
+        camera_target = None
+        if world:
+            try:
+                camera_current = self._step_body_world_center("camera")
+                if camera_current is not None:
+                    camera_target = camera_current + (
+                        sensor_target - np.asarray(geometry["c_i"], dtype=float)
+                    )
+            except Exception:
+                camera_target = None
         _illumination_poses = None
         try:
             _illumination_poses = self.glued_illumination_unit_world_poses()
         except Exception:
             _illumination_poses = None
         # (iii) legal bookkeeping.
-        ng, fg = int(split["near_gap_row"]), int(split["far_gap_row"])
-        if not (0 <= ng < len(rows) and 0 <= fg < len(rows)):
+        # Only require the rows this call actually writes: a sensor-only settle (near_delta 0)
+        # has no business demanding a near_gap_row, and demanding one is how a refactor
+        # silently tightens an input contract (phase 386's stub publishes far_gap_row alone).
+        fg = int(split.get("far_gap_row", -1))
+        ng = int(split.get("near_gap_row", fg - 1))
+        if not (0 <= fg < len(rows)):
             return False, "Image split gap rows are unavailable."
         if abs(float(near_delta)) > 1.0e-12:
+            if not (0 <= ng < len(rows)):
+                return False, "Image split near-leg row is unavailable."
             if not self._apply_near_leg_delta(ng, float(near_delta), int(split.get("gap_start", 0))):
                 return False, (
                     f"Constraint out of range: the lens rear -> mirror leg cannot absorb "
@@ -1612,11 +1634,14 @@ class ParaxialToolsMixin:
                 )
         if far_gap_new is not None:
             rows[fg].thickness = max(float(far_gap_new), 0.0)
-        # (i) world re-bake to the exact targets; the camera follows the sensor.
-        self._rebake_frozen_row_world_center(mirror_row, mirror_target)
-        self._rebake_frozen_row_world_center(image_row, sensor_target)
-        if camera_target is not None:
-            self._seat_step_body_world_center("camera", camera_target)
+        # (i) world re-bake to the exact targets; the camera follows the sensor. Skipped when
+        # the caller had no world geometry -- the gap write above already lands the leg
+        # (bugs/0478: gap + world leg is invariant), which is that caller's whole contract.
+        if world:
+            self._rebake_frozen_row_world_center(mirror_row, mirror_target)
+            self._rebake_frozen_row_world_center(image_row, sensor_target)
+            if camera_target is not None:
+                self._seat_step_body_world_center("camera", camera_target)
         # (ii) whatever the bookkeeping did to the stations, the glued BS + LED unit does not
         # travel with it (the bugs/0571 bracket).
         if _illumination_poses is not None:
@@ -1630,10 +1655,13 @@ class ParaxialToolsMixin:
             if float(getattr(row, "thickness", 0.0) or 0.0) < -1.0e-6
         ]
         if bad:
-            self.append_debug(
-                f"settle image fold: ILLEGAL books at exit, negative thickness at row(s) {bad} "
-                f"-- file a bug, this contract promises legality"
-            )
+            try:
+                self.append_debug(
+                    f"settle image fold: ILLEGAL books at exit, negative thickness at row(s) "
+                    f"{bad} -- file a bug, this contract promises legality"
+                )
+            except Exception:
+                pass
         return True, ""
 
     def apply_image_distance_frozen_aware(self, image_distance: float) -> bool:
@@ -1732,7 +1760,8 @@ class ParaxialToolsMixin:
             # "I put this here", so the honest refusal stands until they unpin it.
             pins = getattr(self, "_axis_section_pins_state", None)
             pinned = isinstance(pins, dict) and pins.get("image_far") is not None
-            if not pinned:
+            has_world = "c_m" in geometry and "out_dir" in geometry
+            if not pinned and has_world:
                 extra = float(far_new) - const
                 sensor_target = (
                     np.asarray(geometry["c_m"], dtype=float)
@@ -1767,13 +1796,20 @@ class ParaxialToolsMixin:
         # (the bugs/0478 both-frames-agree value) and the re-bake writes the world it derives to
         # -- identical pose, but clauses (ii)/(iii) now protect this path too instead of relying
         # on station-derivation dragging the right things by luck.
-        sensor_target = (
-            np.asarray(geometry["c_m"], dtype=float)
-            + float(far_new) * np.asarray(geometry["out_dir"], dtype=float)
-        )
+        # bugs/0478's contract for a (near, far)-only geometry is the pure gap write; aim the
+        # world re-bake only when the caller actually gave us world coordinates.
+        mirror_target = geometry.get("c_m")
+        sensor_target = None
+        if mirror_target is not None and "out_dir" in geometry:
+            sensor_target = (
+                np.asarray(mirror_target, dtype=float)
+                + float(far_new) * np.asarray(geometry["out_dir"], dtype=float)
+            )
+        else:
+            mirror_target = None
         ok, _msg = self._settle_image_fold_world(
             split, geometry,
-            mirror_target=geometry["c_m"], sensor_target=sensor_target,
+            mirror_target=mirror_target, sensor_target=sensor_target,
             near_delta=0.0, far_gap_new=float(gap_new),
         )
         if not ok:

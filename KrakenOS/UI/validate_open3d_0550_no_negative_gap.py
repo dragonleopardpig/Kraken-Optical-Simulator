@@ -211,12 +211,30 @@ def _check_near_leg_spill(failures: list[str]) -> None:
     source = _inspect.getsource(M._folded_image_conjugate_split)
     if '"gap_start"' not in source:
         failures.append("near-leg: the image split must publish `gap_start` for the spill span")
+    # The FROZEN split (the branch a swap's auto-refocus takes) must route its near-leg write
+    # through the spill, not write `mirror_row - 1` raw. bugs/0580-0584 moved that write one
+    # call-hop down, into `_settle_image_fold_world` (the stage-(b) settle of
+    # bugs/DESIGN_world_authority_settle.md) which the split now delegates to -- so follow the
+    # delegation rather than grepping one function's body. The INVARIANT is unchanged: whatever
+    # the frozen split reaches, the spill is what performs the near-leg write.
     frozen = _inspect.getsource(M._apply_frozen_image_split)
-    if "_apply_near_leg_delta" not in frozen:
+    reached = frozen
+    if "_settle_image_fold_world" in frozen:
+        reached += _inspect.getsource(M._settle_image_fold_world)
+    if "_apply_near_leg_delta" not in reached:
         failures.append(
             "near-leg: the FROZEN split (the branch a swap's auto-refocus takes) must route its "
             "near-leg write through the spill, not write `mirror_row - 1` raw"
         )
+    # And the settle must never write the far row negative (bugs/0580's pair-sum floor): the
+    # poison that survived a 'works' flag and detonated at the next swap.
+    if "_settle_image_fold_world" in frozen:
+        settle = _inspect.getsource(M._settle_image_fold_world)
+        if "max(float(far_gap_new), 0.0)" not in settle:
+            failures.append(
+                "near-leg: the settle must FLOOR the far gap row at zero (bugs/0580) -- a "
+                "negative frozen gap is off-axis poison behind a correct-looking world re-bake"
+            )
 
 
 def _check_load_heal(failures: list[str]) -> None:
