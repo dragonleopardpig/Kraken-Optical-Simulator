@@ -143,8 +143,12 @@ sensor-plane snapshot shows 138 overlay actors where the flag showed an empty sq
 environment-sensitive, passes deterministically — the sequential probe was the sensitive part.
 
 **Remaining scope (this class, other doors):** `_build_geometric_image_samples` (the non-full
-x/y variant) and the diffraction-MTF path still construct `Kos.PupilCalc` directly and will
-fail on world-placed chains; they need the same routing when they are next flagged.
+x/y variant) and `_build_geometric_image_samples_for_field_samples` (the geometric-MTF /
+through-field path) were routed through the same world-order instrument in the follow-up
+commit — measured on the flagged scene: 54 rays per spot, 81–96 per field, µm-tight.
+The DIFFRACTION-MTF path (`_compute_diffraction_mtf_sample`) still constructs `Kos.PupilCalc`
+directly for its pupil metadata (EFFL, pupil radius) and remains sequential-only; it needs a
+world-order pupil-metadata substitute when next flagged.
 
 Guard: phase 453 (`validate_open3d_0593_field_analysis_on_folded_scene`) — verified failing
 before the fix.

@@ -445,6 +445,23 @@ class GeometricAnalysisMixin:
             x_local, y_local, worker_count = self._trace_pattern_chunks_parallel(wavelength, [random_source_bundle])
             finite = np.isfinite(x_local) & np.isfinite(y_local)
             return x_local[finite], y_local[finite], worker_count
+        if self._world_placed_chain_rows():
+            # bugs/0593: same routing as the _full sampler — a world-placed (folded/frozen)
+            # chain is out of contract for the sequential PupilCalc probe AND the sequential
+            # spec-trace (no built solids). The world-order launch measures on the real scene.
+            ptype = self._current_analysis_pupil_pattern(pattern) if pattern == "hexapolar" else str(pattern)
+            acceptance = self._world_launch_acceptance(float(wavelength))
+            empty = np.asarray([], dtype=float)
+            if acceptance is None:
+                return empty, empty, 1
+            pupil_distance = self._world_launch_pupil_distance_cached(float(wavelength), float(acceptance))
+            bundle = self._world_order_field_bundle(
+                str(ptype), float(field_x), float(field_y), int(sample_count), float(acceptance),
+                pupil_distance,
+            )
+            x_local, y_local, _z, _l, _m, _n = self._world_order_trace_landings(float(wavelength), bundle)
+            finite = np.isfinite(x_local) & np.isfinite(y_local)
+            return x_local[finite], y_local[finite], 1
         pupil = Kos.PupilCalc(
             system,
             int(surface_index),
@@ -494,6 +511,24 @@ class GeometricAnalysisMixin:
     ) -> tuple[list[tuple[np.ndarray, np.ndarray]], int]:
         if not field_samples:
             return [], 1
+        if self._world_placed_chain_rows():
+            # bugs/0593: the static pupil-bundle builder below is PupilCalc + the sequential
+            # spec-trace — both out of contract on a world-placed chain. Same world-order
+            # routing as the samplers; one traced landing set per requested field.
+            acceptance = self._world_launch_acceptance(float(wavelength))
+            if acceptance is None:
+                empty = np.asarray([], dtype=float)
+                return [(empty, empty) for _ in field_samples], 1
+            pupil_distance = self._world_launch_pupil_distance_cached(float(wavelength), float(acceptance))
+            results: list[tuple[np.ndarray, np.ndarray]] = []
+            for sample in field_samples:
+                bundle = self._world_order_field_bundle(
+                    str(pattern), float(sample["field_x"]), float(sample["field_y"]),
+                    int(sample_count), float(acceptance), pupil_distance,
+                )
+                x_local, y_local, _z, _l, _m, _n = self._world_order_trace_landings(float(wavelength), bundle)
+                results.append(self._center_image_plane_samples(x_local, y_local))
+            return results, 1
         row_specs = self._serializable_row_specs()
         bundles = [
             _build_pupil_bundle_static(
