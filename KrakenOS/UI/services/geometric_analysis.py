@@ -570,6 +570,33 @@ class GeometricAnalysisMixin:
             results.append((centered_x, centered_y))
         return results, worker_count
 
+    def _pupil_probe_failure_reason(self, exc: Exception) -> str:
+        """Plain-language reason the sequential pupil probe could not run (bugs/0593).
+
+        ``Kos.PupilCalc`` drives a SEQUENTIAL probe. On a world-placed chain -- a folded or
+        0433-frozen scene -- the rows carry baked world poses and the beam does not run in row
+        order, so the probe reaches no stop and ``PupilTool``'s pick comes back empty. The raw
+        symptom is an ``IndexError`` deep in ``PupilTool``, which said nothing to the user.
+        """
+        try:
+            from KrakenOS.UI.services import row_placement
+
+            world_rows = [
+                index
+                for index, row in enumerate(getattr(self, "rows", []) or [])
+                if row_placement.is_world_placed(row)
+            ]
+        except Exception:
+            world_rows = []
+        if world_rows:
+            return (
+                "the sequential pupil probe cannot run on this scene: rows "
+                f"{world_rows} carry baked WORLD placement (a folded / frozen layout), so the "
+                "probe reaches no aperture stop and returns no rays. The field-aberration "
+                f"analysis needs a world-order instrument here (bugs/0593). [{exc}]"
+            )
+        return f"the pupil probe failed: {exc}"
+
     def _build_geometric_image_samples_full(
         self,
         system,
@@ -608,13 +635,20 @@ class GeometricAnalysisMixin:
                 n_local[finite],
                 worker_count,
             )
-        pupil = Kos.PupilCalc(
-            system,
-            int(surface_index),
-            wavelength,
-            str(aperture_type),
-            float(aperture_value),
-        )
+        try:
+            pupil = Kos.PupilCalc(
+                system,
+                int(surface_index),
+                wavelength,
+                str(aperture_type),
+                float(aperture_value),
+            )
+        except Exception as exc:
+            # bugs/0593: on a world-placed (folded) chain this raises IndexError out of
+            # PupilTool's empty pick. Re-raise with a reason a user can act on -- the caller's
+            # blanket except turns it into "no spec", and an unexplained blank canvas was the
+            # whole defect.
+            raise RuntimeError(self._pupil_probe_failure_reason(exc)) from exc
         pupil.Samp = max(2, int(sample_count))
         ptype = self._current_analysis_pupil_pattern(pattern) if pattern == "hexapolar" else str(pattern)
         if require_2d_pupil and str(ptype) in {"fanx", "fany", "fan", "chief", "rtheta"}:

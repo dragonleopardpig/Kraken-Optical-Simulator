@@ -244,12 +244,17 @@ class AnalysisPlotService:
                 field_y=field_value,
             )
 
+        starved_fields = 0
         for field_value in field_samples:
             completed_steps += 2
             self._update_analysis_progress("Sampling field curvature", completed_steps, total_steps)
             mer_x, mer_y, _mz, mer_l, mer_m, mer_n, mer_workers = _sample("fany", field_value)
             sag_x, sag_y, _sz, sag_l, sag_m, sag_n, sag_workers = _sample("fanx", field_value)
             if mer_y.size < 3 or sag_x.size < 3:
+                # bugs/0593: the pupil probe reached the image surface with fewer than 3 rays
+                # (on a folded non-sequential scene it reached it with NONE). Count it so the
+                # empty result below can say WHY instead of drawing nothing in silence.
+                starved_fields += 1
                 continue
             chief_x, chief_y, _cz, _cl, _cm, _cn, _cw = _sample("chief", field_value)
 
@@ -319,7 +324,26 @@ class AnalysisPlotService:
             }
 
         if not axis_results:
+            # bugs/0593: an empty scan used to return None in silence -- the user saw a blank
+            # canvas and numpy's "Mean of empty slice" was the only evidence anything ran. Say
+            # what starved, and how many, so the next report is a fact rather than a mystery.
+            try:
+                self.append_debug(
+                    f"Field curvature/distortion scan measured NOTHING: {starved_fields} of "
+                    f"{len(field_samples)} field samples put fewer than 3 rays on the image "
+                    "surface, so the field-aberration overlays and panels cannot draw."
+                )
+            except Exception:
+                pass
             return None
+        if starved_fields:
+            try:
+                self.append_debug(
+                    f"Field curvature/distortion scan: {starved_fields} of {len(field_samples)} "
+                    "field samples starved (fewer than 3 rays reached the image surface)"
+                )
+            except Exception:
+                pass
         return axis_results, field_type, field_limit
 
     def plot_analysis(self, analysis_ax, system, rays, wavelength: float) -> None:

@@ -15975,6 +15975,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor.append_debug(f"Best-focus surface overlay failed: {exc}")
             return 0
         if not spec:
+            # bugs/0593: a silent None left an empty canvas with no explanation. The scan
+            # itself logs WHY it measured nothing; this names the overlay that stayed dark.
+            self.editor.append_debug("Best-focus surface overlay: nothing to draw (the field scan produced no spec)")
             return 0
         count = 0
         color = tuple(spec["color"])
@@ -16050,6 +16053,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor.append_debug(f"Distortion grid overlay failed: {exc}")
             return 0
         if not spec:
+            self.editor.append_debug("Distortion grid overlay: nothing to draw (the field scan produced no spec)")
             return 0
         count = 0
 
@@ -16140,6 +16144,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor.append_debug(f"Astigmatism surfaces overlay failed: {exc}")
             return 0
         if not spec:
+            self.editor.append_debug("Astigmatism surfaces overlay: nothing to draw (the field scan produced no spec)")
             return 0
         count = 0
         count += self._draw_focus_surface_fill_and_rings(spec.get("tangential"), fill_opacity=0.16)
