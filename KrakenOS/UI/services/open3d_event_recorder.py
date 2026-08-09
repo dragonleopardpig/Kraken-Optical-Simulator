@@ -28,6 +28,12 @@ from typing import Any
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 RECORDING_DIR = _PROJECT_ROOT / "attachment" / "recorded_bug_repros"
 
+# bugs/0595: how many individual actors to record per row key. A flagged scene carried 256
+# branch detectors on synthetic rows, so the per-actor breakdown is capped; the untruncated
+# total travels alongside it in ``row_actor_counts`` so a truncated list is never mistaken
+# for a complete one.
+_ROW_ACTOR_DETAIL_CAP = 12
+
 
 @dataclass
 class SceneSnapshot:
@@ -49,6 +55,13 @@ class SceneSnapshot:
     selected_step_rotation_active_label: str | None = None
     optical_axis_records: list[dict[str, Any]] = field(default_factory=list)
     row_actor_bounds: dict[int, list[float]] = field(default_factory=dict)
+    # bugs/0595: ``row_actor_bounds`` is the MERGED union of every actor under a row key, which
+    # cannot distinguish "one actor tilted 0.04 deg" from "two flat actors 0.02 mm apart" -- and
+    # that is exactly the two-tone sensor edge the user flagged. It also cannot say WHICH code
+    # filed an actor under a synthetic key (100000+). Keep the per-actor breakdown alongside it,
+    # capped so a scene carrying 256 branch detectors cannot bloat the recording.
+    row_actor_detail: dict[int, list[dict[str, Any]]] = field(default_factory=dict)
+    row_actor_counts: dict[int, int] = field(default_factory=dict)
     step_actor_counts: dict[str, int] = field(default_factory=dict)
     step_actor_bounds: dict[str, list[float]] = field(default_factory=dict)
     scene_visible_bounds: list[float] = field(default_factory=list)
@@ -400,6 +413,7 @@ class Open3DEventRecorder:
                 bounds_min = [float("inf")] * 3
                 bounds_max = [float("-inf")] * 3
                 found = False
+                detail: list[dict[str, Any]] = []
                 for actor_key in actor_keys:
                     actor = actor_by_key.get(actor_key)
                     if actor is None:
@@ -423,6 +437,22 @@ class Open3DEventRecorder:
                     bounds_min[2] = min(bounds_min[2], b[4])
                     bounds_max[2] = max(bounds_max[2], b[5])
                     found = True
+                    # bugs/0595: keep each actor separately so coincident/z-fighting geometry is
+                    # attributable from the recording alone. Capped -- one flagged scene carried
+                    # 256 branch detectors under synthetic keys.
+                    if len(detail) < _ROW_ACTOR_DETAIL_CAP:
+                        entry: dict[str, Any] = {"key": str(actor_key), "bounds": b}
+                        try:
+                            entry["visible"] = int(actor.GetVisibility())
+                        except Exception:
+                            pass
+                        try:
+                            prop = actor.GetProperty()
+                            entry["color"] = [round(float(c), 4) for c in prop.GetColor()]
+                            entry["opacity"] = round(float(prop.GetOpacity()), 4)
+                        except Exception:
+                            pass
+                        detail.append(entry)
                 if found:
                     snapshot.row_actor_bounds[rk] = [
                         bounds_min[0],
@@ -432,6 +462,8 @@ class Open3DEventRecorder:
                         bounds_min[2],
                         bounds_max[2],
                     ]
+                    snapshot.row_actor_detail[rk] = detail
+                    snapshot.row_actor_counts[rk] = len(actor_keys)
         except Exception:
             pass
 

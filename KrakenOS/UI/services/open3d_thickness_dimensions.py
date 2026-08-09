@@ -429,7 +429,10 @@ class Open3DThicknessDimensionService:
                 continue
             # bugs/0108: a per-branch exit->detector overlay is hideable too (its
             # synthetic detector row index keys the hidden set).
-            overlay_row = int(getattr(target, "row_index", 100000) or 100000)
+            # bugs/0595: `or 100000` also mapped a legitimate row 0 onto the synthetic key,
+            # so its hide-state and its recorded actors were filed under a branch-detector row.
+            _overlay_ri = getattr(target, "row_index", None)
+            overlay_row = int(_overlay_ri) if _overlay_ri is not None else 100000
             try:
                 if self.editor._thickness_dimension_is_hidden(overlay_row):
                     continue
@@ -480,7 +483,7 @@ class Open3DThicknessDimensionService:
             arm = self._branch_arm_label(meta.get("branch_path", ""))
             label = f"{arm}: exit→detector = {distance:.4g} mm"
             label_pos = 0.5 * (start + end) + side * max(base_offset * 0.22, 0.8)
-            if self.add_label_actor(int(getattr(target, "row_index", 100000) or 100000), label_pos, label):
+            if self.add_label_actor(overlay_row, label_pos, label):
                 count += 1
         return count
 

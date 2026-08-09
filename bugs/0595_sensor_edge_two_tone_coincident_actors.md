@@ -61,6 +61,23 @@ filing an actor under the synthetic key.
    **never checks `draw_suppressed`** — so all 256 phantom detectors are still eligible for an
    exit→detector dimension. Whether their geometry can reach the sensor footprint is unverified.
 
+## Done here
+
+1. **The recorder now captures per-actor detail.** `row_actor_detail[row]` carries each actor's
+   key, bounds, visibility and colour, with `row_actor_counts[row]` giving the untruncated total
+   (capped at 12 per row, because this scene carries 256 branch detectors). The merged
+   `row_actor_bounds` is unchanged, so `analyze_open3d_recording.py` and the existing guards keep
+   working and old recordings still parse. **The next recording of this flag will say outright
+   whether row 8 is one tilted actor or two flat ones, and which code filed the `100000` actor.**
+2. **Fixed the synthetic-key default** (suspect 1): `int(getattr(target, "row_index", 100000) or
+   100000)` mapped a legitimate row **0** onto the branch-detector key as well as a missing index,
+   so row 0's hide-state and recorded actors were filed under 100000. Now an explicit `is not None`
+   test. On the flagged scene this is latent rather than the cause -- branch detectors never carry
+   row 0 -- so it is a correctness fix, **not** a claim to have fixed the two-tone edge.
+
+Suspect 2 (overlays drawn for `draw_suppressed` branch detectors) is deliberately **not** changed:
+it is a behaviour change that would remove overlays, and without a repro it cannot be validated.
+
 ## Next step — the measurement that settles it
 
 Dump `inspector._row_actor_map[100000]` and each actor's individual bounds/colour in the **live**
