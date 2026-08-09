@@ -265,6 +265,20 @@ def RMS_Pupil(r, SYSTEM, Surf, W, tet):
 
 
     (X, Y, Z, L, M, N) = RP.pick(Surf)
+    # bugs/0593: when NO probe ray reaches ``Surf`` this pick comes back EMPTY, and the means
+    # below then emit numpy's "Mean of empty slice" / "invalid value encountered in scalar
+    # divide" and return NaN -- which the field-aberration overlays silently turn into "no
+    # spec", i.e. the user sees nothing drawn and no explanation (flag_20260809_094851, "none of
+    # the actual analysis overlay works"; 54 field points x 3 means x 2 warnings on the folded
+    # Apo75 scene). A sequential pupil probe is not guaranteed to land on a folded /
+    # non-sequential scene, so returning NaN is legitimate -- but it must be returned QUIETLY and
+    # DELIBERATELY, so callers can distinguish "no data" from a real zero and say so.
+    if np.size(X) == 0 or np.size(Y) == 0:
+        SYSTEM.SurfFlat((- 1))
+        SYSTEM.TargSurf((- 1))
+        SYSTEM.Vignetting(0)
+        RP.clean()
+        return float("nan")
     delta_Z = 0
     X = (((L / N) * delta_Z) + X)
     Y = (((M / N) * delta_Z) + Y)
