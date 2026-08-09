@@ -16946,9 +16946,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._quick_estimation_overlay_service_instance = service
         return service
 
-    def _add_quick_estimation_overlays(self, system, scene_bundle: SceneBundle | None) -> int:
+    def _add_quick_estimation_overlays(
+        self, system, scene_bundle: SceneBundle | None, *, suppress_image_plane_duplicates: bool = False
+    ) -> int:
         try:
-            return self._quick_estimation_overlay_service().add_overlays(system, scene_bundle)
+            return self._quick_estimation_overlay_service().add_overlays(
+                system, scene_bundle,
+                suppress_image_plane_duplicates=bool(suppress_image_plane_duplicates),
+            )
         except Exception as exc:  # pragma: no cover - defensive
             self.editor.append_debug(f"Quick Estimation overlays skipped: {exc}")
             return 0

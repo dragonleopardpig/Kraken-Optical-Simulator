@@ -1151,8 +1151,14 @@ class Open3DSceneRefreshService:
         except Exception:
             pass
         # Quick Estimation FOV-circle / sensor-rectangle overlays (no-op unless
-        # Quick Estimation is enabled).
-        self._add_quick_estimation_overlays(system, scene_bundle)
+        # Quick Estimation is enabled). bugs/0595: with the detector coverage overlay
+        # active, QE's image-plane circle + recommended-sensor rect coincide with the
+        # coverage overlay's labelled image circle + vendor sensor square -- two identical
+        # squares z-fighting is the user's "sensor square edge is split to 2 colors".
+        # Same masquerade class as bugs/0033; the labelled coverage geometry wins.
+        self._add_quick_estimation_overlays(
+            system, scene_bundle, suppress_image_plane_duplicates=detector_coverage_active
+        )
         # Detector coverage: real ray-traced image circle vs sensor + object-plane
         # FOV rectangle (gated on the "Det" detector overlay toggle).
         if self.show_detector_overlays_var.get():

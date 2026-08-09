@@ -1,4 +1,4 @@
-# 0595 — the sensor square's edge renders in two colours (coincident actors) (OPEN)
+# 0595 — the sensor square's edge renders in two colours (coincident actors) (FIXED)
 
 Flag `flag_20260809_100904_100`: *"I turn on Illumination overlays as well as other analysis, none
 of them works. **Also note the sensor square edge is now split to 2 colors.**"*
@@ -78,7 +78,42 @@ filing an actor under the synthetic key.
 Suspect 2 (overlays drawn for `draw_suppressed` branch detectors) is deliberately **not** changed:
 it is a behaviour change that would remove overlays, and without a repro it cannot be validated.
 
-## Next step — the measurement that settles it
+## FIXED — Quick Estimation's image-plane duplicates (phase 454)
+
+The per-actor recorder detail (shipped for this bug) settled it, by ruling things OUT: the
+recorded row-8 "duplicate" has **opacity 0.0** — it is the bugs/0033 *suppressed* Image disk,
+invisible and innocent — and the 100000-blue actor is the coverage overlay's 8% pick quad. None
+of the recorded row-keyed actors was the second tone. The visible culprit only appeared on an
+actual LOOK at the flag screenshot: the square's top/right edges are **orange** and bottom/left
+are **YELLOW**.
+
+Two identical-size squares draw at the sensor footprint when Quick Estimation and the detector
+coverage overlay are both on:
+
+| element | colour | source |
+|---|---|---|
+| vendor sensor square | orange (0.98, 0.45, 0.05) | `_scene_detector_overlay_specs` |
+| QE recommended-sensor rect | yellow (1.0, 0.9, 0.2) | `quick_estimation_overlay.py` |
+
+Coplanar and congruent → z-fighting → the rim alternates colours. (QE's image circle likewise
+coincides with the coverage image circle — same hue, so it never showed as two-tone, but it was
+double-drawn too.)
+
+**Fix** — the bugs/0033 masquerade rule, applied to QE: the scene refresh threads
+`suppress_image_plane_duplicates=detector_coverage_active` through the inspector wrapper (the
+bugs/0319 kwarg-threading trap) into `QuickEstimationOverlayService.add_overlays`, which then
+skips its image-plane circle + rect. QE keeps its object-plane FOV circle, ghosts and pick
+disks; with the coverage overlay off, QE draws everything exactly as before.
+
+**Verified by rendered snapshots in the Normal-to-Sensor view** (the user's own view): with
+Det + QE on, the square's edge is a single uniform orange on all four sides; with Det off,
+QE's yellow rect returns alone. Actor-level: Det+QE on → 0 visible yellow rects, 3 coverage
+square actors; Det off → 1 yellow rect.
+
+Guard: phase 454 (`validate_open3d_0595_sensor_square_single_edge`) — verified failing on all
+four checks pre-fix, including the real render (1 yellow rect drawn).
+
+## Superseded diagnosis notes (kept for the record)
 
 Dump `inspector._row_actor_map[100000]` and each actor's individual bounds/colour in the **live**
 app. The headless route stalls short of this: `refresh_from_editor` returns early on the async

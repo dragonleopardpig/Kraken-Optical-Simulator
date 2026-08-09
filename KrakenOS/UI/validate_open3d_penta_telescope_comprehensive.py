@@ -15619,6 +15619,10 @@ phase_453_field_analysis_on_folded_scene = _phase_from_standalone(
     453, "the field-aberration suite MEASURES on a folded scene (world-order launch, 0593)",
     "KrakenOS.UI.validate_open3d_0593_field_analysis_on_folded_scene",
     "field_analysis_on_folded_scene")
+phase_454_sensor_square_single_edge = _phase_from_standalone(
+    454, "the sensor square draws ONE edge -- QE defers to the coverage overlay (0595)",
+    "KrakenOS.UI.validate_open3d_0595_sensor_square_single_edge",
+    "sensor_square_single_edge")
 
 
 # ---------------------------------------------------------------------------
@@ -16123,6 +16127,7 @@ def main() -> int:
             phase_451_body_clearance_and_block_integrity,
             phase_452_refused_refocus_still_clears_the_camera,
             phase_453_field_analysis_on_folded_scene,
+            phase_454_sensor_square_single_edge,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

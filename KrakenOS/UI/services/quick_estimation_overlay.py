@@ -118,7 +118,9 @@ class QuickEstimationOverlayService:
         except Exception as exc:
             self.editor.append_debug(f"QE overlay pick disk skipped: {exc}")
 
-    def add_overlays(self, system: Any, scene_bundle: Any = None) -> int:
+    def add_overlays(
+        self, system: Any, scene_bundle: Any = None, *, suppress_image_plane_duplicates: bool = False
+    ) -> int:
         qe = self.inspector._quick_estimation_service()
         if not qe.is_enabled():
             return 0
@@ -185,16 +187,23 @@ class QuickEstimationOverlayService:
 
         # --- image plane: image circle (cyan) + recommended sensor rect (yellow)
         #     + previous image circle ghost (gray) ---
-        self._solid_line_actor(_circle_points(img_pt, u_i, v_i, image_radius), (0.2, 0.7, 1.0), 2.5)
-        count += 1
-        if rec:
-            half_w = float(rec.get("width", 0.0)) / 2.0
-            half_h = float(rec.get("height", 0.0)) / 2.0
-            if half_w > 0 and half_h > 0:
-                # _basis returns (vertical, horizontal): width->v (horizontal),
-                # height->u (vertical) so a landscape sensor reads landscape.
-                self._solid_line_actor(_rect_points(img_pt, v_i, u_i, half_w, half_h), (1.0, 0.9, 0.2), 2.5)
-                count += 1
+        # bugs/0595: with the detector coverage overlay active these two coincide with
+        # the coverage overlay's labelled image circle + vendor sensor square at the
+        # same plane -- the identical-size squares (QE yellow vs coverage orange)
+        # z-fight along the rim, which the user reads as "the sensor square edge is
+        # split to 2 colors". The labelled coverage geometry is authoritative there
+        # (the bugs/0033 masquerade rule); QE keeps its object-plane FOV and ghosts.
+        if not suppress_image_plane_duplicates:
+            self._solid_line_actor(_circle_points(img_pt, u_i, v_i, image_radius), (0.2, 0.7, 1.0), 2.5)
+            count += 1
+            if rec:
+                half_w = float(rec.get("width", 0.0)) / 2.0
+                half_h = float(rec.get("height", 0.0)) / 2.0
+                if half_w > 0 and half_h > 0:
+                    # _basis returns (vertical, horizontal): width->v (horizontal),
+                    # height->u (vertical) so a landscape sensor reads landscape.
+                    self._solid_line_actor(_rect_points(img_pt, v_i, u_i, half_w, half_h), (1.0, 0.9, 0.2), 2.5)
+                    count += 1
         if prev_object_semi and abs(prev_object_semi - object_semi) > 1e-6 * max(1.0, object_semi):
             prev_image_radius = abs(float(mag)) * float(prev_object_semi)
             self._dashed_line_actor(_circle_points(img_pt, u_i, v_i, prev_image_radius), (0.65, 0.65, 0.65), 2.0)
