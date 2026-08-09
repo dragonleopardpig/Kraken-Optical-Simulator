@@ -1,4 +1,4 @@
-# 0591 — the delivered 55×55 field is not square, and the first order cannot judge it (OPEN)
+# 0591 — the delivered 55×55 field is not square, and the first order cannot judge it (RESOLVED: it IS square — the real defect is the delivered magnification)
 
 Flag `flag_20260809_082246_212`: **"FOV 55x55, everything correct?"** — a question, not a defect
 report. Scene `machine_vision_Apo75.py`, as-loaded lens 0703-005-000-40-EXC, build `5bcb72de`
@@ -70,3 +70,42 @@ anything is fixed.
    path t(1−1/n) that bugs/0297 documents) being applied on one axis only.
 4. Whatever the cause, the fix must NOT be judged by `_shared_first_order_reference` — see above.
    A frozen-aware first order is the standing debt (noted in bugs/0576's Open section).
+
+
+## 2026-08-09 — measured with the world-order instrument (bugs/0593's fix)
+
+The aimed-fan instrument (entrance-pupil-aimed launches, real-stop clipping, dominant-cluster
+landings) re-measured the solved 55×55 state, free of the survivor-silhouette confound:
+
+```
+  fx      fy  |  u(land)  v(land)  nrays
+  0.00   0.00 |  -0.165   -0.000     80
+  0.00  27.50 |  -0.164   14.680     57
+  0.00 -27.50 |  -0.164  -14.680     57
+ 27.50   0.00 |  14.466   -0.000     64
+-27.50   0.00 | -14.862   -0.000     56
+```
+
+1. **The field IS square**: X edge-to-edge 29.329 mm vs Y 29.359 mm — 0.1% apart. The
+   "21.053 mm X" of the original measurement was the survivors' silhouette, exactly as this
+   doc's own caveat suspected.
+2. **The Y decentre is NOT real**: ±14.680 exactly symmetric, centre −0.000. The −2.13 mm was
+   preview-sampling asymmetry. The X asymmetry (14.466 vs −14.862) is also pure offset — both
+   edges sit 14.664 from the shifted centre.
+3. **Real, small**: the whole pattern lands ~0.17 mm off-centre on the FOLD axis (u ≈ −0.165
+   at every field) — plausibly the BS plate's lateral walk-off. Cosmetic at sensor scale;
+   unverified attribution.
+4. **Real, large — the actual defect**: delivered |m| = 29.34/55 = **0.534** (0.542 at half
+   field — ~1.6% distortion), against the solve's promised **0.4189**. At the delivered
+   magnification the 55 mm object maps to 29.4 mm across a 23.04 mm sensor: **the sensor sees
+   ~43×43 mm of the requested 55×55.** The solve message "Object 55 x 55 mm fills the sensor"
+   promises a conjugate the machine does not deliver.
+
+So the question this flag asked ("FOV 55x55, everything correct?") now has a precise answer:
+the geometry is fine (square, centred); the CONJUGATE is not — the folded solve's first order
+books gaps for |m| = 0.419 and the world delivers 0.534. That is the frozen-aware first-order
+debt already standing in bugs/0576's Open section (and the §5b per-branch-pupil deep target),
+now with a measured error bar: **27%**. Per `feedback_drag_is_thickness_constraint`'s durable
+lesson (measured shifts are under-measured — iterate, never single-shot), the fix is a
+measured-|m| feedback step in the solve or the frozen-aware first order itself — NOT a
+compensation factor baked on top of the wrong frame.
