@@ -3799,7 +3799,25 @@ class ThreeDSceneToolsMixin:
         cache = self.__dict__.get("_source_illumination_overlay_cache")
         if signature is not None and isinstance(cache, tuple) and len(cache) == 2 and cache[0] == signature:
             return cache[1]
-        spec = self._compute_source_illumination_overlay_spec(system, target)
+        # bugs/0592: this overlay is a MEASUREMENT, so its samples must not carry the bugs/0540
+        # interactive 200-ray cap (bugs/0590 lifted it for the guards; the product path reads the
+        # shared preview records and was still starved). It is lazy and signature-cached, so the
+        # fuller trace happens only when the overlay is actually (re)computed -- the interactive
+        # preview keeps its cap and its speed whenever this overlay is off or cached.
+        previous_flag = getattr(self, "_illumination_analysis_full_count", False)
+        self._illumination_analysis_full_count = True
+        try:
+            self._invalidate_preview_scene_trace()
+        except Exception:
+            pass
+        try:
+            spec = self._compute_source_illumination_overlay_spec(system, target)
+        finally:
+            self._illumination_analysis_full_count = previous_flag
+            try:
+                self._invalidate_preview_scene_trace()
+            except Exception:
+                pass
         if signature is not None:
             self._source_illumination_overlay_cache = (signature, spec)
         return spec

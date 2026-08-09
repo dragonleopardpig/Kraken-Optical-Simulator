@@ -1915,6 +1915,15 @@ class SourceModelingMixin:
         # the phase 175/231/241/244/252 failures -- which were misread for a day as a
         # desktop-vs-laptop hardware difference. Honour the intent: an analysis launch is
         # uncapped, the interactive preview stays capped.
+        # bugs/0592: an ANALYSIS overlay computed from the shared preview records is an analysis
+        # pass too, even though it never calls the trace itself -- it reads
+        # _collect_ray_analysis_records(). The instance flag lets the overlay computation declare
+        # "these samples are being MEASURED, not displayed" for the duration, so the illumination
+        # heatmap stops starving at ~42 in-sensor hits (below the in_extent < 50 floor, which made
+        # the whole overlay vanish -- flag_20260809_094851 "none of the actual analysis overlay
+        # works").
+        if bool(getattr(self, "_illumination_analysis_full_count", False)):
+            full_count = True
         if not full_count:
             preview_cap = int(
                 self._source_spec_float(settings, ("preview_ray_cap",), 200.0, minimum=1.0)
