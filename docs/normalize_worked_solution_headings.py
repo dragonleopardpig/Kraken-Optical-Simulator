@@ -15,7 +15,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORKED_SOLUTIONS = REPO_ROOT / "docs" / "source" / "knowledge_base" / "worked_exercises"
 
-# These totals cover every numbered Exercise/Problem entry in the six book
+# These totals cover every numbered Exercise/Problem entry in the seven book
 # collections currently published under Worked Exercise Solutions.
 EXPECTED_COUNTS = {
     "fundamentals_of_photonics": 445,
@@ -23,6 +23,7 @@ EXPECTED_COUNTS = {
     "introduction_matrix_methods_optics": 27,
     "photonics_essentials": 42,
     "siegman_lasers": 394,
+    "schaum_optics": 270,
     "yariv_yeh_photonics_6e": 263,
 }
 

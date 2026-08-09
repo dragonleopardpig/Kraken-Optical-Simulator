@@ -1,7 +1,7 @@
 Worked Exercise Solutions
 =========================
 
-This section contains seven book-specific collections of textbook-style
+This section contains eight book-specific collections of textbook-style
 exercises, a five-book set of KrakenOS cross-references, a contributor guide,
 and a compact worked example.  The aim is not only to obtain an answer, but to
 make each mathematical decision visible: what is known, which equation
@@ -29,6 +29,7 @@ own parent pages.
    siegman_lasers/index
    yariv_yeh_photonics_6e/index
    introduction_matrix_methods_optics/index
+   schaum_optics/index
 
 .. toctree::
    :maxdepth: 1
