@@ -1437,24 +1437,46 @@ class LayoutTableWorkbenchMixin:
              along the folded leg (bugs/0392: the 0391 datum-only clamp measured from the
              mirror centre with the flange depth and still let the body crash 17.7 mm in).
         Flag when either limits best focus rather than colliding. Any already-applied thickness
-        bounds are honoured by the underlying solve."""
+        bounds are honoured by the underlying solve.
+
+        bugs/0594: the clearance layers below are NOT conditional on best focus being reachable.
+        A refused refocus leaves the sensor wherever the previous state put it, which on a frozen
+        fold can be INSIDE the fold solid -- measured on the flagged ELS-85 replay, sensor world
+        z 49.711 sitting within the prism's 41.645..67.071 with the camera body around it. The
+        refocus is an OPTICAL nicety; the clearance is a PHYSICAL invariant, so it runs either
+        way, and the function ends by VERIFYING it rather than assuming its own writes landed."""
         rows = getattr(self, "rows", None) or []
         if len(rows) < 3 or str(getattr(rows[-1], "surface", "") or "") != "Image":
             return
         gap_index = len(rows) - 2
         self._swap_refocus_note = ""
+        self._swap_clearance_note = ""
+        notes: list[str] = []          # clearance / collision statements
+        refocus_notes: list[str] = []  # why best focus was not reached
+
+        def _finish() -> None:
+            # Two channels: the caller prefixes the refocus one with "NOT refocused:", which
+            # would misdescribe a clearance message (bugs/0594).
+            self._swap_refocus_note = "; ".join(note for note in refocus_notes if note)
+            self._swap_clearance_note = "; ".join(note for note in notes if note)
+
         try:
             moved = self.snap_detector_to_image_plane()
-        except Exception:
-            return
+        except Exception as exc:
+            moved = False
+            refocus_notes.append(f"the refocus raised {type(exc).__name__}")
         if not moved:
             # bugs/0566: a REFUSED refocus is a real result the user must see. With a longer
             # replacement lens best focus can need the fold mirror to slide further than its
             # incoming leg allows (measured: 51.2548 mm wanted, a 0 mm leg to give it), so the
             # snap correctly refuses -- but the swap then overwrites status_var with its own
             # success line and the lens is left silently defocused.
-            self._swap_refocus_note = str(self.__dict__.get("_snap_detector_refusal", "") or "")
-            return
+            #
+            # bugs/0594: this used to `return` here, which skipped BOTH clearance layers and is
+            # exactly how the camera ended up inside the fold prism. Fall through.
+            refusal = str(self.__dict__.get("_snap_detector_refusal", "") or "")
+            if refusal and refusal not in refocus_notes:
+                refocus_notes.append(refusal)
         # bugs/0578: on a 0433-FROZEN fold the gap row runs BACKWARDS (world leg = const -
         # thickness, bugs/0478), so the raw thickness bumps below move the camera TOWARD the
         # mirror -- the floor meant to push it clear pulled it 20.9 mm INTO the collision
@@ -1474,19 +1496,40 @@ class LayoutTableWorkbenchMixin:
             try:
                 gap = float(getattr(rows[gap_index], "thickness", 0.0) or 0.0)
             except Exception:
+                _finish()
                 return
+
+        def _write_gap(value: float) -> str:
+            """Apply the image gap. Returns "" on success, else the refusal text.
+
+            bugs/0594: the old code called ``apply_image_distance_frozen_aware`` and threw away
+            BOTH the bool and ``_frozen_image_write_refusal`` -- whose own docstring says "the
+            caller keys on the string, never on the bool alone" -- then reported "focus limited
+            to N mm so the camera body clears" whether or not anything had moved. A clearance
+            layer that cannot tell you it failed is not a clearance layer.
+            """
+            try:
+                if _frozen:
+                    applied = bool(self.apply_image_distance_frozen_aware(float(value)))
+                    refusal = str(self.__dict__.get("_frozen_image_write_refusal", "") or "")
+                    if refusal:
+                        return refusal
+                    return "" if applied else "the frozen image write did not apply"
+                rows[gap_index].thickness = float(value)
+                return ""
+            except Exception as exc:
+                return f"{type(exc).__name__}: {exc}"
+
         limited = False
         # (1) cheap floor (clearance + flange depth), applied first so the mesh deficit below
         #     is measured at the floored position.
         floor = self._swap_refocus_min_gap()
         if gap < floor:
             gap = float(floor)
-            try:
-                if _frozen:
-                    self.apply_image_distance_frozen_aware(gap)
-                else:
-                    rows[gap_index].thickness = gap
-            except Exception:
+            refusal = _write_gap(gap)
+            if refusal:
+                notes.append(f"could not book the {floor:.2f} mm camera clearance floor: {refusal}")
+                _finish()
                 return
             limited = True
         # (2) exact camera-body mesh clearance -- bump the gap by the real overlap + clearance.
@@ -1502,28 +1545,45 @@ class LayoutTableWorkbenchMixin:
             dbg["floor_mm"] = round(float(floor), 3)
         if deficit and deficit > 1e-6:
             gap += float(deficit)
-            try:
-                if _frozen:
-                    self.apply_image_distance_frozen_aware(gap)
-                else:
-                    rows[gap_index].thickness = gap
-            except Exception:
+            refusal = _write_gap(gap)
+            if refusal:
+                notes.append(
+                    f"the camera body overlaps the upstream element by {deficit:.2f} mm and it "
+                    f"could not be moved clear: {refusal}"
+                )
+                _finish()
                 return
             limited = True
         if isinstance(dbg, dict):
             dbg["final_gap_mm"] = round(float(gap), 3)
-        if limited:
-            self.status_var.set(
-                f"Swapped lens; focus limited to {gap:.1f} mm so the camera body clears the "
-                "upstream element (best focus would collide it with the RA mirror)."
+        # (3) bugs/0594: VERIFY, do not assume. Every layer above can be refused or can be
+        #     defeated by the frozen inverted gap, and the previous code announced success
+        #     without ever re-measuring. Re-run the body-vs-solid deficit on the FINAL geometry;
+        #     anything left is a real collision and must be reported with its number.
+        residual = 0.0
+        try:
+            residual = float(self._swap_camera_body_clearance_deficit() or 0.0)
+        except Exception:
+            residual = 0.0
+        if isinstance(dbg, dict):
+            dbg["residual_deficit_mm"] = round(residual, 3)
+        if residual > 1e-3:
+            notes.append(
+                f"the camera body is still {residual:.2f} mm INSIDE the upstream element -- "
+                "move the camera or the fold mirror down the leg before trusting this scene"
+            )
+        elif limited:
+            notes.append(
+                f"focus limited to {gap:.1f} mm so the camera body clears the upstream element"
             )
         elif isinstance(dbg, dict) and dbg.get("camera_glued") and str(dbg.get("result", "")).startswith("0 mm: missing"):
             # A camera IS glued but the body-clearance geometry could not be resolved -- warn
             # rather than silently leave the sensor where it may collide (bugs/0393).
-            self.status_var.set(
-                "Swapped lens; could NOT verify camera-body clearance to the upstream element "
-                f"({dbg.get('result')}) -- check the camera is clear of the RA mirror."
+            notes.append(
+                "could NOT verify camera-body clearance to the upstream element "
+                f"({dbg.get('result')}) -- check the camera is clear of the RA mirror"
             )
+        _finish()
 
     @staticmethod
     def _swap_preserves_downstream(rows, rear_index) -> bool:
@@ -1804,6 +1864,12 @@ class LayoutTableWorkbenchMixin:
         refocus_note = str(self.__dict__.get("_swap_refocus_note", "") or "")
         if refocus_note:
             message += f" NOT refocused: {refocus_note}"
+        # bugs/0594: the clearance layers used to announce themselves via status_var from inside
+        # _swap_auto_refocus_to_best_focus -- which this line then OVERWROTE, so a limited focus
+        # or an unverifiable camera clearance never reached the user at all. Append it here.
+        clearance_note = str(self.__dict__.get("_swap_clearance_note", "") or "")
+        if clearance_note:
+            message += f" Camera clearance: {clearance_note}."
         self.status_var.set(message)
         self.append_progress(message)
         # bugs/0386: the 2D refresh here is a FULL system build + trace (~5s on a folded

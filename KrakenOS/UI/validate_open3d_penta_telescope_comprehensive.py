@@ -15611,6 +15611,10 @@ phase_451_body_clearance_and_block_integrity = _phase_from_standalone(
     451, "the lens BARREL stays clear of the fold mirror, and a drag cannot tear the block (0583/0584)",
     "KrakenOS.UI.validate_open3d_0583_body_clearance_and_block_integrity",
     "body_clearance_and_block_integrity")
+phase_452_refused_refocus_still_clears_the_camera = _phase_from_standalone(
+    452, "a swap whose refocus is REFUSED still keeps the camera out of the fold solid (0594)",
+    "KrakenOS.UI.validate_open3d_0594_refused_refocus_still_clears_the_camera",
+    "refused_refocus_still_clears_the_camera")
 
 
 # ---------------------------------------------------------------------------
@@ -16113,6 +16117,7 @@ def main() -> int:
             phase_449_solve_carries_the_lens_body,
             phase_450_pinned_solve_survives_swap,
             phase_451_body_clearance_and_block_integrity,
+            phase_452_refused_refocus_still_clears_the_camera,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

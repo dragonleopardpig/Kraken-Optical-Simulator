@@ -60,8 +60,11 @@ def run_checks() -> tuple[bool, list[str]]:
     ed._swap_auto_refocus_to_best_focus()
     if abs(ed.rows[-2].thickness - floor) > 1e-9:
         failures.append(f"clamp: a sub-floor solve must clamp to {floor} (got {ed.rows[-2].thickness})")
-    if not any("focus limited" in m for m in ed._status_messages):
-        failures.append("clamp: a clamped refocus must flag the user")
+    # bugs/0594: assert on _swap_clearance_note, not status_var. The old status_var.set here
+    # was OVERWRITTEN by swap_imaging_lens_from_folder's own status line, so this check passed
+    # while the user was told nothing -- the note channel is the one that survives to the UI.
+    if "focus limited" not in str(ed.__dict__.get("_swap_clearance_note", "") or ""):
+        failures.append("clamp: a clamped refocus must flag the user (_swap_clearance_note)")
 
     # 3. snap moves to a SAFE distance -> left as solved, no flag
     ed = _editor(_lens_image_rows(100.0))
@@ -128,7 +131,7 @@ def run_checks() -> tuple[bool, list[str]]:
             f"camera-body: a 3mm best-focus (sensor-safe but body-colliding) must clamp to {want}; "
             f"got {ed2.rows[-2].thickness}"
         )
-    if not any("camera body" in m for m in ed2._status_messages):
+    if "camera body" not in str(ed2.__dict__.get("_swap_clearance_note", "") or ""):
         failures.append("camera-body: the clamp must flag that the camera body limited focus")
 
     # 7. bugs/0392: the REAL fix -- MESH-geometry camera-body clearance. The 0391 flange floor
@@ -174,7 +177,7 @@ def run_checks() -> tuple[bool, list[str]]:
             f"mesh-clearance: the swap must bump the gap to {want_gap} (floor + mesh deficit); "
             f"got {ed3.rows[-2].thickness}"
         )
-    if not any("camera body" in m for m in ed3._status_messages):
+    if "camera body" not in str(ed3.__dict__.get("_swap_clearance_note", "") or ""):
         failures.append("mesh-clearance: the mesh-deficit bump must flag the camera-body limit")
 
     # 8. bugs/0393b: the mirror obstacle centre must come from the LIVE scene-bundle placement,
