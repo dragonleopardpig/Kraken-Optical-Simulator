@@ -570,6 +570,410 @@ class GeometricAnalysisMixin:
             results.append((centered_x, centered_y))
         return results, worker_count
 
+    # ------------------------------------------------------------------
+    # bugs/0593: the WORLD-ORDER launch — the instrument for folded / frozen scenes.
+    #
+    # ``Kos.PupilCalc`` drives a SEQUENTIAL pupil probe. On a world-placed chain (a
+    # 0433-frozen folded scene) the rows carry baked world poses and the beam does not run
+    # in row order (the beam splitter is row 6 yet physically FIRST on the flagged scene),
+    # so the probe reaches no stop and every field-aberration analysis measured nothing.
+    #
+    # The REAL trace, however, already works in world: ``_trace_analysis_chunk_full``
+    # traces ``_serializable_row_specs()`` — the live scene, promoted solids included —
+    # and picks at the image surface in the sensor's LOCAL frame
+    # (``rays.pick(-1, coordinates="local")``), which is exactly the frame the
+    # field-aberration quantities want. Only the LAUNCH was broken. So on a world-placed
+    # chain the bundle is built geometrically: launch from the object plane along the
+    # incoming leg, spanning a cone calibrated by TRACING (ring probes), and let the REAL
+    # aperture stop clip the fan — the surviving rays ARE the true pupil. The rejected
+    # alternative (measuring on the straight-equivalent rows) answers for a different
+    # machine — see bugs/0593 "Rejected".
+
+    _WORLD_LAUNCH_PROBE_LADDER = (0.02, 0.03, 0.045, 0.07, 0.10, 0.15, 0.22, 0.33, 0.50)
+    _WORLD_LAUNCH_OVERFILL = 1.25
+
+    def _world_placed_chain_rows(self) -> list[int]:
+        """Row indices carrying baked WORLD placement (empty on a plain sequential scene)."""
+        try:
+            from KrakenOS.UI.services import row_placement
+
+            return [
+                index
+                for index, row in enumerate(getattr(self, "rows", []) or [])
+                if row_placement.is_world_placed(row)
+            ]
+        except Exception:
+            return []
+
+    def _world_launch_frame(self) -> tuple[np.ndarray, np.ndarray]:
+        """(origin, direction) of the incoming leg in world. The object row anchors the
+        launch plane; the incoming leg on this scene family is +Z (the 0433 freeze bakes
+        the folds downstream of the object, never the object itself)."""
+        origin = np.zeros(3, dtype=float)
+        try:
+            candidate = np.asarray(self._split_row_world_center(0), dtype=float).reshape(3)
+            if np.all(np.isfinite(candidate)):
+                origin = candidate
+        except Exception:
+            pass
+        return origin, np.asarray([0.0, 0.0, 1.0], dtype=float)
+
+    def _world_detector_plane(self):
+        """(centre, normal, tangent1, tangent2, radius) of the terminal Image row in WORLD,
+        via the ``row_placement`` resolver — the one place that answers "where is this row"
+        correctly on a frozen scene (its own docstring counts five hand-rolled consumers that
+        each got this wrong). Returns None when the scene has no resolvable Image plane."""
+        rows = list(getattr(self, "rows", []) or [])
+        if len(rows) < 2 or str(getattr(rows[-1], "surface", "") or "") != "Image":
+            return None
+        try:
+            from KrakenOS.UI.services import row_placement
+
+            position, rotation, _space = row_placement.world_frame(self, len(rows) - 1)
+        except Exception:
+            return None
+        centre = np.asarray(position, dtype=float).reshape(3)
+        if not np.all(np.isfinite(centre)):
+            return None
+        if rotation is not None:
+            normal = np.asarray(rotation[:, 2], dtype=float)
+            tangent1 = np.asarray(rotation[:, 0], dtype=float)
+            tangent2 = np.asarray(rotation[:, 1], dtype=float)
+        else:
+            normal = np.asarray([0.0, 0.0, 1.0], dtype=float)
+            tangent1 = np.asarray([1.0, 0.0, 0.0], dtype=float)
+            tangent2 = np.asarray([0.0, 1.0, 0.0], dtype=float)
+        try:
+            radius = max(0.5, float(getattr(rows[-1], "diameter", 0.0) or 0.0) / 2.0)
+        except Exception:
+            radius = 25.0
+        return centre, normal, tangent1, tangent2, radius
+
+    def _world_order_trace_landings(
+        self, wavelength: float, bundle
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Trace a launch bundle through the REAL solids-built system and intersect each
+        ray's TERMINAL SEGMENT with the detector plane. Returns image-LOCAL
+        ``(x, y, z, l, m, n)`` for the rays that land.
+
+        The landing is accepted only when the plane crossing lies WITHIN the traced terminal
+        segment (with a small forward tolerance) and inside the detector disc — a ray the
+        stop absorbed upstream is never extrapolated onto a far sensor plane, which is the
+        bugs/0530 doctrine ("no teleports")."""
+        empty = np.asarray([], dtype=float)
+        empties = (empty, empty, empty, empty, empty, empty)
+        plane = self._world_detector_plane()
+        if plane is None:
+            return empties
+        centre, normal, tangent1, tangent2, radius = plane
+        try:
+            system = self.build_system(require_solids=True)
+        except Exception:
+            return empties
+        rays = Kos.raykeeper(system)
+        try:
+            self._trace_preview_bundles(system, rays, float(wavelength), [bundle])
+        except Exception:
+            return empties
+        xs: list[float] = []
+        ys: list[float] = []
+        zs: list[float] = []
+        ls: list[float] = []
+        ms: list[float] = []
+        ns: list[float] = []
+        for ray in getattr(rays, "CC", ()) or ():
+            pts = np.asarray(ray, dtype=float)
+            if pts.ndim != 2 or pts.shape[0] < 2:
+                continue
+            p_last = pts[-1, :3]
+            p_prev = pts[-2, :3]
+            segment = p_last - p_prev
+            length = float(np.linalg.norm(segment))
+            if length <= 1.0e-9:
+                continue
+            direction = segment / length
+            denominator = float(direction @ normal)
+            if abs(denominator) < 1.0e-9:
+                continue
+            t_hit = float((centre - p_prev) @ normal) / denominator
+            # Within the terminal segment (small tolerances both ways): the raykeeper's
+            # continuation point extends past the last real hit, so a landing ray's segment
+            # BRACKETS the plane; an absorbed/vignetted ray's clipped segment never reaches
+            # it and is correctly excluded rather than extrapolated on.
+            if t_hit < -1.0e-6 or t_hit > length * (1.0 + 1.0e-6) + 1.0e-6:
+                continue
+            landing = p_prev + direction * t_hit
+            offset = landing - centre
+            u = float(offset @ tangent1)
+            v = float(offset @ tangent2)
+            if u * u + v * v > radius * radius:  # the drawn image disc bounds a landing
+                continue
+            xs.append(u)
+            ys.append(v)
+            zs.append(0.0)
+            ls.append(float(direction @ tangent1))
+            ms.append(float(direction @ tangent2))
+            ns.append(denominator)
+        x_arr = np.asarray(xs, dtype=float)
+        y_arr = np.asarray(ys, dtype=float)
+        z_arr = np.asarray(zs, dtype=float)
+        l_arr = np.asarray(ls, dtype=float)
+        m_arr = np.asarray(ms, dtype=float)
+        n_arr = np.asarray(ns, dtype=float)
+        if x_arr.size >= 5:
+            # Keep the DOMINANT landing cluster. A folded scene grows ghost families (a BS
+            # double-bounce) that land sparsely near the rim; ONE such ray 5 mm from a
+            # point-focused fan biased the tangential focus by -8.8 mm (measured, field
+            # 13.8 on the flagged Apo75). The imaging bundle is the tight cluster; reject
+            # rays beyond 6 robust deviations, floored at 0.25 mm so an ideal (zero-spread)
+            # fan does not reject its own siblings and a real aberrated fan is untouched.
+            median_x = float(np.median(x_arr))
+            median_y = float(np.median(y_arr))
+            mad = max(
+                float(np.median(np.abs(x_arr - median_x))),
+                float(np.median(np.abs(y_arr - median_y))),
+            )
+            threshold = max(6.0 * mad, 0.25)
+            keep = (np.abs(x_arr - median_x) <= threshold) & (np.abs(y_arr - median_y) <= threshold)
+            x_arr, y_arr, z_arr = x_arr[keep], y_arr[keep], z_arr[keep]
+            l_arr, m_arr, n_arr = l_arr[keep], m_arr[keep], n_arr[keep]
+        return (x_arr, y_arr, z_arr, l_arr, m_arr, n_arr)
+
+    def _world_launch_acceptance(self, wavelength: float) -> "float | None":
+        """The launch cone half-tangent that reaches the image surface, measured by
+        TRACING ring probes on the real scene (cached by row-spec signature).
+
+        Returns None when nothing lands at any probe angle — the caller reports a starved
+        scan rather than inventing a cone. Self-calibrating on purpose: every first-order
+        alternative (station sums, straight equivalents) is a frame that bugs/0576/0593
+        proved untrustworthy on frozen scenes; a traced landing is a fact."""
+        from KrakenOS.UI.services.row_spec_contracts import _row_specs_signature
+
+        row_specs = self._serializable_row_specs()
+        try:
+            signature = (_row_specs_signature(row_specs), round(float(wavelength), 6))
+        except Exception:
+            signature = None
+        cache = self.__dict__.get("_world_launch_acceptance_cache")
+        if signature is not None and isinstance(cache, tuple) and cache[0] == signature:
+            return cache[1]
+        origin, _direction = self._world_launch_frame()
+        azimuths = np.linspace(0.0, 2.0 * np.pi, 16, endpoint=False)
+
+        def _ring_landed(tan_t: float) -> int:
+            l_dir = tan_t * np.cos(azimuths)
+            m_dir = tan_t * np.sin(azimuths)
+            norm = np.sqrt(l_dir * l_dir + m_dir * m_dir + 1.0)
+            bundle = (
+                np.full(azimuths.size, origin[0]),
+                np.full(azimuths.size, origin[1]),
+                np.full(azimuths.size, origin[2]),
+                l_dir / norm,
+                m_dir / norm,
+                np.ones(azimuths.size) / norm,
+            )
+            landings = self._world_order_trace_landings(float(wavelength), bundle)
+            return int(np.asarray(landings[0]).size)
+
+        accepted = None
+        for tan_t in self._WORLD_LAUNCH_PROBE_LADDER:
+            if _ring_landed(float(tan_t)) >= 8:  # at least half the ring survives the stop
+                accepted = float(tan_t)
+        if accepted is None:
+            # Even the tightest ring missed — check the axial ray before giving up.
+            axial = (
+                np.asarray([origin[0]]), np.asarray([origin[1]]), np.asarray([origin[2]]),
+                np.asarray([0.0]), np.asarray([0.0]), np.asarray([1.0]),
+            )
+            try:
+                landings = self._world_order_trace_landings(float(wavelength), axial)
+                if int(np.asarray(landings[0]).size) > 0:
+                    accepted = float(self._WORLD_LAUNCH_PROBE_LADDER[0]) / 2.0
+            except Exception:
+                accepted = None
+        if accepted is not None:
+            # One refinement step toward the next ladder rung, so a stop sitting between
+            # rungs is not under-filled by up to 50%.
+            ladder = list(self._WORLD_LAUNCH_PROBE_LADDER)
+            try:
+                next_up = min(t for t in ladder if t > accepted)
+            except ValueError:
+                next_up = accepted * 1.5
+            midpoint = 0.5 * (accepted + float(next_up))
+            if _ring_landed(midpoint) >= 8:
+                accepted = midpoint
+        try:
+            self.append_debug(
+                "world-order launch: acceptance half-tangent "
+                + ("NONE (nothing lands)" if accepted is None else f"{accepted:.4f}")
+                + " measured by ring probes on the real scene (bugs/0593)"
+            )
+        except Exception:
+            pass
+        if signature is not None:
+            self._world_launch_acceptance_cache = (signature, accepted)
+        return accepted
+
+    def _world_launch_single_lands(self, wavelength: float, field_y: float, tan_t: float) -> bool:
+        """Does the single ray from object field (0, field_y) with meridional tilt ``tan_t``
+        reach the detector? One traced fact for the pupil-distance bisection below."""
+        origin, _direction = self._world_launch_frame()
+        norm = float(np.sqrt(tan_t * tan_t + 1.0))
+        bundle = (
+            np.asarray([origin[0]]),
+            np.asarray([origin[1] + float(field_y)]),
+            np.asarray([origin[2]]),
+            np.asarray([0.0]),
+            np.asarray([tan_t / norm]),
+            np.asarray([1.0 / norm]),
+        )
+        landings = self._world_order_trace_landings(float(wavelength), bundle)
+        return int(np.asarray(landings[0]).size) > 0
+
+    def _world_launch_pupil_distance(
+        self, wavelength: float, acceptance: float, field_limit: float
+    ) -> "float | None":
+        """The entrance-pupil distance along the incoming leg, measured by TRACING.
+
+        The first world instrument launched every field's fan straight down the axis and
+        starved beyond ~1/3 field with a clip-biased image height (measured |m| 0.82 against
+        the solve's 0.42) — the lens is not object-space telecentric, so an off-axis fan
+        must aim where the pupil actually is. Probe: at a moderate field, bisect the two
+        EDGES of the surviving meridional-tilt interval with single traced rays; its centre
+        is the chief tilt, and ``field / |chief tilt|`` is the pupil distance. Cached with
+        the acceptance. None means telecentric-or-unmeasurable → aim straight (the previous
+        behaviour, correct for telecentric glass)."""
+        probe_field = None
+        chief = None
+        for fraction in (0.5, 0.25, 0.75):
+            candidate = float(field_limit) * fraction
+            if abs(candidate) <= 1.0e-9:
+                continue
+            window = max(0.6, 3.0 * float(acceptance))
+            coarse = np.linspace(-window, window, 25)
+            landed = [t for t in coarse if self._world_launch_single_lands(wavelength, candidate, float(t))]
+            if not landed:
+                continue
+            t_lo, t_hi = float(min(landed)), float(max(landed))
+            step = float(coarse[1] - coarse[0])
+
+            def _bisect(inside: float, outside: float) -> float:
+                for _ in range(7):
+                    midpoint = 0.5 * (inside + outside)
+                    if self._world_launch_single_lands(wavelength, candidate, midpoint):
+                        inside = midpoint
+                    else:
+                        outside = midpoint
+                return inside
+
+            t_lo = _bisect(t_lo, t_lo - step)
+            t_hi = _bisect(t_hi, t_hi + step)
+            probe_field = candidate
+            chief = 0.5 * (t_lo + t_hi)
+            break
+        if probe_field is None or chief is None:
+            return None
+        if abs(chief) < 1.0e-4:  # telecentric: the chief is parallel to the axis
+            return None
+        distance = -float(probe_field) / float(chief)
+        if not np.isfinite(distance) or abs(distance) < 1.0:
+            return None
+        try:
+            self.append_debug(
+                f"world-order launch: entrance pupil at {distance:.2f} mm along the incoming "
+                f"leg (chief tilt {chief:+.5f} at field {probe_field:.3f}; bugs/0593)"
+            )
+        except Exception:
+            pass
+        return distance
+
+    def _world_launch_pupil_distance_cached(self, wavelength: float, acceptance: float) -> "float | None":
+        """Signature-cached wrapper for :meth:`_world_launch_pupil_distance` (the probe costs
+        ~40 single-ray traces; the answer is a property of the scene, not of the field)."""
+        from KrakenOS.UI.services.row_spec_contracts import _row_specs_signature
+
+        try:
+            signature = (_row_specs_signature(self._serializable_row_specs()), round(float(wavelength), 6))
+        except Exception:
+            signature = None
+        cache = self.__dict__.get("_world_launch_pupil_distance_cache")
+        if signature is not None and isinstance(cache, tuple) and cache[0] == signature:
+            return cache[1]
+        try:
+            field_limit = float(self._current_field_height() or 0.0)
+        except Exception:
+            field_limit = 0.0
+        if not np.isfinite(field_limit) or field_limit <= 1.0e-6:
+            field_limit = 10.0
+        distance = self._world_launch_pupil_distance(float(wavelength), float(acceptance), field_limit)
+        if signature is not None:
+            self._world_launch_pupil_distance_cache = (signature, distance)
+        return distance
+
+    def _world_order_field_bundle(
+        self,
+        pattern: str,
+        field_x: float,
+        field_y: float,
+        sample_count: int,
+        acceptance: float,
+        pupil_distance: "float | None" = None,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """A launch bundle for one field point on a world-placed scene.
+
+        The fan deliberately OVERFILLS the measured acceptance and lets the real stop
+        clip it — the surviving rays are the true pupil (this scene family terminates
+        out-of-stop rays as ``aperture_stop_vignette``; measured on bugs/0591).
+
+        ``chief`` launches the single axis-parallel ray from the field point. On the
+        telecentric machine-vision lenses this scene family carries, that IS the chief;
+        where it vignettes, the scan's own fallback (mean of the meridional fan) takes
+        over — the fallback that already existed for an empty PupilCalc chief."""
+        origin, _direction = self._world_launch_frame()
+        o_x = float(origin[0]) + float(field_x)
+        o_y = float(origin[1]) + float(field_y)
+        o_z = float(origin[2])
+        span = float(acceptance) * self._WORLD_LAUNCH_OVERFILL
+        count = max(15, int(sample_count))
+        # Aim the fan where the pupil IS: for a non-telecentric lens the off-axis chief
+        # tilts toward the entrance pupil (measured by ``_world_launch_pupil_distance``);
+        # launching every field straight down the axis starved beyond ~1/3 field and biased
+        # the surviving heights (the |m| 0.82-vs-0.42 symptom).
+        centre_x = centre_y = 0.0
+        if pupil_distance is not None and abs(float(pupil_distance)) > 1.0:
+            centre_x = -float(field_x) / float(pupil_distance)
+            centre_y = -float(field_y) / float(pupil_distance)
+        if pattern == "chief":
+            offsets = np.asarray([[centre_x, centre_y]], dtype=float)
+        elif pattern == "fanx":
+            offsets = np.column_stack(
+                [centre_x + np.linspace(-span, span, count), np.full(count, centre_y)]
+            )
+        elif pattern in {"fany", "fan"}:
+            offsets = np.column_stack(
+                [np.full(count, centre_x), centre_y + np.linspace(-span, span, count)]
+            )
+        else:  # hexapolar / any 2-D pupil: rings of 6k points out to the span
+            rings = max(2, int(round(np.sqrt(count))))
+            pts = [(centre_x, centre_y)]
+            for ring in range(1, rings + 1):
+                radius = span * ring / rings
+                for azimuth in np.linspace(0.0, 2.0 * np.pi, 6 * ring, endpoint=False):
+                    pts.append((centre_x + radius * np.cos(azimuth), centre_y + radius * np.sin(azimuth)))
+            offsets = np.asarray(pts, dtype=float)
+        l_dir = offsets[:, 0]
+        m_dir = offsets[:, 1]
+        norm = np.sqrt(l_dir * l_dir + m_dir * m_dir + 1.0)
+        n_pts = offsets.shape[0]
+        return (
+            np.full(n_pts, o_x),
+            np.full(n_pts, o_y),
+            np.full(n_pts, o_z),
+            l_dir / norm,
+            m_dir / norm,
+            np.ones(n_pts) / norm,
+        )
+
     def _pupil_probe_failure_reason(self, exc: Exception) -> str:
         """Plain-language reason the sequential pupil probe could not run (bugs/0593).
 
@@ -635,6 +1039,46 @@ class GeometricAnalysisMixin:
                 n_local[finite],
                 worker_count,
             )
+        ptype = self._current_analysis_pupil_pattern(pattern) if pattern == "hexapolar" else str(pattern)
+        if require_2d_pupil and str(ptype) in {"fanx", "fany", "fan", "chief", "rtheta"}:
+            # A spot diagram / PSF needs the pupil filled in 2D. The editor's display pupil
+            # pattern may be a 1-D fan (the default "Meridional fan" -> "fany"), which would
+            # collapse the spot to a vertical line; force a 2-D hexapolar pupil instead.
+            ptype = "hexapolar"
+        if self._world_placed_chain_rows():
+            # bugs/0593: a world-placed (folded / 0433-frozen) chain is out of contract for
+            # the sequential PupilCalc probe AND for the sequential chunk trace (whose specs
+            # carry no built solids, so on this scene NOTHING lands). Launch geometrically
+            # and trace the REAL solids-built system — the instrument the preview already
+            # trusts — landing on the detector plane resolved by ``row_placement``.
+            acceptance = self._world_launch_acceptance(float(wavelength))
+            empty = np.asarray([], dtype=float)
+            if acceptance is None:
+                return empty, empty, empty, empty, empty, empty, 1
+            pupil_distance = self._world_launch_pupil_distance_cached(float(wavelength), float(acceptance))
+            bundle = self._world_order_field_bundle(
+                str(ptype), float(field_x), float(field_y), int(sample_count), float(acceptance),
+                pupil_distance,
+            )
+            x_local, y_local, z_local, l_local, m_local, n_local = self._world_order_trace_landings(
+                float(wavelength), bundle
+            )
+            finite = (
+                np.isfinite(x_local)
+                & np.isfinite(y_local)
+                & np.isfinite(l_local)
+                & np.isfinite(m_local)
+                & np.isfinite(n_local)
+            )
+            return (
+                x_local[finite],
+                y_local[finite],
+                z_local[finite],
+                l_local[finite],
+                m_local[finite],
+                n_local[finite],
+                1,
+            )
         try:
             pupil = Kos.PupilCalc(
                 system,
@@ -647,15 +1091,10 @@ class GeometricAnalysisMixin:
             # bugs/0593: on a world-placed (folded) chain this raises IndexError out of
             # PupilTool's empty pick. Re-raise with a reason a user can act on -- the caller's
             # blanket except turns it into "no spec", and an unexplained blank canvas was the
-            # whole defect.
+            # whole defect. (Normally preempted by the world-order branch above; this stays as
+            # the honest failure path for any chain that slips past the predicate.)
             raise RuntimeError(self._pupil_probe_failure_reason(exc)) from exc
         pupil.Samp = max(2, int(sample_count))
-        ptype = self._current_analysis_pupil_pattern(pattern) if pattern == "hexapolar" else str(pattern)
-        if require_2d_pupil and str(ptype) in {"fanx", "fany", "fan", "chief", "rtheta"}:
-            # A spot diagram / PSF needs the pupil filled in 2D. The editor's display pupil
-            # pattern may be a 1-D fan (the default "Meridional fan" -> "fany"), which would
-            # collapse the spot to a vertical line; force a 2-D hexapolar pupil instead.
-            ptype = "hexapolar"
         pupil.Ptype = ptype
         pupil.FieldType = str(field_type)
         pupil.FieldX = float(field_x)
