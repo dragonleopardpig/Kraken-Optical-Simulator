@@ -159,7 +159,7 @@ def _build_coaxial_overlay(ray_count: int):
         system = _build_system_from_specs(surfaces)
         rays = Kos.raykeeper(system)
         max_radius = max((max(r.diameter / 2.0, 0.5) for r in rows), default=1.0)
-        editor._trace_preview_rays(system, rays, float(settings["wavelength"]), max_radius, allow_full_pupil=False)
+        editor._trace_preview_rays(system, rays, float(settings["wavelength"]), max_radius, allow_full_pupil=False, full_count_sources=True)
         bundle = build_scene_bundle(
             rows=rows, system=system, rays=rays, sources=sources,
             field_count=len(sources),

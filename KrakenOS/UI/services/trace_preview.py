@@ -44,7 +44,12 @@ class TracePreviewService:
         *,
         allow_full_pupil: bool = True,
         sampling_mode: str = "display_slice",
+        full_count_sources: bool = False,
     ) -> None:
+        # bugs/0590: an ANALYSIS launch (illumination heatmap, coverage) must not inherit the
+        # bugs/0540 interactive 200-ray preview cap -- that cap's own comment promises analysis
+        # passes are unaffected, and they were not. Callers that MEASURE pass full_count_sources.
+
         system.IgnoreVignetting(0)
         pupil_radius = self._resolved_preview_pupil_radius(
             max_radius,
@@ -56,7 +61,9 @@ class TracePreviewService:
         self._active_preview_sampling_mode = mode
         full_pupil = bool(allow_full_pupil and (self._is_full_pupil_mode() or mode == "full_pupil"))
         self._preview_field_bundle_count = max(1, self._current_field_count())
-        scene_source_bundles, scene_source_records = self._build_scene_source_bundles(wavelength)
+        scene_source_bundles, scene_source_records = self._build_scene_source_bundles(
+            wavelength, full_count=bool(full_count_sources)
+        )
         if scene_source_bundles:
             rays.clean()
             self._trace_preview_bundles(

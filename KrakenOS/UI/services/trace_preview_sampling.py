@@ -884,7 +884,11 @@ class TracePreviewSamplingMixin:
         *,
         allow_full_pupil: bool = True,
         sampling_mode: str = "display_slice",
+        full_count_sources: bool = False,
     ) -> None:
+        # bugs/0590: this thin mixin wrapper is the one every caller actually reaches, so it must
+        # forward the analysis opt-out too -- otherwise an analysis pass silently keeps the
+        # interactive 200-ray cap (and, before this, raised TypeError).
         self._trace_preview_service()._trace_preview_rays(
             system,
             rays,
@@ -892,6 +896,7 @@ class TracePreviewSamplingMixin:
             max_radius,
             allow_full_pupil=allow_full_pupil,
             sampling_mode=sampling_mode,
+            full_count_sources=full_count_sources,
         )
 
     def _trace_preview_bundles(

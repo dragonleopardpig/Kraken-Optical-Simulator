@@ -1895,7 +1895,7 @@ class SourceModelingMixin:
             np.asarray(n_values, dtype=float),
         )
 
-    def _build_scene_source_bundle(self, source: SceneSource3D):
+    def _build_scene_source_bundle(self, source: SceneSource3D, *, full_count: bool = False):
         settings = dict(source.settings or {})
         model = str(source.model or settings.get("source_model", "Collimated disk source"))
         ray_count = max(1, int(source.ray_count))
@@ -1905,10 +1905,21 @@ class SourceModelingMixin:
         # preview launches a capped subset (override per source via `preview_ray_cap`);
         # analysis passes (illumination heatmap, coverage) build their own full-count
         # launches from the spec and are unaffected.
-        preview_cap = int(
-            self._source_spec_float(settings, ("preview_ray_cap",), 200.0, minimum=1.0)
-        )
-        ray_count = min(ray_count, max(1, preview_cap))
+        # bugs/0590: that last sentence was ASPIRATIONAL. The analysis passes do NOT build their
+        # own launches -- the illumination heatmap goes through _trace_preview_rays ->
+        # _build_scene_source_bundles -> here, so the 200-ray cap silently applied to them too.
+        # A guard asking for 8000 rays got 200 (a 40x cut) while still PRINTING 8000; only ~42
+        # then landed inside the sensor, below the `in_extent < 50` floor in three_d_scene_tools,
+        # so the DENSITY heatmap was abandoned and a coupled fallback (6x6 bins) answered instead.
+        # That is the whole of the "2 dark + 2 uniform edges became 4 dark edges" report, and of
+        # the phase 175/231/241/244/252 failures -- which were misread for a day as a
+        # desktop-vs-laptop hardware difference. Honour the intent: an analysis launch is
+        # uncapped, the interactive preview stays capped.
+        if not full_count:
+            preview_cap = int(
+                self._source_spec_float(settings, ("preview_ray_cap",), 200.0, minimum=1.0)
+            )
+            ray_count = min(ray_count, max(1, preview_cap))
         radius = self._source_spec_float(settings, ("radius", "source_radius", "launch_radius"), 1.0, minimum=0.0)
         origin = np.asarray(source.origin, dtype=float)
         direction = np.asarray(source.direction, dtype=float)
@@ -2092,7 +2103,7 @@ class SourceModelingMixin:
             np.asarray(n_values, dtype=float),
         )
 
-    def _build_scene_source_bundles(self, wavelength: float) -> tuple[list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]], list[SceneSource3D]]:
+    def _build_scene_source_bundles(self, wavelength: float, *, full_count: bool = False) -> tuple[list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]], list[SceneSource3D]]:
         if not self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", [])):
             return [], []
         # bugs/0542 (flags 124129 "don't enable emission ray tracing by default (any
@@ -2128,7 +2139,7 @@ class SourceModelingMixin:
                 # Letting it reach the preview service's source early-return would replace the imaging
                 # conjugates it is meant to illuminate.
                 continue
-            bundle = self._build_scene_source_bundle(source)
+            bundle = self._build_scene_source_bundle(source, full_count=full_count)
             if bundle is None or len(np.asarray(bundle[0])) <= 0:
                 continue
             bundles.append(bundle)
@@ -2136,7 +2147,7 @@ class SourceModelingMixin:
         return bundles, sources
 
     def _build_coupled_illumination_source_bundles(
-        self, wavelength: float
+        self, wavelength: float, *, full_count: bool = False
     ) -> tuple[
         list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
         list[SceneSource3D],
@@ -2151,7 +2162,7 @@ class SourceModelingMixin:
                 continue
             if not scene_source_spec_couples_to_imaging_launch(source):
                 continue
-            bundle = self._build_scene_source_bundle(source)
+            bundle = self._build_scene_source_bundle(source, full_count=full_count)
             if bundle is None or len(np.asarray(bundle[0])) <= 0:
                 continue
             bundles.append(bundle)
@@ -2189,7 +2200,7 @@ class SourceModelingMixin:
         )
 
     def _build_illumination_marker_bundles(
-        self, wavelength: float
+        self, wavelength: float, *, full_count: bool = False
     ) -> tuple[list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]], list[SceneSource3D]]:
         """Launch bundles for face-bound illumination MARKERS only -- the additive full-surface
         illumination emission (bugs/0267). This is the deliberate COMPLEMENT of
@@ -2207,7 +2218,7 @@ class SourceModelingMixin:
             if not scene_source_spec_is_face_bound_marker(source):
                 continue
             sized = self._illumination_marker_full_surface_source(source)
-            bundle = self._build_scene_source_bundle(sized)
+            bundle = self._build_scene_source_bundle(sized, full_count=full_count)
             if bundle is None or len(np.asarray(bundle[0])) <= 0:
                 continue
             bundles.append(bundle)

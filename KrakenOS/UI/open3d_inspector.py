@@ -13949,6 +13949,36 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             diameter = float(getattr(target, "diameter_mm", 0.0) or getattr(target, "diameter", 0.0) or 0.0)
             width = width if width > 0.0 else (diameter if diameter > 0.0 else 10.0)
             height = height if height > 0.0 else (diameter if diameter > 0.0 else 10.0)
+        # bugs/0589 (flag_20260809_082306 "Normal to sensor is blank, this is recurring bug";
+        # the recurrence of bugs/0556, same lens, four days apart): this preset borrows the
+        # ILLUMINATION-HEATMAP anchor resolver, and on a 0433-frozen FOLDED scene that resolver
+        # can hand back a target that is not the drawn sensor -- measured here, a branch-detector
+        # plane on the straight global +Z axis at (-0.480, 0.069, 248.989) while the sensor the
+        # user can see is at (249.57, 0, -5.05) on the +X fold leg, 356 mm away, of which 250 mm
+        # lies IN the view plane against a 12.44 mm half-window. The camera was aimed 20 half
+        # heights off frame, so the canvas went blank.
+        #
+        # Only `table_row` targets are ever carried onto the fold (the display fold skips every
+        # other target_source), so a resolver change alone would leave the next producer free to
+        # do this again -- 0556 fixed one producer and this arrived through another. Guard the
+        # INVARIANT instead: a camera aimed where NOTHING IS DRAWN can never show anything, so
+        # cross-check the analysis frame against the geometry actually on screen and prefer what
+        # is drawn. The world truth is the drawn actor.
+        drawn = self._drawn_sensor_center_world(target)
+        if drawn is not None:
+            drift = float(np.linalg.norm(np.asarray(drawn, dtype=float).reshape(3) - center))
+            tolerance = max(float(max(width, height)), 1.0)
+            if drift > tolerance:
+                try:
+                    self.editor.append_debug(
+                        f"Normal to Sensor: the anchor target sits {drift:.3f} mm from the DRAWN "
+                        f"sensor ({np.round(center, 3).tolist()} vs "
+                        f"{np.round(np.asarray(drawn, dtype=float), 3).tolist()}) -- aiming at "
+                        f"what is drawn (bugs/0589)"
+                    )
+                except Exception:
+                    pass
+                center = np.asarray(drawn, dtype=float).reshape(3)
         scene_center, scene_radius = self._scene_bounds()
         # Sit on whichever side of the sensor faces the rest of the system, so we look at the
         # illuminated (front) face. Distance is visually irrelevant under parallel projection but
@@ -13979,9 +14009,36 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 break
             except Exception:
                 continue
+        # bugs/0589: clip against the REAL scene, BEFORE the isolation hides most of it. The
+        # reset derives near/far from the currently-visible props, so running it afterwards
+        # brackets only the leftovers -- measured on the flagged state, the slab covered
+        # 552.8-562.3 mm out while the sensor sat at 565.6 mm, i.e. outside it. Order matters.
+        self._reset_camera_clipping_range_for_scene()
         self._isolate_scene_to_sensor_plane(
             center, normal, det_row, band=max(3.0, 0.1 * float(max(width, height)))
         )
+        # bugs/0589: an isolation that leaves NOTHING visible is never what the user asked for --
+        # "show me the sensor" cannot mean "show me an empty canvas". Note the isolation returns
+        # the count it HID, which says nothing about what survived, so count the survivors.
+        still_visible = 0
+        for _actor in list((self.__dict__.get("_actor_by_key") or {}).values()):
+            try:
+                if int(_actor.GetVisibility()):
+                    still_visible += 1
+            except Exception:
+                continue
+        if not still_visible:
+            try:
+                self.editor.append_debug(
+                    "Normal to Sensor: the sensor-plane isolation left NOTHING visible -- "
+                    "restoring the full scene rather than showing a blank canvas (bugs/0589)"
+                )
+            except Exception:
+                pass
+            try:
+                self._restore_sensor_isolation()
+            except Exception:
+                pass
         self._reset_camera_clipping_range_for_scene()
         try:
             self._reorient_thickness_labels_for_camera()
@@ -13989,6 +14046,57 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             pass
         self.render()
         return True
+
+    def _drawn_sensor_center_world(self, target):
+        """bugs/0589: the WORLD centre of the sensor geometry actually on screen, or None.
+
+        The analysis layer's anchor target can be in a frame the display fold never applied (only
+        ``table_row`` targets are carried onto a fold), so on a frozen folded scene its
+        ``center_world`` may name a plane the user cannot see. The actors, by contrast, are drawn
+        where they are drawn -- their bounds ARE the world truth. Prefer the detector row's own
+        actors; fall back to the camera STEP body, whose sensor face is glued to the image plane.
+        """
+        import numpy as _np
+
+        def _bounds_centre(keys):
+            lo = None
+            hi = None
+            for key in dict.fromkeys(keys or []):
+                actor = self._actor_by_key.get(key)
+                if actor is None:
+                    continue
+                try:
+                    b = _np.asarray(actor.GetBounds(), dtype=float).reshape(6)
+                except Exception:
+                    continue
+                if not _np.all(_np.isfinite(b)):
+                    continue
+                mins = _np.array([b[0], b[2], b[4]], dtype=float)
+                maxs = _np.array([b[1], b[3], b[5]], dtype=float)
+                lo = mins if lo is None else _np.minimum(lo, mins)
+                hi = maxs if hi is None else _np.maximum(hi, maxs)
+            return None if lo is None else (lo + hi) / 2.0
+
+        row = None
+        for attr in ("row_index", "trace_surface"):
+            try:
+                row = int(getattr(target, attr))
+                break
+            except Exception:
+                continue
+        if row is not None:
+            centre = _bounds_centre(self._row_actor_map.get(int(row), []))
+            if centre is not None:
+                return centre
+        # The terminal Image row is the sensor when the target names no usable row.
+        try:
+            last = len(self.editor.rows) - 1
+            centre = _bounds_centre(self._row_actor_map.get(int(last), []))
+            if centre is not None:
+                return centre
+        except Exception:
+            pass
+        return None
 
     def _isolate_scene_to_sensor_plane(self, center, normal, det_row_index, *, band: float) -> int:
         """Hide every 3D actor that is not the detector body or an on-sensor-plane overlay, so the
