@@ -1,4 +1,4 @@
-# 0593 — the field-aberration overlays draw nothing, and only numpy said so (PARTIALLY FIXED)
+# 0593 — the field-aberration overlays draw nothing, and only numpy said so (FIXED)
 
 Flag `flag_20260809_094851_598`: *"Normal to sensor works but none of the actual analysis overlay
 works."* Then, separately, the user noticed these in the app's terminal:
@@ -111,7 +111,45 @@ layer out. The measured result was in fact *identically* zero (focus span 1e-14,
 0.0000%) because the flattening also renders both promoted solids optically inert — a flat bowl
 for a machine that is not the user's.
 
-## Open — what the real fix needs
+## FIXED — the world-order launch (commit e6dc2c8b, phase 453)
+
+Implemented as scoped above, plus what only measurement could reveal:
+
+1. **Both instruments were sequential, not just PupilCalc.** The analysis chunk traces its
+   specs with **no built solids** through the sequential `TraceLoop` — measured on this scene,
+   even the axial ray lands nothing, with `build=0` or `build=1`. So "replace the launch, keep
+   the trace" became "replace the launch, and trace via `_trace_preview_bundles`" — the
+   bugs/0243 non-seq path the 3D view already trusts.
+2. **Landing bookkeeping** intersects each ray's TERMINAL SEGMENT with the detector plane from
+   `row_placement.world_frame`, bounded within the segment and the image disc — an absorbed ray
+   is never extrapolated on (the bugs/0530 doctrine).
+3. **Calibration is by tracing, never first order**: ring probes measure the acceptance cone;
+   single-ray edge bisection measures the entrance-pupil distance (166.5 mm on this scene —
+   the lens is not object-space telecentric). Aiming every field straight down the axis
+   starved the scan beyond ~1/3 field; the aimed scan lands all 21 fields with exactly linear
+   heights at |m| = 0.8173, which IS the as-loaded conjugate (an earlier cross-check against
+   0.4189 was comparing against the 55×55-solved state — a different scene state, not an
+   error in the instrument).
+4. **Dominant-cluster rejection**: one BS-ghost ray landing 5–6 mm from a point-focused fan
+   biased the tangential focus by −8.8 mm at two isolated fields (measured). Landings beyond
+   6 robust deviations (floored at 0.25 mm) are rejected.
+
+Measured on the flagged scene: 21/21 fields land, focus span ~1e-5 mm (ideal surrogate —
+correct physics), heights linear, zero numpy warnings; all three overlay specs plus the
+13-field spot RMS map produce; the bowl sits 0.003 mm from the world anchor; a rendered
+sensor-plane snapshot shows 138 overlay actors where the flag showed an empty square.
+
+**Bonus:** `validate_open3d_spot_map_field_cache` (phase 317), which failed at HEAD and was
+environment-sensitive, passes deterministically — the sequential probe was the sensitive part.
+
+**Remaining scope (this class, other doors):** `_build_geometric_image_samples` (the non-full
+x/y variant) and the diffraction-MTF path still construct `Kos.PupilCalc` directly and will
+fail on world-placed chains; they need the same routing when they are next flagged.
+
+Guard: phase 453 (`validate_open3d_0593_field_analysis_on_folded_scene`) — verified failing
+before the fix.
+
+## What the fix needed (original scoping, kept for the record)
 
 1. **Replace the LAUNCH, keep the trace and the pick.** The trace already runs on the real solids,
    and `_pick_image_plane_data_static` already picks in the sensor's LOCAL frame
