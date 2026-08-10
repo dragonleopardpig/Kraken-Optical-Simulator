@@ -40,3 +40,13 @@ status/colour machinery reads every ray as non-reaching — the census cannot di
 converging beam from a stray at the bookkeeping level; only the display geometry does. The
 detector-surface-hit bookkeeping for world-placed Image rows is a standing debt (the same
 family as the 0593 instrument's motivation).
+
+## Addendum (bugs/0605)
+
+The 1.15x half-DIAGONAL disc was still too generous: on the live Apo75 bundle the 9
+missed_image rays (one per field) cross the plane outside the 23x23 glass rectangle
+but inside the disc, and were drawn as fake arrivals — the user's second flag on these
+pencils (flag_20260810_164247). The active stop is now the true RECTANGLE
+(tangent/bitangent + half extents on the plane tuples); the disc remains only as the
+no-dims fallback, and the radial board still governs draw-suppressed branches. See
+bugs/0605.

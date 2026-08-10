@@ -15631,6 +15631,14 @@ phase_456_readout_and_corners = _phase_from_standalone(
     456, "the FOV label reads the DELIVERED field, and the corner widgets hug pixel-square corners (0602/0603)",
     "KrakenOS.UI.validate_open3d_0602_0603_readout_and_corners",
     "readout_and_corners")
+phase_457_ghost_power_weighted_display = _phase_from_standalone(
+    457, "re-split ghost branches draw at power-weighted brightness (0604)",
+    "KrakenOS.UI.validate_open3d_0604_ghost_power_weighted_display",
+    "ghost_power_weighted_display")
+phase_458_pass_by_rays_miss_the_glass = _phase_from_standalone(
+    458, "a missed ray visibly MISSES -- the sensor hard stop is the true rectangle (0605)",
+    "KrakenOS.UI.validate_open3d_0605_pass_by_rays_miss_the_glass",
+    "pass_by_rays_miss_the_glass")
 
 
 # ---------------------------------------------------------------------------
@@ -16138,6 +16146,8 @@ def main() -> int:
             phase_454_sensor_square_single_edge,
             phase_455_sensor_view_draws_the_sensor,
             phase_456_readout_and_corners,
+            phase_457_ghost_power_weighted_display,
+            phase_458_pass_by_rays_miss_the_glass,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

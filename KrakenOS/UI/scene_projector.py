@@ -707,23 +707,44 @@ def detector_planes_for_hard_stop(bundle: object, radius: float) -> list[tuple[n
         # (ghost) light and keeps its arrival look; outside it the ray flies on. The
         # generous board stays as a second limit for DRAW-SUPPRESSED branches, whose
         # planes exist precisely to bound the scatter starburst (bugs/0182/0506).
+        #
+        # flag_20260810_164247 (bugs/0605, the SECOND flag on these pencils): the 1.15x
+        # half-DIAGONAL disc still swallowed the pass-by rays. Measured on the live
+        # Apo75 bundle after a 55x55 solve: the 9 remaining "pencils reaching the
+        # detector" were exactly the 9 missed_image rays (one per field) whose crossings
+        # sit at r 14.9-18.7 -- outside the 23x23 glass (half-side 11.5) yet inside the
+        # 16.26*1.15 disc, so the clip drew a fake arrival for every one. The active
+        # test must be the true RECTANGLE (tangent/bitangent + half extents, small slop
+        # for float noise); the disc limit stays only as the fallback when the target
+        # has no active dims. Real arrivals are unaffected either way -- a ray that
+        # ENDS on the plane keeps its cap without entering the crossing test.
         active_limit = board_limit
+        half_w = half_h = None
         try:
             from KrakenOS.UI.scene_geometry import scene_target_active_dimensions
 
             dims = scene_target_active_dimensions(target)
             if dims is not None:
-                half_diag = 0.5 * float(np.hypot(float(dims[0]), float(dims[1])))
+                w = float(dims[0])
+                h = float(dims[1])
+                half_diag = 0.5 * float(np.hypot(w, h))
                 if np.isfinite(half_diag) and half_diag > 1e-9:
                     active_limit = min(board_limit, 1.15 * half_diag)
+                    half_w = 0.5 * w
+                    half_h = 0.5 * h
         except Exception:
             active_limit = board_limit
+            half_w = half_h = None
         planes.append(
             (
                 np.asarray(center, dtype=float)[:3],
                 np.asarray(normal, dtype=float)[:3],
                 active_limit,
                 board_limit,
+                np.asarray(axes[1], dtype=float)[:3],
+                np.asarray(axes[2], dtype=float)[:3],
+                half_w,
+                half_h,
             )
         )
     return planes
@@ -756,7 +777,12 @@ def _clip_polyline_at_detector_planes(
     best_cross: np.ndarray | None = None
     best_i: int | None = None
     for plane in detector_planes:
-        if len(plane) >= 4:
+        tangent = bitangent = half_w = half_h = None
+        if len(plane) >= 8:
+            center, normal, active_limit, board_limit = plane[0], plane[1], plane[2], plane[3]
+            tangent, bitangent, half_w, half_h = plane[4], plane[5], plane[6], plane[7]
+            limit = float(board_limit if use_board_limit else active_limit)
+        elif len(plane) >= 4:
             center, normal, active_limit, board_limit = plane[0], plane[1], plane[2], plane[3]
             limit = float(board_limit if use_board_limit else active_limit)
         else:  # legacy 3-tuple callers (mechanism harnesses)
@@ -773,8 +799,19 @@ def _clip_polyline_at_detector_planes(
             t = (d[i - 1] / denom) if abs(denom) > 1.0e-12 else 1.0
             t = min(max(t, 0.0), 1.0)
             cross = p[i - 1] + t * (p[i] - p[i - 1])
-            if float(np.linalg.norm(cross - center)) > limit:
-                break  # crosses outside the radial board -> a genuine miss
+            if use_board_limit or tangent is None or half_w is None or half_h is None:
+                if float(np.linalg.norm(cross - center)) > limit:
+                    break  # crosses outside the radial board -> a genuine miss
+            else:
+                # bugs/0605: the active-area stop is the true sensor RECTANGLE, not a
+                # padded disc -- a pass-by ray crossing beside the glass (outside the
+                # rectangle, however close to the half-diagonal) flies on and visibly
+                # MISSES; only light that would physically strike the board is stopped.
+                offset = cross - center
+                u = abs(float(offset @ np.asarray(tangent, dtype=float)[:3]))
+                v = abs(float(offset @ np.asarray(bitangent, dtype=float)[:3]))
+                if u > float(half_w) * 1.02 + 0.05 or v > float(half_h) * 1.02 + 0.05:
+                    break  # beside the glass -> a genuine miss
             param = float(i - 1) + t
             if best_param is None or param < best_param:
                 best_param = param
@@ -955,6 +992,46 @@ def bounded_ray_points_for_scene_display(
                 if remaining_length > 1.0e-9:
                     pts = np.vstack((pts, pts[-1] + direction * remaining_length))
             terminal_was_capped = True
+    elif status == "missed_image" and pts.shape[0] >= 2 and detector_planes:
+        # bugs/0605: the ENGINE terminates a missed_image ray ON the image plane --
+        # that is what the status means: it reached the plane OUTSIDE the glass. Drawn
+        # as-is, that terminal point reads as an arrival pencil beside the sensor
+        # (flag_20260810_164247: 9 such pencils, one per field, r 14.9-18.7 on the
+        # 11.5-half-side sensor). Physically nothing stops light there, so extend the
+        # tail per the bugs/0553 escaped doctrine -- the miss becomes VISIBLE. Gated
+        # to exactly the fake-arrival geometry: the terminal point lies on a known
+        # detector plane BESIDE its glass rectangle; anything else is left alone.
+        end = pts[-1]
+        beside_glass = False
+        for plane in detector_planes:
+            if len(plane) < 8 or plane[6] is None or plane[7] is None:
+                continue
+            centre_p = np.asarray(plane[0], dtype=float)[:3]
+            normal_p = np.asarray(plane[1], dtype=float)[:3]
+            if abs(float((end - centre_p) @ normal_p)) > 0.5:
+                continue
+            offset = end - centre_p
+            u = abs(float(offset @ np.asarray(plane[4], dtype=float)[:3]))
+            v = abs(float(offset @ np.asarray(plane[5], dtype=float)[:3]))
+            if u > float(plane[6]) * 1.02 + 0.05 or v > float(plane[7]) * 1.02 + 0.05:
+                beside_glass = True
+            break
+        if beside_glass:
+            terminal_segment = pts[-1] - pts[-2]
+            geometry_direction = _unit_vector_or_none(terminal_segment)
+            direction = _unit_vector_or_none(terminal_direction)
+            if direction is None:
+                direction = geometry_direction
+            elif geometry_direction is not None and float(np.dot(direction, geometry_direction)) < 0.0:
+                # Same R_LMN SIGN reconciliation as the escaped tail above.
+                direction = -direction
+            if direction is not None:
+                tail = 75.0 if _suppressed_branch else _scene_exit_distance(
+                    pts[-1], direction, terminal_segment, center, scene_radius
+                )
+                if tail > 1.0e-9:
+                    pts = np.vstack((pts, pts[-1] + direction * tail))
+                    terminal_was_capped = True
     # Hard stop: a detector/Image plane terminates the DRAWN ray (display-only;
     # the trace is unchanged). Applied after the escaped tail / missed cap so a
     # tail that would shoot past a detector is truncated at the plane instead.
