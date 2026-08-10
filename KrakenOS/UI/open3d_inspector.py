@@ -2017,20 +2017,47 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # every solid (~4 builds/toggle). Reuse the cached scene when it is still valid
         # (mirrors the Show Rays fast toggle); fall back to a rebuild only when there is
         # no cached scene yet or a geometry edit dirtied the preview trace.
-        if self.editor._open3d_trace_refresh_service().can_reuse_current_scene_for_display_toggle(self):
-            self._debug_trace(
-                "scene_visibility_fast_toggle_refresh",
-                counts=self._debug_actor_counts(),
-            )
-            self.refresh_scene(
-                self.__dict__.get("_current_system"),
-                self.__dict__.get("_current_rays"),
-                list(self.__dict__.get("_current_row_names", []) or []),
-                scene_bundle=self.__dict__.get("_current_scene_bundle"),
-                reset_camera=False,
-            )
-            return
-        self.refresh_from_editor()
+        # flag 2026-08-10 ("a brief flash of optical elements appearing and disappearing
+        # after enabling each analysis overlay"): the rebuild re-creates EVERY actor visible,
+        # renders, and only then re-applies the sensor isolation -- one visible frame of the
+        # whole scene. Freeze buffer swaps for the duration: intermediate renders land in the
+        # back buffer only, and the single final render swaps a finished frame in.
+        render_window = None
+        try:
+            if self._vtk_widget is not None:
+                render_window = self._vtk_widget.GetRenderWindow()
+        except Exception:
+            render_window = None
+        if render_window is not None:
+            try:
+                render_window.SetSwapBuffers(0)
+            except Exception:
+                render_window = None
+        try:
+            if self.editor._open3d_trace_refresh_service().can_reuse_current_scene_for_display_toggle(self):
+                self._debug_trace(
+                    "scene_visibility_fast_toggle_refresh",
+                    counts=self._debug_actor_counts(),
+                )
+                self.refresh_scene(
+                    self.__dict__.get("_current_system"),
+                    self.__dict__.get("_current_rays"),
+                    list(self.__dict__.get("_current_row_names", []) or []),
+                    scene_bundle=self.__dict__.get("_current_scene_bundle"),
+                    reset_camera=False,
+                )
+                return
+            self.refresh_from_editor()
+        finally:
+            if render_window is not None:
+                try:
+                    render_window.SetSwapBuffers(1)
+                except Exception:
+                    pass
+                try:
+                    self.render()
+                except Exception:
+                    pass
 
     def _on_clipped_rays_changed(self) -> None:
         # "Show clipped rays" is the *shared* 2D var (KrakenLayoutEditor.
@@ -14492,6 +14519,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return False
         self._restore_sensor_isolation()
         self._camera_preset = None
+        # flag_20260810_104937 ("zoom in again: blocked by other elements"): rotating away
+        # restores the hidden components BY DESIGN (flag_20260709_162334 demanded it), but the
+        # user then zooms back toward the sensor, finds it buried inside the camera body, and
+        # has no hint of why everything returned. Say it, and name the way back.
+        try:
+            self.status_var.set(
+                "Left Normal to Sensor (rotation restores the scene) -- click Normal to Sensor "
+                "again to isolate the sensor."
+            )
+        except Exception:
+            pass
         return True
 
     def _camera_sight_line_is_axis_aligned(self, camera, tol: float = 1.0e-3) -> bool:
@@ -22208,6 +22246,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             qe.update_readout()
         else:
             self.editor._commit_history_capture()
+        # bugs/0598: the async tracing badge overwrites the status right after this line, so
+        # the solve's outcome (or its refusal) was never readable. Stash it; the badge writer
+        # keeps it in front of its own churn.
+        try:
+            import time as _time
+
+            self.editor._sticky_status_message = {"text": str(msg), "time": _time.perf_counter()}
+        except Exception:
+            pass
         self.status_var.set(msg)
 
     def _apply_design_constraints(self, pins: dict) -> None:

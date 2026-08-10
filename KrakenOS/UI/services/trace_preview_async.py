@@ -209,9 +209,30 @@ def _project_root() -> str:
 
 
 def _set_async_status(inspector: Any, text: str) -> None:
+    """bugs/0598: the tracing badge used to OVERWRITE the status, so a solve's outcome --
+    "mirror -> sensor 30 mm ..." or, worse, a refusal -- was clobbered by "Tracing 999 rays
+    in the background..." before the user could read it (measured: both status bars read the
+    badge right after a 55x55 solve with a section constraint; the user filed "the constraint
+    is not working" with no way to see what the solve had actually said). A recent important
+    message (a solve/split outcome, stashed by the FOV apply path) rides IN FRONT of the badge
+    and survives its churn."""
+    import time
+
+    sticky = ""
+    try:
+        record = getattr(inspector.editor, "_sticky_status_message", None)
+        if isinstance(record, dict):
+            age = time.perf_counter() - float(record.get("time", 0.0))
+            if age < 120.0:
+                sticky = str(record.get("text", "") or "")
+            else:
+                inspector.editor._sticky_status_message = None
+    except Exception:
+        sticky = ""
+    display = f"{sticky}  |  {text}" if sticky else text
     for var in (getattr(inspector, "status_var", None), getattr(inspector.editor, "status_var", None)):
         try:
-            var.set(text)
+            var.set(display)
         except Exception:
             pass
 
