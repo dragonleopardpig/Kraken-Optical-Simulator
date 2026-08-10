@@ -1013,7 +1013,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self._orientation_widget = vtkOrientationMarkerWidget()
                 self._orientation_widget.SetOrientationMarker(axes)
                 self._orientation_widget.SetInteractor(self._vtk_interactor)
-                self._orientation_widget.SetViewport(0.0, 0.0, 0.18, 0.18)
+                # flag_20260810_151023: hug the lower-left corner (smaller viewport = less
+                # internal margin in pixels), freeing scene space when panels are hidden.
+                self._orientation_widget.SetViewport(0.0, 0.0, 0.13, 0.13)
                 self._orientation_widget.SetEnabled(1)
                 self._orientation_widget.InteractiveOff()
 

@@ -76,20 +76,23 @@ _ARROW_LAYER = 4
 # half-height, and bigger => cube smaller on screen => the fixed-size arrows clear the cube
 # silhouette instead of sitting on it (flagged 2026-07-07). Was 0.92 (cube nearly filled
 # the corner, so a rotated corner poked past the orbit arrows).
-_CUBE_VIEWPORT = (0.78, 0.75, 0.995, 0.995)
+# flag_20260810_151023: with the side panels hidden the cube should hug the top-right
+# corner and its ornaments should sit CLOSE to the cube (the blue orbit triangles and the
+# orange roll arcs floated wide, wasting scene space -- the third flag on these arcs).
+_CUBE_VIEWPORT = (0.815, 0.78, 1.0, 1.0)
 _CUBE_FRAME_SCALE = 1.22
 # World half-extent that must stay visible in the arrow renderer (the arrows reach
 # ~1.28 from centre); the camera parallel scale is fitted to this each render so the
 # arrows never clip whatever the corner viewport's pixel aspect turns out to be.
-_ARROW_FIT_HALF = 1.42
+_ARROW_FIT_HALF = 1.16
 # bugs/0253 -- roll arrows are big arcs CONCENTRIC with the cube (roll spins about the
 # sight line = screen centre), flanking the Up arrow at the upper-left/right and capped by a
 # tangential arrowhead pointing down along the top edge -- FreeCAD's rotation handles, not the
 # old small "ears" perched on the cube. Radius sits just outside the cube silhouette.
-_ROLL_ARROW_RADIUS = 1.18
-_ROLL_ARROW_WIDTH = 0.17
-_ROLL_ARROW_HEAD_LEN = 0.30
-_ROLL_ARROW_HEAD_HALF = 0.20
+_ROLL_ARROW_RADIUS = 0.98
+_ROLL_ARROW_WIDTH = 0.15
+_ROLL_ARROW_HEAD_LEN = 0.24
+_ROLL_ARROW_HEAD_HALF = 0.16
 
 
 def _import_vtk():
@@ -316,9 +319,9 @@ class NavigationCube:
         roll_color = (0.95, 0.60, 0.15)
         # Orbit arrows: filled triangles pointing off the four screen edges. The corner
         # viewport is narrow (aspect < 1), so keep tips within ~1.28 of centre.
-        r = 1.00
-        tip = 0.28
-        s = 0.16
+        r = 0.86
+        tip = 0.22
+        s = 0.13
         orbit_specs = {
             "az_right": [(r, s), (r, -s), (r + tip, 0.0)],
             "az_left": [(-r, s), (-r, -s), (-r - tip, 0.0)],
@@ -338,8 +341,8 @@ class NavigationCube:
         # rotation handles (bugs/0253). (a0, a1) in degrees; the arc sweeps a0 -> a1 and the
         # head caps the a1 end: left arc CCW -> head down-left, right arc CW -> head down-right.
         roll_specs = {
-            "roll_ccw": (110.0, 150.0),   # upper-left, sweeps CCW, head points down-left
-            "roll_cw": (70.0, 30.0),      # upper-right, sweeps CW, head points down-right
+            "roll_ccw": (114.0, 142.0),   # upper-left, 28-deg sweep (shorter orange, 3rd ask)
+            "roll_cw": (66.0, 38.0),      # upper-right, 28-deg sweep
         }
         for kind, (a0, a1) in roll_specs.items():
             actor = self._roll_arrow_actor(a0, a1, roll_color)
