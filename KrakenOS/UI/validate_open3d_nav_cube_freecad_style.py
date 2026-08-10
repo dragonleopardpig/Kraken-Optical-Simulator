@@ -128,10 +128,14 @@ def run_checks():
     try:
         from KrakenOS.UI.services import nav_cube_widget as W
 
-        if getattr(W, "_ROLL_ARROW_RADIUS", 0.0) < 1.0:
+        # Re-derived for flag_20260810_151023/164247 (bugs/0603): the user asked twice for
+        # the arcs to sit CLOSER to the cube, so the radius came down to 0.98 -- just
+        # outside the cube silhouette (~0.87), still a concentric arc, nothing like the
+        # old 0.28 ears this check exists to forbid. The bound is the silhouette, not 1.0.
+        if getattr(W, "_ROLL_ARROW_RADIUS", 0.0) < 0.9:
             failures.append(
-                f"D FAIL: _ROLL_ARROW_RADIUS {getattr(W, '_ROLL_ARROW_RADIUS', None)} < 1.0 -- "
-                "roll handles are the old small 'ears', not big concentric arcs"
+                f"D FAIL: _ROLL_ARROW_RADIUS {getattr(W, '_ROLL_ARROW_RADIUS', None)} < 0.9 -- "
+                "roll handles are the old small 'ears', not concentric arcs outside the cube"
             )
         roll_src = inspect.getsource(W.NavigationCube._roll_arrow_actor)
         sig = roll_src.splitlines()[0]

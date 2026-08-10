@@ -55,7 +55,12 @@ os.environ.setdefault("KRAKENOS_HEADLESS", "1")
 # missed this. Drive the guard at the live density.
 _LIVE_RAYS = 60
 # A scatter/bounce-bounded folded scene stays well inside this half-extent.
+# Re-derived for bugs/0605: a PRIMARY ray that misses a detector now legally flies
+# past it (the bugs/0553 scene-envelope tail, <= 600 mm), so the tight bound applies
+# to the DRAW-SUPPRESSED ghost-branch class the clutter contract is about, and every
+# path obeys the absolute no-endless-lines cap.
 _BOUNDED_XY_LIMIT = 150.0
+_ABSOLUTE_XY_CAP = 700.0
 
 
 def _ray(branch_path: str, origin, direction, *, ray_index: int) -> RayPath3D:
@@ -199,7 +204,10 @@ def _check_real_scene(notes: list[str]) -> bool:
     # (c) the bounded 3-D ray extent stays tight (the hard-stops still bound the rays)
     center, radius = scene_display_center_radius(bundle)
     planes = detector_planes_for_hard_stop(bundle, radius)
+    from KrakenOS.UI.services.branch_detectors import _branch_path_draw_suppressed
+
     bounded: list[np.ndarray] = []
+    bounded_suppressed: list[np.ndarray] = []
     for path in list(getattr(bundle, "ray_paths", []) or []):
         pts = np.asarray(getattr(path, "points_world", []), dtype=float)
         if pts.ndim != 2 or pts.shape[0] < 2:
@@ -208,12 +216,21 @@ def _check_real_scene(notes: list[str]) -> bool:
             status = ray_path_terminal_status_from_events(path)
         except Exception:
             status = ""
+        # bugs/0506/0605: thread branch_path so the guard measures what the display
+        # actually draws (suppressed ghost branches keep the generous-board clip).
+        branch = str(getattr(path, "branch_path", "") or "")
         bpts, _capped = bounded_ray_points_for_scene_display(
-            pts, center, radius, terminal_status=status, detector_planes=planes
+            pts, center, radius, terminal_status=status, detector_planes=planes,
+            branch_path=branch,
         )
         bpts = np.asarray(bpts, dtype=float)
         if bpts.ndim == 2 and bpts.shape[0] >= 1 and bpts.shape[1] >= 3:
             bounded.append(bpts[:, :3])
+            try:
+                if branch and _branch_path_draw_suppressed(branch):
+                    bounded_suppressed.append(bpts[:, :3])
+            except Exception:
+                pass
     if not bounded:
         notes.append("no bounded ray points produced -> cannot verify 3-D extent")
         ok = False
@@ -221,11 +238,27 @@ def _check_real_scene(notes: list[str]) -> bool:
         allpts = np.vstack(bounded)
         allpts = allpts[np.all(np.isfinite(allpts), axis=1)]
         max_xy = float(np.max(np.abs(allpts[:, :2]))) if allpts.size else 0.0
-        if max_xy > _BOUNDED_XY_LIMIT:
-            notes.append(f"bounded 3-D ray extent max|x,y|={max_xy:.0f} > {_BOUNDED_XY_LIMIT:.0f} -> un-bounded")
+        sup = np.vstack(bounded_suppressed) if bounded_suppressed else np.empty((0, 3))
+        sup = sup[np.all(np.isfinite(sup), axis=1)] if sup.size else sup
+        max_xy_sup = float(np.max(np.abs(sup[:, :2]))) if sup.size else 0.0
+        if max_xy_sup > _BOUNDED_XY_LIMIT:
+            notes.append(
+                f"suppressed-branch extent max|x,y|={max_xy_sup:.0f} > {_BOUNDED_XY_LIMIT:.0f}"
+                " -> ghost-branch starburst un-bounded"
+            )
+            ok = False
+        elif max_xy > _ABSOLUTE_XY_CAP:
+            notes.append(
+                f"bounded 3-D ray extent max|x,y|={max_xy:.0f} > {_ABSOLUTE_XY_CAP:.0f}"
+                " -> a drawn tail outruns the scene-envelope cap (endless line)"
+            )
             ok = False
         else:
-            notes.append(f"bounded 3-D ray extent tight: max|x,y|={max_xy:.0f} (hard-stops hold)")
+            notes.append(
+                f"bounded 3-D ray extent holds: suppressed max|x,y|={max_xy_sup:.0f} "
+                f"(<= {_BOUNDED_XY_LIMIT:.0f}), all {max_xy:.0f} (<= {_ABSOLUTE_XY_CAP:.0f}; "
+                "primary fly-past tails are legal per bugs/0605)"
+            )
     return ok
 
 

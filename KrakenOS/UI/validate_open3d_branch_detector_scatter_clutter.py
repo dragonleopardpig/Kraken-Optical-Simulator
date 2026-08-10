@@ -52,9 +52,14 @@ from KrakenOS.UI.services.branch_detectors import (
 
 os.environ.setdefault("KRAKENOS_HEADLESS", "1")
 
-# A scatter-bounded folded scene stays well inside this half-extent in display
-# X/Y; the starburst regression blew it past 200 (and Y past 460).
+# A scatter-bounded folded scene keeps its SUPPRESSED branches well inside this
+# half-extent in display X/Y; the starburst regression blew it past 200 (and Y
+# past 460). Re-derived for bugs/0605: a PRIMARY ray that misses a detector now
+# legally flies past it (the bugs/0553 scene-envelope tail, <= 600 mm), so the
+# tight bound applies to the suppressed starburst class the 0182/0506 contract
+# is about, and every path obeys the absolute no-endless-lines cap below.
 _BOUNDED_XY_LIMIT = 150.0
+_ABSOLUTE_XY_CAP = 700.0
 
 
 def _ray(branch_path: str, origin, direction, *, ray_index: int) -> RayPath3D:
@@ -163,6 +168,7 @@ def _check_real_scene(notes: list[str]) -> bool:
     center, radius = scene_display_center_radius(bundle)
     planes = detector_planes_for_hard_stop(bundle, radius)
     bounded: list[np.ndarray] = []
+    bounded_suppressed: list[np.ndarray] = []
     for path in list(getattr(bundle, "ray_paths", []) or []):
         pts = np.asarray(getattr(path, "points_world", []), dtype=float)
         if pts.ndim != 2 or pts.shape[0] < 2:
@@ -173,14 +179,19 @@ def _check_real_scene(notes: list[str]) -> bool:
             status = ""
         # bugs/0506: thread the production kwargs -- the 0459 hit_detector exemption is
         # branch/scene-aware, and the guard must measure what the display actually draws.
+        branch = str(getattr(path, "branch_path", "") or "")
         bpts, _capped = bounded_ray_points_for_scene_display(
             pts, center, radius, terminal_status=status, detector_planes=planes,
-            branch_path=str(getattr(path, "branch_path", "") or ""),
+            branch_path=branch,
             scene_has_diffuse_scatter=True,
         )
         bpts = np.asarray(bpts, dtype=float)
         if bpts.ndim == 2 and bpts.shape[0] >= 1 and bpts.shape[1] >= 3:
             bounded.append(bpts[:, :3])
+            # The same suppression rule the display applies with diffuse scatter on
+            # (bugs/0184): every non-primary branch. These are the starburst class.
+            if branch and branch.lower() not in ("", "primary"):
+                bounded_suppressed.append(bpts[:, :3])
     if not bounded:
         notes.append("no bounded ray points produced -> cannot verify 3-D extent")
         ok = False
@@ -188,14 +199,27 @@ def _check_real_scene(notes: list[str]) -> bool:
         allpts = np.vstack(bounded)
         allpts = allpts[np.all(np.isfinite(allpts), axis=1)]
         max_xy = float(np.max(np.abs(allpts[:, :2]))) if allpts.size else 0.0
-        if max_xy > _BOUNDED_XY_LIMIT:
+        sup = np.vstack(bounded_suppressed) if bounded_suppressed else np.empty((0, 3))
+        sup = sup[np.all(np.isfinite(sup), axis=1)] if sup.size else sup
+        max_xy_sup = float(np.max(np.abs(sup[:, :2]))) if sup.size else 0.0
+        if max_xy_sup > _BOUNDED_XY_LIMIT:
             notes.append(
-                f"bounded 3-D ray extent max|x,y|={max_xy:.0f} > {_BOUNDED_XY_LIMIT:.0f}"
+                f"suppressed-branch extent max|x,y|={max_xy_sup:.0f} > {_BOUNDED_XY_LIMIT:.0f}"
                 " -> scatter starburst un-bounded"
             )
             ok = False
+        elif max_xy > _ABSOLUTE_XY_CAP:
+            notes.append(
+                f"bounded 3-D ray extent max|x,y|={max_xy:.0f} > {_ABSOLUTE_XY_CAP:.0f}"
+                " -> a drawn tail outruns the scene-envelope cap (endless line)"
+            )
+            ok = False
         else:
-            notes.append(f"bounded 3-D ray extent tight: max|x,y|={max_xy:.0f} (hard-stops hold)")
+            notes.append(
+                f"bounded 3-D ray extent holds: suppressed max|x,y|={max_xy_sup:.0f} "
+                f"(<= {_BOUNDED_XY_LIMIT:.0f}), all {max_xy:.0f} (<= {_ABSOLUTE_XY_CAP:.0f}; "
+                "primary fly-past tails are legal per bugs/0605)"
+            )
 
     # (b) the 2-D projection draws only a couple of detector curves (no plaid)
     proj = SceneProjector2D("Vertical").project_bundle(bundle)

@@ -161,6 +161,10 @@ def _make_self(ok: bool = True):
         "destroy",
     ):
         setattr(s, name, lambda *a, **k: None)
+    # bugs/0600: the fov-solve producer now routes its message through the compact
+    # status headline; bind the REAL staticmethod so the stub survives the call
+    # (its output is not under test here -- phase 456 owns the readout contract).
+    s._compact_solve_status = Kraken3DInspector._compact_solve_status
     # The real methods under test:
     s._mark_2d_layout_stale = types.MethodType(Kraken3DInspector._mark_2d_layout_stale, s)
     s.finish_stl_placement = types.MethodType(Kraken3DInspector.finish_stl_placement, s)
