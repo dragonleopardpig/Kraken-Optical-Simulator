@@ -421,13 +421,26 @@ class DetectorCoverageOverlayService:
         return radius if np.isfinite(radius) and radius > 0.0 else None
 
     def _magnification(self) -> float | None:
+        """Measured-aware magnification for the coverage READOUT (object-FOV box + label).
+
+        flag_20260810_164247 (bugs/0591 follow-up): after a solve for 55x55 the label read
+        "FOV 49.8x49.8". The solve deliberately books a conjugate whose RAW paraxial m is
+        shifted by the learned measured/first-order ratio so the DELIVERED field is 55 --
+        so a label that back-computes sensor/|m_raw| shows 55*c, the wrong-direction
+        number. The readout contract (typed = delivered = readout) requires the same
+        corrected magnification current_state() reports."""
         try:
             mag = self.editor._current_finite_paraxial_magnification()
         except Exception:
             return None
         if mag is None or not np.isfinite(mag):
             return None
-        return float(mag)
+        try:
+            from KrakenOS.UI.services.quick_estimation import folded_m_correction
+
+            return float(mag) * folded_m_correction(self.editor)
+        except Exception:
+            return float(mag)
 
     def _is_finite_object(self) -> bool:
         try:

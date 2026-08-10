@@ -64,6 +64,24 @@ SENSOR_FORMATS = (
 SENSOR_ASPECT = (4.0, 3.0)  # default 4:3 machine-vision sensor
 
 
+def folded_m_correction(editor) -> float:
+    """The measured/first-order magnification ratio for the editor's scene (bugs/0591): what
+    the TRACED machine delivered against what the station-frame first order promised. 1.0
+    when unmeasured; cleared on load and on lens/camera swaps. Module-level so DISPLAY
+    readouts outside QuickEstimationService (flag_20260810_164247: the green object-plane
+    "FOV a x b" coverage label showed 55*c = 49.8 from the RAW paraxial m after a solve
+    deliberately booked the corrected conjugate) share the same delivered-truth view. The
+    raw helper `_current_finite_paraxial_magnification` must STAY raw -- the solve's
+    booking math and QuickEstimationService.current_state() apply this factor themselves,
+    and correcting at the source would double it."""
+    record = getattr(editor, "_folded_m_correction_state", None)
+    try:
+        value = float(record) if record is not None else 1.0
+    except Exception:
+        return 1.0
+    return value if np.isfinite(value) and 0.1 < value < 10.0 else 1.0
+
+
 def _nearest_sensor_format(diagonal: float) -> tuple[str, float]:
     return min(SENSOR_FORMATS, key=lambda fmt: abs(fmt[1] - float(diagonal)))
 
@@ -2189,12 +2207,7 @@ class QuickEstimationService:
         """The measured/first-order magnification ratio for THIS scene (bugs/0591), 1.0 when
         unmeasured. Runtime state like the section pins: it records what the TRACED machine
         delivered against what the station-frame first order promised, and is cleared on load."""
-        record = getattr(self.editor, "_folded_m_correction_state", None)
-        try:
-            value = float(record) if record is not None else 1.0
-        except Exception:
-            return 1.0
-        return value if np.isfinite(value) and 0.1 < value < 10.0 else 1.0
+        return folded_m_correction(self.editor)
 
     def _set_folded_m_correction(self, factor: float) -> None:
         try:
