@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-08-09T04:45:09+00:00",
+  "generated_at": "2026-08-10T14:57:35+00:00",
   "phases": {
     "0": "pass",
     "1": "fail",
@@ -318,7 +318,7 @@
     "314": "fail",
     "315": "pass",
     "316": "pass",
-    "317": "fail",
+    "317": "pass",
     "318": "pass",
     "319": "pass",
     "320": "pass",
@@ -453,7 +453,13 @@
     "449": "pass",
     "450": "pass",
     "451": "pass",
-    "452": "pass"
+    "452": "pass",
+    "453": "pass",
+    "454": "pass",
+    "455": "pass",
+    "456": "pass",
+    "457": "pass",
+    "458": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -907,6 +913,12 @@
     "449": "a solve carries the lens BODY with its surrogate, and focuses in the world frame (0574/0575/0576)",
     "450": "a pinned solve books LEGAL gaps and the next swap keeps every element on its leg (0580/0581/0582)",
     "451": "the lens BARREL stays clear of the fold mirror, and a drag cannot tear the block (0583/0584)",
-    "452": "a swap whose refocus is REFUSED still keeps the camera out of the fold solid (0594)"
+    "452": "a swap whose refocus is REFUSED still keeps the camera out of the fold solid (0594)",
+    "453": "the field-aberration suite MEASURES on a folded scene (world-order launch, 0593)",
+    "454": "the sensor square draws ONE edge -- QE defers to the coverage overlay (0595)",
+    "455": "Normal to Sensor shows THE SENSOR -- never un-hides the world (0597)",
+    "456": "the FOV label reads the DELIVERED field, and the corner widgets hug pixel-square corners (0602/0603)",
+    "457": "re-split ghost branches draw at power-weighted brightness (0604)",
+    "458": "a missed ray visibly MISSES -- the sensor hard stop is the true rectangle (0605)"
   }
 }
