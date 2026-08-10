@@ -1,23 +1,18 @@
-"""flag_20260709_162334_323 -- "ISO view, all elements missing (except detector)". Leaving the
-Normal-to-Sensor view via a nav-cube face/edge/corner pick or a free mouse orbit (NOT a cardinal/iso
-preset button) must drop the sensor isolation, exactly as set_camera_preset already does -- otherwise
-the LED plate / lens / rays / axis stay hidden and _reapply_sensor_isolation_if_active re-hides them
-on every refresh, so the ISO view shows only the detector.
+"""PRODUCT DECISION 2026-08-10 (supersedes flag_20260709_162334's gesture-leave): a free
+camera gesture -- orbit, zoom, pan -- NEVER leaves the Normal-to-Sensor isolation. The user:
+"The zoom after the rotation of Normal to Sensor should not reintroduce other actors. To
+restore the 3D scene, the user can just click on the Nav Cube." The explicit ways out are the
+Nav Cube handlers (`_apply_navigation_cube_orientation` / `_apply_navigation_cube_step`) and
+the preset buttons (set_camera_preset), which all call _restore_sensor_isolation directly.
 
-Both the nav-cube snap and the mouse orbit funnel through Kraken3DInspector._on_camera_interaction,
-which now calls _leave_sensor_normal_on_gesture(view_dir). This guard exercises that method directly
-against stub VTK actors (display-free -- no renderer, no Tk, no llvmpipe segfault). The stub scene
-mirrors the coaxial MV-150 layout: a detector + two coplanar overlays at z=657 plus four off-plane
-props (lens, LED cube, optical axis, ray). The guard asserts:
-  * TURN-AWAY -- an off-normal sight line (the reported ISO direction (1,1,1)) leaves: the four hidden
-    props re-show, the isolation intent is nulled, the preset drops to None, and returns True. A second
-    call is a no-op (one-shot -- params already cleared).
-  * STAY -- a face-on sight line (a pure zoom straight down the sensor normal) keeps the isolation:
-    returns False, the props stay hidden, params + preset unchanged. This is why entering the view
-    (camera set straight down the normal) never self-cancels.
-  * PRESET-GUARD -- when the camera is no longer on the sensor_normal preset, the method is inert even
-    for an off-normal view_dir (returns False).
-  * NO-PARAMS -- on the sensor_normal preset but with no isolation recorded, the method no-ops (False).
+This guard asserts the NEW contract against stub VTK actors (display-free):
+  * ORBIT-STAYS -- an off-normal sight line (the old leave trigger, ISO (1,1,1)) does NOT
+    leave: returns False, the props stay hidden, intent + preset intact.
+  * ZOOM-STAYS -- a face-on sight line keeps the isolation, as before.
+  * CUBE-RESTORES -- the nav-cube orientation handler's restore block: on the sensor_normal
+    preset it re-shows the hidden props, clears the intent and drops the preset (source
+    contract -- the stub cannot run the full camera math).
+  * NO-PARAMS -- with no isolation recorded the gesture path stays a no-op (False).
 """
 from __future__ import annotations
 
@@ -110,28 +105,42 @@ def _isolated_inspector():
     return insp, by_name
 
 
-def _check_turn_away(failures: list[str], notes: list[str]) -> None:
+def _check_orbit_stays(failures: list[str], notes: list[str]) -> None:
     insp, by_name = _isolated_inspector()
-    # An ISO nav-cube pick: sight line (1,1,1) is well off the +z sensor normal (|cos| ~ 0.577).
+    # The OLD leave trigger: sight line (1,1,1), well off the +z sensor normal. Under the
+    # 2026-08-10 contract a free orbit KEEPS the isolation.
     iso_dir = np.array([1.0, 1.0, 1.0]) / float(np.linalg.norm([1.0, 1.0, 1.0]))
     left = insp._leave_sensor_normal_on_gesture(iso_dir)
-    if left is not True:
-        failures.append(f"TURN-AWAY: off-normal ISO gesture should leave the view (got {left!r})")
+    if left is not False:
+        failures.append(f"ORBIT-STAYS: a free orbit must NOT leave the view any more (got {left!r})")
     for name in _HIDE:
-        if not by_name[name].GetVisibility():
-            failures.append(f"TURN-AWAY: '{name}' stayed hidden after leaving via nav-cube/orbit")
-    if insp.__dict__.get("_sensor_isolation_params") is not None:
-        failures.append("TURN-AWAY: isolation intent not cleared after leaving (would re-hide on refresh)")
-    if getattr(insp, "_camera_preset", "sensor_normal") is not None:
-        failures.append("TURN-AWAY: _camera_preset should drop to None after leaving the view")
-    # One-shot: a second per-frame fire is inert (params already nulled).
-    if insp._leave_sensor_normal_on_gesture(iso_dir) is not False:
-        failures.append("TURN-AWAY: a second gesture after leaving should be a no-op")
-    if not [f for f in failures if f.startswith("TURN-AWAY")]:
-        notes.append("turn-away: off-normal nav-cube/orbit re-shows the 4 props, clears intent + preset")
+        if by_name[name].GetVisibility():
+            failures.append(f"ORBIT-STAYS: '{name}' was re-shown by a free orbit")
+    if insp.__dict__.get("_sensor_isolation_params") is None:
+        failures.append("ORBIT-STAYS: isolation intent must persist through a free orbit")
+    if str(getattr(insp, "_camera_preset", None)) != "sensor_normal":
+        failures.append("ORBIT-STAYS: _camera_preset must remain 'sensor_normal' through a free orbit")
+    if not [f for f in failures if f.startswith("ORBIT-STAYS")]:
+        notes.append("orbit-stays: a free orbit keeps the 4 props hidden (intent + preset intact)")
 
 
-def _check_stay(failures: list[str], notes: list[str]) -> None:
+def _check_cube_restores(failures: list[str], notes: list[str]) -> None:
+    import inspect as _inspect
+
+    from KrakenOS.UI.open3d_inspector import Kraken3DInspector as _K
+
+    for handler in ("_apply_navigation_cube_orientation", "_apply_navigation_cube_step"):
+        src = _inspect.getsource(getattr(_K, handler))
+        if "_restore_sensor_isolation" not in src or "sensor_normal" not in src:
+            failures.append(
+                f"CUBE-RESTORES: {handler} no longer restores the isolation -- the only explicit "
+                "way out of the sensor view is gone (2026-08-10 contract)"
+            )
+    if not [f for f in failures if f.startswith("CUBE-RESTORES")]:
+        notes.append("cube-restores: both Nav Cube handlers restore the isolation explicitly")
+
+
+def _check_zoom_stays(failures: list[str], notes: list[str]) -> None:
     insp, by_name = _isolated_inspector()
     # A pure zoom stays straight down the sensor normal: sight line anti-parallel to +z (|cos| = 1).
     left = insp._leave_sensor_normal_on_gesture((0.0, 0.0, -1.0))
@@ -171,9 +180,9 @@ def _check_no_params(failures: list[str], notes: list[str]) -> None:
 def run_checks() -> tuple[bool, list[str]]:
     failures: list[str] = []
     notes: list[str] = []
-    _check_turn_away(failures, notes)
-    _check_stay(failures, notes)
-    _check_preset_guard(failures, notes)
+    _check_orbit_stays(failures, notes)
+    _check_zoom_stays(failures, notes)
+    _check_cube_restores(failures, notes)
     _check_no_params(failures, notes)
     return (not failures), (failures + notes)
 

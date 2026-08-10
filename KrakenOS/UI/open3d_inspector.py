@@ -14488,49 +14488,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 pass
 
     def _leave_sensor_normal_on_gesture(self, view_dir) -> bool:
-        """A free camera gesture -- a mouse orbit or a nav-cube face/edge/corner pick, BOTH routed
-        through _on_camera_interaction -- has turned the sight line OFF the sensor normal while the
-        Normal-to-Sensor isolation is active: bring the hidden LED plate / lens / rays / axis back and
-        drop the preset, exactly as a cardinal/iso preset button already does (flag_20260709_162334_323
-        "ISO view, all elements missing except detector"). Only set_camera_preset called
-        _restore_sensor_isolation before, so a nav-cube pick left _camera_preset == "sensor_normal" with
-        the actors hidden -- and _reapply_sensor_isolation_if_active then RE-hid them on every refresh.
+        """PRODUCT DECISION 2026-08-10 (user, after flags 104827..104937): a free camera
+        gesture -- orbit, zoom, pan -- NEVER leaves the Normal-to-Sensor isolation any more.
+        "The zoom after the rotation of Normal to Sensor should not reintroduce other actors.
+        To restore the 3D scene, the user can just click on the Nav Cube."
 
-        Gated on the sight line actually turning away (|cos(view_dir, normal)| < ~1): a pure ZOOM that
-        stays face-on keeps the isolation, and a spurious per-frame fire while still face-on is inert, so
-        entering the view (which sets the camera straight down the normal) never self-cancels. One-shot:
-        _restore_sensor_isolation nulls the intent so later frames no-op. Returns True iff it left."""
-        if str(getattr(self, "_camera_preset", None)) != "sensor_normal":
-            return False
-        params = self.__dict__.get("_sensor_isolation_params")
-        if not params:
-            return False
-        try:
-            normal = np.asarray(params.get("normal"), dtype=float).reshape(3)
-            direction = np.asarray(view_dir, dtype=float).reshape(3)
-            n_norm = float(np.linalg.norm(normal))
-            d_norm = float(np.linalg.norm(direction))
-            if n_norm <= 1e-9 or d_norm <= 1e-9:
-                return False
-            aligned = abs(float(np.dot(normal / n_norm, direction / d_norm)))
-        except Exception:
-            return False
-        if aligned >= 0.999:  # still looking straight down the sensor normal (a pure zoom): stay isolated
-            return False
-        self._restore_sensor_isolation()
-        self._camera_preset = None
-        # flag_20260810_104937 ("zoom in again: blocked by other elements"): rotating away
-        # restores the hidden components BY DESIGN (flag_20260709_162334 demanded it), but the
-        # user then zooms back toward the sensor, finds it buried inside the camera body, and
-        # has no hint of why everything returned. Say it, and name the way back.
-        try:
-            self.status_var.set(
-                "Left Normal to Sensor (rotation restores the scene) -- click Normal to Sensor "
-                "again to isolate the sensor."
-            )
-        except Exception:
-            pass
-        return True
+        History: this used to restore the scene once the sight line turned off the sensor
+        normal, because a nav-cube pick routed through the same camera-interaction path and
+        otherwise left the preset stuck with everything hidden (flag_20260709_162334). The
+        nav-cube handlers (`_apply_navigation_cube_orientation` / `_apply_navigation_cube_step`)
+        now restore EXPLICITLY, exactly like the preset buttons, so the gesture trigger is
+        retired rather than gated. Kept as a method (returning False) because the camera
+        interaction path and the isolation guard both reference it by name."""
+        return False
 
     def _camera_sight_line_is_axis_aligned(self, camera, tol: float = 1.0e-3) -> bool:
         """True when the camera looks straight down a principal axis -- a face-on
@@ -14697,6 +14667,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         absolute canonical up still lives on the +yz/... preset buttons (set_camera_preset)
         and on orientation_pose, so those are unchanged; only the cube CLICK is relative.
         """
+        # 2026-08-10: a Nav Cube pick is the EXPLICIT way out of the Normal-to-Sensor
+        # isolation (free gestures no longer leave it) -- restore like a preset button does.
+        try:
+            if str(getattr(self, "_camera_preset", None)) == "sensor_normal":
+                self._restore_sensor_isolation()
+                self._camera_preset = None
+        except Exception:
+            pass
         if self._renderer is None:
             return
         camera = self._renderer.GetActiveCamera()
@@ -14778,6 +14756,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         render via _on_navigation_cube_snap. Roll leaves the sight line fixed and
         only turns the picture (vtkCamera.Roll, matching the toolbar rotate buttons);
         azimuth/elevation swing to a neighbouring oblique view."""
+        try:
+            if str(getattr(self, "_camera_preset", None)) == "sensor_normal":
+                self._restore_sensor_isolation()
+                self._camera_preset = None
+        except Exception:
+            pass
         if self._renderer is None:
             return
         camera = self._renderer.GetActiveCamera()
