@@ -15623,6 +15623,10 @@ phase_454_sensor_square_single_edge = _phase_from_standalone(
     454, "the sensor square draws ONE edge -- QE defers to the coverage overlay (0595)",
     "KrakenOS.UI.validate_open3d_0595_sensor_square_single_edge",
     "sensor_square_single_edge")
+phase_455_sensor_view_draws_the_sensor = _phase_from_standalone(
+    455, "Normal to Sensor shows THE SENSOR -- never un-hides the world (0597)",
+    "KrakenOS.UI.validate_open3d_0597_sensor_view_draws_the_sensor",
+    "sensor_view_draws_the_sensor")
 
 
 # ---------------------------------------------------------------------------
@@ -16128,6 +16132,7 @@ def main() -> int:
             phase_452_refused_refocus_still_clears_the_camera,
             phase_453_field_analysis_on_folded_scene,
             phase_454_sensor_square_single_edge,
+            phase_455_sensor_view_draws_the_sensor,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

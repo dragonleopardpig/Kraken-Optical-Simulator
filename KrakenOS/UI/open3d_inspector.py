@@ -13965,6 +13965,33 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # cross-check the analysis frame against the geometry actually on screen and prefer what
         # is drawn. The world truth is the drawn actor.
         drawn = self._drawn_sensor_center_world(target)
+        if drawn is None:
+            # bugs/0597: this scene draws NO Image-row geometry at all (Det overlay off), so
+            # there is nothing on screen to cross-check against and the bugs/0589 correction
+            # never engaged -- the camera aimed at a synthetic branch-detector plane 300 mm up
+            # the straight axis while the real sensor sat on the fold leg. The row_placement
+            # resolver is the SAME world truth the frozen display seats rows with (bugs/0556:
+            # five consumers hand-rolled this and each got a frozen scene wrong) -- adopt the
+            # terminal Image row's resolved frame, orientation included.
+            try:
+                from KrakenOS.UI.services import row_placement as _row_placement
+
+                _pos, _rot, _space = _row_placement.world_frame(self.editor, len(self.editor.rows) - 1)
+                _pos = np.asarray(_pos, dtype=float).reshape(3)
+                if np.all(np.isfinite(_pos)):
+                    drawn = _pos
+                    if _rot is not None:
+                        _n = self._normalized_vector(np.asarray(_rot[:, 2], dtype=float))
+                        _t = self._normalized_vector(np.asarray(_rot[:, 0], dtype=float))
+                        if _n is not None:
+                            normal = _n
+                        if _n is not None and _t is not None:
+                            tangent = _t
+                            _u = self._normalized_vector(np.cross(normal, tangent))
+                            if _u is not None:
+                                up = _u
+            except Exception:
+                drawn = None
         if drawn is not None:
             drift = float(np.linalg.norm(np.asarray(drawn, dtype=float).reshape(3) - center))
             tolerance = max(float(max(width, height)), 1.0)
@@ -14028,17 +14055,64 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 continue
         if not still_visible:
+            # bugs/0597 (flag_20260810_083640 "Enabling Normal to Sensor: components not
+            # hidden"): with the Det overlay OFF this scene draws NO geometry at the sensor
+            # plane, so the isolation hid everything and the bugs/0589 restore-all fallback
+            # un-hid the whole scene -- rays, LED plate and all. "Show me the sensor" means
+            # show THE SENSOR: draw the labelled coverage geometry (the same square + image
+            # circle the Det toggle draws) for this view, and only restore the world when even
+            # that cannot draw (a scene with no configured detector at all).
+            drew_sensor = 0
             try:
-                self.editor.append_debug(
-                    "Normal to Sensor: the sensor-plane isolation left NOTHING visible -- "
-                    "restoring the full scene rather than showing a blank canvas (bugs/0589)"
-                )
+                system = getattr(self.editor, "last_system", None)
+                if system is not None and bundle is not None:
+                    drew_sensor = int(self._add_detector_coverage_overlays(system, bundle) or 0)
+                if bundle is not None:
+                    # The labelled vendor sensor square lives in the scene-detector overlay,
+                    # not the coverage overlay -- draw both so the view shows the same square +
+                    # image circle the Det toggle shows.
+                    drew_sensor += int(
+                        self._add_scene_detector_overlays(bundle, include_miss_crosshairs=False) or 0
+                    )
             except Exception:
                 pass
-            try:
-                self._restore_sensor_isolation()
-            except Exception:
-                pass
+            if drew_sensor:
+                # The overlays draw at BOTH conjugate planes (the object FOV rectangle too);
+                # re-apply the band filter so only the sensor-plane pieces stay in this view.
+                try:
+                    self._isolate_scene_to_sensor_plane(
+                        center, normal, det_row, band=max(3.0, 0.1 * float(max(width, height)))
+                    )
+                except Exception:
+                    pass
+                still_visible = 0
+                for _actor in list((self.__dict__.get("_actor_by_key") or {}).values()):
+                    try:
+                        still_visible += int(bool(_actor.GetVisibility()))
+                    except Exception:
+                        continue
+                if not still_visible:
+                    drew_sensor = 0
+            if drew_sensor:
+                try:
+                    self.editor.append_debug(
+                        "Normal to Sensor: no geometry was drawn at the sensor plane -- drew the "
+                        f"detector overlays ({drew_sensor} actors) for this view (bugs/0597)"
+                    )
+                except Exception:
+                    pass
+            else:
+                try:
+                    self.editor.append_debug(
+                        "Normal to Sensor: the sensor-plane isolation left NOTHING visible -- "
+                        "restoring the full scene rather than showing a blank canvas (bugs/0589)"
+                    )
+                except Exception:
+                    pass
+                try:
+                    self._restore_sensor_isolation()
+                except Exception:
+                    pass
         self._reset_camera_clipping_range_for_scene()
         try:
             self._reorient_thickness_labels_for_camera()
