@@ -22262,16 +22262,55 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             qe.update_readout()
         else:
             self.editor._commit_history_capture()
+        # bugs/0600 ("the message is too long, it is clipped"): the composed solve story now
+        # carries conjugates + make-room + focus + the measured delivered field, which no
+        # status bar can show. The FULL story goes to the debug pane; the status bar (and the
+        # bugs/0598 sticky) get a compact headline with the numbers that matter first.
+        compact = self._compact_solve_status(msg)
+        try:
+            self.editor.append_debug(f"FOV solve: {msg}")
+        except Exception:
+            pass
         # bugs/0598: the async tracing badge overwrites the status right after this line, so
         # the solve's outcome (or its refusal) was never readable. Stash it; the badge writer
         # keeps it in front of its own churn.
         try:
             import time as _time
 
-            self.editor._sticky_status_message = {"text": str(msg), "time": _time.perf_counter()}
+            self.editor._sticky_status_message = {"text": compact, "time": _time.perf_counter()}
         except Exception:
             pass
-        self.status_var.set(msg)
+        self.status_var.set(compact)
+
+    @staticmethod
+    def _compact_solve_status(message: str) -> str:
+        """bugs/0600: compress the solve story to a status-bar headline. Known phrases become
+        short tokens (numbers kept); anything unrecognised -- refusals especially -- survives
+        verbatim. The full text is in the debug pane."""
+        import re
+
+        text = str(message or "")
+        rules = (
+            (r"Object ([\d.]+) x ([\d.]+) mm fills the sensor\.\s*", r"\1×\2 solved. "),
+            (r"Solved \(folded\): object->lens ([\d.]+) mm[;.]?\s*", r"obj→lens \1. "),
+            (r"the sensor moved ([+-]?[\d.]+) mm along its folded leg \(the fold mirror stayed put\)\s*", r"sensor \1. "),
+            (r"the camera moved ([+-]?[\d.]+) mm further down the fold leg \(the fold mirror stayed put\)\.\s*", r"camera \1. "),
+            (r"\(\|m\|=([\d.]+)\)\.?\s*", r"|m|=\1. "),
+            (r"Made room first: the fold mirror and the camera moved ([+-]?[\d.]+) mm along the leg\.\s*", r"made room \1. "),
+            (r"Snapped the detector to the traced focus\.\s*", "focused. "),
+            (r"Focus: residual ([+-]?[\d.eE-]+) -> ([+-]?[\d.eE-]+) mm \(snapped to the traced focus\)\.\s*", r"focus \1→\2. "),
+            (r"Delivered field VERIFIED by real rays: ([\d.]+) mm on the sensor diagonal \(target ([\d.]+), ([+-][\d.]+)%\)\.", r"delivered \1/\2 mm (\3%) ✓"),
+            (r"Delivered field measured ([\d.]+) mm vs target ([\d.]+) \(([+-][\d.]+)% after \d+ passes[^)]*\)\.", r"delivered \1/\2 mm (\3%) !"),
+            (r"Image distance split: lens rear->mirror ([\d.]+) mm, mirror->sensor ([\d.]+) mm \([^)]*\)\.", r"legs \1/\2. "),
+            (r"Switched (\d+) analysis overlay\(s\) off for the swap \(re-enable from Overlays\)\.", r"\1 overlays off. "),
+            (r"\s+", " "),
+        )
+        for pattern, replacement in rules:
+            text = re.sub(pattern, replacement, text)
+        text = text.strip()
+        if len(text) > 180:
+            text = text[:177] + "…"
+        return text
 
     def _apply_design_constraints(self, pins: dict) -> None:
         """Apply the design-mode constraint solve to the LAYOUT -- write the solved
