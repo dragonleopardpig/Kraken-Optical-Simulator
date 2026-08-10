@@ -3134,6 +3134,41 @@ class ThreeDSceneToolsMixin:
         return False
 
     @staticmethod
+    def _ray_branch_power_display_weight(branch_path, branch_power) -> float:
+        """Display-opacity weight for a traced branch by its POWER fraction (bugs/0604).
+
+        A beam splitter's internal TIR ladder re-splits at every pass of the flagged
+        plane, spawning a combinatorial ghost forest (2^8 = 256 branches on the flagged
+        Apo75 LED splitter, each carrying <= 0.3% of the ray's power) -- and drawing
+        every branch at full brightness reads as "pencils of rays reaching the
+        detector" (flag_20260810_164247), a ~250x visual exaggeration of real but
+        negligible stray light. True light stays VISIBLE (the bugs/0530 doctrine: no
+        hiding, no teleports) but its display weight follows the physics.
+
+        Scope guard: only RE-SPLIT branches (2+ split events in the lineage) are ever
+        faded -- the root path and the two first-generation splitter arms keep full
+        strength no matter what absolute power they carry, so a deliberately dim
+        source (source_weight semantics) is never dimmed further. Below 5% of the
+        source ray the weight falls as sqrt(power/5%), floored at 0.15 so even deep
+        ghosts remain faintly traceable. The result is QUANTIZED to four buckets so
+        the bugs/0223 merged-ray-actor grouping (keyed by exact opacity) stays a few
+        actors instead of one per distinct ghost power."""
+        lineage = str(branch_path or "").strip()
+        if not lineage or "->" not in lineage:
+            return 1.0
+        try:
+            power = float(branch_power)
+        except (TypeError, ValueError):
+            return 1.0
+        if not np.isfinite(power) or power >= 0.05:
+            return 1.0
+        weight = (power / 0.05) ** 0.5 if power > 0.0 else 0.0
+        for bucket in (0.55, 0.3, 0.15):
+            if weight >= bucket:
+                return bucket
+        return 0.15
+
+    @staticmethod
     def _ray_terminal_3d_style(
         color: tuple[float, float, float],
         terminal_status: str,

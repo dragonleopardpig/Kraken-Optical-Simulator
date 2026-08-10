@@ -146,12 +146,16 @@ class Open3DSceneRefreshService:
             if ray_mesh is None or int(getattr(ray_mesh, "n_points", 0)) < 2:
                 continue
             style = KrakenLayoutEditor._ray_terminal_3d_style(color, terminal_status)
+            # bugs/0604: a re-split ghost branch's brightness follows its power.
+            power_weight = KrakenLayoutEditor._ray_branch_power_display_weight(
+                getattr(ray_path, "branch_path", None), getattr(ray_path, "branch_power", None)
+            )
             self._add_ray_actor(
                 ray_mesh,
                 radius=ray_radius,
                 color=style["line_color"],
                 ray_index=ray_index,
-                opacity=float(style["line_opacity"]),
+                opacity=float(style["line_opacity"]) * power_weight,
                 line_width=float(style["line_width"]),
             )
             if KrakenLayoutEditor._should_draw_3d_terminal_endpoint(
@@ -946,12 +950,16 @@ class Open3DSceneRefreshService:
                 if int(getattr(ray_mesh, "n_points", 0)) < 2:
                     continue
                 style = KrakenLayoutEditor._ray_terminal_3d_style(color, terminal_status)
+                # bugs/0604: a re-split ghost branch's brightness follows its power.
+                power_weight = KrakenLayoutEditor._ray_branch_power_display_weight(
+                    getattr(ray_path, "branch_path", None), getattr(ray_path, "branch_power", None)
+                )
                 self._add_ray_actor(
                     ray_mesh,
                     radius=ray_radius,
                     color=style["line_color"],
                     ray_index=ray_index,
-                    opacity=float(style["line_opacity"]),
+                    opacity=float(style["line_opacity"]) * power_weight,
                     line_width=float(style["line_width"]),
                 )
                 if KrakenLayoutEditor._should_draw_3d_terminal_endpoint(
