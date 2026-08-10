@@ -686,7 +686,7 @@ def detector_planes_for_hard_stop(bundle: object, radius: float) -> list[tuple[n
     ``_display_detector_miss_limit`` so the hard stop matches the existing
     missed-detector cap (a generous radial board, NOT a tight active-area rect).
     """
-    planes: list[tuple[np.ndarray, np.ndarray, float]] = []
+    planes: list[tuple[np.ndarray, np.ndarray, float, float]] = []
     for target in list(getattr(bundle, "targets", []) or []):
         if not bool(getattr(target, "is_detector", False)):
             continue
@@ -697,16 +697,43 @@ def detector_planes_for_hard_stop(bundle: object, radius: float) -> list[tuple[n
         normal = _unit_vector_or_none(getattr(target, "normal_world", None))
         if normal is None:
             continue
-        limit = float(_display_detector_miss_limit(target, radius))
-        if not np.isfinite(limit) or limit <= 0.0:
+        board_limit = float(_display_detector_miss_limit(target, radius))
+        if not np.isfinite(board_limit) or board_limit <= 0.0:
             continue
-        planes.append((np.asarray(center, dtype=float)[:3], np.asarray(normal, dtype=float)[:3], limit))
+        # flag_20260810_145934 ("why there are some pencils of rays reaching the detector?
+        # Those not located at the 9 focused points"): the clip truncated ANY stray tail
+        # crossing the generous radial board, drawing a fake arrival for light that
+        # physically passes BESIDE the sensor. A crossing INSIDE the active sensor is real
+        # (ghost) light and keeps its arrival look; outside it the ray flies on. The
+        # generous board stays as a second limit for DRAW-SUPPRESSED branches, whose
+        # planes exist precisely to bound the scatter starburst (bugs/0182/0506).
+        active_limit = board_limit
+        try:
+            from KrakenOS.UI.scene_geometry import scene_target_active_dimensions
+
+            dims = scene_target_active_dimensions(target)
+            if dims is not None:
+                half_diag = 0.5 * float(np.hypot(float(dims[0]), float(dims[1])))
+                if np.isfinite(half_diag) and half_diag > 1e-9:
+                    active_limit = min(board_limit, 1.15 * half_diag)
+        except Exception:
+            active_limit = board_limit
+        planes.append(
+            (
+                np.asarray(center, dtype=float)[:3],
+                np.asarray(normal, dtype=float)[:3],
+                active_limit,
+                board_limit,
+            )
+        )
     return planes
 
 
 def _clip_polyline_at_detector_planes(
     pts: np.ndarray,
-    detector_planes: list[tuple[np.ndarray, np.ndarray, float]] | None,
+    detector_planes: list | None,
+    *,
+    use_board_limit: bool = False,
 ) -> tuple[np.ndarray, bool]:
     """Truncate ``pts`` at the FIRST detector plane the ray reaches within extent.
 
@@ -728,7 +755,12 @@ def _clip_polyline_at_detector_planes(
     best_param: float | None = None
     best_cross: np.ndarray | None = None
     best_i: int | None = None
-    for center, normal, limit in detector_planes:
+    for plane in detector_planes:
+        if len(plane) >= 4:
+            center, normal, active_limit, board_limit = plane[0], plane[1], plane[2], plane[3]
+            limit = float(board_limit if use_board_limit else active_limit)
+        else:  # legacy 3-tuple callers (mechanism harnesses)
+            center, normal, limit = plane[0], plane[1], float(plane[2])
         center = np.asarray(center, dtype=float)[:3]
         normal = np.asarray(normal, dtype=float)[:3]
         d = (p - center) @ normal  # signed distance of every vertex to this plane
@@ -948,7 +980,15 @@ def bounded_ray_points_for_scene_display(
     # and draws all the way to its sensor.
     detector_clip_applied = False
     if detector_planes and (status != "hit_detector" or _suppressed_branch):
-        pts, detector_clip_applied = _clip_polyline_at_detector_planes(pts, detector_planes)
+        pts, detector_clip_applied = _clip_polyline_at_detector_planes(
+            pts,
+            detector_planes,
+            # The active-rect clip is for IMAGING scenes (the fake-arrival flag). A diffuse
+            # double-pass scene's whole point is BOUNDING the scatter (bugs/0182/0184 --
+            # phases 178/180 measured the regression when the rect let scatter fly past),
+            # so it keeps the generous board, as do draw-suppressed branches.
+            use_board_limit=_suppressed_branch or bool(scene_has_diffuse_scatter),
+        )
         if detector_clip_applied:
             terminal_was_capped = True
     display_radius = max(scene_radius * 3.0, 250.0)
