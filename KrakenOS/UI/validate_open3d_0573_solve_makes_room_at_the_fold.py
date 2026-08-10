@@ -191,7 +191,9 @@ def _check_real_scene(ok, notes) -> None:
                 f"({message[message.find('Made room'):][:70]})",
             )
             ok(
-                abs(float(readout.get("fov_full") or 0.0) - field * np.sqrt(2.0)) < 0.5,
+                # bugs/0591: measured-aware readout -- the delivered field within the
+                # refinement dead-band (~1%) + measurement noise, not the shared-frame 0.5 mm.
+                abs(float(readout.get("fov_full") or 0.0) - field * np.sqrt(2.0)) < 0.02 * field * np.sqrt(2.0) + 0.5,
                 f"B3@{field:g}: the FOV readout lands on the request "
                 f"(diag {readout.get('fov_full')}, want {field * np.sqrt(2.0):.3f})",
             )

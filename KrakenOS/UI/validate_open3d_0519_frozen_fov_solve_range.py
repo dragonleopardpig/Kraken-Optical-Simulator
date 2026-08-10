@@ -67,7 +67,10 @@ def run_checks() -> tuple[bool, list[str]]:
             state = qe.current_state()
             fov = state.get("fov_full")
             mag = state.get("magnification")
-            if fov is not None and abs(float(fov) - 77.78) <= 0.8:
+            # bugs/0591: the readout is now MEASURED-aware (delivered field, not the
+            # station-frame promise); the contract tolerance is the refinement dead-band (~1%)
+            # plus measurement noise -> 2%.
+            if fov is not None and abs(float(fov) - 77.78) <= 1.6:
                 notes.append(f"REAL = 55x55 reached (FOV diag {fov:.2f} mm, |m|={mag:.4g})")
             else:
                 notes.append(f"REAL solve accepted but FOV wrong (diag {fov}, |m|={mag})")

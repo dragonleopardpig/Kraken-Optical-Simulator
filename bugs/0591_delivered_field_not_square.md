@@ -1,4 +1,4 @@
-# 0591 — the delivered 55×55 field is not square, and the first order cannot judge it (RESOLVED: it IS square — the real defect is the delivered magnification)
+# 0591 — the delivered 55×55 field is not square, and the first order cannot judge it (FIXED: measured-|m| corrected solve)
 
 Flag `flag_20260809_082246_212`: **"FOV 55x55, everything correct?"** — a question, not a defect
 report. Scene `machine_vision_Apo75.py`, as-loaded lens 0703-005-000-40-EXC, build `5bcb72de`
@@ -109,3 +109,35 @@ now with a measured error bar: **27%**. Per `feedback_drag_is_thickness_constrai
 lesson (measured shifts are under-measured — iterate, never single-shot), the fix is a
 measured-|m| feedback step in the solve or the frozen-aware first order itself — NOT a
 compensation factor baked on top of the wrong frame.
+
+
+## 2026-08-10 — FIXED: the solve now delivers what it promises (measured)
+
+Architecture chosen against the guard couplings (phases 418/448-B3/261 assert request↔readout
+consistency; phase 444-C4 asserts re-solve idempotence), so a naive book-then-correct loop was
+ruled out in design:
+
+1. **A learned correction factor** `_folded_m_correction_state` (runtime, like the section
+   pins): the ratio of the TRACED machine's magnification to the station-frame first order's.
+   INVALIDATED wherever the machine changes — layout load, lens swap, camera swap — because a
+   stale factor from the old glass steered the first booking on the new one (measured: −6.8%
+   at 35×35 after a PYRITE swap before the invalidation).
+2. **The booking is pre-corrected**: `fov_solve` books `sensor/(correction)` so a re-solve of
+   the same field is idempotent once the factor is learned.
+3. **The refinement measures with real rays** (the bugs/0593 world-order instrument, probing at
+   0.7 of the field so an over-magnified first pass still lands inside the image disc) and
+   re-books until the delivered fill is within 1%, up to 5 passes. The update is a **SECANT**
+   on measured(request), not a multiplicative fixed point: the fresh-swap deferred branch
+   responds with a different (even inverted) local slope, and the naive update diverged there
+   (measured +7.3% after 3 passes while the request walked the wrong way — caught by phase
+   448's B3@35, whose 46.11-vs-49.50 readout was the HONEST delivered field of the diverged
+   state). The secant converges the same case to −0.35%.
+4. **The readout is measured-aware**: `current_state()` multiplies the paraxial |m| by the
+   learned factor, so typed = delivered = readout — the three request↔readout guards keep
+   their meaning at the new (honest) 2% tolerance instead of asserting two copies of the same
+   wrong frame agree to 1e-6.
+
+Measured before/after on the flagged 55×55: delivered error **+27.5% → ~1–3%** (the residual
+is field distortion, reported honestly in the solve message: "Delivered field VERIFIED by real
+rays: … on the sensor diagonal"). Guards re-derived: 0519 (±0.8 → ±1.6 on 77.78), 0573-B3
+(±0.5 → 2%+0.5), folded_conjugate_first_order A (1e-6 → 2%, with the reason in-line).

@@ -485,6 +485,9 @@ class LayoutTableWorkbenchMixin:
         # bugs/0489: hand-placed section pins belong to the editing session, not the
         # prescription -- a freshly loaded scene must never arrive silently over-constrained.
         self._axis_section_pins_state = {}
+        # bugs/0591: the measured/first-order magnification correction is a property of the
+        # MACHINE -- a freshly loaded layout must not inherit another scene's factor.
+        self._folded_m_correction_state = None
         # bugs/0375: a normal menu/Open load ties the layout to this file; the lens
         # importer re-marks it transient AFTER this call (it loads then imports).
         self._layout_is_unsaved_import = False
@@ -1860,6 +1863,10 @@ class LayoutTableWorkbenchMixin:
         # by moving the image to best focus, clamped so it never collides with the RA mirror.
         try:
             self._swap_overlay_note = self._switch_off_analysis_overlays_for_swap()
+            # bugs/0591: new glass = new machine -- the learned magnification correction of the
+            # OLD lens must not steer the first solve on the new one (measured: a stale factor
+            # left the 35x35 readout -6.8% off after a PYRITE swap).
+            self._folded_m_correction_state = None
             self._swap_auto_refocus_to_best_focus()
         except Exception as exc:
             self.append_debug(f"swap auto-refocus skipped: {exc}")
@@ -1980,6 +1987,7 @@ class LayoutTableWorkbenchMixin:
         # auto-fills the field / image circle to the sensor -- the same complete
         # state as picking the camera from the dropdown.
         overlay_note = self._switch_off_analysis_overlays_for_swap()
+        self._folded_m_correction_state = None  # bugs/0591: new sensor = new conjugate target
         self.import_camera_step(
             path=assets.primary_step, dialog_parent=parent, refresh_open_3d=refresh_open_3d
         )

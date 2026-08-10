@@ -2183,6 +2183,129 @@ class QuickEstimationService:
             f"Sensor set to {w:.6g} x {h:.6g} mm (image circle Ø{diagonal:.6g} mm)."
         )
 
+
+    # ---------------------------------------------------------- bugs/0591: measured field fill
+    def _folded_m_correction(self) -> float:
+        """The measured/first-order magnification ratio for THIS scene (bugs/0591), 1.0 when
+        unmeasured. Runtime state like the section pins: it records what the TRACED machine
+        delivered against what the station-frame first order promised, and is cleared on load."""
+        record = getattr(self.editor, "_folded_m_correction_state", None)
+        try:
+            value = float(record) if record is not None else 1.0
+        except Exception:
+            return 1.0
+        return value if np.isfinite(value) and 0.1 < value < 10.0 else 1.0
+
+    def _set_folded_m_correction(self, factor: float) -> None:
+        try:
+            factor = float(factor)
+        except Exception:
+            return
+        if np.isfinite(factor) and 0.1 < factor < 10.0:
+            self.editor._folded_m_correction_state = factor
+
+    _FIELD_FILL_TOLERANCE = 0.01
+    _FIELD_FILL_MAX_PASSES = 5
+    _FIELD_FILL_PROBE_FRACTION = 0.7
+
+    def _measured_delivered_image_semi(self, object_semi: float) -> "float | None":
+        """The DELIVERED image semi-field for a requested object semi-field, measured by
+        real-ray tracing (the bugs/0593 world-order instrument), or None where the first
+        order is already trustworthy (sequential scenes) or nothing lands.
+
+        Probes at a FRACTION of the field (the full corner of an over-magnified solve lands
+        outside the image disc and would read as vignetted) and scales back up — the
+        instrument's own field scan measured the heights exactly linear on this scene family.
+        """
+        editor = self.editor
+        try:
+            if not editor._world_placed_chain_rows():
+                return None
+            wavelength = float(editor._current_wavelength())
+            acceptance = editor._world_launch_acceptance(wavelength)
+            if acceptance is None:
+                return None
+            pupil_distance = editor._world_launch_pupil_distance_cached(wavelength, float(acceptance))
+        except Exception:
+            return None
+        fraction = float(self._FIELD_FILL_PROBE_FRACTION)
+        probe = float(object_semi) * fraction
+        heights: list[float] = []
+        for field_x, field_y in ((0.0, probe), (0.0, -probe)):
+            try:
+                bundle = editor._world_order_field_bundle(
+                    "hexapolar", field_x, field_y, 30, float(acceptance), pupil_distance
+                )
+                x_local, y_local, _z, _l, _m, _n = editor._world_order_trace_landings(wavelength, bundle)
+            except Exception:
+                continue
+            if np.asarray(x_local).size >= 5:
+                heights.append(float(np.hypot(np.mean(x_local), np.mean(y_local))))
+        if len(heights) < 2:
+            return None
+        return float(np.mean(heights)) / fraction
+
+    def _refine_folded_field_fill(self, object_semi: float, target_image_semi: float) -> str:
+        """bugs/0591: the folded first order books gaps for a magnification the machine does
+        not deliver — measured on the flagged Apo75, the solve promised |m| = 0.4189 and the
+        world delivered 0.534, so "Object 55 x 55 mm fills the sensor" actually put ~43 x 43
+        of it on the glass. The station-frame first order cannot be trusted on a frozen fold
+        (bugs/0576), so per the standing doctrine (measured shifts are under-measured —
+        iterate, never single-shot): MEASURE the delivered field with real rays and re-book
+        the conjugate against the measured error until the fill lands within 1%.
+
+        Returns a message fragment; refusals from the re-book are surfaced verbatim (the
+        0577-era refusal machinery stays authoritative — a refinement must never force a gap
+        the machine cannot hold)."""
+        measured = self._measured_delivered_image_semi(object_semi)
+        if measured is None or not np.isfinite(measured) or measured <= 0:
+            return ""
+        target = float(target_image_semi)
+        request = target / self._folded_m_correction()
+        # SECANT update on measured(request): the fresh-swap deferred branch responds with a
+        # DIFFERENT (even inverted) local slope than the frozen-world branch, and the naive
+        # multiplicative fixed point diverged there (measured +7.3% after 3 passes while the
+        # request walked the wrong way). The secant uses the actual local slope, sign included;
+        # the multiplicative step only seeds it.
+        previous_request = None
+        previous_measured = None
+        best = (abs(measured / target - 1.0), float(measured), float(request))
+        for _pass in range(int(self._FIELD_FILL_MAX_PASSES)):
+            error = measured / target - 1.0
+            if abs(error) <= float(self._FIELD_FILL_TOLERANCE):
+                # Learn the machine's measured/first-order ratio for the next booking AND for
+                # the measured-aware readout (delivered == typed == readout).
+                self._set_folded_m_correction(float(measured) / float(request))
+                return (
+                    f" Delivered field VERIFIED by real rays: {2.0 * measured:.4g} mm on the "
+                    f"sensor diagonal (target {2.0 * target:.4g}, {100.0 * error:+.2f}%)."
+                )
+            if previous_measured is not None and abs(measured - previous_measured) > 1.0e-9:
+                slope = (float(measured) - previous_measured) / (float(request) - previous_request)
+                next_request = float(request) + (target - float(measured)) / slope if abs(slope) > 1.0e-9 else float(request) * target / float(measured)
+            else:
+                next_request = float(request) * target / float(measured)
+            next_request = float(np.clip(next_request, 0.3 * target, 3.0 * target))
+            previous_request, previous_measured = float(request), float(measured)
+            request = next_request
+            applied, note = self._apply_conjugate_pair(float(object_semi), float(request))
+            if not applied:
+                return (
+                    f" Field-fill refinement stopped ({100.0 * error:+.1f}% residual): {note}"
+                )
+            measured = self._measured_delivered_image_semi(object_semi)
+            if measured is None or not np.isfinite(measured) or measured <= 0:
+                return " Field-fill refinement stopped: the delivered field became unmeasurable."
+            if abs(measured / target - 1.0) < best[0]:
+                best = (abs(measured / target - 1.0), float(measured), float(request))
+        error = measured / target - 1.0
+        self._set_folded_m_correction(float(measured) / float(request))
+        return (
+            f" Delivered field measured {2.0 * measured:.4g} mm vs target {2.0 * target:.4g} "
+            f"({100.0 * error:+.1f}% after {int(self._FIELD_FILL_MAX_PASSES)} passes -- the "
+            "folded first order disagrees with the traced machine; bugs/0591)."
+        )
+
     def fov_solve(
         self,
         plane: str,
@@ -2218,8 +2341,14 @@ class QuickEstimationService:
                 sensor = self._sensor_semi()
                 if not sensor:
                     return False, "No sensor available to fill."
-                ok, msg = self._apply_conjugate_pair(semi, float(sensor))
+                # bugs/0591: the station-frame first order over-delivers on a frozen fold
+                # (measured 27%). Book with the LEARNED measured correction so a re-solve of
+                # the same field is idempotent (phase 444 C4), then verify with real rays and
+                # update the correction.
+                correction = self._folded_m_correction()
+                ok, msg = self._apply_conjugate_pair(semi, float(sensor) / correction)
                 if ok:
+                    msg += self._refine_folded_field_fill(semi, float(sensor))
                     self.set_target_fov(semi)
                     msg = f"Object {obj_w:.6g} x {obj_h:.6g} mm fills the sensor. " + msg
                 return ok, msg
@@ -2331,6 +2460,13 @@ class QuickEstimationService:
             mag = self.editor._current_finite_paraxial_magnification()
         except Exception:
             mag = None
+        # bugs/0591: the readout shares the solve's frame -- with the measured correction the
+        # reported |m| / FOV are what the TRACED machine delivers, not the station-frame promise.
+        if mag is not None:
+            try:
+                mag = float(mag) * self._folded_m_correction()
+            except Exception:
+                pass
         state["magnification"] = float(mag) if mag is not None and np.isfinite(mag) else None
         sensor = state["sensor_semi"]
         if state["magnification"] and abs(state["magnification"]) > 1e-9 and sensor:
