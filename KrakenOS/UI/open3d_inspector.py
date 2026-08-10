@@ -1015,9 +1015,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self._orientation_widget.SetInteractor(self._vtk_interactor)
                 # flag_20260810_151023: hug the lower-left corner (smaller viewport = less
                 # internal margin in pixels), freeing scene space when panels are hidden.
+                # flag_20260810_164247: a window-FRACTION viewport letterboxes on a wide
+                # window (0.13 of 2478x1264 = 322x164 px, aspect 2) and the marker camera
+                # centres the axes ~80 px off the left edge -- keep it PIXEL-SQUARE at the
+                # corner instead, recomputed per render (window StartEvent).
                 self._orientation_widget.SetViewport(0.0, 0.0, 0.13, 0.13)
+                self._orientation_marker_viewport = None
                 self._orientation_widget.SetEnabled(1)
                 self._orientation_widget.InteractiveOff()
+                render_window.AddObserver("StartEvent", self._square_orientation_marker_viewport)
 
             # bugs/0112: a dedicated always-on-top overlay layer for the
             # move/rotate gizmo handles. Sharing the main camera keeps the
@@ -14789,6 +14795,34 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             return
         self._on_navigation_cube_snap()
+
+    def _square_orientation_marker_viewport(self, *_args) -> None:
+        """Keep the lower-left axes marker's viewport PIXEL-SQUARE at the corner.
+
+        flag_20260810_164247: the marker lived in a window-FRACTION viewport, which
+        letterboxes on a wide window (aspect 2 at 2478x1264) -- the widget's camera
+        centres the axes, floating them ~80 px off the left edge. A square viewport
+        makes the fit exact so the axes hug the corner at any window shape. Runs on
+        the render window's StartEvent; SetViewport only when the size changed."""
+        widget = getattr(self, "_orientation_widget", None)
+        if widget is None or self._vtk_widget is None:
+            return
+        try:
+            w, h = self._vtk_widget.GetRenderWindow().GetSize()
+        except Exception:
+            return
+        from KrakenOS.UI.services.nav_cube_widget import corner_square_viewport
+
+        viewport = corner_square_viewport(
+            w, h, side_fraction=0.15, floor_px=96.0, anchor="bottom-left"
+        )
+        if viewport is None or viewport == getattr(self, "_orientation_marker_viewport", None):
+            return
+        self._orientation_marker_viewport = viewport
+        try:
+            widget.SetViewport(*viewport)
+        except Exception:
+            pass
 
     def _handle_navigation_cube_left_press(self) -> bool:
         """Give the navigation cube (bugs/0156) first refusal on a left-click.

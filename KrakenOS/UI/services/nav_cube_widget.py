@@ -79,7 +79,43 @@ _ARROW_LAYER = 4
 # flag_20260810_151023: with the side panels hidden the cube should hug the top-right
 # corner and its ornaments should sit CLOSE to the cube (the blue orbit triangles and the
 # orange roll arcs floated wide, wasting scene space -- the third flag on these arcs).
+# flag_20260810_164247 (the FOURTH flag on this corner): a window-FRACTION viewport is
+# letterboxed on a wide window -- (0.815..1, 0.78..1) of 2478x1264 is a 458x278 px rect,
+# aspect 1.65, and the corner cameras centre their content, parking the cube ~100 px off
+# the right edge. The viewport must be PIXEL-SQUARE (aspect 1) anchored at the corner, so
+# it is recomputed from the live window size each render (_apply_corner_viewport);
+# _CUBE_VIEWPORT is only the build-time seed before the first render.
 _CUBE_VIEWPORT = (0.815, 0.78, 1.0, 1.0)
+# Height fraction that sets the corner square's pixel side (matches the old vertical
+# extent, 0.22 of the window height), with a width clamp for very narrow windows.
+_CORNER_SIDE_FRACTION = 0.22
+_CORNER_MAX_WIDTH_FRACTION = 0.30
+
+
+def corner_square_viewport(
+    width: float,
+    height: float,
+    *,
+    side_fraction: float,
+    max_width_fraction: float = _CORNER_MAX_WIDTH_FRACTION,
+    floor_px: float = 120.0,
+    anchor: str = "top-right",
+) -> tuple[float, float, float, float] | None:
+    """A PIXEL-SQUARE corner viewport as window fractions, or None on a degenerate size.
+
+    flag_20260810_164247: window-fraction corner viewports letterbox on any non-square
+    window and the corner cameras centre their content, so the nav cube / axes marker
+    floated off their corners. side = side_fraction*height (clamped by width, with a
+    readable floor on tiny windows); the square touches the anchored corner exactly.
+    Shared by the nav-cube (top-right) and the inspector's axes marker (bottom-left)."""
+    w, h = float(width), float(height)
+    if w <= 0.0 or h <= 0.0:
+        return None
+    side = min(side_fraction * h, max_width_fraction * w)
+    side = max(side, min(float(floor_px), 0.9 * min(w, h)))
+    if anchor == "bottom-left":
+        return (0.0, 0.0, min(1.0, side / w), min(1.0, side / h))
+    return (max(0.0, 1.0 - side / w), max(0.0, 1.0 - side / h), 1.0, 1.0)
 _CUBE_FRAME_SCALE = 1.22
 # World half-extent that must stay visible in the arrow renderer (the arrows reach
 # ~1.28 from centre); the camera parallel scale is fitted to this each render so the
@@ -167,6 +203,9 @@ class NavigationCube:
         self._arrow_base_colors: dict[str, tuple[float, float, float]] = {}
         self._arrow_hover_actor = None
         self._start_observer = None
+        # Live corner viewport (pixel-square, see _apply_corner_viewport); seeded with
+        # the static constant until the first render reveals the window size.
+        self._viewport = _CUBE_VIEWPORT
 
         vtk = _import_vtk()
         if vtk is None or render_window is None or main_renderer is None:
@@ -437,6 +476,10 @@ class NavigationCube:
 
     def _on_render_start(self, *_args) -> None:
         try:
+            self._apply_corner_viewport()
+        except Exception:
+            pass
+        try:
             self.sync()
         except Exception:
             pass
@@ -444,6 +487,29 @@ class NavigationCube:
             self._sync_arrow_camera()
         except Exception:
             pass
+
+    def _apply_corner_viewport(self) -> None:
+        """Keep the corner viewport PIXEL-SQUARE and anchored at the top-right corner.
+
+        flag_20260810_164247: a window-fraction viewport letterboxes on a wide window and
+        the corner cameras centre their content, so neither the cube nor its arrows hugged
+        the corner. A square (aspect-1) viewport makes the camera fit exact: the arrows
+        reach ``_ARROW_FIT_HALF`` in every direction, so the assembly touches the corner
+        at any window shape. Recomputed each render; SetViewport only on change."""
+        try:
+            w, h = self._render_window.GetSize()
+        except Exception:
+            return
+        viewport = corner_square_viewport(w, h, side_fraction=_CORNER_SIDE_FRACTION)
+        if viewport is None or viewport == self._viewport:
+            return
+        self._viewport = viewport
+        for renderer in (self._cube_renderer, self._arrow_renderer):
+            if renderer is not None:
+                try:
+                    renderer.SetViewport(*viewport)
+                except Exception:
+                    pass
 
     def _sync_arrow_camera(self) -> None:
         """Frame the screen-fixed arrows so they fit the corner viewport at ANY
@@ -503,7 +569,7 @@ class NavigationCube:
             return False
         if w <= 0 or h <= 0:
             return False
-        x0, y0, x1, y1 = _CUBE_VIEWPORT
+        x0, y0, x1, y1 = self._viewport
         return (x0 * w) <= x <= (x1 * w) and (y0 * h) <= y <= (y1 * h)
 
     def _remember_arrow_color(self, actor, color) -> None:
