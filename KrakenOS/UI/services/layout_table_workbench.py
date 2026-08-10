@@ -1650,6 +1650,29 @@ class LayoutTableWorkbenchMixin:
         # rotation_{x,y,z}_deg / axis_offset_xy / placement_offset_xyz / reverse_direction:
         # PRESERVED (untouched) so the swapped lens keeps the pose the user aligned it to.
 
+
+    def _switch_off_analysis_overlays_for_swap(self) -> str:
+        """bugs/0599: a swap with the heavy analysis overlays on re-runs every field scan /
+        spot map / illumination trace on the new glass -- "swapping would take a super long
+        time" (user, 2026-08-10). Switch them off before the swap's retrace and say so; the
+        user re-enables what they need. Returns the message fragment ('' when none were on
+        or no inspector is open)."""
+        inspector = getattr(self, "_three_d_inspector", None)
+        if inspector is None:
+            return ""
+        try:
+            if not inspector.winfo_exists():
+                return ""
+        except Exception:
+            pass
+        try:
+            switched = int(inspector.switch_off_analysis_overlays())
+        except Exception:
+            return ""
+        if switched <= 0:
+            return ""
+        return f" Switched {switched} analysis overlay(s) off for the swap (re-enable from Overlays)."
+
     def swap_imaging_lens_from_folder(self, folder: str | None = None, *, dialog_parent=None, refresh: bool = True):
         """SWAP the scene's imaging-lens surrogate (rows + STEP overlay) for a newly
         imported lens, IN PLACE (bugs/0378).
@@ -1836,6 +1859,7 @@ class LayoutTableWorkbenchMixin:
         # at their absolute positions, so the image is defocused on the sensor. Auto re-solve
         # by moving the image to best focus, clamped so it never collides with the RA mirror.
         try:
+            self._swap_overlay_note = self._switch_off_analysis_overlays_for_swap()
             self._swap_auto_refocus_to_best_focus()
         except Exception as exc:
             self.append_debug(f"swap auto-refocus skipped: {exc}")
@@ -1861,6 +1885,7 @@ class LayoutTableWorkbenchMixin:
         # Read via __dict__, NOT getattr with a default: a Tk widget's __getattr__ delegates to
         # self.tk and RECURSES on a missing attribute, so the default is never reached (it blew
         # the 0546/0547 guards' stub editor with RecursionError).
+        message += self.__dict__.pop("_swap_overlay_note", "")
         refocus_note = str(self.__dict__.get("_swap_refocus_note", "") or "")
         if refocus_note:
             message += f" NOT refocused: {refocus_note}"
@@ -1954,12 +1979,13 @@ class LayoutTableWorkbenchMixin:
         # known CAMERA_DATABASE entry, import_camera_step reverse-resolves it and
         # auto-fills the field / image circle to the sensor -- the same complete
         # state as picking the camera from the dropdown.
+        overlay_note = self._switch_off_analysis_overlays_for_swap()
         self.import_camera_step(
             path=assets.primary_step, dialog_parent=parent, refresh_open_3d=refresh_open_3d
         )
         message = (
             f"Imported camera {imported.name} from {Path(folder).name}: registered "
-            f"its sensor and placed {assets.primary_step.name}."
+            f"its sensor and placed {assets.primary_step.name}." + overlay_note
         )
         self.status_var.set(message)
         self.append_progress(message)

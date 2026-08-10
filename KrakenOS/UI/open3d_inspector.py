@@ -15178,6 +15178,38 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     # Inspector-only 3D-session state that the layout .py does NOT already carry.
     # (STEP-overlay poses, promoted solids, scene sources, glue, thickness dims,
     # dimension-anchor overrides etc. are already in the layout settings dict.)
+    # The HEAVY analysis overlays: each recompute runs field scans / spot maps / illumination
+    # traces. A lens/camera swap retraces the whole scene, and with these on the swap re-runs
+    # every one of them on the new glass -- "swapping would take a super long time" (user,
+    # 2026-08-10). The swap switches them OFF (bugs/0599) and says so; the user re-enables
+    # what they need from the Overlays menu.
+    _ANALYSIS_OVERLAY_VAR_NAMES = (
+        "show_best_focus_surface_var",
+        "show_distortion_grid_var",
+        "show_astigmatism_var",
+        "show_spot_field_map_var",
+        "show_pixel_grid_var",
+        "show_source_illumination_var",
+        "show_source_illumination_rays_var",
+        "show_illumination_marker_rays_var",
+        "show_receiving_cone_var",
+        "show_illumination_volume_var",
+    )
+
+    def switch_off_analysis_overlays(self) -> int:
+        """Turn every heavy analysis overlay off (no per-var callbacks -- the caller owns the
+        single refresh that follows). Returns how many were ON."""
+        switched = 0
+        for name in self._ANALYSIS_OVERLAY_VAR_NAMES:
+            var = getattr(self, name, None)
+            try:
+                if var is not None and bool(var.get()):
+                    var.set(False)
+                    switched += 1
+            except Exception:
+                continue
+        return switched
+
     _SESSION_TOGGLE_VAR_NAMES = (
         "show_rays_var",
         "show_rotation_handles_var",
