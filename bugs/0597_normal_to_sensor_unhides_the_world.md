@@ -51,3 +51,44 @@ This is the SIXTH consumer of "where is the sensor really" to fail on a frozen s
 camera frame, 0519 solve gate, 0525 cone crease, 0547 swap placement, 0556 sensor anchor, and
 now the 0589 cross-check's empty-scene hole). Every fix converges on the same instrument:
 `row_placement.world_frame`. Any new consumer should start there.
+
+
+## Part 2 — the same phantom, two more doors (flags 20260810_091754 / 091853)
+
+Within the hour the user hit the family twice more: *"turned illumination overlay ON, become
+blank"* and *"Pixel Grid ON"* (the grid drawn far from the sensor with a ray spray across the
+canvas). Both trace to the SAME root: `_source_illumination_anchor_target`'s tiebreaker
+(`int(row_index)` max) picked a **draw-suppressed synthetic branch detector** (row 100001,
+parked mid-air on the straight axis) over the real drawn Image row, because the phantom carries
+the same 23×23 sensor dims and a higher row index. Every consumer of that anchor — the
+illumination heatmap's drape, the pixel grid's lattice (whose "relative illumination" then read
+a uniform 1.00 sampled at the phantom), and Normal-to-Sensor's aim — inherited the phantom.
+
+**Fixes, invariant-level:**
+1. **The resolver prefers what the user can SEE**: non-`draw_suppressed` detectors outrank
+   suppressed phantoms (the bugs/0291 doctrine — a suppressed branch detector is a ray
+   hard-stop, not a display anchor). This heals the heatmap, the pixel grid and the sensor
+   view in one place.
+2. **The isolation is enforced at render time**: overlay machinery adds actors through
+   DEFERRED paths (after_idle draws, the async seated source trace) that land after the
+   isolation pass — the flagged ray spray. `render()` now sweeps late arrivals against the
+   band and hides off-plane ones, whichever code path created them.
+3. **The labelled frame always rides along**: with Det OFF, a rebuild in the sensor view
+   leaves only the heatmap quad — on a uniformly-lit scene a white rectangle on a white
+   canvas. The guarantee now draws the coverage square + image circle unconditionally per
+   rebuild while the view is active (Det ON already draws its own).
+4. `_visible_actor_count` reads the RENDERER traversal, not `_actor_by_key` — the keyed map
+   lies whenever a drawer registered an actor some other way, and a false zero fired the
+   restore-all fallback (caught by the isolation guard's stub).
+
+**Sequence-verified with rendered snapshots** (the user's exact clicks, driven through the
+REAL checkbox callback `_on_scene_visibility_changed`, not a bare refresh): enter the view →
+frame + circle + labels; illumination ON → frame + heatmap fill, no spray, no blank; pixel
+grid ON → the lattice fills the sensor square. Guards: phase 455 extended (resolver contract,
+render-time sweep, frame presence); the isolation/gesture/0556/0595/0593 guards all pass;
+`illumination_flood_phantom_branch_detector` fails identically with and without these changes
+(pre-existing, in the 2026-08-09 baseline's known-fail set).
+
+**Process note**: the first version of this validation drove `refresh_from_editor()` directly
+and missed all of this — the checkbox path is `_on_scene_visibility_changed`. Sequence
+replays must drive the REAL UI callbacks.

@@ -3684,6 +3684,19 @@ class ThreeDSceneToolsMixin:
 
         detectors = [t for t in targets if bool(getattr(t, "is_detector", False))]
         live = [t for t in detectors if not _parked(t)]
+        # bugs/0597 (flags 20260810_091754/091853): a DRAW-SUPPRESSED branch detector is a ray
+        # hard-stop, not a display anchor (the bugs/0291 doctrine). On the frozen folded Apo75
+        # a suppressed synthetic (row 100001, parked mid-air on the straight axis) carried the
+        # same 23x23 sensor dims as the REAL drawn Image row, and the row-index tiebreaker then
+        # picked the phantom -- so the illumination heatmap draped 134 mm up the straight axis,
+        # the pixel grid anchored there too (its "relative illumination" read a uniform 1.00),
+        # and Normal to Sensor aimed at empty space. Prefer what the user can SEE.
+        drawn_live = [
+            t for t in live
+            if not (getattr(t, "metadata", None) or {}).get("draw_suppressed")
+        ]
+        if drawn_live:
+            return _rank(drawn_live)
         if live:
             return _rank(live)
         synthetic = self._imaging_detector_row_anchor_target()

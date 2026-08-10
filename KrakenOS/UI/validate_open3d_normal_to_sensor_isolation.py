@@ -83,6 +83,9 @@ class _StubInspector:
     _restore_sensor_isolation = Kraken3DInspector._restore_sensor_isolation
     _show_sensor_isolation_hidden = Kraken3DInspector._show_sensor_isolation_hidden
     _reapply_sensor_isolation_if_active = Kraken3DInspector._reapply_sensor_isolation_if_active
+    # bugs/0597: the re-apply now guarantees the sensor stays on screen via these helpers.
+    _ensure_sensor_plane_visible = Kraken3DInspector._ensure_sensor_plane_visible
+    _visible_actor_count = Kraken3DInspector._visible_actor_count
     _step_label_has_visible_body_actor = Kraken3DInspector._step_label_has_visible_body_actor
     _step_label_has_only_invisible_body_actors = (
         Kraken3DInspector._step_label_has_only_invisible_body_actors

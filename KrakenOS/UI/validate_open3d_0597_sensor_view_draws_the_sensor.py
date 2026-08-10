@@ -43,7 +43,9 @@ def run_checks():
 
     from KrakenOS.UI import open3d_inspector as inspector_module
 
-    view_src = inspect.getsource(inspector_module.Kraken3DInspector.view_normal_to_sensor)
+    view_src = inspect.getsource(inspector_module.Kraken3DInspector.view_normal_to_sensor) + inspect.getsource(
+        inspector_module.Kraken3DInspector._ensure_sensor_plane_visible
+    ) + inspect.getsource(inspector_module.Kraken3DInspector._reapply_sensor_isolation_if_active)
     if "world_frame" not in view_src:
         ok = False
         notes.append(
@@ -52,6 +54,27 @@ def run_checks():
         )
     else:
         notes.append("PASS: A1: the view adopts the row_placement frame when nothing is drawn")
+    from KrakenOS.UI.services import three_d_scene_tools as scene_tools_module
+
+    resolver_src = inspect.getsource(scene_tools_module.ThreeDSceneToolsMixin._source_illumination_anchor_target)
+    if "drawn_live" not in resolver_src or "draw_suppressed" not in resolver_src:
+        ok = False
+        notes.append(
+            "FAIL: A (bugs/0597): the illumination-anchor resolver no longer prefers DRAWN "
+            "detectors -- a suppressed phantom with matching sensor dims wins the tiebreak "
+            "again, and the heatmap/pixel-grid/sensor-view all anchor mid-air"
+        )
+    else:
+        notes.append("PASS: A0: the anchor resolver prefers drawn detectors over suppressed phantoms")
+    render_src = inspect.getsource(inspector_module.Kraken3DInspector.render)
+    if "_enforce_sensor_isolation_on_late_actors" not in render_src:
+        ok = False
+        notes.append(
+            "FAIL: A (bugs/0597): render() lost the late-actor isolation sweep -- deferred "
+            "overlay draws spray over the isolated sensor view again"
+        )
+    else:
+        notes.append("PASS: A3: render() enforces the isolation on late-arriving actors")
     if "_add_detector_coverage_overlays" not in view_src or "_add_scene_detector_overlays" not in view_src:
         ok = False
         notes.append(

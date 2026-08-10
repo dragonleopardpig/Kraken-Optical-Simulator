@@ -14044,75 +14044,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._isolate_scene_to_sensor_plane(
             center, normal, det_row, band=max(3.0, 0.1 * float(max(width, height)))
         )
-        # bugs/0589: an isolation that leaves NOTHING visible is never what the user asked for --
-        # "show me the sensor" cannot mean "show me an empty canvas". Note the isolation returns
-        # the count it HID, which says nothing about what survived, so count the survivors.
-        still_visible = 0
-        for _actor in list((self.__dict__.get("_actor_by_key") or {}).values()):
-            try:
-                if int(_actor.GetVisibility()):
-                    still_visible += 1
-            except Exception:
-                continue
-        if not still_visible:
-            # bugs/0597 (flag_20260810_083640 "Enabling Normal to Sensor: components not
-            # hidden"): with the Det overlay OFF this scene draws NO geometry at the sensor
-            # plane, so the isolation hid everything and the bugs/0589 restore-all fallback
-            # un-hid the whole scene -- rays, LED plate and all. "Show me the sensor" means
-            # show THE SENSOR: draw the labelled coverage geometry (the same square + image
-            # circle the Det toggle draws) for this view, and only restore the world when even
-            # that cannot draw (a scene with no configured detector at all).
-            drew_sensor = 0
-            try:
-                system = getattr(self.editor, "last_system", None)
-                if system is not None and bundle is not None:
-                    drew_sensor = int(self._add_detector_coverage_overlays(system, bundle) or 0)
-                if bundle is not None:
-                    # The labelled vendor sensor square lives in the scene-detector overlay,
-                    # not the coverage overlay -- draw both so the view shows the same square +
-                    # image circle the Det toggle shows.
-                    drew_sensor += int(
-                        self._add_scene_detector_overlays(bundle, include_miss_crosshairs=False) or 0
-                    )
-            except Exception:
-                pass
-            if drew_sensor:
-                # The overlays draw at BOTH conjugate planes (the object FOV rectangle too);
-                # re-apply the band filter so only the sensor-plane pieces stay in this view.
-                try:
-                    self._isolate_scene_to_sensor_plane(
-                        center, normal, det_row, band=max(3.0, 0.1 * float(max(width, height)))
-                    )
-                except Exception:
-                    pass
-                still_visible = 0
-                for _actor in list((self.__dict__.get("_actor_by_key") or {}).values()):
-                    try:
-                        still_visible += int(bool(_actor.GetVisibility()))
-                    except Exception:
-                        continue
-                if not still_visible:
-                    drew_sensor = 0
-            if drew_sensor:
-                try:
-                    self.editor.append_debug(
-                        "Normal to Sensor: no geometry was drawn at the sensor plane -- drew the "
-                        f"detector overlays ({drew_sensor} actors) for this view (bugs/0597)"
-                    )
-                except Exception:
-                    pass
-            else:
-                try:
-                    self.editor.append_debug(
-                        "Normal to Sensor: the sensor-plane isolation left NOTHING visible -- "
-                        "restoring the full scene rather than showing a blank canvas (bugs/0589)"
-                    )
-                except Exception:
-                    pass
-                try:
-                    self._restore_sensor_isolation()
-                except Exception:
-                    pass
+        self._ensure_sensor_plane_visible(
+            center, normal, det_row, band=max(3.0, 0.1 * float(max(width, height)))
+        )
         self._reset_camera_clipping_range_for_scene()
         try:
             self._reorient_thickness_labels_for_camera()
@@ -14319,6 +14253,186 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._show_sensor_isolation_hidden()
         self._sensor_isolation_params = None
 
+    def _visible_actor_count(self) -> int:
+        """Visible actors by RENDERER traversal — the same ground truth the isolation pass
+        walks. Counting ``_actor_by_key`` instead lies whenever a drawer registered an actor
+        some other way (and made the bugs/0597 guarantee fire restore-all on a false zero)."""
+        count = 0
+        renderers = [r for r in (self._renderer, getattr(self, "_gizmo_overlay_renderer", None)) if r is not None]
+        seen: set[int] = set()
+        for renderer in dict.fromkeys(renderers):
+            try:
+                collection = renderer.GetActors()
+                collection.InitTraversal()
+            except Exception:
+                continue
+            while True:
+                try:
+                    actor = collection.GetNextItem()
+                except Exception:
+                    break
+                if actor is None:
+                    break
+                if id(actor) in seen:
+                    continue
+                seen.add(id(actor))
+                try:
+                    count += int(bool(actor.GetVisibility()))
+                except Exception:
+                    continue
+        if not seen:
+            for actor in list((self.__dict__.get("_actor_by_key") or {}).values()):
+                try:
+                    count += int(bool(actor.GetVisibility()))
+                except Exception:
+                    continue
+        return count
+
+    def _ensure_sensor_plane_visible(self, center, normal, det_row, *, band: float) -> int:
+        """bugs/0589 + 0597: after an isolation pass, guarantee the SENSOR is on screen.
+
+        An isolation that leaves NOTHING visible is never what the user asked for -- but the
+        bugs/0589 answer (restore the whole scene) turned "show me the sensor" into "un-hide
+        the world" whenever the scene drew no geometry at the sensor plane (Det overlay off).
+        Middle path first: DRAW the sensor -- the detector coverage overlays plus the labelled
+        scene-detector square -- then re-apply the band filter so only the sensor-plane pieces
+        stay. Restore-all remains the true last resort (a scene with no configured detector).
+
+        Shared by ``view_normal_to_sensor`` AND ``_reapply_sensor_isolation_if_active``: the
+        flagged sequence (flag_20260810_091754 "turned illumination overlay ON, become blank")
+        was an overlay toggle REBUILD while isolated -- the rebuild re-ran the isolation on a
+        scene with nothing at the plane, and without this fallback the canvas went blank.
+        With the Det overlay OFF the rebuild draws NO frame at the sensor at all, and a bare
+        heatmap quad on a uniformly-lit scene is a white rectangle on a white canvas -- so the
+        labelled square + image circle are drawn UNCONDITIONALLY per rebuild while the view is
+        active (the Det-ON rebuild already drew them itself). Returns the visible-actor count
+        after the guarantee."""
+        det_overlay_on = False
+        try:
+            det_overlay_on = bool(self.show_detector_overlays_var.get())
+        except Exception:
+            det_overlay_on = False
+        drew_sensor = 0
+        if not det_overlay_on:
+            bundle = self.__dict__.get("_current_scene_bundle")
+            try:
+                system = getattr(self.editor, "last_system", None)
+                if system is not None and bundle is not None:
+                    drew_sensor = int(self._add_detector_coverage_overlays(system, bundle) or 0)
+                if bundle is not None:
+                    drew_sensor += int(
+                        self._add_scene_detector_overlays(bundle, include_miss_crosshairs=False) or 0
+                    )
+            except Exception:
+                pass
+            if drew_sensor:
+                # The overlays draw at BOTH conjugate planes (the object FOV rectangle too);
+                # the band filter keeps only the sensor-plane pieces in this view.
+                try:
+                    self._isolate_scene_to_sensor_plane(center, normal, det_row, band=band)
+                except Exception:
+                    pass
+        still_visible = self._visible_actor_count()
+        if still_visible:
+            if drew_sensor:
+                try:
+                    self.editor.append_debug(
+                        "Normal to Sensor: drew the detector overlays "
+                        f"({drew_sensor} actors) so the view keeps its labelled frame (bugs/0597)"
+                    )
+                except Exception:
+                    pass
+            return still_visible
+        try:
+            self.editor.append_debug(
+                "Normal to Sensor: the sensor-plane isolation left NOTHING visible -- "
+                "restoring the full scene rather than showing a blank canvas (bugs/0589)"
+            )
+        except Exception:
+            pass
+        try:
+            self._restore_sensor_isolation()
+        except Exception:
+            pass
+        return self._visible_actor_count()
+
+    def _enforce_sensor_isolation_on_late_actors(self) -> int:
+        """bugs/0597: hide off-plane actors that arrived AFTER the isolation pass.
+
+        The isolation hides what exists when it runs, but overlay machinery keeps adding
+        actors later -- deferred after_idle draws, the async seated source trace -- and those
+        landed visible over the isolated sensor view (the flagged illumination-toggle ray
+        spray). Called from ``render()``: while the sensor view is active, sweep the renderer
+        for visible actors beyond the band and hide them, recording each on the restore list
+        so leaving the view brings everything back. The detector row's own actors are exempt,
+        exactly as in the isolation pass. Cheap (one bounds check per actor per render)."""
+        if str(getattr(self, "_camera_preset", None)) != "sensor_normal":
+            return 0
+        params = self.__dict__.get("_sensor_isolation_params")
+        if not params or self._renderer is None:
+            return 0
+        try:
+            centre = np.asarray(params["center"], dtype=float).reshape(3)
+            normal = np.asarray(params["normal"], dtype=float).reshape(3)
+            band = float(params["band"])
+        except Exception:
+            return 0
+        norm = float(np.linalg.norm(normal))
+        if norm <= 1e-9:
+            return 0
+        normal = normal / norm
+        keep_ids: set[int] = set()
+        try:
+            for actor_key in self._row_actor_map.get(int(params.get("det_row")), []) or []:
+                actor = self._actor_by_key.get(actor_key)
+                if actor is not None:
+                    keep_ids.add(id(actor))
+        except Exception:
+            pass
+        hidden = 0
+        renderers = [self._renderer]
+        gizmo_renderer = getattr(self, "_gizmo_overlay_renderer", None)
+        if gizmo_renderer is not None and gizmo_renderer is not self._renderer:
+            renderers.append(gizmo_renderer)
+        for renderer in renderers:
+            try:
+                collection = renderer.GetActors()
+                collection.InitTraversal()
+            except Exception:
+                continue
+            while True:
+                try:
+                    actor = collection.GetNextItem()
+                except Exception:
+                    break
+                if actor is None:
+                    break
+                if id(actor) in keep_ids:
+                    continue
+                try:
+                    if not int(actor.GetVisibility()):
+                        continue
+                    bounds = np.asarray(actor.GetBounds(), dtype=float)
+                except Exception:
+                    continue
+                if bounds.size != 6 or not np.all(np.isfinite(bounds)) or bounds[0] > bounds[1]:
+                    continue
+                corners = np.array(
+                    [(bounds[i], bounds[2 + j], bounds[4 + k]) for i in (0, 1) for j in (0, 1) for k in (0, 1)],
+                    dtype=float,
+                )
+                if float(np.max(np.abs((corners - centre) @ normal))) <= band:
+                    continue
+                try:
+                    actor.SetVisibility(False)
+                    hidden += 1
+                    restore = self.__dict__.get("_sensor_isolation_restore")
+                    if isinstance(restore, list):
+                        restore.append(actor)
+                except Exception:
+                    pass
+        return hidden
+
     def _reapply_sensor_isolation_if_active(self) -> None:
         """Re-hide the off-sensor-plane actors after a scene rebuild, so the Normal-to-Sensor
         isolation survives ANY overlay toggle (flag_20260709_150713_387 + the follow-up "none of the
@@ -14332,6 +14446,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if not params:
             return
         hidden = self._isolate_scene_to_sensor_plane(
+            params["center"], params["normal"], params["det_row"], band=params["band"]
+        )
+        # bugs/0597 (flag_20260810_091754): an overlay toggle rebuild while isolated can leave
+        # NOTHING at the sensor plane -- the user turned the illumination overlay ON and the
+        # canvas went blank. Same guarantee as entering the view: draw the sensor if need be.
+        self._ensure_sensor_plane_visible(
             params["center"], params["normal"], params["det_row"], band=params["band"]
         )
         if hidden:
@@ -14729,6 +14849,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def render(self) -> None:
         if self._vtk_widget is None:
             return
+        # bugs/0597 (flag_20260810_091754): overlay machinery adds actors through DEFERRED
+        # paths (after_idle ray draws, the async seated source trace) that land AFTER the
+        # isolation pass -- the illumination toggle sprayed marker rays across the isolated
+        # sensor view. Guard the INVARIANT at the choke point every drawer funnels through:
+        # while the Normal-to-Sensor isolation is active, an off-plane actor is hidden the
+        # moment it would first render, whichever path created it.
+        try:
+            self._enforce_sensor_isolation_on_late_actors()
+        except Exception:
+            pass
         token = self._timing_start("render")
         try:
             self._vtk_widget.GetRenderWindow().Render()
