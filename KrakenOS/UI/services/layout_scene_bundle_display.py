@@ -122,9 +122,24 @@ class LayoutSceneBundleDisplayMixin:
         image_distance = self._current_image_distance()
         finite_magnification = self._current_finite_paraxial_magnification()
 
+        # bugs/0610: an image-height field (the camera coupling stores "Real Image Height" =
+        # the sensor half-diagonal) is converted to an OBJECT height by dividing by the
+        # magnification -- so it must divide by what the machine DELIVERS, not by the folded
+        # first order's promise. Measured after a PYRITE swap: raw |m| 1.506 put the launched
+        # field at 15.30 mm while the sensor needed 19.79, so the trace under-filled the glass
+        # by ~18% and no FOV solve could re-frame it (the launcher never saw the new number).
+        # This is the SHARED field converter -- every consumer (ray launcher, field samplers,
+        # auto image diameter, the panel readout) inherits the fix, and on a sequential scene
+        # the correction is 1.0 so nothing moves.
+        try:
+            from KrakenOS.UI.services.quick_estimation import folded_m_correction
+
+            delivered_correction = float(folded_m_correction(self))
+        except Exception:
+            delivered_correction = 1.0
         with np.errstate(divide="ignore", invalid="ignore", over="ignore"):
             if finite_magnification is not None:
-                mag = max(abs(float(finite_magnification)), 1e-9)
+                mag = max(abs(float(finite_magnification)) * delivered_correction, 1e-9)
                 if field_type == "Angle":
                     angle_deg = raw_value
                     object_height = object_distance * np.tan(np.deg2rad(angle_deg))

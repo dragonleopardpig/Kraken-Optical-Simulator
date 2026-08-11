@@ -15639,6 +15639,10 @@ phase_458_pass_by_rays_miss_the_glass = _phase_from_standalone(
     458, "a missed ray visibly MISSES -- the sensor hard stop is the true rectangle (0605)",
     "KrakenOS.UI.validate_open3d_0605_pass_by_rays_miss_the_glass",
     "pass_by_rays_miss_the_glass")
+phase_462_field_converter_uses_delivered_magnification = _phase_from_standalone(
+    462, "the shared field converter launches the DELIVERED field, not the first order's promise (0610)",
+    "KrakenOS.UI.validate_open3d_0610_field_converter_uses_delivered_magnification",
+    "field_converter_uses_delivered_magnification")
 phase_461_swap_prompts_for_fov = _phase_from_standalone(
     461, "an interactive swap ASKS for the FOV you want (prefilled with the delivered field) (0609)",
     "KrakenOS.UI.validate_open3d_0609_swap_prompts_for_fov",
@@ -16163,6 +16167,7 @@ def main() -> int:
             phase_459_sensor_view_landing_rays_only,
             phase_460_swap_relearns_delivered_magnification,
             phase_461_swap_prompts_for_fov,
+            phase_462_field_converter_uses_delivered_magnification,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
