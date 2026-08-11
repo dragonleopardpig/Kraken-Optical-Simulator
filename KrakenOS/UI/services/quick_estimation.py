@@ -2296,6 +2296,23 @@ class QuickEstimationService:
         factor = float(measured_semi / object_semi) / promised_raw
         if not np.isfinite(factor) or not (0.1 < factor < 10.0):
             return None
+        # bugs/0613 (the 448@55 regression): this is a ONE-SHOT, UNVERIFIED measurement taken
+        # at the swap's transitional state -- unlike the solve refinement, no secant pass ever
+        # checks it. Measured on the PYRITE swap: it recorded 0.4731 (a 2x disagreement with
+        # the first order), the next 55x55 solve over-booked its conjugate by that factor, the
+        # refinement aborted "unmeasurable", and the readout landed at -30%. A single probe
+        # that claims the first order is off by more than +-50% is a broken measurement, not
+        # physics -- leave the correction UNSET and let the next solve's verified refinement
+        # learn the real factor (converged large factors like the Apo75's 2.03 stay legal).
+        if not (0.5 <= factor <= 2.0):
+            try:
+                self.editor.append_debug(
+                    f"swap re-measure: one-shot factor {factor:.4g} outside [0.5, 2.0] -- "
+                    "not stored (unverified; the next solve's refinement will learn it)"
+                )
+            except Exception:
+                pass
+            return None
         self._set_folded_m_correction(factor)
         return factor
 
@@ -2312,9 +2329,21 @@ class QuickEstimationService:
         0577-era refusal machinery stays authoritative — a refinement must never force a gap
         the machine cannot hold)."""
         measured = self._measured_delivered_image_semi(object_semi)
-        if measured is None or not np.isfinite(measured) or measured <= 0:
-            return ""
         target = float(target_image_semi)
+        if measured is None or not np.isfinite(measured) or measured <= 0:
+            # bugs/0613: the caller's booking already divided by the standing correction. A
+            # correction that cannot be VERIFIED must not keep steering the booking or the
+            # readout -- unlearn it and re-book the raw first order so typed == booked.
+            if getattr(self.editor, "_folded_m_correction_state", None) is not None:
+                self.editor._folded_m_correction_state = None
+                applied, note = self._apply_conjugate_pair(float(object_semi), target)
+                if not applied:
+                    return f" Field verification unavailable; raw re-book refused: {note}"
+                return (
+                    " Field verification unavailable here -- unlearned the unverified "
+                    "correction and booked the raw first order."
+                )
+            return ""
         request = target / self._folded_m_correction()
         # SECANT update on measured(request): the fresh-swap deferred branch responds with a
         # DIFFERENT (even inverted) local slope than the frozen-world branch, and the naive
@@ -2349,7 +2378,21 @@ class QuickEstimationService:
                 )
             measured = self._measured_delivered_image_semi(object_semi)
             if measured is None or not np.isfinite(measured) or measured <= 0:
-                return " Field-fill refinement stopped: the delivered field became unmeasurable."
+                # bugs/0613: mid-refinement blindness -- the booking sits at an arbitrary
+                # secant step and the standing correction was never verified. Unlearn it and
+                # re-book the RAW target so the booking and the readout agree with what was
+                # typed (the pre-0608 contract).
+                self.editor._folded_m_correction_state = None
+                applied, note = self._apply_conjugate_pair(float(object_semi), target)
+                if not applied:
+                    return (
+                        " Field-fill refinement stopped: the delivered field became "
+                        f"unmeasurable; raw re-book refused: {note}"
+                    )
+                return (
+                    " Field-fill refinement stopped: the delivered field became unmeasurable "
+                    "(unlearned the unverified correction; booked the raw first order)."
+                )
             if abs(measured / target - 1.0) < best[0]:
                 best = (abs(measured / target - 1.0), float(measured), float(request))
         error = measured / target - 1.0

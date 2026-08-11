@@ -15647,6 +15647,14 @@ phase_463_fold_elbows_connect = _phase_from_standalone(
     463, "fold elbows connect -- no world-space ray vertex inset (0611)",
     "KrakenOS.UI.validate_open3d_0611_fold_elbows_connect",
     "fold_elbows_connect")
+phase_464_replace_camera_seats_on_fold = _phase_from_standalone(
+    464, "replacing a camera seats the body on the TRACED sensor (0612)",
+    "KrakenOS.UI.validate_open3d_0612_replace_camera_seats_on_fold",
+    "replace_camera_seats_on_fold")
+phase_465_unverified_relearn_gate = _phase_from_standalone(
+    465, "unverified corrections cannot steer bookings (0613)",
+    "KrakenOS.UI.validate_open3d_0613_unverified_relearn_gate",
+    "unverified_relearn_gate")
 phase_461_swap_prompts_for_fov = _phase_from_standalone(
     461, "an interactive swap ASKS for the FOV you want (prefilled with the delivered field) (0609)",
     "KrakenOS.UI.validate_open3d_0609_swap_prompts_for_fov",
@@ -16173,6 +16181,8 @@ def main() -> int:
             phase_461_swap_prompts_for_fov,
             phase_462_field_converter_uses_delivered_magnification,
             phase_463_fold_elbows_connect,
+            phase_464_replace_camera_seats_on_fold,
+            phase_465_unverified_relearn_gate,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
