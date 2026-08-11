@@ -15639,6 +15639,10 @@ phase_458_pass_by_rays_miss_the_glass = _phase_from_standalone(
     458, "a missed ray visibly MISSES -- the sensor hard stop is the true rectangle (0605)",
     "KrakenOS.UI.validate_open3d_0605_pass_by_rays_miss_the_glass",
     "pass_by_rays_miss_the_glass")
+phase_459_sensor_view_landing_rays_only = _phase_from_standalone(
+    459, "Normal-to-Sensor draws ONLY landing rays; leaving restores the full set (0606)",
+    "KrakenOS.UI.validate_open3d_0606_sensor_view_landing_rays_only",
+    "sensor_view_landing_rays_only")
 
 
 # ---------------------------------------------------------------------------
@@ -16148,6 +16152,7 @@ def main() -> int:
             phase_456_readout_and_corners,
             phase_457_ghost_power_weighted_display,
             phase_458_pass_by_rays_miss_the_glass,
+            phase_459_sensor_view_landing_rays_only,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

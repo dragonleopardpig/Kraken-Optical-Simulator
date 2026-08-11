@@ -127,7 +127,14 @@ class Open3DSceneRefreshService:
             center, radius = self._row_scene_bounds()
         paths_by_ray_index = KrakenLayoutEditor._scene_ray_path_by_index(scene_bundle)
         ray_radius = max(radius * 0.0015, 0.08)
+        # bugs/0606: in the Normal-to-Sensor view only LANDING rays draw (plane-crossers
+        # read as strays face-on); shared with refresh_scene's loop below.
+        sensor_view_filter = bool(self._sensor_view_hides_non_landing_rays())
+        filtered_non_landing = 0
         for ray_index, color, ray_pts, terminal_status in self.editor._iter_3d_scene_ray_records(rays, scene_bundle):
+            if sensor_view_filter and str(terminal_status or "").strip().lower() != "hit_detector":
+                filtered_non_landing += 1
+                continue
             ray_path = paths_by_ray_index.get(int(ray_index))
             terminal_target = KrakenLayoutEditor._missed_detector_target_for_path(scene_bundle, ray_path)
             terminal_direction = KrakenLayoutEditor._terminal_display_direction_for_path(ray_path)
@@ -169,6 +176,9 @@ class Open3DSceneRefreshService:
                     ray_index=ray_index,
                     terminal_status=terminal_status,
                 )
+        if filtered_non_landing:
+            self._sensor_view_ray_filter_applied = True
+            self._debug_trace("sensor_view_non_landing_rays_hidden", rays=filtered_non_landing)
         self._flush_merged_ray_actors()  # bugs/0223 (Fix B): build the merged ray actors
         self.render()
 
@@ -911,12 +921,19 @@ class Open3DSceneRefreshService:
             ray_radius = max(radius * 0.0015, 0.08)
             bounded_ray_count = 0
             suppressed_endpoint_count = 0
+            # bugs/0606: in the Normal-to-Sensor view only LANDING rays draw (shared
+            # contract with _refresh_rays_only's loop above).
+            sensor_view_filter = bool(self._sensor_view_hides_non_landing_rays())
+            filtered_non_landing = 0
             terminal_counts: dict[str, int] = {}
             terminal_face_counts: dict[str, int] = {}
             terminal_sequence_counts: dict[str, int] = {}
             for ray_index, color, ray_pts, terminal_status in self.editor._iter_3d_scene_ray_records(rays, scene_bundle):
                 terminal_key = str(terminal_status or "unknown").strip().lower() or "unknown"
                 terminal_counts[terminal_key] = int(terminal_counts.get(terminal_key, 0)) + 1
+                if sensor_view_filter and terminal_key != "hit_detector":
+                    filtered_non_landing += 1
+                    continue
                 ray_path = paths_by_ray_index.get(int(ray_index))
                 if ray_path is not None:
                     sequence_summary = self._ray_path_surface_sequence_summary(ray_path)
@@ -975,6 +992,9 @@ class Open3DSceneRefreshService:
                     )
                 else:
                     suppressed_endpoint_count += 1
+            if filtered_non_landing:
+                self._sensor_view_ray_filter_applied = True
+                self._debug_trace("sensor_view_non_landing_rays_hidden", rays=filtered_non_landing)
             self._flush_merged_ray_actors()  # bugs/0223 (Fix B): build the merged ray actors
             if bounded_ray_count:
                 self._debug_trace("ray_display_bounded", rays=bounded_ray_count, radius=float(radius))

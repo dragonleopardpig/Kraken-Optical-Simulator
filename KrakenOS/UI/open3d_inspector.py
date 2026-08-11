@@ -14281,12 +14281,33 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             pass
 
+    def _sensor_view_hides_non_landing_rays(self) -> bool:
+        """While Normal-to-Sensor is active, the ray draw keeps ONLY rays that LAND on a
+        detector (bugs/0606, from the flag_20260810_204240 discussion): face-on, the 415
+        polylines that merely CROSS the sensor plane beside the glass visually overlap the
+        square and read as strays. Derived from the camera preset -- the single source of
+        truth for being in the view -- so every draw path (rays toggle, overlay rebuild,
+        async trace) inherits the filter without its own lifecycle."""
+        return str(getattr(self, "_camera_preset", None)) == "sensor_normal"
+
     def _restore_sensor_isolation(self) -> None:
         """Leave the Normal-to-Sensor view: re-show the hidden actors AND drop the isolation intent so
         a later scene rebuild no longer re-hides them. set_camera_preset calls this at the top, so any
         cardinal / iso / nav-cube view returns the full scene."""
         self._show_sensor_isolation_hidden()
         self._sensor_isolation_params = None
+        # bugs/0606: if a ray draw inside the view filtered out non-landing rays, they are
+        # ABSENT (not hidden) -- re-draw the rays now that the preset no longer filters.
+        if self.__dict__.get("_sensor_view_ray_filter_applied"):
+            self._sensor_view_ray_filter_applied = False
+            self._camera_preset = None  # the caller assigns its own preset right after
+            try:
+                self._refresh_rays_only(
+                    getattr(self.editor, "last_rays", None),
+                    getattr(self.editor, "_last_scene_bundle", None),
+                )
+            except Exception:
+                pass
 
     def _visible_actor_count(self) -> int:
         """Visible actors by RENDERER traversal — the same ground truth the isolation pass
