@@ -1668,13 +1668,25 @@ class LayoutTableWorkbenchMixin:
                 return ""
         except Exception:
             pass
+        # bugs/0607: a swap performed INSIDE Normal-to-Sensor leaves a stale isolation --
+        # the old sensor plane hides the incoming lens and the bugs/0606 filter keeps
+        # hiding non-landing rays. Leave the view (camera pose untouched) so the swap's
+        # result is visible, as the user expects (flag_20260811_125507).
+        left_sensor_view = False
+        try:
+            left_sensor_view = bool(inspector.leave_sensor_view_for_scene_change())
+        except Exception:
+            left_sensor_view = False
         try:
             switched = int(inspector.switch_off_analysis_overlays())
         except Exception:
-            return ""
-        if switched <= 0:
-            return ""
-        return f" Switched {switched} analysis overlay(s) off for the swap (re-enable from Overlays)."
+            switched = 0
+        note = ""
+        if switched > 0:
+            note += f" Switched {switched} analysis overlay(s) off for the swap (re-enable from Overlays)."
+        if left_sensor_view:
+            note += " Left the Normal to Sensor view so the swapped optics are visible."
+        return note
 
     def swap_imaging_lens_from_folder(self, folder: str | None = None, *, dialog_parent=None, refresh: bool = True):
         """SWAP the scene's imaging-lens surrogate (rows + STEP overlay) for a newly

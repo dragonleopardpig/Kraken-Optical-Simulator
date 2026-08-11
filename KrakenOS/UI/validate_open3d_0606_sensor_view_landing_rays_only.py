@@ -90,6 +90,100 @@ def run_checks():
     else:
         notes.append("PASS: C: leaving the view redraws the full ray set")
 
+    # ---------------------------------------------------------------- D: no preset wipe
+    # The first 0606 cut cleared `_camera_preset` inside the restore to stop the leaving
+    # redraw from re-filtering. But set_camera_preset assigns the NEW preset BEFORE it
+    # calls the restore, so that wiped the caller's own preset (every preset button and
+    # nav-cube snap left `_camera_preset` None). The redraw must suppress the FILTER,
+    # never the preset.
+    if "_camera_preset = None" in restore_src:
+        ok = False
+        notes.append(
+            "FAIL: D (bugs/0606): _restore_sensor_isolation clears _camera_preset -- "
+            "set_camera_preset assigns its preset BEFORE calling it, so the caller's "
+            "preset is wiped on every exit"
+        )
+    elif "_sensor_view_ray_filter_suppressed" not in restore_src:
+        ok = False
+        notes.append(
+            "FAIL: D (bugs/0606): the leaving redraw no longer suppresses the filter -- "
+            "it re-filters while the preset still reads sensor_normal, so the rays stay gone"
+        )
+    else:
+        notes.append("PASS: D: the leaving redraw suppresses the filter, not the preset")
+
+    # The suppression must actually win over a sensor_normal preset.
+    stub2 = _Stub()
+    stub2._camera_preset = "sensor_normal"
+    stub2._sensor_view_ray_filter_suppressed = True
+    if bool(helper(stub2)):
+        ok = False
+        notes.append("FAIL: D2 (bugs/0606): the suppression flag does not disable the filter")
+    else:
+        notes.append("PASS: D2: the suppression flag wins over the sensor_normal preset")
+
+    # set_camera_preset must still assign the preset it was given (order-of-operations pin).
+    preset_src = inspect.getsource(Inspector.set_camera_preset)
+    if "_camera_preset = preset" not in preset_src:
+        ok = False
+        notes.append("FAIL: D3 (bugs/0606): set_camera_preset no longer records its preset")
+    else:
+        notes.append("PASS: D3: set_camera_preset records the preset it was given")
+
+    # ------------------------------------------------------- E: swap leaves the view (0607)
+    # A swap performed INSIDE the sensor view leaves a stale isolation: the old sensor
+    # plane hides the incoming lens and the 0606 filter keeps hiding non-landing rays.
+    leaver = getattr(Inspector, "leave_sensor_view_for_scene_change", None)
+    if not callable(leaver):
+        ok = False
+        notes.append(
+            "FAIL: E (bugs/0607): leave_sensor_view_for_scene_change is gone -- a swap "
+            "inside the sensor view leaves the incoming optics invisible"
+        )
+    else:
+        leaver_src = inspect.getsource(leaver)
+        if "_restore_sensor_isolation" not in leaver_src or "_camera_preset = None" not in leaver_src:
+            ok = False
+            notes.append(
+                "FAIL: E (bugs/0607): the scene-change exit no longer restores the isolation "
+                "AND clears the view mode -- a stale preset keeps the ray filter on"
+            )
+        else:
+            notes.append("PASS: E1: the scene-change exit restores the scene and clears the view mode")
+        # It must be a no-op outside the view (never disturb an ordinary preset).
+        stub3 = _Stub()
+        stub3._camera_preset = "+yz"
+        try:
+            if bool(leaver(stub3)):
+                ok = False
+                notes.append("FAIL: E2 (bugs/0607): the scene-change exit fires outside the sensor view")
+            else:
+                notes.append("PASS: E2: the scene-change exit is a no-op outside the sensor view")
+        except Exception as exc:
+            ok = False
+            notes.append(f"FAIL: E2 (bugs/0607): raised outside the view: {type(exc).__name__}: {exc}")
+
+    from KrakenOS.UI.services import layout_table_workbench as workbench_module
+
+    swap_src = inspect.getsource(workbench_module.LayoutTableWorkbenchMixin._switch_off_analysis_overlays_for_swap)
+    if "leave_sensor_view_for_scene_change" not in swap_src:
+        ok = False
+        notes.append(
+            "FAIL: E3 (bugs/0607): the swap no longer leaves the sensor view -- the user's "
+            "confirmed expectation (flag_20260811_125507) regressed"
+        )
+    else:
+        notes.append("PASS: E3: both swap paths leave the sensor view through the shared helper")
+    # bugs/0599 had no guard of its own; pin it here since 0607 edits the same helper.
+    if "switch_off_analysis_overlays" not in swap_src:
+        ok = False
+        notes.append(
+            "FAIL: E4 (bugs/0599): the swap no longer switches the analysis overlays off -- "
+            "swapping with them on re-runs every field scan (\"a super long time\")"
+        )
+    else:
+        notes.append("PASS: E4: the swap still switches the analysis overlays off (bugs/0599)")
+
     return ok, notes
 
 

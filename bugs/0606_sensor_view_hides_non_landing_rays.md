@@ -31,3 +31,11 @@ view, show only the light that actually lands.
 Guard: phase 459 (`validate_open3d_0606_sensor_view_landing_rays_only`). Verified by
 sequence replay with rendered snapshots: enter view → rays ON → only the 9 field
 pencils; Nav-Cube exit → full ray set restored.
+
+## Follow-up (bugs/0607)
+
+The first cut of the leaving redraw cleared `_camera_preset` so it would not re-filter —
+but `set_camera_preset` assigns the NEW preset BEFORE calling the restore, so that wiped
+the caller's own preset on every exit. The redraw now suppresses the FILTER for its
+duration (`_sensor_view_ray_filter_suppressed`) and never touches the preset. See
+bugs/0607, which also makes a swap leave the view explicitly.

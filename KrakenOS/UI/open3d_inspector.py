@@ -14287,7 +14287,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         polylines that merely CROSS the sensor plane beside the glass visually overlap the
         square and read as strays. Derived from the camera preset -- the single source of
         truth for being in the view -- so every draw path (rays toggle, overlay rebuild,
-        async trace) inherits the filter without its own lifecycle."""
+        async trace) inherits the filter without its own lifecycle.
+
+        The one exception is the LEAVING redraw itself (``_restore_sensor_isolation``),
+        which runs while the preset may still read ``sensor_normal``; it suppresses the
+        filter for the duration rather than mutating the preset -- ``set_camera_preset``
+        assigns the NEW preset BEFORE it calls the restore, so clearing it there wiped
+        the caller's own preset (caught by flag_20260811_125507's swap sequence)."""
+        if self.__dict__.get("_sensor_view_ray_filter_suppressed"):
+            return False
         return str(getattr(self, "_camera_preset", None)) == "sensor_normal"
 
     def _restore_sensor_isolation(self) -> None:
@@ -14297,10 +14305,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._show_sensor_isolation_hidden()
         self._sensor_isolation_params = None
         # bugs/0606: if a ray draw inside the view filtered out non-landing rays, they are
-        # ABSENT (not hidden) -- re-draw the rays now that the preset no longer filters.
+        # ABSENT (not hidden) -- re-draw the rays now that the view is being left. The
+        # filter is suppressed for the duration instead of clearing `_camera_preset`:
+        # set_camera_preset assigns the new preset BEFORE calling this, so clearing it
+        # here wiped the caller's own preset.
         if self.__dict__.get("_sensor_view_ray_filter_applied"):
             self._sensor_view_ray_filter_applied = False
-            self._camera_preset = None  # the caller assigns its own preset right after
+            self._sensor_view_ray_filter_suppressed = True
             try:
                 self._refresh_rays_only(
                     getattr(self.editor, "last_rays", None),
@@ -14308,6 +14319,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 )
             except Exception:
                 pass
+            finally:
+                self._sensor_view_ray_filter_suppressed = False
 
     def _visible_actor_count(self) -> int:
         """Visible actors by RENDERER traversal — the same ground truth the isolation pass
@@ -15252,6 +15265,29 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         "show_receiving_cone_var",
         "show_illumination_volume_var",
     )
+
+    def leave_sensor_view_for_scene_change(self) -> bool:
+        """Leave the Normal-to-Sensor view because the SCENE ITSELF changed (bugs/0607).
+
+        A lens/camera swap rebuilds the optics around a new focus, so an isolation
+        recorded for the OLD sensor plane is stale: measured on a swap performed inside
+        the view, 3 actors stayed visible and the incoming lens -- off the old plane --
+        was invisible, with the bugs/0606 ray filter still hiding non-landing rays. The
+        user confirmed the expectation in flag_20260811_125507 ("swapped lens auto turn
+        off Normal to sensor"), so the swap now leaves the view explicitly instead of
+        relying on whether the rebuild happened to skip the re-isolation.
+
+        Restores the hidden actors + the full ray set and clears the view MODE; the
+        camera POSE is left exactly where the user put it (no reframe surprise).
+        Returns True when a view was actually left."""
+        if str(getattr(self, "_camera_preset", None)) != "sensor_normal":
+            return False
+        try:
+            self._restore_sensor_isolation()
+        except Exception:
+            return False
+        self._camera_preset = None
+        return True
 
     def switch_off_analysis_overlays(self) -> int:
         """Turn every heavy analysis overlay off (no per-var callbacks -- the caller owns the

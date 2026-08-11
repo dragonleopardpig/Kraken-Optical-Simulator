@@ -15640,7 +15640,7 @@ phase_458_pass_by_rays_miss_the_glass = _phase_from_standalone(
     "KrakenOS.UI.validate_open3d_0605_pass_by_rays_miss_the_glass",
     "pass_by_rays_miss_the_glass")
 phase_459_sensor_view_landing_rays_only = _phase_from_standalone(
-    459, "Normal-to-Sensor draws ONLY landing rays; leaving restores the full set (0606)",
+    459, "Normal-to-Sensor draws ONLY landing rays; leaving restores the full set + preset, and a swap leaves the view (0606/0607)",
     "KrakenOS.UI.validate_open3d_0606_sensor_view_landing_rays_only",
     "sensor_view_landing_rays_only")
 
