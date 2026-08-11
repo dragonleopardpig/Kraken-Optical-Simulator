@@ -2258,6 +2258,41 @@ class QuickEstimationService:
             return None
         return float(np.mean(heights)) / fraction
 
+    def relearn_folded_m_correction(self) -> "float | None":
+        """Re-measure the delivered/promised magnification ratio for the CURRENT optics and
+        record it (bugs/0608), returning the factor or None when it cannot be measured.
+
+        bugs/0591 invalidates the learned correction on a lens/camera swap -- the old glass's
+        factor is meaningless on the new one -- but nothing re-measured it, so every readout
+        between the swap and the user's next solve was the RAW folded first order. Measured on
+        flag_20260811_133818 (Apo75 -> PYRITE 4.5/85): the readout promised |m| 1.506 while the
+        real rays delivered 1.160, so the "FOV 15.3 x 15.3" label implied a full sensor while
+        the traced field covered ~82% of its width. The swap's own refocus already knows the
+        new conjugate; this pins the READOUT to what that conjugate actually delivers.
+
+        Uses the same real-ray probe as the solve's refinement, so a scene where the first
+        order is already trustworthy (sequential, no world-placed chain) simply gets None and
+        keeps correction 1.0."""
+        state = self.current_state()
+        try:
+            promised = abs(float(state.get("magnification")))
+            object_semi = float(state.get("fov_semi"))
+        except (TypeError, ValueError):
+            return None
+        if not (np.isfinite(promised) and promised > 1e-9 and np.isfinite(object_semi) and object_semi > 1e-9):
+            return None
+        # current_state() already multiplies by the standing correction; measure against the
+        # RAW first order so the factor is absolute, not compounded.
+        promised_raw = promised / max(self._folded_m_correction(), 1e-9)
+        measured_semi = self._measured_delivered_image_semi(object_semi)
+        if measured_semi is None or not np.isfinite(measured_semi) or measured_semi <= 0.0:
+            return None
+        factor = float(measured_semi / object_semi) / promised_raw
+        if not np.isfinite(factor) or not (0.1 < factor < 10.0):
+            return None
+        self._set_folded_m_correction(factor)
+        return factor
+
     def _refine_folded_field_fill(self, object_semi: float, target_image_semi: float) -> str:
         """bugs/0591: the folded first order books gaps for a magnification the machine does
         not deliver — measured on the flagged Apo75, the solve promised |m| = 0.4189 and the

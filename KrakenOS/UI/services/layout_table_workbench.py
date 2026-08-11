@@ -1688,6 +1688,30 @@ class LayoutTableWorkbenchMixin:
             note += " Left the Normal to Sensor view so the swapped optics are visible."
         return note
 
+    def _relearn_folded_m_correction_after_swap(self) -> str:
+        """bugs/0608: re-measure the delivered/promised magnification for the NEW optics.
+
+        bugs/0591 clears the learned factor on a swap (the old glass's is meaningless), but
+        clearing alone leaves every readout between the swap and the user's next solve on the
+        RAW folded first order. Returns a message fragment naming the shortfall, or '' when
+        the scene needs no correction (sequential first order) or it cannot be measured."""
+        from types import SimpleNamespace
+
+        from KrakenOS.UI.services.quick_estimation import QuickEstimationService
+
+        try:
+            service = QuickEstimationService(SimpleNamespace(editor=self))
+            factor = service.relearn_folded_m_correction()
+        except Exception as exc:
+            self.append_debug(f"swap magnification re-measure skipped: {exc}")
+            return ""
+        if factor is None or abs(factor - 1.0) < 0.01:
+            return ""
+        return (
+            f" Re-measured the delivered magnification by real rays ({factor:+.1%} vs the "
+            "folded first order); FOV readouts follow the new lens."
+        ).replace("+-", "-")
+
     def swap_imaging_lens_from_folder(self, folder: str | None = None, *, dialog_parent=None, refresh: bool = True):
         """SWAP the scene's imaging-lens surrogate (rows + STEP overlay) for a newly
         imported lens, IN PLACE (bugs/0378).
@@ -1880,6 +1904,11 @@ class LayoutTableWorkbenchMixin:
             # left the 35x35 readout -6.8% off after a PYRITE swap).
             self._folded_m_correction_state = None
             self._swap_auto_refocus_to_best_focus()
+            # bugs/0608: invalidating is only half the job -- until the user's NEXT solve the
+            # readout was the RAW folded first order (measured on this scene: promised |m|
+            # 1.506 vs 1.160 delivered, so the FOV label implied a full sensor while the rays
+            # covered ~82% of its width). Re-measure the new glass's factor now.
+            self._swap_correction_note = self._relearn_folded_m_correction_after_swap()
         except Exception as exc:
             self.append_debug(f"swap auto-refocus skipped: {exc}")
         message = (
@@ -1905,6 +1934,7 @@ class LayoutTableWorkbenchMixin:
         # self.tk and RECURSES on a missing attribute, so the default is never reached (it blew
         # the 0546/0547 guards' stub editor with RecursionError).
         message += self.__dict__.pop("_swap_overlay_note", "")
+        message += self.__dict__.pop("_swap_correction_note", "")
         refocus_note = str(self.__dict__.get("_swap_refocus_note", "") or "")
         if refocus_note:
             message += f" NOT refocused: {refocus_note}"
@@ -2003,9 +2033,12 @@ class LayoutTableWorkbenchMixin:
         self.import_camera_step(
             path=assets.primary_step, dialog_parent=parent, refresh_open_3d=refresh_open_3d
         )
+        # bugs/0608: re-measure for the new sensor conjugate, exactly as the lens swap does --
+        # otherwise the readout runs on the raw folded first order until the next solve.
+        correction_note = self._relearn_folded_m_correction_after_swap()
         message = (
             f"Imported camera {imported.name} from {Path(folder).name}: registered "
-            f"its sensor and placed {assets.primary_step.name}." + overlay_note
+            f"its sensor and placed {assets.primary_step.name}." + overlay_note + correction_note
         )
         self.status_var.set(message)
         self.append_progress(message)
