@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-08-10T14:57:35+00:00",
+  "generated_at": "2026-08-11T16:27:56+00:00",
   "phases": {
     "0": "pass",
     "1": "fail",
@@ -459,7 +459,14 @@
     "455": "pass",
     "456": "pass",
     "457": "pass",
-    "458": "pass"
+    "458": "pass",
+    "459": "pass",
+    "460": "pass",
+    "461": "pass",
+    "462": "pass",
+    "463": "pass",
+    "464": "pass",
+    "465": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -919,6 +926,13 @@
     "455": "Normal to Sensor shows THE SENSOR -- never un-hides the world (0597)",
     "456": "the FOV label reads the DELIVERED field, and the corner widgets hug pixel-square corners (0602/0603)",
     "457": "re-split ghost branches draw at power-weighted brightness (0604)",
-    "458": "a missed ray visibly MISSES -- the sensor hard stop is the true rectangle (0605)"
+    "458": "a missed ray visibly MISSES -- the sensor hard stop is the true rectangle (0605)",
+    "459": "Normal-to-Sensor draws ONLY landing rays; leaving restores the full set + preset, and a swap leaves the view (0606/0607)",
+    "460": "a swap RE-MEASURES the delivered magnification, not just clears it (0608)",
+    "461": "an interactive swap ASKS for the FOV you want (prefilled with the delivered field) (0609)",
+    "462": "the shared field converter launches the DELIVERED field, not the first order's promise (0610)",
+    "463": "fold elbows connect -- no world-space ray vertex inset (0611)",
+    "464": "replacing a camera seats the body on the TRACED sensor (0612)",
+    "465": "unverified corrections cannot steer bookings (0613)"
   }
 }
