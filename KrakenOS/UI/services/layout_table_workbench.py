@@ -1712,6 +1712,37 @@ class LayoutTableWorkbenchMixin:
             "folded first order); FOV readouts follow the new lens."
         ).replace("+-", "-")
 
+    def _prompt_fov_solve_after_swap(self, interactive: bool) -> str:
+        """bugs/0609: after a swap, ASK for the field the user wants and solve for it.
+
+        A different lens does not reproduce the old operating point -- object distance,
+        image distance and the magnification all move -- so silently preserving the old
+        FOV NUMBER leaves the scene in a state the user did not choose (measured on the
+        PYRITE swap: the preserved 15.30 field filled only 82% x 77% of the sensor, and
+        19.79 was needed to fill it). Opening the object-plane FOV popup puts that
+        decision in front of the user, prefilled with the field that fills the sensor at
+        the newly measured magnification; Cancel simply keeps the swap's own refocus.
+
+        Only for INTERACTIVE swaps (the bugs/0586 convention: an explicitly-passed folder
+        is a programmatic caller). The popup is modal (grab_set + wait_window), so it is
+        SCHEDULED rather than called inline -- a headless/guard swap must never block."""
+        if not interactive:
+            return ""
+        inspector = getattr(self, "_three_d_inspector", None)
+        if inspector is None:
+            return ""
+        try:
+            if not inspector.winfo_exists():
+                return ""
+        except Exception:
+            return ""
+        try:
+            inspector.after(120, lambda: inspector._open_quick_estimation_fov_popup("object"))
+        except Exception as exc:
+            self.append_debug(f"post-swap FOV prompt skipped: {exc}")
+            return ""
+        return " Enter the field you want in the FOV dialog and Solve for Thickness."
+
     def swap_imaging_lens_from_folder(self, folder: str | None = None, *, dialog_parent=None, refresh: bool = True):
         """SWAP the scene's imaging-lens surrogate (rows + STEP overlay) for a newly
         imported lens, IN PLACE (bugs/0378).
@@ -1944,6 +1975,10 @@ class LayoutTableWorkbenchMixin:
         clearance_note = str(self.__dict__.get("_swap_clearance_note", "") or "")
         if clearance_note:
             message += f" Camera clearance: {clearance_note}."
+        # bugs/0609: a swapped lens rarely reproduces the old operating point, so ASK for
+        # the field the user wants rather than keeping a number that no longer fills the
+        # sensor. Scheduled (the popup is modal) and interactive-only.
+        message += self._prompt_fov_solve_after_swap(interactive)
         self.status_var.set(message)
         self.append_progress(message)
         # bugs/0386: the 2D refresh here is a FULL system build + trace (~5s on a folded

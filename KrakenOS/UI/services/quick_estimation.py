@@ -2122,12 +2122,18 @@ class QuickEstimationService:
         """Current object field ``(width, height)`` in mm for the object popup
         prefill. The object field that maps onto the sensor is the sensor
         rectangle divided by the magnification; falls back to a 4:3 rectangle
-        derived from the circular object FOV diagonal."""
+        derived from the circular object FOV diagonal.
+
+        bugs/0609: this is a DISPLAY/prefill reader, so it uses the DELIVERED
+        magnification (bugs/0602's rule) -- the raw folded first order would prefill
+        a field that does not fill the sensor. Measured after a PYRITE swap: raw said
+        15.27 while the machine needed 19.79 to fill the same 23 mm sensor.
+        """
         mag = self._finite_mag()
         sensor_wh = self.sensor_active_dimensions()
         if mag is not None and sensor_wh is not None:
             sw, sh = sensor_wh
-            m = abs(mag)
+            m = abs(float(mag) * self._folded_m_correction())
             if m > 1e-9 and sw > 0 and sh > 0:
                 return sw / m, sh / m
         fov_full = self.current_state().get("fov_full")
