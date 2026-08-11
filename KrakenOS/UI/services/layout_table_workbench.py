@@ -2099,16 +2099,34 @@ class LayoutTableWorkbenchMixin:
         )
         if imported is None:
             return None
+        # bugs/0612 ("replace a camera, it dislocate"): the fresh import lands the body by the
+        # bugs/0220 STRAIGHT-axis convention (image_plane_z - front_to_sensor), and the old
+        # transverse-keep below inherited that axial answer. On a 0433-frozen fold leg -- which
+        # runs BACKWARDS (world leg = const - thickness) -- that sign parks the new body on the
+        # WRONG SIDE of the sensor: measured on the Apo75, replacing hr25MCX with ITSELF flipped
+        # the body across the sensor plane (z -28.7 -> +22.0, a 50.7 mm jump, distance
+        # unchanged). Seat through the traced-beam, fold-aware seat instead
+        # (seat_camera_on_sensor: detector-normal beam direction, the bugs/0480 ladder, all
+        # three axes); the transverse-keep survives only as the fallback when seating REFUSES
+        # (no traced detector to read the beam from -- its status then starts "Seat camera:").
+        seated = False
         try:
-            _new_x, _new_y, new_z = self._step_placement_offset_xyz("camera")
-            self.camera_step_placement_offset_xyz = (float(old_x), float(old_y), float(new_z))
-        except Exception:
-            pass
+            seated = bool(self.seat_camera_on_sensor("camera"))
+            if not seated and not str(self.status_var.get()).startswith("Seat camera:"):
+                seated = True  # "Camera already seated on the sensor." -- nothing to fall back from
+        except Exception as exc:
+            self.append_debug(f"replace camera: seat-on-sensor failed: {exc}")
+        if not seated:
+            try:
+                _new_x, _new_y, new_z = self._step_placement_offset_xyz("camera")
+                self.camera_step_placement_offset_xyz = (float(old_x), float(old_y), float(new_z))
+            except Exception:
+                pass
         self._live_step_overlay_trace_plan_cache = {}
         self._invalidate_preview_scene_trace()
         self.status_var.set(
             f"Replaced camera with {getattr(imported, 'name', 'vendor camera')} via the folder import "
-            "(sensor re-located); transverse position kept."
+            + ("(body seated on the traced sensor)." if seated else "(sensor re-located); transverse position kept.")
         )
         if refresh_open_3d:
             self._refresh_open_3d_views(camera_only=True)

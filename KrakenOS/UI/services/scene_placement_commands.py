@@ -3349,6 +3349,34 @@ class ScenePlacementMixin:
                 centre = np.asarray(getattr(chosen, "center_world", None), dtype=float).reshape(3)
                 if np.all(np.isfinite(centre)):
                     sensor_point = centre
+            # bugs/0612: the stored normal's SIGN is a baked display convention -- on the
+            # frozen Apo75 the designed-image target carries (0,0,+1) while the beam arrives
+            # travelling -Z, and trusting it seated the body MIRRORED across its own sensor
+            # (measured: body-sensor vector -25.3 -> +25.3, the seat zeroing the -50.67 mm
+            # placement offset that had held the body right). Traced rays cannot vote here:
+            # in this analysis bundle a frozen scene's raw paths never reach the world-placed
+            # Image plane (all no_next_intersection -- measured: zero crossings within 60 mm).
+            # The sign evidence is the RESOLVER itself: the final leg runs from the last
+            # optic's world position to the sensor (`row_placement.world_frame`, the standing
+            # frozen-scene doctrine). Scoped to the row-based Image target; a synthetic
+            # branch detector's normal is already derived from traced rays (bugs/0464).
+            if (
+                beam is not None
+                and sensor_point is not None
+                and str(seating_reason or "") == "designed_image_target"
+            ):
+                try:
+                    from KrakenOS.UI.services import row_placement as _row_placement
+
+                    rows = list(getattr(self, "rows", None) or [])
+                    if len(rows) >= 2:
+                        prev_pos, _prev_rot, _ = _row_placement.world_frame(self, len(rows) - 2)
+                        leg = sensor_point - np.asarray(prev_pos, dtype=float).reshape(3)
+                        norm = float(np.linalg.norm(leg))
+                        if np.isfinite(norm) and norm > 1.0e-6 and float((leg / norm) @ beam) < 0.0:
+                            beam = -beam  # the stored normal pointed AGAINST the light
+                except Exception:
+                    pass
         except Exception:
             beam = None
         if beam is None or sensor_point is None:
