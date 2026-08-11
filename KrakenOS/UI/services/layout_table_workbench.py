@@ -2115,7 +2115,10 @@ class LayoutTableWorkbenchMixin:
             if not seated and not str(self.status_var.get()).startswith("Seat camera:"):
                 seated = True  # "Camera already seated on the sensor." -- nothing to fall back from
         except Exception as exc:
-            self.append_debug(f"replace camera: seat-on-sensor failed: {exc}")
+            try:
+                self.append_debug(f"replace camera: seat-on-sensor failed: {exc}")
+            except Exception:
+                pass
         if not seated:
             try:
                 _new_x, _new_y, new_z = self._step_placement_offset_xyz("camera")
