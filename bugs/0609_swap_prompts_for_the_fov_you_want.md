@@ -64,3 +64,11 @@ Until that coupling reads the delivered magnification too, this dialog lets the 
 *state* the field they want and moves the conjugates for it, but the scene keeps imaging
 the old field. Fixing the coupling is the natural next step and needs its own
 verification pass (it changes what the trace samples, not just a readout).
+
+## Resolved by bugs/0610 (96c600cb, phase 462)
+
+The blocking gap above — the launcher reading the RAW |m| — is fixed at the shared
+converter `_field_metrics_for_value`. Guard green; the in-app swap measurement was still
+running when the session ended, so the AFTER-swap fill number is unconfirmed. RESUME
+HERE: re-run `scratchpad/verify_0610.py` (or an equivalent swap probe) and confirm the
+traced launch field grows 15.30 -> ~19.8 mm and the sensor fill goes 82%x77% -> ~100%.
