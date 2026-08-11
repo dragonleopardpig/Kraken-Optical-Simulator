@@ -3050,13 +3050,19 @@ class ThreeDSceneToolsMixin:
 
     @staticmethod
     def _ray_vertex_display_inset(radius: float) -> float:
-        try:
-            scene_radius = float(radius)
-        except Exception:
-            scene_radius = 1.0
-        if not np.isfinite(scene_radius) or scene_radius <= 0.0:
-            scene_radius = 1.0
-        return float(max(min(scene_radius * 0.0015, 0.18), 0.035))
+        """Display inset pulled off each interior ray vertex: ZERO (bugs/0611).
+
+        This used to return a WORLD-SPACE inset (0.035..0.18 mm, scene-scaled) so a
+        segment's line cap could not poke through the mirror surface at a fold vertex
+        and mimic transmission. But any world-space gap is zoom-FALSE: invisible zoomed
+        out, it becomes the dominant feature zoomed in — flags 20260811_201311/201334
+        ("broken reflection rays at BS / at RA mirror") show every fold elbow as two
+        disconnected stubs at high zoom, a physics lie (the reflected ray touches the
+        mirror AT the vertex). The real fake-transmission defense is that segments are
+        DISCONNECTED (no polyline miter join to overshoot the bend); a butt cap's
+        lengthwise overhang is sub-pixel at every zoom. The parameter machinery stays
+        for callers that pass an explicit inset."""
+        return 0.0
 
     @staticmethod
     def _ray_segment_mesh_for_3d_display(points, *, vertex_inset: float = 0.0):
