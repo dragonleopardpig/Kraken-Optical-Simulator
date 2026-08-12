@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="420" viewBox="0 0 1280 420" role="img" aria-labelledby="title desc">
+  <title id="title">Laser design interview reasoning loop</title>
+  <desc id="desc">Requirements lead to architecture, coupled physical models, prototype measurements, and a feedback loop for correction.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3.5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,3.5 L0,7 z" fill="#334155"/>
+    </marker>
+    <style>
+      .box{stroke-width:2;rx:12;ry:12}.h{font:700 19px sans-serif;fill:#0f172a}.t{font:15px sans-serif;fill:#334155}.a{fill:none;stroke:#334155;stroke-width:2.5;marker-end:url(#arrow)}.loop{fill:none;stroke:#7c3aed;stroke-width:2.5;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1280" height="420" fill="#ffffff"/>
+
+  <rect class="box" x="20" y="76" width="230" height="168" fill="#e0f2fe" stroke="#0284c7"/>
+  <text class="h" x="135" y="109" text-anchor="middle">1. Requirements</text>
+  <text class="t" x="42" y="141">Wavelength and power</text>
+  <text class="t" x="42" y="169">CW or pulse format</text>
+  <text class="t" x="42" y="197">Beam quality and stability</text>
+  <text class="t" x="42" y="225">Envelope, cost, safety</text>
+
+  <rect class="box" x="285" y="76" width="220" height="168" fill="#ecfccb" stroke="#65a30d"/>
+  <text class="h" x="395" y="109" text-anchor="middle">2. Architecture</text>
+  <text class="t" x="307" y="141">Gain medium</text>
+  <text class="t" x="307" y="169">Pump and cooling</text>
+  <text class="t" x="307" y="197">Oscillator / amplifier</text>
+  <text class="t" x="307" y="225">CW / Q-switch / ML</text>
+
+  <rect class="box" x="540" y="35" width="280" height="250" fill="#f5f3ff" stroke="#7c3aed"/>
+  <text class="h" x="680" y="69" text-anchor="middle">3. Coupled models</text>
+  <rect x="566" y="89" width="105" height="64" rx="8" fill="#ede9fe" stroke="#8b5cf6"/>
+  <text class="t" x="618" y="116" text-anchor="middle">Gain and</text><text class="t" x="618" y="138" text-anchor="middle">threshold</text>
+  <rect x="689" y="89" width="105" height="64" rx="8" fill="#ede9fe" stroke="#8b5cf6"/>
+  <text class="t" x="741" y="116" text-anchor="middle">ABCD and</text><text class="t" x="741" y="138" text-anchor="middle">modes</text>
+  <rect x="566" y="174" width="105" height="64" rx="8" fill="#ede9fe" stroke="#8b5cf6"/>
+  <text class="t" x="618" y="201" text-anchor="middle">Thermal</text><text class="t" x="618" y="223" text-anchor="middle">lens</text>
+  <rect x="689" y="174" width="105" height="64" rx="8" fill="#ede9fe" stroke="#8b5cf6"/>
+  <text class="t" x="741" y="201" text-anchor="middle">Loss and</text><text class="t" x="741" y="223" text-anchor="middle">damage</text>
+  <path d="M671 121 L689 121" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M741 153 L741 174" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M689 206 L671 206" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow)"/>
+  <path d="M618 174 L618 153" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect class="box" x="855" y="76" width="405" height="168" fill="#ffedd5" stroke="#ea580c"/>
+  <text class="h" x="1057" y="109" text-anchor="middle">4. Build, measure, decide</text>
+  <text class="t" x="880" y="141">Align safely at low power</text>
+  <text class="t" x="880" y="169">Measure loss, power, M², and spectrum</text>
+  <text class="t" x="880" y="197">Compare prediction with uncertainty</text>
+  <text class="t" x="880" y="225">Change one controlled variable</text>
+
+  <path class="a" d="M250 160 L285 160"/>
+  <path class="a" d="M505 160 L540 160"/>
+  <path class="a" d="M820 160 L855 160"/>
+  <path class="loop" d="M1057 244 L1057 337 Q1057 377 1017 377 L435 377 Q395 377 395 337 L395 257"/>
+  <text x="726" y="362" text-anchor="middle" style="font:700 15px sans-serif;fill:#7c3aed">Update the architecture when evidence disagrees with the model</text>
+</svg>

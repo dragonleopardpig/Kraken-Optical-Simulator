@@ -16,5 +16,6 @@ real sensor.
    aberration_polynomial
    ir_subpixel_detection
    eol_imaging_qualification/index
+   laser_design_interview/index
    step_overlay_promotion
    coaxial_led_dark_edges

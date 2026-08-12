@@ -1,0 +1,236 @@
+Interview Questions and Answer Frameworks
+=========================================
+
+Answer each question aloud before opening the suggested answer.  Lead with the
+physical principle, give one governing relation, state assumptions, and finish
+with an engineering consequence or test.
+
+Core theory
+-----------
+
+Why is population inversion necessary?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Net stimulated gain must exceed resonant absorption.  In the cross-section
+form :eq:`interview-small-signal-gain`, inversion makes
+:math:`\sigma_eN_2-\sigma_aN_1` positive.  A populated upper state alone is not
+enough if the lower-state absorption remains larger.
+
+What sets laser threshold?
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Threshold is the round-trip balance: stimulated gain equals mirror output
+coupling plus absorption, scatter, diffraction, and all other losses.  Write
+:eq:`interview-threshold`, explain the double pass for a linear cavity, and say
+that above threshold saturation clamps the gain near this value.
+
+Why is a four-level laser easier to operate than a three-level laser?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The lower laser level of an ideal four-level system empties rapidly, so little
+pump is needed to make its upper population exceed the lower one.  A three-level
+system terminates on the ground state and must deplete a large ground-state
+population before net gain appears.
+
+What determines slope efficiency?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+It is a chain of driver, pump transport, absorption, quantum/Stokes, overlap,
+internal-loss, and extraction efficiencies.  State the pump-power basis.  A
+high optical slope efficiency can coexist with poor wall-plug efficiency.
+
+Why can a laser oscillate on several longitudinal modes?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The cavity permits frequencies separated by :eq:`interview-fsr`; every mode
+lying under adequate net gain can oscillate.  Gain saturation, homogeneous or
+inhomogeneous broadening, spatial hole burning, polarization, and mode selectors
+determine which survive.
+
+Resonators and beams
+--------------------
+
+How do you decide whether a resonator is stable?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Multiply the complete round-trip ABCD matrix and require
+:math:`|(A+D)/2|<1`.  For an empty two-mirror cavity use
+:math:`0<g_1g_2<1`.  Then sweep the thermal lens and tolerances; nominal
+stability alone is not robustness.
+
+How do you calculate the intracavity mode size?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Solve the self-consistent complex-beam equation
+:math:`q=(Aq+B)/(Cq+D)`, select the physical root, and propagate it with the ABCD
+law.  Extract beam radius and wavefront curvature from
+:eq:`interview-q-parameter` at every optic and through the gain medium.
+
+What does :math:`M^2=1.5` mean?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The measured second-moment beam parameter product is 1.5 times the ideal
+Gaussian value at the same wavelength.  It has 1.5 times the ideal divergence
+for a fixed waist, or a larger focused spot for a fixed input geometry.  It does
+not identify the mode composition or guarantee the beam is stigmatic.
+
+What is the tradeoff in choosing a small cavity waist?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+It can improve pump overlap and lower required gain volume, but raises
+intracavity irradiance, divergence, coating/damage risk, nonlinear phase, and
+sensitivity to thermal aberration and alignment.  The answer must include both
+gain and reliability.
+
+How would you choose an output coupler?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Sweep transmission in a saturated-gain model with measured/estimated internal
+loss and the intended pump range.  Too little transmission traps power and
+raises internal loading; too much raises threshold.  Verify the choice against
+thermal-lens, coating, and low-pump requirements.
+
+Solid-state system design
+-------------------------
+
+How do you choose a gain medium?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Start from wavelength, pulse format, linewidth/tuning, power, beam quality, and
+environment.  Compare cross section, lifetime, bandwidth, pump absorption,
+quantum defect, thermal conductivity, thermo-optic/stress properties, fracture
+limit, available geometry, doping quality, and coatings.  Then close the pump,
+gain, thermal, and resonator models together.
+
+What causes thermal lensing?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Absorbed pump creates a nonuniform temperature and stress field.  Refractive
+index changes with temperature, end faces bulge, and photoelastic response
+changes optical path; stress also produces birefringence.  Measure lens power
+against absorbed pump and model it as a range with aberration, not just one
+perfect focal length.
+
+Why can Yb:YAG be efficient yet harder to reach threshold?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Its small quantum defect reduces heat, but the quasi-three-level transition has
+significant lower-state population and reabsorption.  Temperature, pump
+brightness, inversion density, wavelength, and overlap strongly influence net
+gain.
+
+What limits scaling of an end-pumped rod?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Localized heat raises thermal lens, aberration, stress, birefringence, and
+fracture risk; brightness and overlap constrain pump scaling.  Larger pump/mode
+areas reduce irradiance but demand more gain volume and can support higher modes.
+Thin-disk, slab, fiber, or distributed pumping changes the heat-flow geometry.
+
+What are ASE and parasitic lasing?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+ASE is spontaneous emission amplified while crossing an inverted medium; it
+depletes stored energy and adds background.  Parasitic lasing is oscillation on
+an unintended feedback path, often along a long crystal dimension or polished
+surface.  Inspect all high-gain paths and suppress them with geometry, absorbing
+boundaries, roughening, segmentation, or index matching.
+
+When would you use Q-switching rather than mode locking?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Use Q-switching to store inversion and release comparatively high-energy
+nanosecond-class pulses at lower repetition rates.  Use mode locking when many
+longitudinal modes must phase-lock to produce picosecond or femtosecond pulses.
+Quote energy, duration, repetition rate, and peak-power requirements rather than
+choosing by pulse duration alone.
+
+Hands-on and troubleshooting
+----------------------------
+
+How would you align a laser cavity?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Make the setup safe, establish a mechanical axis with two references, pass a
+low-power alignment beam through element centers, retroreflect each cavity
+mirror, distinguish desired surfaces from ghosts, verify pump overlap, and then
+raise pump slowly while walking the mirrors.  Optimize and characterize at low
+power before scaling under thermal monitoring.
+
+The pump is present but the laser will not oscillate. What next?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Verify pump wavelength/polarization and calibrated power, transport and
+absorption, overlap with the intended gain volume, cavity closure and mirror
+orientation, output-coupler value, clipping/contamination, and whether gain is
+being stolen by fluorescence, ASE, or a parasitic path.  Check the detector and
+expected wavelength too.
+
+How do you measure :math:`M^2`?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Attenuate without clipping, focus with a known lens, collect calibrated
+background-corrected second-moment widths at multiple planes on both sides of
+the waist, fit :eq:`interview-m2-beam` in each principal axis, and report the
+fit, wavelength, waist, divergence, and uncertainty.  One near-field and one
+far-field image are not a robust caustic measurement.
+
+Output falls slowly after turn-on. What hypotheses do you test?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Thermal-lens movement, pump-diode wavelength drift, coolant/interface change,
+polarization loss, mount drift, absorption saturation, and contamination are
+leading hypotheses.  Time-correlate absorbed pump, diode/coolant temperatures,
+output, spectrum, beam position, and waist.  Use a pump step to separate fast
+electrical response from slower thermal response.
+
+How do you prevent optical damage?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Calculate local pulse fluence, peak irradiance, average absorption, and
+temperature at every bulk and coating surface; use the proper spatial/temporal
+peak factors.  Compare with qualified data at matching wavelength and pulse
+conditions, include statistical and contamination margin, avoid ghost foci and
+back-reflections, control cleanliness, and inspect while scaling gradually.
+
+How would you prove a low-power problem is internal loss rather than weak pump overlap?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Measure incident and absorbed pump, image or map the pumped region and cavity
+mode, and vary their relative size/position while holding thermal state fixed.
+Independently estimate cavity loss using an output-coupler or delay-time method.
+Overlap changes should modify threshold/slope systematically; true passive loss
+persists after overlap is optimized.
+
+Whiteboard calculations
+-----------------------
+
+**A 100-mm linear air cavity:**
+:math:`\Delta\nu=c/(2L)=1.50\,\mathrm{GHz}`.
+
+**A 10-W average, 50-kHz source:**
+:math:`E_p=P/f=200\,\mu\mathrm J`.
+At 5 ns, :math:`P_{\rm peak}\approx40\,\mathrm{kW}` before pulse-shape factors.
+
+**A 100-µm ideal waist at 1064 nm:**
+:math:`z_R=\pi w_0^2/\lambda\approx29.5\,\mathrm{mm}` and
+:math:`\theta\approx3.39\,\mathrm{mrad}`.
+
+**A 20-W pump with 85% transport and 90% absorption:**
+:math:`P_{\rm abs}=15.3\,\mathrm W`.
+
+**808-nm pump to 1064-nm output:** the Stokes limit is
+:math:`808/1064\approx75.9\%`; quantum defect is at least 24.1% of absorbed pump.
+
+Behavioral/project question
+---------------------------
+
+For ``Tell me about a laser you designed or debugged,`` use:
+
+1. **Requirement and constraint** — include numerical targets.
+2. **Model** — gain, resonator, thermal, tolerance, or measurement relation.
+3. **Decision** — the tradeoff you personally made.
+4. **Evidence** — calibrated result with uncertainty or before/after comparison.
+5. **Failure or surprise** — what disagreed with the model.
+6. **Correction** — the discriminating experiment and design update.
+7. **Lesson** — a reusable engineering principle, not merely ``communicate more.``
