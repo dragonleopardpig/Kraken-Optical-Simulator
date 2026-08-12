@@ -757,20 +757,9 @@ class Open3DFaceAssignmentService:
                             face_id=picked_face_id,
                         ),
                     )
-            # bugs/0406-0408: replace an imported STEP OVERLAY in place -- the camera/BS half of
-            # "delete/import on the spot" (the promoted-solid half is the row menu's "Replace STEP...").
-            # A CAMERA is replaced via its vendor FOLDER (flange prompt + front_to_sensor, bugs/0408),
-            # so its label reads "from Folder"; LED/BS/optical swap a single STEP keeping the pose. A
-            # LENS is EXCLUDED (Swap Imaging Lens from Folder rebuilds its optical surrogate).
-            if step_label != "lens":
-                replace_label = (
-                    "Replace Camera from Folder..." if step_label == "camera"
-                    else f"Replace {display} STEP..."
-                )
-                menu.add_command(
-                    label=replace_label,
-                    command=lambda picked_label=step_label: self._replace_step_overlay_from_context(picked_label),
-                )
+            # flag_20260812_114828: the swap/replace entries moved into
+            # append_element_context_actions (below) so the Scene Components tree
+            # offers them too -- one shared branch, both surfaces in sync.
             menu.add_separator()
             menu.add_command(
                 label="Center Picked Face -> Optical Axis",
@@ -1145,6 +1134,29 @@ class Open3DFaceAssignmentService:
             if step_label not in le.STEP_OVERLAY_LABEL_SET:
                 return False
             decoration = le.is_step_overlay_decoration(step_label)
+            display = self.editor._step_overlay_display_label(step_label).upper()
+            # flag_20260812_114828 ("can make right click to each STEP component and offer
+            # swapping option?"): every STEP body's right-click -- 3D canvas AND the Scene
+            # Components tree, since this branch serves both -- offers its swap.
+            # bugs/0406-0408 routing preserved: a CAMERA is replaced via its vendor FOLDER
+            # (flange prompt + front_to_sensor), so its label reads "from Folder"; LED/BS
+            # swap a single STEP keeping the pose. A LENS is EXCLUDED from the plain
+            # replace -- its swap is "Swap Imaging Lens from Folder", which rebuilds the
+            # optical surrogate (bugs/0378) rather than only the decoration mesh.
+            if step_label != "lens":
+                replace_label = (
+                    "Replace Camera from Folder..." if step_label == "camera"
+                    else f"Replace {display} STEP..."
+                )
+                menu.add_command(
+                    label=replace_label,
+                    command=lambda picked_label=step_label: self._replace_step_overlay_from_context(picked_label),
+                )
+            else:
+                menu.add_command(
+                    label="Swap Imaging Lens from Folder (keeps scene)...",
+                    command=lambda: self._swap_imaging_lens_from_context(),
+                )
             menu.add_command(
                 label=self._step_surrogate_reset_label(step_label),
                 command=lambda picked_label=step_label: self._glue_step_to_surrogate_from_context(picked_label),
@@ -1414,6 +1426,20 @@ class Open3DFaceAssignmentService:
             return
         self._debug_trace("hide_step_overlay_from_context", label=label)
         self.status_var.set(f"Hid {display} STEP. Re-show it from the Scene Components panel.")
+
+    def _swap_imaging_lens_from_context(self) -> None:
+        """Right-click "Swap Imaging Lens from Folder": the LENS body's swap is the folder
+        flow that rebuilds the optical surrogate (bugs/0378) -- never the plain overlay
+        replace, which would swap only the decoration mesh around unchanged optics
+        (flag_20260812_114828: every STEP body's right-click offers its swap)."""
+        try:
+            self._inspector.swap_imaging_lens_from_folder()
+        except Exception as exc:
+            self.editor.append_debug(f"Swap imaging lens from context failed: {exc}")
+            try:
+                self.editor.status_var.set(f"Swap Imaging Lens failed: {exc}")
+            except Exception:
+                pass
 
     def _replace_step_overlay_from_context(self, step_label: str) -> None:
         """Right-click "Replace ...": replace an imported STEP overlay in place (bugs/0406-0408; the

@@ -166,6 +166,11 @@ def _check_camera_rejected(failures, notes):
 
 
 def _check_camera_folder(failures, notes):
+    # bugs/0612/0614: the SEAT (traced-beam, fold-aware, transverse-keep fallback) lives
+    # inside import_vendor_camera_from_folder now -- the one flow both the toolbar import
+    # and this replace share. The replace flow's contract is DELEGATION: run the folder
+    # import and do NOT clobber whatever placement the import's seating produced (the old
+    # behaviour restored stale transverse numbers over the seated position).
     svc = _StubFolderSvc()
     result = svc.replace_camera_from_folder(folder="dummy", refresh_open_3d=True)
     if result is None:
@@ -174,13 +179,15 @@ def _check_camera_folder(failures, notes):
     if not svc.folder_import_called:
         failures.append("CAMERA-FOLDER: did NOT run the vendor FOLDER import (flange prompt + front_to_sensor)")
     off = tuple(svc.camera_step_placement_offset_xyz)
-    # old transverse x/y (7,8) restored; axial z (5) from the import glue
-    if not (abs(off[0] - 7.0) < 1e-9 and abs(off[1] - 8.0) < 1e-9 and abs(off[2] - 5.0) < 1e-9):
-        failures.append(f"CAMERA-FOLDER: transverse x/y must be restored + axial z from import (got {off})")
+    if not (abs(off[0] - 0.0) < 1e-9 and abs(off[1] - 0.0) < 1e-9 and abs(off[2] - 5.0) < 1e-9):
+        failures.append(
+            f"CAMERA-FOLDER: the replace flow must keep the import's seated placement (got {off}, "
+            "want the stub-import's (0, 0, 5) untouched)"
+        )
     if not svc.invalidated or not svc.refreshed:
         failures.append("CAMERA-FOLDER: did not invalidate/refresh after the folder import")
     if not [f for f in failures if f.startswith("CAMERA-FOLDER")]:
-        notes.append("camera-folder = folder import (flange + front_to_sensor) then old transverse x/y restored")
+        notes.append("camera-folder = folder import (seat inside), replace keeps the seated placement")
 
 
 def _check_lens(failures, notes):
@@ -219,18 +226,30 @@ def _check_wrapper(failures, notes):
 def _check_menu(failures, notes):
     from KrakenOS.UI.services.open3d_face_assignment import Open3DFaceAssignmentService
 
-    menu = inspect.getsource(Open3DFaceAssignmentService._show_surface_function_context_menu)
+    # flag_20260812_114828: the swap/replace entries live in append_element_context_actions
+    # now, the branch SHARED by the 3D-canvas right-click AND the Scene Components tree --
+    # both surfaces offer every STEP body's swap. Same routing contract as before, plus the
+    # lens gains its own entry wired to the surrogate-rebuilding folder swap (bugs/0378).
+    menu = inspect.getsource(Open3DFaceAssignmentService.append_element_context_actions)
     if "Replace {display} STEP..." not in menu:
-        failures.append("MENU: the overlay right-click has no 'Replace ... STEP...' entry")
+        failures.append("MENU: the shared element menu has no 'Replace ... STEP...' entry")
     if "Replace Camera from Folder..." not in menu:
         failures.append("MENU: a camera must read 'Replace Camera from Folder...' (bugs/0408)")
     if 'step_label != "lens"' not in menu:
         failures.append("MENU: the Replace entry must EXCLUDE a lens (it needs Swap Imaging Lens)")
+    if "Swap Imaging Lens from Folder" not in menu:
+        failures.append("MENU: the lens body must offer 'Swap Imaging Lens from Folder' (flag_20260812_114828)")
     handler = inspect.getsource(Open3DFaceAssignmentService._replace_step_overlay_from_context)
     if "replace_imported_step_overlay" not in handler or "replace_camera_from_folder" not in handler:
         failures.append("MENU: the handler must route camera->folder flow and others->step swap")
+    lens_handler = inspect.getsource(Open3DFaceAssignmentService._swap_imaging_lens_from_context)
+    if "swap_imaging_lens_from_folder" not in lens_handler:
+        failures.append("MENU: the lens swap entry must route to swap_imaging_lens_from_folder")
+    canvas = inspect.getsource(Open3DFaceAssignmentService._show_surface_function_context_menu)
+    if "append_element_context_actions" not in canvas:
+        failures.append("MENU: the canvas menu no longer includes the shared element actions")
     if not [f for f in failures if f.startswith("MENU")]:
-        notes.append("menu = camera->'from Folder', LED/BS->STEP swap, lens excluded")
+        notes.append("menu = camera->'from Folder', LED/BS->STEP swap, lens->folder swap, both surfaces")
 
 
 def run_checks() -> "tuple[bool, list[str]]":

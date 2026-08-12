@@ -2065,9 +2065,37 @@ class LayoutTableWorkbenchMixin:
         # state as picking the camera from the dropdown.
         overlay_note = self._switch_off_analysis_overlays_for_swap()
         self._folded_m_correction_state = None  # bugs/0591: new sensor = new conjugate target
+        try:
+            old_x, old_y, _old_z = self._step_placement_offset_xyz("camera")
+        except Exception:
+            old_x, old_y = 0.0, 0.0
         self.import_camera_step(
             path=assets.primary_step, dialog_parent=parent, refresh_open_3d=refresh_open_3d
         )
+        # bugs/0614 ("camera still relocate after importing camera"): import_camera_step
+        # ZEROES every placement offset, so on a frozen fold leg the fresh body falls back
+        # to the bugs/0220 straight-axis default -- measured: importing hr25MCX over itself
+        # moved the body 186.8 mm (transverse glue offset x=179.8 wiped AND the axial sign
+        # flipped). The bugs/0612 seat now runs in the IMPORT flow itself -- before the
+        # bugs/0608 re-measure, whose real-ray probe a dislocated body can vignette (the
+        # same run recorded a spurious +81.6%). Fallback on seat REFUSAL: restore the old
+        # transverse offset (a first import has zeros there -- a no-op).
+        seated = False
+        try:
+            seated = bool(self.seat_camera_on_sensor("camera"))
+            if not seated and not str(self.status_var.get()).startswith("Seat camera:"):
+                seated = True  # "Camera already seated on the sensor."
+        except Exception as exc:
+            try:
+                self.append_debug(f"camera import: seat-on-sensor failed: {exc}")
+            except Exception:
+                pass
+        if not seated:
+            try:
+                _new_x, _new_y, new_z = self._step_placement_offset_xyz("camera")
+                self.camera_step_placement_offset_xyz = (float(old_x), float(old_y), float(new_z))
+            except Exception:
+                pass
         # bugs/0608: re-measure for the new sensor conjugate, exactly as the lens swap does --
         # otherwise the readout runs on the raw folded first order until the next solve.
         correction_note = self._relearn_folded_m_correction_after_swap()
@@ -2090,46 +2118,20 @@ class LayoutTableWorkbenchMixin:
         plane location -- then restores the old TRANSVERSE position as a minor adjustment (the axial
         position is auto-driven by ``image_plane_z - front_to_sensor``). The camera analogue of Swap
         Imaging Lens from Folder. Returns the built ImportedCamera, or None on cancel."""
-        try:
-            old_x, old_y, _old_z = self._step_placement_offset_xyz("camera")
-        except Exception:
-            old_x, old_y = 0.0, 0.0
+        # bugs/0612/0614: the seat lives in import_vendor_camera_from_folder now -- BOTH the
+        # replace flow and the plain "Import Camera from Folder..." toolbar flow dislocated
+        # the body on a frozen fold leg (0612 = axial sign flip; 0614 = the import also wipes
+        # the transverse glue offset, 186.8 mm measured). One flow owns the seating.
         imported = self.import_vendor_camera_from_folder(
             folder, dialog_parent=dialog_parent, refresh_open_3d=False
         )
         if imported is None:
             return None
-        # bugs/0612 ("replace a camera, it dislocate"): the fresh import lands the body by the
-        # bugs/0220 STRAIGHT-axis convention (image_plane_z - front_to_sensor), and the old
-        # transverse-keep below inherited that axial answer. On a 0433-frozen fold leg -- which
-        # runs BACKWARDS (world leg = const - thickness) -- that sign parks the new body on the
-        # WRONG SIDE of the sensor: measured on the Apo75, replacing hr25MCX with ITSELF flipped
-        # the body across the sensor plane (z -28.7 -> +22.0, a 50.7 mm jump, distance
-        # unchanged). Seat through the traced-beam, fold-aware seat instead
-        # (seat_camera_on_sensor: detector-normal beam direction, the bugs/0480 ladder, all
-        # three axes); the transverse-keep survives only as the fallback when seating REFUSES
-        # (no traced detector to read the beam from -- its status then starts "Seat camera:").
-        seated = False
-        try:
-            seated = bool(self.seat_camera_on_sensor("camera"))
-            if not seated and not str(self.status_var.get()).startswith("Seat camera:"):
-                seated = True  # "Camera already seated on the sensor." -- nothing to fall back from
-        except Exception as exc:
-            try:
-                self.append_debug(f"replace camera: seat-on-sensor failed: {exc}")
-            except Exception:
-                pass
-        if not seated:
-            try:
-                _new_x, _new_y, new_z = self._step_placement_offset_xyz("camera")
-                self.camera_step_placement_offset_xyz = (float(old_x), float(old_y), float(new_z))
-            except Exception:
-                pass
         self._live_step_overlay_trace_plan_cache = {}
         self._invalidate_preview_scene_trace()
         self.status_var.set(
-            f"Replaced camera with {getattr(imported, 'name', 'vendor camera')} via the folder import "
-            + ("(body seated on the traced sensor)." if seated else "(sensor re-located); transverse position kept.")
+            f"Replaced camera with {getattr(imported, 'name', 'vendor camera')} via the folder "
+            "import (body seated on the traced sensor)."
         )
         if refresh_open_3d:
             self._refresh_open_3d_views(camera_only=True)
