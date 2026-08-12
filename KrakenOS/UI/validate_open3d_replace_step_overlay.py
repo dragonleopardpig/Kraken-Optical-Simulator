@@ -253,6 +253,16 @@ def _check_menu(failures, notes):
     canvas = inspect.getsource(Open3DFaceAssignmentService._show_surface_function_context_menu)
     if "append_element_context_actions" not in canvas:
         failures.append("MENU: the canvas menu no longer includes the shared element actions")
+    # flag_20260812_140652: dialog-opening entries strand keyboard focus outside the
+    # inspector (the bugs/0348 dismiss deliberately skips its grab under a modal), so the
+    # 's' flag-bug hotkey died after a replace -- these handlers must restore focus.
+    for handler_name in ("_replace_step_overlay_from_context", "_swap_imaging_lens_from_context"):
+        handler_src = inspect.getsource(getattr(Open3DFaceAssignmentService, handler_name))
+        if "_restore_canvas_focus" not in handler_src:
+            failures.append(
+                f"MENU: {handler_name} no longer restores canvas focus -- the 's' hotkey "
+                "dies after its dialog chain (flag_20260812_140652)"
+            )
     if not [f for f in failures if f.startswith("MENU")]:
         notes.append("menu = camera->'from Folder', LED/BS->STEP swap, lens->folder swap, both surfaces")
 

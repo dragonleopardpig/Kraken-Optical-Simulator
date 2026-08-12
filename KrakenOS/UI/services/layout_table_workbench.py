@@ -2099,9 +2099,23 @@ class LayoutTableWorkbenchMixin:
         # bugs/0608: re-measure for the new sensor conjugate, exactly as the lens swap does --
         # otherwise the readout runs on the raw folded first order until the next solve.
         correction_note = self._relearn_folded_m_correction_after_swap()
+        # flag_20260812_140652: a cancelled/failed flange prompt used to seat the body's
+        # front face silently ON the sensor plane (front_to_sensor = 0). The value is a
+        # mechanical-drawing dimension only the user can supply (bugs/0309) -- say so
+        # LOUDLY instead of looking correct while being wrong by the flange depth.
+        flange_note = ""
+        try:
+            flange = imported.record.get("camera_front_to_sensor_mm")
+            if flange is None or float(flange) <= 0.0:
+                flange_note = (
+                    " NOTE: flange-to-sensor distance UNKNOWN -- the body front sits on the "
+                    "sensor plane; re-import and enter it from the mechanical drawing."
+                )
+        except Exception:
+            pass
         message = (
             f"Imported camera {imported.name} from {Path(folder).name}: registered "
-            f"its sensor and placed {assets.primary_step.name}." + overlay_note + correction_note
+            f"its sensor and placed {assets.primary_step.name}." + overlay_note + correction_note + flange_note
         )
         self.status_var.set(message)
         self.append_progress(message)

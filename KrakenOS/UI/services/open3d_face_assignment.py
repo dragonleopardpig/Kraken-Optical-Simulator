@@ -1436,6 +1436,23 @@ class Open3DFaceAssignmentService:
         self._debug_trace("hide_step_overlay_from_context", label=label)
         self.status_var.set(f"Hid {display} STEP. Re-show it from the Scene Components panel.")
 
+    def _restore_canvas_focus(self) -> None:
+        """Give keyboard focus back to the 3D canvas after a dialog-opening flow.
+
+        flag_20260812_140652: the 's' flag-bug hotkey died after a right-click camera
+        replace+flip. The menu dismiss deliberately SKIPS its focus grab while a modal
+        dialog holds the Tk grab (bugs/0348, so the dialog keeps keyboard focus) -- but
+        nothing restored focus after the dialog chain CLOSED, stranding the keyboard
+        outside the inspector toplevel where the hotkey bindings live."""
+        widget = getattr(self._inspector, "_vtk_widget", None)
+        if widget is None:
+            return
+        try:
+            if widget.grab_current() is None:
+                widget.focus_set()
+        except Exception:
+            pass
+
     def _swap_imaging_lens_from_context(self) -> None:
         """Right-click "Swap Imaging Lens from Folder": the LENS body's swap is the folder
         flow that rebuilds the optical surrogate (bugs/0378) -- never the plain overlay
@@ -1449,6 +1466,8 @@ class Open3DFaceAssignmentService:
                 self.editor.status_var.set(f"Swap Imaging Lens failed: {exc}")
             except Exception:
                 pass
+        finally:
+            self._restore_canvas_focus()
 
     def _replace_step_overlay_from_context(self, step_label: str) -> None:
         """Right-click "Replace ...": replace an imported STEP overlay in place (bugs/0406-0408; the
@@ -1474,6 +1493,10 @@ class Open3DFaceAssignmentService:
                 self.editor.status_var.set(f"Replace STEP failed: {exc}")
             except Exception:
                 pass
+        finally:
+            # flag_20260812_140652: the folder/flange dialog chain strands keyboard
+            # focus outside the inspector -- the 's' hotkey dies until a click.
+            self._restore_canvas_focus()
 
     def _promote_step_from_context(self, label: str) -> None:
         le = _layout_module()
