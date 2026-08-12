@@ -92,6 +92,9 @@ def run_checks():
             float(getattr(app, "camera_step_rotation_z_deg", 0.0)),
             bool(getattr(app, "camera_step_reverse_direction", False)),
         )
+        # bugs/0617: the catalog's flange-to-sensor value (drawing-only, user-entered)
+        # must SURVIVE a re-import -- the re-scrape cannot recover it and used to wipe it.
+        flange_before = float(app._current_camera_front_to_sensor_mm())
         # Both camera flows must be a placement no-op with the SAME camera: the replace
         # flow (bugs/0612) and the plain import flow (bugs/0614 -- the flag's actual door,
         # which wiped the transverse glue offset and flipped the axial sign: 186.8 mm).
@@ -137,6 +140,18 @@ def run_checks():
                 )
             else:
                 notes.append(f"PASS: B[{flow_name}] (bugs/0615): rotations + flip preserved {pose_after}")
+            flange_after = float(app._current_camera_front_to_sensor_mm())
+            if abs(flange_after - flange_before) > 1e-6 or flange_after <= 0.0:
+                ok = False
+                notes.append(
+                    f"FAIL: B[{flow_name}] (bugs/0617): the flange-to-sensor value did not "
+                    f"survive the re-import ({flange_before:g} -> {flange_after:g}) -- the "
+                    "re-scrape wiped the user's drawing-entered dimension"
+                )
+            else:
+                notes.append(
+                    f"PASS: B[{flow_name}] (bugs/0617): flange-to-sensor {flange_after:g} mm survives"
+                )
     except Exception as exc:  # pragma: no cover - harness failure, not a product failure
         ok = False
         notes.append(f"FAIL: harness error {type(exc).__name__}: {exc}")

@@ -2030,6 +2030,27 @@ class LayoutTableWorkbenchMixin:
                     "body CAD is required to place the camera and couple its sensor."
                 )
             imported = build_camera_record_from_assets(assets)
+            # bugs/0617: a re-import rebuilds the record by RE-SCRAPING the folder, and
+            # the flange-to-sensor distance is a drawing-only dimension the scrape can
+            # never recover -- so every re-import silently WIPED the user's previously
+            # entered value from the catalog (measured: a headless verification
+            # re-import erased the user's hand-entered 12 mm for the BC-OM25M). Carry
+            # the persisted value forward; the prompt then only fires for a genuinely
+            # new camera, and a cancelled prompt cannot destroy earlier work.
+            try:
+                if imported.record.get("camera_front_to_sensor_mm") is None:
+                    from KrakenOS.UI.services.camera_folder_import import load_imported_cameras
+
+                    previous = (load_imported_cameras() or {}).get(imported.name) or {}
+                    carried = previous.get("camera_front_to_sensor_mm")
+                    if carried is not None and float(carried) > 0.0:
+                        imported.record["camera_front_to_sensor_mm"] = float(carried)
+                        imported.notes.append(
+                            f"Flange-to-sensor distance {float(carried):g} mm carried forward "
+                            "from the existing catalog entry (bugs/0617)."
+                        )
+            except Exception:
+                pass
             # bugs/0309: a vendor datasheet carries the flange-to-sensor optical
             # distance only in the mechanical drawing (BC-OM25M = 12 mm), so ask the
             # user for it here -- before persist -- when it could not be scraped, so
