@@ -228,11 +228,24 @@ class StepOverlayImportService:
         if path is None:
             return None
         self._begin_history_capture()
+        # bugs/0615: re-importing the SAME STEP file must be a POSE no-op -- the user's
+        # rotations and direction flip encode THIS vendor's axis convention, which does
+        # not change with a re-import (measured: the same-camera re-import wiped the
+        # scene's baked x=180/z=90, rendering the body backwards). A DIFFERENT file is
+        # a different vendor convention: reset everything, exactly as before.
+        same_file = False
+        try:
+            previous = getattr(self, "imported_camera_step_path", None)
+            same_file = previous is not None and Path(previous).resolve() == Path(path).resolve()
+        except Exception:
+            same_file = False
         self.imported_camera_step_path = path
-        self.camera_step_rotation_x_deg = 0.0
-        self.camera_step_rotation_y_deg = 0.0
-        self.camera_step_rotation_z_deg = 0.0
-        self.camera_step_axis_offset_xy = (0.0, 0.0)
+        if not same_file:
+            self.camera_step_rotation_x_deg = 0.0
+            self.camera_step_rotation_y_deg = 0.0
+            self.camera_step_rotation_z_deg = 0.0
+            self.camera_step_reverse_direction = False
+            self.camera_step_axis_offset_xy = (0.0, 0.0)
         self.camera_step_placement_offset_xyz = (0.0, 0.0, 0.0)
         self._clear_step_overlay_axis_anchor("camera")
         self._selected_step_label = "camera"

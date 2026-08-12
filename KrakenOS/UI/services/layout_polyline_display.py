@@ -2236,6 +2236,7 @@ class LayoutPolylineDisplayMixin:
             round(float(getattr(self, "camera_step_rotation_z_deg", 0.0)), 6),
             round(float(getattr(self, "camera_step_rotation_x_deg", 0.0)), 6),
             round(float(getattr(self, "camera_step_rotation_y_deg", 0.0)), 6),
+            bool(getattr(self, "camera_step_reverse_direction", False)),  # bugs/0615
             tuple(round(float(v), 6) for v in self._step_axis_offset_xy("camera")),
             tuple(round(float(v), 6) for v in self._step_placement_offset_xyz("camera")),
             self._step_resize_signature("camera"),
@@ -2261,6 +2262,12 @@ class LayoutPolylineDisplayMixin:
             # bugs/0308: orient the body so the lens MOUNT faces the beam. A fixed
             # "max" reversed vendor bodies whose mount is at native min-z (BC-OM25M).
             front_face = self._camera_step_mount_front_face(mesh, default="max")
+            # bugs/0615 (flag_20260812_131816 "the camera is flipped"): the mount-end
+            # detect is a HEURISTIC and a mechanical STEP carries no optical direction
+            # (the bugs/0373 lens lesson) -- the persisted user flip overrides it by
+            # seating the OPPOSITE native end toward the beam.
+            if bool(getattr(self, "camera_step_reverse_direction", False)):
+                front_face = "min" if front_face == "max" else "max"
             aligned = self._cad_mesh_aligned_to_optical_axis(
                 mesh,
                 source_axis="z",

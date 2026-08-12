@@ -1195,6 +1195,15 @@ class Open3DFaceAssignmentService:
                     label="Flip Lens Direction (front/rear)",
                     command=lambda: self._flip_lens_step_direction_from_context(),
                 )
+            # bugs/0615: the camera analogue of the lens flip -- the 0308 mount-end
+            # heuristic can guess wrong on an ambiguous body and a swapped vendor STEP
+            # arrives with its own axis convention (flag_20260812_131816 "the camera is
+            # flipped"). Display-only; the trace never reads the decoration mesh.
+            if step_label == "camera":
+                menu.add_command(
+                    label="Flip Camera Direction (front/rear)",
+                    command=lambda: self._flip_camera_step_direction_from_context(),
+                )
             # bugs/0319: one-click "Add Beam Splitter to LED". Only on the LED overlay --
             # it generates a parametric BS, centres it on the LED clear-aperture opening,
             # glues, promotes, and auto-flags the 45-degree diagonal coating.
@@ -1593,6 +1602,18 @@ class Open3DFaceAssignmentService:
         if not self.editor.toggle_imported_lens_step_direction():
             return
         self._debug_trace("flip_lens_step_direction_from_context")
+        try:
+            self.refresh_from_editor()
+        except Exception:
+            pass
+
+    def _flip_camera_step_direction_from_context(self) -> None:
+        """bugs/0615: toggle the imported camera STEP front/rear and re-render. A pure
+        display flip -- the trace runs on the layout rows + registered sensor -- so no
+        retrace (the lens-flip pattern, bugs/0373)."""
+        if not self.editor.toggle_imported_camera_step_direction():
+            return
+        self._debug_trace("flip_camera_step_direction_from_context")
         try:
             self.refresh_from_editor()
         except Exception:

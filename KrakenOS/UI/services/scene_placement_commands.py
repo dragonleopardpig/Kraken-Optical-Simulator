@@ -5553,6 +5553,28 @@ class ScenePlacementMixin:
         self.status_var.set(f"Lens direction flipped -- {facing}.")
         return True
 
+    def toggle_imported_camera_step_direction(self) -> bool:
+        """bugs/0615 (flag_20260812_131816): flip the imported camera STEP front/rear.
+
+        The bugs/0308 mount-end detect is a heuristic and a mechanical STEP carries no
+        optical direction (the bugs/0373 lens lesson) -- when it guesses wrong the body
+        renders backwards on the fold leg. This toggles the persisted
+        ``camera_step_reverse_direction``, which seats the OPPOSITE native end toward
+        the beam; the alignment re-pins the new front at the same image-plane target,
+        so no reseat is needed. Display-only: the trace runs on the layout rows and the
+        registered sensor, never the decoration mesh."""
+        if getattr(self, "imported_camera_step_path", None) is None:
+            self.status_var.set("Flip Camera Direction: no imported camera STEP overlay.")
+            return False
+        self.camera_step_reverse_direction = not bool(getattr(self, "camera_step_reverse_direction", False))
+        facing = (
+            "opposite end faces the beam (heuristic overridden)"
+            if self.camera_step_reverse_direction
+            else "auto-detected mount end faces the beam"
+        )
+        self.status_var.set(f"Camera direction flipped -- {facing}.")
+        return True
+
     def _transformed_imported_step_mesh_for_label(self, label: str):
         label = str(label).strip().lower()
         builders = {

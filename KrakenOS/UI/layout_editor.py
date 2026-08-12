@@ -2929,6 +2929,10 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         # imports reversed. This persisted flip re-pins the opposite end at the front
         # datum -- one click, remembered with the layout.
         self.lens_step_reverse_direction = False
+        # flag_20260812_131816: the camera analogue -- the 0308 mount-end heuristic can
+        # guess wrong on an ambiguous vendor body, and a mechanical STEP carries no
+        # optical direction. One click, remembered with the layout (bugs/0615).
+        self.camera_step_reverse_direction = False
         self.led_object_edge_distance_mm = 0.0
         self.led_step_object_edge_local_z: float | None = None
         # bugs/0053: per-row thickness-dimension measurement re-anchor overrides.

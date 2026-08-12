@@ -245,6 +245,11 @@ def _check_menu(failures, notes):
     lens_handler = inspect.getsource(Open3DFaceAssignmentService._swap_imaging_lens_from_context)
     if "swap_imaging_lens_from_folder" not in lens_handler:
         failures.append("MENU: the lens swap entry must route to swap_imaging_lens_from_folder")
+    if "Flip Camera Direction (front/rear)" not in menu:
+        failures.append("MENU: the camera body must offer 'Flip Camera Direction' (bugs/0615)")
+    flip_handler = inspect.getsource(Open3DFaceAssignmentService._flip_camera_step_direction_from_context)
+    if "toggle_imported_camera_step_direction" not in flip_handler:
+        failures.append("MENU: the camera flip entry must route to toggle_imported_camera_step_direction")
     canvas = inspect.getsource(Open3DFaceAssignmentService._show_surface_function_context_menu)
     if "append_element_context_actions" not in canvas:
         failures.append("MENU: the canvas menu no longer includes the shared element actions")

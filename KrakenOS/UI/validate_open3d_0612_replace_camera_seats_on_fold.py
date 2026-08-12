@@ -84,6 +84,14 @@ def run_checks():
             return np.asarray(mesh.center, dtype=float) - sensor
 
         before = body_vector()
+        # bugs/0615: a same-file re-import must also be a POSE no-op -- the scene's baked
+        # rotations (x=180/z=90 on the Apo75's hr25MCX) encode THIS vendor's axis
+        # convention and used to be wiped, rendering the body backwards.
+        pose_before = (
+            float(getattr(app, "camera_step_rotation_x_deg", 0.0)),
+            float(getattr(app, "camera_step_rotation_z_deg", 0.0)),
+            bool(getattr(app, "camera_step_reverse_direction", False)),
+        )
         # Both camera flows must be a placement no-op with the SAME camera: the replace
         # flow (bugs/0612) and the plain import flow (bugs/0614 -- the flag's actual door,
         # which wiped the transverse glue offset and flipped the axial sign: 186.8 mm).
@@ -116,6 +124,19 @@ def run_checks():
                     f"PASS: B[{flow_name}]: same-camera {flow_name} preserves the body-to-sensor "
                     f"vector (drift {drift:.2f} mm, same side)"
                 )
+            pose_after = (
+                float(getattr(app, "camera_step_rotation_x_deg", 0.0)),
+                float(getattr(app, "camera_step_rotation_z_deg", 0.0)),
+                bool(getattr(app, "camera_step_reverse_direction", False)),
+            )
+            if pose_after != pose_before:
+                ok = False
+                notes.append(
+                    f"FAIL: B[{flow_name}] (bugs/0615): same-file re-import changed the POSE "
+                    f"({pose_before} -> {pose_after}) -- the body renders backwards again"
+                )
+            else:
+                notes.append(f"PASS: B[{flow_name}] (bugs/0615): rotations + flip preserved {pose_after}")
     except Exception as exc:  # pragma: no cover - harness failure, not a product failure
         ok = False
         notes.append(f"FAIL: harness error {type(exc).__name__}: {exc}")
