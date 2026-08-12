@@ -4,7 +4,8 @@ Solid-State Laser Design
 A strong system answer begins with requirements and closes four coupled loops:
 spectroscopy, pump/gain overlap, resonator extraction, and heat removal.  Pulse
 format, nonlinear conversion, mechanics, controls, safety, and lifetime sit on
-top of those loops.
+top of those loops.  See :doc:`diode_pumped_lasers` for the pump-source and
+delivery workflow, and :doc:`laser_damage` for component qualification.
 
 Translate requirements before choosing hardware
 ------------------------------------------------
@@ -230,6 +231,8 @@ wavelength, pulse duration, repetition rate, spot definition, incidence angle,
 polarization, number of shots, defect statistics, cleanliness, and test protocol.
 Design below the applicable lower-confidence threshold with margin for hot spots,
 back-reflections, coating variation, contamination growth, and focus drift.
+Use the exposure equations, test-protocol distinctions, and procurement checklist
+in :doc:`laser_damage` rather than scaling one catalog number across regimes.
 
 A design review should include at least these unintended paths: first-surface
 reflections, uncoated wedges, ghost foci, rejected polarization, undiffracted

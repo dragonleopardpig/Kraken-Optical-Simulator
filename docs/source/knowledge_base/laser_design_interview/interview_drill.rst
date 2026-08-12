@@ -102,6 +102,17 @@ quantum defect, thermal conductivity, thermo-optic/stress properties, fracture
 limit, available geometry, doping quality, and coatings.  Then close the pump,
 gain, thermal, and resonator models together.
 
+How do you select a pump diode and its delivery optics?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Start with the gain medium's absorption versus wavelength and temperature, then
+compare the diode spectrum over current, junction temperature, tolerance, and
+life.  Use measured fast/slow-axis or fiber core/NA data to propagate étendue,
+not just total watts.  Model spectral absorption, three-dimensional pump/mode
+overlap, residual pump, thermal deposition, and diode feedback.  Finally verify
+power, spectrum, focus, absorption, and output together at cold, nominal, and hot
+states as described in :doc:`diode_pumped_lasers`.
+
 What causes thermal lensing?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -175,6 +186,16 @@ the waist, fit :eq:`interview-m2-beam` in each principal axis, and report the
 fit, wavelength, waist, divergence, and uncertainty.  One near-field and one
 far-field image are not a robust caustic measurement.
 
+Why is :math:`M^2` not a complete beam-quality specification?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+It compresses the second-moment waist-divergence product into a propagation
+metric.  Different beams can share :math:`M^2` while differing in halo energy,
+bucket power, focal peak, astigmatism, pointing jitter, polarization, and time
+dependence.  Choose additional metrics from the application and state width,
+centering, time-gate, operating-state, and uncertainty conventions; see
+:doc:`beam_quality`.
+
 Output falls slowly after turn-on. What hypotheses do you test?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -192,6 +213,17 @@ temperature at every bulk and coating surface; use the proper spatial/temporal
 peak factors.  Compare with qualified data at matching wavelength and pulse
 conditions, include statistical and contamination margin, avoid ghost foci and
 back-reflections, control cleanliness, and inspect while scaling gradually.
+
+How would you qualify an optic's laser-damage margin?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Calculate local Gaussian or measured-profile peak exposure at every intended and
+ghost path using intracavity power and temporal/spatial factors.  Match it to
+damage-probability data for the actual wavelength, pulse shape/duration, rate,
+shot count, spot definition, angle, polarization, coating lot, environment, and
+test protocol.  Include measurement and lot statistics, contamination/lifetime,
+fault transients, and detection criteria.  A catalog's typical LIDT without those
+conditions is not acceptance evidence; use the framework in :doc:`laser_damage`.
 
 How would you prove a low-power problem is internal loss rather than weak pump overlap?
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

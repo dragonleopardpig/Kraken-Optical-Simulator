@@ -214,6 +214,10 @@ pump diode where permitted by system requirements.
      - Irradiance budget plus qualified optic data and inspection
      - Required statistical margin at wavelength and exposure condition
 
+The beam-quality row must be converted into the full acceptance statement
+described in :doc:`beam_quality`; the coating row must use the local-exposure and
+qualification framework in :doc:`laser_damage`.
+
 8. Optional Q-switched extension
 --------------------------------
 

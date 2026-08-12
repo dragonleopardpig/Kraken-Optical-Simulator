@@ -1,7 +1,7 @@
 Source Map and Further Reading
 ==============================
 
-This guide is a concise synthesis, not a substitute for the three references.
+This guide is a concise synthesis, not a substitute for the seven references.
 The map below identifies the most useful chapters for checking a derivation,
 recovering a book's full assumptions, or preparing a deeper follow-up answer.
 Chapter numbers refer to the editions listed on the :doc:`index` page.
@@ -76,12 +76,42 @@ How to use the books efficiently
   sensitivity, and beam-characterization details.
 * Use Koechner to close the solid-state engineering loop: material data, pump
   architecture, heat removal, extraction, pulsed operation, and damage.
+* Use Scheps as the short, build-oriented path from diode and gain-element
+  selection to an end-pumped oscillator and its pump optics.
+* Use Taylor to refresh the explanatory chain from light and amplification to
+  stimulated emission, cavities, source descriptions, and safe use.
+* Use Ross when a beam metric, analyzer result, or acceptance requirement must
+  be defined precisely; use Ristau when exposure margin, coating qualification,
+  or damage evidence must withstand design review.
 
 For any real design, confirm material parameters against a current supplier
 datasheet and applicable laser-safety requirements.  Values such as lifetime,
 cross section, absorption, thermal conductivity, coating limit, and diode
 wavelength tolerance depend on material composition, temperature, pulse
 duration, spot size, and test method.
+
+Focused-reference chapter map
+-----------------------------
+
+.. list-table:: Additional source map
+   :header-rows: 1
+   :widths: 29 22 49
+
+   * - Reference
+     - Highest-value chapters
+     - Interview contribution
+   * - Scheps, *Introduction to Laser Diode-Pumped Solid State Lasers*
+     - Chapters 2--6 and 10
+     - Pump-diode spatial/spectral properties, end-pumped TEM00 design, pump optics, cw operation, efficiency, scaling, thermal effects, and intracavity elements; synthesized in :doc:`diode_pumped_lasers`
+   * - Taylor, *Introduction to Laser Science and Engineering*
+     - Chapters 2--7
+     - Amplification, stimulated emission, laser components/rate equations/cavities, laser types, power and beam descriptions, efficiency, measurement, and practical safety; cross-checks :doc:`theory_essentials`, :doc:`hands_on`, and :doc:`beam_quality`
+   * - Ross, *Laser Beam Quality Metrics*
+     - Chapters 1--4 and 6; Appendix
+     - Metric definitions, second-moment :math:`M^2` measurement, application-derived specifications, metric conversion limits, truncation, noise, and reporting traps; synthesized in :doc:`beam_quality`
+   * - Ristau, ed., *Laser-Induced Damage in Optical Materials*
+     - Chapters 1--8 and 11--16
+     - Thermal, defect, nonlinear, and ultrashort-pulse damage; detection, protocols, statistics, transfer/scatter measurement, laser materials, surfaces, coatings, and contamination; synthesized in :doc:`laser_damage`
 
 Scope of this synthesis
 -----------------------

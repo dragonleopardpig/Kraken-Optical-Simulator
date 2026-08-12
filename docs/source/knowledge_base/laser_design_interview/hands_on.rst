@@ -117,6 +117,10 @@ for both principal axes, and report wavelength, fit quality, waist position,
 waist size, divergence, and :math:`M^2`.  Rotate or otherwise diagnose the axes
 if astigmatism is present.
 
+For metric selection, second-moment definitions, window/noise sensitivity, and
+a defensible acceptance specification, use :doc:`beam_quality`.  For damage
+exposure, test protocols, and evidence preservation, use :doc:`laser_damage`.
+
 Do not put an unqualified neutral-density filter near a high-power focus.
 Absorption, thermal lensing, nonlinear response, coating damage, and etalon
 feedback can corrupt both the laser and the measurement.

@@ -2,7 +2,7 @@ Laser Design Engineer Interview Guide
 =====================================
 
 This collection distills the interview-relevant theory and engineering practice
-from three local references:
+from seven local references.  Three provide the main conceptual and design spine:
 
 * Jeff Hecht, *Understanding Lasers: An Entry-Level Guide*, fourth edition
   (2019);
@@ -10,6 +10,15 @@ from three local references:
   second edition (2005); and
 * Walter Koechner, *Solid-State Laser Engineering*, sixth revised edition
   (2006).
+
+Four focused references deepen the engineering and measurement treatment:
+
+* Richard Scheps, *Introduction to Laser Diode-Pumped Solid State Lasers*
+  (2002);
+* Travis S. Taylor, *Introduction to Laser Science and Engineering*, first
+  edition (2020);
+* T. Sean Ross, *Laser Beam Quality Metrics* (2013); and
+* Detlev Ristau, editor, *Laser-Induced Damage in Optical Materials* (2015).
 
 The text is an independent technical synthesis.  It paraphrases concepts rather
 than reproducing the books.  Use the :doc:`source_map` to return to the relevant
@@ -49,6 +58,10 @@ What an interviewer is testing
      - Aligns at low power, measures with calibrated tools, and changes one variable at a time
      - Chases maximum power without a baseline or damage controls
      - :doc:`hands_on`
+   * - Qualification
+     - Defines beam quality and damage limits using application-specific, traceable conditions
+     - Quotes an instrument's :math:`M^2` or a catalog LIDT without the measurement basis
+     - :doc:`beam_quality` and :doc:`laser_damage`
    * - Communication
      - Starts from requirements, names assumptions, estimates, verifies, then discusses risk
      - Gives a number without units, tolerance, or validation plan
@@ -62,10 +75,12 @@ Recommended preparation order
 2. Work the cavity and Gaussian-beam calculations in
    :doc:`resonators_and_beams` without notes.
 3. Practice turning requirements into a solid-state architecture with
-   :doc:`solid_state_design` and :doc:`design_case`.
-4. Rehearse the alignment, measurement, and fault-isolation sequences in
+   :doc:`solid_state_design`, :doc:`diode_pumped_lasers`, and :doc:`design_case`.
+4. Learn to defend the source specification and qualification evidence with
+   :doc:`beam_quality` and :doc:`laser_damage`.
+5. Rehearse the alignment, measurement, and fault-isolation sequences in
    :doc:`hands_on`.
-5. Answer :doc:`interview_drill` aloud.  Keep the first answer under 90 seconds,
+6. Answer :doc:`interview_drill` aloud.  Keep the first answer under 90 seconds,
    then expand only when asked.
 
 .. toctree::
@@ -74,6 +89,9 @@ Recommended preparation order
    theory_essentials
    resonators_and_beams
    solid_state_design
+   diode_pumped_lasers
+   beam_quality
+   laser_damage
    hands_on
    design_case
    interview_drill
