@@ -538,6 +538,17 @@ class LayoutTableWorkbenchMixin:
             self._apply_layout_settings(info.get("settings", {}))
 
         self._normalize_special_rows()
+        # bugs/0618 (the bugs/0563 two-loader trap again): the bugs/0021 derived-cache
+        # heal lived only in ``open_layout``, so a scene loaded BY NAME (this path --
+        # the Common Layout / Machine Vision menus, guards, headless probes) kept its
+        # dangling ``Solid_3d_stl`` and the system build silently substituted the
+        # analytic single-face fallback -- on attachment/penta.py all four promoted
+        # prisms lost their per-face coating chain (phase 172). Regenerate from the
+        # still-present source STEPs exactly as open_layout does.
+        try:
+            self._regenerate_missing_optical_solid_caches()
+        except Exception:
+            pass
         # Prompt for any missing on-disk CAD references *before* the
         # table sync and first plot refresh. ``load_layout_by_name`` is
         # the entry point used by the Common Optical Layout / Machine

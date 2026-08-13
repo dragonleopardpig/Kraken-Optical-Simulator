@@ -1134,7 +1134,12 @@ class Open3DFaceAssignmentService:
             if step_label not in le.STEP_OVERLAY_LABEL_SET:
                 return False
             decoration = le.is_step_overlay_decoration(step_label)
-            display = self.editor._step_overlay_display_label(step_label).upper()
+            # Defensive: guard stubs (phase 89's glue harness) drive this branch with a
+            # bare SimpleNamespace editor -- fall back to the raw label for the display.
+            try:
+                display = self.editor._step_overlay_display_label(step_label).upper()
+            except Exception:
+                display = str(step_label).upper()
             # flag_20260812_114828 ("can make right click to each STEP component and offer
             # swapping option?"): every STEP body's right-click -- 3D canvas AND the Scene
             # Components tree, since this branch serves both -- offers its swap.

@@ -44,17 +44,32 @@ _COATING = "Protected mirror 94%"
 
 def _trace_penta_rp(coat: bool):
     """Build penta.py (optionally coating every promoted-solid face with the mirror preset),
-    trace one on-axis ray, return the per-hit reflectance array system.RP (or None on failure)."""
+    trace one on-axis ray, return the per-hit reflectance array system.RP (or None on failure).
+
+    bugs/0618: rows come from a REAL editor load, not the raw file parse -- the load heals
+    dangling ``Solid_3d_stl`` caches from their source STEPs (the bugs/0021 pass, now also
+    on the by-name loader). The raw parse kept the dangling legacy paths, the system build
+    silently substituted the analytic fallback, and this guard measured a machine with NO
+    promoted solids at all (its C check then hinged on whether the fallback produced hits)."""
     import KrakenOS as Kos
     from KrakenOS.UI.layout_editor import (
         KrakenLayoutEditor,
         _build_system_from_specs,
-        _load_python_data,
         surface_rows_to_specs,
     )
 
-    info = _load_python_data(_SCENE)
-    rows = [KrakenLayoutEditor._row_from_layout_item(item) for item in info["surfaces"]]
+    cap = io.StringIO()
+    with redirect_stdout(cap), redirect_stderr(cap):
+        app = KrakenLayoutEditor()
+        try:
+            app.layout_files["_172"] = _SCENE
+            app.load_layout_by_name("_172", refresh=False)
+            rows = [row for row in app.rows]
+        finally:
+            try:
+                app.destroy()
+            except Exception:
+                pass
     if coat:
         for row in rows:
             osf = (getattr(row, "advanced", {}) or {}).get("OpticalSolidFaces")
@@ -128,7 +143,13 @@ def run_checks() -> "tuple[bool, list[str]]":
         failures.append(f"C: trace raised {exc!r}")
         return (not failures), (failures + notes)
     if rp_bare is None or rp_coat is None or rp_bare.size == 0 or rp_bare.size != rp_coat.size:
-        notes.append(f"SKIP physics: trace produced no comparable energy (bare={rp_bare.size if rp_bare is not None else 'None'})")
+        # bugs/0618: this used to SKIP (reading as PASS) -- which is how a scene whose
+        # promoted solids silently degraded to the analytic fallback hid for weeks. A
+        # coating guard with no energy data has verified nothing: fail loudly.
+        failures.append(
+            f"C: trace produced no comparable energy (bare={rp_bare.size if rp_bare is not None else 'None'}, "
+            f"coat={rp_coat.size if rp_coat is not None else 'None'}) -- the penta solids did not build/trace"
+        )
         return (not failures), (failures + notes)
     changed = not np.allclose(rp_bare, rp_coat, atol=1e-4)
     coated_near_table = bool(np.any(np.abs(rp_coat - 0.95) < 0.06))
