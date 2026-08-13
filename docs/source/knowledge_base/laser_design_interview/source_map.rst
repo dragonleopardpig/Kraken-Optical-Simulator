@@ -110,8 +110,8 @@ Focused-reference chapter map
      - Chapters 1--4 and 6; Appendix
      - Metric definitions, second-moment :math:`M^2` measurement, application-derived specifications, metric conversion limits, truncation, noise, and reporting traps; synthesized in :doc:`beam_quality`
    * - Ristau, ed., *Laser-Induced Damage in Optical Materials*
-     - Chapters 1--8 and 11--16
-     - Thermal, defect, nonlinear, and ultrashort-pulse damage; detection, protocols, statistics, transfer/scatter measurement, laser materials, surfaces, coatings, and contamination; synthesized in :doc:`laser_damage`
+     - Chapters 1--17, especially 6--17
+     - Thermal, defect, nonlinear, and ultrashort-pulse damage; detection, statistics, materials, surfaces, coatings, contamination, and DUV optic stability; synthesized in :doc:`laser_damage` and :doc:`duv_integration`
 
 Scope of this synthesis
 -----------------------

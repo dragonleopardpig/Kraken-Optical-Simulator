@@ -5,6 +5,90 @@ Answer each question aloud before opening the suggested answer.  Lead with the
 physical principle, give one governing relation, state assumptions, and finish
 with an engineering consequence or test.
 
+Exact-role systems questions
+----------------------------
+
+How do you turn a market requirement into subsystem budgets?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Clarify the customer use case and measurable system outcome, including operating
+conditions, time/population statistic, interfaces, lifetime, and verification
+method.  Build a sensitivity model and allocate performance, variation,
+measurement uncertainty, and margin to source, delivery optics, mechanics,
+motion, controls, and environment.  Assign owners and close every allocation in
+a requirements-verification matrix.  Use worst case for hard/safety limits and
+the covariance form in :eq:`interview-system-budget` when statistical
+contributors are correlated.
+
+How would you prove a risky product concept on the bench?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+State the cause-event-impact risk and competing hypotheses.  Build the minimum
+controlled setup that produces different predicted observations, calibrate its
+measurement chain, and agree numerical exit criteria before testing.  Preserve
+raw data and configuration, compare with the model, and end with a design
+decision plus residual risk—not merely ``the prototype worked.``
+
+How would you design an automated laser qualification bench?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Start from the requirements-verification matrix.  Define DUT interfaces,
+calibrated metrology and uncertainty, a source reference channel, deterministic
+fixturing/motion, environmental logging, interlocks and injected faults.  Use a
+recoverable state machine that saves raw data and complete provenance before
+analysis.  Prove the bench with known-good, known-bad, repeat load/home, drift,
+range/linearity, and measurement-repeatability/reproducibility studies before it
+makes acceptance decisions.
+
+The motion encoder is stable but the beam still drifts. What next?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The encoder, physical optic pose, and optical output are different observables.
+Time-align encoder, beam centroids at two planes, temperatures, purge/airflow and
+structural sensors after a repeatable move.  Test approach direction, settling
+time, cable force, mount creep, optic heating, Abbe offset and non-common-path
+sensor drift.  Change move profile or thermal/purge condition one at a time to
+separate servo dynamics from structural or optical drift.
+
+What is different about integrating a DUV laser?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+First identify wavelength and architecture: excimer, frequency-converted solid
+state, or a supplied source.  Then add the matching gas/high-voltage or nonlinear
+conversion risks, invisible-beam controls, DUV-compatible materials/coatings and
+detectors, nitrogen purge and contamination control, residual wavelengths, and
+accumulated-dose monitoring for absorption, color centers, compaction,
+birefringence, thermal wavefront and coating degradation.  Follow the controlled
+alignment and qualification plan in :doc:`duv_integration`.
+
+How do you transfer a prototype to operations and field service?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Release the configuration, interfaces, fixtures, software and calibration with
+a procedure containing safe state, prerequisites, datums, expected observation
+and limit per step, data capture, recovery and escalation.  Validate it with a
+trained nonexpert, train concept/execution/diagnostics, and monitor first-pass
+yield, retest, adjustment pareto, cycle time and field recurrence.  Feed those
+data back into product, fixture, limits and training.
+
+How do you report a serious integration issue to management?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Lead with requirement and current result, customer/schedule impact, confidence
+and containment.  Show the top evidence-supported hypotheses, next
+discriminating test with owner/date, recovery options and the decision or
+resource needed.  Put detailed traces in backup.  Separate measured fact,
+engineering inference and committed action.
+
+How do you handle a cross-functional technical disagreement?
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Restate the shared requirement and decision deadline; make coordinate systems,
+interfaces and terms explicit; list each hypothesis and predicted observation;
+then agree on a small discriminating analysis or test and its decision rule.
+Record the result and owner.  Escalate a decision with evidence and impact when
+necessary, rather than escalating personalities.
+
 Core theory
 -----------
 

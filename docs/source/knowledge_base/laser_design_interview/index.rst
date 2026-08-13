@@ -24,6 +24,12 @@ The text is an independent technical synthesis.  It paraphrases concepts rather
 than reproducing the books.  Use the :doc:`source_map` to return to the relevant
 chapters when a topic needs deeper study.
 
+For the supplied job description, begin with :doc:`role_playbook`, then study
+:doc:`duv_integration`.  These pages map the general laser material to the role's
+requirements allocation, feasibility benches, integration, qualification,
+automation, motion control, cross-functional execution, and product-introduction
+responsibilities.
+
 .. figure:: ../../_static/knowledge_base/laser_design_interview/design_loop.svg
    :alt: Laser design reasoning from requirements through modelling and measurement
    :width: 100%
@@ -66,26 +72,36 @@ What an interviewer is testing
      - Starts from requirements, names assumptions, estimates, verifies, then discusses risk
      - Gives a number without units, tolerance, or validation plan
      - :doc:`design_case` and :doc:`interview_drill`
+   * - Productization
+     - Converts prototype knowledge into controlled tests, procedures, training, and yield feedback
+     - Treats first light or one passing unit as completion
+     - :doc:`role_playbook` and :doc:`duv_integration`
 
 Recommended preparation order
 -----------------------------
 
-1. Memorize the governing equations and verbal explanations in
+1. Map your own projects to the evidence matrix in :doc:`role_playbook` and
+   prepare the six requested stories with numerical results.
+2. Learn the architecture fork, materials, purge, alignment, and lifetime risks
+   in :doc:`duv_integration`.
+3. Memorize the governing equations and verbal explanations in
    :doc:`theory_essentials`.
-2. Work the cavity and Gaussian-beam calculations in
+4. Work the cavity and Gaussian-beam calculations in
    :doc:`resonators_and_beams` without notes.
-3. Practice turning requirements into a solid-state architecture with
+5. Practice turning requirements into a solid-state architecture with
    :doc:`solid_state_design`, :doc:`diode_pumped_lasers`, and :doc:`design_case`.
-4. Learn to defend the source specification and qualification evidence with
+6. Learn to defend the source specification and qualification evidence with
    :doc:`beam_quality` and :doc:`laser_damage`.
-5. Rehearse the alignment, measurement, and fault-isolation sequences in
+7. Rehearse the alignment, measurement, and fault-isolation sequences in
    :doc:`hands_on`.
-6. Answer :doc:`interview_drill` aloud.  Keep the first answer under 90 seconds,
+8. Answer :doc:`interview_drill` aloud.  Keep the first answer under 90 seconds,
    then expand only when asked.
 
 .. toctree::
    :maxdepth: 1
 
+   role_playbook
+   duv_integration
    theory_essentials
    resonators_and_beams
    solid_state_design

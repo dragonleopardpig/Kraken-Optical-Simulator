@@ -5,6 +5,11 @@ Interviewers value a safe, causal procedure more than a heroic alignment story.
 The recurring pattern is: make safe, establish references, measure a baseline,
 change one variable, and preserve evidence.
 
+For the exact job-description emphasis on automated qualification, motion
+control, and product transfer, pair this page with :doc:`role_playbook`.  For
+wavelength-specific purge, contamination, ageing, and alignment controls, use
+:doc:`duv_integration`.
+
 Safety before signal
 --------------------
 
