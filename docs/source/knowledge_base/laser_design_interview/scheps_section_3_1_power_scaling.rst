@@ -102,6 +102,77 @@ two stated assumptions; under those assumptions the result is 4.2 mJ.
    40 W arrays produce 4.2 mJ with the idealized 35 percent conversion; the
    book's approximate 3 mJ value corresponds to 71.4 percent effective delivery.
 
+Brewster-angle resonator: does the output power fall?
+-------------------------------------------------------
+
+A Brewster plate or Brewster-cut gain element is set at
+
+.. math::
+   :label: scheps-31-brewster-angle
+
+   \theta_B=\tan^{-1}\!\left(\frac{n_2}{n_1}\right),
+
+where :math:`n_1` and :math:`n_2` are the refractive indices on the incident
+and transmitted sides.  At this angle, ideal :math:`p`-polarized light has zero
+Fresnel reflection at the interface.  The orthogonal :math:`s` polarization
+still reflects, so the Brewster element acts as a polarization-selective loss
+inside the resonator.
+
+The effect on output power is therefore not automatically a reduction.  Compare
+the two cases using the above-threshold relation
+
+.. math::
+   :label: scheps-31-brewster-output
+
+   P_{\rm out}\simeq\eta_s\left(P_{\rm pump}-P_{\rm th}\right),
+   \qquad
+   P_{\rm th}\ \text{increases with round-trip loss}.
+
+* If the Brewster surface replaces an uncoated or poorly coated interface, it
+  can reduce the loss for the desired :math:`p` polarization and preserve or
+  increase output.
+* If it is added to a cavity that already has low-loss AR coatings, absorption,
+  scatter, angle error, and imperfect surface quality add loss.  Output will
+  usually be lower unless the polarization selection is needed.
+* The rejected :math:`s` polarization does not normally appear as a simple
+  50-percent power penalty.  The lower-loss :math:`p` mode reaches threshold
+  first and gain saturation suppresses the competing mode.
+* Tilting the optic makes the resonator astigmatic: tangential and sagittal
+  beam sizes and waist positions differ.  Poor compensation can reduce mode
+  overlap, increase diffraction loss, and lower :math:`\eta_s` even when the
+  Brewster Fresnel loss is small.
+
+For example, an air-to-glass surface with :math:`n_2=1.5` has
+:math:`\theta_B\approx56.3^\circ`.  The ideal :math:`p` reflection is zero,
+whereas the :math:`s` reflection is about 15 percent per interface.  Real
+performance must also include both surfaces, propagation through the plate,
+thermal birefringence, alignment tolerance, and any change to the output
+coupler.  A fair power comparison therefore re-optimizes the output coupling
+for the changed round-trip loss.
+
+Local references for this design choice
+---------------------------------------
+
+The following supplied references discuss Brewster surfaces in laser
+resonators:
+
+* *Understanding Lasers*, Sec. 4.7, pp. 120--121: Brewster-window
+  polarization selection and the different :math:`p`/:math:`s` losses.
+* *Laser Resonators and Beam Propagation*, Secs. 3.3--3.4, pp. 168--170:
+  Brewster-plate Jones matrices and the lowest-loss resonator polarization
+  eigenmode.
+* *Solid-State Laser Engineering*, pp. 250--252: Brewster-ended rods,
+  astigmatism, and compensation in folded resonators.
+* *Introduction to Laser Diode-Pumped Solid State Lasers*, Sec. 5.3.2,
+  pp. 63--64: a Brewster-angle Nd:YAG ring resonator used to maintain the
+  polarization needed for unidirectional operation.
+
+For a polarization-insensitive Nd:YAG oscillator, a normal-incidence,
+AR-coated interface is usually simpler and can provide higher total power.  A
+Brewster design is justified when polarization, frequency doubling, Q-switching,
+or a Brewster-cut gain element provides a stronger system-level benefit than
+the added astigmatism and alignment complexity.
+
 Meaning of low threshold and high slope efficiency
 ---------------------------------------------------
 
