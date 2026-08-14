@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">Scheps Section 3.1 diode pump power scaling</title>
+  <desc id="desc">A comparison of the 19 kilowatt one joule case and two 40 watt arrays producing 4.2 millijoules ideally or about 3 millijoules with 71.4 percent delivery.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#244b62"/>
+    </marker>
+    <style>
+      .title { font: 700 26px sans-serif; fill: #163447; }
+      .heading { font: 700 20px sans-serif; fill: #163447; }
+      .label { font: 600 17px sans-serif; fill: #163447; }
+      .text { font: 16px sans-serif; fill: #294957; }
+      .box { fill: #e8f2f5; stroke: #35758b; stroke-width: 2; rx: 12; }
+      .result { fill: #fff3d5; stroke: #bd8525; stroke-width: 2; rx: 12; }
+      .line { stroke: #244b62; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .dash { stroke: #bd8525; stroke-width: 2; stroke-dasharray: 8 7; fill: none; }
+    </style>
+  </defs>
+  <rect width="1200" height="520" fill="#fbfaf6"/>
+  <text x="600" y="42" text-anchor="middle" class="title">Section 3.1 pulse-energy bookkeeping</text>
+  <text x="600" y="70" text-anchor="middle" class="text">η = 0.35, τp = 150 μs</text>
+
+  <text x="52" y="115" class="heading">Case A: 1 J target</text>
+  <rect x="45" y="135" width="240" height="105" class="box"/>
+  <text x="165" y="170" text-anchor="middle" class="label">Required output</text>
+  <text x="165" y="202" text-anchor="middle" class="text">Eout = 1 J / pulse</text>
+  <text x="165" y="226" text-anchor="middle" class="text">τp = 150 μs</text>
+  <path d="M285 187 H430" class="line"/>
+  <rect x="430" y="135" width="260" height="105" class="box"/>
+  <text x="560" y="170" text-anchor="middle" class="label">Diode pump</text>
+  <text x="560" y="202" text-anchor="middle" class="text">P = E/(ητ)</text>
+  <text x="560" y="226" text-anchor="middle" class="text">= 19.05 kW</text>
+  <path d="M690 187 H835" class="line"/>
+  <rect x="835" y="135" width="315" height="105" class="result"/>
+  <text x="992" y="170" text-anchor="middle" class="label">Nd:YAG pulse</text>
+  <text x="992" y="202" text-anchor="middle" class="text">0.35 × 19.05 kW</text>
+  <text x="992" y="226" text-anchor="middle" class="text">× 150 μs = 1 J</text>
+
+  <text x="52" y="300" class="heading">Case B: two 40 W end-pump arrays</text>
+  <rect x="45" y="320" width="240" height="105" class="box"/>
+  <text x="165" y="355" text-anchor="middle" class="label">Nominal arrays</text>
+  <text x="165" y="387" text-anchor="middle" class="text">2 × 40 W = 80 W</text>
+  <text x="165" y="411" text-anchor="middle" class="text">τp = 150 μs</text>
+  <path d="M285 372 H430" class="line"/>
+  <rect x="430" y="320" width="260" height="105" class="box"/>
+  <text x="560" y="355" text-anchor="middle" class="label">Ideal conversion</text>
+  <text x="560" y="387" text-anchor="middle" class="text">0.35 × 80 W × 150 μs</text>
+  <text x="560" y="411" text-anchor="middle" class="text">= 4.2 mJ</text>
+  <path d="M690 372 H835" class="line"/>
+  <rect x="835" y="320" width="315" height="105" class="result"/>
+  <text x="992" y="355" text-anchor="middle" class="label">Book's “about 3 mJ”</text>
+  <text x="992" y="387" text-anchor="middle" class="text">requires 71.4% delivery</text>
+  <text x="992" y="411" text-anchor="middle" class="text">or ηnet = 25%</text>
+  <path d="M690 440 C760 490 865 490 935 440" class="dash"/>
+  <text x="600" y="490" text-anchor="middle" class="text">The 3 mJ estimate includes an unstated practical loss factor.</text>
+</svg>
