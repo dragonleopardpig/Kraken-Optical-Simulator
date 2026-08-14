@@ -102,6 +102,66 @@ two stated assumptions; under those assumptions the result is 4.2 mJ.
    40 W arrays produce 4.2 mJ with the idealized 35 percent conversion; the
    book's approximate 3 mJ value corresponds to 71.4 percent effective delivery.
 
+Meaning of low threshold and high slope efficiency
+---------------------------------------------------
+
+The sentence in Section 3.1 is describing two different parts of the laser
+input-output curve.  The relevant pump quantity is the absorbed pump power
+density,
+
+.. math::
+   :label: scheps-31-pump-density
+
+   I_p=\frac{P_{\rm abs}}{A_p},
+
+where :math:`P_{\rm abs}` is the pump power absorbed in the crystal and
+:math:`A_p` is the illuminated cross-sectional area.  End pumping focuses the
+pump into approximately the same small volume occupied by the resonator mode,
+so a given total pump power produces a larger inversion where it is useful.
+
+**Threshold pump power** :math:`P_{\rm th}` is the minimum absorbed pump power
+at which the round-trip gain equals the resonator loss.  Below threshold,
+spontaneous emission and fluorescence dominate and there is no sustained laser
+output.  A simple above-threshold model is
+
+.. math::
+   :label: scheps-31-laser-input-output
+
+   P_{\rm out}=\begin{cases}
+   0, & P_{\rm abs}\le P_{\rm th},\\
+   \eta_s\left(P_{\rm abs}-P_{\rm th}\right),
+      & P_{\rm abs}>P_{\rm th}.
+   \end{cases}
+
+“Low threshold” means that :math:`P_{\rm th}` is small.  High pump density can
+lower it when the pump distribution overlaps the fundamental mode well: less
+total pump is wasted outside the active mode, and the required inversion is
+reached with less incident power.  It does **not** mean that the material has
+zero loss or that arbitrarily high intensity is safe.
+
+**Slope efficiency** :math:`\eta_s` is the slope of the straight part of the
+output curve above threshold,
+
+.. math::
+   :label: scheps-31-slope-efficiency
+
+   \eta_s=\frac{dP_{\rm out}}{dP_{\rm abs}}.
+
+It is dimensionless when both powers use the same units.  For example,
+:math:`\eta_s=0.50` means that each additional watt of absorbed pump produces
+about 0.5 W of extracted laser power after threshold.  This is different from
+the earlier :math:`\eta_{\rm d\to YAG}`: the latter is the overall diode-pump
+to laser-output factor used for the pulse-energy estimate, while slope
+efficiency is a local derivative and is normally measured from a power sweep.
+
+The two benefits are related but not identical.  Good overlap can reduce
+:math:`P_{\rm th}` and increase :math:`\eta_s`; output coupling, quantum
+defect, reabsorption, excited-state absorption, parasitic loss, and thermal
+lensing also affect the slope.  Increasing pump density too far can reverse
+the benefit through thermal lensing, birefringence, fracture, coating damage,
+or gain saturation.  Thus “high density” means high useful density in the
+mode volume, not simply the highest possible irradiance.
+
 Scaling rules
 -------------
 
