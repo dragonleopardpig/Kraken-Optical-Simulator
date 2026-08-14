@@ -1,10 +1,11 @@
-Scheps Chapter 3: Pump, Rod, and Resonator Design
-==================================================
+Chapter 3: Pump, Rod, and Resonator Design
+===========================================
 
-This worked calculation expands the second and third paragraphs of Section 3.1
-in Richard Scheps, *Introduction to Laser Diode-Pumped Solid State Lasers*,
-Chapter 3, p. 26.  The paragraph uses a pump-diode-to-Nd:YAG output conversion
-efficiency of 35 percent and a 150 microsecond excitation pulse.
+These worked reading notes expand numerical statements in Sections 3.1 and
+3.2.2 of Richard Scheps, *Introduction to Laser Diode-Pumped Solid State
+Lasers*, Chapter 3, pp. 26 and 31--32.  They currently cover pump-pulse power,
+Nd:YAG rod absorption and dimensions, Brewster-angle trade-offs, threshold
+pump power, and slope efficiency.
 
 The energy-to-power conversion
 -------------------------------
@@ -94,7 +95,7 @@ spectral mismatch, and other delivery losses reduce the nominal array power by
 about 29 percent.  It should not be presented as the exact result of only the
 two stated assumptions; under those assumptions the result is 4.2 mJ.
 
-.. figure:: ../../_static/knowledge_base/laser_design_interview/scheps_section_3_1_power_scaling.svg
+.. figure:: /_static/knowledge_base/worked_exercises/introduction_laser_diode_pumped_solid_state_lasers/ch03_power_scaling.svg
    :alt: Pump pulse power and energy scaling from diode arrays to Nd:YAG output
    :width: 100%
 
@@ -206,7 +207,7 @@ the optical mode, but the 6.4 mm rod is stiffer, less vulnerable to fracture,
 and easier to hold in a macroscopic mount.  It does not change the axial Beer
 law calculation unless the pump path or illuminated geometry changes.
 
-.. figure:: ../../_static/knowledge_base/laser_design_interview/scheps_section_3_2_2_absorption.svg
+.. figure:: /_static/knowledge_base/worked_exercises/introduction_laser_diode_pumped_solid_state_lasers/ch03_rod_absorption.svg
    :alt: Nd:YAG pump absorption versus crystal path length at peak and FWHM absorption coefficients
    :width: 100%
 

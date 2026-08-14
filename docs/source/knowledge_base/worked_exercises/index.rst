@@ -1,7 +1,7 @@
 Worked Exercise Solutions
 =========================
 
-This section contains eight book-specific collections of textbook-style
+This section contains nine book-specific collections of textbook-style
 exercises, a five-book set of KrakenOS cross-references, a contributor guide,
 and a compact worked example.  The aim is not only to obtain an answer, but to
 make each mathematical decision visible: what is known, which equation
@@ -23,6 +23,7 @@ own parent pages.
    :caption: Book Collections
 
    understanding_lasers
+   introduction_laser_diode_pumped_solid_state_lasers/index
    photonics_essentials/index
    fundamentals_of_photonics/index
    hecht_optics_5e/index

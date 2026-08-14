@@ -12,6 +12,7 @@
       .fwhm { stroke: #35758b; stroke-width: 4; fill: none; }
       .select { stroke: #bd8525; stroke-width: 3; stroke-dasharray: 8 7; }
       .legend { font: 16px sans-serif; fill: #294957; }
+      .legend-box { fill: #fffdf7; stroke: #9db0b7; stroke-width: 1.5; rx: 8; }
     </style>
   </defs>
   <rect width="1100" height="560" fill="#fbfaf6"/>
@@ -33,12 +34,15 @@
     </g>
     <text x="450" y="475" text-anchor="middle" class="label">Crystal path length L</text>
     <text x="-70" y="205" text-anchor="middle" transform="rotate(-90 -70 205)" class="label">Absorbed fraction A</text>
-    <path d="M0 410 C90 180 180 75 270 31 C450 2 675 0 900 0" class="peak"/>
-    <path d="M0 410 C90 300 180 220 270 164 C450 57 675 13 900 6" class="fwhm"/>
     <line x1="900" y1="0" x2="900" y2="410" class="select"/>
-    <circle cx="900" cy="1" r="6" fill="#c0523e"/><circle cx="900" cy="7.5" r="6" fill="#35758b"/>
-    <text x="710" y="56" class="legend">L = 10 mm</text>
-    <text x="620" y="92" class="legend" fill="#c0523e">α = 8 cm⁻¹: 99.97%</text>
-    <text x="580" y="125" class="legend" fill="#35758b">α = 4 cm⁻¹: 98.17%</text>
+    <polyline points="0,410 112.5,150.8 225,55.5 337.5,20.4 450,7.5 562.5,2.8 675,1.0 787.5,0.4 900,0.1" class="peak"/>
+    <polyline points="0,410 112.5,248.7 225,150.8 337.5,91.5 450,55.5 562.5,33.7 675,20.4 787.5,12.4 900,7.5" class="fwhm"/>
+    <circle cx="900" cy="0.1" r="6" fill="#c0523e"/><circle cx="900" cy="7.5" r="6" fill="#35758b"/>
+    <text x="790" y="390" class="legend" fill="#8a611e">selected L = 10 mm</text>
+    <rect x="470" y="245" width="365" height="105" class="legend-box"/>
+    <line x1="495" y1="278" x2="555" y2="278" class="peak"/>
+    <text x="570" y="284" class="legend">α = 8 cm⁻¹ (peak): 99.97% at 10 mm</text>
+    <line x1="495" y1="318" x2="555" y2="318" class="fwhm"/>
+    <text x="570" y="324" class="legend">α = 4 cm⁻¹ (FWHM): 98.17% at 10 mm</text>
   </g>
 </svg>

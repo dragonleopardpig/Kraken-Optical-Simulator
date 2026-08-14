@@ -106,7 +106,6 @@ Recommended preparation order
    resonators_and_beams
    solid_state_design
    diode_pumped_lasers
-   scheps_section_3_1_power_scaling
    beam_quality
    laser_damage
    hands_on
