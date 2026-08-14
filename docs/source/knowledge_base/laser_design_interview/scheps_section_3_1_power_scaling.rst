@@ -102,6 +102,118 @@ two stated assumptions; under those assumptions the result is 4.2 mJ.
    40 W arrays produce 4.2 mJ with the idealized 35 percent conversion; the
    book's approximate 3 mJ value corresponds to 71.4 percent effective delivery.
 
+Scheps Section 3.2.2: laser-rod specifications
+-----------------------------------------------
+
+Section 3.2.2 chooses the Nd:YAG rod length from the absorption coefficient of
+the pump wavelength.  The governing Beer-law relation is
+
+.. math::
+   :label: scheps-322-beer-law
+
+   A(L)=1-\exp(-\alpha L),
+
+where :math:`A` is the absorbed fraction, :math:`\alpha` is the absorption
+coefficient, and :math:`L` is the pump path length in the crystal.  The
+remaining transmitted fraction is :math:`T=\exp(-\alpha L)=1-A`.
+
+Peak-wavelength calculation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For the Nd:YAG peak at 808.5 nm, the book uses
+:math:`\alpha_{\rm peak}\simeq8\ \mathrm{cm^{-1}}`.  The absorption length is
+the distance at which the transmitted fraction falls to :math:`1/e`:
+
+.. math::
+   :label: scheps-322-absorption-length
+
+   L_{1/e}=\frac{1}{\alpha_{\rm peak}}
+          =\frac{1}{8\ \mathrm{cm^{-1}}}
+          =0.125\ \mathrm{cm}=1.25\ \mathrm{mm}.
+
+At integer multiples :math:`mL_{1/e}`, the absorption is
+:math:`A_m=1-e^{-m}`.  The numerical values are
+
+.. math::
+   :label: scheps-322-multiples
+
+   \begin{array}{c|c|c|c}
+   m & L & T=e^{-m} & A=1-e^{-m}\\ \hline
+   1 & 1.25\ \mathrm{mm} & 0.3679 & 63.21\%\\
+   2 & 2.50\ \mathrm{mm} & 0.1353 & 86.47\%\\
+   3 & 3.75\ \mathrm{mm} & 0.0498 & 95.02\%\\
+   4 & 5.00\ \mathrm{mm} & 0.0183 & 98.17\%
+   \end{array}
+
+Therefore the statement that a 5 mm path absorbs about 98% follows directly
+from :math:`\alpha L=8(0.50)=4`:
+
+.. math::
+   :label: scheps-322-five-mm
+
+   A(5\ \mathrm{mm})=1-e^{-4}=0.9817=98.17\%.
+
+FWHM-wavelength design constraint
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The pump diode has finite spectral bandwidth.  At the two FWHM points of the
+Nd:YAG absorption line, the book uses the lower coefficient
+:math:`\alpha_{\rm FWHM}\simeq4\ \mathrm{cm^{-1}}`.  Requiring
+:math:`\alpha L\ge2` gives
+
+.. math::
+   :label: scheps-322-fwhm-minimum
+
+   L\ge\frac{2}{4\ \mathrm{cm^{-1}}}=0.50\ \mathrm{cm}=5\ \mathrm{mm},
+   \qquad
+   A_{\rm FWHM}(5\ \mathrm{mm})=1-e^{-2}=86.47\%.
+
+The selected rod is twice this minimum length:
+
+.. math::
+   :label: scheps-322-selected-length
+
+   L_{\rm rod}=1.0\ \mathrm{cm}=10\ \mathrm{mm}.
+
+At the FWHM coefficient this gives :math:`\alpha L=4` and
+
+.. math::
+   :label: scheps-322-fwhm-at-ten-mm
+
+   A_{\rm FWHM}(10\ \mathrm{mm})=1-e^{-4}=98.17\%.
+
+At the peak coefficient the same rod has :math:`\alpha L=8`, so
+:math:`A_{\rm peak}=1-e^{-8}=99.966\%`.  The book's statement that more than
+90% of the *entire* pump beam is absorbed also includes spectral averaging over
+the diode bandwidth; the single-wavelength values above are the limiting-case
+calculation, not a substitute for the spectral-overlap integral.
+
+The remaining rod numbers
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The stated 1.1% Nd doping is the material choice that supplies approximately
+:math:`8\ \mathrm{cm^{-1}}` peak absorption in this Nd:YAG grade.  It is not
+calculated from Beer law alone; the coefficient must come from measured or
+qualified material data.  The selected diameter is
+
+.. math::
+   :label: scheps-322-diameter
+
+   d=6.4\ \mathrm{mm}\simeq0.25\ \mathrm{in}.
+
+This diameter is primarily a mechanical decision: a 2--3 mm rod could support
+the optical mode, but the 6.4 mm rod is stiffer, less vulnerable to fracture,
+and easier to hold in a macroscopic mount.  It does not change the axial Beer
+law calculation unless the pump path or illuminated geometry changes.
+
+.. figure:: ../../_static/knowledge_base/laser_design_interview/scheps_section_3_2_2_absorption.svg
+   :alt: Nd:YAG pump absorption versus crystal path length at peak and FWHM absorption coefficients
+   :width: 100%
+
+   **Figure 2.** Beer-law absorption for :math:`\alpha=8\ \mathrm{cm^{-1}}`
+   (peak) and :math:`4\ \mathrm{cm^{-1}}` (FWHM).  The 10 mm selection gives
+   99.97% peak absorption and 98.17% absorption at the FWHM coefficient.
+
 Brewster-angle resonator: does the output power fall?
 -------------------------------------------------------
 
