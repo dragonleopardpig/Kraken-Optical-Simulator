@@ -1,5 +1,5 @@
-Scheps Section 3.1: Pump-Power Scaling
-=======================================
+Scheps Chapter 3: Pump, Rod, and Resonator Design
+==================================================
 
 This worked calculation expands the second and third paragraphs of Section 3.1
 in Richard Scheps, *Introduction to Laser Diode-Pumped Solid State Lasers*,

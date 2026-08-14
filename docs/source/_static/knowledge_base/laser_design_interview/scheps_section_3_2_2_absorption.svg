@@ -36,7 +36,7 @@
     <path d="M0 410 C90 180 180 75 270 31 C450 2 675 0 900 0" class="peak"/>
     <path d="M0 410 C90 300 180 220 270 164 C450 57 675 13 900 6" class="fwhm"/>
     <line x1="900" y1="0" x2="900" y2="410" class="select"/>
-    <circle cx="900" cy="28" r="6" fill="#c0523e"/><circle cx="900" cy="15" r="6" fill="#35758b"/>
+    <circle cx="900" cy="1" r="6" fill="#c0523e"/><circle cx="900" cy="7.5" r="6" fill="#35758b"/>
     <text x="710" y="56" class="legend">L = 10 mm</text>
     <text x="620" y="92" class="legend" fill="#c0523e">α = 8 cm⁻¹: 99.97%</text>
     <text x="580" y="125" class="legend" fill="#35758b">α = 4 cm⁻¹: 98.17%</text>
