@@ -20,24 +20,11 @@ class Open3DMouseBindingsService:
             return
         setattr(self._inspector, name, value)
 
-    # -- bugs/0620 (flag_20260814 "just like 3D CAD software"): a left-drag that
-    # STARTS on empty background box-selects (the CAD default); a drag starting
-    # on any scene content still orbits, and Ctrl+drag always orbits, so the
-    # orbit gesture is never lost.
-
-    def _press_on_empty_space(self) -> bool:
-        """True when the current press position hits NO pickable prop."""
-        picker = getattr(self._inspector, "_prop_picker", None)
-        renderer = getattr(self._inspector, "_renderer", None)
-        interactor = getattr(self._inspector, "_vtk_interactor", None)
-        if picker is None or renderer is None or interactor is None:
-            return False
-        try:
-            x, y = interactor.GetEventPosition()
-            picker.Pick(float(x), float(y), 0.0, renderer)
-            return picker.GetViewProp() is None
-        except Exception:
-            return False
+    # -- bugs/0622 (user: "Ctrl-drag to select and drag to rotate -- rotate is
+    # most frequently used"): plain drag ORBITS everywhere (the pre-0620 default
+    # restored); Ctrl+drag draws the one-shot box select from anywhere. The 0620
+    # empty-space heuristic is retired -- the modifier is more predictable than
+    # guessing from what the press landed on.
 
     def _empty_drag_select_eligible(self) -> bool:
         """No armed click-to-target mode may lose its drag to a box select."""
@@ -160,7 +147,7 @@ class Open3DMouseBindingsService:
                 self._row_carry_drag_state = None
                 return "break"
             self._cancel_step_carry_hold_timer()
-            self._empty_drag_select_pending = False
+            self._ctrl_drag_select_pending = False
             ctrl_pressed = control_pressed(event)
             if self._step_carry_follow_state is not None and not ctrl_pressed:
                 self.stop_step_carry()
@@ -191,6 +178,11 @@ class Open3DMouseBindingsService:
                     self._dimension_anchor_drag_state = self._dimension_anchor_pick_state
                 else:
                     self._dimension_anchor_drag_state = None
+                    # bugs/0622: Ctrl+drag = one-shot box select (plain drag orbits).
+                    # Armed click-to-target modes keep their Ctrl-orbit fallback.
+                    if self._empty_drag_select_eligible():
+                        self._ctrl_drag_select_pending = True
+                        self._rubber_band_press_xy = (int(event.x), int(event.y))
             elif self._dimension_anchor_pick_mode:
                 # bugs/0053: a plain click while re-anchoring commits the pick
                 # (handled in left_release). Don't arm any drag/carry detector --
@@ -273,19 +265,6 @@ class Open3DMouseBindingsService:
                                 row_index = self._row_carry_index_from_current_pick()
                                 if row_index is not None:
                                     self._arm_row_carry_hold(row_index, (int(event.x), int(event.y)))
-                        # bugs/0620: nothing claimed this press -- if it landed on
-                        # EMPTY background (no pickable prop) and no click-to-target
-                        # mode is armed, a drag from here box-selects (CAD default).
-                        if (
-                            self._placement_drag_state is None
-                            and self._thickness_drag_state is None
-                            and self._step_carry_hold_candidate_label is None
-                            and self._row_carry_hold_candidate_index is None
-                            and self._empty_drag_select_eligible()
-                            and self._press_on_empty_space()
-                        ):
-                            self._empty_drag_select_pending = True
-                            self._rubber_band_press_xy = (int(event.x), int(event.y))
             return "break"
 
         def left_motion(event):
@@ -332,6 +311,16 @@ class Open3DMouseBindingsService:
                     return "break"
                 if ctrl_pressed:
                     self._cancel_step_carry_hold_timer()
+                    if getattr(self, "_ctrl_drag_select_pending", False):
+                        # bugs/0622: Ctrl+drag draws the one-shot selection box.
+                        self._cancel_row_carry_hold_timer()
+                        self._ctrl_drag_select_pending = False
+                        self._ctrl_left_camera_active = False
+                        self._rubber_band_select_mode = True
+                        if getattr(self, "_rubber_band_press_xy", None) is not None:
+                            self._update_rubber_band_rectangle(self._rubber_band_press_xy, current)
+                        self._left_drag_last_xy = current
+                        return "break"
                     self._ctrl_left_camera_active = True
                     self._rotate_camera_fixed_drag(dx, dy)
                 elif self._measure_offset_drag_state is not None:
@@ -390,17 +379,6 @@ class Open3DMouseBindingsService:
                         self._apply_row_carry_drag_motion(current_xy=current)
                         self._left_drag_last_xy = current
                         return "break"
-                elif getattr(self, "_empty_drag_select_pending", False):
-                    # bugs/0620: the empty-background drag becomes a one-shot box
-                    # select; release completes it via the armed-mode path.
-                    self._cancel_step_carry_hold_timer()
-                    self._cancel_row_carry_hold_timer()
-                    self._empty_drag_select_pending = False
-                    self._rubber_band_select_mode = True
-                    if getattr(self, "_rubber_band_press_xy", None) is not None:
-                        self._update_rubber_band_rectangle(self._rubber_band_press_xy, current)
-                    self._left_drag_last_xy = current
-                    return "break"
                 else:
                     self._rotate_camera_fixed_drag(dx, dy)
             self._left_drag_last_xy = current

@@ -17,9 +17,10 @@ dynamic interaction — right-click on the element — like 3D CAD software. Con
   E  MECHANISM (display-free) — append_row_place_orient_actions on a stub menu
      yields the entries for a movable row and nothing for Object/Image;
      append_selection_actions yields entries only with 2+ picked rows.
-  F  EMPTY-DRAG BOX SELECT (bugs/0620) — a left-drag STARTING on empty background
-     becomes a one-shot rubber-band select; a drag starting on scene content still
-     orbits; armed click-to-target modes are never hijacked; Ctrl always orbits.
+  F  CTRL-DRAG BOX SELECT (bugs/0622, superseding 0620) — plain drag ORBITS
+     everywhere (the most frequent gesture); Ctrl+drag draws the one-shot
+     rubber-band select from anywhere; armed click-to-target modes keep their
+     Ctrl-orbit fallback (never hijacked).
 
 Run:  .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_0619_contextual_scene_commands
 """
@@ -164,56 +165,40 @@ def run_checks():
     from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService as M
 
     bindings_src = inspect.getsource(M._install_pick_only_left_click_bindings)
-    if "_empty_drag_select_pending = True" not in bindings_src:
+    if "_ctrl_drag_select_pending = True" not in bindings_src:
         ok = False
-        notes.append("FAIL: F (bugs/0620): the empty-space press no longer arms the box select")
-    elif '_empty_drag_select_pending", False' not in bindings_src or "_rubber_band_select_mode = True" not in bindings_src:
+        notes.append("FAIL: F (bugs/0622): the Ctrl press no longer arms the box select")
+    elif '_ctrl_drag_select_pending", False' not in bindings_src or "_rubber_band_select_mode = True" not in bindings_src:
         ok = False
-        notes.append("FAIL: F (bugs/0620): the motion handler no longer activates the transient box select")
-    elif "_press_on_empty_space" not in bindings_src or "_empty_drag_select_eligible" not in bindings_src:
+        notes.append("FAIL: F (bugs/0622): the Ctrl-drag motion no longer activates the transient box select")
+    elif "_empty_drag_select_eligible" not in bindings_src:
         ok = False
-        notes.append("FAIL: F (bugs/0620): the empty/eligibility gates are gone -- body drags or armed picks get hijacked")
+        notes.append("FAIL: F (bugs/0622): the eligibility gate is gone -- armed picks get hijacked")
+    elif "_press_on_empty_space" in bindings_src:
+        ok = False
+        notes.append("FAIL: F (bugs/0622): the retired empty-space heuristic is back -- plain drags stop orbiting")
     else:
-        notes.append("PASS: F1: empty-background drags arm a one-shot box select behind both gates")
+        notes.append("PASS: F1: Ctrl+drag arms the one-shot box select; plain drag orbits")
 
-    class _Pick:
-        def __init__(self, prop):
-            self._prop = prop
-        def Pick(self, *_a):
-            return 1
-        def GetViewProp(self):
-            return self._prop
-
-    class _Insp(SimpleNamespace):
-        pass
-
-    def _service(prop, **modes):
-        insp = _Insp(
-            _prop_picker=_Pick(prop), _renderer=object(),
-            _vtk_interactor=SimpleNamespace(GetEventPosition=lambda: (10, 10)),
+    def _service(**modes):
+        insp = SimpleNamespace(
             editor=SimpleNamespace(_cad_axis_pick_any=False, _cad_led_object_edge_pick=False),
         )
         for name, value in modes.items():
             setattr(insp, name, value)
         return M(insp)
 
-    if not _service(None)._press_on_empty_space():
+    if not _service()._empty_drag_select_eligible():
         ok = False
-        notes.append("FAIL: F (bugs/0620): a no-prop pick does not read as empty space")
-    elif _service(object())._press_on_empty_space():
+        notes.append("FAIL: F (bugs/0622): a mode-free scene is not eligible for the box select")
+    elif _service(_measure_pick_mode=True)._empty_drag_select_eligible():
         ok = False
-        notes.append("FAIL: F (bugs/0620): a prop hit wrongly reads as empty space")
-    elif not _service(None)._empty_drag_select_eligible():
+        notes.append("FAIL: F (bugs/0622): an armed measure pick would be hijacked by the box select")
+    elif _service(_snap_rows_to_axis_pick_mode=True)._empty_drag_select_eligible():
         ok = False
-        notes.append("FAIL: F (bugs/0620): a mode-free scene is not eligible for the box select")
-    elif _service(None, _measure_pick_mode=True)._empty_drag_select_eligible():
-        ok = False
-        notes.append("FAIL: F (bugs/0620): an armed measure pick would be hijacked by the box select")
-    elif _service(None, _snap_rows_to_axis_pick_mode=True)._empty_drag_select_eligible():
-        ok = False
-        notes.append("FAIL: F (bugs/0620): an armed snap-to-axis pick would be hijacked")
+        notes.append("FAIL: F (bugs/0622): an armed snap-to-axis pick would be hijacked")
     else:
-        notes.append("PASS: F2: empty-space and eligibility gates behave (mechanism)")
+        notes.append("PASS: F2: the eligibility gate behaves (mechanism)")
 
     return ok, notes
 
