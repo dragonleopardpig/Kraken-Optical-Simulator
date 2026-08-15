@@ -486,6 +486,13 @@ class Open3DFaceAssignmentService:
                     return "break"
             except Exception:
                 pass
+            # flag_20260814: empty space offers the scene-level selection/move
+            # verbs instead of dead-ending in a status hint.
+            try:
+                if self._show_scene_context_menu(event):
+                    return "break"
+            except Exception:
+                pass
             self._debug_trace(
                 "right_click_no_context",
                 x=getattr(event, "x", None),
@@ -761,6 +768,27 @@ class Open3DFaceAssignmentService:
             # append_element_context_actions (below) so the Scene Components tree
             # offers them too -- one shared branch, both surfaces in sync.
             menu.add_separator()
+            # flag_20260814: the toolbar's face->axis snaps needed a prior LEFT
+            # click to have stored the feature; here the RIGHT-click IS the
+            # feature pick, so these arm in one step with what's under the cursor.
+            menu.add_command(
+                label="Snap Face Normal -> Optical Axis (then click axis; body centre lands)",
+                command=lambda picked_label=step_label, picked_face=face_id, picked_point=point[:3].copy(), picked_normal=normal, picked_center=face_center[:3].copy(): self._arm_step_face_axis_action(
+                    picked_label, picked_face, picked_point, picked_normal, picked_center, "normal_body"
+                ),
+            )
+            menu.add_command(
+                label="Snap Face Normal -> Optical Axis (then click axis; this point lands)",
+                command=lambda picked_label=step_label, picked_face=face_id, picked_point=point[:3].copy(), picked_normal=normal, picked_center=face_center[:3].copy(): self._arm_step_face_axis_action(
+                    picked_label, picked_face, picked_point, picked_normal, picked_center, "normal_point"
+                ),
+            )
+            menu.add_command(
+                label="Center This Face -> Optical Axis (then click axis; no rotation)",
+                command=lambda picked_label=step_label, picked_face=face_id, picked_point=point[:3].copy(), picked_normal=normal, picked_center=face_center[:3].copy(): self._arm_step_face_axis_action(
+                    picked_label, picked_face, picked_point, picked_normal, picked_center, "center"
+                ),
+            )
             menu.add_command(
                 label="Center Picked Face -> Optical Axis",
                 command=lambda picked_label=step_label, picked_center=face_center[:3].copy(): self._center_step_face_to_optical_axis_from_context(
@@ -1233,6 +1261,11 @@ class Open3DFaceAssignmentService:
                     label="Promote to Optical Element",
                     command=lambda picked_label=step_label: self._promote_step_from_context(picked_label),
                 )
+            # flag_20260814: the CAD-menu move/rotate/delete verbs live on the body.
+            try:
+                self.append_step_body_actions(menu, step_label)
+            except Exception:
+                pass
             return True
         if row_index is not None:
             row_index = int(row_index)
@@ -1264,6 +1297,11 @@ class Open3DFaceAssignmentService:
                     menu.add_command(label="Glue BS to LED (move together)", command=lambda: self._set_optical_led_glue(True))
                 menu.add_separator()
                 self._build_row_actions_cascade(menu, row_index)
+                try:
+                    self.append_selection_actions(menu)
+                    self.append_row_place_orient_actions(menu, row_index)
+                except Exception:
+                    pass
                 return True
             if self.editor._is_any_promoted_optical_solid_row(rows[row_index]):
                 if self._row_has_step_overlay_promotion(row_index):
@@ -1290,7 +1328,21 @@ class Open3DFaceAssignmentService:
                     menu.add_command(label="Glue BS to LED (move together)", command=lambda: self._set_optical_led_glue(True))
                     menu.add_separator()
                 self._build_row_actions_cascade(menu, row_index)
+                try:
+                    self.append_selection_actions(menu)
+                    self.append_row_place_orient_actions(menu, row_index)
+                except Exception:
+                    pass
                 return True
+            # flag_20260814: PLAIN surface rows (ordinary lenses/mirrors) used to fall
+            # through with NO element actions -- give them the Place/Orient verbs too.
+            added = False
+            try:
+                added = self.append_selection_actions(menu) or added
+                added = self.append_row_place_orient_actions(menu, row_index) or added
+            except Exception:
+                pass
+            return added
         return False
 
     def _assign_row_face_function_from_context(
@@ -1440,6 +1492,269 @@ class Open3DFaceAssignmentService:
             return
         self._debug_trace("hide_step_overlay_from_context", label=label)
         self.status_var.set(f"Hid {display} STEP. Re-show it from the Scene Components panel.")
+
+    # ------------------------------------------------------------------
+    # flag_20260814 ("integrate the commands during user dynamic interaction with
+    # the elements... just like 3D CAD software"): the element-targeted commands
+    # from the CAD/target, Place and Orient toolbar menus become right-click verbs
+    # on the thing they act on. Direct commands only, never cascades (bugs/0320);
+    # the toolbar entries stay for muscle memory. Section headers are disabled
+    # entries -- cheap visual grouping that VTK menus tolerate.
+
+    def _context_select_row(self, row_index: int) -> None:
+        """Make ``row_index`` the active pick so the immediate/armed commands --
+        which resolve their subject from `_picked_row_index` with a table-selection
+        fallback -- act on the row the user right-clicked, not a stale selection."""
+        try:
+            self._inspector.select_scene_row_from_admin(int(row_index))
+        except Exception:
+            pass
+        try:
+            self._inspector._picked_row_index = int(row_index)
+        except Exception:
+            pass
+
+    def _run_row_command(self, row_index: int, command_name: str) -> None:
+        self._context_select_row(row_index)
+        try:
+            getattr(self._inspector, command_name)()
+        except Exception as exc:
+            self.editor.append_debug(f"context {command_name} failed: {exc}")
+            try:
+                self.editor.status_var.set(f"{command_name}: {exc}")
+            except Exception:
+                pass
+
+    def append_row_place_orient_actions(self, menu, row_index: int) -> bool:
+        """Place + Orient verbs on a movable row's right-click (canvas AND tree).
+
+        Every entry wires an EXISTING toolbar command with this row pre-selected;
+        arm-a-pick commands then guide the next click via the status bar. The
+        Axis / Normal toolbar comboboxes feed the two parametric entries -- their
+        CURRENT values are baked into the labels at build time so the menu says
+        what it will do."""
+        rows = list(getattr(self.editor, "rows", []) or [])
+        if not (0 <= int(row_index) < len(rows)):
+            return False
+        if str(getattr(rows[int(row_index)], "surface", "")) in ("Object", "Image"):
+            return False
+        menu.add_separator()
+        menu.add_command(label="— Place this element —", state="disabled")
+        menu.add_command(
+            label="Move Row -> Optical Axis (then click the dotted axis)",
+            command=lambda idx=int(row_index): self._run_row_command(idx, "start_center_row_to_ray"),
+        )
+        menu.add_command(
+            label="Snap Row -> Target (then click the target row/face)",
+            command=lambda idx=int(row_index): self._run_row_command(idx, "start_placement_target_pick"),
+        )
+        menu.add_command(label="— Orient this face —", state="disabled")
+        menu.add_command(
+            label="Orient -> Target (then click the target row/face)",
+            command=lambda idx=int(row_index): self._run_row_command(idx, "start_placement_orient_pick"),
+        )
+        menu.add_command(
+            label="Orient -> Ray (then click a traced ray)",
+            command=lambda idx=int(row_index): self._run_row_command(idx, "start_placement_orient_ray_pick"),
+        )
+        try:
+            normal_choice = str(self._inspector.normal_target_var.get())
+        except Exception:
+            normal_choice = "Active target"
+        menu.add_command(
+            label=f"Orient -> {normal_choice} Normal (toolbar 'Normal' choice)",
+            command=lambda idx=int(row_index): self._run_row_command(idx, "orient_selected_row_to_named_normal_target"),
+        )
+        try:
+            axis_choice = str(self._inspector.orient_axis_var.get())
+        except Exception:
+            axis_choice = "+Z"
+        menu.add_command(
+            label=f"Orient -> own CAD axis {axis_choice} (toolbar 'Axis' choice)",
+            command=lambda idx=int(row_index): self._run_row_command(idx, "orient_selected_row_to_local_axis"),
+        )
+        menu.add_command(
+            label="Orient -> Source-panel aim direction",
+            command=lambda idx=int(row_index): self._run_row_command(idx, "orient_selected_row_to_source_direction"),
+        )
+        menu.add_command(
+            label="Orient -> Scene source emission",
+            command=lambda idx=int(row_index): self._run_row_command(idx, "orient_selected_row_to_scene_source"),
+        )
+        menu.add_command(
+            label="Orient -> Path-view direction",
+            command=lambda idx=int(row_index): self._run_row_command(idx, "orient_selected_row_to_path_frame"),
+        )
+        menu.add_command(
+            label=f"Preview normal error vs {normal_choice} (read-only)",
+            command=lambda idx=int(row_index): self._run_row_command(idx, "preview_selected_row_normal_target"),
+        )
+        return True
+
+    def append_step_body_actions(self, menu, step_label: str) -> None:
+        """Move / rotate / delete verbs on an imported STEP body's right-click."""
+        display = str(step_label).upper()
+        try:
+            display = self.editor._step_overlay_display_label(step_label).upper()
+        except Exception:
+            pass
+        menu.add_separator()
+        menu.add_command(label="— Move / rotate this body —", state="disabled")
+        menu.add_command(
+            label="Move Body (then hold-drag it; release to drop)",
+            command=lambda label=step_label: self._arm_step_carry_from_context(label),
+        )
+        menu.add_command(
+            label="Rotate Body (show the X/Y/Z arc handles)",
+            command=lambda label=step_label: self._show_rotation_handles_from_context(label),
+        )
+        menu.add_command(
+            label="Center a Feature -> Optical Axis (then click the feature)",
+            command=lambda: self.editor.start_any_step_axis_pick(),
+        )
+        if str(step_label).strip().lower() == "led":
+            menu.add_command(
+                label="Set Object-Distance Reference Edge (then click an LED edge)",
+                command=lambda: self.editor.start_led_object_edge_pick(),
+            )
+        menu.add_command(
+            label=f"Delete {display} STEP",
+            command=lambda label=step_label: self._delete_step_from_context(label),
+        )
+
+    def _arm_step_carry_from_context(self, step_label: str) -> None:
+        try:
+            self.editor._selected_step_label = str(step_label)
+        except Exception:
+            pass
+        try:
+            self._inspector.start_selected_step_carry()
+        except Exception as exc:
+            self.editor.append_debug(f"context carry arm failed: {exc}")
+
+    def _show_rotation_handles_from_context(self, step_label: str) -> None:
+        try:
+            self.editor._selected_step_label = str(step_label)
+        except Exception:
+            pass
+        try:
+            self._inspector.show_step_rotation_handler(str(step_label))
+        except TypeError:
+            try:
+                self._inspector.show_step_rotation_handler()
+            except Exception as exc:
+                self.editor.append_debug(f"context rotate handles failed: {exc}")
+        except Exception as exc:
+            self.editor.append_debug(f"context rotate handles failed: {exc}")
+
+    def _delete_step_from_context(self, step_label: str) -> None:
+        try:
+            self.editor._selected_step_label = str(step_label)
+        except Exception:
+            pass
+        try:
+            self._inspector.delete_selected_step()
+        except Exception as exc:
+            self.editor.append_debug(f"context delete STEP failed: {exc}")
+
+    def _arm_step_face_axis_action(self, step_label, face_id, point, normal, face_center, mode: str) -> None:
+        """Arm a face->axis action straight from the RIGHT-CLICKED face.
+
+        The toolbar variants need a prior LEFT-click to have stored the feature;
+        here the right-click IS the feature pick, so store it and arm in one step
+        -- one less click, and the menu acts on what the cursor is on."""
+        from KrakenOS.UI.services.open3d_step_state import StepFeatureSelection
+
+        def _tuple3(value):
+            try:
+                arr = np.asarray(value, dtype=float).reshape(-1)[:3]
+                if arr.size == 3 and np.all(np.isfinite(arr)):
+                    return tuple(float(v) for v in arr)
+            except Exception:
+                pass
+            return ()
+
+        selection = StepFeatureSelection(
+            label=str(step_label),
+            face_id=str(face_id or ""),
+            pick_point_world=_tuple3(point),
+            surface_center_world=_tuple3(face_center),
+            normal_world=_tuple3(normal),
+        )
+        insp = self._inspector
+        insp._selected_step_feature = selection
+        insp._selected_step_feature_label = selection.label
+        insp._selected_step_feature_center_world = selection.surface_center_world or None
+        insp._selected_step_feature_surface_center_world = selection.surface_center_world or None
+        insp._selected_step_feature_normal_world = selection.normal_world or None
+        try:
+            self.editor._selected_step_label = str(step_label)
+        except Exception:
+            pass
+        command = {
+            "normal_body": "snap_selected_step_normal_to_optical_axis",
+            "normal_point": "snap_selected_step_pick_point_normal_to_optical_axis",
+            "center": "center_selected_step_surface_to_optical_axis",
+        }.get(mode)
+        if command is None:
+            return
+        try:
+            getattr(insp, command)()
+        except Exception as exc:
+            self.editor.append_debug(f"context face-axis {mode} failed: {exc}")
+
+    def append_selection_actions(self, menu) -> bool:
+        """Multi-selection / assembly verbs, shown when 2+ elements are selected."""
+        try:
+            picked = set(self._inspector._picked_row_indices or set())
+        except Exception:
+            picked = set()
+        if len(picked) < 2:
+            return False
+        menu.add_command(label=f"— Selection ({len(picked)} elements) —", state="disabled")
+        menu.add_command(
+            label="Snap Selected -> Optical Axis (then click the dotted axis)",
+            command=lambda: self._inspector.start_snap_selected_to_axis(),
+        )
+        menu.add_command(
+            label="Group Selected as Assembly (rigid unit)",
+            command=lambda: self._inspector.group_selected_as_assembly(),
+        )
+        menu.add_command(
+            label="Snap Assembly -> Optical Axis (then click the dotted axis)",
+            command=lambda: self._inspector.start_snap_assembly_to_axis(),
+        )
+        menu.add_command(label="Clear Assembly", command=lambda: self._inspector.clear_assembly())
+        menu.add_command(label="Clear Selection", command=lambda: self._clear_open3d_selection())
+        menu.add_separator()
+        return True
+
+    def _show_scene_context_menu(self, event) -> bool:
+        """Right-click on EMPTY space: the scene-level selection/move verbs.
+
+        In CAD software empty-space right-click offers the tools that START an
+        interaction; previously this click dead-ended in a status hint."""
+        menu = tk.Menu(self, tearoff=False)
+        menu.add_command(label="— Scene —", state="disabled")
+        added = False
+        try:
+            added = self.append_selection_actions(menu) or added
+        except Exception:
+            pass
+        menu.add_command(
+            label="Select Elements (then drag a box around them)",
+            command=lambda: self._inspector.start_rubber_band_select(),
+        )
+        menu.add_command(
+            label="Select + Snap to Axis (drag a box, then click the axis)",
+            command=lambda: self._inspector.start_rubber_band_select_and_snap(),
+        )
+        menu.add_command(
+            label="Move Elements Axis -> Axis (click the old axis, then the new)",
+            command=lambda: self._inspector.start_axis_to_axis_move(),
+        )
+        self._popup_context_menu(menu, event)
+        return True
 
     def _restore_canvas_focus(self) -> None:
         """Give keyboard focus back to the 3D canvas after a dialog-opening flow.
