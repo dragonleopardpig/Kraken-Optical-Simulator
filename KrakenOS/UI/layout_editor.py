@@ -2086,6 +2086,21 @@ def _build_system_from_specs(
             )
             if _uda_active:
                 surface.IsApertureStop = True
+        # bugs/0623 (flags 20260815_2213xx "some rays missed lens surrogate"): the
+        # imaging surrogate's vertex-datum rows are the BARREL's clear aperture. A
+        # corner-field ray can thread the front datum + stop hole yet diverge outside
+        # the rear elements' finite discs -- the non-seq chooser then SKIPS them and
+        # the ray flies on un-refracted (measured: 21 of 38 missed_image rays walked
+        # outside rows 4-5 after passing rows 1-3 legally). Physically that ray hits
+        # the barrel interior: mark the datum rows as hard aperture WALLS so the
+        # bugs/0179 stop scan blocks outside their clear aperture. Only the datums --
+        # the stop row is already a wall, and honest in-aperture misses stay misses.
+        _row_name = str(spec.get("name", "") or "")
+        if "datum" in _row_name.lower() and ("front" in _row_name.lower() or "rear" in _row_name.lower()):
+            surface.HardApertureWall = True
+            # The wall is an annulus out to the physical barrel: 2x the clear aperture
+            # (vendor barrels run ~1.5-2x the glass diameter). Beyond that = free space.
+            surface.HardApertureWallOuter = 2.0 * float(spec.get("diameter", 0.0) or 0.0)
         for attr, value in _advanced_surface_attrs_from_spec(spec).items():
             setattr(surface, attr, _normalize_advanced_surface_value(attr, value))
         # Per-face coating: resolve each promoted-solid face's coating NAME (a shared

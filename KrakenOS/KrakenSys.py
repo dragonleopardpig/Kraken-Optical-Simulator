@@ -3752,7 +3752,9 @@ class system():
         best_k = None
         for k in range(1, len(self.SDT)):
             s = self.SDT[k]
-            if not bool(getattr(s, "IsApertureStop", False)):
+            # bugs/0623: surrogate vertex-datum rows are barrel WALLS -- same
+            # outside-the-clear-aperture block as the designated stop (bugs/0179).
+            if not (bool(getattr(s, "IsApertureStop", False)) or bool(getattr(s, "HardApertureWall", False))):
                 continue
             try:
                 T = self.Pr3D.TRANS_1A[k]
@@ -3785,6 +3787,15 @@ class system():
             DiamSup = float(getattr(s, "Diameter", 0.0)) * sub0
             DiamInf = float(getattr(s, "InDiameter", 0.0)) * sub0 * float(getattr(self.INORM, "Disable_Inner", 1.0))
             blocked = bool(D0 > DiamSup or D0 < DiamInf)  # outside the circular clear aperture
+            # bugs/0623: a HardApertureWall (surrogate vertex datum) is a BARREL, not the
+            # system stop -- its wall is an ANNULUS bounded by the barrel outer diameter,
+            # never laterally infinite. A non-seq scene has legitimate light (illumination
+            # flood, splitter arms) crossing these planes far off-axis; an infinite wall
+            # would silently absorb it (the invisible-wall trap).
+            if blocked and not bool(getattr(s, "IsApertureStop", False)):
+                wall_outer = float(getattr(s, "HardApertureWallOuter", 0.0) or 0.0)
+                if wall_outer > 0.0 and D0 > wall_outer:
+                    blocked = False  # beyond the physical barrel -- free space
             # bugs/0179: a User-Defined Aperture (e.g. the rectangular beam-splitter exit
             # stop in the coaxial-LED layout) defines a NON-circular clear aperture. The
             # sequential trace already vignettes on UDA_Obj.Hit (InterNormalCalc); honour the
