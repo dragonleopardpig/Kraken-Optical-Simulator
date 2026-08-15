@@ -12,7 +12,7 @@ actually does and how to reach it dynamically.
 |---|---|
 | **Hold-drag a STEP body** (with "Move/Rotate whole body" ✔) | Lifts the body and moves it freely on the camera plane; release drops it. With the checkbox off, the same drag orbits the camera (bugs/0425: too easy to move things by mistake). Right-click → "Move Body" arms it for one body without the checkbox. |
 | **Click/drag the red/green/blue arcs** on a selected body/row | Rotates it about world X/Y/Z in the "Rot" step (15…180°). Arcs appear via the checkbox or right-click → "Rotate Body". |
-| **Left-drag on empty space** | Orbits the camera. Rubber-band select is armed from the right-click (below), then the drag draws the box. |
+| **Left-drag on empty space** | **Box-selects** (bugs/0620, the CAD default): drag from empty background draws the selection rectangle; release selects everything inside — then right-click for the Selection menu. Orbit by dragging FROM any scene content, or Ctrl+drag anywhere. Armed pick modes (measure, snap-to-axis, …) keep their drags. |
 
 ## Right-click an ELEMENT (row: lens surface, mirror, promoted solid)
 

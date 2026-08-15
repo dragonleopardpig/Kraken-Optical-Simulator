@@ -313,7 +313,7 @@ class Open3DTopControlsPanel:
         carry_toolbar = ttk.Frame(parent)
         carry_toolbar.grid(row=2, column=0, sticky="ew", pady=(4, 0))
         ttk.Label(carry_toolbar, text="Carry").pack(side="left", padx=(0, 6))
-        ttk.Label(carry_toolbar, text="Hold-drag STEP to move freely; Ctrl+drag rotates view.").pack(side="left")
+        ttk.Label(carry_toolbar, text="Hold-drag STEP to move freely; Ctrl+drag rotates view; drag on empty space box-selects.").pack(side="left")
         pack_commit_checkbutton(
             carry_toolbar,
             "Move/Rotate whole body",

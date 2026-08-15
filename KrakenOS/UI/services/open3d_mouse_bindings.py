@@ -20,6 +20,46 @@ class Open3DMouseBindingsService:
             return
         setattr(self._inspector, name, value)
 
+    # -- bugs/0620 (flag_20260814 "just like 3D CAD software"): a left-drag that
+    # STARTS on empty background box-selects (the CAD default); a drag starting
+    # on any scene content still orbits, and Ctrl+drag always orbits, so the
+    # orbit gesture is never lost.
+
+    def _press_on_empty_space(self) -> bool:
+        """True when the current press position hits NO pickable prop."""
+        picker = getattr(self._inspector, "_prop_picker", None)
+        renderer = getattr(self._inspector, "_renderer", None)
+        interactor = getattr(self._inspector, "_vtk_interactor", None)
+        if picker is None or renderer is None or interactor is None:
+            return False
+        try:
+            x, y = interactor.GetEventPosition()
+            picker.Pick(float(x), float(y), 0.0, renderer)
+            return picker.GetViewProp() is None
+        except Exception:
+            return False
+
+    def _empty_drag_select_eligible(self) -> bool:
+        """No armed click-to-target mode may lose its drag to a box select."""
+        mode_flags = (
+            "_source_target_pick_mode", "_center_row_to_ray_mode",
+            "_placement_target_pick_mode", "_placement_orient_pick_mode",
+            "_placement_orient_ray_mode", "_step_normal_axis_pick_mode",
+            "_step_surface_center_axis_pick_mode", "_step_carry_snap_ray_mode",
+            "_step_carry_snap_target_mode", "_axis_to_axis_move_pick_mode",
+            "_snap_rows_to_axis_pick_mode",
+            "_measure_pick_mode", "_measure_entity_mode",
+            "_dimension_anchor_pick_mode", "_measure_offset_adjust_mode",
+        )
+        for flag in mode_flags:
+            if bool(getattr(self._inspector, flag, False)):
+                return False
+        editor = getattr(self._inspector, "editor", None)
+        for flag in ("_cad_axis_pick_any", "_cad_led_object_edge_pick"):
+            if bool(getattr(editor, flag, False)):
+                return False
+        return True
+
     # ------------------------------------------------------------------
     # bugs/0156: route left-clicks to the custom FreeCAD-style navigation cube.
     #
@@ -120,6 +160,7 @@ class Open3DMouseBindingsService:
                 self._row_carry_drag_state = None
                 return "break"
             self._cancel_step_carry_hold_timer()
+            self._empty_drag_select_pending = False
             ctrl_pressed = control_pressed(event)
             if self._step_carry_follow_state is not None and not ctrl_pressed:
                 self.stop_step_carry()
@@ -232,6 +273,19 @@ class Open3DMouseBindingsService:
                                 row_index = self._row_carry_index_from_current_pick()
                                 if row_index is not None:
                                     self._arm_row_carry_hold(row_index, (int(event.x), int(event.y)))
+                        # bugs/0620: nothing claimed this press -- if it landed on
+                        # EMPTY background (no pickable prop) and no click-to-target
+                        # mode is armed, a drag from here box-selects (CAD default).
+                        if (
+                            self._placement_drag_state is None
+                            and self._thickness_drag_state is None
+                            and self._step_carry_hold_candidate_label is None
+                            and self._row_carry_hold_candidate_index is None
+                            and self._empty_drag_select_eligible()
+                            and self._press_on_empty_space()
+                        ):
+                            self._empty_drag_select_pending = True
+                            self._rubber_band_press_xy = (int(event.x), int(event.y))
             return "break"
 
         def left_motion(event):
@@ -336,6 +390,17 @@ class Open3DMouseBindingsService:
                         self._apply_row_carry_drag_motion(current_xy=current)
                         self._left_drag_last_xy = current
                         return "break"
+                elif getattr(self, "_empty_drag_select_pending", False):
+                    # bugs/0620: the empty-background drag becomes a one-shot box
+                    # select; release completes it via the armed-mode path.
+                    self._cancel_step_carry_hold_timer()
+                    self._cancel_row_carry_hold_timer()
+                    self._empty_drag_select_pending = False
+                    self._rubber_band_select_mode = True
+                    if getattr(self, "_rubber_band_press_xy", None) is not None:
+                        self._update_rubber_band_rectangle(self._rubber_band_press_xy, current)
+                    self._left_drag_last_xy = current
+                    return "break"
                 else:
                     self._rotate_camera_fixed_drag(dx, dy)
             self._left_drag_last_xy = current
