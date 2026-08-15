@@ -33,3 +33,23 @@ Verified: the 21 bypass rays terminate at the barrel; the 17 honest misses remai
 solve phases 447/448 and the diffuse/illumination phases 92/178/179/180 unchanged.
 
 Guard: phase 468 (`validate_open3d_0623_surrogate_datum_walls`).
+
+## Part 2 — 0624 (flag_20260815_233428 "image side still missing 2 sampled rays, only shows 7")
+
+The 0623 walls over-reached: absorbing everything outside Ø13.11 killed TWO of the
+nine field pencils entirely (arrivals 120 → 95, stop-vignettes 106 → 161). The
+surrogate is a vendor BLACKBOX: its row diameters are paraxial bookkeeping, not glass
+sizes — the vendor guarantees the Ø32.6 image circle, so corner pencils MUST pass.
+Neither skipping (fake bypass, part 1) nor walling at the drawn radius (fake corner
+vignetting, this flag) is the truth.
+
+**Blackbox semantics (the fix):** rows between the Front and Rear vertex datums
+(marked `_surrogate_block_member` in a build pre-scan) trace with their aperture
+EXTENDED to 2× the drawn diameter — the mesh the non-seq chooser intersects grows;
+the DISPLAY keeps the drawn row size; the STOP keeps sole aperture authority
+(anything "stop"-named / Aperture-typed is excluded from the extension). The datum
+walls remain only as a far backstop annulus (2×..4× the drawn diameter): inside 2×
+refracts, 2×–4× absorbs at the barrel, beyond 4× is free space.
+
+Verified: all 9 field spots restored, arrivals recover, the bypass class stays
+extinct, and phases 92/178/179/180/447/448/467/468 pass.

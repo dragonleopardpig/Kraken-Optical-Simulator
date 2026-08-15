@@ -30,6 +30,12 @@ def run_checks():
     if "HardApertureWall" not in build_src or "HardApertureWallOuter" not in build_src:
         ok = False
         notes.append("FAIL: A (bugs/0623): the build no longer flags datum rows as bounded walls")
+    elif "_surrogate_block_member" not in build_src or "2.0 * _spec_diam" not in build_src:
+        ok = False
+        notes.append(
+            "FAIL: A (bugs/0624): the surrogate-block trace apertures are no longer EXTENDED -- "
+            "corner pencils clip at paraxial bookkeeping and field spots vanish (95 arrivals, 7 spots)"
+        )
     elif '"front"' not in build_src.lower() or '"rear"' not in build_src.lower() or "datum" not in build_src.lower():
         ok = False
         notes.append("FAIL: A (bugs/0623): the datum-name detection changed -- verify both recipes' names still match")

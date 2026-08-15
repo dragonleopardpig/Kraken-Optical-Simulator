@@ -2059,6 +2059,18 @@ def _build_system_from_specs(
     clear_aperture = max(
         [max(float(spec["diameter"]), 1.0) for spec in row_specs if spec["surface"] not in {"Object", "Image"}] or [100.0]
     ) * 4.0
+    # bugs/0624: mark surrogate-block members (rows between a Front and Rear vertex
+    # datum) so the build can extend their trace apertures -- blackbox rows refract
+    # across the vendor-guaranteed field, they do not clip at paraxial bookkeeping.
+    _front_idx = None
+    for _i, _sp in enumerate(row_specs):
+        _nm = str(_sp.get("name", "") or "").lower()
+        if "datum" in _nm and "front" in _nm:
+            _front_idx = _i
+        elif "datum" in _nm and "rear" in _nm and _front_idx is not None:
+            for _k in range(_front_idx, _i + 1):
+                row_specs[_k]["_surrogate_block_member"] = True
+            _front_idx = None
     for spec in row_specs:
         surface = Kos.surf()
         surface.Name = ""
@@ -2086,21 +2098,29 @@ def _build_system_from_specs(
             )
             if _uda_active:
                 surface.IsApertureStop = True
-        # bugs/0623 (flags 20260815_2213xx "some rays missed lens surrogate"): the
-        # imaging surrogate's vertex-datum rows are the BARREL's clear aperture. A
-        # corner-field ray can thread the front datum + stop hole yet diverge outside
-        # the rear elements' finite discs -- the non-seq chooser then SKIPS them and
-        # the ray flies on un-refracted (measured: 21 of 38 missed_image rays walked
-        # outside rows 4-5 after passing rows 1-3 legally). Physically that ray hits
-        # the barrel interior: mark the datum rows as hard aperture WALLS so the
-        # bugs/0179 stop scan blocks outside their clear aperture. Only the datums --
-        # the stop row is already a wall, and honest in-aperture misses stay misses.
+        # bugs/0623/0624 (flags 20260815_2213xx + 233428): a corner-field ray can
+        # thread the front datum + stop hole yet diverge outside the rear rows'
+        # drawn discs. The 0623 barrel WALLS absorbed them -- but the surrogate is
+        # a vendor BLACKBOX whose row diameters are paraxial bookkeeping, not glass
+        # sizes: the vendor guarantees the image circle, so corner pencils MUST
+        # refract (walls killed 2 of the 9 field spots, arrivals 120 -> 95). The
+        # honest blackbox semantics: rows between the datums REFRACT out to 2x
+        # their drawn diameter (the trace mesh extends; the DISPLAY keeps the
+        # row's drawn size), the STOP keeps sole aperture authority, and the
+        # datum walls remain only as a far backstop annulus (2x..4x) so nothing
+        # can ever fly through un-refracted where a barrel would absorb it.
         _row_name = str(spec.get("name", "") or "")
-        if "datum" in _row_name.lower() and ("front" in _row_name.lower() or "rear" in _row_name.lower()):
+        _is_datum = "datum" in _row_name.lower() and ("front" in _row_name.lower() or "rear" in _row_name.lower())
+        _in_block = bool(spec.get("_surrogate_block_member"))
+        _is_stoplike = ("stop" in _row_name.lower()) or str(spec.get("surface", "")) == "Aperture"
+        if (_is_datum or _in_block) and not _is_stoplike:
+            _spec_diam = float(spec.get("diameter", 0.0) or 0.0)
+            if _spec_diam > 0.0:
+                surface.Diameter = 2.0 * _spec_diam
+        if _is_datum:
             surface.HardApertureWall = True
-            # The wall is an annulus out to the physical barrel: 2x the clear aperture
-            # (vendor barrels run ~1.5-2x the glass diameter). Beyond that = free space.
-            surface.HardApertureWallOuter = 2.0 * float(spec.get("diameter", 0.0) or 0.0)
+            _spec_diam = float(spec.get("diameter", 0.0) or 0.0)
+            surface.HardApertureWallOuter = 4.0 * _spec_diam
         for attr, value in _advanced_surface_attrs_from_spec(spec).items():
             setattr(surface, attr, _normalize_advanced_surface_value(attr, value))
         # Per-face coating: resolve each promoted-solid face's coating NAME (a shared
