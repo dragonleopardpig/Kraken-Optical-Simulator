@@ -130,6 +130,12 @@ class TracePreviewSamplingMixin:
             return None
         try:
             mag = self._current_finite_paraxial_magnification()
+            try:  # bugs/0621: launch extents use the DELIVERED |m| (raw x correction)
+                from KrakenOS.UI.services.quick_estimation import folded_m_correction
+
+                mag = float(mag) * float(folded_m_correction(self))
+            except Exception:
+                pass
             m = abs(float(mag))
             half_w = abs(float(sensor[0])) * 0.5 / m
             half_h = abs(float(sensor[1])) * 0.5 / m
@@ -150,6 +156,12 @@ class TracePreviewSamplingMixin:
             return None
         try:
             mag = self._current_finite_paraxial_magnification()
+            try:  # bugs/0621: launch extents use the DELIVERED |m| (raw x correction)
+                from KrakenOS.UI.services.quick_estimation import folded_m_correction
+
+                mag = float(mag) * float(folded_m_correction(self))
+            except Exception:
+                pass
             m = abs(float(mag))
         except (TypeError, ValueError):
             return None
@@ -244,6 +256,12 @@ class TracePreviewSamplingMixin:
             return half
         try:
             mag = self._current_finite_paraxial_magnification()
+            try:  # bugs/0621: launch extents use the DELIVERED |m| (raw x correction)
+                from KrakenOS.UI.services.quick_estimation import folded_m_correction
+
+                mag = float(mag) * float(folded_m_correction(self))
+            except Exception:
+                pass
             dims = self._current_camera_sensor_active_mm()
             if mag is not None and dims is not None and abs(float(mag)) > 1e-9:
                 return (
@@ -531,6 +549,13 @@ class TracePreviewSamplingMixin:
         traced_diameter = self._traced_image_diameter_value()
         candidates = [2.0 * max(image_heights) if image_heights else 0.0]
         finite_magnification = self._current_finite_paraxial_magnification()
+        try:  # bugs/0621: the image-extent estimate uses the DELIVERED |m|
+            from KrakenOS.UI.services.quick_estimation import folded_m_correction
+
+            if finite_magnification is not None:
+                finite_magnification = float(finite_magnification) * float(folded_m_correction(self))
+        except Exception:
+            pass
         if (
             self._current_object_mode() == "Finite"
             and finite_magnification is not None
