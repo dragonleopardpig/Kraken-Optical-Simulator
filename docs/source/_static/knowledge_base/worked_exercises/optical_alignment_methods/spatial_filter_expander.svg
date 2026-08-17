@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 400" role="img" aria-labelledby="title desc">
+  <title id="title">Spatial-filter beam expander</title><desc id="desc">A Keplerian telescope focuses through a pinhole and expands a collimated laser beam.</desc>
+  <defs><style>.t{font:700 24px sans-serif;fill:#15384a}.l{font:16px sans-serif;fill:#294957}.b{stroke:#2d7188;stroke-width:3;fill:none}.d{stroke:#748c96;stroke-width:2;stroke-dasharray:7 6}.lens{fill:#d8eef3;stroke:#2d7188;stroke-width:4}</style></defs>
+  <rect width="1000" height="400" fill="#fbfaf6"/><text x="500" y="38" text-anchor="middle" class="t">Keplerian expansion with a shared focal plane</text>
+  <path d="M285 80Q245 200 285 320Q325 200 285 80zM690 65Q630 200 690 335Q750 200 690 65z" class="lens"/>
+  <line x1="70" y1="160" x2="285" y2="160" class="b"/><line x1="70" y1="240" x2="285" y2="240" class="b"/>
+  <line x1="285" y1="160" x2="470" y2="200" class="b"/><line x1="285" y1="240" x2="470" y2="200" class="b"/>
+  <circle cx="470" cy="200" r="8" fill="#b44d3a"/><line x1="470" y1="200" x2="690" y2="85" class="b"/><line x1="470" y1="200" x2="690" y2="315" class="b"/>
+  <line x1="690" y1="85" x2="940" y2="85" class="b"/><line x1="690" y1="315" x2="940" y2="315" class="b"/>
+  <text x="285" y="360" text-anchor="middle" class="l">L1, f1 = 25 mm</text><text x="470" y="180" text-anchor="middle" class="l">50 um pinhole</text><text x="690" y="360" text-anchor="middle" class="l">L2, f2 = 100 mm</text>
+  <line x1="285" y1="375" x2="690" y2="375" class="d"/><text x="487" y="397" text-anchor="middle" class="l">separation f1 + f2; magnification 4x</text>
+</svg>

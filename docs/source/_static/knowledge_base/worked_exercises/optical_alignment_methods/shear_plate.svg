@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 430" role="img" aria-labelledby="title desc">
+  <title id="title">Shear-plate collimation test</title><desc id="desc">A wedge produces sheared wavefront copies and diagnostic straight, tilted, or curved fringes.</desc>
+  <defs><style>.t{font:700 24px sans-serif;fill:#15384a}.h{font:700 17px sans-serif;fill:#15384a}.l{font:15px sans-serif;fill:#294957}.b{stroke:#2d7188;stroke-width:3;fill:none}.p{fill:#d8eef3;stroke:#2d7188;stroke-width:3}.f{stroke:#b44d3a;stroke-width:3}</style></defs>
+  <rect width="1000" height="430" fill="#fbfaf6"/><text x="500" y="38" text-anchor="middle" class="t">Shear plate converts wavefront curvature into fringe rotation</text>
+  <line x1="55" y1="150" x2="260" y2="150" class="b"/><line x1="55" y1="210" x2="260" y2="210" class="b"/><path d="M285 75L360 285L405 265L330 55z" class="p"/>
+  <line x1="315" y1="105" x2="520" y2="70" class="b"/><line x1="352" y1="205" x2="540" y2="120" class="b"/><text x="250" y="330" class="l">front/back reflections create lateral shear s</text>
+  <rect x="570" y="70" width="120" height="230" rx="8" fill="#fff" stroke="#9db0b7"/><text x="630" y="330" text-anchor="middle" class="h">collimated</text>
+  <g class="f"><line x1="590" y1="95" x2="590" y2="275"/><line x1="615" y1="95" x2="615" y2="275"/><line x1="640" y1="95" x2="640" y2="275"/><line x1="665" y1="95" x2="665" y2="275"/></g>
+  <rect x="725" y="70" width="120" height="230" rx="8" fill="#fff" stroke="#9db0b7"/><text x="785" y="330" text-anchor="middle" class="h">defocused</text>
+  <g class="f"><line x1="735" y1="110" x2="805" y2="275"/><line x1="755" y1="95" x2="825" y2="260"/><line x1="780" y1="95" x2="840" y2="235"/></g>
+  <rect x="875" y="70" width="95" height="230" rx="8" fill="#fff" stroke="#9db0b7"/><text x="922" y="330" text-anchor="middle" class="h">aberrated</text>
+  <g fill="none" class="f"><path d="M892 95Q940 180 892 275"/><path d="M915 95Q963 180 915 275"/><path d="M938 95Q980 180 938 275"/></g>
+</svg>
