@@ -4,7 +4,7 @@
   <rect width="1000" height="420" fill="#fbfaf6"/><text x="500" y="38" text-anchor="middle" class="t">Two-mirror dog leg: alternate near and far targets</text>
   <rect x="55" y="165" width="120" height="58" rx="10" class="o"/><text x="115" y="200" text-anchor="middle" class="l">laser</text>
   <line x1="175" y1="194" x2="300" y2="255" class="b"/><line x1="300" y1="255" x2="445" y2="125" class="b"/><line x1="445" y1="125" x2="910" y2="125" class="b"/>
-  <line x1="270" y1="278" x2="330" y2="222" stroke="#244b62" stroke-width="9"/><line x1="415" y1="95" x2="475" y2="155" stroke="#244b62" stroke-width="9"/>
+  <line x1="260.4" y1="260.5" x2="339.6" y2="249.5" stroke="#244b62" stroke-width="9"/><line x1="407.6" y1="139.3" x2="482.4" y2="110.7" stroke="#244b62" stroke-width="9"/>
   <text x="300" y="315" text-anchor="middle" class="l">M1: restore near position</text><text x="445" y="82" text-anchor="middle" class="l">M2: correct outgoing angle</text>
   <line x1="650" y1="65" x2="650" y2="190" stroke="#657d87" stroke-width="5"/><circle cx="650" cy="125" r="10" fill="#fbfaf6" stroke="#244b62" stroke-width="3"/>
   <line x1="865" y1="65" x2="865" y2="190" stroke="#657d87" stroke-width="5"/><circle cx="865" cy="125" r="10" fill="#fbfaf6" stroke="#244b62" stroke-width="3"/>
