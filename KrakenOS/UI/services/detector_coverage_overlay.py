@@ -572,6 +572,16 @@ class DetectorCoverageOverlayService:
         finite = self._is_finite_object()
         try:
             obj_pt = np.asarray(self.editor._surface_reference_world_point(0, system=system), dtype=float).reshape(3)
+            # bugs/0625: the machine images the field OFF-CENTRE -- the drawn FOV box
+            # (and its pickable square) recentres on the learned delivered-field
+            # centre, matching the launch grid. Field coords are world X/Y offsets
+            # at the object plane (the world-order launcher's convention).
+            try:
+                _center = getattr(self.editor, "_folded_field_center_state", None)
+                if _center is not None:
+                    obj_pt = obj_pt + np.array([float(_center[0]), float(_center[1]), 0.0])
+            except Exception:
+                pass
         except Exception as exc:
             self.editor.append_debug(f"Detector coverage overlay reference points unavailable: {exc}")
             return 0

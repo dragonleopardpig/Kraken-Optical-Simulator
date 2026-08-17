@@ -2264,6 +2264,79 @@ class QuickEstimationService:
             return None
         return float(np.mean(heights)) / fraction
 
+    def _learn_folded_field_center(self, object_semi: float) -> "tuple[float, float] | None":
+        """bugs/0625: learn the object-plane offset whose image lands at the SENSOR CENTRE.
+
+        The real folded machine images the field OFF-CENTRE along the fold axis
+        (measured: launch column x=-27.6 lost ALL its rays off the glass while
+        x=0/+27.6 landed everything -- two of nine field spots missing). The
+        bugs/0591 correction fixes the delivered SCALE; this learns the delivered
+        CENTRE. Sign-safe by construction: three traced probes (on-axis + two axis
+        offsets) measure the full field->landing Jacobian, the shift solves
+        J @ S = -C0, and a FOURTH probe must verify the shift at least halves the
+        centroid before anything is stored (the bugs/0613 verified-trust rule).
+        Runtime state like the scale correction: cleared on load and swaps."""
+        editor = self.editor
+        try:
+            if not editor._world_placed_chain_rows():
+                return None
+            wavelength = float(editor._current_wavelength())
+            acceptance = editor._world_launch_acceptance(wavelength)
+            if acceptance is None:
+                return None
+            pupil_distance = editor._world_launch_pupil_distance_cached(wavelength, float(acceptance))
+        except Exception:
+            return None
+
+        def _centroid(field_x: float, field_y: float):
+            try:
+                bundle = editor._world_order_field_bundle(
+                    "hexapolar", float(field_x), float(field_y), 30, float(acceptance), pupil_distance
+                )
+                x_local, y_local, _z, _l, _m, _n = editor._world_order_trace_landings(wavelength, bundle)
+            except Exception:
+                return None
+            if np.asarray(x_local).size < 5:
+                return None
+            return np.array([float(np.mean(x_local)), float(np.mean(y_local))])
+
+        delta = max(0.1 * abs(float(object_semi)), 1.0)
+        c0 = _centroid(0.0, 0.0)
+        cx = _centroid(delta, 0.0)
+        cy = _centroid(0.0, delta)
+        if c0 is None or cx is None or cy is None:
+            return None
+        if float(np.linalg.norm(c0)) < 0.05:
+            editor._folded_field_center_state = (0.0, 0.0)
+            return (0.0, 0.0)
+        jacobian = np.column_stack([(cx - c0) / delta, (cy - c0) / delta])
+        try:
+            shift = -np.linalg.solve(jacobian, c0)
+        except Exception:
+            return None
+        if not np.all(np.isfinite(shift)) or float(np.linalg.norm(shift)) > abs(float(object_semi)):
+            return None  # unphysical solution -- never store it
+        verify = _centroid(float(shift[0]), float(shift[1]))
+        if verify is None or float(np.linalg.norm(verify)) > 0.5 * float(np.linalg.norm(c0)) + 1e-6:
+            try:
+                editor.append_debug(
+                    "field-centre learn: shift %s did not verify (centroid %s -> %s) -- not stored"
+                    % (np.round(shift, 2).tolist(), np.round(c0, 2).tolist(),
+                       None if verify is None else np.round(verify, 2).tolist())
+                )
+            except Exception:
+                pass
+            return None
+        editor._folded_field_center_state = (float(shift[0]), float(shift[1]))
+        try:
+            editor.append_debug(
+                "field-centre learned: object shift %s mm (axial centroid %s -> %s)"
+                % (np.round(shift, 2).tolist(), np.round(c0, 2).tolist(), np.round(verify, 2).tolist())
+            )
+        except Exception:
+            pass
+        return (float(shift[0]), float(shift[1]))
+
     def relearn_folded_m_correction(self) -> "float | None":
         """Re-measure the delivered/promised magnification ratio for the CURRENT optics and
         record it (bugs/0608), returning the factor or None when it cannot be measured.
@@ -2314,6 +2387,13 @@ class QuickEstimationService:
                 pass
             return None
         self._set_folded_m_correction(factor)
+        # bugs/0625: the delivered CENTRE is machine state exactly like the scale --
+        # whenever the scale is re-measured, re-learn the centre too (its own 4th-probe
+        # verification keeps an unverifiable shift from ever being stored).
+        try:
+            self._learn_folded_field_center(float(object_semi))
+        except Exception:
+            pass
         return factor
 
     def _refine_folded_field_fill(self, object_semi: float, target_image_semi: float) -> str:
@@ -2336,6 +2416,7 @@ class QuickEstimationService:
             # readout -- unlearn it and re-book the raw first order so typed == booked.
             if getattr(self.editor, "_folded_m_correction_state", None) is not None:
                 self.editor._folded_m_correction_state = None
+                self.editor._folded_field_center_state = None  # bugs/0625
                 applied, note = self._apply_conjugate_pair(float(object_semi), target)
                 if not applied:
                     return f" Field verification unavailable; raw re-book refused: {note}"
@@ -2359,6 +2440,10 @@ class QuickEstimationService:
                 # Learn the machine's measured/first-order ratio for the next booking AND for
                 # the measured-aware readout (delivered == typed == readout).
                 self._set_folded_m_correction(float(measured) / float(request))
+                try:
+                    self._learn_folded_field_center(float(object_semi))  # bugs/0625
+                except Exception:
+                    pass
                 return (
                     f" Delivered field VERIFIED by real rays: {2.0 * measured:.4g} mm on the "
                     f"sensor diagonal (target {2.0 * target:.4g}, {100.0 * error:+.2f}%)."
@@ -2383,6 +2468,7 @@ class QuickEstimationService:
                 # re-book the RAW target so the booking and the readout agree with what was
                 # typed (the pre-0608 contract).
                 self.editor._folded_m_correction_state = None
+                self.editor._folded_field_center_state = None  # bugs/0625
                 applied, note = self._apply_conjugate_pair(float(object_semi), target)
                 if not applied:
                     return (
@@ -2397,6 +2483,10 @@ class QuickEstimationService:
                 best = (abs(measured / target - 1.0), float(measured), float(request))
         error = measured / target - 1.0
         self._set_folded_m_correction(float(measured) / float(request))
+        try:
+            self._learn_folded_field_center(float(object_semi))  # bugs/0625
+        except Exception:
+            pass
         return (
             f" Delivered field measured {2.0 * measured:.4g} mm vs target {2.0 * target:.4g} "
             f"({100.0 * error:+.1f}% after {int(self._FIELD_FILL_MAX_PASSES)} passes -- the "

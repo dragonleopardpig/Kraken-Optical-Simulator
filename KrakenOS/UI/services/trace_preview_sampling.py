@@ -284,10 +284,27 @@ class TracePreviewSamplingMixin:
         if half is None:
             return self._sample_field_grid_pairs(self._launch_field_radial_max())
         count = self._current_field_count()
+        # bugs/0625: the real folded machine images the field OFF-CENTRE -- the learned
+        # object-plane shift recentres the grid on the field the machine actually maps
+        # onto the sensor (measured: a centred grid lost BOTH minus-side field spots
+        # off the glass). Unlearned scenes shift by (0, 0) -- nothing moves.
+        # SIGN: the learned centre is a WORLD offset at the object plane (the world-order
+        # instrument's frame, geometric_analysis), but these pairs feed PupilCalc-style
+        # launchers whose 'height' convention launches from MINUS the field value
+        # (PupilTool: shiftX = -FieldX; the geometric fallback mirrors it) -- so the world
+        # shift enters the pair values NEGATED. Measured: adding it un-negated moved the
+        # pencils AWAY from the delivered field and killed the mirrored edge column.
+        shift_x, shift_y = 0.0, 0.0
+        try:
+            center = getattr(self, "_folded_field_center_state", None)
+            if center is not None:
+                shift_x, shift_y = -float(center[0]), -float(center[1])
+        except Exception:
+            shift_x, shift_y = 0.0, 0.0
         if count <= 1:
-            return [(0.0, 0.0)]
-        x_values = np.linspace(-float(half[0]), float(half[0]), count)
-        y_values = np.linspace(-float(half[1]), float(half[1]), count)
+            return [(shift_x, shift_y)]
+        x_values = np.linspace(-float(half[0]), float(half[0]), count) + shift_x
+        y_values = np.linspace(-float(half[1]), float(half[1]), count) + shift_y
         return [(float(x), float(y)) for y in y_values for x in x_values]
 
     def _finite_imaging_field_values(self, axis: str) -> list[float]:
@@ -1497,7 +1514,24 @@ class TracePreviewSamplingMixin:
                         if _rim > 1e-9
                         else np.asarray([[0.0, 0.0]], dtype=float)
                     )
-                    for _cx, _cy in ((-_hx, -_hy), (_hx, -_hy), (-_hx, _hy), (_hx, _hy)):
+                    # bugs/0625: probe the corners of the DELIVERED field rectangle -- the
+                    # same learned-centre shift (in pair/PupilCalc sign convention, see
+                    # _sample_imaging_field_grid_pairs) the main grid uses. Unshifted
+                    # corners double-launched next to the shifted grid corners and probed
+                    # a field the machine does not image.
+                    _sx = _sy = 0.0
+                    try:
+                        _center = getattr(self, "_folded_field_center_state", None)
+                        if _center is not None:
+                            _sx, _sy = -float(_center[0]), -float(_center[1])
+                    except Exception:
+                        _sx = _sy = 0.0
+                    for _cx, _cy in (
+                        (-_hx + _sx, -_hy + _sy),
+                        (_hx + _sx, -_hy + _sy),
+                        (-_hx + _sx, _hy + _sy),
+                        (_hx + _sx, _hy + _sy),
+                    ):
                         if (round(_cx, 6), round(_cy, 6)) not in _present:
                             field_launches.append((float(_cx), float(_cy), _probe))
             for field_x, field_y, launch_points in field_launches:

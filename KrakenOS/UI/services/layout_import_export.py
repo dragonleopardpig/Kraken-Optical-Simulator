@@ -329,8 +329,22 @@ class LayoutImportExportMixin:
         self.current_layout_file = None
         self.rows = self._normalized_rows_copy([self._row_from_layout_item(item) for item in info["surfaces"]])
         self._auto_assign_missing_elements(self.rows)
+        # bugs/0591 + bugs/0625: the learned delivered-magnification correction and
+        # delivered-field centre are MACHINE measurements -- a freshly loaded scene
+        # must not inherit the previous scene's. (Every loader clears these -- the
+        # bugs/0563 two-loader rule; load_layout_by_name already does.)
+        self._folded_m_correction_state = None
+        self._folded_field_center_state = None
         self._apply_layout_settings(info.get("settings", {}))
         self._normalize_special_rows()
+        # bugs/0625: re-measure the cleared machine state for the scene just loaded (the
+        # bugs/0608 doctrine extended to loaders); sequential scenes no-op cheaply.
+        try:
+            note = self._relearn_folded_m_correction_after_swap()
+            if note:
+                self.append_debug("Loaded-scene re-measure:" + note)
+        except Exception:
+            pass
         # Zemax NSC imports often reference CAD geometry files that the
         # user no longer has -- prompt before the first table sync /
         # plot refresh so a relocation feeds straight into the first
@@ -540,6 +554,12 @@ class LayoutImportExportMixin:
                 [self._row_from_surface(surface, index, len(surfaces)) for index, surface in enumerate(surfaces)]
             )
         self._auto_assign_missing_elements(self.rows)
+        # bugs/0591 + bugs/0625: the learned delivered-magnification correction and
+        # delivered-field centre are MACHINE measurements -- a freshly loaded scene
+        # must not inherit the previous scene's. (Every loader clears these -- the
+        # bugs/0563 two-loader rule; load_layout_by_name already does.)
+        self._folded_m_correction_state = None
+        self._folded_field_center_state = None
         self._apply_layout_settings(info.get("settings", {}))
         self._normalize_special_rows()
         # Surface missing CAD references *before* the first table sync
@@ -560,6 +580,17 @@ class LayoutImportExportMixin:
             pass
         try:
             self._prompt_for_missing_cad_assets()
+        except Exception:
+            pass
+        # bugs/0625: re-measure the cleared machine state for the scene just loaded (the
+        # bugs/0608 doctrine extended to loaders -- a load must not leave the readouts and
+        # launch grid on the RAW first order until the next solve). After the cache regen
+        # and asset prompt so the traced machine is complete; sequential scenes no-op
+        # cheaply on the world-placed-chain early-out.
+        try:
+            note = self._relearn_folded_m_correction_after_swap()
+            if note:
+                self.append_debug("Loaded-scene re-measure:" + note)
         except Exception:
             pass
         self._sync_table()

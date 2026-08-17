@@ -488,6 +488,7 @@ class LayoutTableWorkbenchMixin:
         # bugs/0591: the measured/first-order magnification correction is a property of the
         # MACHINE -- a freshly loaded layout must not inherit another scene's factor.
         self._folded_m_correction_state = None
+        self._folded_field_center_state = None  # bugs/0625: centre is machine state too
         # bugs/0375: a normal menu/Open load ties the layout to this file; the lens
         # importer re-marks it transient AFTER this call (it loads then imports).
         self._layout_is_unsaved_import = False
@@ -573,6 +574,20 @@ class LayoutTableWorkbenchMixin:
             loaded_camera = self._current_camera_model()
             if loaded_camera != CAMERA_NONE_LABEL:
                 self._apply_camera_coverage_autofill(loaded_camera)
+        # bugs/0625: a load CLEARS the learned machine state above, but nothing re-measured
+        # it, so a freshly loaded folded scene traced with the RAW first order until the
+        # user's next solve -- measured on the flagged Apo75: the launch grid sat decentred
+        # and the x=-27.6 column lost every ray (7 of 9 field spots). Extend the bugs/0608
+        # doctrine (a swap RE-MEASURES, not just clears) to loads: re-measure the delivered
+        # magnification AND field centre for the machine that was just loaded. Cheap no-op
+        # on sequential scenes (the world-placed-chain early-out).
+        if not append_to_existing:
+            try:
+                note = self._relearn_folded_m_correction_after_swap()
+                if note:
+                    self.append_debug("Loaded-scene re-measure:" + note)
+            except Exception:
+                pass
         if append_to_existing:
             self._select_inserted_layout_rows(loaded_rows, insert_after=insert_after)
         if had_existing_rows:
@@ -1945,6 +1960,7 @@ class LayoutTableWorkbenchMixin:
             # OLD lens must not steer the first solve on the new one (measured: a stale factor
             # left the 35x35 readout -6.8% off after a PYRITE swap).
             self._folded_m_correction_state = None
+            self._folded_field_center_state = None  # bugs/0625
             self._swap_auto_refocus_to_best_focus()
             # bugs/0608: invalidating is only half the job -- until the user's NEXT solve the
             # readout was the RAW folded first order (measured on this scene: promised |m|
@@ -2097,6 +2113,7 @@ class LayoutTableWorkbenchMixin:
         # state as picking the camera from the dropdown.
         overlay_note = self._switch_off_analysis_overlays_for_swap()
         self._folded_m_correction_state = None  # bugs/0591: new sensor = new conjugate target
+        self._folded_field_center_state = None  # bugs/0625
         try:
             old_x, old_y, _old_z = self._step_placement_offset_xyz("camera")
         except Exception:
