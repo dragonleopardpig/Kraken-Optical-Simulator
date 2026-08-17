@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-08-14T02:00:12+00:00",
+  "generated_at": "2026-08-17T07:29:25+00:00",
   "phases": {
     "0": "pass",
     "1": "fail",
@@ -466,7 +466,11 @@
     "462": "pass",
     "463": "pass",
     "464": "pass",
-    "465": "pass"
+    "465": "pass",
+    "466": "pass",
+    "467": "pass",
+    "468": "pass",
+    "469": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -933,6 +937,10 @@
     "462": "the shared field converter launches the DELIVERED field, not the first order's promise (0610)",
     "463": "fold elbows connect -- no world-space ray vertex inset (0611)",
     "464": "replacing a camera seats the body on the TRACED sensor (0612)",
-    "465": "unverified corrections cannot steer bookings (0613)"
+    "465": "unverified corrections cannot steer bookings (0613)",
+    "466": "the CAD/Place/Orient commands live on the elements' right-click (0619)",
+    "467": "the launch grid samples the DELIVERED field, not the raw paraxial promise (0621)",
+    "468": "surrogate vertex datums are bounded barrel walls -- no un-refracted bypass (0623)",
+    "469": "the launch grid recentres on the learned DELIVERED field centre (0625)"
   }
 }
