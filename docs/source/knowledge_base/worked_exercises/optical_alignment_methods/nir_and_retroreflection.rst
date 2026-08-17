@@ -80,8 +80,10 @@ before interpreting coupling loss.
    :width: 100%
 
    **Figure 2.** A plane mirror is an angular-normal reference; a corner cube is
-   an anti-parallel return reference.  Choose the one that measures the required
-   degree of freedom.
+   an anti-parallel return reference.  The corner-cube panel is a 2D section:
+   it shows the beam entering the front face and the two in-plane reflections;
+   the third reflecting face acts out of the page.  Choose the return optic that
+   measures the required degree of freedom.
 
 For fiber-to-free-space-and-back alignment, place a beamsplitter or circulator
 to measure returned power, install the corner cube near the intended remote

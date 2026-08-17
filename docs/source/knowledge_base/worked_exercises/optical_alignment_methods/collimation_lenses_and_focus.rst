@@ -136,8 +136,12 @@ tilt.
    :alt: Autocollimator projects and receives a reticle image from a tilted optical surface
    :width: 100%
 
-   **Figure 4.** The factor of two is reflection geometry.  A stable instrument
-   mount is part of the reference and must not be adjusted between elements.
+   **Figure 4.** In this unfolded ray diagram, the objective converts a reticle
+   point at its focal plane into a parallel bundle.  Surface tilt
+   :math:`\tau` changes the return angle by :math:`2\tau`; the same objective
+   then focuses the return at :math:`\Delta x\simeq2f_a\tau`.  A stable
+   instrument mount is part of the reference and must not be adjusted between
+   elements.
 
 Method 7: locate a focal plane and an objective BFP
 ---------------------------------------------------
