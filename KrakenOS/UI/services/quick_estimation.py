@@ -2223,8 +2223,13 @@ class QuickEstimationService:
         if np.isfinite(factor) and 0.1 < factor < 10.0:
             self.editor._folded_m_correction_state = factor
 
-    _FIELD_FILL_TOLERANCE = 0.01
-    _FIELD_FILL_MAX_PASSES = 5
+    # bugs/0626 ("input 55x55, why become 54.5x54.5? can't it be exact?"): the old 1%
+    # tolerance let the secant exit at -0.91%, which the honest delivered readout then
+    # showed as 54.5. 0.1% is readout precision (55.0 displays as 55.0); the secant
+    # normally lands in 2-4 passes, so the raised ceiling only spends traces while the
+    # error is genuinely above tolerance.
+    _FIELD_FILL_TOLERANCE = 0.001
+    _FIELD_FILL_MAX_PASSES = 10
     _FIELD_FILL_PROBE_FRACTION = 0.7
 
     def _measured_delivered_image_semi(self, object_semi: float) -> "float | None":
@@ -2247,22 +2252,52 @@ class QuickEstimationService:
             pupil_distance = editor._world_launch_pupil_distance_cached(wavelength, float(acceptance))
         except Exception:
             return None
+        # bugs/0626: a VIGNETTED probe is a broken ruler. At 0.7x a 55x55 field the probe
+        # launches from 27.2 mm object height while this machine images ~14 mm -- most of
+        # the bundle dies and the surviving edge rays' centroid saturates near the image
+        # circle (~19.9 mm) REGARDLESS of the booked conjugate. The refinement then sees a
+        # flat response and can never converge (measured: every pass read ~+22%). The
+        # heights are linear in field (the docstring's own calibration), so probe at the
+        # largest fraction whose bundles keep >=60% of their rays and scale back up.
+        # bugs/0626 (second ruler defect, measured at the pass-3 conjugate): even a
+        # NEAR-AXIS full-acceptance cone lost 43% of its rays to aperture clipping
+        # (52/91 at fraction 0.0875) -- and a clipped cone's centroid is biased at any
+        # field. Measure with a NARROW pencil about the chief ray instead: the chief's
+        # landing height IS the image height (the textbook definition), immune to
+        # aperture clipping; the health gate below then only fails when the probe field
+        # is genuinely outside the field stop.
+        probe_acceptance = float(acceptance) * 0.1
         fraction = float(self._FIELD_FILL_PROBE_FRACTION)
-        probe = float(object_semi) * fraction
-        heights: list[float] = []
-        for field_x, field_y in ((0.0, probe), (0.0, -probe)):
-            try:
-                bundle = editor._world_order_field_bundle(
-                    "hexapolar", field_x, field_y, 30, float(acceptance), pupil_distance
-                )
-                x_local, y_local, _z, _l, _m, _n = editor._world_order_trace_landings(wavelength, bundle)
-            except Exception:
-                continue
-            if np.asarray(x_local).size >= 5:
+        for _attempt in range(4):
+            probe = float(object_semi) * fraction
+            heights: list[float] = []
+            healthy = True
+            for field_x, field_y in ((0.0, probe), (0.0, -probe)):
+                try:
+                    bundle = editor._world_order_field_bundle(
+                        "hexapolar", field_x, field_y, 30, probe_acceptance, pupil_distance
+                    )
+                    launched = int(np.asarray(bundle[0]).size)
+                    x_local, y_local, _z, _l, _m, _n = editor._world_order_trace_landings(wavelength, bundle)
+                except Exception:
+                    healthy = False
+                    break
+                landed = int(np.asarray(x_local).size)
+                if landed < max(5, int(np.ceil(0.6 * launched))):
+                    try:
+                        editor.append_debug(
+                            f"field-fill probe unhealthy at fraction {fraction:.3g}: "
+                            f"{landed}/{launched} rays landed"
+                        )
+                    except Exception:
+                        pass
+                    healthy = False
+                    break
                 heights.append(float(np.hypot(np.mean(x_local), np.mean(y_local))))
-        if len(heights) < 2:
-            return None
-        return float(np.mean(heights)) / fraction
+            if healthy and len(heights) >= 2:
+                return float(np.mean(heights)) / fraction
+            fraction *= 0.5
+        return None
 
     def _learn_folded_field_center(self, object_semi: float) -> "tuple[float, float] | None":
         """bugs/0625: learn the object-plane offset whose image lands at the SENSOR CENTRE.
@@ -2434,6 +2469,69 @@ class QuickEstimationService:
         previous_request = None
         previous_measured = None
         best = (abs(measured / target - 1.0), float(measured), float(request))
+
+        def _snapshot_geometry():
+            """bugs/0626: the refinement explores by MUTATING the scene -- lens/arm slides,
+            focus snaps -- with no undo, so a degraded exit that merely re-BOOKS a number
+            lands in a different machine than the one that measured it (measured: the
+            restore re-booked the best request after the arm had slid 268 mm and delivered
+            +15.7% with 8 of 9 pencils dead). Only the GEOMETRY is the state: snapshot the
+            row poses and the STEP overlay placement offsets the slides carry."""
+            editor = self.editor
+            rows_state = [
+                {
+                    field: getattr(row, field)
+                    for field in ("thickness", "desp_x", "desp_y", "desp_z")
+                }
+                for row in getattr(editor, "rows", []) or []
+            ]
+            offsets = {}
+            try:
+                from KrakenOS.UI.services.scene_placement_commands import _step_overlay_label_set
+
+                for label in _step_overlay_label_set():
+                    value = getattr(editor, f"{label}_step_placement_offset_xyz", None)
+                    if value is not None:
+                        offsets[label] = tuple(float(v) for v in value)
+            except Exception:
+                pass
+            return rows_state, offsets
+
+        def _restore_geometry(snapshot):
+            editor = self.editor
+            rows_state, offsets = snapshot
+            rows = getattr(editor, "rows", []) or []
+            if len(rows) != len(rows_state):
+                return False  # rows changed identity mid-refinement -- do not guess
+            for row, fields in zip(rows, rows_state):
+                for field, value in fields.items():
+                    setattr(row, field, value)
+            for label, value in offsets.items():
+                try:
+                    editor._set_step_placement_offset_xyz(label, value)
+                except Exception:
+                    pass
+            return True
+
+        best_snapshot = _snapshot_geometry()
+
+        def _finish_at(measured_final, request_final, prefix):
+            """Land every degraded exit on the best MEASURED state of this solve: restore
+            the geometry that produced it (never a blind or raw re-book -- bugs/0613 spirit,
+            bugs/0626 mechanism), then record its verified correction."""
+            if not _restore_geometry(best_snapshot):
+                return f"{prefix} the best measured state could not be restored (rows changed)."
+            self._set_folded_m_correction(float(measured_final) / float(request_final))
+            try:
+                self._learn_folded_field_center(float(object_semi))  # bugs/0625
+            except Exception:
+                pass
+            error_fin = float(measured_final) / target - 1.0
+            return (
+                f"{prefix} kept the best measured booking: {2.0 * float(measured_final):.4g} mm "
+                f"on the sensor diagonal (target {2.0 * target:.4g}, {100.0 * error_fin:+.2f}%)."
+            )
+
         for _pass in range(int(self._FIELD_FILL_MAX_PASSES)):
             error = measured / target - 1.0
             if abs(error) <= float(self._FIELD_FILL_TOLERANCE):
@@ -2453,35 +2551,57 @@ class QuickEstimationService:
                 next_request = float(request) + (target - float(measured)) / slope if abs(slope) > 1.0e-9 else float(request) * target / float(measured)
             else:
                 next_request = float(request) * target / float(measured)
+            # bugs/0626 (the 55->54.5 flag's fix uncovered this): inside the ~1% band the
+            # book->focus-snap response is noise/oscillation-dominated, the secant slope
+            # collapses, and the raw step explodes -- measured: a -0.9% residual produced
+            # +52.8 then +267 mm lens-slide requests and dislocated the scene. A legitimate
+            # local slope near 1 needs a step ~error*target; allow 10x for genuinely weak
+            # slopes and treat anything larger as a broken slope: take the multiplicative
+            # step (~error-sized by construction) instead.
+            step_cap = 10.0 * abs(error) * target
+            if abs(next_request - float(request)) > step_cap:
+                next_request = float(request) * target / float(measured)
             next_request = float(np.clip(next_request, 0.3 * target, 3.0 * target))
             previous_request, previous_measured = float(request), float(measured)
             request = next_request
             applied, note = self._apply_conjugate_pair(float(object_semi), float(request))
             if not applied:
-                return (
-                    f" Field-fill refinement stopped ({100.0 * error:+.1f}% residual): {note}"
+                # bugs/0626: a refused re-book can still have MOVED the machine (the
+                # recruitment slides the arm before the retry fails) -- land on the best
+                # measured state, then surface the refusal.
+                return _finish_at(
+                    best[1], best[2],
+                    f" Field-fill refinement stopped ({100.0 * error:+.1f}% residual: {note})",
                 )
             measured = self._measured_delivered_image_semi(object_semi)
+            try:
+                self.editor.append_debug(
+                    f"field-fill pass {_pass + 1}: request {float(request):.4g} -> measured "
+                    f"{'None' if measured is None else format(float(measured), '.4g')} "
+                    f"(target {target:.4g})"
+                )
+            except Exception:
+                pass
             if measured is None or not np.isfinite(measured) or measured <= 0:
-                # bugs/0613: mid-refinement blindness -- the booking sits at an arbitrary
-                # secant step and the standing correction was never verified. Unlearn it and
-                # re-book the RAW target so the booking and the readout agree with what was
-                # typed (the pre-0608 contract).
-                self.editor._folded_m_correction_state = None
-                self.editor._folded_field_center_state = None  # bugs/0625
-                applied, note = self._apply_conjugate_pair(float(object_semi), target)
-                if not applied:
-                    return (
-                        " Field-fill refinement stopped: the delivered field became "
-                        f"unmeasurable; raw re-book refused: {note}"
-                    )
-                return (
-                    " Field-fill refinement stopped: the delivered field became unmeasurable "
-                    "(unlearned the unverified correction; booked the raw first order)."
+                # bugs/0613 said: never leave an UNVERIFIED booking steering the scene. This
+                # solve verified pairs of its own -- restore the best one (bugs/0626); the
+                # pre-loop branch (nothing ever measured) keeps the raw unlearn.
+                return _finish_at(
+                    best[1], best[2],
+                    " Field-fill refinement stopped: the delivered field became unmeasurable;",
                 )
             if abs(measured / target - 1.0) < best[0]:
                 best = (abs(measured / target - 1.0), float(measured), float(request))
+                best_snapshot = _snapshot_geometry()
         error = measured / target - 1.0
+        if best[0] < abs(error) - 1.0e-12:
+            # bugs/0626: the loop ended off its own best pass (oscillation) -- land on the
+            # best MEASURED booking rather than wherever the last step happened to sit.
+            return _finish_at(
+                best[1], best[2],
+                f" Delivered field refined to its measurement floor after "
+                f"{int(self._FIELD_FILL_MAX_PASSES)} passes;",
+            )
         self._set_folded_m_correction(float(measured) / float(request))
         try:
             self._learn_folded_field_center(float(object_semi))  # bugs/0625

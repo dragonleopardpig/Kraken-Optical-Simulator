@@ -113,11 +113,18 @@ def run_checks():
             f"FAIL: A (bugs/0625): only {learn_calls} refinement exit(s) learn the field "
             "centre -- a solve path exists whose grid stays decentred"
         )
-    elif center_clears < 2:
+    elif center_clears < 1:
         ok = False
         notes.append(
-            f"FAIL: A (bugs/0625): only {center_clears} unmeasurable exit(s) clear the "
+            f"FAIL: A (bugs/0625): the pre-loop unmeasurable exit no longer clears the "
             "centre -- a stale centre survives an unlearn (bugs/0613)"
+        )
+    elif "best measured booking" not in refine_srcs:
+        ok = False
+        notes.append(
+            "FAIL: A (bugs/0625/0626): the mid-refinement degraded exit no longer restores "
+            "the best measured booking -- a blind or raw re-book steers the scene (the "
+            "dislocation the 0626 probe measured)"
         )
     elif "_learn_folded_field_center(" not in relearn_src:
         ok = False

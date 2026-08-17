@@ -4394,6 +4394,24 @@ class ScenePlacementMixin:
         up_new = float(self.rows[upstream].thickness) + amount
         down_new = float(self.rows[downstream].thickness) - amount
         if not (np.isfinite(up_new) and np.isfinite(down_new)) or up_new <= 0.0 or down_new <= 0.0:
+            # bugs/0626 ("the auto solve should adjust the 4th section distance if 3rd
+            # section can't meet"): when the DOWNSTREAM gap is what runs out, this is a
+            # room problem the fold-arm slide can solve -- report the shortfall through
+            # the same channel as the bugs/0572 room refusal so the caller's recruitment
+            # (slide the fold mirror and the camera along the leg, bugs/0573) fires here
+            # too. Previously this branch set only the refusal text, so the solve stopped
+            # with a residual instead of making room. An exhausted UPSTREAM gap stays a
+            # plain refusal: the arm behind the lens cannot make room in front of it.
+            if (
+                np.isfinite(up_new)
+                and up_new > 0.0
+                and np.isfinite(down_new)
+                and down_new <= 0.0
+                and amount > 0.0
+            ):
+                self._lens_leg_slide_shortfall = float(amount) - max(
+                    float(self.rows[downstream].thickness) - 1.0, 0.0
+                )
             self._lens_leg_slide_refusal = (
                 f"that field needs the lens {amount:.4g} mm further from the object, which would "
                 f"leave the section gaps at {up_new:.4g} / {down_new:.4g} mm -- move the fold "

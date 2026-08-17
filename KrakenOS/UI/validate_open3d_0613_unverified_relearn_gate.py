@@ -87,6 +87,11 @@ def run_checks():
     else:
         notes.append("PASS: B1: first-probe blindness unlearns and re-books the raw target")
     # Mid-refinement blindness: first probe measures (off-target), second goes blind.
+    # RE-DERIVED for bugs/0626: the old contract unlearned and re-booked the RAW target --
+    # measured on the flagged Apo75, that raw re-book demanded a 267 mm lens slide and left
+    # 8 of 9 field pencils dead. The refinement now restores its own best MEASURED pair
+    # (request 24.31 -> measured 8.0, traced by this very solve), which still satisfies the
+    # bugs/0613 spirit: no NEVER-verified number steers the booking or the readout.
     calls = {"n": 0}
 
     def flaky(semi):
@@ -96,17 +101,21 @@ def run_checks():
     service, editor, booked = _service(measured=None, correction=0.4731)
     service._measured_delivered_image_semi = flaky
     msg = service._refine_folded_field_fill(27.5, 11.5)
-    if editor._folded_m_correction_state is not None:
+    best_request = 11.5 / 0.4731
+    want_correction = 8.0 / best_request
+    stored = editor._folded_m_correction_state
+    if stored is None or abs(float(stored) - want_correction) > 1e-9:
         ok = False
-        notes.append("FAIL: B (bugs/0613): mid-refinement blindness kept the unverified correction")
-    elif not booked or abs(booked[-1][1] - 11.5) > 1e-9:
-        ok = False
-        notes.append(f"FAIL: B (bugs/0613): mid-refinement blindness did not re-book raw (booked={booked})")
-    elif "unmeasurable" not in msg:
+        notes.append(
+            f"FAIL: B (bugs/0613/0626): mid-refinement blindness stored {stored} instead of "
+            f"the best MEASURED pair's ratio {want_correction:.4f} -- either the unverified "
+            "0.4731 survived or a blind booking is steering the readout"
+        )
+    elif "unmeasurable" not in msg or "best measured booking" not in msg:
         ok = False
         notes.append(f"FAIL: B: the unmeasurable exit lost its message ({msg!r})")
     else:
-        notes.append("PASS: B2: mid-refinement blindness unlearns and re-books the raw target")
+        notes.append("PASS: B2: mid-refinement blindness restores the best measured booking")
 
     return ok, notes
 
