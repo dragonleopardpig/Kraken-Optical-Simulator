@@ -1191,6 +1191,13 @@ class Open3DSceneRefreshService:
         # FOV rectangle (gated on the "Det" detector overlay toggle).
         if self.show_detector_overlays_var.get():
             self._add_detector_coverage_overlays(system, scene_bundle)
+        # bugs/0628 (user feature): the system-info HUD (resolution um/px,
+        # magnification sensor/FOV, camera pixel count + pixel size) refreshes
+        # with the scene so it tracks solves, swaps and camera changes.
+        try:
+            self._update_system_info_hud()
+        except Exception:
+            pass
         detector_overlay_ms = (time.perf_counter() - detector_overlay_start) * 1000.0
 
         finalize_start = time.perf_counter()

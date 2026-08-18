@@ -17789,6 +17789,77 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def _apply_step_rotation_handle(self, label: str, axis: str, delta_deg: float) -> None:
         self._open3d_step_rotation_handle_service().apply_handle(label, axis, delta_deg)
 
+    def _update_system_info_hud(self, *, render: bool = False) -> None:
+        """bugs/0628 (user feature): top-left system-info HUD -- resolution (um/px),
+        magnification (sensor/FOV), camera pixel count and pixel size. Fed by the same
+        delivered-field reader as the drawn FOV square (bugs/0602), so the two can
+        never disagree. Hidden whenever no row has data (no finite imaging, no camera)."""
+        if self._renderer is None:
+            return
+        try:
+            from KrakenOS.UI.services.system_info_hud import system_info_hud_text
+
+            text = system_info_hud_text(self.editor)
+        except Exception:
+            text = ""
+        actor = self.__dict__.get("_system_info_hud_actor")
+        if not text:
+            if actor is not None:
+                self._remove_renderer_view_prop(actor)
+                self._system_info_hud_actor = None
+                if render:
+                    self.render()
+            return
+        if actor is None and vtkTextActor is not None:
+            try:
+                actor = vtkTextActor()
+                prop = actor.GetTextProperty()
+                prop.SetFontSize(13)
+                prop.SetColor(0.05, 0.09, 0.16)
+                try:
+                    prop.SetBackgroundColor(1.0, 1.0, 1.0)
+                    prop.SetBackgroundOpacity(0.78)
+                    prop.SetFrame(1)
+                    prop.SetFrameColor(0.46, 0.54, 0.62)
+                    prop.SetVerticalJustificationToTop()
+                    prop.SetLineSpacing(1.25)
+                except Exception:
+                    pass
+                # Normalized-viewport anchor: top-left regardless of canvas size,
+                # clear of the nav-cube (top-right) and the axes triad (bottom-left).
+                try:
+                    coordinate = actor.GetPositionCoordinate()
+                    coordinate.SetCoordinateSystemToNormalizedViewport()
+                    coordinate.SetValue(0.012, 0.985)
+                except Exception:
+                    pass
+                actor.SetPickable(False)
+                self._add_renderer_view_prop(actor)
+                self._system_info_hud_actor = actor
+            except Exception as exc:
+                self.editor.append_debug(f"3D system-info HUD unavailable: {exc}")
+                self._system_info_hud_actor = None
+                return
+        if actor is None:
+            return
+        # The scene refresh clears ALL view props (RemoveAllViewProps) before this
+        # runs -- a kept actor object is DETACHED on every refresh after its first.
+        # Re-attach unconditionally; HasViewProp keeps it duplicate-free.
+        try:
+            has_prop = getattr(self._renderer, "HasViewProp", None)
+            if not (callable(has_prop) and has_prop(actor)):
+                self._add_renderer_view_prop(actor)
+        except Exception:
+            pass
+        try:
+            actor.SetInput(text)
+            actor.SetVisibility(True)
+        except Exception as exc:
+            self.editor.append_debug(f"3D system-info HUD update failed: {exc}")
+            return
+        if render:
+            self.render()
+
     def _update_placement_grid_status(self, text: str, *, render: bool = True) -> None:
         if self._renderer is None:
             return

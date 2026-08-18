@@ -15679,6 +15679,10 @@ phase_471_blackbox_display_size = _phase_from_standalone(
     471, "blackbox surrogates DRAW at drawn size, trace at 2x (0627)",
     "KrakenOS.UI.validate_open3d_0627_blackbox_display_size",
     "blackbox_display_size")
+phase_472_system_info_hud = _phase_from_standalone(
+    472, "the system-info HUD shows delivered resolution/magnification/pixels (0628)",
+    "KrakenOS.UI.validate_open3d_0628_system_info_hud",
+    "system_info_hud")
 phase_461_swap_prompts_for_fov = _phase_from_standalone(
     461, "an interactive swap ASKS for the FOV you want (prefilled with the delivered field) (0609)",
     "KrakenOS.UI.validate_open3d_0609_swap_prompts_for_fov",
@@ -16213,6 +16217,7 @@ def main() -> int:
             phase_469_delivered_field_center,
             phase_470_solve_exactness_arm_recruitment,
             phase_471_blackbox_display_size,
+            phase_472_system_info_hud,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
