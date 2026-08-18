@@ -1898,6 +1898,7 @@ class ThreeDSceneToolsMixin:
         block_count = min(len(self.rows), getattr(surfaces, "n_blocks", 0), len(transforms), surface_count)
         mesh_items: list[SurfaceMesh3D] = []
         pose_overrides = optical_solid_output_port_pose_overrides(system, self.rows)
+        blackbox_members = self._surrogate_blackbox_member_rows()  # bugs/0627
         # 0113: in a two-arm splitter fold, the per-arm fold detectors sit at the PHYSICAL focus and
         # supersede the scene's prescription Detector/Image surfaces. Skip their clear-aperture DISKS
         # (drawn here, separate from the surface_curves suppressed in 0110/0112) so no no-correction
@@ -2006,6 +2007,12 @@ class ThreeDSceneToolsMixin:
                     mesh = body_mesh
             if mesh is None:
                 mesh = Kraken3DInspector._mesh_with_transform(surfaces[index], row_transform)
+                # bugs/0627: the built disc of a blackbox member is 2x its drawn size
+                # (bugs/0624, trace-only) -- the display shows the DRAWN diameter.
+                if index in blackbox_members:
+                    mesh = self._clip_world_mesh_to_row_radius(
+                        mesh, system, index, 0.5 * float(getattr(row, "diameter", 0.0) or 0.0)
+                    )
             if mesh is None and row_transform is not None:
                 mesh = self._stl_mesh_with_world_transform(row, row_transform)
             if mesh is None or int(getattr(mesh, "n_points", 0)) == 0:
@@ -2366,6 +2373,59 @@ class ThreeDSceneToolsMixin:
             )
         return mesh_items
 
+    def _surrogate_blackbox_member_rows(self) -> set[int]:
+        """bugs/0627: row indices between a Front and a Rear vertex datum (stop-like rows
+        excluded) -- the rows whose TRACE apertures bugs/0624 extends to 2x their drawn
+        diameter. Mirrors the build-side scan in layout_editor so the display can undo
+        the extension it must never show."""
+        members: set[int] = set()
+        front = None
+        for index, row in enumerate(self.rows):
+            name = str(getattr(row, "name", "") or "").lower()
+            if "datum" in name and "front" in name:
+                front = index
+            elif "datum" in name and "rear" in name and front is not None:
+                for k in range(front, index + 1):
+                    row_k = self.rows[k]
+                    name_k = str(getattr(row_k, "name", "") or "").lower()
+                    stoplike = "stop" in name_k or str(getattr(row_k, "surface", "")) == "Aperture"
+                    if not stoplike:
+                        members.add(k)
+                front = None
+        return members
+
+    @staticmethod
+    def _clip_world_mesh_to_row_radius(mesh, system, surface_index, radius):
+        """bugs/0627 (flag_20260818: "swap lens to pyrite85, lens surrogate grow big"):
+        bugs/0624 builds surrogate-member surfaces at 2x their drawn diameter so corner
+        pencils refract instead of bypassing -- a TRACE-only extension. But the display
+        meshes (system.AAA discs and system.BBB side bodies) are the SAME built geometry,
+        so a bare surrogate drew its doubled discs (hidden on the Apo75 only by its STEP
+        barrel). Clip the DISPLAY copy back to the drawn radius in Kos's own local frame
+        (TRANS_2A is local->world); a mesh that is not extended passes through untouched,
+        and any failure returns the original -- the display never goes emptier than built."""
+        try:
+            if mesh is None or radius is None or float(radius) <= 0.0:
+                return mesh
+            points = np.asarray(mesh.points, dtype=float)
+            if points.size == 0:
+                return mesh
+            transform = np.asarray(system.TRANS_2A[int(surface_index)], dtype=float)
+            inverse = np.linalg.inv(transform)
+            homogeneous = np.column_stack([points, np.ones(len(points))])
+            local = (inverse @ homogeneous.T).T[:, :3]
+            radial = np.hypot(local[:, 0], local[:, 1])
+            if float(np.max(radial)) <= float(radius) * 1.02:
+                return mesh
+            clipped = mesh.copy(deep=True)
+            clipped["__kos_display_radius"] = radial
+            clipped = clipped.clip_scalar(scalars="__kos_display_radius", value=float(radius))
+            if int(getattr(clipped, "n_points", 0)) == 0:
+                return mesh
+            return clipped
+        except Exception:
+            return mesh
+
     def _iter_3d_side_body_meshes(
         self,
         system,
@@ -2380,6 +2440,7 @@ class ThreeDSceneToolsMixin:
             surface_count = 0
         mesh_items: list[SurfaceMesh3D] = []
         side_index = 0
+        blackbox_members = self._surrogate_blackbox_member_rows()  # bugs/0627
         for row_index in getattr(system, "side_number", []):
             try:
                 row_index_int = int(row_index)
@@ -2405,6 +2466,15 @@ class ThreeDSceneToolsMixin:
             side_index += 1
             if int(getattr(body, "n_points", 0)) == 0:
                 continue
+            # bugs/0627: a blackbox member's auto-revolved side body is built at the
+            # bugs/0624 2x trace diameter -- clip the display copy to the drawn radius.
+            if row_index_int in blackbox_members:
+                body = self._clip_world_mesh_to_row_radius(
+                    body, system, row_index_int,
+                    0.5 * float(getattr(row, "diameter", 0.0) or 0.0),
+                )
+                if int(getattr(body, "n_points", 0)) == 0:
+                    continue
             surface = surface_descriptors[row_index_int]
             # Analytic-promoted STEP lens already shows its actual
             # body mesh via StepAnalyticBodyStlPath (front row) and
