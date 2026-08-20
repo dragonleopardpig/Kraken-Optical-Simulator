@@ -354,5 +354,7 @@ def format_system_selection_lines(result: SystemSelection) -> list[str]:
             f"(WD {_fmt(result.working_distance_mm)} mm at that EFL; longer EFL → longer WD)"
         )
     if result.required_pixel_pitch_um is not None:
-        lines.append(f"Pixel pitch at this sensor: {_fmt(result.required_pixel_pitch_um, 3)} µm")
+        lines.append(
+            f"Required pixel pitch (at this sensor): {_fmt(result.required_pixel_pitch_um, 3)} µm"
+        )
     return lines
