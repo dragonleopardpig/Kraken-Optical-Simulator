@@ -15687,6 +15687,10 @@ phase_473_system_selection = _phase_from_standalone(
     473, "the System Selection calculator sizes camera + lens from FOV/resolution/WD (0631)",
     "KrakenOS.UI.validate_open3d_0631_system_selection",
     "system_selection")
+phase_474_catalog_matcher = _phase_from_standalone(
+    474, "the catalog matcher lists camera+lens combos meeting FOV/resolution/WD (0634)",
+    "KrakenOS.UI.validate_open3d_0634_catalog_matcher",
+    "catalog_matcher")
 phase_461_swap_prompts_for_fov = _phase_from_standalone(
     461, "an interactive swap ASKS for the FOV you want (prefilled with the delivered field) (0609)",
     "KrakenOS.UI.validate_open3d_0609_swap_prompts_for_fov",
@@ -16223,6 +16227,7 @@ def main() -> int:
             phase_471_blackbox_display_size,
             phase_472_system_info_hud,
             phase_473_system_selection,
+            phase_474_catalog_matcher,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

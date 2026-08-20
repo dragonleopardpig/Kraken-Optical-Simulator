@@ -8380,6 +8380,13 @@ class LayoutTableWorkbenchMixin:
 
         open_system_selection_dialog(self)
 
+    def open_camera_lens_matcher(self) -> None:
+        """bugs/0634 (user feature): list every registered camera × catalog lens
+        combination that meets a FOV / resolution / minimum-WD requirement."""
+        from KrakenOS.UI.services.system_matcher import open_catalog_matcher_dialog
+
+        open_catalog_matcher_dialog(self)
+
     def clear_current_bounds(self) -> None:
         if self.current_menu_row_id is None or self.current_menu_field is None:
             return
