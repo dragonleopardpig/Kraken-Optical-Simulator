@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from pathlib import Path
 from KrakenOS.UI.services.system_selection import open_system_selection_dialog, build_system_selection_form
 
-DLG = Path("bugs/_0632_dialog_selffit.png")
+DLG = Path("bugs/_0633_dialog_perf_targets.png")
 PANEL = Path("bugs/_0632_left_panel_section.png")
 
 
@@ -37,10 +37,11 @@ def main() -> int:
                              _current_camera_record=lambda: {"resolution_px": [5120, 5120]})
     # Dialog — the exact clipping case from the flag: FOV 8, res 1, sensor 23.04, WD blank
     dlg = open_system_selection_dialog(editor)
-    _fill(dlg, ["8", "8", "1", "", "23.04", "23.04"])
+    _fill(dlg, ["100", "100", "50", "200", "12.8", "12.8", "0.55"])
     dlg.after(150, lambda: dlg.event_generate("<Configure>"))
     _grab(dlg, DLG)
 
+    root.destroy(); return 0
     # Compact left-panel section (rendered in a ~300px frame like the real panel)
     top = tk.Toplevel(root); top.geometry("300x520+380+30"); top.title("System Selection")
     lf = ttk.LabelFrame(top, text="System Selection", padding=8); lf.pack(fill="both", expand=True)

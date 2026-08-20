@@ -54,3 +54,19 @@ user asked for the calculator in the 3D view's left panel too.
   clips.
 
 Guard phase 473 extended (check D): shared form, left-panel section, self-fitting dialog.
+
+## 0633 follow-up: lens PERFORMANCE targets (user request)
+
+After sizing the pixel, the lens must actually RESOLVE to it. Added (when a sensor size +
+wavelength are given), from the required pixel pitch p and λ:
+
+- **Sensor Nyquist** = `500/p` lp/mm — the spatial frequency the lens MTF must hold
+  contrast at (the direct "can this lens feed the pixel" test).
+- **Max working f/#** (diffraction Airy ≈ 2 px) = `p/(1.22·λ)`, with the **nominal**
+  (infinity) f/# = working/(1+|m|) that lenses are specced by. Slower → diffraction blurs
+  past a pixel; faster → aberrations usually dominate.
+- **Target lens spot** ≤ `2·p` µm diameter (≈ 2 px geometric blur — the Nyquist match).
+
+New **Wavelength (µm)** input (default 0.55) drives these. Verified: guard phase 473
+check E (Nyquist = 1/(2·pitch); working f/# = p/(1.22λ); nominal = working/(1+m); λ=0
+drops the diffraction f/# but keeps Nyquist). Screenshot bugs/_0633_dialog_perf_targets.png.

@@ -93,6 +93,29 @@ def run_checks():
     else:
         notes.append("PASS: C: editor method + Actions-menu entry wired")
 
+    # ---------------------------------------------------------------- E: performance targets
+    # bugs/0633: Nyquist / diffraction f/# / target spot from the required pixel pitch.
+    if abs(ss.nyquist_frequency_lp_per_mm(6.4) - 500.0 / 6.4) > 1e-9:
+        ok = False
+        notes.append("FAIL: E (bugs/0633): Nyquist != 1/(2·pitch)")
+    elif abs(ss.diffraction_limited_working_fnumber(6.4, 0.55) - 6.4 / (1.22 * 0.55)) > 1e-9:
+        ok = False
+        notes.append("FAIL: E (bugs/0633): diffraction working f/# != pitch/(1.22·λ)")
+    else:
+        perf = ss.compute_system_selection((100.0, 100.0), 50.0, sensor_wh_mm=(12.8, 12.8), wavelength_um=0.55)
+        no_lam = ss.compute_system_selection((100.0, 100.0), 50.0, sensor_wh_mm=(12.8, 12.8), wavelength_um=0.0)
+        if (perf.nyquist_lp_per_mm is None or perf.diffraction_working_fnumber_max is None
+                or perf.target_spot_diameter_um is None
+                or abs(perf.diffraction_nominal_fnumber_max
+                       - perf.diffraction_working_fnumber_max / (1 + perf.magnification)) > 1e-6):
+            ok = False
+            notes.append(f"FAIL: E (bugs/0633): performance targets missing/wrong ({perf})")
+        elif no_lam.diffraction_working_fnumber_max is not None or no_lam.nyquist_lp_per_mm is None:
+            ok = False
+            notes.append("FAIL: E (bugs/0633): λ=0 dropped Nyquist or kept a diffraction f/#")
+        else:
+            notes.append("PASS: E: Nyquist / diffraction f/# (working+nominal) / target spot")
+
     # ---------------------------------------------------------------- D: shared form + panel
     # bugs/0632: the form is shared by the dialog AND the 3D left panel; the dialog self-fits.
     from KrakenOS.UI.panels import open3d_live_controls as lc

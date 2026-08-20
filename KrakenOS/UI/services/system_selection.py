@@ -61,6 +61,27 @@ def min_focal_length_for_working_distance(wd_min_mm: float, magnification: float
     return wd * m / (m + 1.0)
 
 
+def nyquist_frequency_lp_per_mm(pixel_pitch_um: float) -> float:
+    """Sensor Nyquist spatial frequency = 1 / (2·pitch), in line-pairs/mm.
+
+    The lens must hold useful MTF contrast here to resolve at the pixel level."""
+    p = float(pixel_pitch_um)
+    if not (p > 0):
+        raise ValueError("pixel_pitch_um must be positive")
+    return 500.0 / p  # 1/(2·p_mm) with p_mm = p/1000
+
+
+def diffraction_limited_working_fnumber(pixel_pitch_um: float, wavelength_um: float) -> float:
+    """The slowest (largest) WORKING f/# whose diffraction Airy disk (2.44·λ·N) still
+    spans ~2 pixels -- the Nyquist match. A slower lens blurs past a pixel by diffraction
+    alone; a faster one usually pays in aberrations. Returns the WORKING (image-space) f/#."""
+    p = float(pixel_pitch_um)
+    lam = float(wavelength_um)
+    if not (p > 0 and lam > 0):
+        raise ValueError("pixel_pitch_um and wavelength_um must be positive")
+    return 2.0 * p / (2.44 * lam)  # == p / (1.22·λ)
+
+
 @dataclass(frozen=True)
 class SystemSelection:
     """Computed camera + lens specs for a FOV / resolution / WD requirement."""
@@ -73,6 +94,11 @@ class SystemSelection:
     working_distance_mm: float | None = None  # the WD at the min EFL (== wd_min by construction)
     image_circle_min_mm: float | None = None
     required_pixel_pitch_um: float | None = None
+    nyquist_lp_per_mm: float | None = None
+    diffraction_working_fnumber_max: float | None = None
+    diffraction_nominal_fnumber_max: float | None = None
+    target_spot_diameter_um: float | None = None
+    wavelength_um: float | None = None
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -87,6 +113,7 @@ def compute_system_selection(
     resolution_um_per_px: float,
     wd_min_mm: float | None = None,
     sensor_wh_mm=None,
+    wavelength_um: float = 0.55,
 ) -> SystemSelection:
     """Size a camera + lens from the requirements.
 
@@ -94,6 +121,8 @@ def compute_system_selection(
     candidate sensor size (from the registered camera, or a user entry): it fixes the
     magnification and therefore the lens. Without it only the pixel count -- the pure
     sampling requirement -- is returned. ``wd_min_mm`` gates the lens focal length.
+    ``wavelength_um`` drives the lens PERFORMANCE targets (Nyquist / diffraction f/# /
+    target spot) -- what the lens must resolve to feed the pixel, not just fit the field.
     """
     fov_w, fov_h = float(fov_wh_mm[0]), float(fov_wh_mm[1])
     notes: list[str] = []
@@ -102,6 +131,8 @@ def compute_system_selection(
 
     mag_w = mag_h = None
     min_f = wd = image_circle = pitch = None
+    nyquist = fno_work = fno_nom = target_spot = None
+    lam = float(wavelength_um) if wavelength_um and float(wavelength_um) > 0 else None
     if sensor_wh_mm is not None:
         sw, sh = float(sensor_wh_mm[0]), float(sensor_wh_mm[1])
         if sw > 0 and sh > 0:
@@ -115,10 +146,17 @@ def compute_system_selection(
                     f"{sw:.4g}:{sh:.4g} -- magnification differs per axis; match the FOV "
                     "aspect to the sensor for a single value."
                 )
+            m = 0.5 * (mag_w + mag_h)
             if wd_min_mm is not None and float(wd_min_mm) > 0:
-                m = 0.5 * (mag_w + mag_h)
                 min_f = min_focal_length_for_working_distance(float(wd_min_mm), m)
                 wd = working_distance_for_focal_length(min_f, m)
+            # Lens PERFORMANCE targets from the required pixel pitch (image-space).
+            nyquist = nyquist_frequency_lp_per_mm(pitch)
+            target_spot = 2.0 * pitch  # geometric blur diameter ~2 px (Nyquist match)
+            if lam is not None:
+                fno_work = diffraction_limited_working_fnumber(pitch, lam)
+                # A lens is specced by its NOMINAL (infinity) f/#: working = (1+|m|)·nominal.
+                fno_nom = fno_work / (1.0 + m)
     elif wd_min_mm is not None and float(wd_min_mm) > 0:
         notes.append("Enter a sensor size to size the lens (magnification + focal length).")
 
@@ -131,6 +169,11 @@ def compute_system_selection(
         working_distance_mm=wd,
         image_circle_min_mm=image_circle,
         required_pixel_pitch_um=pitch,
+        nyquist_lp_per_mm=nyquist,
+        diffraction_working_fnumber_max=fno_work,
+        diffraction_nominal_fnumber_max=fno_nom,
+        target_spot_diameter_um=target_spot,
+        wavelength_um=lam,
         notes=notes,
     )
 
@@ -189,6 +232,7 @@ def build_system_selection_form(parent, editor, *, compact: bool = False, prefil
     wd_var = tk.StringVar(value="")
     sw_var = tk.StringVar(value=_pf(sensor[0] if sensor else None))
     sh_var = tk.StringVar(value=_pf(sensor[1] if sensor else None))
+    wl_var = tk.StringVar(value="0.55")  # bugs/0633: λ drives the lens performance targets
     out_var = tk.StringVar(value="")
 
     parent.columnconfigure(1, weight=1)
@@ -209,6 +253,7 @@ def build_system_selection_form(parent, editor, *, compact: bool = False, prefil
         (("Min WD (mm):" if compact else "Minimum working distance (mm):"), wd_var),
         (("Sensor W (mm):" if compact else "Sensor width (mm):"), sw_var),
         (("Sensor H (mm):" if compact else "Sensor height (mm):"), sh_var),
+        (("λ (µm):" if compact else "Wavelength (µm):"), wl_var),
     ]
     for label, var in field_rows:
         ttk.Label(parent, text=label).grid(row=row, column=0, padx=pad, pady=2, sticky="e" if not compact else "w")
@@ -248,7 +293,8 @@ def build_system_selection_form(parent, editor, *, compact: bool = False, prefil
         fov_w, fov_h = _num(fov_w_var), _num(fov_h_var)
         res, wd = _num(res_var), _num(wd_var)
         sw, sh = _num(sw_var), _num(sh_var)
-        if "error" in (fov_w, fov_h, res, wd, sw, sh):
+        wl = _num(wl_var)
+        if "error" in (fov_w, fov_h, res, wd, sw, sh, wl):
             out_var.set("Enter positive numbers (optional boxes may be blank).")
             return
         if fov_w is None or fov_h is None or res is None:
@@ -256,7 +302,10 @@ def build_system_selection_form(parent, editor, *, compact: bool = False, prefil
             return
         sensor_wh = (sw, sh) if (sw and sh) else None
         try:
-            result = compute_system_selection((fov_w, fov_h), res, wd_min_mm=wd, sensor_wh_mm=sensor_wh)
+            result = compute_system_selection(
+                (fov_w, fov_h), res, wd_min_mm=wd, sensor_wh_mm=sensor_wh,
+                wavelength_um=(wl if wl else 0.55),
+            )
         except Exception as exc:  # noqa: BLE001
             out_var.set(f"Cannot compute: {exc}")
             return
@@ -282,7 +331,7 @@ def build_system_selection_form(parent, editor, *, compact: bool = False, prefil
             sh_var.set(_pf(s[1]))
         recompute()
 
-    for var in (fov_w_var, fov_h_var, res_var, wd_var, sw_var, sh_var):
+    for var in (fov_w_var, fov_h_var, res_var, wd_var, sw_var, sh_var, wl_var):
         var.trace_add("write", recompute)
     recompute()
 
@@ -357,4 +406,13 @@ def format_system_selection_lines(result: SystemSelection) -> list[str]:
         lines.append(
             f"Required pixel pitch (at this sensor): {_fmt(result.required_pixel_pitch_um, 3)} µm"
         )
+    if result.nyquist_lp_per_mm is not None:
+        lines.append(f"Sensor Nyquist: {_fmt(result.nyquist_lp_per_mm, 3)} lp/mm (target MTF here)")
+    if result.diffraction_working_fnumber_max is not None:
+        line = f"Max working f/# (diffraction ≈2 px): f/{_fmt(result.diffraction_working_fnumber_max, 3)}"
+        if result.diffraction_nominal_fnumber_max is not None:
+            line += f"  (nominal f/{_fmt(result.diffraction_nominal_fnumber_max, 3)})"
+        lines.append(line)
+    if result.target_spot_diameter_um is not None:
+        lines.append(f"Target lens spot: ≤ {_fmt(result.target_spot_diameter_um, 3)} µm dia (≈2 px)")
     return lines
