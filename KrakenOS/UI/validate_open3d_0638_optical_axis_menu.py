@@ -140,6 +140,52 @@ def run_checks():
     else:
         notes.append("PASS: C: the right-click dispatch offers the optical-axis menu")
 
+    # ---------------------------------------------------------------- D: screen-space proximity
+    # A thin axis crossing a body: resolve by proximity to the polyline, not the picked actor.
+    import numpy as np
+
+    from KrakenOS.UI.services.open3d_face_assignment import _point_segment_distance_2d
+
+    class _Renderer:
+        def SetWorldPoint(self, *a):
+            self._w = a
+
+        def WorldToDisplay(self):
+            pass
+
+        def GetDisplayPoint(self):
+            return (self._w[0], self._w[1], 0.0)  # identity world->display for the test
+
+    try:
+        proot = tk.Tk()
+        proot.withdraw()
+        pinsp = tk.Frame(proot)
+        pinsp._renderer = _Renderer()
+        pinsp._optical_axis_pick_records = [
+            {"axis_label": "Optical Axis", "branch_path": "B", "points": np.array([[0, 0, 0], [100, 0, 0]], float)}
+        ]
+        pinsp.append_debug = lambda *a: None
+        pinsp.editor = pinsp
+        psvc = S(pinsp)
+        near = psvc._optical_axis_record_near_display_xy(50, 3, tol_px=12)
+        far = psvc._optical_axis_record_near_display_xy(50, 40, tol_px=12)
+        if abs(_point_segment_distance_2d((5, 5), (0, 0), (10, 0)) - 5.0) > 1e-9:
+            ok = False
+            notes.append("FAIL: D (bugs/0638): point-segment distance is wrong")
+        elif near is None or near.get("branch_path") != "B":
+            ok = False
+            notes.append("FAIL: D (bugs/0638): a click near the axis line did not resolve")
+        elif far is not None:
+            ok = False
+            notes.append("FAIL: D (bugs/0638): a click far from the axis wrongly resolved")
+        else:
+            notes.append("PASS: D: screen-space proximity resolves a near-axis click, rejects a far one")
+    finally:
+        try:
+            proot.destroy()
+        except Exception:
+            pass
+
     return ok, notes
 
 

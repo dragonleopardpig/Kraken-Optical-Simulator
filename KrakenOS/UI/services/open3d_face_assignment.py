@@ -66,6 +66,21 @@ def _base_optical_axis_id(axis_id) -> str:
     return text[:index] if index != -1 else text
 
 
+def _point_segment_distance_2d(p, a, b) -> float:
+    """Distance from point p to segment a-b in 2D (bugs/0638 axis screen-space hit test)."""
+    px, py = float(p[0]), float(p[1])
+    ax, ay = float(a[0]), float(a[1])
+    bx, by = float(b[0]), float(b[1])
+    abx, aby = bx - ax, by - ay
+    denom = abx * abx + aby * aby
+    if denom <= 1e-12:
+        return ((px - ax) ** 2 + (py - ay) ** 2) ** 0.5
+    t = ((px - ax) * abx + (py - ay) * aby) / denom
+    t = max(0.0, min(1.0, t))
+    cx, cy = ax + t * abx, ay + t * aby
+    return ((px - cx) ** 2 + (py - cy) ** 2) ** 0.5
+
+
 # bugs/0543: the auto floor seat's "substantial plate" tolerance -- a bin must carry
 # at least this fraction of the peak per-bin area to count as a plate (cables and thin
 # brackets stay below it). A documented tolerance, not a scene constant.
@@ -1736,6 +1751,40 @@ class Open3DFaceAssignmentService:
         menu.add_separator()
         return True
 
+    def _optical_axis_record_near_display_xy(self, x, y, tol_px: float = 12.0):
+        """bugs/0638: resolve a right-click to an optical axis by SCREEN-SPACE proximity to
+        the axis polyline, independent of what actor the picker returned. The axis is a thin
+        line and often crosses in front of a body (the picker then returns the body, not the
+        axis), so an actor-only test misses it. Projects each axis record's points to display
+        coordinates and returns the nearest record within ``tol_px`` pixels, else None."""
+        renderer = self._renderer
+        records = list(getattr(self._inspector, "_optical_axis_pick_records", None) or [])
+        if renderer is None or not records:
+            return None
+
+        def _to_display(point):
+            renderer.SetWorldPoint(float(point[0]), float(point[1]), float(point[2]), 1.0)
+            renderer.WorldToDisplay()
+            disp = renderer.GetDisplayPoint()
+            return (float(disp[0]), float(disp[1]))
+
+        best = None
+        for record in records:
+            pts = np.asarray(record.get("points"), dtype=float)
+            if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+                continue
+            try:
+                disp = [_to_display(pts[i, :3]) for i in range(pts.shape[0])]
+            except Exception:
+                continue
+            for i in range(len(disp) - 1):
+                dist = _point_segment_distance_2d((float(x), float(y)), disp[i], disp[i + 1])
+                if best is None or dist < best[0]:
+                    best = (dist, record)
+        if best is not None and best[0] <= float(tol_px):
+            return best[1]
+        return None
+
     def _maybe_show_optical_axis_menu(self, event) -> bool:
         """bugs/0638 (user request): a right-click ON an optical axis offers axis-level
         verbs -- chiefly ADD ELEMENTS onto that axis (a stock lens, a CAD/STL solid, a
@@ -1752,9 +1801,17 @@ class Open3DFaceAssignmentService:
             actor_key = self._actor_key(self._picker.GetActor())
         except Exception:
             return False
-        if actor_key is None:
-            return False
-        axis_info = (getattr(self._inspector, "_actor_optical_axis_map", {}) or {}).get(actor_key)
+        # Fast path: the picker landed on the axis actor itself. Fallback: screen-space
+        # proximity, so a click on the thin line still resolves when it crosses over a body
+        # (the picker then returns the body) -- the axis.png case.
+        axis_info = None
+        if actor_key is not None:
+            axis_info = (getattr(self._inspector, "_actor_optical_axis_map", {}) or {}).get(actor_key)
+        if not axis_info:
+            try:
+                axis_info = self._optical_axis_record_near_display_xy(x, y)
+            except Exception:
+                axis_info = None
         if not axis_info:
             return False
         label = (str(axis_info.get("axis_label", "") or "").strip() or "Optical Axis")
