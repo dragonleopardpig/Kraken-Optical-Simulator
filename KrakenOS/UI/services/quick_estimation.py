@@ -2118,57 +2118,6 @@ class QuickEstimationService:
         norm = (aw * aw + ah * ah) ** 0.5 or 1.0
         return diagonal * aw / norm, diagonal * ah / norm
 
-    def _camera_pixel_count(self) -> "tuple[int, int] | None":
-        """The registered camera's active pixel count ``(N1, N2)`` -- the same field the
-        bugs/0628 HUD shows -- or None when no camera / resolution is registered."""
-        try:
-            record = self.editor._current_camera_record()
-        except Exception:
-            return None
-        if not isinstance(record, dict):
-            return None
-        res = record.get("resolution_px")
-        try:
-            n1, n2 = int(res[0]), int(res[1])
-        except (TypeError, ValueError, IndexError):
-            return None
-        return (n1, n2) if (n1 > 0 and n2 > 0) else None
-
-    def object_fov_for_magnification(self, magnification: Any) -> "tuple[float, float] | None":
-        """bugs/0630: the object field ``(w, h)`` mm that images at the requested SYSTEM
-        MAGNIFICATION ``m = sensor / FOV`` (the bugs/0628 HUD definition) -- so
-        ``FOV = sensor / m``. The subsequent thickness solve then makes the DELIVERED field
-        equal this, i.e. delivers exactly ``m``. None when no sensor size is known."""
-        try:
-            m = abs(float(magnification))
-        except (TypeError, ValueError):
-            return None
-        if not (m > 1e-9):
-            return None
-        sensor = self.sensor_active_dimensions()
-        if sensor is None:
-            return None
-        sw, sh = float(sensor[0]), float(sensor[1])
-        if not (sw > 0 and sh > 0):
-            return None
-        return (sw / m, sh / m)
-
-    def object_fov_for_resolution(self, resolution_um_per_px: Any) -> "tuple[float, float] | None":
-        """bugs/0630: the object field ``(w, h)`` mm that gives the requested SYSTEM
-        RESOLUTION ``r um/px = FOV_mm * 1000 / N`` per axis (the bugs/0628 HUD definition)
-        -- so ``FOV_mm = r * N / 1000``. Needs the camera pixel count; None without it."""
-        try:
-            r = float(resolution_um_per_px)
-        except (TypeError, ValueError):
-            return None
-        if not (r > 0):
-            return None
-        px = self._camera_pixel_count()
-        if px is None:
-            return None
-        n1, n2 = px
-        return (r * n1 / 1000.0, r * n2 / 1000.0)
-
     def object_fov_dimensions(self) -> tuple[float, float] | None:
         """Current object field ``(width, height)`` in mm for the object popup
         prefill. The object field that maps onto the sensor is the sensor
