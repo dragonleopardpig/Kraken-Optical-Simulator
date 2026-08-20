@@ -47,17 +47,18 @@ def run_checks():
     cls._update_window_title(loaded)
     cls._update_window_title(imported)
     cls._update_window_title(empty)
-    if loaded._title != "KrakenOS Layout Editor — machine_vision_Apo75.py":
+    # Just the filename (the app name clipped on small title bars); "*" flags an import.
+    if loaded._title != "machine_vision_Apo75.py":
         ok = False
-        notes.append(f"FAIL: A (bugs/0637): loaded-file title wrong: {loaded._title!r}")
-    elif "machine_vision_pyrite.py" not in (imported._title or "") or "unsaved import" not in (imported._title or ""):
+        notes.append(f"FAIL: A (bugs/0637): loaded-file title should be the bare filename: {loaded._title!r}")
+    elif imported._title != "* machine_vision_pyrite.py":
         ok = False
         notes.append(f"FAIL: A (bugs/0637): unsaved-import title wrong: {imported._title!r}")
     elif empty._title != "KrakenOS Layout Editor":
         ok = False
         notes.append(f"FAIL: A (bugs/0637): base title wrong: {empty._title!r}")
     else:
-        notes.append("PASS: A: title names the loaded file, tags an import, base when empty")
+        notes.append("PASS: A: title is the bare filename, '*'-tags an import, base when empty")
 
     # ---------------------------------------------------------------- B: contract
     wb_src = inspect.getsource(wb)

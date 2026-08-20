@@ -480,11 +480,13 @@ class LayoutTableWorkbenchMixin:
             if path is None:
                 self.title(base)
                 return
+            # bugs/0637: just the filename -- "KrakenOS Layout Editor — <file>" clipped on a
+            # small laptop title bar. A leading "*" flags a transient import (bugs/0375).
             name = Path(str(path)).name
             if getattr(self, "_layout_is_unsaved_import", False):
-                self.title(f"{base} — {name} (unsaved import)")
+                self.title(f"* {name}")
             else:
-                self.title(f"{base} — {name}")
+                self.title(name)
         except Exception:
             pass
 
