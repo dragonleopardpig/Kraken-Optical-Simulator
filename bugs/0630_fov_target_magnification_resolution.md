@@ -33,3 +33,11 @@ Conversions live on `QuickEstimationService`: `object_fov_for_magnification`,
   Magnification=0.5 solved for object width 46.08 mm (= sensor 23.04 / 0.5), mode=thickness
   -- the mode superseded the FOV boxes.
 - Screenshot: bugs/_0630_fov_target_modes_dialog.png (prefilled 0.8179x / 5.502 µm/px).
+
+## Follow-up: which button (user asked)
+
+A target mode is realised by ONE action -- "Solve for Thickness". "Solve for Image/Sensor
+Size" resizes the sensor, which is meaningless when the target is defined BY the fixed
+sensor + pixel count, so it is grayed out whenever a magnification/resolution box is
+ticked (bugs/_0630_fov_resolution_ticked.png). Width/Height and the other mode gray too,
+leaving Solve for Thickness as the single clear action.

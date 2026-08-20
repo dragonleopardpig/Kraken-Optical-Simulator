@@ -22026,6 +22026,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         )
         _mode_hint.grid(row=6, column=0, columnspan=2, padx=12, pady=(0, 8), sticky="w")
 
+        _mode_solve_buttons: dict[str, object] = {}
+
         def _sync_modes(*_a):
             mag_on, res_on = use_mag_var.get(), use_res_var.get()
             try:
@@ -22041,6 +22043,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 # A target mode derives BOTH object dims, so gray the FOV boxes.
                 entry.configure(state=("disabled" if mode_on else "normal"))
                 height_entry.configure(state=("disabled" if mode_on else "normal"))
+                # bugs/0630: a magnification / resolution target is defined BY the fixed
+                # sensor + pixel count, so resizing the sensor is meaningless in that mode
+                # -- gray "Solve for Image/Sensor Size" so "Solve for Thickness" is the one
+                # clear action (the user asked which button to press).
+                _sensor_btn = _mode_solve_buttons.get("sensor")
+                if _sensor_btn is not None:
+                    _sensor_btn.configure(state=("disabled" if mode_on else "normal"))
             except Exception:
                 pass
 
@@ -22296,9 +22305,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         ttk.Button(dialog, text="Solve for Thickness", command=lambda: run("thickness")).grid(
             row=button_row, column=0, padx=(12, 4), pady=(0, 6), sticky="ew"
         )
-        ttk.Button(dialog, text="Solve for Image/Sensor Size", command=lambda: run("sensor")).grid(
-            row=button_row, column=1, padx=(4, 12), pady=(0, 6), sticky="ew"
+        _sensor_solve_btn = ttk.Button(
+            dialog, text="Solve for Image/Sensor Size", command=lambda: run("sensor")
         )
+        _sensor_solve_btn.grid(row=button_row, column=1, padx=(4, 12), pady=(0, 6), sticky="ew")
+        # bugs/0630: register the sensor-size button so a ticked magnification/resolution
+        # target can gray it out (it does not apply to those modes); apply the state now.
+        _mode_solve_buttons["sensor"] = _sensor_solve_btn
+        _sync_modes()
         ttk.Button(dialog, text="Cancel", command=dialog.destroy).grid(
             row=button_row + 1, column=0, columnspan=2, padx=12, pady=(0, 12)
         )

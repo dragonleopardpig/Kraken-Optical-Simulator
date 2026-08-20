@@ -92,6 +92,7 @@ def run_checks():
         "object_fov_for_resolution",
         "_mode_target_wh",
         "next_row = 7",
+        "_mode_solve_buttons",  # the sensor-size button is grayed out under a target mode
     ]
     missing = [n for n in needles if n not in src]
     if missing:

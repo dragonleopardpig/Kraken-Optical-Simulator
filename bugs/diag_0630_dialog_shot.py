@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 
 SCENE = Path("attachment/machine_vision_Apo75.py")
-OUT = Path("bugs/_0630_fov_target_modes_dialog.png")
+OUT = Path("bugs/_0630_fov_resolution_ticked.png")
 
 
 def main() -> int:
@@ -24,6 +24,15 @@ def main() -> int:
             try:
                 dialog = [w for w in insp.winfo_children()
                           if w.winfo_class() == "Toplevel" and "Field of View" in (w.title() or "")][-1]
+                for w in [dialog] + [c for c in dialog.winfo_children()]:
+                    pass
+                def _walk(w):
+                    out=[w]
+                    for c in w.winfo_children(): out.extend(_walk(c))
+                    return out
+                for w in _walk(dialog):
+                    if w.winfo_class()=="TCheckbutton" and "Resolution" in str(w.cget("text")):
+                        w.invoke(); break
                 dialog.update_idletasks()
                 x, y = dialog.winfo_rootx(), dialog.winfo_rooty()
                 w, h = dialog.winfo_width(), dialog.winfo_height()
