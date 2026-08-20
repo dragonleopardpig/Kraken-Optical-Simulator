@@ -486,6 +486,13 @@ class Open3DFaceAssignmentService:
                     return "break"
             except Exception:
                 pass
+            # bugs/0638 (user request): a right-click ON the optical axis offers its own
+            # add-element / axis verbs (before the empty-space fallback below).
+            try:
+                if self._maybe_show_optical_axis_menu(event):
+                    return "break"
+            except Exception:
+                pass
             # flag_20260814: empty space offers the scene-level selection/move
             # verbs instead of dead-ending in a status hint.
             try:
@@ -1727,6 +1734,69 @@ class Open3DFaceAssignmentService:
         menu.add_command(label="Clear Assembly", command=lambda: self._inspector.clear_assembly())
         menu.add_command(label="Clear Selection", command=lambda: self._clear_open3d_selection())
         menu.add_separator()
+        return True
+
+    def _maybe_show_optical_axis_menu(self, event) -> bool:
+        """bugs/0638 (user request): a right-click ON an optical axis offers axis-level
+        verbs -- chiefly ADD ELEMENTS onto that axis (a stock lens, a CAD/STL solid, a
+        path component) -- plus the axis-to-axis move. The axis had no right-click menu at
+        all; it is a pickable actor (open3d_inspector keeps axis actors Pickable), so this
+        resolves the cursor to its axis record just like the source-glyph menu (bugs/0537).
+        On a folded/branched scene the lens is placed onto THIS axis via its branch_path."""
+        if self._picker is None or self._renderer is None or self._vtk_interactor is None:
+            return False
+        try:
+            self._vtk_interactor.SetEventInformationFlipY(int(event.x), int(event.y), 0, 0, chr(0), 0, None)
+            x, y = self._vtk_interactor.GetEventPosition()
+            self._picker.Pick(x, y, 0.0, self._renderer)
+            actor_key = self._actor_key(self._picker.GetActor())
+        except Exception:
+            return False
+        if actor_key is None:
+            return False
+        axis_info = (getattr(self._inspector, "_actor_optical_axis_map", {}) or {}).get(actor_key)
+        if not axis_info:
+            return False
+        label = (str(axis_info.get("axis_label", "") or "").strip() or "Optical Axis")
+        branch_path = str(axis_info.get("branch_path", "") or "").strip()
+
+        def _wrap(fn):
+            def _run():
+                try:
+                    fn()
+                except Exception as exc:  # noqa: BLE001
+                    self.editor.append_debug(f"Optical-axis menu action failed: {exc}")
+                finally:
+                    self._restore_canvas_focus()
+            return _run
+
+        def _add_stock_lens():
+            if branch_path:
+                self.editor.open_stock_lens_importer(path_placement={"branch_path": branch_path})
+            else:
+                self.editor.open_stock_lens_importer()
+
+        menu = tk.Menu(self, tearoff=False)
+        menu.add_command(label=label, state="disabled")
+        menu.add_separator()
+        menu.add_command(
+            label=("Add Stock Lens on this axis…" if branch_path else "Add Stock Lens…"),
+            command=_wrap(_add_stock_lens),
+        )
+        menu.add_command(
+            label="Import Optical CAD/STL Solid…",
+            command=_wrap(self.editor.import_optical_stl_solid),
+        )
+        menu.add_command(
+            label="Add Component to Current Path…",
+            command=_wrap(self.editor.open_current_path_component_placement),
+        )
+        menu.add_separator()
+        menu.add_command(
+            label="Move Elements Axis → Axis…",
+            command=_wrap(self._inspector.start_axis_to_axis_move),
+        )
+        self._popup_context_menu(menu, event)
         return True
 
     def _show_scene_context_menu(self, event) -> bool:

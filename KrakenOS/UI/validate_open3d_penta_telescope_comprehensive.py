@@ -15699,6 +15699,10 @@ phase_476_window_title = _phase_from_standalone(
     476, "the loaded layout file name shows in the window title (0637)",
     "KrakenOS.UI.validate_open3d_0637_window_title",
     "window_title")
+phase_477_optical_axis_menu = _phase_from_standalone(
+    477, "right-click on an optical axis offers add-element / axis verbs (0638)",
+    "KrakenOS.UI.validate_open3d_0638_optical_axis_menu",
+    "optical_axis_menu")
 phase_461_swap_prompts_for_fov = _phase_from_standalone(
     461, "an interactive swap ASKS for the FOV you want (prefilled with the delivered field) (0609)",
     "KrakenOS.UI.validate_open3d_0609_swap_prompts_for_fov",
@@ -16238,6 +16242,7 @@ def main() -> int:
             phase_474_catalog_matcher,
             phase_475_panel_categories,
             phase_476_window_title,
+            phase_477_optical_axis_menu,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
