@@ -93,6 +93,25 @@ def run_checks():
     else:
         notes.append("PASS: C: editor method + Actions-menu entry wired")
 
+    # ---------------------------------------------------------------- D: shared form + panel
+    # bugs/0632: the form is shared by the dialog AND the 3D left panel; the dialog self-fits.
+    from KrakenOS.UI.panels import open3d_live_controls as lc
+
+    has_form = hasattr(ss, "build_system_selection_form")
+    panel_src = inspect.getsource(lc.Open3DLiveControlsPanel)
+    dialog_src = inspect.getsource(ss.open_system_selection_dialog)
+    if not has_form:
+        ok = False
+        notes.append("FAIL: D (bugs/0632): the shared build_system_selection_form is gone")
+    elif "build_system_selection_controls" not in panel_src or "System Selection" not in panel_src:
+        ok = False
+        notes.append("FAIL: D (bugs/0632): the 3D left panel lost its System Selection section")
+    elif "resizable(True, True)" not in dialog_src or "_fit_to_content" not in dialog_src:
+        ok = False
+        notes.append("FAIL: D (bugs/0632): the dialog no longer self-fits -- the result clips")
+    else:
+        notes.append("PASS: D: shared form + left-panel section + self-fitting dialog")
+
     return ok, notes
 
 

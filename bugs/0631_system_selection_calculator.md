@@ -35,3 +35,22 @@ size it returns the pixel-count requirement alone. A FOV/sensor aspect mismatch 
 
 ## Next (on request): the catalog MATCHER -- scan registered cameras + lens catalogs and
 list the combinations that meet all three requirements.
+
+## 0632 follow-up: self-fitting dialog + left-panel embedding (user request)
+
+flag/attachment popup.png: the fixed-size dialog clipped its result text when the output
+grew (e.g. the "camera UNDER the pixel requirement" line appears once you type). And the
+user asked for the calculator in the 3D view's left panel too.
+
+- The form is refactored into a shared `build_system_selection_form(parent, editor,
+  compact=...)` used by BOTH the dialog and the panel (short labels + narrow entries in
+  compact mode). Same bugs/0631 first-order core.
+- The dialog is now `resizable(True, True)` and self-fits: a trace on the result grows the
+  window to `winfo_reqheight` (never shrinking below the user's size), so the output never
+  clips (bugs/_0632_dialog_selffit.png — the exact popup.png case now shows every line).
+- 3D left panel: a "System Selection" LabelFrame section (Open3DLiveControlsPanel), with a
+  "↺ From scene" button to re-pull FOV/sensor/pixels from the current scene
+  (bugs/_0632_left_panel_section.png). It sits in the panel's scroll stack, so it never
+  clips.
+
+Guard phase 473 extended (check D): shared form, left-panel section, self-fitting dialog.

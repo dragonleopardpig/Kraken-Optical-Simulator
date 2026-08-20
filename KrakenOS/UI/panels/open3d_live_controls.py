@@ -103,8 +103,25 @@ class Open3DLiveControlsPanel:
         solve = ttk.LabelFrame(stack, text="Solve (Variable thickness)", padding=8)
         solve.grid(row=4, column=0, sticky="ew", pady=(8, 0))
         self.build_solve_controls(solve)
+
+        # bugs/0632 (user request): the System Selection calculator, embedded in the left
+        # panel too (not only Actions → dialog). Same shared first-order form (bugs/0631).
+        selection = ttk.LabelFrame(stack, text="System Selection", padding=8)
+        selection.grid(row=5, column=0, sticky="ew", pady=(8, 0))
+        selection.columnconfigure(0, weight=1)
+        self.build_system_selection_controls(selection)
         # Measure moved to the top Scene toolbar (open3d_top_controls) -- no longer a Left-Panel
         # LabelFrame. build_measure_controls is kept for any external caller / test.
+
+    def build_system_selection_controls(self, parent: tk.Widget) -> None:
+        # bugs/0632: the bugs/0631 sizing calculator, embedded compact in the left panel.
+        from KrakenOS.UI.services.system_selection import build_system_selection_form
+
+        form = build_system_selection_form(parent, self.editor, compact=True)
+        ttk.Button(parent, text="↺ From scene", command=form.set_prefill).grid(
+            row=form.next_row, column=0, columnspan=2, sticky="ew", pady=(4, 0)
+        )
+        self._system_selection_form = form
 
     def build_measure_controls(self, parent: tk.Widget) -> None:
         # CAD-style 2-point measure tool: click two edges/surfaces -> a dimension between them.

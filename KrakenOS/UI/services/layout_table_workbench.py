@@ -8376,13 +8376,9 @@ class LayoutTableWorkbenchMixin:
         """bugs/0631 (user feature): size a matching camera + lens from a FOV / object-space
         resolution / minimum-working-distance requirement. Prefilled from the current
         scene + registered camera; scene-independent otherwise."""
-        from KrakenOS.UI.services.system_selection import (
-            gather_system_selection_prefill,
-            open_system_selection_dialog,
-        )
+        from KrakenOS.UI.services.system_selection import open_system_selection_dialog
 
-        fov, sensor, pixels = gather_system_selection_prefill(self)
-        open_system_selection_dialog(self, fov_wh=fov, sensor_wh=sensor, camera_pixels=pixels)
+        open_system_selection_dialog(self)
 
     def clear_current_bounds(self) -> None:
         if self.current_menu_row_id is None or self.current_menu_field is None:

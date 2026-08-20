@@ -160,64 +160,79 @@ def gather_system_selection_prefill(editor):
     return fov, sensor, pixels
 
 
-def open_system_selection_dialog(editor, *, fov_wh=None, sensor_wh=None, camera_pixels=None):
-    """Modeless System Selection Calculator: enter FOV + object-space resolution + minimum
-    working distance (+ a candidate sensor size) and read the matching camera + lens specs
-    live. Scene-independent; prefilled from the current scene/camera when available."""
+def build_system_selection_form(parent, editor, *, compact: bool = False, prefill: bool = True):
+    """Build the calculator's inputs + live output into ``parent`` (a dialog or a panel
+    section). Returns a controller with ``.recompute()``, ``.out_var``, ``.next_row`` and
+    ``.set_prefill()`` (re-pull FOV/sensor/pixels from the current scene/camera).
+
+    ``compact`` uses short labels + narrow entries for the 3D left panel; the wide dialog
+    uses full labels. The bugs/0631 first-order core is shared."""
     import tkinter as tk
     from tkinter import ttk
+    from types import SimpleNamespace
 
-    parent = editor.winfo_toplevel() if hasattr(editor, "winfo_toplevel") else editor
-    dialog = tk.Toplevel(parent)
-    dialog.title("System Selection Calculator")
-    try:
-        dialog.transient(parent)
-        dialog.resizable(False, False)
-    except Exception:
-        pass
+    wrap = 250 if compact else 380
+    ew = 9 if compact else 14
+    pad = (0, 4) if compact else (12, 4)
+
+    fov = sensor = pixels = None
+    if prefill:
+        fov, sensor, pixels = gather_system_selection_prefill(editor)
+    state = {"pixels": pixels}
 
     def _pf(value):
         return f"{float(value):.6g}" if value else ""
 
-    fov_w_var = tk.StringVar(value=_pf(fov_wh[0] if fov_wh else None))
-    fov_h_var = tk.StringVar(value=_pf(fov_wh[1] if fov_wh else None))
+    fov_w_var = tk.StringVar(value=_pf(fov[0] if fov else None))
+    fov_h_var = tk.StringVar(value=_pf(fov[1] if fov else None))
     res_var = tk.StringVar(value="")
     wd_var = tk.StringVar(value="")
-    sw_var = tk.StringVar(value=_pf(sensor_wh[0] if sensor_wh else None))
-    sh_var = tk.StringVar(value=_pf(sensor_wh[1] if sensor_wh else None))
+    sw_var = tk.StringVar(value=_pf(sensor[0] if sensor else None))
+    sh_var = tk.StringVar(value=_pf(sensor[1] if sensor else None))
     out_var = tk.StringVar(value="")
 
-    ttk.Label(
-        dialog,
-        text=("Enter the requirement — FOV, object-space resolution, and the minimum "
-              "working distance — to size the matching camera and lens."),
-        wraplength=380, justify="left",
-    ).grid(row=0, column=0, columnspan=2, padx=12, pady=(12, 8), sticky="w")
+    parent.columnconfigure(1, weight=1)
+    row = 0
+    if not compact:
+        ttk.Label(
+            parent,
+            text=("Enter the requirement — FOV, object-space resolution, and the minimum "
+                  "working distance — to size the matching camera and lens."),
+            wraplength=wrap, justify="left",
+        ).grid(row=row, column=0, columnspan=2, padx=12, pady=(12, 8), sticky="w")
+        row += 1
 
-    rows = [
-        ("FOV width (mm):", fov_w_var),
-        ("FOV height (mm):", fov_h_var),
-        ("Resolution (µm/px):", res_var),
-        ("Minimum working distance (mm):", wd_var),
-        ("Sensor width (mm):", sw_var),
-        ("Sensor height (mm):", sh_var),
+    field_rows = [
+        (("FOV W (mm):" if compact else "FOV width (mm):"), fov_w_var),
+        (("FOV H (mm):" if compact else "FOV height (mm):"), fov_h_var),
+        (("Res (µm/px):" if compact else "Resolution (µm/px):"), res_var),
+        (("Min WD (mm):" if compact else "Minimum working distance (mm):"), wd_var),
+        (("Sensor W (mm):" if compact else "Sensor width (mm):"), sw_var),
+        (("Sensor H (mm):" if compact else "Sensor height (mm):"), sh_var),
     ]
-    for i, (label, var) in enumerate(rows, start=1):
-        ttk.Label(dialog, text=label).grid(row=i, column=0, padx=(12, 4), pady=2, sticky="e")
-        ttk.Entry(dialog, textvariable=var, width=14).grid(
-            row=i, column=1, padx=(0, 12), pady=2, sticky="ew"
+    for label, var in field_rows:
+        ttk.Label(parent, text=label).grid(row=row, column=0, padx=pad, pady=2, sticky="e" if not compact else "w")
+        ttk.Entry(parent, textvariable=var, width=ew).grid(
+            row=row, column=1, padx=(0, 12 if not compact else 0), pady=2, sticky="ew"
         )
+        row += 1
     ttk.Label(
-        dialog, text="Sensor size is the candidate camera's — it sets the magnification "
-        "and lens. Leave it blank for the pixel-count requirement only.",
-        foreground="#888888", wraplength=380, justify="left",
-    ).grid(row=len(rows) + 1, column=0, columnspan=2, padx=12, pady=(2, 8), sticky="w")
-
-    ttk.Separator(dialog, orient="horizontal").grid(
-        row=len(rows) + 2, column=0, columnspan=2, sticky="ew", padx=12, pady=4
+        parent,
+        text=("Sensor size is the candidate camera's — leave blank for the pixel count only."
+              if compact else
+              "Sensor size is the candidate camera's — it sets the magnification and lens. "
+              "Leave it blank for the pixel-count requirement only."),
+        foreground="#888888", wraplength=wrap, justify="left",
+    ).grid(row=row, column=0, columnspan=2, padx=(0 if compact else 12, 0), pady=(2, 6), sticky="w")
+    row += 1
+    ttk.Separator(parent, orient="horizontal").grid(
+        row=row, column=0, columnspan=2, sticky="ew", padx=(0 if compact else 12, 0), pady=4
     )
-    out_label = ttk.Label(dialog, textvariable=out_var, justify="left", wraplength=380)
-    out_label.grid(row=len(rows) + 3, column=0, columnspan=2, padx=12, pady=(4, 12), sticky="w")
+    row += 1
+    ttk.Label(parent, textvariable=out_var, justify="left", wraplength=wrap).grid(
+        row=row, column=0, columnspan=2, padx=(0 if compact else 12, 0), pady=(4, 6), sticky="w"
+    )
+    row += 1
 
     def _num(var):
         raw = (var.get() or "").strip()
@@ -231,43 +246,86 @@ def open_system_selection_dialog(editor, *, fov_wh=None, sensor_wh=None, camera_
 
     def recompute(*_a):
         fov_w, fov_h = _num(fov_w_var), _num(fov_h_var)
-        res = _num(res_var)
-        wd = _num(wd_var)
+        res, wd = _num(res_var), _num(wd_var)
         sw, sh = _num(sw_var), _num(sh_var)
         if "error" in (fov_w, fov_h, res, wd, sw, sh):
-            out_var.set("Enter positive numbers (or leave optional boxes blank).")
+            out_var.set("Enter positive numbers (optional boxes may be blank).")
             return
         if fov_w is None or fov_h is None or res is None:
-            out_var.set("Enter FOV width, height and resolution to size the camera.")
+            out_var.set("Enter FOV width, height and resolution.")
             return
-        sensor = (sw, sh) if (sw and sh) else None
+        sensor_wh = (sw, sh) if (sw and sh) else None
         try:
-            result = compute_system_selection((fov_w, fov_h), res, wd_min_mm=wd, sensor_wh_mm=sensor)
+            result = compute_system_selection((fov_w, fov_h), res, wd_min_mm=wd, sensor_wh_mm=sensor_wh)
         except Exception as exc:  # noqa: BLE001
             out_var.set(f"Cannot compute: {exc}")
             return
         lines = format_system_selection_lines(result)
-        if camera_pixels is not None:
-            meets = camera_pixels[0] >= result.required_pixels_w and camera_pixels[1] >= result.required_pixels_h
+        cam = state.get("pixels")
+        if cam is not None:
+            meets = cam[0] >= result.required_pixels_w and cam[1] >= result.required_pixels_h
             lines.append(
-                f"Current camera {camera_pixels[0]}×{camera_pixels[1]} px: "
+                f"Current camera {cam[0]}×{cam[1]} px: "
                 + ("meets the pixel requirement." if meets else "UNDER the pixel requirement.")
             )
         lines.extend(result.notes)
         out_var.set("\n".join(lines))
 
+    def set_prefill():
+        f, s, p = gather_system_selection_prefill(editor)
+        state["pixels"] = p
+        if f:
+            fov_w_var.set(_pf(f[0]))
+            fov_h_var.set(_pf(f[1]))
+        if s:
+            sw_var.set(_pf(s[0]))
+            sh_var.set(_pf(s[1]))
+        recompute()
+
     for var in (fov_w_var, fov_h_var, res_var, wd_var, sw_var, sh_var):
         var.trace_add("write", recompute)
     recompute()
 
+    return SimpleNamespace(recompute=recompute, out_var=out_var, next_row=row, set_prefill=set_prefill)
+
+
+def open_system_selection_dialog(editor):
+    """Modeless System Selection Calculator dialog. Prefilled from the current scene/camera;
+    resizable and self-fitting so the (growing) result text is never clipped (bugs/0632)."""
+    import tkinter as tk
+    from tkinter import ttk
+
+    parent = editor.winfo_toplevel() if hasattr(editor, "winfo_toplevel") else editor
+    dialog = tk.Toplevel(parent)
+    dialog.title("System Selection Calculator")
+    try:
+        dialog.transient(parent)
+        dialog.resizable(True, True)  # bugs/0632: let the user enlarge; also self-fits below
+    except Exception:
+        pass
+
+    form = build_system_selection_form(dialog, editor, compact=False)
     ttk.Button(dialog, text="Close", command=dialog.destroy).grid(
-        row=len(rows) + 4, column=0, columnspan=2, pady=(0, 12)
+        row=form.next_row, column=0, columnspan=2, pady=(0, 12)
     )
+
+    def _fit_to_content(*_a):
+        # bugs/0632: the result text grows as inputs change (extra notes, the camera-check
+        # line); grow the window to fit so nothing clips. Never shrinks below the user's size.
+        if not dialog.winfo_exists():
+            return
+        dialog.update_idletasks()
+        need_h = dialog.winfo_reqheight()
+        need_w = max(dialog.winfo_reqwidth(), dialog.winfo_width())
+        if dialog.winfo_height() < need_h:
+            dialog.geometry(f"{need_w}x{need_h}")
+
+    form.out_var.trace_add("write", lambda *_a: dialog.after_idle(_fit_to_content))
     try:
         editor._show_centered_dialog(dialog)
     except Exception:
         pass
-    # Modeless (like the design popups) so it can sit open beside the scene.
+    dialog.after(120, _fit_to_content)
     return dialog
 
 
