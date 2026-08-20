@@ -117,6 +117,7 @@ class MainWindowBuilder:
         action_menu.add_command(label="Inspect Optical CAD/STL Solids", command=self.open_optical_stl_diagnostics)
         action_menu.add_command(label="Assign CAD/STL Optical Faces", command=self.open_optical_solid_face_role_editor)
         action_menu.add_command(label="3D Place/Orient Selected CAD/STL Solid", command=self.open_optical_stl_placement_assistant)
+        action_menu.add_command(label="System Selection Calculator...", command=self.open_system_selection_calculator)
         action_menu.add_command(label="Paraxial Matrix Report", command=self.open_paraxial_matrix_report)
         action_menu.add_command(label="Gaussian Beam Report", command=self.open_gaussian_beam_report)
         action_menu.add_command(label="Branch Gaussian Q Report", command=self.open_branch_gaussian_q_report)
