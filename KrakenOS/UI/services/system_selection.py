@@ -240,15 +240,25 @@ def build_system_selection_form(parent, editor, *, compact: bool = False, prefil
     wl_var = tk.StringVar(value="0.55")  # bugs/0633: λ drives the lens performance targets
     out_var = tk.StringVar(value="")
 
+    def _reflowing_label(text=None, **kw):
+        """bugs/0636: a wrapped label that RE-WRAPS to its live width on resize (Tk keeps a
+        fixed wraplength otherwise, so the text never reflows when the window widens)."""
+        lbl = ttk.Label(parent, text=text, justify="left", wraplength=wrap, **kw)
+        margin = 4 if compact else 24
+
+        def _on_configure(event):
+            lbl.configure(wraplength=max(int(event.width) - margin, 80))
+
+        lbl.bind("<Configure>", _on_configure)
+        return lbl
+
     parent.columnconfigure(1, weight=1)
     row = 0
     if not compact:
-        ttk.Label(
-            parent,
-            text=("Enter the requirement — FOV, object-space resolution, and the minimum "
-                  "working distance — to size the matching camera and lens."),
-            wraplength=wrap, justify="left",
-        ).grid(row=row, column=0, columnspan=2, padx=12, pady=(12, 8), sticky="w")
+        _reflowing_label(
+            "Enter the requirement — FOV, object-space resolution, and the minimum "
+            "working distance — to size the matching camera and lens.",
+        ).grid(row=row, column=0, columnspan=2, padx=12, pady=(12, 8), sticky="ew")
         row += 1
 
     field_rows = [
@@ -266,21 +276,20 @@ def build_system_selection_form(parent, editor, *, compact: bool = False, prefil
             row=row, column=1, padx=(0, 12 if not compact else 0), pady=2, sticky="ew"
         )
         row += 1
-    ttk.Label(
-        parent,
-        text=("Sensor size is the candidate camera's — leave blank for the pixel count only."
-              if compact else
-              "Sensor size is the candidate camera's — it sets the magnification and lens. "
-              "Leave it blank for the pixel-count requirement only."),
-        foreground="#888888", wraplength=wrap, justify="left",
-    ).grid(row=row, column=0, columnspan=2, padx=(0 if compact else 12, 0), pady=(2, 6), sticky="w")
+    _reflowing_label(
+        ("Sensor size is the candidate camera's — leave blank for the pixel count only."
+         if compact else
+         "Sensor size is the candidate camera's — it sets the magnification and lens. "
+         "Leave it blank for the pixel-count requirement only."),
+        foreground="#888888",
+    ).grid(row=row, column=0, columnspan=2, padx=(0 if compact else 12, 0), pady=(2, 6), sticky="ew")
     row += 1
     ttk.Separator(parent, orient="horizontal").grid(
         row=row, column=0, columnspan=2, sticky="ew", padx=(0 if compact else 12, 0), pady=4
     )
     row += 1
-    ttk.Label(parent, textvariable=out_var, justify="left", wraplength=wrap).grid(
-        row=row, column=0, columnspan=2, padx=(0 if compact else 12, 0), pady=(4, 6), sticky="w"
+    _reflowing_label(textvariable=out_var).grid(
+        row=row, column=0, columnspan=2, padx=(0 if compact else 12, 0), pady=(4, 6), sticky="ew"
     )
     row += 1
 
@@ -420,8 +429,6 @@ def format_system_selection_lines(result: SystemSelection) -> list[str]:
         lines.append(line)
     if result.target_spot_diameter_um is not None:
         lines.append(
-            f"Target spot ≈ {_fmt(result.target_spot_diameter_um, 3)} µm "
-            "(2× the axis pixel pitch — the axis-Nyquist match, per H/V; a round spot "
-            "can't match the square grid on the diagonal)"
+            f"Target spot ≈ {_fmt(result.target_spot_diameter_um, 3)} µm (2× axis pixel pitch, per H/V)"
         )
     return lines

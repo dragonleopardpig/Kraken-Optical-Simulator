@@ -353,7 +353,10 @@ def open_catalog_matcher_dialog(editor):
     tree.tag_configure("fail", foreground="#888888")
 
     detail = ttk.Label(dialog, textvariable=status, wraplength=760, justify="left")
-    detail.grid(row=2, column=0, columnspan=2, sticky="w", padx=8, pady=(4, 8))
+    detail.grid(row=2, column=0, columnspan=2, sticky="ew", padx=8, pady=(4, 8))
+    detail.bind(  # bugs/0636: reflow the status text to the live width
+        "<Configure>", lambda e: detail.configure(wraplength=max(int(e.width) - 12, 120))
+    )
 
     results_state: dict[int, MatchResult] = {}
 
