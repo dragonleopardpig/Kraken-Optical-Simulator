@@ -140,6 +140,22 @@ def run_checks():
     else:
         notes.append("PASS: C: the right-click dispatch offers the optical-axis menu")
 
+    # ---------------------------------------------------------------- C2: axis is not a CAD context
+    # The highlighted-axis dead-end: _right_click_pick_context must report NO context for an
+    # optical-axis / highlight actor, so the dispatch reaches the axis menu instead of the
+    # (useless) CAD-face branch.
+    from KrakenOS.UI.open3d_inspector import Kraken3DInspector
+
+    pick_ctx = inspect.getsource(Kraken3DInspector._right_click_pick_context)
+    if "_optical_axis_highlight_actor" not in pick_ctx or "_actor_optical_axis_map" not in pick_ctx:
+        ok = False
+        notes.append(
+            "FAIL: C2 (bugs/0638): _right_click_pick_context does not skip an axis/highlight "
+            "actor -- a right-click on the highlighted axis dead-ends before the axis menu"
+        )
+    else:
+        notes.append("PASS: C2: an optical-axis / highlight actor is treated as no CAD context")
+
     # ---------------------------------------------------------------- D: screen-space proximity
     # A thin axis crossing a body: resolve by proximity to the polyline, not the picked actor.
     import numpy as np

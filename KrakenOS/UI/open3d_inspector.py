@@ -1778,6 +1778,20 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             cell_id = int(self._picker.GetCellId())
         except Exception:
             return None
+        # bugs/0638: an optical-axis line (or its selection HIGHLIGHT) is not a CAD/element
+        # context. Returning a context for it here short-circuits the right-click dispatch
+        # BEFORE the optical-axis menu, so a right-click on the just-highlighted axis spot
+        # dead-ended ("won't work"; moving off the highlight worked because the picker then
+        # missed the thin line). Report no context so _maybe_show_optical_axis_menu handles it.
+        try:
+            axis_map = getattr(self, "_actor_optical_axis_map", None) or {}
+            if actor is not None and (
+                actor is getattr(self, "_optical_axis_highlight_actor", None)
+                or (actor_key is not None and actor_key in axis_map)
+            ):
+                return None
+        except Exception:
+            pass
         vtk_step_label = self._actor_step_map.get(actor_key) if actor_key is not None else None
         vtk_step_label, _vtk_row = self._resolve_picked_step_overlay(
             vtk_step_label,
