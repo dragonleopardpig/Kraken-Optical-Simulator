@@ -152,7 +152,12 @@ def compute_system_selection(
                 wd = working_distance_for_focal_length(min_f, m)
             # Lens PERFORMANCE targets from the required pixel pitch (image-space).
             nyquist = nyquist_frequency_lp_per_mm(pitch)
-            target_spot = 2.0 * pitch  # geometric blur diameter ~2 px (Nyquist match)
+            # 2x the LINEAR (H/V) pixel pitch: the axis-Nyquist match (2 samples per
+            # resolved line pair). This is a frequency criterion referenced to the axis
+            # pitch, NOT a 2D circle tiled onto square pixels -- a round spot cannot match
+            # the square sampling lattice on the diagonal (the corners of the square
+            # passband go unused), so the axis pitch is the reference by convention.
+            target_spot = 2.0 * pitch
             if lam is not None:
                 fno_work = diffraction_limited_working_fnumber(pitch, lam)
                 # A lens is specced by its NOMINAL (infinity) f/#: working = (1+|m|)·nominal.
@@ -414,5 +419,9 @@ def format_system_selection_lines(result: SystemSelection) -> list[str]:
             line += f"  (nominal f/{_fmt(result.diffraction_nominal_fnumber_max, 3)})"
         lines.append(line)
     if result.target_spot_diameter_um is not None:
-        lines.append(f"Target lens spot: ≤ {_fmt(result.target_spot_diameter_um, 3)} µm dia (≈2 px)")
+        lines.append(
+            f"Target spot ≈ {_fmt(result.target_spot_diameter_um, 3)} µm "
+            "(2× the axis pixel pitch — the axis-Nyquist match, per H/V; a round spot "
+            "can't match the square grid on the diagonal)"
+        )
     return lines
