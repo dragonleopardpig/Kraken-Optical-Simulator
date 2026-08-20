@@ -462,6 +462,14 @@ class Open3DInteractionService:
             self.status_var.set("Center Surface->Optical Axis: click the dotted Optical Axis guide.")
             self.render()
             return
+        # bugs/0639: the guide is drawn DASHED, so only the dots are solid pickable geometry
+        # -- a plain click in a GAP missed the axis ("dots highlight, gaps don't"). When the
+        # click hit NOTHING else (actor_key is None), resolve the axis by proximity to the
+        # guide line (the helper the axis pick-modes already use), so the WHOLE line is
+        # selectable. Gated on an empty pick so a click on an element the axis crosses still
+        # selects the element, not the axis.
+        if axis_info is None and actor_key is None:
+            axis_info = self._optical_axis_info_near_display_xy((x, y), tolerance_px=12.0)
         if axis_info is not None:
             axis_id = str(axis_info.get("axis_id", "") or "").strip()
             axis_label = str(axis_info.get("axis_label", "Optical Axis") or "Optical Axis")
