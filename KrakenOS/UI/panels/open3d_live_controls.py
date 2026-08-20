@@ -88,28 +88,44 @@ class Open3DLiveControlsPanel:
             source, text="Scene Source Manager...", command=self.editor.open_scene_source_manager
         ).grid(row=0, column=0, sticky="ew")
 
-        field = ttk.LabelFrame(stack, text="Field", padding=8)
-        field.grid(row=1, column=0, sticky="ew", pady=(8, 0))
-        self.build_field_controls(field)
+        # bugs/0635 (user request): group the panel's calculators/solvers under big
+        # "Given … → solve for …" category headers so their role is legible at a glance.
+        import tkinter.font as _tkfont
 
-        trace = ttk.LabelFrame(stack, text="Trace / Display", padding=8)
-        trace.grid(row=2, column=0, sticky="ew", pady=(8, 0))
-        self.build_trace_controls(trace)
+        _base = _tkfont.nametofont("TkDefaultFont")
+        _hdr_font = (_base.cget("family"), _base.cget("size") + 1, "bold")
+        _row = [1]
 
-        quick = ttk.LabelFrame(stack, text="Quick Estimation (Object / Image / FOV)", padding=8)
-        quick.grid(row=3, column=0, sticky="ew", pady=(8, 0))
-        self.build_quick_estimation_controls(quick)
+        def _category(title: str, subtitle: str) -> None:
+            frame = ttk.Frame(stack)
+            frame.grid(row=_row[0], column=0, sticky="ew", pady=(14, 0))
+            frame.columnconfigure(0, weight=1)
+            ttk.Separator(frame, orient="horizontal").grid(row=0, column=0, sticky="ew", pady=(0, 3))
+            ttk.Label(frame, text=title, font=_hdr_font).grid(row=1, column=0, sticky="w")
+            ttk.Label(
+                frame, text=subtitle, foreground="#777777", wraplength=250, justify="left",
+            ).grid(row=2, column=0, sticky="w")
+            _row[0] += 1
 
-        solve = ttk.LabelFrame(stack, text="Solve (Variable thickness)", padding=8)
-        solve.grid(row=4, column=0, sticky="ew", pady=(8, 0))
-        self.build_solve_controls(solve)
+        def _section(title: str, builder) -> ttk.LabelFrame:
+            lf = ttk.LabelFrame(stack, text=title, padding=8)
+            lf.grid(row=_row[0], column=0, sticky="ew", pady=(6, 0))
+            lf.columnconfigure(0, weight=1)
+            builder(lf)
+            _row[0] += 1
+            return lf
 
-        # bugs/0632 (user request): the System Selection calculator, embedded in the left
-        # panel too (not only Actions → dialog). Same shared first-order form (bugs/0631).
-        selection = ttk.LabelFrame(stack, text="System Selection", padding=8)
-        selection.grid(row=5, column=0, sticky="ew", pady=(8, 0))
-        selection.columnconfigure(0, weight=1)
-        self.build_system_selection_controls(selection)
+        _category("Set up", "The field to image and how the scene is drawn.")
+        _section("Field", self.build_field_controls)
+        _section("Trace / Display", self.build_trace_controls)
+
+        _category("Solve the current system", "Given the loaded optics → object / image / FOV, or a thickness.")
+        _section("Object / Image / FOV (Quick Estimation)", self.build_quick_estimation_controls)
+        _section("Variable thickness", self.build_solve_controls)
+
+        _category("Size a new system", "Given FOV + resolution + working distance → the camera + lens to buy.")
+        # bugs/0632: the System Selection calculator, embedded in the left panel too.
+        _section("Camera + lens (System Selection)", self.build_system_selection_controls)
         # Measure moved to the top Scene toolbar (open3d_top_controls) -- no longer a Left-Panel
         # LabelFrame. build_measure_controls is kept for any external caller / test.
 
