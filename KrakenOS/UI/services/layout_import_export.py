@@ -291,6 +291,7 @@ class LayoutImportExportMixin:
         self.machine_vision_var.set("Machine Vision Lens")
         self.example_var.set("Examples")
         self._commit_history_capture()
+        self._update_window_title()  # bugs/0637
         self.refresh_plot(suppress_analysis=True)
         source_label = "example" if source == "example" else "file"
         total_records = sum(int(spec.get("record_count", 0) or 0) for spec in source_specs)
@@ -359,6 +360,7 @@ class LayoutImportExportMixin:
         self.machine_vision_var.set("Machine Vision Lens")
         self.example_var.set("Examples")
         self._commit_history_capture()
+        self._update_window_title()  # bugs/0637
         self.refresh_plot(suppress_analysis=True)
         source_label = "example" if source == "example" else "file"
         self.status_var.set(
@@ -597,6 +599,7 @@ class LayoutImportExportMixin:
         self.refresh_plot(suppress_analysis=True)
         self._mark_saved_state()
         self.status_var.set(f"Opened {Path(path).name}. Click Update to run analysis.")
+        self._update_window_title()  # bugs/0637
 
     def _portable_cache_path(self, path_text: str) -> str:
         """Return ``path_text`` relative to the project root when it lives
@@ -712,6 +715,7 @@ class LayoutImportExportMixin:
         if self.current_layout_file is None or getattr(self, "_layout_is_unsaved_import", False):
             return self.save_layout_as()
         self._write_layout_file(self.current_layout_file)
+        self._update_window_title()  # bugs/0637
         return True
 
     def save_layout_as(self) -> bool:
@@ -734,6 +738,7 @@ class LayoutImportExportMixin:
         self._layout_is_unsaved_import = False
         self._write_layout_file(self.current_layout_file)
         self.load_layouts()
+        self._update_window_title()  # bugs/0637
         return True
 
     def export_3d_step(self) -> None:

@@ -468,12 +468,33 @@ class LayoutTableWorkbenchMixin:
         self.example_var.set("Examples")
         self._apply_initial_layout_view_defaults("Reset")
 
+    def _update_window_title(self) -> None:
+        """bugs/0637: surface the loaded layout file in the window title -- there was no
+        indication ANYWHERE of which .py file is loaded. Base title when nothing is
+        loaded; a "(unsaved import)" tag for a transient import (bugs/0375)."""
+        from pathlib import Path
+
+        base = "KrakenOS Layout Editor"
+        try:
+            path = getattr(self, "current_layout_file", None)
+            if path is None:
+                self.title(base)
+                return
+            name = Path(str(path)).name
+            if getattr(self, "_layout_is_unsaved_import", False):
+                self.title(f"{base} — {name} (unsaved import)")
+            else:
+                self.title(f"{base} — {name}")
+        except Exception:
+            pass
+
     def reset_layout(self) -> None:
         """Fast UI reset: clear prescription and preview without ray tracing."""
         self._begin_history_capture()
         self._load_reset_system()
         self._commit_history_capture()
         self._clear_preview_after_reset()
+        self._update_window_title()
 
     def load_layout_by_name(self, name: str, *, refresh: bool = True) -> None:
         path = self.layout_files.get(name)
@@ -603,6 +624,7 @@ class LayoutTableWorkbenchMixin:
         self.example_var.set("Examples")
         action = "Appended" if append_to_existing else "Loaded"
         self.status_var.set(f"{action} {name}. Click Update to run analysis.")
+        self._update_window_title()  # bugs/0637
 
     @staticmethod
     def _is_insertable_common_layout(name: str, _loaded_rows: list[SurfaceRow], info: dict[str, object]) -> bool:
