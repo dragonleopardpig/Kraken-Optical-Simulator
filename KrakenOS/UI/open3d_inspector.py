@@ -21977,9 +21977,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         ttk.Label(dialog, text="Height (mm):").grid(
             row=2, column=0, padx=(12, 4), pady=(0, 10), sticky="e"
         )
-        ttk.Entry(dialog, textvariable=height_var, width=12).grid(
-            row=2, column=1, padx=(0, 12), pady=(0, 10), sticky="ew"
-        )
+        height_entry = ttk.Entry(dialog, textvariable=height_var, width=12)
+        height_entry.grid(row=2, column=1, padx=(0, 12), pady=(0, 10), sticky="ew")
         ttk.Label(
             dialog,
             text="Fill just one box — the other is derived from the sensor aspect.",
@@ -21987,6 +21986,101 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             wraplength=320,
             justify="left",
         ).grid(row=3, column=0, columnspan=2, padx=12, pady=(0, 8), sticky="w")
+
+        # bugs/0630 (user request): drive the SAME thickness solve from the HUD's System
+        # Magnification (m = sensor/FOV) or System Resolution (um/px) instead of typing the
+        # object FOV. Ticking one converts its target to the object field it implies
+        # (QuickEstimationService.object_fov_for_*), which fills Width/Height and runs the
+        # solve -- so the delivered field lands at exactly that magnification / resolution.
+        # Each needs the camera datum the HUD uses (sensor size / pixel count); its row is
+        # disabled with a hint when that datum is absent. Unticked, the dialog is unchanged.
+        _sensor_wh = qe.sensor_active_dimensions()
+        _pixel_count = qe._camera_pixel_count()
+        _mag0 = (float(_sensor_wh[0]) / w0) if (_sensor_wh and w0) else None
+        _res0 = (w0 * 1000.0 / _pixel_count[0]) if (_pixel_count and w0) else None
+        use_mag_var = tk.BooleanVar(value=False)
+        use_res_var = tk.BooleanVar(value=False)
+        mag_var = tk.StringVar(value=(f"{_mag0:.4g}" if _mag0 else ""))
+        res_var = tk.StringVar(value=(f"{_res0:.4g}" if _res0 else ""))
+        mag_cb = ttk.Checkbutton(dialog, text="Set Magnification (sensor/FOV):", variable=use_mag_var)
+        res_cb = ttk.Checkbutton(dialog, text="Set Resolution (µm/px):", variable=use_res_var)
+        mag_entry = ttk.Entry(dialog, textvariable=mag_var, width=12)
+        res_entry = ttk.Entry(dialog, textvariable=res_var, width=12)
+        mag_cb.grid(row=4, column=0, sticky="w", padx=(12, 4), pady=(0, 2))
+        mag_entry.grid(row=4, column=1, sticky="ew", padx=(0, 12), pady=(0, 2))
+        res_cb.grid(row=5, column=0, sticky="w", padx=(12, 4), pady=(0, 2))
+        res_entry.grid(row=5, column=1, sticky="ew", padx=(0, 12), pady=(0, 2))
+        _mag_ok = _sensor_wh is not None
+        _res_ok = _pixel_count is not None
+        _mode_hint = ttk.Label(
+            dialog,
+            text=(
+                "Tick one to solve the thickness for that target instead of the FOV; "
+                "Width/Height are then derived."
+                + ("" if _mag_ok else "  (Magnification needs a sensor size.)")
+                + ("" if _res_ok else "  (Resolution needs a registered camera's pixel count.)")
+            ),
+            foreground="#888888",
+            wraplength=320,
+            justify="left",
+        )
+        _mode_hint.grid(row=6, column=0, columnspan=2, padx=12, pady=(0, 8), sticky="w")
+
+        def _sync_modes(*_a):
+            mag_on, res_on = use_mag_var.get(), use_res_var.get()
+            try:
+                # Mutually exclusive: ticking one unticks + grays the other.
+                if mag_on and res_on:
+                    (use_res_var if _a and _a[0] == "mag" else use_mag_var).set(False)
+                    mag_on, res_on = use_mag_var.get(), use_res_var.get()
+                mode_on = mag_on or res_on
+                mag_cb.configure(state=("disabled" if (res_on or not _mag_ok) else "normal"))
+                res_cb.configure(state=("disabled" if (mag_on or not _res_ok) else "normal"))
+                mag_entry.configure(state=("normal" if mag_on else "disabled"))
+                res_entry.configure(state=("normal" if res_on else "disabled"))
+                # A target mode derives BOTH object dims, so gray the FOV boxes.
+                entry.configure(state=("disabled" if mode_on else "normal"))
+                height_entry.configure(state=("disabled" if mode_on else "normal"))
+            except Exception:
+                pass
+
+        mag_cb.configure(command=lambda: _sync_modes("mag"))
+        res_cb.configure(command=lambda: _sync_modes("res"))
+        if not _mag_ok:
+            mag_entry.configure(state="disabled")
+            mag_cb.configure(state="disabled")
+        if not _res_ok:
+            res_entry.configure(state="disabled")
+            res_cb.configure(state="disabled")
+        _sync_modes()
+
+        def _mode_target_wh():
+            """(w, h) mm from the active target mode, ('error', msg), or None (no mode)."""
+            if use_mag_var.get():
+                raw = (mag_var.get() or "").strip()
+                if not raw:
+                    return ("error", "Enter a magnification, or untick it.")
+                try:
+                    m = float(raw)
+                except (TypeError, ValueError):
+                    return ("error", "Magnification must be a number.")
+                if not (m > 0):
+                    return ("error", "Magnification must be positive.")
+                wh = qe.object_fov_for_magnification(m)
+                return wh if wh is not None else ("error", "No sensor size available to set magnification.")
+            if use_res_var.get():
+                raw = (res_var.get() or "").strip()
+                if not raw:
+                    return ("error", "Enter a resolution (µm/px), or untick it.")
+                try:
+                    r = float(raw)
+                except (TypeError, ValueError):
+                    return ("error", "Resolution must be a number.")
+                if not (r > 0):
+                    return ("error", "Resolution must be positive.")
+                wh = qe.object_fov_for_resolution(r)
+                return wh if wh is not None else ("error", "No camera pixel count available to set resolution.")
+            return None
 
         # bugs/0237 → 0242 → 0247: on a FOLDED scene each conjugate is bent by an RA fold mirror,
         # so the user may PIN one leg of a fold as part of the SAME solve. A conjugate's two legs
@@ -22116,7 +22210,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
         segment_getter = lambda: None
         image_segment_getter = lambda: None
-        next_row = 4
+        next_row = 7  # bugs/0630: rows 4-6 are the magnification/resolution target modes
         try:
             _obj_split = self.editor._folded_object_conjugate_split()
         except Exception:
@@ -22158,17 +22252,27 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return True, val
 
         def run(mode):
-            ok_w, width = _read_dim(width_var, "Width")
-            if not ok_w:
+            # bugs/0630: a ticked target mode (magnification / resolution) derives BOTH
+            # object dims and supersedes the Width/Height boxes; both Solve buttons then
+            # act on that derived field.
+            mode_wh = _mode_target_wh()
+            if isinstance(mode_wh, tuple) and mode_wh and mode_wh[0] == "error":
+                self.status_var.set(str(mode_wh[1]))
                 return
-            ok_h, height = _read_dim(height_var, "Height")
-            if not ok_h:
-                return
-            if width is None and height is None:
-                self.status_var.set(
-                    "Enter a Width or a Height — the other is derived from the sensor aspect."
-                )
-                return
+            if mode_wh is not None:
+                width, height = float(mode_wh[0]), float(mode_wh[1])
+            else:
+                ok_w, width = _read_dim(width_var, "Width")
+                if not ok_w:
+                    return
+                ok_h, height = _read_dim(height_var, "Height")
+                if not ok_h:
+                    return
+                if width is None and height is None:
+                    self.status_var.set(
+                        "Enter a Width or a Height — the other is derived from the sensor aspect."
+                    )
+                    return
             seg = segment_getter()
             if seg is not None and seg[0] == "error":
                 self.status_var.set(seg[1])
