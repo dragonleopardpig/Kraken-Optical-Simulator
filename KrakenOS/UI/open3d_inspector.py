@@ -11983,6 +11983,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 continue
             rd = reflect_dir / rd_norm
             reach = float(np.max((corners - fp) @ rd))
+            # bugs/0641: a coaxial BS reflects the imaging axis toward the (nearby) LED, and
+            # NOTHING is placed on that reflect arm, so the raw scene-extent reach clamps the
+            # guide to the bounding-box edge -- ~78 mm here, invisible beside the ~1650 mm main
+            # axis ("No 2nd optical axis created"). Give it a MINIMUM length tied to the scene's
+            # largest dimension so an assigned-BS reflect axis reads as a real optical axis,
+            # exactly as axis:global keeps running past the last optic. Reflect direction only
+            # (the beam goes one way); the fold point stays the anchor.
+            try:
+                bounds_span = np.asarray(bounds_arr[1::2], dtype=float) - np.asarray(bounds_arr[0::2], dtype=float)
+                min_reach = 0.6 * float(np.max(bounds_span))
+            except Exception:
+                min_reach = 0.0
+            reach = max(reach, min_reach)
             if not (reach > 1e-6):
                 continue
             far = fp + rd * reach
