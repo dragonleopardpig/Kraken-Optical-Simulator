@@ -417,8 +417,35 @@ def _solid_has_full_mirror_interaction_face(world_faces: list[dict[str, object]]
     return _optical_solid_face_function(face) == "Mirror"
 
 
+def beam_splitter_interaction_face(world_faces: list[dict[str, object]]) -> dict[str, object] | None:
+    """bugs/0640: the interaction-surface face EXPLICITLY assigned function "Beam Splitter",
+    or None. Found DIRECTLY (the highest-priority / largest BS face) rather than via
+    ``select_optical_solid_interaction_face`` -- that picks the single top-priority
+    interaction face of ANY function, so a co-present Transmit/Port face (priority 2.0)
+    shadowed an assigned Beam-Splitter coating (priority 1.0) and the user's BS went
+    unrecognised (a coating flagged interior_duplicate/recovered ranks below a plain output
+    face). The user's explicit assignment is authoritative, so match the function first.
+    """
+    candidates = [
+        face
+        for face in list(world_faces or [])
+        if isinstance(face, dict)
+        and optical_solid_face_port_role(face) == OPTICAL_SOLID_FACE_PORT_INTERACTION
+        and _optical_solid_face_function(face) == "Beam Splitter"
+    ]
+    if not candidates:
+        return None
+    return max(
+        candidates,
+        key=lambda face: (
+            float(_interaction_face_priority(face)),
+            float(face.get("area_mm2", 0.0) or 0.0),
+        ),
+    )
+
+
 def _solid_has_beam_splitter_interaction_face(world_faces: list[dict[str, object]]) -> bool:
-    """True when the solid's primary interaction face is a Beam Splitter.
+    """True when the solid has an EXPLICITLY-assigned Beam-Splitter interaction face.
 
     A beam splitter's PRIMARY (imaging) path is a straight-through TRANSMIT -- it
     peels a SECOND branch off by reflection, handled separately (branch detectors /
@@ -431,11 +458,12 @@ def _solid_has_beam_splitter_interaction_face(world_faces: list[dict[str, object
     (bugs/0396: "when I add a BS, the camera responds to it"). This predicate lets
     the follower builder recognise the plate as the same straight-through transmit
     the cube gets, so the camera does not respond to the BS at all.
+
+    bugs/0640: match the Beam-Splitter face DIRECTLY (``beam_splitter_interaction_face``)
+    so an assigned coating is honoured even when a Transmit/Port interaction face out-ranks
+    it in the generic top-priority selection.
     """
-    face = select_optical_solid_interaction_face(world_faces)
-    if face is None:
-        return False
-    return _optical_solid_face_function(face) == "Beam Splitter"
+    return beam_splitter_interaction_face(world_faces) is not None
 
 
 def _row_is_marked_beam_splitter(row) -> bool:
@@ -1511,9 +1539,15 @@ def beam_splitter_coating_world_frames(rows) -> list[tuple[np.ndarray, np.ndarra
             )
         except Exception:
             continue
-        if not (_row_is_marked_beam_splitter(current) or _solid_has_beam_splitter_interaction_face(world_faces)):
-            continue
-        face = select_optical_solid_interaction_face(world_faces)
+        # bugs/0640: prefer the EXPLICITLY-assigned Beam-Splitter coating for the reflect
+        # geometry. Only when a solid is MARKED a BS but exposes no such face (a plate whose
+        # LED-matching rotation baked the coating normal off the geometric test) do we fall
+        # back to the top-priority interaction face -- the plate itself.
+        face = beam_splitter_interaction_face(world_faces)
+        if face is None:
+            if not _row_is_marked_beam_splitter(current):
+                continue
+            face = select_optical_solid_interaction_face(world_faces)
         if face is None:
             continue
         point = np.asarray(face.get("centroid_world", (0.0, 0.0, 0.0)), dtype=float).reshape(3)

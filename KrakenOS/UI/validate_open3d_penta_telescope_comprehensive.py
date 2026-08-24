@@ -15707,6 +15707,10 @@ phase_478_axis_gap_select = _phase_from_standalone(
     478, "the whole dashed optical axis is selectable, not just the dots (0639)",
     "KrakenOS.UI.validate_open3d_0639_axis_gap_select",
     "axis_gap_select")
+phase_479_beam_splitter_face_honored = _phase_from_standalone(
+    479, "an explicitly-assigned Beam-Splitter face is honored over a Transmit face (0640)",
+    "KrakenOS.UI.validate_open3d_0640_beam_splitter_face_honored",
+    "beam_splitter_face_honored")
 phase_461_swap_prompts_for_fov = _phase_from_standalone(
     461, "an interactive swap ASKS for the FOV you want (prefilled with the delivered field) (0609)",
     "KrakenOS.UI.validate_open3d_0609_swap_prompts_for_fov",
@@ -16248,6 +16252,7 @@ def main() -> int:
             phase_476_window_title,
             phase_477_optical_axis_menu,
             phase_478_axis_gap_select,
+            phase_479_beam_splitter_face_honored,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
