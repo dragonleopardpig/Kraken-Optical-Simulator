@@ -11942,9 +11942,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         extent, like the mirror fold guide. Display only -- follower placement still skips the BS
         (bugs/0396-0399)."""
         try:
-            from KrakenOS.UI.nonseq_output_ports import beam_splitter_coating_world_frames
+            from KrakenOS.UI.nonseq_output_ports import beam_splitter_coating_world_records
 
-            coatings = beam_splitter_coating_world_frames(self.editor.rows)
+            # bugs/0643: the extent-carrying records -- the fold point is bounded to the REAL
+            # coating face below, not its infinite plane.
+            coating_records = beam_splitter_coating_world_records(self.editor.rows)
+            coatings = [(record["centroid"], record["normal"]) for record in coating_records]
         except Exception:
             return []
         if not coatings:
@@ -11977,6 +11980,32 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             # fold point = where the incoming line (origin + s*in_dir) crosses the coating plane
             s = float(np.dot(point - origin, n)) / denom
             fp = origin + in_dir * s
+            # bugs/0643 (flag_20260824_144559, user's "illuminator-only" call): the crossing above
+            # is with the coating's INFINITE plane. Slide the BS off the imaging beam and that
+            # crossing still exists -- far from the cube -- so a stale-looking second axis hung at
+            # the old spot while the hardware moved away ("the optical axis is not moving").
+            # Physically there is no reflection unless the beam lands ON the coating: bound the
+            # fold point to the face's in-plane half-extent and emit nothing when it misses.
+            # The coating is a RECTANGLE, and a lateral slide walks the crossing along ONE of its
+            # in-plane axes -- so test the offset per axis (u, v) against the face half-extent,
+            # not against a circle. (Measured on machine_vision_150mm_standoff_145mm: at rest the
+            # crossing sits 1.8 mm from the coating centroid; after a +40 mm lateral station drag
+            # it is 58.4 mm along the face's u axis -- well past the 38.95 mm half-width, i.e. off
+            # the glass, so no reflect axis is emitted.)
+            record = coating_records[i] if i < len(coating_records) else {}
+            extent = float(record.get("extent_mm", 0.0) or 0.0)
+            if extent > 0.0:
+                offset = np.asarray(fp, dtype=float).reshape(3) - point
+                u_axis = np.asarray(record.get("u_axis", (0.0, 0.0, 0.0)), dtype=float).reshape(3)
+                v_axis = np.asarray(record.get("v_axis", (0.0, 0.0, 0.0)), dtype=float).reshape(3)
+                if float(np.linalg.norm(u_axis)) > 1e-9 and float(np.linalg.norm(v_axis)) > 1e-9:
+                    du = abs(float(np.dot(offset, u_axis / np.linalg.norm(u_axis))))
+                    dv = abs(float(np.dot(offset, v_axis / np.linalg.norm(v_axis))))
+                    off_the_face = du > extent or dv > extent
+                else:  # no usable in-plane basis -- fall back to a radial bound
+                    off_the_face = float(np.linalg.norm(offset)) > extent
+                if off_the_face:
+                    continue
             reflect_dir = in_dir - 2.0 * float(np.dot(in_dir, n)) * n
             rd_norm = float(np.linalg.norm(reflect_dir))
             if rd_norm < 1e-9 or not (np.all(np.isfinite(fp)) and np.all(np.isfinite(reflect_dir))):

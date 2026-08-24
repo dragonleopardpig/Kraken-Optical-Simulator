@@ -87,8 +87,11 @@ def _check_no_bs(failures, notes):
 def _check_mechanism(failures, notes):
     from KrakenOS.UI.open3d_inspector import Kraken3DInspector
     guide = inspect.getsource(Kraken3DInspector._bs_reflect_axis_guide_records)
-    if "beam_splitter_coating_world_frames" not in guide or "axis:global:split" not in guide:
-        failures.append("MECHANISM: _bs_reflect_axis_guide_records must use beam_splitter_coating_world_frames + emit axis:global:split")
+    # bugs/0643: the drawer now takes the EXTENT-carrying source (beam_splitter_coating_world_records,
+    # which beam_splitter_coating_world_frames wraps) so it can bound the fold point to the real
+    # coating face. Either name satisfies the contract: coating geometry from nonseq_output_ports.
+    if ("beam_splitter_coating_world_records" not in guide and "beam_splitter_coating_world_frames" not in guide) or "axis:global:split" not in guide:
+        failures.append("MECHANISM: _bs_reflect_axis_guide_records must use the BS coating world geometry + emit axis:global:split")
     if "_incoming_axis_leg_for_point" not in guide:
         failures.append("MECHANISM: _bs_reflect_axis_guide_records must derive the incoming from the nearest axis leg")
     assembler = inspect.getsource(Kraken3DInspector._optical_axis_records_for_3d)

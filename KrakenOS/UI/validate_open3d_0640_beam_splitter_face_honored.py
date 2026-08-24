@@ -30,7 +30,7 @@ def run_checks():
     ok = True
 
     from KrakenOS.UI.nonseq_output_ports import (
-        beam_splitter_coating_world_frames,
+        beam_splitter_coating_world_records,
         beam_splitter_interaction_face,
         select_optical_solid_interaction_face,
         _solid_has_beam_splitter_interaction_face,
@@ -76,7 +76,9 @@ def run_checks():
         notes.append("PASS: C: the generic selector still picks Transmit (the shadowing the fix bypasses)")
 
     # ---------------------------------------------------------------- D: contract
-    src = inspect.getsource(beam_splitter_coating_world_frames)
+    # bugs/0643: the row walk (and so the face choice) moved into the extent-carrying
+    # beam_splitter_coating_world_records; the 2-tuple frames API is now a thin wrapper.
+    src = inspect.getsource(beam_splitter_coating_world_records)
     if "beam_splitter_interaction_face(" not in src:
         ok = False
         notes.append("FAIL: D (bugs/0640): the coating builder no longer uses beam_splitter_interaction_face")

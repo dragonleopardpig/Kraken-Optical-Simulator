@@ -1513,21 +1513,47 @@ def _exit_frame_is_non_folding(
     return float(np.dot(forward, incoming)) >= 1.0 - float(direction_tol)
 
 
-def beam_splitter_coating_world_frames(rows) -> list[tuple[np.ndarray, np.ndarray]]:
-    """bugs/0428 (Phase 1): each promoted BEAM SPLITTER's coating interaction face as (centroid, normal)
-    in world coords -- the geometry needed to draw its REFLECT-branch axis (the "2nd optical axis"; the
-    transmit leg is axis:global). The follower builder skips a BS as a fold source (it must NOT re-aim
-    the camera, bugs/0396-0399); this is DISPLAY-ONLY geometry.
+def _beam_splitter_coating_face_extent_mm(face: dict[str, object]) -> float:
+    """bugs/0643: an in-plane HALF-EXTENT (mm) for a coating face, so a caller can ask whether
+    the incoming axis actually lands ON the coating instead of on its infinite plane.
 
-    The CALLER supplies the incoming axis (the leg the BS sits on -- which may be folded by an upstream
-    mirror) and reflects the incoming off this coating; here we only expose the world coating plane.
-    Returns ``[]`` when there is no promoted BS.
+    Prefers an explicit ``clear_aperture_mm`` (radius = half of it); else treats the face as a
+    square of the same area (``sqrt(area)/2``) -- the same characteristic-extent convention
+    optical_solid_metadata already uses for planarity tolerances. Measured on the 55x78 BS cube
+    whose 45 deg coating is 78 x 77.8 mm: sqrt(6067)/2 = 38.95 vs the true 39.0/38.9 half-widths.
+    Returns 0.0 when the face states no size (callers then skip the bound rather than guess).
+    """
+    try:
+        clear_aperture = float(face.get("clear_aperture_mm", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        clear_aperture = 0.0
+    if clear_aperture > 0.0:
+        return 0.5 * clear_aperture
+    try:
+        area = float(face.get("area_mm2", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        area = 0.0
+    if area > 0.0:
+        return 0.5 * float(np.sqrt(area))
+    return 0.0
+
+
+def beam_splitter_coating_world_records(rows) -> list[dict[str, object]]:
+    """bugs/0643: each promoted BEAM SPLITTER's coating as ``{centroid, normal, extent_mm,
+    row_index}`` in world coords -- the extent-carrying source that
+    :func:`beam_splitter_coating_world_frames` (the long-standing 2-tuple API) wraps.
+
+    ``extent_mm`` is the face's in-plane half-extent, which lets the reflect-axis drawer bound
+    the fold point to the REAL coating instead of its infinite plane: slide the BS off the
+    imaging beam and there is no reflection at all, so no second axis should be drawn
+    (flag_20260824_144559 -- the guide used to hang at the old crossing where the cube no
+    longer is).
     """
     prepared = [_row_like(row) for row in list(rows or [])]
     if not prepared:
         return []
     z_positions = row_z_positions(prepared)
-    coatings: list[tuple[np.ndarray, np.ndarray]] = []
+    coatings: list[dict[str, object]] = []
     for row_index, current in enumerate(prepared):
         if not _row_has_optical_solid(current):
             continue
@@ -1555,8 +1581,41 @@ def beam_splitter_coating_world_frames(rows) -> list[tuple[np.ndarray, np.ndarra
         norm = float(np.linalg.norm(raw_normal))
         if norm < 1e-9 or not (np.all(np.isfinite(point)) and np.all(np.isfinite(raw_normal))):
             continue
-        coatings.append((point, raw_normal / norm))
+        u_axis = np.asarray(face.get("u_axis_world", (1.0, 0.0, 0.0)), dtype=float).reshape(3)
+        v_axis = np.asarray(face.get("v_axis_world", (0.0, 1.0, 0.0)), dtype=float).reshape(3)
+        coatings.append(
+            {
+                "centroid": point,
+                "normal": raw_normal / norm,
+                "extent_mm": float(_beam_splitter_coating_face_extent_mm(face)),
+                # bugs/0643: the face's own in-plane axes, so a caller can ask "is the crossing
+                # inside the RECTANGLE" rather than inside a circle -- the coating is a rectangle
+                # and a lateral slide walks the crossing along ONE of these axes.
+                "u_axis": u_axis,
+                "v_axis": v_axis,
+                "row_index": int(row_index),
+            }
+        )
     return coatings
+
+
+def beam_splitter_coating_world_frames(rows) -> list[tuple[np.ndarray, np.ndarray]]:
+    """bugs/0428 (Phase 1): each promoted BEAM SPLITTER's coating interaction face as (centroid, normal)
+    in world coords -- the geometry needed to draw its REFLECT-branch axis (the "2nd optical axis"; the
+    transmit leg is axis:global). The follower builder skips a BS as a fold source (it must NOT re-aim
+    the camera, bugs/0396-0399); this is DISPLAY-ONLY geometry.
+
+    The CALLER supplies the incoming axis (the leg the BS sits on -- which may be folded by an upstream
+    mirror) and reflects the incoming off this coating; here we only expose the world coating plane.
+    Returns ``[]`` when there is no promoted BS.
+
+    bugs/0643: a thin wrapper over :func:`beam_splitter_coating_world_records`, which also carries the
+    coating's in-plane extent. This 2-tuple API is unchanged for its existing callers.
+    """
+    return [
+        (record["centroid"], record["normal"])
+        for record in beam_splitter_coating_world_records(rows)
+    ]
 
 
 #: bugs/0485 stage 1 -- the two ways an element can act on the optical axis.

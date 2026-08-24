@@ -1,4 +1,4 @@
-# 0642 — TRIAGE (OPEN): the glued illuminator station moves, the optical axes do not
+# 0642 — TRIAGE (RESOLVED by bugs/0643): the glued illuminator station moves, the optical axes do not
 
 flag_20260824_144559 (build ccb9344b): *"the glued illuminator source + BS Cube + LED moved
 together, the optical axis is not moving."* Scene machine_vision_150mm_standoff_145mm.py.
@@ -69,3 +69,10 @@ What should dragging the glued coaxial illuminator (LED + BS + source) SIDEWAYS 
 The saved scene persists `show_rays = False`, so a plain load reports 0 ray paths and an empty
 census (the flag's state.json shows exactly this). That is a view preference, NOT a broken
 trace — any probe must toggle `show_rays_var` before reading a census on this scene.
+
+## Resolution
+
+The user chose **illuminator-only** semantics: placement stays as-is (this triage's reverted
+station-plan patch is NOT re-applied) and the reflect axis was made honest instead — see
+bugs/0643_reflect_axis_bounded_to_face.md. The follow-up requirement ("elements snapped to
+the 2nd axis follow it") was measured to hold already via the bugs/0485/0488 fold carry.
