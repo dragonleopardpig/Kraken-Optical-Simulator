@@ -5554,7 +5554,21 @@ class ScenePlacementMixin:
             f"d=({float(delta[0]):.6g}, {float(delta[1]):.6g}, {float(delta[2]):.6g}) mm; "
             f"offset=({float(next_offset[0]):.6g}, {float(next_offset[1]):.6g}, {float(next_offset[2]):.6g}) mm."
         )
-        if refresh:
+        # bugs/0644 (flag_20260824_164820 "the 2nd optical axis stays after the BS+LED+illuminator
+        # shifted"): `refresh` is the caller's RETRACE appetite -- the gizmo release passes
+        # `physics_requested`, which is False with Live Mode/physics off. But the optical AXES are
+        # DISPLAY geometry derived from the model, so skipping the rebuild left them at the
+        # pre-drag pose while the bodies had already been carried live by
+        # `_translate_step_overlay_actors`. Measured on the flagged scene: the promoted BS row
+        # moved +101 mm in z (row actor bounds 146.7..202.6 -> 247.7..303.6) while
+        # axis:global:split stayed byte-identical at z=173.35 -- the user's "seems the algorithm
+        # separates the BS from optical axis generation".
+        #
+        # A COMMIT (record_history=True) therefore always re-derives the display; the per-frame
+        # drag calls (record_history=False) still skip it, so dragging stays smooth. The rebuild
+        # forces no retrace of its own (`_refresh_open_3d_views` passes force_retrace=False), so a
+        # physics-off drag pays only for the actor/axis rebuild it already needed.
+        if refresh or record_history:
             self._refresh_open_3d_views(step_label=label)
 
     def toggle_imported_lens_step_direction(self) -> bool:
