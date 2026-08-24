@@ -74,6 +74,24 @@ def folded_m_correction(editor) -> float:
     raw helper `_current_finite_paraxial_magnification` must STAY raw -- the solve's
     booking math and QuickEstimationService.current_state() apply this factor themselves,
     and correcting at the source would double it."""
+    if getattr(editor, "_folded_m_relearn_pending", False) and not getattr(
+        editor, "_preview_trace_deferred_until_requested", False
+    ):
+        # bugs/0646: consume the load's DEFERRED bugs/0625 re-measure now -- the first
+        # reader is by definition ahead of any trace or readout that would otherwise use
+        # the raw first order (loads used to run this eagerly at 6.5 s inside the load).
+        # While the FAST-LOAD state is still set (the load's own geometry-only refresh
+        # reads this for its labels), keep returning the raw 1.0 -- the first REAL trace
+        # request clears that state and the next read here re-measures.
+        # Clear the marker BEFORE running: the re-measure itself traces, and its launch
+        # sampling reads this very function (re-entrancy).
+        editor._folded_m_relearn_pending = False
+        try:
+            note = editor._relearn_folded_m_correction_after_swap()
+            if note:
+                editor.append_debug("Deferred loaded-scene re-measure:" + note)
+        except Exception:
+            pass
     record = getattr(editor, "_folded_m_correction_state", None)
     try:
         value = float(record) if record is not None else 1.0
@@ -2674,6 +2692,10 @@ class QuickEstimationService:
         object/thickness solve to ONE arm (``branch_fov_solve``) -- that arm's sensor
         sees the field, every other arm is re-focused at the shared new object gap.
         """
+        # bugs/0646: a solve is a REAL physics request -- end the fast-load state so the
+        # first correction read below re-measures the deferred bugs/0625 state instead of
+        # booking the raw first order (a solve straight after a fast load, no trace yet).
+        self.editor._preview_trace_deferred_until_requested = False
         if plane == "object":
             wh = self._sensor_wh(width, height, aspect)
             if wh is None:

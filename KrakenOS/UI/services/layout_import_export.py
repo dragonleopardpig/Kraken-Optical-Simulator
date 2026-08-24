@@ -292,7 +292,7 @@ class LayoutImportExportMixin:
         self.example_var.set("Examples")
         self._commit_history_capture()
         self._update_window_title()  # bugs/0637
-        self.refresh_plot(suppress_analysis=True)
+        self.refresh_plot(suppress_analysis=True, defer_trace=True)  # bugs/0646: fast load
         source_label = "example" if source == "example" else "file"
         total_records = sum(int(spec.get("record_count", 0) or 0) for spec in source_specs)
         self.status_var.set(
@@ -338,14 +338,9 @@ class LayoutImportExportMixin:
         self._folded_field_center_state = None
         self._apply_layout_settings(info.get("settings", {}))
         self._normalize_special_rows()
-        # bugs/0625: re-measure the cleared machine state for the scene just loaded (the
-        # bugs/0608 doctrine extended to loaders); sequential scenes no-op cheaply.
-        try:
-            note = self._relearn_folded_m_correction_after_swap()
-            if note:
-                self.append_debug("Loaded-scene re-measure:" + note)
-        except Exception:
-            pass
+        # bugs/0625 re-measure, DEFERRED to the first trace/readout (bugs/0646: the eager
+        # run cost 6.5 s inside an already-slow load; the doctrine is unchanged).
+        self._defer_folded_m_relearn_on_load()
         # Zemax NSC imports often reference CAD geometry files that the
         # user no longer has -- prompt before the first table sync /
         # plot refresh so a relocation feeds straight into the first
@@ -361,7 +356,7 @@ class LayoutImportExportMixin:
         self.example_var.set("Examples")
         self._commit_history_capture()
         self._update_window_title()  # bugs/0637
-        self.refresh_plot(suppress_analysis=True)
+        self.refresh_plot(suppress_analysis=True, defer_trace=True)  # bugs/0646: fast load
         source_label = "example" if source == "example" else "file"
         self.status_var.set(
             f"Imported Zemax {source_label} {path.name} ({len(self.rows)} surfaces). Save As to store a Kraken layout."
@@ -586,17 +581,11 @@ class LayoutImportExportMixin:
             pass
         # bugs/0625: re-measure the cleared machine state for the scene just loaded (the
         # bugs/0608 doctrine extended to loaders -- a load must not leave the readouts and
-        # launch grid on the RAW first order until the next solve). After the cache regen
-        # and asset prompt so the traced machine is complete; sequential scenes no-op
-        # cheaply on the world-placed-chain early-out.
-        try:
-            note = self._relearn_folded_m_correction_after_swap()
-            if note:
-                self.append_debug("Loaded-scene re-measure:" + note)
-        except Exception:
-            pass
+        # launch grid on the RAW first order until the next solve). bugs/0646: DEFERRED to
+        # the first trace/readout; the doctrine is unchanged, only the timing.
+        self._defer_folded_m_relearn_on_load()
         self._sync_table()
-        self.refresh_plot(suppress_analysis=True)
+        self.refresh_plot(suppress_analysis=True, defer_trace=True)  # bugs/0646: fast load
         self._mark_saved_state()
         self.status_var.set(f"Opened {Path(path).name}. Click Update to run analysis.")
         self._update_window_title()  # bugs/0637

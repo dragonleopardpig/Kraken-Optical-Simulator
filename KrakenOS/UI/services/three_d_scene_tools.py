@@ -500,6 +500,10 @@ class ThreeDSceneToolsMixin:
         # trace -- for a model change (add/move a solid) while Show Rays is OFF, the scene
         # shows CAD geometry the user can manipulate without paying for the ~45s folded trace
         # nobody is looking at; the trace runs when rays are turned on.
+        if trace_rays:
+            # bugs/0646: a REAL trace request ends the fast-load state FIRST, so the launch
+            # sampling re-measures the deferred bugs/0625 correction before any ray uses it.
+            self._preview_trace_deferred_until_requested = False
         preview_start = time.perf_counter()
         wavelength = self._current_wavelength()
         capture = io.StringIO()

@@ -1394,6 +1394,20 @@ class LayoutShellControlsMixin:
     def _analysis_mode_label(self, mode: str) -> str:
         return analysis_mode_label(mode)
 
+    def _trace_now(self) -> None:
+        """bugs/0646: the explicit ray trace after a fast (rays-deferred) load.
+
+        A load draws geometry only ("don't trace the ray upon startup. Let the user click
+        Trace Now"); this button runs the deferred trace WITHOUT the analysis panels --
+        lighter than Update, which re-runs the selected analyses too."""
+        if self.editor is not None:
+            row_id = self._editor_row_id
+            field = self._editor_field
+            if row_id is not None and field is not None:
+                self._finish_edit(row_id, field, quiet=True)
+        self.refresh_plot(suppress_analysis=True)
+        self.status_var.set("Rays traced.")
+
     def _manual_update_plot(self) -> None:
         # Commit any pending inline table edit before refreshing.
         if self.editor is not None:

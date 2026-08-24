@@ -456,10 +456,19 @@ class LayoutAnalysisDisplayMixin:
             self._plot_refresh_service_instance = service
         return service
 
-    def refresh_plot(self, *, suppress_analysis: bool = False, sampling_mode: str | None = None) -> None:
+    def refresh_plot(
+        self,
+        *,
+        suppress_analysis: bool = False,
+        sampling_mode: str | None = None,
+        defer_trace: bool = False,
+    ) -> None:
+        # bugs/0646: defer_trace must thread through this facade (the bugs/0319 mixin-
+        # wrapper rule: a new service kwarg ALSO goes through the editor-facing wrapper).
         self._plot_refresh_service().refresh_plot(
             suppress_analysis=suppress_analysis,
             sampling_mode=sampling_mode,
+            defer_trace=defer_trace,
         )
 
 

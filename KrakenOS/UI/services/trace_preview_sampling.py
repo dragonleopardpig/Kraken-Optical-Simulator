@@ -515,6 +515,11 @@ class TracePreviewSamplingMixin:
         rays = self.last_rays
         last_signature = self.__dict__.get("_last_preview_trace_signature")
         if system is None or rays is None or not preview_trace_signature_matches(last_signature, self._preview_trace_signature()):
+            if getattr(self, "_preview_trace_deferred_until_requested", False):
+                # bugs/0646: FAST-LOAD state -- a label must not resurrect the trace the
+                # load just deferred (this temporary build was 25 s of the "loading takes
+                # super long" profile). The first real trace request clears the state.
+                return None
             try:
                 system, rays = self._build_temporary_preview_trace()
             except Exception:

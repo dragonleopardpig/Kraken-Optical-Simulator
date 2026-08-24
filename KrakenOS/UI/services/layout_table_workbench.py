@@ -605,18 +605,15 @@ class LayoutTableWorkbenchMixin:
         # magnification AND field centre for the machine that was just loaded. Cheap no-op
         # on sequential scenes (the world-placed-chain early-out).
         if not append_to_existing:
-            try:
-                note = self._relearn_folded_m_correction_after_swap()
-                if note:
-                    self.append_debug("Loaded-scene re-measure:" + note)
-            except Exception:
-                pass
+            self._defer_folded_m_relearn_on_load()  # bugs/0646: run at first trace, not here
         if append_to_existing:
             self._select_inserted_layout_rows(loaded_rows, insert_after=insert_after)
         if had_existing_rows:
             self._commit_history_capture()
         if refresh:
-            self.refresh_plot(suppress_analysis=True)
+            # bugs/0646: a load draws geometry only -- the ~18 s preview trace waits for
+            # an explicit Trace Now / the 3D view / a solve.
+            self.refresh_plot(suppress_analysis=True, defer_trace=True)
         if path.stem.startswith("machine_vision_"):
             self.layout_var.set("Common Optical Layout")
             self.machine_vision_var.set(name)
@@ -625,7 +622,10 @@ class LayoutTableWorkbenchMixin:
             self.machine_vision_var.set("Machine Vision Lens")
         self.example_var.set("Examples")
         action = "Appended" if append_to_existing else "Loaded"
-        self.status_var.set(f"{action} {name}. Click Update to run analysis.")
+        self.status_var.set(
+            f"{action} {name} (rays not traced -- fast load). Click Trace Now for rays, "
+            f"Update for analysis."
+        )
         self._update_window_title()  # bugs/0637
 
     @staticmethod
@@ -1738,6 +1738,26 @@ class LayoutTableWorkbenchMixin:
             note += " Left the Normal to Sensor view so the swapped optics are visible."
         return note
 
+    def _defer_folded_m_relearn_on_load(self) -> None:
+        """bugs/0646: loads DEFER the bugs/0625 re-measure to the first consumer.
+
+        The 0625 doctrine stands -- a folded scene must never trace (or show a delivered
+        readout) on the RAW first order -- but running the re-measure inside the load cost
+        6.5 s of a 24.6 s "loading takes super long" (measured, probe_0646, ELS85/Apo75).
+        The pending marker is consumed by ``folded_m_correction()`` the moment the first
+        reader (launch sampling, display readout, solve math) asks -- which by definition
+        is before any trace or readout could use the raw first order.
+
+        ``_preview_trace_deferred_until_requested`` is the FAST-LOAD state: while set,
+        label/report side channels must not trace either (measured: with only the main
+        preview trace skipped, ``_traced_image_diameter_value`` rebuilt a temporary trace
+        for the results table and the field-metrics chain consumed the pending re-measure
+        mid-load -- 16.8 s instead of fast). It is cleared by the first REAL trace request
+        (Trace Now / an undeferred refresh / the 3D preview bundle), which then also
+        consumes the pending re-measure in the right order."""
+        self._folded_m_relearn_pending = True
+        self._preview_trace_deferred_until_requested = True
+
     def _relearn_folded_m_correction_after_swap(self) -> str:
         """bugs/0608: re-measure the delivered/promised magnification for the NEW optics.
 
@@ -1749,6 +1769,9 @@ class LayoutTableWorkbenchMixin:
 
         from KrakenOS.UI.services.quick_estimation import QuickEstimationService
 
+        # bugs/0646: an eager run satisfies any load-deferred pending re-measure -- without
+        # this, a load followed by a swap would re-measure twice (6.5 s each).
+        self._folded_m_relearn_pending = False
         try:
             service = QuickEstimationService(SimpleNamespace(editor=self))
             factor = service.relearn_folded_m_correction()

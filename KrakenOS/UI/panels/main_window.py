@@ -607,7 +607,10 @@ class MainWindowBuilder:
         trace_button = pack_command_button(plot_toolbar_main, "Trace", command=self.open_ray_inspector, side="right", padx=(0, 6))
         self._add_widget_tooltip(trace_button, "Inspect ray / surface physics")
         update_button = pack_command_button(plot_toolbar_main, "Update", command=self._manual_update_plot, side="right")
-        self._add_widget_tooltip(update_button, "Trace rays and refresh the plot")
+        self._add_widget_tooltip(update_button, "Trace rays and refresh the plot + selected analyses")
+        # bugs/0646: loads are fast (geometry only); this is the explicit first trace.
+        trace_now_button = pack_command_button(plot_toolbar_main, "Trace Now", command=self._trace_now, side="right", padx=(0, 6))
+        self._add_widget_tooltip(trace_now_button, "Trace the rays deferred by the fast load (no analysis panels)")
         flag_bug_button = pack_command_button(
             plot_toolbar_main, "● Flag bug", command=self.flag_bug_2d, side="right", padx=(0, 6)
         )

@@ -43,7 +43,13 @@ class PlotRefreshService:
             return
         setattr(self.editor, name, value)
 
-    def refresh_plot(self, *, suppress_analysis: bool = False, sampling_mode: str | None = None) -> None:
+    def refresh_plot(
+        self,
+        *,
+        suppress_analysis: bool = False,
+        sampling_mode: str | None = None,
+        defer_trace: bool = False,
+    ) -> None:
         le = _layout_module()
         NonSequentialTracePreviewError = le.NonSequentialTracePreviewError
         _short_error_message = le._short_error_message
@@ -192,23 +198,42 @@ class PlotRefreshService:
                     # Thin-Lens SIGN fix), so the rays come out already folded and no
                     # display bend is applied afterwards.
                     folded_trace_rows = self._folded_sequential_trace_rows(self.rows)
-                    rays, straight_equivalent_fold_transform = (
-                        self._trace_preview_rays_folded_aware(
-                            system,
-                            wavelength,
-                            max_radius,
-                            sampling_mode=preview_sampling_mode,
-                            folded_trace_rows=folded_trace_rows,
+                    if defer_trace:
+                        # bugs/0646 ("loading of a .py file take super long time ...
+                        # don't trace the ray upon startup"): a load draws GEOMETRY only.
+                        # Measured on ELS85/Apo75: the non-sequential preview trace plus
+                        # its ray-derived analysis records were ~18 s of a 24.6 s load;
+                        # build_scene_bundle documents rays=None as supported. The trace
+                        # stays DIRTY so the first real consumer (Trace Now, the 3D view,
+                        # a solve) traces fresh.
+                        rays = None
+                        straight_equivalent_fold_transform = None
+                    else:
+                        # bugs/0646: a REAL trace request ends the fast-load state FIRST,
+                        # so the launch sampling below re-measures the deferred bugs/0625
+                        # correction before any ray uses it.
+                        self._preview_trace_deferred_until_requested = False
+                        rays, straight_equivalent_fold_transform = (
+                            self._trace_preview_rays_folded_aware(
+                                system,
+                                wavelength,
+                                max_radius,
+                                sampling_mode=preview_sampling_mode,
+                                folded_trace_rows=folded_trace_rows,
+                            )
                         )
-                    )
             self.append_debug(capture.getvalue())
             self._update_analysis_progress("Tracing rays", 2, 5)
             self.update_idletasks()
             self.last_system = system
             self.last_rays = rays
-            self._last_preview_trace_signature = self._preview_trace_signature()
+            if defer_trace:
+                self._last_preview_trace_signature = None
+                self._preview_scene_trace_dirty = True
+            else:
+                self._last_preview_trace_signature = self._preview_trace_signature()
+                self._preview_scene_trace_dirty = False
             self._last_scene_trace_sampling_mode = preview_sampling_mode
-            self._preview_scene_trace_dirty = False
             if self._apply_image_diameter_mode():
                 self._sync_image_row_table_value()
 

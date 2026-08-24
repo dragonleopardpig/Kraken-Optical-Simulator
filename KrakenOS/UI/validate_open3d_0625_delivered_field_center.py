@@ -307,12 +307,18 @@ def run_checks():
                 missing.append(f"{site} ({state.split(' ')[0]})")
     # The bugs/0608 doctrine extended to loads: clearing alone leaves a freshly loaded
     # folded scene tracing the RAW first order (the flagged workflow -- load, no solve).
-    # Every full-scene loader must RE-MEASURE after clearing.
+    # Every full-scene loader must RE-MEASURE after clearing -- eagerly, or (bugs/0646,
+    # "loading takes super long") DEFERRED via the pending marker that
+    # folded_m_correction() consumes at the first trace/readout (guard 0646 checks the
+    # consumer side).
     for site, src in (
         ("load_layout_by_name", site_sources.get("load_layout_by_name") or ""),
         ("open_layout", open_layout_src),
     ):
-        if "_relearn_folded_m_correction_after_swap(" not in src:
+        if (
+            "_relearn_folded_m_correction_after_swap(" not in src
+            and "_defer_folded_m_relearn_on_load(" not in src
+        ):
             missing.append(f"{site} (no re-measure after clear)")
     if missing:
         ok = False
