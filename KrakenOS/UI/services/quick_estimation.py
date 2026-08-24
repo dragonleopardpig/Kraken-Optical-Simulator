@@ -1622,11 +1622,15 @@ class QuickEstimationService:
                     # FOCUS rather than by the paraxial target, so quoting the target's |m| would
                     # be quoting a number the scene does not have. Say what actually happened and
                     # let the FOV readout report the field that resulted.
+                    # bugs/0645: this used to assert "the sensor WAS placed at the traced focus"
+                    # -- but the placement is the focus snap's job, and on the ELS85 20x20 solve
+                    # the snap had refused (sensor never moved) while this line still claimed
+                    # focus. State the intent; the focus_note carries the measured verdict.
                     return True, (
                         f"Solved (folded): object->lens {folded['object_distance']:.6g} mm. The "
-                        f"paraxial sensor plane was out of this fold's reach, so the sensor was "
-                        f"placed at the traced focus instead -- read the FOV box for the field "
-                        f"that actually results.{room_note}{focus_note}"
+                        f"paraxial sensor plane was out of this fold's reach, so the sensor "
+                        f"placement follows the traced focus instead -- read the FOV box for the "
+                        f"field that actually results.{room_note}{focus_note}"
                     )
                 if image_handled:
                     # Report what was actually applied: on a frozen fold the image side is a
@@ -1823,13 +1827,47 @@ class QuickEstimationService:
             return f" Focus snap skipped ({type(exc).__name__}: {exc})."
         finally:
             self.editor._solve_focus_finish_active = False
+        # bugs/0645 (ELS85 20x20 magnifying solve): this tail used to claim "snapped to the
+        # traced focus" UNCONDITIONALLY -- measured, the snap's every pass had been reverted
+        # (net sensor movement 0.0000 mm, residual +78 intact, and the snap's own refusal was
+        # already recorded in _snap_detector_refusal) and the solve still reported focus. The
+        # claim is now measured, and an out-of-reach remainder reaches the user.
+        reach_note = ""
+        try:
+            unreachable = float(
+                getattr(self.editor, "_snap_detector_unreachable_mm", 0.0) or 0.0
+            )
+        except Exception:
+            unreachable = 0.0
+        if unreachable > 0.5:
+            reach_note = (
+                f" WARNING: the traced focus sits {unreachable:.4g} mm beyond the fold's reach "
+                f"(behind the fold mirror); the sensor is at its closest reachable point."
+            )
         try:
             after = float(self.editor._traced_bundle_best_focus_shift())
         except Exception:
-            return " Snapped the detector to the traced focus."
-        if not np.isfinite(before):
-            return " Snapped the detector to the traced focus."
-        return f" Focus: residual {before:+.4g} -> {after:+.4g} mm (snapped to the traced focus)."
+            after = float("nan")
+        if not np.isfinite(after) or not np.isfinite(before):
+            refusal = str(getattr(self.editor, "_snap_detector_refusal", "") or "")
+            if refusal:
+                return f" Focus snap: {refusal}{reach_note}"
+            return " Snapped the detector to the traced focus." + reach_note
+        if abs(after) <= 0.5:
+            return (
+                f" Focus: residual {before:+.4g} -> {after:+.4g} mm "
+                f"(snapped to the traced focus).{reach_note}"
+            )
+        if abs(after) < abs(before) - 1.0e-6:
+            return (
+                f" Focus: residual {before:+.4g} -> {after:+.4g} mm (moved to the closest "
+                f"reachable focus; {abs(after):.4g} mm of defocus remains).{reach_note}"
+            )
+        refusal = str(getattr(self.editor, "_snap_detector_refusal", "") or "")
+        return (
+            f" WARNING: the focus snap could not improve the defocus (residual {before:+.4g} -> "
+            f"{after:+.4g} mm)." + (f" {refusal}" if refusal else "") + reach_note
+        )
 
     def _rebalance_object_leg_sections(self, pre: "dict | None", led_offset=None) -> str:
         """bugs/0484: put the whole object-side change into section 2, holding section 1.

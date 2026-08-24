@@ -15723,6 +15723,10 @@ phase_482_commit_rebuilds_axes = _phase_from_standalone(
     482, "a STEP-overlay commit re-derives the optical axes even with retrace off (0644)",
     "KrakenOS.UI.validate_open3d_0644_commit_rebuilds_axes",
     "commit_rebuilds_axes")
+phase_483_focus_reach_recruitment = _phase_from_standalone(
+    483, "an out-of-reach traced focus recruits the fold's near leg; focus claims are measured (0645)",
+    "KrakenOS.UI.validate_open3d_0645_focus_reach_recruitment",
+    "focus_reach_recruitment")
 phase_461_swap_prompts_for_fov = _phase_from_standalone(
     461, "an interactive swap ASKS for the FOV you want (prefilled with the delivered field) (0609)",
     "KrakenOS.UI.validate_open3d_0609_swap_prompts_for_fov",
@@ -16268,6 +16272,7 @@ def main() -> int:
             phase_480_reflect_axis_visible_length,
             phase_481_reflect_axis_bounded_to_face,
             phase_482_commit_rebuilds_axes,
+            phase_483_focus_reach_recruitment,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

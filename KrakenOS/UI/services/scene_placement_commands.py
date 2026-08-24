@@ -3482,6 +3482,11 @@ class ScenePlacementMixin:
         # then overwrites status_var with its own success line, so a refused refocus used to
         # leave the lens silently defocused with no explanation on screen.
         self._snap_detector_refusal = ""
+        # bugs/0645: when the traced focus sits BEHIND the fold mirror (a negative exit leg,
+        # first seen on the ELS85 20x20 magnifying solve) the loop below recruits the near leg;
+        # whatever remains out of reach is recorded here so the CALLER (the solve's focus
+        # finisher) can report it instead of claiming focus.
+        self._snap_detector_unreachable_mm = 0.0
         _frozen_world = False
         try:
             _frozen_world = bool((self._folded_image_conjugate_split() or {}).get("frozen_world"))
@@ -3677,16 +3682,37 @@ class ScenePlacementMixin:
 
         def _row_snapshot():
             """bugs/0577: everything the loop's writers can move -- the gap row AND the
-            collision resolver's mirror slide, which writes desp across the arm."""
-            return [
-                (float(r.thickness), float(r.desp_x), float(r.desp_y), float(r.desp_z))
-                for r in self.rows
-            ]
+            collision resolver's mirror slide, which writes desp across the arm.
+            bugs/0645: PLUS the STEP overlay placement offsets. The settle's clause (i)
+            walks the camera BODY with the sensor by writing its offset, so a rows-only
+            restore left the body stranded at the reverted pass's pose (the bugs/0626
+            refinement snapshot, same mechanism)."""
+            offsets = {}
+            try:
+                for _label in _step_overlay_label_set():
+                    _value = getattr(self, f"{_label}_step_placement_offset_xyz", None)
+                    if _value is not None:
+                        offsets[_label] = tuple(float(v) for v in _value)
+            except Exception:
+                pass
+            return (
+                [
+                    (float(r.thickness), float(r.desp_x), float(r.desp_y), float(r.desp_z))
+                    for r in self.rows
+                ],
+                offsets,
+            )
 
         def _restore_row_snapshot(snapshot) -> None:
-            for row, (thickness, dx, dy, dz) in zip(self.rows, snapshot):
+            rows_state, offsets = snapshot
+            for row, (thickness, dx, dy, dz) in zip(self.rows, rows_state):
                 row.thickness = thickness
                 row.desp_x, row.desp_y, row.desp_z = dx, dy, dz
+            for _label, _value in offsets.items():
+                try:
+                    self._set_step_placement_offset_xyz(_label, _value)
+                except Exception:
+                    pass
 
         if not _frozen_world:
             applied_ok, refusal = _apply_gap_with_floor(float(self.rows[-2].thickness) + float(delta))
@@ -3722,8 +3748,19 @@ class ScenePlacementMixin:
             previous_magnitude = None
             best_snapshot = _row_snapshot()
             best_magnitude = abs(float(delta))
+            best_residual = float(delta)
             diverged = False
-            for _iteration in range(5):
+            # bugs/0645 (flag_20260824_201312, ELS85 20x20 "image side ray defocus"): the
+            # 0515-B2 adaptive flip was DEAD CODE -- the 0577 guard reverted-and-broke on the
+            # first non-improving pass, before the flip could ever run. When the 0570 pre-flip
+            # guessed wrong (see below), the loop burned its one pass moving the sensor the
+            # wrong way, reverted, and returned claiming focus with the sensor NEVER moved
+            # (net 0.0000 mm, residual +78 intact). The guard now grants exactly ONE measured
+            # retry in the opposite direction before giving up.
+            flip_retry_used = False
+            recruited_total = 0.0
+            unreachable_mm = 0.0
+            for _iteration in range(7):
                 if abs(residual) <= 0.5:
                     break
                 if previous_magnitude is not None and abs(residual) > previous_magnitude + 1e-6:
@@ -3733,6 +3770,7 @@ class ScenePlacementMixin:
                     split_now = self._folded_image_conjugate_split() or {}
                     base_now = float(split_now.get("far", self.rows[-2].thickness))
                 except Exception:
+                    split_now = {}
                     base_now = float(self.rows[-2].thickness)
                 # bugs/0570 (flag_20260806_102258 "right click defocus not working", and the
                 # same snap is what the FOV solve's finisher calls -- flag_20260806_102150
@@ -3744,9 +3782,41 @@ class ScenePlacementMixin:
                 # bailed on iteration 0 -- before the adaptive flip it was built around ever
                 # ran. A leg that would go NEGATIVE is not a near miss, it is proof of the
                 # sign, so decide it here instead of spending the attempt.
-                if base_now + direction * residual <= 0.0 < base_now - direction * residual:
+                #
+                # bugs/0645: ...except it is NOT proof. On the ELS85 20x20 MAGNIFYING solve the
+                # traced focus genuinely sits behind the fold mirror (scanned: axial blur is
+                # monotone toward the mirror, zero extrapolates to a -23.5 mm exit leg), so the
+                # 0570 flip drove the sensor +82.65 mm the WRONG way and 0577 reverted it. The
+                # flip is now only the FIRST hypothesis: if its pass fails to improve, the
+                # retry below flips back and lands here again -- where a still-negative target
+                # means the focus really is out of reach, and the remedy is GEOMETRIC: recruit
+                # the near leg (slide the fold mirror toward the lens; near shrinks, far grows,
+                # the total -- and the focus -- unchanged) until a positive exit leg exists.
+                target = base_now + direction * residual
+                if target <= 0.0 < base_now - direction * residual and not flip_retry_used:
                     direction = -direction
-                iter_ok, refusal = _apply_gap_with_floor(base_now + direction * residual)
+                    target = base_now + direction * residual
+                if target <= 0.0:
+                    far_floor = max(float(split_now.get("far_min", 0.0) or 0.0), 2.0)
+                    recruited = self._recruit_image_fold_near_leg(far_floor + 2.0 - target)
+                    if recruited > 0.0:
+                        recruited_total += recruited
+                        base_now += recruited
+                        target = base_now + direction * residual
+                        self.append_debug(
+                            "snap detector iter {i}: recruited {r:.4f} mm from the near leg "
+                            "(fold mirror slid toward the lens, bugs/0645) -> new far base "
+                            "{base:.4f}".format(i=int(_iteration), r=float(recruited), base=float(base_now))
+                        )
+                    if target <= 0.0:
+                        # Partial (or no) recruitment: book the closest reachable point and
+                        # keep the honest remainder for the caller.
+                        unreachable_mm = float(-target)
+                        if recruited <= 0.0:
+                            diverged = True
+                            break
+                        target = far_floor
+                iter_ok, refusal = _apply_gap_with_floor(target)
                 # bugs/0570: this loop is the one place a "remove defocus" can silently do the
                 # wrong thing (it converged onto the far side of the fold mirror before the
                 # frame mix-up was found), and it is not reproducible without the numbers.
@@ -3754,7 +3824,7 @@ class ScenePlacementMixin:
                     "snap detector iter {i}: base(world far)={base:.4f} residual={res:+.4f} "
                     "dir={dir:+.0f} -> target far {target:.4f} | ok={ok} {why}".format(
                         i=int(_iteration), base=float(base_now), res=float(residual),
-                        dir=float(direction), target=float(base_now + direction * residual),
+                        dir=float(direction), target=float(target),
                         ok=bool(iter_ok), why=str(refusal or ""),
                     )
                 )
@@ -3784,19 +3854,52 @@ class ScenePlacementMixin:
                 # pass; anything else and the best state seen goes back.
                 if abs(residual) < best_magnitude - 1.0e-6:
                     best_magnitude = abs(residual)
+                    best_residual = float(residual)
                     best_snapshot = _row_snapshot()
+                    continue
+                failed_residual = float(residual)
+                _restore_row_snapshot(best_snapshot)
+                residual = float(best_residual)
+                if not flip_retry_used:
+                    # bugs/0645: the one measured retry -- the failed pass proved its direction
+                    # wrong (or the 0570 pre-flip guessed wrong); try the opposite sign from the
+                    # restored best state before declaring divergence.
+                    flip_retry_used = True
+                    direction = -direction
+                    previous_magnitude = None
+                    self.append_debug(
+                        "snap detector iter {i}: pass did not improve -- reverted to best "
+                        "({best:.4f} mm) and retrying the opposite direction (bugs/0645)".format(
+                            i=int(_iteration), best=float(best_magnitude),
+                        )
+                    )
                     continue
                 self.append_debug(
                     "snap detector iter {i}: residual {res:+.4f} did not beat {best:+.4f} -- "
                     "reverting to the best state and stopping (bugs/0577)".format(
-                        i=int(_iteration), res=float(residual), best=float(best_magnitude),
+                        i=int(_iteration), res=float(failed_residual), best=float(best_magnitude),
                     )
                 )
-                _restore_row_snapshot(best_snapshot)
                 diverged = True
                 break
+            # bugs/0645: record the honest remainder for the CALLER (the solve's focus
+            # finisher reports it) -- meaningful only when the loop ended out of focus.
+            self._snap_detector_unreachable_mm = (
+                float(unreachable_mm) if best_magnitude > 0.5 else 0.0
+            )
+            if recruited_total > 0.0:
+                collision_note = (
+                    f"{collision_note} (the fold mirror slid {recruited_total:.4g} mm toward "
+                    f"the lens to bring the focus in reach)"
+                )
             if diverged and best_magnitude > 0.5:
                 entry_magnitude = abs(float(delta))
+                reach_note = ""
+                if float(unreachable_mm) > 0.5:
+                    reach_note = (
+                        f" The traced focus sits {float(unreachable_mm):.4g} mm beyond this "
+                        f"fold's reach (behind the fold mirror)."
+                    )
                 # bugs/0578 measured the dishonest epilogue: iteration 0 moved the sensor
                 # 103 mm, re-measured WORSE, correctly reverted -- and the code below then
                 # reported "Snapped detector to best focus (moved +103.1 mm)". A revert must
@@ -3815,12 +3918,13 @@ class ScenePlacementMixin:
                     self.status_var.set(
                         f"Snapped detector partway to {source}: residual {entry_magnitude:.4g} "
                         f"-> {best_magnitude:.4g} mm (further correction made it worse)."
-                        f"{collision_note}"
+                        f"{reach_note}{collision_note}"
                     )
                     return True
                 self._snap_detector_refusal = (
                     f"best focus could not be reached from here (residual {best_magnitude:.4g} mm "
                     f"and every correction made it worse) -- the scene was left untouched."
+                    + reach_note
                 )
                 self.status_var.set(f"Snap detector: {self._snap_detector_refusal}")
                 return False
@@ -3838,6 +3942,38 @@ class ScenePlacementMixin:
             f"Snapped detector to {source} (moved {delta:+.4g} mm to best focus).{collision_note}"
         )
         return True
+
+    def _recruit_image_fold_near_leg(self, amount: float) -> float:
+        """bugs/0645: make the image fold's exit leg long enough to book a focus that sits
+        BEHIND the fold mirror.
+
+        A magnifying FOV solve (|m| > 1, first seen on the ELS85 20x20 solve) can land the
+        traced focus BEFORE the fold point: the required mirror->sensor leg is NEGATIVE
+        (scanned on the real scene: axial blur monotone toward the mirror, zero at a
+        -23.5 mm exit leg), so NO sensor position on the exit leg reaches it. The remedy is
+        geometric, not another sign guess: slide the fold mirror back toward the lens along
+        its INCOMING leg (``_apply_folded_image_split``'s repackaging -- near shrinks, far
+        grows, the total and thus the focus unchanged), so the fold happens BEFORE the focus
+        and a positive exit leg exists. The applier enforces the collision floors and
+        re-seats the sensor + camera on the repositioned arm (bugs/0447/0236).
+
+        Returns the mm actually recruited (0.0 when the near leg has no room -- the honest
+        remainder stays with the caller)."""
+        try:
+            split = self._folded_image_conjugate_split() or {}
+            near = float(split["near"])
+            near_min = float(split.get("near_min", 0.0) or 0.0)
+        except Exception:
+            return 0.0
+        room = float(near) - float(near_min)
+        give = min(float(amount), room)
+        if give <= 0.5:
+            return 0.0
+        try:
+            ok, _msg = self._apply_folded_image_split("near", near - give)
+        except Exception:
+            return 0.0
+        return float(give) if ok else 0.0
 
     def glue_step_overlay_to_surrogate(self, label: str) -> bool:
         """Re-apply the automatic "glue to optical surrogate" placement for an
