@@ -132,11 +132,19 @@ def _check_real_scene(ok, notes) -> None:
                 for index in range(len(editor.rows))
             ]
 
-        # bugs/0573 now MAKES the room (slides the fold mirror + camera by the shortfall) and the
-        # solve succeeds -- that is guarded by phase 448. What has no other home, and is what this
-        # bug is about, is the case where room-making is NOT available: there must still be no
-        # dislocating fallback. Disable it for this section and check the refusal contract.
-        editor.slide_fold_arm_along_leg = lambda distance: None
+        # REWRITE (bugs/0645/0647): the machine gained LEGAL room-makers -- the snap's
+        # measured direction retry, the near-leg recruit, the bugs/0550 collision
+        # redistribution -- so fields that used to be unreachable now genuinely solve, and
+        # simulating "no room" by disabling mechanisms one-by-one became a fiction (every
+        # rerun found the next legal mover; measured: with the recruit disabled the retry
+        # + redistribution still solved 35x35 with the field delivered). What this bug is
+        # DURABLY about is the dislocating fallback: a "solved" scene with the lens block
+        # thrown 73.9 mm across its leg and the field NOT actually delivered. The honest
+        # invariant, either way the machine decides:
+        #   - SUCCESS  => the MEASURED delivered field lands on the request (a dislocating
+        #                 fallback can never pass this -- the field it delivers is wrong);
+        #   - REFUSAL  => the message says what to move and by how much, and the scene is
+        #                 byte-identical (nothing moved).
         qe = QuickEstimationService(SimpleNamespace(editor=editor))
         for field in (35.0, 55.0):
             before = snapshot()
@@ -145,23 +153,31 @@ def _check_real_scene(ok, notes) -> None:
             drift = max(
                 float(np.linalg.norm(a - b)) for a, b in zip(after, before)
             ) if before else 0.0
-            ok(
-                not solved,
-                f"B1@{field:g}: the solve REFUSES rather than dislocating "
-                f"({message[:110]})",
-            )
-            ok(
-                "slide the fold mirror" in message and "mm of the lens-to-fold leg is left" in message,
-                f"B2@{field:g}: ... and the refusal says what to move and by how much",
-            )
-            ok(
-                drift < 1e-9,
-                f"B3@{field:g} (the recurrence): NOTHING moved -- max row drift {drift:.9f} mm "
-                f"(the pre-fix 55x55 threw the lens block 73.9 mm across its leg)",
-            )
+            if solved:
+                readout = qe.current_state()
+                diag = float(readout.get("fov_full") or 0.0)
+                want = field * float(np.sqrt(2.0))
+                ok(
+                    abs(diag - want) < 0.02 * want + 0.5,
+                    f"B1@{field:g}: the solve SUCCEEDED and the MEASURED field lands on the "
+                    f"request (diag {diag:.3f}, want {want:.3f}) -- legal room-making, not "
+                    f"a dislocating fallback",
+                )
+            else:
+                ok(
+                    "slide the fold mirror" in message
+                    and "mm of the lens-to-fold leg is left" in message,
+                    f"B2@{field:g}: the refusal says what to move and by how much "
+                    f"({message[:90]})",
+                )
+                ok(
+                    drift < 1e-9,
+                    f"B3@{field:g} (the recurrence): a REFUSED solve moved NOTHING -- max "
+                    f"row drift {drift:.9f} mm (the pre-fix 55x55 threw the lens block "
+                    f"73.9 mm across its leg)",
+                )
 
-        # NON-VACUITY: a field that fits still solves and still moves the lens along the leg --
-        # with room-making still disabled, so this is the plain in-range path.
+        # NON-VACUITY: a field that fits still solves and still moves the lens along the leg.
         before = snapshot()
         solved, message = qe.fov_solve("object", "thickness", 24.0, 24.0)
         after = snapshot()

@@ -297,6 +297,14 @@ class DatasheetCardinals:
     mag_label: str | None = None       # the "1.0x" / "0.5x-2.0x" title token
     title: str | None = None
     lens_id: str | None = None
+    # bugs/0647: the vendor's Optimum Working Distance (object -> front housing rim,
+    # the plane a bench user can actually measure to) and the |m| it pairs with.
+    # Together with the EFL they pin the front principal plane RELATIVE TO THE
+    # HOUSING: principal-behind-rim = f(1+1/m) - WD. The ELS-85 surrogate's nominal
+    # symmetric principal split sat 9.45 mm too deep, so every on-screen standoff
+    # read ~9 mm short of the bench.
+    optimum_wd: float | None = None
+    optimum_wd_mag: float | None = None
 
     @property
     def ppa(self) -> float | None:
@@ -483,4 +491,65 @@ def parse_datasheet_cardinals(path: str | Path) -> DatasheetCardinals | None:
             text, r"(?i)magnification\s+\w?\s*\[range\]\s*(-?\d+\.?\d*)"
         )
 
+    parse_optimum_working_distance(text, cardinals)  # bugs/0647
+
     return cardinals
+
+
+def parse_optimum_working_distance(text: str, cardinals: DatasheetCardinals) -> None:
+    """bugs/0647: recover the vendor's Optimum Working Distance + its pairing |m|.
+
+    On the AZURE ELS-85 sheet the flattened text delaminates labels from values
+    (bugs/0565), so the WD value cannot be paired with its label positionally --
+    but it CAN be pinned by physics. With the pairing magnification m*, a real
+    working distance must satisfy  f/m* < WD < f(1+1/m*)  (the principal plane
+    sits INSIDE the object leg, 0 < offset < f). On the ELS soup that window
+    (85, 170) admits exactly one "<n>mm" token: 142. The decoys fall out on
+    their own: the back focus arrives glued as "10-4141.85mm" (matches 4141.85,
+    out of window), TTL 196.8 and the 26/68/85 tokens are outside the window,
+    and the EFL itself is excluded explicitly. Ambiguity (zero or 2+ survivors)
+    refuses -- a wrong housing calibration is worse than none.
+
+    Pairing rule for m*: a "0.5X,1.0X,2.0X"-style magnification list containing
+    1.0 pairs the optimum with 1.0x (the vendor's own suitable-distance row
+    lists the optimum under 1.0x); else a single nominal magnification from the
+    sheet; else a single-entry list; else refuse."""
+    effl = cardinals.effl
+    if effl is None or not math.isfinite(effl) or effl <= 0.0:
+        return
+    if not re.search(r"(?i)optimum\s+working\s+distance", text):
+        return
+    mags = [
+        float(v)
+        for v in re.findall(r"(?<![\dA-Za-z.])(\d+(?:\.\d+)?)\s*[Xx](?![A-Za-z0-9])", text)
+        if float(v) > 0.0
+    ]
+    pairing: float | None = None
+    if any(abs(m - 1.0) < 1e-6 for m in mags):
+        pairing = 1.0
+    elif cardinals.magnification is not None and abs(cardinals.magnification) > 1e-9:
+        pairing = abs(float(cardinals.magnification))
+    elif len(set(mags)) == 1 and mags:
+        pairing = mags[0]
+    if pairing is None:
+        return
+    low, high = effl / pairing, effl * (1.0 + 1.0 / pairing)
+    known = {round(float(v), 2) for v in (effl, cardinals.back_focal, cardinals.hh, cardinals.span) if v is not None}
+    survivors = []
+    for token in re.findall(r"(?<![\d.])(\d+(?:\.\d+)?)mm", text):
+        try:
+            value = float(token)
+        except ValueError:
+            continue
+        if not (low < value < high):
+            continue
+        if round(value, 2) in known:
+            continue
+        offset = effl * (1.0 + 1.0 / pairing) - value
+        if not (0.0 < offset < effl):
+            continue
+        survivors.append(value)
+    if len(set(survivors)) != 1:
+        return
+    cardinals.optimum_wd = survivors[0]
+    cardinals.optimum_wd_mag = pairing

@@ -792,9 +792,24 @@ class LayoutTableWorkbenchMixin:
         # sidecar is NOT restored on the rebuild and (b) Save prompts the user to
         # create their own .py rather than overwriting the auto-generated one.
         self._layout_is_unsaved_import = True
+        # bugs/0647: refit the imported surrogate to the vendor's working-distance law so
+        # on-screen object->rim standoffs match what a bench user measures, and PERSIST
+        # the refit into the emitted library .py (future loads of the surrogate carry it).
+        # Falls back to the advisory bench note for non-two-group blocks.
+        housing_note = ""
+        try:
+            _hnote = self.refit_lens_principal_to_datasheet_wd()
+            if _hnote:
+                self.append_debug("WD registration: " + _hnote)
+                housing_note = " " + _hnote
+                if "refit" in _hnote and self.current_layout_file is not None:
+                    self._write_layout_file(self.current_layout_file)
+                    self.refresh_plot(suppress_analysis=True, defer_trace=True)
+        except Exception as exc:
+            self.append_debug(f"import WD refit skipped: {exc}")
         message = (
             f"Imported {model.title} (EFL {model.effl:.4g} mm) from "
-            f"{Path(folder).name}; surrogate saved as {model.filename}."
+            f"{Path(folder).name}; surrogate saved as {model.filename}." + housing_note
         )
         self.status_var.set(message)
         self.append_progress(message)
@@ -1997,6 +2012,21 @@ class LayoutTableWorkbenchMixin:
             self.append_debug(f"swap fold-clearance skipped: {exc}")
         self._sync_table()
         self.load_layouts()  # discover the new library surrogate (also insertable later)
+        # bugs/0647: ADVISORY bench note only on the swap path. The full refit is applied
+        # at fresh IMPORT (unfrozen scene) -- measured on the frozen ELS85: refitting the
+        # block moves the aperture stop ~12 mm inside desp-baked rows, and the frozen
+        # scene's pupil-referenced launch/measure machinery then mis-verifies the next
+        # solve (ruler claimed 20x20 where the grid mapping and first order said m~0.83;
+        # the solve drove object->rim to 169). Until that interaction is solved, a swap
+        # reports the honest bench offset instead of rewriting the block.
+        housing_note = ""
+        try:
+            _hnote = self.calibrate_lens_housing_to_datasheet_wd()
+            if _hnote:
+                self.append_debug("WD registration: " + _hnote)
+                housing_note = " " + _hnote
+        except Exception as exc:
+            self.append_debug(f"swap WD note skipped: {exc}")
         self._commit_history_capture()
         # bugs/0388: the swapped lens focuses at a different plane; 0383 kept the camera/mounts
         # at their absolute positions, so the image is defocused on the sensor. Auto re-solve
@@ -2019,6 +2049,7 @@ class LayoutTableWorkbenchMixin:
         message = (
             f"Swapped imaging lens -> {model.title} (EFL {model.effl:.4g} mm) in place; "
             "Object / beam splitter / LED / camera / FOV preserved." + clearance_note
+            + housing_note
         )
         if preserved:
             message += (

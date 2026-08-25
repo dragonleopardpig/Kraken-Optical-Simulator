@@ -3829,6 +3829,12 @@ class ScenePlacementMixin:
                     )
                 )
                 if not iter_ok:
+                    # bugs/0645 follow-up (guard 0572 caught it): the recruit above can slide
+                    # the fold mirror BEFORE this apply refuses -- pre-0645 nothing had moved
+                    # by iteration 0, so the bail never restored. A refused snap must leave
+                    # the scene EXACTLY as found (the 0572 no-dislocation contract: an 11.2 mm
+                    # mirror drift survived a refused 35x35 solve).
+                    _restore_row_snapshot(best_snapshot)
                     if _iteration == 0:
                         self.restore_glued_illumination_unit_world_poses(_illumination_poses)  # 0571
                         if gui:
@@ -3848,6 +3854,9 @@ class ScenePlacementMixin:
                 except Exception:
                     measured = None
                 if measured is None:
+                    # bugs/0645 follow-up: an unmeasurable pass must not keep its write (nor
+                    # a recruit that preceded it) -- fall back to the best MEASURED state.
+                    _restore_row_snapshot(best_snapshot)
                     break
                 residual = float(measured)
                 # bugs/0577: the divergence guard. Improvement is the ONLY licence to keep the
@@ -5008,6 +5017,272 @@ class ScenePlacementMixin:
         if moved:
             self._selected_step_label = "camera"
         return moved
+
+    def calibrate_lens_housing_to_datasheet_wd(self, *, refresh: bool = True) -> "str | None":
+        """bugs/0647 (flag_20260825_113300 "standoff=53.47+67.32? Actual testing is around
+        130mm"): REPORT the housing-vs-datasheet working-distance mismatch.
+
+        The vendor's Optimum Working Distance is object -> FRONT HOUSING RIM -- the only
+        plane a bench user can measure to -- and with the EFL it pins the front principal
+        plane relative to the housing: principal-behind-rim = f(1+1/m*) - WD*. A
+        datasheet-only surrogate has no such anchor (its principal split is NOMINAL,
+        bugs/0565's symmetric fallback), so on the ELS-85 the principal sat 37.45 mm behind
+        the STEP front face where the vendor law demands 28.0 -- every on-screen
+        rim-referenced standoff read ~9.4 mm short of the user's bench.
+
+        ADVISORY ONLY -- geometric body remedies were tried and retired the same day:
+        routing a shift through ``translate_step_overlay`` dragged the OPTICS rows with
+        the body (the user-drag glue follow, bugs/0574) and broke the conjugates; the raw
+        body-offset shift left the surrogate's fictitious thin-group discs floating
+        OUTSIDE the housing front (flag_20260825_132731 "lens surrogate detached from lens
+        body"). The PROPER fix is :meth:`refit_lens_principal_to_datasheet_wd` (rewrite the
+        two-group internals); this note remains for blocks the refit cannot act on.
+        Returns None when the scene has no lens STEP / no parseable WD data / a PDF that
+        does not match this glass, or when the registration is already bench-true."""
+        reg = self._lens_datasheet_wd_registration()
+        if reg is None or abs(reg["mismatch"]) <= 0.5:
+            return None
+        mismatch = reg["mismatch"]
+        return (
+            f"BENCH STANDOFF NOTE: the vendor datasheet (Optimum WD {reg['wd']:g} mm at "
+            f"{reg['pairing']:g}x, EFL {reg['effl_sheet']:g}) puts the front principal "
+            f"{reg['vendor_offset']:.1f} mm behind the housing rim; this surrogate draws "
+            f"it {reg['offset_now']:.1f} mm behind. On-screen object->housing "
+            f"measurements read {abs(mismatch):.1f} mm "
+            f"{'SHORTER' if mismatch > 0 else 'LONGER'} than the physical bench -- "
+            f"{'add' if mismatch > 0 else 'subtract'} {abs(mismatch):.1f} mm when planning "
+            f"the setup."
+        )
+
+    def _lens_datasheet_wd_registration(self) -> "dict | None":
+        """bugs/0647: measure the housing-vs-datasheet working-distance registration.
+
+        DATASHEET IS THE AUTHORITY (user decision 2026-08-25): the vendor's Optimum WD row
+        pins principal-behind-rim = f(1+1/m*) - WD*; lab measurements are corroboration
+        notes only ("there might be manufacturing error + lab measurement error").
+        Returns None when unmeasurable (no lens STEP, no parseable WD data, a PDF whose
+        EFL does not match this glass within 5%, degenerate geometry)."""
+        import math as _math
+
+        step_path = self._step_path_for_label("lens")
+        if step_path is None:
+            return None
+        cardinals = None
+        try:
+            from KrakenOS.UI.services.datasheet_prescription_import import (
+                parse_datasheet_cardinals,
+            )
+
+            for pdf in sorted(Path(step_path).parent.glob("*.pdf")):
+                parsed = parse_datasheet_cardinals(pdf)
+                if parsed is not None and parsed.optimum_wd is not None:
+                    cardinals = parsed
+                    break
+        except Exception:
+            cardinals = None
+        if cardinals is None:
+            return None
+        try:
+            _total, last_src, reference_rows = self._paraxial_total_image_gap()
+            _a, _b, _c, _d, effl_scene, ppa, _ppp = self._exact_paraxial_solution_for_rows(
+                reference_rows
+            )
+            _obj_gap, first_src = self._paraxial_total_object_gap()
+        except Exception:
+            return None
+        effl_sheet = float(cardinals.effl)
+        if not (
+            _math.isfinite(float(effl_scene))
+            and abs(float(effl_scene) - effl_sheet) <= 0.05 * effl_sheet
+        ):
+            # The folder's PDF does not describe this glass -- "calibrating" against it
+            # would be a confident wrong answer.
+            return None
+        pairing = float(cardinals.optimum_wd_mag)
+        vendor_offset = effl_sheet * (1.0 + 1.0 / pairing) - float(cardinals.optimum_wd)
+        if not (0.0 < vendor_offset < effl_sheet):
+            return None
+        try:
+            front = np.asarray(
+                self._split_row_world_center(int(first_src)), dtype=float
+            ).reshape(3)
+            rear = np.asarray(
+                self._split_row_world_center(int(last_src)), dtype=float
+            ).reshape(3)
+        except Exception:
+            return None
+        axis = rear - front
+        norm = float(np.linalg.norm(axis))
+        if norm <= 1.0e-6:
+            return None
+        axis = axis / norm
+        mesh = self._transformed_imported_step_mesh_for_label("lens")
+        if mesh is None or getattr(mesh, "n_points", 0) == 0:
+            return None
+        rim_s = float(
+            np.min(np.asarray(mesh.points, dtype=float) @ axis) - float(front @ axis)
+        )
+        offset_now = float(ppa) - rim_s  # principal sits ppa behind the front datum
+        return {
+            "wd": float(cardinals.optimum_wd),
+            "pairing": pairing,
+            "effl_sheet": effl_sheet,
+            "effl_scene": float(effl_scene),
+            "ppa": float(ppa),
+            "vendor_offset": float(vendor_offset),
+            "offset_now": float(offset_now),
+            "mismatch": float(offset_now - vendor_offset),
+            "first_src": int(first_src),
+            "last_src": int(last_src),
+        }
+
+    def refit_lens_principal_to_datasheet_wd(self) -> "str | None":
+        """bugs/0647 PROPER FIX: refit the two-group Black-Box internals so the front
+        principal lands f(1+1/m*) - WD* behind the housing rim -- discs stay inside the
+        barrel, datums / body / image gap untouched.
+
+        The datasheet is the AUTHORITY (user decision 2026-08-25). The refit keeps the
+        importer-convention ``ppp`` (derived from the block itself: ppp = -(g2 + f*d/f1))
+        and the span, so the rear principal keeps its distance to the rear datum and the
+        image conjugate is preserved; only ``ppa`` moves, by exactly the measured
+        registration mismatch. ``solve_two_thin_groups`` reproduces all four cardinals; a
+        solution with a group outside the datums refuses and falls back to the advisory
+        note (:meth:`calibrate_lens_housing_to_datasheet_wd`), as does any block that is
+        not the pure two-group shape."""
+        reg = self._lens_datasheet_wd_registration()
+        if reg is None:
+            return None
+        if abs(reg["mismatch"]) <= 0.5:
+            return None
+        rows = self.rows
+        # The block is the five rows from the front datum; reg["last_src"] is the IMAGE
+        # gap's source index, which on a folded scene sits past the promoted BS/prism
+        # rows (measured: 7 on the ELS85 while the rear datum is row 5) -- it serves the
+        # axis direction, never the block boundary.
+        first = int(reg["first_src"])
+        last = first + 4
+        if last >= len(rows):
+            return self.calibrate_lens_housing_to_datasheet_wd()
+        shape = [str(getattr(rows[i], "surface", "")) for i in range(first, last + 1)]
+        if shape != ["Standard", "Thin Lens", "Aperture", "Thin Lens", "Standard"]:
+            self.append_debug(
+                f"WD refit: block rows {first}..{last} are {shape}, not the pure "
+                "two-group shape -- advisory note only."
+            )
+            return self.calibrate_lens_housing_to_datasheet_wd()
+        f1 = float(getattr(rows[first + 1], "rc", 0.0) or 0.0)
+        f2 = float(getattr(rows[first + 3], "rc", 0.0) or 0.0)
+        if abs(f1) < 1e-6 or abs(f2) < 1e-6:
+            return self.calibrate_lens_housing_to_datasheet_wd()
+        g1 = float(rows[first].thickness)
+        d = float(rows[first + 1].thickness) + float(rows[first + 2].thickness)
+        g2 = float(rows[first + 3].thickness)
+        span = g1 + d + g2
+        effl = float(reg["effl_scene"])
+        ppa_now = g1 + effl * d / f2
+        ppp_now = -(g2 + effl * d / f1)
+        if abs(ppa_now - reg["ppa"]) > 0.5:
+            # The Parax solve and the pure two-group formula disagree -- the block is not
+            # what it looks like; do not rewrite it on a guess.
+            return self.calibrate_lens_housing_to_datasheet_wd()
+        ppa_new = ppa_now - float(reg["mismatch"])
+        try:
+            from KrakenOS.UI.services.machine_vision_folder_import import (
+                solve_two_thin_groups,
+            )
+
+            sol = solve_two_thin_groups(effl, ppa_new, ppp_now, span)
+        except Exception as exc:
+            self.append_debug(f"WD refit infeasible ({type(exc).__name__}: {exc}).")
+            return self.calibrate_lens_housing_to_datasheet_wd()
+        if sol.g1 < 0.0 or sol.g2 < 0.0 or sol.d <= 0.0:
+            self.append_debug("WD refit would push a group outside the datums.")
+            return self.calibrate_lens_housing_to_datasheet_wd()
+        frozen = False
+        try:
+            frozen = bool((self._folded_image_conjugate_split() or {}).get("frozen_world"))
+        except Exception:
+            frozen = False
+        front_world = None
+        axis_unit = None
+        if frozen:
+            # Capture the block axis BEFORE the rewrite: on a frozen scene the world pose
+            # of a row is (desp_x, desp_y, station + desp_z), so thickness edits move
+            # world_z by the station delta -- the first frozen refit attempt lifted the
+            # internal discs (and, via the row-0 conjugate write, EVERYTHING downstream)
+            # 9-17 mm OFF the leg while x stayed baked; the "mis-verifying ruler" was
+            # honestly tracing that displaced hybrid. The datums keep their stations
+            # (row 0 untouched, span preserved), the internal rows get re-baked below.
+            try:
+                front_world = np.asarray(
+                    self._split_row_world_center(first), dtype=float
+                ).reshape(3)
+                rear_world = np.asarray(
+                    self._split_row_world_center(last), dtype=float
+                ).reshape(3)
+                axis_vec = rear_world - front_world
+                axis_len = float(np.linalg.norm(axis_vec))
+                if axis_len <= 1.0e-6:
+                    return self.calibrate_lens_housing_to_datasheet_wd()
+                axis_unit = axis_vec / axis_len
+            except Exception:
+                return self.calibrate_lens_housing_to_datasheet_wd()
+        rows[first].thickness = round(float(sol.g1), 6)
+        rows[first + 1].rc = round(float(sol.f1), 6)
+        half = round(float(sol.d) / 2.0, 6)
+        rows[first + 1].thickness = half
+        rows[first + 2].thickness = round(float(sol.d) - half, 6)
+        rows[first + 3].rc = round(float(sol.f2), 6)
+        rows[first + 3].thickness = round(float(sol.g2), 6)
+        if frozen:
+            # Re-bake the INTERNAL rows onto the leg at their new stations: world must be
+            # front-datum + axis * s (s = the new offset inside the block), and desp_z
+            # absorbs whatever the new station leaves over.
+            offsets = {
+                first + 1: float(sol.g1),
+                first + 2: float(sol.g1) + half,
+                first + 3: float(sol.g1) + float(sol.d),
+            }
+            for index, s_offset in offsets.items():
+                intended = front_world + axis_unit * s_offset
+                station = float(sum(float(r.thickness) for r in rows[:index]))
+                rows[index].desp_x = round(float(intended[0]), 6)
+                rows[index].desp_y = round(float(intended[1]), 6)
+                rows[index].desp_z = round(float(intended[2]) - station, 6)
+        else:
+            # Keep the conjugate: the object sat right relative to the OLD principal, and
+            # the principal just moved toward the object by the mismatch -- grow the
+            # object leg by the same amount so object->principal is invariant. FROZEN
+            # scenes skip this: their object plane is world-pinned (t is bookkeeping) and
+            # the write would shift every downstream station off the leg; the user's next
+            # solve re-establishes the field on the corrected optics.
+            rows[0].thickness = round(float(rows[0].thickness) + float(reg["mismatch"]), 6)
+        # bugs/0591/0608 doctrine: the refit changes the MACHINE, so the learned
+        # magnification correction and field centre of the OLD optics are poison.
+        # Measured: the first 20x20 solve after an un-cleared refit drove the lens to
+        # object->rim 169 mm while "verifying" the field through the stale centre (the
+        # independent grid mapping read m=0.83 where the ruler claimed 1.15). Clear both
+        # and mark the deferred re-measure (bugs/0646) so the next real trace re-learns.
+        self._folded_m_correction_state = None
+        self._folded_field_center_state = None
+        self._folded_m_relearn_pending = True
+        # Push the refit rows into the table widget: `_write_layout_file` starts with
+        # `_read_rows_from_table()`, so without this sync the STALE table silently
+        # reverts the refit on the next save (measured: the import's persisted library
+        # file and the live rows both carried the old block).
+        try:
+            self._sync_table()
+        except Exception:
+            pass
+        self._invalidate_preview_scene_trace()
+        self._fold_carry_pending_rebuild = True
+        return (
+            f"Lens surrogate refit to the datasheet working-distance law: the front "
+            f"principal now sits {reg['vendor_offset']:.1f} mm behind the housing rim "
+            f"(was {reg['offset_now']:.1f}; vendor Optimum WD {reg['wd']:g} mm at "
+            f"{reg['pairing']:g}x). On-screen object->rim standoffs match the bench; the "
+            f"thin groups stay inside the barrel."
+        )
 
     def improve_lens_surrogate_rear_to_step(self) -> bool:
         """Item 4 ("vendor CAD is truth; improve the surrogate to fit it"): move the lens

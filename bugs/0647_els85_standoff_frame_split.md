@@ -46,3 +46,105 @@ correction goes back to measuring OPTICS only.
 
 Probes: scratchpad check_els85_wd/wd2/drift/mapping (session 2026-08-25); the mapping probe
 fits launch→landing spans from the full traced grid — no chief ruler, no learned state.
+
+## CORRECTION + SHIPPED FIX (same day, after the user pushed back)
+
+The user: "We can only measure the object plane to the outer housing rim during actual
+setup … do you mean whatever I measure on the screen is wrong?" — right on both counts.
+The vendor WD convention IS the housing rim (the only bench-accessible plane), so my
+"reference-plane ambiguity" reconciliation above was wrong: **the scene really was ~9.4 mm
+optimistic**. Root cause: a datasheet-only surrogate's principal split is NOMINAL
+(bugs/0565 symmetric fallback) — nothing anchored the glass to the housing. On the ELS-85
+the front principal sat 37.45 mm behind the STEP front face; the vendor's own Optimum
+Working Distance row (142 mm @ 1.0×, EFL 85) demands 85·(1+1/1) − 142 = **28.0 mm**.
+
+Shipped (general, per the standing rule):
+
+- `parse_optimum_working_distance` (datasheet_prescription_import): recovers the Optimum
+  WD + pairing |m| from the delaminated text soup via a physics window
+  f/m* < WD < f(1+1/m*) — on the ELS soup that admits exactly 142; decoys (back focus
+  glued as "10-4141.85mm", TTL, 26/68/85) fall out; ambiguity refuses. PYRITE sheets
+  (no such label) refuse cleanly.
+- `calibrate_lens_housing_to_datasheet_wd` (scene_placement_commands): slides the BODY
+  (never the optics) along the lens axis until principal-behind-rim matches the vendor
+  law. **Scar:** the first cut routed through `translate_step_overlay`, which drags the
+  OPTICS rows with the body (the user-drag glue follow, 0574) — principal−rim stayed put
+  and the conjugates broke; the fix writes the placement offset directly. EFL
+  cross-check (5%) refuses a PDF that does not match the glass.
+- Wired into the folder importer AND the lens swap (both after glue, before the 0608
+  delivered-field re-measure — the housing openings are 0379 ray stops).
+- ELS85 scene repaired + saved (backup: `machine_vision_ELS85_pre0647_backup.py`):
+  rim +9.46 mm, datum/optics byte-identical, principal−rim 27.99, object→rim
+  **121.89 → 131.34 ≈ the bench's ~130**, delivered semi(10 mm) unchanged to the last
+  digit. Render: `recorded_bug_repros/render_0647_after_housing_calibration.png`.
+- Guard: `validate_open3d_0647_housing_wd_calibration` = penta **phase 485**.
+
+## RETIREMENT of the body shift (flag_20260825_132731 "lens surrogate detached from lens body")
+
+The +9.46 mm body shift made the on-screen standoff bench-true — and floated the
+surrogate's fictitious thin-group discs ~5.6 mm OUTSIDE the housing front. The user
+flagged it within the hour. Scene REVERTED to the user's own 11:23 save (backup kept);
+`calibrate_lens_housing_to_datasheet_wd` is now ADVISORY ONLY: it returns the honest
+bench note ("on-screen standoffs read 9.4 mm SHORTER than the bench -- add 9.4 mm"),
+appended by the folder importer and the lens swap. Guard C now asserts the function
+moves NOTHING.
+
+**The real fix — SHIPPED for the import path:** `refit_lens_principal_to_datasheet_wd`
+re-solves the two-group internals (`solve_two_thin_groups` with ppa reduced by the
+measured mismatch, ppp/span/datums/body/image-gap all preserved, object leg grown by the
+mismatch so object→principal is invariant) — discs stay INSIDE the barrel, no visual
+detachment. Auto-applied at folder IMPORT and persisted into the emitted library .py.
+Verified end-to-end on a fresh ELS-85 import: mismatch −0.0000 after refit, conjugate
+held exactly (object→principal 175.91 before and after), and the solved standoff followed
+the vendor law to the last digit (object→rim 147.91 = f(1+1/0.935) − 28.0 − 0).
+
+Three scars found on the way, all guarded:
+- the refit must `_sync_table()` — `_write_layout_file` starts with
+  `_read_rows_from_table()`, so a stale table silently REVERTS un-synced row writes on
+  the next save;
+- the refit must clear the learned magnification/centre + set the 0646 deferral (the
+  0591/0608 "new machine" doctrine) — a stale centre let a solve "verify" 20×20 while
+  the independent grid mapping read m=0.83;
+- **frozen scenes need the desp RE-BAKE** — the "mis-verifying ruler" was never a pupil
+  bug: on a frozen scene world_z = station + baked desp_z, so the refit's thickness
+  edits (and the row-0 conjugate write) lifted the internal discs — and everything
+  downstream — 9–17 mm OFF the leg in z while x stayed baked; every instrument then
+  honestly measured a displaced hybrid. The frozen-aware refit (same function) skips the
+  row-0 write (object world-pinned; the write would shift ALL downstream stations) and
+  re-bakes the three internal rows' desp onto the leg at their new stations.
+  **Verified on the user's saved ELS85**: rows 1–5 all at z=54.283 on the leg, trace vs
+  first-order 1.294 vs 1.310 (1.2%), the 20×20 solve honest (focus −3.8e-05 mm, ruler
+  −0.06% AND the independent grid mapping at m=1.1502 — reconciled), and
+  **object→rim = 131.39 mm on screen** = the vendor law at the operating point (bench
+  132 ± spec scatter). Scene saved; render
+  `recorded_bug_repros/render_0647_frozen_refit.png`.
+
+The SWAP path stays advisory for now — not because of the frozen hazard (solved above)
+but because bugs/0648 (the 0645 recruit's interaction with consecutive opposing-room
+solves, caught by guard 0573: 55×55-after-35×35 under-delivers 10.5% on Apo75+PYRITE)
+must be resolved before adding another machinery interaction to that path.
+
+**Authority decision (user, 2026-08-25): the datasheet PDF is the calibration source.**
+The WD-aware build uses the vendor's Optimum-WD row (28.0 mm principal-behind-rim for the
+ELS-85), NOT any single lab point — "there might be manufacturing error + lab measurement
+error."
+
+*Lab corroboration note (not used for calibration):* object plane → lens front outer rim
+measured **132 mm** at the 20×20 operating point. Inverted: principal-behind-rim = 26.9 mm
+— within 1.1 mm of the vendor row; the model's object→principal (159.3) matches the
+bench-derived 160.0 within 0.7 mm. The vendor law, the model optics, and the lab agree to
+~1 mm; the on-screen shortfall is purely the drawn housing registration. Practical rule on
+the current scene: **on-screen standoff + ~9.4 mm ≈ bench** (datasheet law; the lab point
+suggests ~10, inside the combined tolerance).
+
+**0572 catch (fixed here):** the 0645 recruit could slide the fold mirror BEFORE the
+snap's first apply refused, and the iteration-0 bail returned WITHOUT restoring the row
+snapshot (pre-0645 nothing had moved by then) — an 11.2 mm mirror drift survived a
+REFUSED 35×35 solve on the 0572 guard scene. Both refusal exits (and the
+unmeasurable-pass break) now restore the best snapshot first: a refused snap leaves the
+scene exactly as found.
+
+STILL OPEN (the original frame-split finding stands): solve messages quote the
+prescription-frame object distance (17.35 mm short of world on this scene) and the
+delivered-m correction absorbs that split — the object-side world-truth reader
+(the 0447/0478 image-side doctrine mirrored) remains to be built.
