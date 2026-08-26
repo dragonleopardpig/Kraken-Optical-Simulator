@@ -57,3 +57,22 @@ collapse, bends survive RDP.
    identical) — the small row discs alone benefit from cleaning; and "how long to go"
    was a STUCK MONITOR, not a stuck job — check the worker's CPU% before believing a
    wait loop.
+
+5. **"refer to attachment/freecad.png ... some right side open ended"** (rounds 5+6) —
+   the user's symmetry framing cracked it. Quantified: 1583 left-side body segments had
+   no right twin vs 197 the other way. Two causes, one dead end:
+   - DEAD END (kept as a code comment): classifying `_actor_step_follow_map` keys into
+     BODIES swallowed ~1100 ILLUMINATION-RAY polylines (they follow their LED via the
+     same map). The correct discriminator is ROW TRACKING: CAD edge/rim companions
+     register with `track_row_index` → `_row_actor_map` (row → [keys]; NOT the
+     key→row `_actor_row_map` — a naming trap), illumination bundles are follow-only.
+   - THE ASYMMETRY ITSELF: `vtkPolyDataSilhouette`'s facing-flip test is a knife-edge
+     at tangency, and OCC tessellation is not mirror-symmetric — contour steps on one
+     side of a body of revolution fall exactly on the threshold and vanish while their
+     mirror twins survive. Fix: UNION the silhouettes of three slightly perturbed view
+     directions (±~0.6°); the fragment dedupe absorbs the overlap.
+   Verified: the tight lens zoom renders fully symmetric (ring steps, flange chamfers,
+   neck pillars, closed boxes on BOTH sides — scratchpad round6_lens_tight.png vs the
+   user's freecad.png). A left/right mirror-twin metric was built
+   (scratchpad symmetry_check.py) but over-counts on stitched+RDP output (symmetric
+   curves keep different points) — the rendered eyeball is the arbiter.

@@ -162,14 +162,33 @@ def mesh_outline_strips(
 
         strips: list[np.ndarray] = []
         if view_direction is not None:
-            sil = vtk.vtkPolyDataSilhouette()
-            sil.SetInputData(source)
-            sil.SetDirectionToSpecifiedVector()
-            sil.SetVector(*(float(v) for v in np.asarray(view_direction).reshape(3)))
-            sil.SetEnableFeatureAngle(0)
-            sil.BorderEdgesOn()
-            sil.Update()
-            strips.extend(polydata_line_strips(sil.GetOutput()))
+            # bugs/0650 round 6 (the user's freecad.png: right-side profile steps
+            # missing, left side present -- "compare the symmetry from the center
+            # line"): the silhouette test (adjacent facets flipping facing) is a
+            # knife-edge at tangency, and OCC tessellation is not mirror-symmetric,
+            # so contour edges on one side of a body of revolution can fall exactly
+            # on the threshold and vanish while their mirror twins survive. UNION the
+            # silhouettes of three slightly perturbed view directions (+-~0.6 deg);
+            # the fragment dedupe absorbs the overlap, and edges lost at one
+            # direction's threshold are caught by the neighbours.
+            base = np.asarray(view_direction, dtype=float).reshape(3)
+            norm = float(np.linalg.norm(base)) or 1.0
+            base = base / norm
+            ortho = np.cross(base, [0.0, 0.0, 1.0])
+            if float(np.linalg.norm(ortho)) < 1e-6:
+                ortho = np.cross(base, [0.0, 1.0, 0.0])
+            ortho = ortho / (float(np.linalg.norm(ortho)) or 1.0)
+            for tilt in (0.0, 0.01, -0.01):
+                direction = base + tilt * ortho
+                direction = direction / (float(np.linalg.norm(direction)) or 1.0)
+                sil = vtk.vtkPolyDataSilhouette()
+                sil.SetInputData(source)
+                sil.SetDirectionToSpecifiedVector()
+                sil.SetVector(*(float(v) for v in direction))
+                sil.SetEnableFeatureAngle(0)
+                sil.BorderEdgesOn()
+                sil.Update()
+                strips.extend(polydata_line_strips(sil.GetOutput()))
 
         fe = vtk.vtkFeatureEdges()
         fe.SetInputData(source)
@@ -379,10 +398,19 @@ def collect_viewport_dxf_layers(inspector) -> dict[str, dict[str, object]]:
     except Exception:
         cad_body_keys = set()
     # bugs/0650 round 5 dead end, kept as a warning: do NOT classify
-    # _actor_step_follow_map keys into BODIES -- ILLUMINATION RAY actors ride their
-    # LED via that map (follow_step_label), so the "fix" reclassified ~1100 ray
-    # polylines as body line art. The dash-like fragments on the housing bands are
-    # legitimate illumination-ray terminations, not broken body lines.
+    # _actor_step_follow_map keys into BODIES wholesale -- ILLUMINATION RAY actors ride
+    # their LED via that map (follow_step_label), so that "fix" reclassified ~1100 ray
+    # polylines as body line art.
+    # Round 6 (the user's freecad.png): the correct discriminator is ROW TRACKING. The
+    # inspector's _add_mesh_actor registers CAD edge/rim companions with
+    # track_row_index -> _row_actor_map (row -> [keys]; NOT the key->row _actor_row_map
+    # this collector already reads -- a naming trap), while illumination bundles are
+    # follow-only. Row-tracked companions are body line art.
+    for keys in (getattr(inspector, "_row_actor_map", None) or {}).values():
+        try:
+            cad_body_keys.update(keys)
+        except Exception:
+            pass
 
     layers: dict[str, dict[str, object]] = {
         "KRAKEN_RAYS": {"ltype": "CONTINUOUS", "color": 3, "polylines": []},

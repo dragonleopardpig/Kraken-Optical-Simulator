@@ -153,6 +153,24 @@ def run_checks():
         e_problems.append("the walk uses GetActors only (assembly/prop geometry invisible)")
     if "GetParts" not in collect_src:
         e_problems.append("assemblies are not descended")
+    # round 6 (the user's freecad.png: right-side profile steps missing, asymmetric):
+    if '"_row_actor_map"' not in collect_src:
+        e_problems.append(
+            "row-tracked companion actors (_row_actor_map, row->keys -- NOT _actor_row_map) "
+            "are not classified into BODIES"
+        )
+    if "_actor_step_follow_map" in collect_src.replace(
+        "# bugs/0650 round 5 dead end", ""
+    ) and "cad_body_keys.update((getattr(inspector, \"_actor_step_follow_map\"" in collect_src:
+        e_problems.append(
+            "follow-map keys classified into BODIES again (they include ILLUMINATION "
+            "RAYS -- the round-5 dead end)"
+        )
+    if "for tilt in (0.0, 0.01, -0.01)" not in outline_src:
+        e_problems.append(
+            "the silhouette perturbation union is gone -- tangency knife-edges on "
+            "asymmetric tessellation drop one side's contour steps (freecad.png)"
+        )
     if e_problems:
         ok = False
         notes.append(f"FAIL: E (bugs/0650): {e_problems}")
