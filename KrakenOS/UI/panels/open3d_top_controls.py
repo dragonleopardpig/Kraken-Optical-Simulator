@@ -230,6 +230,7 @@ class Open3DTopControlsPanel:
                 MenuCommand("Glue STEP to Surrogate", self.inspector.glue_selected_step_to_surrogate),
                 MenuCommand("Obj->LED", self.editor.start_led_object_edge_pick),
                 MenuCommand("Export STEP", self.editor.export_3d_step),
+                MenuCommand("Export View DXF", self.editor.export_3d_view_dxf),
                 None,
                 MenuCommand("Faces...", self.inspector.open_selected_optical_faces),
                 MenuCommand("Source Target", self.inspector.start_source_target_pick),

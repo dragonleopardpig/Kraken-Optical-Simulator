@@ -62,6 +62,7 @@ class MainWindowBuilder:
         file_menu.add_command(label="Lens Drawing Surface Properties...", command=self._open_lens_drawing_surface_properties_dialog)
         file_menu.add_command(label="Export Lens Drawing...", command=self.export_lens_drawing)
         file_menu.add_command(label="Export 3D STEP...", command=self.export_3d_step)
+        file_menu.add_command(label="Export 3D View DXF...", command=self.export_3d_view_dxf)
         file_menu.add_separator()
         file_menu.add_command(label="Quit", command=self.request_quit)
         menubar.add_cascade(label="File", menu=file_menu)

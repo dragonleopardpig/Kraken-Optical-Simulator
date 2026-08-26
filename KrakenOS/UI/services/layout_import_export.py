@@ -730,6 +730,61 @@ class LayoutImportExportMixin:
         self._update_window_title()  # bugs/0637
         return True
 
+    def export_3d_view_dxf(self) -> None:
+        """bugs/0650: export the CURRENT 3D viewport as a DXF R12 vector drawing.
+
+        The scene is flattened orthographically into the current camera's view plane in
+        TRUE millimetres (rays / dashed axes / body feature edges / measures, layered),
+        so the drawing is dimensionable in any CAD package. DXF R12 opens everywhere
+        (AutoCAD, FreeCAD, LibreCAD) and converts to DWG there -- a native DWG writer
+        would need an external binary, which this project deliberately avoids."""
+        inspector = getattr(self, "_three_d_inspector", None)
+        alive = False
+        try:
+            alive = inspector is not None and bool(inspector.winfo_exists())
+        except Exception:
+            alive = False
+        if not alive:
+            messagebox.showinfo(
+                "Export View DXF",
+                "Open the 3D view first -- the DXF is a flattening of the CURRENT 3D "
+                "camera view.",
+                parent=self,
+            )
+            return
+        stem = "kraken_3d_view"
+        if self.current_layout_file is not None:
+            stem = f"{self.current_layout_file.stem}_view"
+        try:
+            SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        path = filedialog.asksaveasfilename(
+            title="Export Current 3D View as DXF",
+            initialdir=str(SCREENSHOT_DIR),
+            initialfile=f"{stem}.dxf",
+            defaultextension=".dxf",
+            filetypes=[("DXF R12", "*.dxf"), ("All files", "*")],
+            parent=self,
+        )
+        if not path:
+            return
+        try:
+            from KrakenOS.UI.services.dxf_viewport_export import export_viewport_to_dxf
+
+            summary = export_viewport_to_dxf(inspector, Path(path).expanduser())
+        except Exception as exc:
+            self.status_var.set(f"DXF export failed: {exc}")
+            messagebox.showerror(
+                "Export View DXF", f"DXF export failed:\n\n{exc}", parent=self
+            )
+            return
+        self.status_var.set(summary)
+        try:
+            self.append_progress(summary)
+        except Exception:
+            pass
+
     def export_3d_step(self) -> None:
         """Export the current 3D viewer geometry as a STEP assembly."""
         worker = getattr(self, "_step_export_thread", None)
