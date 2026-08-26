@@ -316,6 +316,84 @@ def run_checks():
             "pieces merge into one vector line (camera bottom edge = one polyline)"
         )
 
+    # ---------------------------------------------------------------- H: round 8
+    # user: "exported DXF still have broken lines here and there" -- three mechanisms,
+    # all reproduced from the user's own re-export (95 surviving overlaps):
+    #   1. the round-7 merge sorted by (angle, offset); real tessellation angle JITTER
+    #      interleaves other offsets between same-line members and the consecutive
+    #      sweep splits the group; and the directed angle wraps at +-pi/2. The merge
+    #      must cluster the UNDIRECTED angle (with a 0/pi wrap merge) first, offsets
+    #      second.
+    #   2. chains bypassed the merge entirely; body layers must DECOMPOSE chains into
+    #      segments so chain-carried collinear pieces merge too.
+    #   3. the stitcher's HEAD-side join prepended seg[:-1] with seg oriented to START
+    #      at the tip -- duplicating the tip and DROPPING the far endpoint on every
+    #      head join since round 2.
+    h_problems = []
+    jittered = merge_collinear_segments_2d(
+        [
+            np.array([[10.0, 0.0], [10.000001, 5.0]]),
+            np.array([[20.0, 0.0], [20.0, 4.0]]),
+            np.array([[10.0, 4.0], [10.0, 9.0]]),
+            np.array([[20.000001, 3.0], [19.999999, 8.0]]),
+        ]
+    )
+    if len(jittered) != 2:
+        h_problems.append(
+            f"angle-jittered interleaved verticals did not merge per line "
+            f"({len(jittered)} != 2 -- the round-7 single-sort sweep)"
+        )
+    wrapped = merge_collinear_segments_2d(
+        [
+            np.array([[0.0, 5.0], [6.0, 5.000001]]),
+            np.array([[10.0, 4.999999], [4.0, 5.0]]),
+        ]
+    )
+    if len(wrapped) != 1:
+        h_problems.append("horizontals jittering across the 0/pi angle wrap did not merge")
+    head = stitch_strips_2d([np.array([[5.0, 0.0], [10.0, 0.0]]), np.array([[5.0, 0.0], [0.0, 0.0]])])
+    if (
+        len(head) != 1
+        or head[0].shape[0] != 3
+        or not np.allclose(head[0][0], [0.0, 0.0])
+        or not np.allclose(head[0][-1], [10.0, 0.0])
+    ):
+        h_problems.append(
+            "a HEAD-side stitch join loses the far endpoint / duplicates the tip "
+            f"(got {[np.round(x, 2).tolist() for x in head]})"
+        )
+    decomposed = _postprocess_layer_polylines(
+        [
+            {"points": np.array([[0.0, 0.0], [5.0, 0.0], [5.0, 3.0]]), "color": None},
+            {"points": np.array([[2.0, 0.0], [9.0, 0.0]]), "color": None},
+        ],
+        decompose=True,
+    )
+    spans = sorted(
+        (
+            tuple(np.round(q["points"][0], 2)),
+            tuple(np.round(q["points"][-1], 2)),
+        )
+        for q in decomposed
+    )
+    if len(decomposed) != 2 or spans != [((0.0, 0.0), (9.0, 0.0)), ((5.0, 0.0), (5.0, 3.0))]:
+        h_problems.append(
+            f"a chain-carried collinear piece did not merge with the overlapping "
+            f"fragment under decompose (got {spans})"
+        )
+    collect_src4 = _insp3.getsource(_dve.collect_viewport_dxf_layers)
+    if "decompose=" not in collect_src4 or "KRAKEN_BODIES" not in collect_src4.split("decompose=")[1][:80]:
+        h_problems.append("the body layer is not post-processed with decompose=True")
+    if h_problems:
+        ok = False
+        notes.append(f"FAIL: H (bugs/0650 round 8): {h_problems}")
+    else:
+        notes.append(
+            "PASS: H: undirected-angle clustering (jitter + wrap) merges same-line "
+            "pieces; chains decompose into the merge; head-side stitch joins keep "
+            "their far endpoint"
+        )
+
     # ---------------------------------------------------------------- D: wiring
     import inspect as _inspect
 

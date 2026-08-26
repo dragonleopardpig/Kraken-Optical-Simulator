@@ -104,3 +104,33 @@ collapse, bends survive RDP.
    from the live geometry (sensor position is linear in the booked thickness on a frozen
    fold — two samples, solve for the solid's centre). Baseline: 487 phases, 46 known
    environment failures, 452 restored to pass.
+
+## Round 8 — "exported DXF still have broken lines here and there" (2026-08-27)
+
+The user re-exported (07:30, round-7 code confirmed: zero companion edges on RAYS) and
+still saw broken lines. Measured on their own file: 95 collinear overlaps surviving in
+BODIES. Three real mechanisms, each with a guard-H check:
+
+1. **The round-7 merge grouping was a fiction on real geometry.** It sorted by
+   (directed angle, offset) and swept CONSECUTIVE rows. Tessellated edges carry ~1e-6
+   angle jitter, so the sort interleaves other offsets between same-line members and
+   the sweep splits the group — my synthetic tests all had exact axis-aligned angles,
+   which is why they passed. The directed angle also wraps at ±π/2, splitting one
+   vertical line's members to both ends of the sort. Fix: cluster the UNDIRECTED
+   angle (mod π, explicit 0/π wrap merge of the end clusters), re-project every
+   cluster member on ONE reference direction, then cluster by offset, then union
+   parameter intervals.
+2. **Chains bypassed the merge.** Round 7 merged only 2-point fragments; stitched or
+   multi-point strips carried collinear pieces past it. Body layers now DECOMPOSE
+   every chain into individual segments before the merge (`decompose=True` for
+   KRAKEN_BODIES only — rays keep their chains; two rays on one line are two rays).
+3. **The stitcher's head-side join ate an endpoint — since round 2.** `seg` is
+   oriented to START at the tip (the tail-growth convention), but head growth
+   prepended `seg[:-1]`: a duplicated tip and a DROPPED far endpoint on every
+   head-side join. Guard F's box test passed by orientation luck. Fix: prepend
+   `seg[::-1][:-1]`.
+
+Measured after, same scene, same view: residual collinear overlaps 95 → **0**
+(1837 body segments); guard sections A–H all pass; re-render eyeball clean (closed
+boxes, continuous profiles). Lesson for the file: an order-dependent sweep over sorted
+tuples is only correct when the FIRST key is exact — measured geometry never is.

@@ -263,7 +263,12 @@ def stitch_strips_2d(strips: list[np.ndarray], tol: float = 1e-3) -> list[np.nda
                 if end:
                     chain.extend(list(seg[1:]))
                 else:
-                    chain[0:0] = list(seg[:-1])
+                    # ``seg`` is oriented to START at the tip (the tail-growth
+                    # convention); a head join must prepend it REVERSED -- ending at
+                    # the tip -- or the far endpoint is dropped and the tip
+                    # duplicated (bugs/0650 round 8: every head-side join silently
+                    # ate one endpoint).
+                    chain[0:0] = list(seg[::-1][:-1])
         out.append(np.asarray(chain, dtype=float))
     return out
 
@@ -331,10 +336,17 @@ def merge_collinear_segments_2d(
     A housing edge reaches the export twice -- once from the silhouette pass, once
     from the STEP body's companion edge actor -- and each copy is cut wherever a
     neighbouring feature touches it, so the camera's bottom edge arrived as nine
-    overlapping pieces. Endpoint stitching cannot see overlap; this pass groups by
-    (direction, perpendicular offset) with a SORT-based sweep (no bin lottery) and
-    unions the parameter intervals. Chains of 3+ points are not segments and pass
-    through untouched.
+    overlapping pieces. Endpoint stitching cannot see overlap.
+
+    Round 8 (user: "exported DXF still have broken lines here and there"): the round-7
+    single sort by (angle, offset) broke on real geometry -- near-vertical edges carry
+    tiny tessellation angle jitter, so segments of OTHER offsets interleave between
+    same-line members and the consecutive sweep splits the group (95 overlaps survived
+    on the user's own export); and the directed-angle canonical form wraps at +-pi/2,
+    splitting one vertical line's members to both ends of the sort. Now: cluster the
+    UNDIRECTED angle (mod pi, with an explicit wrap merge of the first/last cluster),
+    re-project every cluster member on ONE reference direction, then cluster by offset
+    and union the parameter intervals.
     """
     if not segments:
         return []
@@ -346,44 +358,65 @@ def merge_collinear_segments_2d(
         length = float(np.hypot(d[0], d[1]))
         if length < 1e-6:
             continue
-        d = d / length
-        if d[0] < 0.0 or (abs(d[0]) < 1e-12 and d[1] < 0.0):
-            d = -d
-        theta = float(np.arctan2(d[1], d[0]))  # in [0, pi)
-        offset = float(d[0] * a[1] - d[1] * a[0])  # signed perpendicular distance of the line
-        t0, t1 = float(np.dot(d, a)), float(np.dot(d, b))
-        rows.append((theta, offset, min(t0, t1), max(t0, t1), d))
+        phi = float(np.arctan2(d[1], d[0])) % np.pi  # undirected line angle in [0, pi)
+        rows.append((phi, a, b))
     if not rows:
         return []
-    rows.sort(key=lambda r: (r[0], r[1], r[2]))
+    rows.sort(key=lambda r: r[0])
+    # Angle clusters: consecutive sweep over the sorted undirected angles ...
+    clusters: list[list[tuple]] = [[rows[0]]]
+    for row in rows[1:]:
+        if row[0] - clusters[-1][-1][0] <= angle_tol:
+            clusters[-1].append(row)
+        else:
+            clusters.append([row])
+    # ... with the 0/pi wrap: a horizontal edge jittering either side of 0 lands in
+    # both end clusters; they are the same undirected direction.
+    if len(clusters) > 1 and (clusters[0][0][0] + np.pi) - clusters[-1][-1][0] <= angle_tol:
+        clusters[0] = clusters.pop() + clusters[0]
     out: list[np.ndarray] = []
-    i = 0
-    while i < len(rows):
-        # Group consecutive rows on the same line (angle AND offset within tolerance).
-        j = i + 1
-        while (
-            j < len(rows)
-            and abs(rows[j][0] - rows[i][0]) <= angle_tol
-            and abs(rows[j][1] - rows[i][1]) <= perp_tol
-        ):
-            j += 1
-        group = sorted(rows[i:j], key=lambda r: r[2])
-        theta, offset, _, _, d = group[0]
+    for cluster in clusters:
+        d = np.array([np.cos(cluster[0][0]), np.sin(cluster[0][0])])
         normal = np.array([-d[1], d[0]])
-        cur_t0, cur_t1 = group[0][2], group[0][3]
-        for _, _, t0, t1, _ in group[1:]:
-            if t0 <= cur_t1 + gap_tol:
-                cur_t1 = max(cur_t1, t1)
-            else:
-                out.append(np.array([d * cur_t0 + normal * offset, d * cur_t1 + normal * offset]))
-                cur_t0, cur_t1 = t0, t1
-        out.append(np.array([d * cur_t0 + normal * offset, d * cur_t1 + normal * offset]))
-        i = j
+        members = []
+        for _, a, b in cluster:
+            t0, t1 = float(np.dot(d, a)), float(np.dot(d, b))
+            offset = 0.5 * (float(np.dot(normal, a)) + float(np.dot(normal, b)))
+            members.append((offset, min(t0, t1), max(t0, t1)))
+        members.sort(key=lambda m: (m[0], m[1]))
+        i = 0
+        while i < len(members):
+            j = i + 1
+            while j < len(members) and members[j][0] - members[j - 1][0] <= perp_tol:
+                j += 1
+            group = sorted(members[i:j], key=lambda m: m[1])
+            offset = float(np.mean([m[0] for m in group]))
+            cur_t0, cur_t1 = group[0][1], group[0][2]
+            for _, t0, t1 in group[1:]:
+                if t0 <= cur_t1 + gap_tol:
+                    cur_t1 = max(cur_t1, t1)
+                else:
+                    out.append(
+                        np.array([d * cur_t0 + normal * offset, d * cur_t1 + normal * offset])
+                    )
+                    cur_t0, cur_t1 = t0, t1
+            out.append(np.array([d * cur_t0 + normal * offset, d * cur_t1 + normal * offset]))
+            i = j
     return out
 
 
-def _postprocess_layer_polylines(polylines: list[dict], epsilon: float = 0.02) -> list[dict]:
-    """Per colour bucket: split at bad points, stitch fragments, simplify, dedupe."""
+def _postprocess_layer_polylines(
+    polylines: list[dict], epsilon: float = 0.02, decompose: bool = False
+) -> list[dict]:
+    """Per colour bucket: split at bad points, stitch fragments, simplify, dedupe.
+
+    ``decompose`` (bugs/0650 round 8, body layers): break every chain into its
+    individual segments FIRST so chain-carried collinear pieces join the overlap
+    merge too -- a stitched-then-simplified chain is straight-line geometry just like
+    a raw fragment, and on the user's export such pieces kept doubling edges the
+    round-7 merge never saw. Rays keep their chains (two rays sharing a line are
+    still two rays).
+    """
     by_color: dict[object, list[np.ndarray]] = {}
     frag_seen: set = set()
     for poly in polylines:
@@ -406,8 +439,14 @@ def _postprocess_layer_polylines(polylines: list[dict], epsilon: float = 0.02) -
         # Round 7: overlapping collinear pieces of ONE edge (silhouette + companion
         # copies, each cut at every touching feature) become one segment BEFORE the
         # endpoint stitch -- the stitch only ever sees shared endpoints.
-        segments = [run for run in strips if run.shape[0] == 2]
-        chains = [run for run in strips if run.shape[0] != 2]
+        if decompose:
+            segments = [
+                np.array([p, q]) for run in strips for p, q in zip(run[:-1], run[1:])
+            ]
+            chains = []
+        else:
+            segments = [run for run in strips if run.shape[0] == 2]
+            chains = [run for run in strips if run.shape[0] != 2]
         strips = merge_collinear_segments_2d(segments) + chains
         for chain in stitch_strips_2d(strips):
             simple = simplify_polyline_2d(chain, epsilon)
@@ -651,7 +690,9 @@ def collect_viewport_dxf_layers(inspector) -> dict[str, dict[str, object]]:
     for name, spec in layers.items():
         if name.startswith("__"):
             continue
-        spec["polylines"] = _postprocess_layer_polylines(spec["polylines"])
+        spec["polylines"] = _postprocess_layer_polylines(
+            spec["polylines"], decompose=(name == "KRAKEN_BODIES")
+        )
     layers["__counts__"] = counts  # type: ignore[assignment]
     return layers
 
