@@ -135,6 +135,43 @@ def run_checks():
             "immune to perpendicular (slope-ward) motion, None outside tolerance"
         )
 
+    # ---------------------------------------------------------------- D: feature magnet
+    # bugs/0651 (user round 2: the pure glide killed the edge highlight and the
+    # discrete "snap feel"): component features are MAGNETS on the glide -- within the
+    # magnet radius the X jumps to the feature's bugs/0115 axis station, the component
+    # edge highlights, the marker draws EMPHASIZED, and a dotted leader ties the X to
+    # the picked edge point. The click applies the same magnet (hover == click).
+    d_problems = []
+    axis_branch = hover_src[hover_src.find("if axis_near is not None:"):]
+    for token, why in (
+        ("_measure_axis_snap_for_pick", "no feature magnet on the glide"),
+        ("<= 14.0", "no magnet radius"),
+        ("_set_dimension_anchor_snap_highlight(hit_key", "edge highlight lost on snap"),
+        ("emphasized=snapped_feature", "no emphasized marker on a feature snap"),
+        ("_show_measure_snap_leader", "no dotted leader to the snapping edge"),
+    ):
+        if token not in axis_branch:
+            d_problems.append(why)
+    click_axis = click_src[click_src.find("if axis_near is not None:"):]
+    if "magnet_resolved" not in click_axis or "<= 14.0" not in click_axis:
+        d_problems.append("the click does not mirror the feature magnet (hover != click)")
+    from KrakenOS.UI.open3d_inspector import Kraken3DInspector as _K
+
+    leader_src = inspect.getsource(_K._show_measure_snap_leader)
+    if "dash" not in leader_src:
+        d_problems.append("the leader is not dashed")
+    clear_src = inspect.getsource(_K._clear_measure_snap_marker)
+    if "_measure_snap_leader_actors" not in clear_src:
+        d_problems.append("the leader does not die with the marker (stale leaders)")
+    if d_problems:
+        ok = False
+        notes.append(f"FAIL: D (bugs/0651): {d_problems}")
+    else:
+        notes.append(
+            "PASS: D: feature magnet (14 px) with edge highlight + emphasized X + "
+            "dashed leader; click mirrors the magnet"
+        )
+
     return ok, notes
 
 

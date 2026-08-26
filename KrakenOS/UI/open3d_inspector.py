@@ -19102,10 +19102,71 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 pass
         self._measure_snap_marker_actors = []
+        # bugs/0651: the dotted leader lives and dies with the marker.
+        for _actor in getattr(self, "_measure_snap_leader_actors", []) or []:
+            try:
+                self._remove_renderer_view_prop(_actor)
+            except Exception:
+                pass
+        self._measure_snap_leader_actors = []
 
-    def _show_measure_snap_marker(self, world) -> None:
+    def _show_measure_snap_leader(self, snap_world, edge_world) -> None:
+        """bugs/0651 (user: "good to have little dotted line from the cross hair to the
+        snapping edge to help visualize"): a small DASHED leader from the snapped "X"
+        on the axis to the component edge point that owns the snap. Manual dash
+        segments (VTK line stipple is unreliable across backends); cleared with the
+        marker; never pickable."""
+        if self._renderer is None or vtkActor is None:
+            return
+        try:
+            from vtkmodules.vtkRenderingCore import vtkPolyDataMapper
+        except Exception:
+            return
+        p0 = np.asarray(snap_world, dtype=float).reshape(-1)[:3]
+        p1 = np.asarray(edge_world, dtype=float).reshape(-1)[:3]
+        if not (np.all(np.isfinite(p0)) and np.all(np.isfinite(p1))):
+            return
+        span = p1 - p0
+        length = float(np.linalg.norm(span))
+        if length <= 1e-9:
+            return
+        dash = max(length / 14.0, 0.4)
+        n = max(int(length / (2.0 * dash)), 1)
+        points = []
+        lines = []
+        for k in range(n):
+            a = p0 + span * min((2 * k) * dash / length, 1.0)
+            b = p0 + span * min((2 * k + 1) * dash / length, 1.0)
+            lines.append(2)
+            lines.append(len(points))
+            points.append(a)
+            lines.append(len(points))
+            points.append(b)
+        try:
+            poly = pv.PolyData(np.asarray(points, dtype=float))
+            poly.lines = np.asarray(lines, dtype=np.int64)
+            mapper = vtkPolyDataMapper()
+            mapper.SetInputData(poly)
+            act = vtkActor()
+            act.SetMapper(mapper)
+            act.PickableOff()
+            prop = act.GetProperty()
+            prop.SetColor(1.0, 0.75, 0.1)
+            prop.SetLineWidth(1.4)
+            prop.SetOpacity(0.9)
+            self._add_renderer_view_prop(act)
+            self._measure_snap_leader_actors = (
+                getattr(self, "_measure_snap_leader_actors", []) or []
+            )
+            self._measure_snap_leader_actors.append(act)
+        except Exception:
+            pass
+
+    def _show_measure_snap_marker(self, world, *, emphasized: bool = False) -> None:
         """Draw a small view-facing "X" at the resolved snap point so the user sees
         exactly where the next Measure click lands (bugs/0303 -- the "snap feel").
+        ``emphasized`` (bugs/0651): a FEATURE snap draws bigger, brighter and thicker
+        than the plain axis glide, so the discrete magnet is visually unmistakable.
         Cleared and redrawn every hover; never pickable."""
         self._clear_measure_snap_marker()
         if world is None or self._renderer is None or vtkActor is None:
@@ -19136,6 +19197,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             up = np.array([0.0, 1.0, 0.0])
             scale = 100.0
         r = max(min(scale * 0.02, 12.0), 1.5)
+        if emphasized:
+            r *= 1.6
         d1 = (right + up)
         d1 = d1 / (np.linalg.norm(d1) or 1.0) * r
         d2 = (right - up)
@@ -19151,8 +19214,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 act.SetMapper(mapper)
                 act.PickableOff()
                 prop = act.GetProperty()
-                prop.SetColor(1.0, 0.55, 0.0)
-                prop.SetLineWidth(2.6)
+                if emphasized:
+                    prop.SetColor(1.0, 0.9, 0.1)
+                    prop.SetLineWidth(4.0)
+                else:
+                    prop.SetColor(1.0, 0.55, 0.0)
+                    prop.SetLineWidth(2.6)
                 self._add_renderer_view_prop(act)
                 self._measure_snap_marker_actors.append(act)
             except Exception:
@@ -19258,16 +19325,57 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 axis_near = None
         if axis_near is not None:
-            snap_point = np.asarray(
+            glide_point = np.asarray(
                 axis_near.get("picked_world"), dtype=float
             ).reshape(3)
-            self._clear_dimension_anchor_snap_highlight()
-            self._show_measure_snap_marker(snap_point)
+            # bugs/0651 (user round 2: the 0649 glide killed the edge highlight and the
+            # discrete "snap feel"): component FEATURES are magnets on the glide. When a
+            # recognised component is under the cursor and its bugs/0115 axis station
+            # lies within the magnet radius of the cursor's own axis projection, the X
+            # JUMPS to the feature station (discrete), the component edge highlights,
+            # the marker draws emphasized, and a dotted leader ties the X to the picked
+            # edge point. Between features the X glides continuously along the axis.
+            snap_point = glide_point
+            snapped_feature = False
+            if pickable:
+                feature_axis = None
+                try:
+                    feature_axis = self._measure_axis_snap_for_pick(hit_key, world)
+                except Exception:
+                    feature_axis = None
+                if feature_axis is not None:
+                    fa = np.asarray(feature_axis, dtype=float).reshape(3)
+                    fd = self._world_to_display_2d(fa)
+                    gd = self._world_to_display_2d(glide_point)
+                    if (
+                        fd is not None
+                        and gd is not None
+                        and float(
+                            np.linalg.norm(
+                                np.asarray(fd[:2], dtype=float)
+                                - np.asarray(gd[:2], dtype=float)
+                            )
+                        )
+                        <= 14.0
+                    ):
+                        snap_point = fa
+                        snapped_feature = True
+            if snapped_feature and sx is not None:
+                self._set_dimension_anchor_snap_highlight(hit_key, int(sx), int(sy))
+            else:
+                self._clear_dimension_anchor_snap_highlight()
+            self._show_measure_snap_marker(snap_point, emphasized=snapped_feature)
+            if snapped_feature and world is not None:
+                try:
+                    self._show_measure_snap_leader(snap_point, world)
+                except Exception:
+                    pass
             self._set_measure_snap_cursor(True)
+            where = "SNAPPED to the component's axis station" if snapped_feature else "ON the optical axis"
             if getattr(self, "_measure_p0", None) is None:
                 self._clear_measure_preview()
                 self.status_var.set(
-                    "Measure: ON the optical axis -- click to place the FIRST point."
+                    f"Measure: {where} -- click to place the FIRST point."
                 )
             else:
                 try:
@@ -19275,7 +19383,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 except Exception:
                     self._clear_measure_preview()
                 self.status_var.set(
-                    "Measure: ON the optical axis -- click to place the SECOND point."
+                    f"Measure: {where} -- click to place the SECOND point."
                 )
             try:
                 self.render()
@@ -23094,6 +23202,37 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     world = np.asarray(
                         axis_near.get("picked_world"), dtype=float
                     ).reshape(3)
+                    # bugs/0651 hover==click: apply the same FEATURE magnet the hover
+                    # shows, so a click lands exactly where the emphasized X was.
+                    try:
+                        magnet_resolved = self._measure_resolve_snap(int(x), int(y))
+                    except Exception:
+                        magnet_resolved = None
+                    if magnet_resolved is not None and self._measure_recognised_component(
+                        magnet_resolved[0]
+                    ):
+                        try:
+                            fa = self._measure_axis_snap_for_pick(
+                                magnet_resolved[0], magnet_resolved[1]
+                            )
+                        except Exception:
+                            fa = None
+                        if fa is not None:
+                            fa = np.asarray(fa, dtype=float).reshape(3)
+                            fd = self._world_to_display_2d(fa)
+                            gd = self._world_to_display_2d(world)
+                            if (
+                                fd is not None
+                                and gd is not None
+                                and float(
+                                    np.linalg.norm(
+                                        np.asarray(fd[:2], dtype=float)
+                                        - np.asarray(gd[:2], dtype=float)
+                                    )
+                                )
+                                <= 14.0
+                            ):
+                                world = fa
                 else:
                     # bugs/0303: resolve through the SAME object-snap magnetism the
                     # hover marker uses, so aiming at a thin silhouette edge locks onto
