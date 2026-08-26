@@ -359,6 +359,25 @@ def collect_viewport_dxf_layers(inspector) -> dict[str, dict[str, object]]:
     for keys in (getattr(inspector, "_ray_actor_map", None) or {}).values():
         ray_keys.update(keys)
     measure_keys = set((getattr(inspector, "_actor_measure_handle_map", None) or {}).keys())
+    # bugs/0650 round 4 (user's DXF.png "still have some open sides"): every STEP body
+    # draws a COMPANION edges actor (pre-extracted CAD feature edges, lines-only,
+    # unregistered) -- diag'd at 6.9k/30k segments on the Pyrite90 scene. Those carried
+    # the body's own crease line-work but the many-segment heuristic misfiled them into
+    # KRAKEN_RAYS. The scene dict registers them per label as ("mesh"|"edges", actor):
+    # classify BOTH kinds into BODIES.
+    cad_body_keys: set = set()
+    try:
+        scene_info = dict(getattr(inspector, "_kraken_scene", {}) or {})
+        for _label, entries in (scene_info.get("cad_step_actors", {}) or {}).items():
+            for _kind, cad_actor in list(entries or []):
+                try:
+                    cad_key = inspector._actor_key(cad_actor)
+                except Exception:
+                    cad_key = None
+                if cad_key:
+                    cad_body_keys.add(cad_key)
+    except Exception:
+        cad_body_keys = set()
 
     layers: dict[str, dict[str, object]] = {
         "KRAKEN_RAYS": {"ltype": "CONTINUOUS", "color": 3, "polylines": []},
@@ -368,17 +387,36 @@ def collect_viewport_dxf_layers(inspector) -> dict[str, dict[str, object]]:
         "KRAKEN_OVERLAYS": {"ltype": "CONTINUOUS", "color": 7, "polylines": []},
     }
 
-    actors = renderer.GetActors()
-    actors.InitTraversal()
-    counts = {"actors": 0, "skipped_heavy": 0}
+    # Walk ALL view props, not just GetActors() -- assemblies and non-vtkActor prop
+    # classes carry geometry too (bugs/0650 round 4: bodies invisible to the export
+    # cannot close their boxes).
+    props = renderer.GetViewProps()
+    props.InitTraversal()
+    pending = []
     while True:
-        actor = actors.GetNextActor()
-        if actor is None:
+        prop = props.GetNextProp()
+        if prop is None:
             break
+        pending.append(prop)
+    counts = {"actors": 0, "skipped_heavy": 0}
+    while pending:
+        actor = pending.pop(0)
+        try:
+            parts = actor.GetParts() if hasattr(actor, "GetParts") else None
+            if parts is not None:  # vtkAssembly: descend
+                parts.InitTraversal()
+                while True:
+                    part = parts.GetNextProp3D()
+                    if part is None:
+                        break
+                    pending.append(part)
+                continue
+        except Exception:
+            pass
         try:
             if not actor.GetVisibility():
                 continue
-            mapper = actor.GetMapper()
+            mapper = actor.GetMapper() if hasattr(actor, "GetMapper") else None
             polydata = mapper.GetInput() if mapper is not None else None
             if polydata is None:
                 continue
@@ -404,7 +442,7 @@ def collect_viewport_dxf_layers(inspector) -> dict[str, dict[str, object]]:
             layer = "KRAKEN_RAYS"
         elif key in measure_keys:
             layer = "KRAKEN_MEASURES"
-        elif key in step_keys or key in row_keys:
+        elif key in step_keys or key in row_keys or key in cad_body_keys:
             layer = "KRAKEN_BODIES"
         else:
             layer = None  # decided below from the geometry itself

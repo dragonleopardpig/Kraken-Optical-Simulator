@@ -143,6 +143,16 @@ def run_checks():
         e_problems.append("the direct key->ray registry is not consulted")
     if ">= 20" not in collect_src:
         e_problems.append("the many-segment ray heuristic for unregistered bundles is gone")
+    # round 4 ("still have some open sides"): the STEP bodies' COMPANION edge actors
+    # (pre-extracted CAD feature edges, lines-only, unregistered) carried the missing
+    # crease work but were misfiled by the heuristic; and geometry living outside
+    # renderer.GetActors() (assemblies / other prop classes) was invisible entirely.
+    if "cad_step_actors" not in collect_src or "cad_body_keys" not in collect_src:
+        e_problems.append("the CAD companion edge actors are not classified into BODIES")
+    if "GetViewProps" not in collect_src:
+        e_problems.append("the walk uses GetActors only (assembly/prop geometry invisible)")
+    if "GetParts" not in collect_src:
+        e_problems.append("assemblies are not descended")
     if e_problems:
         ok = False
         notes.append(f"FAIL: E (bugs/0650): {e_problems}")

@@ -41,3 +41,19 @@ DXF...". Guard = `validate_open3d_0650_dxf_viewport_export`, penta **phase 487**
 Guard F pins the round-3 contracts numerically: a 4-fragment box closes into one
 5-point chain, bin-edge joins hold, poisoned vertices split not kill, duplicates
 collapse, bends survive RDP.
+
+4. **"check attachment/DXF.png, still have some open sides"** — per-prop diagnosis
+   (diag v2, GetViewProps with class names + registry membership) found two more:
+   (a) every STEP body draws a COMPANION edges actor (pre-extracted CAD feature edges,
+   lines-only, unregistered — 6.9k/30k segments on this scene) that carried the body's
+   own crease work but the many-segment heuristic misfiled into RAYS; the scene dict's
+   `cad_step_actors` (label → [("mesh"|"edges", actor)]) now classifies BOTH kinds into
+   BODIES; (b) the walk used `renderer.GetActors()`, which excludes assemblies and
+   non-vtkActor prop classes — now `GetViewProps()` with `GetParts()` descent.
+   Verified visually: the exported DXF re-rendered to PNG shows fully closed camera and
+   lens boxes with both verticals (scratchpad pyrite90_zoom.png vs the user's DXF.png).
+   Investigation scars: a long-running per-actor silhouette A/B (vtkCleanPolyData)
+   DISPROVED the unshared-topology theory for the big bodies (dup=0, silhouettes
+   identical) — the small row discs alone benefit from cleaning; and "how long to go"
+   was a STUCK MONITOR, not a stuck job — check the worker's CPU% before believing a
+   wait loop.
