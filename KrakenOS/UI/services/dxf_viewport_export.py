@@ -378,6 +378,11 @@ def collect_viewport_dxf_layers(inspector) -> dict[str, dict[str, object]]:
                     cad_body_keys.add(cad_key)
     except Exception:
         cad_body_keys = set()
+    # bugs/0650 round 5 dead end, kept as a warning: do NOT classify
+    # _actor_step_follow_map keys into BODIES -- ILLUMINATION RAY actors ride their
+    # LED via that map (follow_step_label), so the "fix" reclassified ~1100 ray
+    # polylines as body line art. The dash-like fragments on the housing bands are
+    # legitimate illumination-ray terminations, not broken body lines.
 
     layers: dict[str, dict[str, object]] = {
         "KRAKEN_RAYS": {"ltype": "CONTINUOUS", "color": 3, "polylines": []},
