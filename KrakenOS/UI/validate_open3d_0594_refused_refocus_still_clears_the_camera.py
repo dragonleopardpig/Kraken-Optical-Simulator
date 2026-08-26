@@ -49,7 +49,8 @@ SWAP_SEQUENCE = [
     "PYRITE_45_85_05x-20x_V38_1072517",
 ]
 
-# The thickness recorded in the flag; on this scene it collapses the world leg to ~4.6 mm.
+# The thickness recorded in the flag (pre-0647 scene numbers; the fixture now CONSTRUCTS
+# the collision from the live geometry -- these are kept for the report only).
 CRASH_THICKNESS_MM = 125.5793
 CRASH_SENSOR_Z = 49.711
 SENSOR_Z_TOL_MM = 0.05
@@ -126,28 +127,48 @@ def run_checks():
         n = len(rows)
 
         # ---- A: the fixture really is the flagged collision --------------------------
-        rows[n - 2].thickness = CRASH_THICKNESS_MM
-        inside, centre, bounds = _sensor_inside_fold_solid(app)
-        if inside is None:
+        # The collision is CONSTRUCTED from the scene's own geometry, not from the
+        # recorded thickness: the image gap on this frozen fold runs backwards
+        # (world leg = const - thickness, bugs/0478), so the sensor position is LINEAR
+        # in the booked thickness -- measure it at two thicknesses and solve for the one
+        # that lands the sensor on the fold solid's centre. The recorded 125.5793 mm
+        # only collided on the scene numbers of the day; the bugs/0647 datasheet refit
+        # re-baked machine_vision_ELS85.py and that fixed number then landed the sensor
+        # 100 mm past the prism (phase 452 PASS->FAIL with no code change).
+        inside0, centre0, bounds = _sensor_inside_fold_solid(app)
+        if inside0 is None:
             notes.append("SKIP: A: fold-solid bounds unavailable on this scene")
             return ok, notes
+        t0 = float(rows[n - 2].thickness)
+        rows[n - 2].thickness = t0 + 10.0
+        _, centre1, _ = _sensor_inside_fold_solid(app)
+        slope = (np.asarray(centre1, dtype=float) - np.asarray(centre0, dtype=float)) / 10.0
+        target = np.array(
+            [(bounds[0] + bounds[1]) / 2.0, (bounds[2] + bounds[3]) / 2.0,
+             (bounds[4] + bounds[5]) / 2.0]
+        )
+        if float(np.dot(slope, slope)) < 1e-12:
+            ok = False
+            notes.append("FAIL: A (fixture): the booked thickness does not move the sensor at all")
+            return ok, notes
+        crash_thickness = t0 + float(np.dot(target - np.asarray(centre0, dtype=float), slope)) / float(
+            np.dot(slope, slope)
+        )
+        rows[n - 2].thickness = crash_thickness
+        inside, centre, bounds = _sensor_inside_fold_solid(app)
         if not inside:
             ok = False
             notes.append(
-                f"FAIL: A (non-vacuity): thickness {CRASH_THICKNESS_MM} mm no longer puts the "
-                f"sensor inside the fold solid (sensor z {centre[2]:.3f}, solid z "
+                f"FAIL: A (non-vacuity): the constructed thickness {crash_thickness:.4f} mm does "
+                f"not put the sensor inside the fold solid (sensor z {centre[2]:.3f}, solid z "
                 f"{bounds[4]:.3f}..{bounds[5]:.3f}) -- B would prove nothing"
             )
             return ok, notes
-        drift = abs(float(centre[2]) - CRASH_SENSOR_Z)
-        if drift > SENSOR_Z_TOL_MM:
-            notes.append(
-                f"NOTE: A: reproduced sensor z {centre[2]:.3f} vs the recorded {CRASH_SENSOR_Z} "
-                f"({drift:.3f} mm apart)"
-            )
         notes.append(
-            f"PASS: A: the recorded thickness reproduces the flagged collision (sensor z "
-            f"{centre[2]:.3f} inside the fold solid {bounds[4]:.3f}..{bounds[5]:.3f})"
+            f"PASS: A: a constructed thickness of {crash_thickness:.3f} mm reproduces the flagged "
+            f"collision (sensor z {centre[2]:.3f} inside the fold solid {bounds[4]:.3f}.."
+            f"{bounds[5]:.3f}; the flag recorded {CRASH_THICKNESS_MM} mm -> z {CRASH_SENSOR_Z} "
+            f"on the pre-0647 scene)"
         )
 
         # ---- B/C: a REFUSED refocus must still clear the camera, and say so ----------

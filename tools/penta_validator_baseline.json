@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-08-17T07:29:25+00:00",
+  "generated_at": "2026-08-26T13:31:40+00:00",
   "phases": {
     "0": "pass",
     "1": "fail",
@@ -470,7 +470,25 @@
     "466": "pass",
     "467": "pass",
     "468": "pass",
-    "469": "pass"
+    "469": "pass",
+    "470": "pass",
+    "471": "pass",
+    "472": "pass",
+    "473": "pass",
+    "474": "pass",
+    "475": "pass",
+    "476": "pass",
+    "477": "pass",
+    "478": "pass",
+    "479": "pass",
+    "480": "pass",
+    "481": "pass",
+    "482": "pass",
+    "483": "pass",
+    "484": "pass",
+    "485": "pass",
+    "486": "pass",
+    "487": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -941,6 +959,24 @@
     "466": "the CAD/Place/Orient commands live on the elements' right-click (0619)",
     "467": "the launch grid samples the DELIVERED field, not the raw paraxial promise (0621)",
     "468": "surrogate vertex datums are bounded barrel walls -- no un-refracted bypass (0623)",
-    "469": "the launch grid recentres on the learned DELIVERED field centre (0625)"
+    "469": "the launch grid recentres on the learned DELIVERED field centre (0625)",
+    "470": "the FOV solve converges to readout precision and recruits the fold arm (0626)",
+    "471": "blackbox surrogates DRAW at drawn size, trace at 2x (0627)",
+    "472": "the system-info HUD shows delivered resolution/magnification/pixels (0628)",
+    "473": "the System Selection calculator sizes camera + lens from FOV/resolution/WD (0631)",
+    "474": "the catalog matcher lists camera+lens combos meeting FOV/resolution/WD (0634)",
+    "475": "the left panel groups its solvers under Given\u2192Solve category headers (0635)",
+    "476": "the loaded layout file name shows in the window title (0637)",
+    "477": "right-click on an optical axis offers add-element / axis verbs (0638)",
+    "478": "the whole dashed optical axis is selectable, not just the dots (0639)",
+    "479": "an explicitly-assigned Beam-Splitter face is honored over a Transmit face (0640)",
+    "480": "the BS reflect axis has a visible minimum length (0641)",
+    "481": "the BS reflect axis is bounded to the real coating face (0643)",
+    "482": "a STEP-overlay commit re-derives the optical axes even with retrace off (0644)",
+    "483": "an out-of-reach traced focus recruits the fold's near leg; focus claims are measured (0645)",
+    "484": "loads are fast: rays + the 0625 re-measure deferred to Trace Now / first consumer (0646)",
+    "485": "the lens housing registers to the vendor working-distance law (0647)",
+    "486": "the Measure crosshair is the cursor's projection onto the axis (0649)",
+    "487": "the current 3D viewport exports to a DXF R12 vector drawing (0650)"
   }
 }

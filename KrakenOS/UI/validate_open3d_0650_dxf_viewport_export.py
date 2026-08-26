@@ -19,6 +19,8 @@ Checks (display-free):
   D  the exporter is wired: the editor exposes export_3d_view_dxf and both the 3D
      window menu and the File menu offer it next to the STEP export.
 
+  G  round 7: STEP companion edges by bounds containment; collinear-overlap merge.
+
 Run:  .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_0650_dxf_viewport_export
 """
 
@@ -257,6 +259,61 @@ def run_checks():
         notes.append(
             "PASS: F: fragments stitch into single vector lines (boxes CLOSE, bin-edge "
             "joins hold, poisoned vertices split not kill, duplicates collapse)"
+        )
+
+    # ---------------------------------------------------------------- G: round 7
+    # user (lens.png / camera.png): "many of them consist of black segment line joining
+    # the green ... the camera, first line from the bottom seems broken". The STEP
+    # bodies' companion edge actors have NO row (follow-only), so the round-6 row-tracked
+    # keys never covered them and they still shipped as dark-green RAYS; and the same
+    # housing edge arrived as up to nine overlapping collinear pieces (silhouette copy +
+    # companion copy, each cut at every touching feature) -- endpoint stitching cannot
+    # see overlap. Contract: lines-only actors INSIDE a STEP body's bounds are that
+    # body's edge work (BODIES, layer colour), and overlapping collinear pieces merge
+    # into ONE segment before the stitch.
+    from KrakenOS.UI.services.dxf_viewport_export import merge_collinear_segments_2d
+
+    g_problems = []
+    collect_src3 = _insp3.getsource(_dve.collect_viewport_dxf_layers)
+    if "_inside_step_body" not in collect_src3 or "step_bounds" not in collect_src3:
+        g_problems.append("lines-only actors inside a STEP body are not filed as BODIES")
+    # the camera's bottom edge exactly as the user's 20:19 export shipped it
+    pieces = [
+        ((54.57, -40.0), (58.05, -40.0)), ((63.05, -40.0), (58.05, -40.0)),
+        ((59.40, -40.0), (58.05, -40.0)), ((61.05, -40.0), (59.40, -40.0)),
+        ((59.40, -40.0), (62.69, -40.0)), ((61.21, -40.0), (62.70, -40.0)),
+        ((62.70, -40.0), (62.42, -40.0)), ((82.05, -40.0), (63.05, -40.0)),
+        ((63.05, -40.0), (82.05, -40.0)), ((53.57, -39.0), (54.57, -40.0)),
+        ((82.05, -40.0), (83.05, -39.0)), ((53.57, -39.0), (53.57, -39.0)),
+    ]
+    merged = merge_collinear_segments_2d([np.array(p, dtype=float) for p in pieces])
+    bottom = [
+        m for m in merged if abs(m[0][1] + 40.0) < 1e-6 and abs(m[1][1] + 40.0) < 1e-6
+    ]
+    if len(bottom) != 1 or abs(bottom[0][0][0] - 54.57) > 1e-6 or abs(bottom[0][1][0] - 82.05) > 1e-6:
+        g_problems.append(f"nine overlapping bottom-edge pieces did not merge into one span: {bottom}")
+    if len(merged) != 3:
+        g_problems.append(f"expected bottom + 2 chamfers after the merge, got {len(merged)}")
+    whole = _postprocess_layer_polylines([{"points": np.array(p, dtype=float), "color": None} for p in pieces])
+    if len(whole) != 1 or whole[0]["points"].shape[0] != 4:
+        g_problems.append(
+            f"the bottom edge + chamfers did not become ONE 4-point polyline "
+            f"(got {len(whole)} polylines)"
+        )
+    # distinct parallel lines must NOT merge; a genuine gap must stay a gap
+    apart = merge_collinear_segments_2d(
+        [np.array([[0.0, 0.0], [10.0, 0.0]]), np.array([[0.0, 2.0], [10.0, 2.0]]),
+         np.array([[20.0, 0.0], [30.0, 0.0]])]
+    )
+    if len(apart) != 3:
+        g_problems.append(f"parallel/gapped segments were merged ({len(apart)} != 3)")
+    if g_problems:
+        ok = False
+        notes.append(f"FAIL: G (bugs/0650 round 7): {g_problems}")
+    else:
+        notes.append(
+            "PASS: G: STEP companion edges file as BODIES by bounds; overlapping collinear "
+            "pieces merge into one vector line (camera bottom edge = one polyline)"
         )
 
     # ---------------------------------------------------------------- D: wiring

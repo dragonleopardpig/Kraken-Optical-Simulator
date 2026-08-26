@@ -319,6 +319,69 @@ def _finite_runs(points: np.ndarray) -> list[np.ndarray]:
     return runs
 
 
+def merge_collinear_segments_2d(
+    segments: list[np.ndarray],
+    angle_tol: float = 2e-4,
+    perp_tol: float = 0.03,
+    gap_tol: float = 0.05,
+) -> list[np.ndarray]:
+    """Merge straight 2-point fragments that lie on the SAME line and overlap or
+    touch into one maximal segment (bugs/0650 round 7).
+
+    A housing edge reaches the export twice -- once from the silhouette pass, once
+    from the STEP body's companion edge actor -- and each copy is cut wherever a
+    neighbouring feature touches it, so the camera's bottom edge arrived as nine
+    overlapping pieces. Endpoint stitching cannot see overlap; this pass groups by
+    (direction, perpendicular offset) with a SORT-based sweep (no bin lottery) and
+    unions the parameter intervals. Chains of 3+ points are not segments and pass
+    through untouched.
+    """
+    if not segments:
+        return []
+    rows = []
+    for seg in segments:
+        a = np.asarray(seg[0], dtype=float)
+        b = np.asarray(seg[-1], dtype=float)
+        d = b - a
+        length = float(np.hypot(d[0], d[1]))
+        if length < 1e-6:
+            continue
+        d = d / length
+        if d[0] < 0.0 or (abs(d[0]) < 1e-12 and d[1] < 0.0):
+            d = -d
+        theta = float(np.arctan2(d[1], d[0]))  # in [0, pi)
+        offset = float(d[0] * a[1] - d[1] * a[0])  # signed perpendicular distance of the line
+        t0, t1 = float(np.dot(d, a)), float(np.dot(d, b))
+        rows.append((theta, offset, min(t0, t1), max(t0, t1), d))
+    if not rows:
+        return []
+    rows.sort(key=lambda r: (r[0], r[1], r[2]))
+    out: list[np.ndarray] = []
+    i = 0
+    while i < len(rows):
+        # Group consecutive rows on the same line (angle AND offset within tolerance).
+        j = i + 1
+        while (
+            j < len(rows)
+            and abs(rows[j][0] - rows[i][0]) <= angle_tol
+            and abs(rows[j][1] - rows[i][1]) <= perp_tol
+        ):
+            j += 1
+        group = sorted(rows[i:j], key=lambda r: r[2])
+        theta, offset, _, _, d = group[0]
+        normal = np.array([-d[1], d[0]])
+        cur_t0, cur_t1 = group[0][2], group[0][3]
+        for _, _, t0, t1, _ in group[1:]:
+            if t0 <= cur_t1 + gap_tol:
+                cur_t1 = max(cur_t1, t1)
+            else:
+                out.append(np.array([d * cur_t0 + normal * offset, d * cur_t1 + normal * offset]))
+                cur_t0, cur_t1 = t0, t1
+        out.append(np.array([d * cur_t0 + normal * offset, d * cur_t1 + normal * offset]))
+        i = j
+    return out
+
+
 def _postprocess_layer_polylines(polylines: list[dict], epsilon: float = 0.02) -> list[dict]:
     """Per colour bucket: split at bad points, stitch fragments, simplify, dedupe."""
     by_color: dict[object, list[np.ndarray]] = {}
@@ -333,13 +396,19 @@ def _postprocess_layer_polylines(polylines: list[dict], epsilon: float = 0.02) -
             b = tuple(np.round(run[-1], 3))
             length = float(np.sum(np.linalg.norm(np.diff(run, axis=0), axis=1)))
             fkey = (poly.get("color"), len(run), min(a, b), max(a, b), round(length, 2))
-            if fkey in frag_seen:
+            if fkey in frag_seen or length < 1e-6:
                 continue
             frag_seen.add(fkey)
             by_color.setdefault(poly.get("color"), []).append(run)
     out: list[dict] = []
     seen: set = set()
     for color, strips in by_color.items():
+        # Round 7: overlapping collinear pieces of ONE edge (silhouette + companion
+        # copies, each cut at every touching feature) become one segment BEFORE the
+        # endpoint stitch -- the stitch only ever sees shared endpoints.
+        segments = [run for run in strips if run.shape[0] == 2]
+        chains = [run for run in strips if run.shape[0] != 2]
+        strips = merge_collinear_segments_2d(segments) + chains
         for chain in stitch_strips_2d(strips):
             simple = simplify_polyline_2d(chain, epsilon)
             if simple.shape[0] < 2:
@@ -419,6 +488,47 @@ def collect_viewport_dxf_layers(inspector) -> dict[str, dict[str, object]]:
         "KRAKEN_MEASURES": {"ltype": "CONTINUOUS", "color": 30, "polylines": []},
         "KRAKEN_OVERLAYS": {"ltype": "CONTINUOUS", "color": 7, "polylines": []},
     }
+
+    # bugs/0650 round 7 (lens.png/camera.png: housing outlines drawn GREEN on the
+    # RAYS layer with black silhouette segments bridging their gaps): the STEP bodies'
+    # companion edge actors are follow-only (no row -- STEP bodies are not rows), so
+    # neither registry classifier could see them; every one of the user's 1120 RAYS
+    # polylines was such an edge (ACI 94 = their dark-green display tone). The
+    # registry-free discriminator: a lines-only actor whose bounding box lies INSIDE a
+    # STEP mesh actor's bounds is that body's edge work; illumination bundles extend
+    # far beyond any body. Collect the step-mesh bounds first.
+    step_bounds: list[np.ndarray] = []
+    try:
+        _pp = renderer.GetViewProps()
+        _pp.InitTraversal()
+        while True:
+            _prop = _pp.GetNextProp()
+            if _prop is None:
+                break
+            try:
+                _key = inspector._actor_key(_prop)
+            except Exception:
+                _key = None
+            if _key in step_keys and hasattr(_prop, "GetBounds"):
+                step_bounds.append(np.asarray(_prop.GetBounds(), dtype=float))
+    except Exception:
+        step_bounds = []
+
+    def _inside_step_body(actor, margin: float = 2.0) -> bool:
+        try:
+            b = np.asarray(actor.GetBounds(), dtype=float)
+        except Exception:
+            return False
+        if b.size != 6 or not np.all(np.isfinite(b)):
+            return False
+        for sb in step_bounds:
+            if (
+                b[0] >= sb[0] - margin and b[1] <= sb[1] + margin
+                and b[2] >= sb[2] - margin and b[3] <= sb[3] + margin
+                and b[4] >= sb[4] - margin and b[5] <= sb[5] + margin
+            ):
+                return True
+        return False
 
     # Walk ALL view props, not just GetActors() -- assemblies and non-vtkActor prop
     # classes carry geometry too (bugs/0650 round 4: bodies invisible to the export
@@ -508,10 +618,14 @@ def collect_viewport_dxf_layers(inspector) -> dict[str, dict[str, object]]:
         if not strips:
             continue
         if layer is None:
-            # Unregistered lines-only actor: a many-segment bundle is ray-like
-            # (illumination bundles draw outside the imaging-ray registries); a few
-            # segments are a guide/overlay.
-            layer = "KRAKEN_RAYS" if len(strips) >= 20 else "KRAKEN_OVERLAYS"
+            # Unregistered lines-only actor: inside a STEP body's bounds it is that
+            # body's companion edge work (round 7); otherwise a many-segment bundle is
+            # ray-like (illumination bundles draw outside the imaging-ray registries)
+            # and a few segments are a guide/overlay.
+            if _inside_step_body(actor):
+                layer = "KRAKEN_BODIES"
+            else:
+                layer = "KRAKEN_RAYS" if len(strips) >= 20 else "KRAKEN_OVERLAYS"
         counts["actors"] += 1
         aci = nearest_aci(color) if color is not None else None
         for strip in strips:

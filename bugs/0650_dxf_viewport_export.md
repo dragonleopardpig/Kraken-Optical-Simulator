@@ -76,3 +76,31 @@ collapse, bends survive RDP.
    user's freecad.png). A left/right mirror-twin metric was built
    (scratchpad symmetry_check.py) but over-counts on stitched+RDP output (symmetric
    curves keep different points) — the rendered eyeball is the arbiter.
+
+6. **"many of them consist of black segment line joining the green ... the camera, first
+   line from the bottom seems broken"** (round 7, lens.png / camera.png) — measured on the
+   user's 20:19 export: the RAYS layer held 1120 polylines ALL of ACI 94 (dark green) —
+   the STEP bodies' companion edge actors. They have NO row (`_add_mesh_actor(...,
+   follow_step_label=...)`, follow-only), so the round-6 row-tracked keys never covered
+   them, and the ≥20-segment heuristic filed them as rays. The "broken" camera bottom
+   edge was not a gap: at y −40 it was NINE overlapping collinear pieces on two layers
+   (green companion copy 54.6→58.1→63.1→82.1 + black silhouette copy 58.1→59.4→62.7,
+   63.1→82.1), each copy cut wherever the lower plate touches it — endpoint stitching
+   can only join shared endpoints, it cannot see overlap. Two general fixes:
+   - CLASSIFY BY CONTAINMENT: a lines-only, unregistered actor whose bounds sit inside a
+     STEP body's bounds (+2 mm) is that body's edge work → BODIES (`_inside_step_body`).
+     Illumination rays leave their LED's bounds, so the follow-map trap does not recur.
+   - MERGE COLLINEAR OVERLAP before the stitch: `merge_collinear_segments_2d` groups
+     2-point fragments by (direction, perpendicular offset) with a SORT-based sweep (no
+     bin lottery) and unions the parameter intervals (angle 2e-4 rad, perp 0.03 mm,
+     gap 0.05 mm); chains of 3+ points pass through untouched; zero-length runs drop.
+   Measured after: RAYS = 640 polylines, colours {4,3,30,8,1,2} — zero ACI 94; BODIES
+   3225 → 2054 polylines; the camera bottom edge + both chamfers = ONE 4-point polyline
+   (guard section G reproduces the nine pieces verbatim). Renders: scratchpad
+   r7_zoom_lens.png / r7_zoom_camera.png — every housing line black and continuous.
+   Side find while the baseline re-cut ran: phase 452 (guard 0594) flipped PASS→FAIL
+   with no code change — its fixture hard-coded a thickness (125.5793 mm) that only
+   collided on the pre-0647 ELS85 numbers; the fixture now CONSTRUCTS the collision
+   from the live geometry (sensor position is linear in the booked thickness on a frozen
+   fold — two samples, solve for the solid's centre). Baseline: 487 phases, 46 known
+   environment failures, 452 restored to pass.
