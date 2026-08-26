@@ -19234,6 +19234,54 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 pass
             return
+        # bugs/0649 (user: "the mouse pointer and crosshair are detached, hard for me
+        # to place and click ... and the cross hair can climb up the BS slope"): when
+        # the CURSOR is near an optical axis in SCREEN space, the axis wins outright.
+        # The marker becomes the projection of the cursor onto the axis polyline (the
+        # bugs/0639 helper's picked_world), so the X stays glued under the pointer and
+        # slides ONLY along the axis -- and no surface pick can hijack it (the old
+        # path snapped the front-most CELL pick, so over a beam splitter the sloped
+        # diagonal face owned the pick and the projected X rode up the slope).
+        # Surface picks remain the FALLBACK for measuring bodies away from any axis
+        # (the bugs/0115 keep-the-feature's-z contract); Alt keeps the edge-entity
+        # contract untouched.
+        axis_near = None
+        if (
+            x is not None
+            and y is not None
+            and not getattr(self, "_edge_pick_alt_active", False)
+        ):
+            try:
+                axis_near = self._optical_axis_info_near_display_xy(
+                    (float(x), float(y)), tolerance_px=28.0
+                )
+            except Exception:
+                axis_near = None
+        if axis_near is not None:
+            snap_point = np.asarray(
+                axis_near.get("picked_world"), dtype=float
+            ).reshape(3)
+            self._clear_dimension_anchor_snap_highlight()
+            self._show_measure_snap_marker(snap_point)
+            self._set_measure_snap_cursor(True)
+            if getattr(self, "_measure_p0", None) is None:
+                self._clear_measure_preview()
+                self.status_var.set(
+                    "Measure: ON the optical axis -- click to place the FIRST point."
+                )
+            else:
+                try:
+                    self._refresh_measure_preview(snap_point)
+                except Exception:
+                    self._clear_measure_preview()
+                self.status_var.set(
+                    "Measure: ON the optical axis -- click to place the SECOND point."
+                )
+            try:
+                self.render()
+            except Exception:
+                pass
+            return
         if pickable and sx is not None:
             self._set_dimension_anchor_snap_highlight(hit_key, int(sx), int(sy))
             try:
@@ -23030,12 +23078,29 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             normal = None
             try:
                 x, y = self._vtk_interactor.GetEventPosition()
-                # bugs/0303: resolve through the SAME object-snap magnetism the hover
-                # marker uses, so aiming at a thin silhouette edge locks onto the body
-                # (and the recorded point matches the "X" the user was shown).
-                resolved = self._measure_resolve_snap(int(x), int(y))
-                if resolved is not None:
-                    hit_key, world, normal = resolved[0], resolved[1], resolved[2]
+                # bugs/0649: the hover marker gives the axis outright priority in
+                # SCREEN space; the click must record exactly the point the X showed
+                # (the bugs/0303 hover==click contract), so the same axis-first
+                # resolution runs here. hit_key stays None: the point is already ON
+                # the axis, so the bugs/0115 per-component re-snap below must not run.
+                axis_near = None
+                try:
+                    axis_near = self._optical_axis_info_near_display_xy(
+                        (float(x), float(y)), tolerance_px=28.0
+                    )
+                except Exception:
+                    axis_near = None
+                if axis_near is not None:
+                    world = np.asarray(
+                        axis_near.get("picked_world"), dtype=float
+                    ).reshape(3)
+                else:
+                    # bugs/0303: resolve through the SAME object-snap magnetism the
+                    # hover marker uses, so aiming at a thin silhouette edge locks onto
+                    # the body (and the recorded point matches the "X" shown).
+                    resolved = self._measure_resolve_snap(int(x), int(y))
+                    if resolved is not None:
+                        hit_key, world, normal = resolved[0], resolved[1], resolved[2]
             except Exception:
                 hit_key = None
                 world = None

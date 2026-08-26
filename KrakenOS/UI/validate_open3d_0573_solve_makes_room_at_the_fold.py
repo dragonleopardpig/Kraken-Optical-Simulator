@@ -185,10 +185,17 @@ def _check_real_scene(ok, notes) -> None:
             readout = qe.current_state()
 
             ok(bool(solved), f"B1@{field:g} (the user's ask): the solve RUNS ({message[:80]})")
+            mirror_dx = float(mirror_after[0] - mirror_before[0])
+            # bugs/0648 REWRITE of the mechanism pins: the bugs/0645 snap machinery can
+            # reach some of these fields WITHOUT the room-maker (measured: 35x35 now
+            # solves with the mirror unmoved and the field delivered). The durable
+            # contract is CLAIM == MOTION: the "Made room first" message appears exactly
+            # when the fold mirror really moved along the leg (>1 mm), so the user is
+            # told what moved and never told a fiction.
             ok(
-                "Made room first" in message,
-                f"B2@{field:g}: ... and says the fold mirror + camera were moved to make room "
-                f"({message[message.find('Made room'):][:70]})",
+                ("Made room first" in message) == (abs(mirror_dx) > 1.0),
+                f"B2@{field:g}: the made-room claim matches the mirror's actual motion "
+                f"(claim={'Made room first' in message}, mirror dx {mirror_dx:+.3f})",
             )
             ok(
                 # bugs/0591: measured-aware readout -- the delivered field within the
@@ -204,12 +211,14 @@ def _check_real_scene(ok, notes) -> None:
                 f"(dx {float(lens_after[0] - lens_before[0]):+.3f}, "
                 f"dz {float(lens_after[2] - lens_before[2]):+.4f})",
             )
+            # bugs/0648: the mirror may legitimately stay put (snap-machinery reach) or
+            # slide either way ALONG the leg (room-maker +x, near-leg recruit -x); what
+            # it must never do is leave the leg.
             ok(
-                abs(float(mirror_after[2] - mirror_before[2])) < 0.05
-                and float(mirror_after[0] - mirror_before[0]) > 1.0,
-                f"B5@{field:g}: so does the fold mirror "
-                f"(dx {float(mirror_after[0] - mirror_before[0]):+.3f}, "
-                f"dz {float(mirror_after[2] - mirror_before[2]):+.4f})",
+                abs(float(mirror_after[2] - mirror_before[2])) < 0.05,
+                f"B5@{field:g}: the fold mirror stays ON its leg "
+                f"(dx {mirror_dx:+.3f} allowed, "
+                f"dz {float(mirror_after[2] - mirror_before[2]):+.4f} must be ~0)",
             )
             ok(
                 float(np.linalg.norm(bs_after - bs_before)) < 1e-6

@@ -2351,7 +2351,28 @@ class QuickEstimationService:
                     break
                 heights.append(float(np.hypot(np.mean(x_local), np.mean(y_local))))
             if healthy and len(heights) >= 2:
-                return float(np.mean(heights)) / fraction
+                value = float(np.mean(heights)) / fraction
+                # bugs/0648: the scale-back-up assumes the heights stay linear in field;
+                # on an absurd intermediate booking a landed-but-saturated pencil at a
+                # small fraction fabricated 92.77 mm "delivered semi" against a 16.3 mm
+                # sensor semi-diagonal, and the refinement chased it (arm slid +321 mm).
+                # A delivered field beyond ~2x the sensor's own semi-diagonal is not a
+                # measurement -- report unmeasurable so the refinement lands on its best
+                # verified state instead.
+                try:
+                    sensor_semi = self._sensor_semi()
+                except Exception:
+                    sensor_semi = None
+                if sensor_semi and np.isfinite(float(sensor_semi)) and value > 2.0 * float(sensor_semi):
+                    try:
+                        editor.append_debug(
+                            f"field-fill probe implausible: {value:.4g} mm delivered semi "
+                            f"vs sensor semi-diagonal {float(sensor_semi):.4g} -- unmeasurable"
+                        )
+                    except Exception:
+                        pass
+                    return None
+                return value
             fraction *= 0.5
         return None
 
@@ -2610,13 +2631,21 @@ class QuickEstimationService:
             # bugs/0626 (the 55->54.5 flag's fix uncovered this): inside the ~1% band the
             # book->focus-snap response is noise/oscillation-dominated, the secant slope
             # collapses, and the raw step explodes -- measured: a -0.9% residual produced
-            # +52.8 then +267 mm lens-slide requests and dislocated the scene. A legitimate
-            # local slope near 1 needs a step ~error*target; allow 10x for genuinely weak
-            # slopes and treat anything larger as a broken slope: take the multiplicative
-            # step (~error-sized by construction) instead.
-            step_cap = 10.0 * abs(error) * target
-            if abs(next_request - float(request)) > step_cap:
-                next_request = float(request) * target / float(measured)
+            # +52.8 then +267 mm lens-slide requests and dislocated the scene.
+            # bugs/0648 (guard 0573, Apo75+PYRITE 55x55): the old 10*|error|*target cap
+            # scaled WITH the error, so at a 13% residual it allowed a 21 mm step and a
+            # flat secant slope (0.153 -- the arm/snap machinery reshapes the geometry
+            # between bookings, so measured is not a clean function of request) sailed
+            # request 20.77 -> 6.889. That booking demands |m| 2.4x, slid the fold arm
+            # +321 mm, blinded the probes, and the solve spiralled. The multiplicative
+            # step request*target/measured is direction-correct and ~error-sized by
+            # construction at EVERY error scale -- it is the trust region: the secant may
+            # refine within twice the multiplicative step's reach (slopes 0.5..2 pass;
+            # collapsed slopes cannot), else the multiplicative step is taken.
+            step_mult = float(request) * target / float(measured)
+            trust = 2.0 * abs(step_mult - float(request)) + 0.02 * target
+            if abs(next_request - step_mult) > trust:
+                next_request = step_mult
             next_request = float(np.clip(next_request, 0.3 * target, 3.0 * target))
             previous_request, previous_measured = float(request), float(measured)
             request = next_request
