@@ -52,6 +52,27 @@ class QuickEstimationOverlayService:
         self.inspector = inspector
         self.editor = inspector.editor
         self._pv = pv_module
+        # bugs/0660: the service OWNS its actors. Every generation the five-flag
+        # repro found lingering ("toggle Refs off. Still shwoing." -- and the swap's
+        # "2 big circles") was a PREVIOUS add_overlays set nobody removed: the discs
+        # were re-added by solve/readout paths outside the tracked scene rebuild, so
+        # the refresh clear pass never owned them. Track and wipe here instead.
+        self._tracked: list = []
+
+    def clear(self) -> int:
+        removed = 0
+        for actor in self._tracked:
+            try:
+                self.inspector._renderer.RemoveActor(actor)
+                removed += 1
+            except Exception:
+                pass
+        self._tracked = []
+        return removed
+
+    def _track(self, actor) -> None:
+        if actor is not None:
+            self._tracked.append(actor)
 
     def _solid_line_actor(self, points, color, width):
         pv = self._pv
@@ -59,7 +80,9 @@ class QuickEstimationOverlayService:
             return
         try:
             mesh = pv.lines_from_points(np.asarray(points, dtype=float))
-            self.inspector._add_mesh_actor(mesh, color=color, line_width=width, opacity=1.0)
+            self._track(
+                self.inspector._add_mesh_actor(mesh, color=color, line_width=width, opacity=1.0)
+            )
         except Exception as exc:
             self.editor.append_debug(f"QE overlay solid line skipped: {exc}")
 
@@ -76,7 +99,9 @@ class QuickEstimationOverlayService:
             if not cells:
                 return
             mesh = pv.PolyData(pts, lines=np.asarray(cells, dtype=np.int64))
-            self.inspector._add_mesh_actor(mesh, color=color, line_width=width, opacity=0.9)
+            self._track(
+                self.inspector._add_mesh_actor(mesh, color=color, line_width=width, opacity=0.9)
+            )
         except Exception as exc:
             self.editor.append_debug(f"QE overlay dashed line skipped: {exc}")
 
@@ -107,13 +132,15 @@ class QuickEstimationOverlayService:
                 r_res=1,
                 c_res=64,
             )
-            self.inspector._add_mesh_actor(
-                disk,
-                color=color,
-                opacity=0.10,
-                flat_shading=True,
-                backface_culling=False,
-                pick_row_index=int(row_index),
+            self._track(
+                self.inspector._add_mesh_actor(
+                    disk,
+                    color=color,
+                    opacity=0.10,
+                    flat_shading=True,
+                    backface_culling=False,
+                    pick_row_index=int(row_index),
+                )
             )
         except Exception as exc:
             self.editor.append_debug(f"QE overlay pick disk skipped: {exc}")
@@ -121,6 +148,9 @@ class QuickEstimationOverlayService:
     def add_overlays(
         self, system: Any, scene_bundle: Any = None, *, suppress_image_plane_duplicates: bool = False
     ) -> int:
+        # bugs/0660: EVERY call first wipes the previous generation -- including the
+        # disabled path, so toggling QE off (or any refresh after) leaves nothing.
+        self.clear()
         qe = self.inspector._quick_estimation_service()
         if not qe.is_enabled():
             return 0

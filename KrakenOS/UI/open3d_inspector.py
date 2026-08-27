@@ -1230,6 +1230,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.status_var.set(service._role_summary())
         else:
             self.status_var.set("Quick Estimation off -- thickness edits no longer re-solve the conjugate.")
+        # bugs/0660 (the five-flag repro 15:47-48 + "2 big circles" after a swap): the
+        # QE FOV pick-discs are drawn by the scene refresh while QE is enabled; with
+        # no refresh here, toggling OFF left them on screen until some unrelated
+        # rebuild -- the un-killable "big green circle(s)". Refresh so the toggle
+        # takes effect immediately, both directions.
+        self._on_scene_visibility_changed()
 
     def _open3d_step_rotation_handle_service(self) -> Open3DStepRotationHandleService:
         if pv is None:

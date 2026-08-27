@@ -98,6 +98,13 @@ class Open3DTopControlsPanel:
                 # nobody connects to the object plane. Mechanism verified correct
                 # (off = disc hides on both refresh paths); the LABEL was the bug.
                 MenuCheckbutton("Obj/Img planes (Refs)", self.inspector.show_reference_surfaces_var, self.inspector._on_scene_visibility_changed),
+                # bugs/0660 (the five-flag repro, 15:47-48): the OTHER green circle --
+                # the Quick-Estimation FOV pick-disc. Opening the FOV dialog silently
+                # ENABLES QE mode (five code paths set the var), its discs then redraw
+                # on every refresh, and the only OFF switch was the Left Panel's
+                # "Quick Estimation" checkbox -- nowhere near the Overlays menu the
+                # user sweeps. Same var here, one obvious place to kill it.
+                MenuCheckbutton("FOV planes (QE)", self.inspector.quick_estimation_var, self.inspector._toggle_quick_estimation),
                 MenuCheckbutton("Det", self.inspector.show_detector_overlays_var, self.inspector._on_scene_visibility_changed),
                 MenuCheckbutton("Miss", self.inspector.show_terminal_diagnostics_var, self.inspector._on_scene_visibility_changed),
                 # Clipped rays share the 2D show_clipped_rays_var (via _editor_var)
