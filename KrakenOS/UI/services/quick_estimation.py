@@ -2737,6 +2737,36 @@ class QuickEstimationService:
                 sensor = self._sensor_semi()
                 if not sensor:
                     return False, "No sensor available to fill."
+                # bugs/0656 (flag_20260827_140507): a FIXED-MAGNIFICATION lens (the
+                # telecentric mount law) has NOTHING to solve -- its field is
+                # sensor/m, full stop. The old path treated the request as reachable
+                # and drove the lens INTO the camera chasing it. Within tolerance:
+                # just confirm focus (idempotent); anything else: an honest refusal
+                # that quotes the one field this lens can deliver.
+                fixed_reg = None
+                try:
+                    fixed_reg = self.editor._lens_datasheet_wd_registration()
+                except Exception:
+                    fixed_reg = None
+                if fixed_reg and fixed_reg.get("fixed_magnification"):
+                    m_fixed = abs(float(fixed_reg["fixed_magnification"]))
+                    fixed_semi = float(sensor) / m_fixed
+                    if abs(semi - fixed_semi) <= 0.02 * fixed_semi:
+                        try:
+                            self.editor.snap_detector_to_image_plane()
+                        except Exception:
+                            pass
+                        return True, (
+                            f"Fixed {m_fixed:g}x lens: field = sensor/{m_fixed:g} "
+                            f"(diag {2.0 * fixed_semi:.2f} mm) -- focus confirmed, "
+                            "nothing to slide."
+                        )
+                    return False, (
+                        f"Fixed {m_fixed:g}x lens: the field is sensor/{m_fixed:g} = "
+                        f"{2.0 * fixed_semi:.2f} mm diagonal and cannot be solved to "
+                        f"{2.0 * semi:.2f} mm -- the magnification is fixed by the "
+                        "design. Choose a different lens or sensor for that field."
+                    )
                 # bugs/0591: the station-frame first order over-delivers on a frozen fold
                 # (measured 27%). Book with the LEARNED measured correction so a re-solve of
                 # the same field is idempotent (phase 444 C4), then verify with real rays and

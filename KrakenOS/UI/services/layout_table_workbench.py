@@ -1816,6 +1816,22 @@ class LayoutTableWorkbenchMixin:
         SCHEDULED rather than called inline -- a headless/guard swap must never block."""
         if not interactive:
             return ""
+        # bugs/0656 (flag_20260827_140507, "the FOV pop up dialog should have option
+        # to let user somehow no need to input FOV for this kind of fixed
+        # magnification lens"): a fixed-magnification lens has NO field to choose --
+        # the FOV is sensor/m at the vendor working distance, and the swap just set
+        # exactly that operating point. Say so instead of asking.
+        try:
+            reg = self._lens_datasheet_wd_registration()
+        except Exception:
+            reg = None
+        if reg and reg.get("fixed_magnification"):
+            m_fixed = abs(float(reg["fixed_magnification"]))
+            return (
+                f" Fixed {m_fixed:g}x lens -- FOV = sensor/{m_fixed:g}, nothing to "
+                f"enter: object at the {reg['wd']:g} mm working distance, camera "
+                f"mounted at the flange."
+            )
         inspector = getattr(self, "_three_d_inspector", None)
         if inspector is None:
             return ""
@@ -2032,6 +2048,30 @@ class LayoutTableWorkbenchMixin:
                 housing_note = " " + _hnote
         except Exception as exc:
             self.append_debug(f"swap WD refit skipped: {exc}")
+        # bugs/0656 (flag_20260827_140507): a FIXED-MAGNIFICATION lens operates at ONE
+        # point -- object at the vendor WD, sensor at the mount flange. Set the object
+        # leg to the working distance here (unfrozen scenes; a frozen object plane is
+        # world-pinned); the auto-refocus below then lands the sensor at the flange
+        # (the 0656 refit made best focus and the flange the same plane), and the
+        # camera glue seats the body there: MOUNTED, never solved into the barrel.
+        try:
+            _reg = self._lens_datasheet_wd_registration()
+            if _reg and _reg.get("fixed_magnification"):
+                frozen_split = self._folded_image_conjugate_split() or {}
+                if not frozen_split.get("frozen_world"):
+                    measured = float(self.rows[0].thickness) + float(_reg["rim_s"])
+                    delta = float(_reg["wd"]) - measured
+                    if abs(delta) > 1e-6:
+                        self.rows[0].thickness = round(
+                            float(self.rows[0].thickness) + delta, 6
+                        )
+                        self._sync_table()
+                        housing_note += (
+                            f" Object set to the vendor working distance "
+                            f"({_reg['wd']:g} mm to the housing rim)."
+                        )
+        except Exception as exc:
+            self.append_debug(f"fixed-conjugate WD placement skipped: {exc}")
         self._commit_history_capture()
         # bugs/0388: the swapped lens focuses at a different plane; 0383 kept the camera/mounts
         # at their absolute positions, so the image is defocused on the sensor. Auto re-solve

@@ -305,6 +305,11 @@ class DatasheetCardinals:
     # read ~9 mm short of the bench.
     optimum_wd: float | None = None
     optimum_wd_mag: float | None = None
+    # bugs/0656: a FIXED-CONJUGATE lens (telecentric with a named mount) carries its
+    # mount's flange focal distance -- the image plane sits this far behind the
+    # housing rear face, so the camera MOUNTS to the lens instead of being solved
+    # toward it. None for ordinary variable-conjugate lenses.
+    mount_flange_mm: float | None = None
 
     @property
     def ppa(self) -> float | None:
@@ -469,6 +474,7 @@ def telecentric_conjugate_cardinals(text: str) -> DatasheetCardinals | None:
     cardinals.magnification = -abs(mag)  # a finite-conjugate lens inverts
     cardinals.optimum_wd = wd
     cardinals.optimum_wd_mag = abs(mag)
+    cardinals.mount_flange_mm = float(flange)  # bugs/0656: the image is AT the flange
     # The housing length is the honest vertex span: a telecentric barrel is far
     # longer than its EFL (here 160 mm vs 70.4), and both the STEP-extent span (the
     # body's Z can be its DIAMETER when the CAD axis is not Z) and the 0.7*EFL cap

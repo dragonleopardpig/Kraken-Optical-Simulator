@@ -5134,6 +5134,21 @@ class ScenePlacementMixin:
             "mismatch": float(offset_now - vendor_offset),
             "first_src": int(first_src),
             "last_src": int(last_src),
+            "rim_s": float(rim_s),
+            # bugs/0656: a FIXED-CONJUGATE lens (telecentric, named mount) also pins
+            # the IMAGE side -- the sensor sits mount_flange behind the housing rear,
+            # so the camera MOUNTS to the lens. None for variable-conjugate lenses.
+            "mount_flange": (
+                float(cardinals.mount_flange_mm)
+                if getattr(cardinals, "mount_flange_mm", None) is not None
+                else None
+            ),
+            "housing_length": (
+                float(cardinals.span) if cardinals.span is not None else None
+            ),
+            "fixed_magnification": (
+                pairing if getattr(cardinals, "mount_flange_mm", None) is not None else None
+            ),
         }
 
     def refit_lens_principal_to_datasheet_wd(self) -> "str | None":
@@ -5186,14 +5201,53 @@ class ScenePlacementMixin:
             # what it looks like; do not rewrite it on a guess.
             return self.calibrate_lens_housing_to_datasheet_wd()
         ppa_new = ppa_now - float(reg["mismatch"])
-        try:
-            from KrakenOS.UI.services.machine_vision_folder_import import (
-                solve_two_thin_groups,
-            )
+        if reg.get("mount_flange") is not None:
+            # bugs/0656: a FIXED-CONJUGATE lens pins the IMAGE side too. Its EFL was
+            # derived (bugs/0653) from T = WD + L + FFD with COINCIDENT principals, so
+            # the rear principal must sit at the SAME station as the front one
+            # (HH' = 0): image = principal' + f(1+m) = rim + L + FFD -- the flange
+            # plane, where the camera MOUNTS. Preserving the builder's ppp instead
+            # left the rear principal elsewhere, and the flagged FOV solve then
+            # legally focused the sensor INSIDE the barrel's mount overhang -- the
+            # lens "crashed into" the camera (flag_20260827_140507).
+            #
+            # Two thin groups have HH' = -f d^2/(f1 f2): EXACTLY zero is degenerate,
+            # so `solve_two_thin_groups` cannot land it (measured: its best-effort
+            # silently regressed the WD mismatch to 15.3). Construct the honest shape
+            # DIRECTLY -- the full power in group 2 AT the principal station, group 1
+            # a near-flat window (f1 = 1e5 mm leaves |HH'| ~ 4e-5 mm):
+            from types import SimpleNamespace as _NS
 
-            sol = solve_two_thin_groups(effl, ppa_new, ppp_now, span)
-        except Exception as exc:
-            self.append_debug(f"WD refit infeasible ({type(exc).__name__}: {exc}).")
+            d_small = min(2.0, 0.5 * ppa_new)
+            g1_new = ppa_new - d_small
+            g2_new = span - ppa_new
+            if d_small <= 0.0 or g1_new < 0.0 or g2_new < 0.0:
+                self.append_debug(
+                    f"fixed-conjugate refit infeasible (principal {ppa_new:.2f} vs "
+                    f"span {span:.2f})."
+                )
+                return self.calibrate_lens_housing_to_datasheet_wd()
+            f1_new = 1.0e5
+            f2_new = 1.0 / ((1.0 / effl - 1.0 / f1_new) / (1.0 - d_small / f1_new))
+            sol = _NS(g1=g1_new, d=d_small, g2=g2_new, f1=f1_new, f2=f2_new)
+        else:
+            try:
+                from KrakenOS.UI.services.machine_vision_folder_import import (
+                    solve_two_thin_groups,
+                )
+
+                sol = solve_two_thin_groups(effl, ppa_new, ppp_now, span)
+            except Exception as exc:
+                self.append_debug(f"WD refit infeasible ({type(exc).__name__}: {exc}).")
+                return self.calibrate_lens_housing_to_datasheet_wd()
+        # OUTCOME check (the solver can silently return a best-effort): the solution
+        # must actually place the front principal where the law demands.
+        ppa_sol = float(sol.g1) + effl * float(sol.d) / float(sol.f2)
+        if abs(ppa_sol - ppa_new) > 0.05:
+            self.append_debug(
+                f"WD refit solution off the law (ppa {ppa_sol:.3f} vs {ppa_new:.3f}) "
+                "-- advisory note only."
+            )
             return self.calibrate_lens_housing_to_datasheet_wd()
         if sol.g1 < 0.0 or sol.g2 < 0.0 or sol.d <= 0.0:
             self.append_debug("WD refit would push a group outside the datums.")
@@ -5257,6 +5311,20 @@ class ScenePlacementMixin:
             # the write would shift every downstream station off the leg; the user's next
             # solve re-establishes the field on the corrected optics.
             rows[0].thickness = round(float(rows[0].thickness) + float(reg["mismatch"]), 6)
+            if (
+                reg.get("mount_flange") is not None
+                and last + 1 < len(rows)
+                and str(getattr(rows[last + 1], "surface", "")) == "Image"
+            ):
+                # bugs/0656: the fixed-conjugate IMAGE side -- the sensor belongs at
+                # f(1+m) behind the (now coincident) principals, i.e. AT the mount
+                # flange. Only when the image row directly follows (the library
+                # layout); a live scene's camera is seated by the measured detector
+                # snap instead.
+                m_star = abs(float(reg["pairing"]))
+                image_gap = (ppa_new + effl * (1.0 + m_star)) - span
+                if np.isfinite(image_gap) and image_gap > 0.0:
+                    rows[last].thickness = round(float(image_gap), 6)
         # bugs/0591/0608 doctrine: the refit changes the MACHINE, so the learned
         # magnification correction and field centre of the OLD optics are poison.
         # Measured: the first 20x20 solve after an un-cleared refit drove the lens to
