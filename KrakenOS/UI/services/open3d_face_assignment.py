@@ -1653,6 +1653,16 @@ class Open3DFaceAssignmentService:
             label="Center a Feature -> Optical Axis (then click the feature)",
             command=lambda: self.editor.start_any_step_axis_pick(),
         )
+        if str(step_label).strip().lower() == "lens":
+            # bugs/0657: one-click repair for a barrel left transversely off its
+            # surrogate axis (e.g. by the old centroid-pivot rotation, or any stale
+            # placement offset) -- purely transverse, axial registration untouched.
+            menu.add_command(
+                label="Re-centre Body on Optical Axis (transverse)",
+                command=lambda: self.editor.center_lens_body_on_surrogate_axis(
+                    context="manual"
+                ),
+            )
         if str(step_label).strip().lower() == "led":
             menu.add_command(
                 label="Set Object-Distance Reference Edge (then click an LED edge)",

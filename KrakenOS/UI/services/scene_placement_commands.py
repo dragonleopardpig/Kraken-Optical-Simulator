@@ -2955,6 +2955,37 @@ class ScenePlacementMixin:
         if refresh:
             self._refresh_open_3d_views(step_label=label)
 
+    def _step_rotation_pivot_world(self, label: str) -> "np.ndarray | None":
+        """bugs/0657 (flag_20260827_145650 "I rotated the lens ... now it is off
+        axis"; user diagnosis, confirmed to the millimetre: "the algorithm not
+        taking the clear aperture lens as the center of rotation, it also take into
+        account the illumination port"): the in-place pivot for a body rotation.
+
+        ``mesh.center`` is the centroid of the WHOLE body -- an In-Line illumination
+        port drags it 5.35 mm off the clear-aperture barrel on the #67-319, and the
+        rotate-in-place compensation (offset += center_before - center_after) then
+        swung the barrel 5.35*sqrt(2) = 7.57 mm off the optical axis on a 270 deg
+        roll. The pivot must be a point ON the CLEAR-APERTURE AXIS whenever the body
+        has one (the CAD cylinder axis -- the same anchor the alignment centres on,
+        bugs/0077); the centroid stays only as the fallback for axis-less bodies."""
+        if str(label).strip().lower() == "lens":
+            try:
+                line = self._lens_step_overlay_axis_world_line()
+            except Exception:
+                line = None
+            if line is not None:
+                point = np.asarray(line[0], dtype=float).reshape(-1)[:3]
+                if point.size == 3 and np.all(np.isfinite(point)):
+                    return point
+        mesh = self._transformed_imported_step_mesh_for_label(label)
+        if mesh is None:
+            return None
+        try:
+            center = np.asarray(mesh.center, dtype=float).reshape(3)
+        except Exception:
+            return None
+        return center if np.all(np.isfinite(center)) else None
+
     def rotate_step_world_axis(
         self,
         label: str,
@@ -2984,15 +3015,10 @@ class ScenePlacementMixin:
         delta_matrix = self._world_axis_rotation_matrix(axis_key, delta)
         next_angles = self._step_angles_from_rotation_matrix(delta_matrix @ current_matrix)
         current_offset = np.asarray(self._step_placement_offset_xyz(label), dtype=float).reshape(3)
-        current_mesh = self._transformed_imported_step_mesh_for_label(label)
-        try:
-            current_center = np.asarray(current_mesh.center, dtype=float).reshape(3) if current_mesh is not None else None
-        except Exception:
-            current_center = None
+        current_center = self._step_rotation_pivot_world(label)
         self._set_step_rotation_deg_tuple(label, next_angles)
         try:
-            rotated_mesh = self._transformed_imported_step_mesh_for_label(label)
-            rotated_center = np.asarray(rotated_mesh.center, dtype=float).reshape(3) if rotated_mesh is not None else None
+            rotated_center = self._step_rotation_pivot_world(label)
         finally:
             self._set_step_rotation_deg_tuple(label, current_angles)
         next_offset = current_offset
