@@ -240,6 +240,17 @@ def parse_camera_datasheet(path: str | Path) -> CameraSpec | None:
     spec.lens_mount = _field(blob, "Lens mount(s)", r"Weight")
     if spec.lens_mount is None:
         spec.lens_mount = _field(blob, "Lens mount", r"Weight")
+    if spec.lens_mount is None:
+        # bugs/0655: the Edmund row "Mount:C-Mount" (under "Threading & Mounting";
+        # the named-mount token only, so "Tripod Mount Adapter" cannot match).
+        mount = re.search(r"Mount\s*:\s*((?:C|CS|TFL|F|EF|T2)\s*-?\s*Mount)", blob)
+        if mount is not None:
+            spec.lens_mount = mount.group(1)
+    if spec.model is None:
+        # bugs/0655: the Edmund row "Model Number:acA2440-20gm".
+        model = re.search(r"Model Number\s*:\s*([A-Za-z0-9][A-Za-z0-9 ._/-]*?)(?=[A-Z][a-z]+\s*:|$)", blob)
+        if model is not None:
+            spec.model = model.group(1).strip() or None
 
     low = _num(blob, r"Spectral range\s*:?\s*([\d.]+)\s*nm")
     high = _num(blob, r"Spectral range\s*:?\s*[\d.]+\s*nm to\s*([\d.]+)\s*nm")
@@ -251,6 +262,11 @@ def parse_camera_datasheet(path: str | Path) -> CameraSpec | None:
         # "5120 (H) x 5120 (V)" spec-table form (Bopixel BC-OM/GN datasheets); the
         # >=3-digit guard keeps it off the pixel-pitch row's own "(H) x (V)".
         res = re.search(r"([\d,]{3,})\s*\(H\)\s*[×xX]\s*([\d,]{3,})\s*\(V\)", blob)
+    if res is None:
+        # bugs/0655: the Edmund row "Pixels (H x V):2,448 x 2,048".
+        res = re.search(
+            r"Pixels\s*\(\s*H\s*[×xX]\s*V\s*\)\s*:?\s*([\d,]+)\s*[×xX]\s*([\d,]+)", blob
+        )
     if res is not None:
         try:
             spec.resolution_px = (int(res.group(1).replace(",", "")),
@@ -262,10 +278,18 @@ def parse_camera_datasheet(path: str | Path) -> CameraSpec | None:
     size = re.search(
         r"Sensor size\s*:?\s*([\d.]+)\s*[×xX]\s*([\d.]+)\s*mm(?:\s*\(([\d.]+)\s*mm)?", blob
     )
+    if size is None:
+        # bugs/0655 (error.png, Basler ace via an Edmund stock page): the Edmund
+        # camera format's row is "Sensing Area, H x V (mm):8.45 x 7.07" -- the
+        # sensor size stated directly, label-glued like every Edmund value.
+        size = re.search(
+            r"Sensing Area,?\s*H\s*[×xX]\s*V\s*\(\s*mm\s*\)\s*:?\s*([\d.]+)\s*[×xX]\s*([\d.]+)",
+            blob,
+        )
     if size is not None:
         spec.sensor_width_mm = float(size.group(1))
         spec.sensor_height_mm = float(size.group(2))
-        if size.group(3):
+        if size.lastindex and size.lastindex >= 3 and size.group(3):
             spec.sensor_diagonal_mm = float(size.group(3))
 
     pixel = re.search(r"Pixel size\s*:?\s*([\d.]+)\s*[^\d×xX]*[×xX]\s*([\d.]+)", blob)
@@ -274,6 +298,12 @@ def parse_camera_datasheet(path: str | Path) -> CameraSpec | None:
         # row's "(H) x (V)" is not misread as a pixel pitch.
         pixel = re.search(
             r"([\d.]+)\s*\(H\)\s*[×xX]\s*([\d.]+)\s*\(V\)\s*[µμu]m", blob
+        )
+    if pixel is None:
+        # bugs/0655: the Edmund row "Pixel Size, H x V (um):3.45 x 3.45".
+        pixel = re.search(
+            r"Pixel Size,?\s*H\s*[×xX]\s*V\s*\(\s*[µμu]m\s*\)\s*:?\s*([\d.]+)\s*[×xX]\s*([\d.]+)",
+            blob,
         )
     if pixel is not None:
         spec.pixel_size_um = (float(pixel.group(1)), float(pixel.group(2)))
@@ -339,7 +369,13 @@ def _scrape_flange(blob: str, lens_mount: str | None) -> float | None:
     if lens_mount:
         token = re.match(r"\s*([A-Za-z0-9-]+)", lens_mount)
         if token is not None:
-            std = _MOUNT_FLANGE_MM.get(token.group(1).upper())
+            # bugs/0655: vendors write the mount as "C-Mount"/"C-mount"; the table is
+            # keyed by the bare mount name, so the "-MOUNT" suffix must come off or
+            # every suffixed spelling silently missed the standard FFD.
+            key = token.group(1).upper()
+            if key.endswith("-MOUNT"):
+                key = key[: -len("-MOUNT")]
+            std = _MOUNT_FLANGE_MM.get(key)
             if std:
                 return float(std)
     return None
@@ -399,6 +435,7 @@ def build_camera_record_from_assets(
     notes: list[str] = list(assets.notes)
     sidecar_record: dict | None = None
     spec: CameraSpec | None = None
+    spec_pdf: Path | None = None
 
     if assets.primary_sidecar is not None:
         try:
@@ -407,18 +444,32 @@ def build_camera_record_from_assets(
             raise ValueError(f"Could not read camera sidecar {assets.primary_sidecar.name}: {exc}")
         notes.append(f"Sensor spec from sidecar {assets.primary_sidecar.name}.")
     else:
-        spec = parse_camera_datasheet(assets.primary_pdf) if assets.primary_pdf else None
-        if spec is None or not spec.has_sensor_size:
+        # bugs/0655 (Basler ace, error.png): a vendor folder often bundles SEVERAL
+        # PDFs -- the mechanical DRAWING sorted first here, and the spec sheet the
+        # user dropped beside it was never even opened. Try every PDF (primary
+        # first, so a proper vendor datasheet keeps precedence); the first one
+        # that yields a sensor size feeds the record.
+        spec_pdf = None
+        for pdf in assets.pdf_files:
+            candidate = parse_camera_datasheet(pdf)
+            if candidate is not None and candidate.has_sensor_size:
+                spec, spec_pdf = candidate, pdf
+                break
+        if spec is None:
             raise ValueError(
                 "Could not extract a sensor size from this folder. Provide a vendor "
                 "datasheet PDF whose spec table is text-based, or drop a camera .json "
                 "sidecar (with at least sensor_width_mm / sensor_height_mm) beside the "
                 "STEP file."
             )
-        notes.append(f"Sensor spec scraped from datasheet {assets.primary_pdf.name}.")
+        notes.append(f"Sensor spec scraped from datasheet {spec_pdf.name}.")
 
     manufacturer = _guess_manufacturer(assets, spec)
     record = _assemble_record(assets, spec, sidecar_record, manufacturer)
+    if spec is not None and spec_pdf is not None:
+        # The record's datasheet pointer must name the PDF that actually FED the
+        # spec, not whichever file sorted first (bugs/0655).
+        record["datasheet"] = _project_relative(spec_pdf)
     display_name = _display_name(name, sidecar_record, spec, manufacturer, assets)
 
     if record.get("camera_front_to_sensor_mm") is None:
