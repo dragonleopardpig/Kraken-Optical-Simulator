@@ -1283,6 +1283,14 @@ class Open3DFaceAssignmentService:
                     label="Promote to Optical Element",
                     command=lambda picked_label=step_label: self._promote_step_from_context(picked_label),
                 )
+            # bugs/0652: a component-scoped engineering sheet -- all six orthographic
+            # views of THIS body (plus its companion edge work) on one DXF.
+            menu.add_command(
+                label="Export Component DXF (6 Views)...",
+                command=lambda picked_label=step_label: self.editor.export_component_six_view_dxf(
+                    step_label=picked_label
+                ),
+            )
             # flag_20260814: the CAD-menu move/rotate/delete verbs live on the body.
             try:
                 self.append_step_body_actions(menu, step_label)
@@ -1294,6 +1302,17 @@ class Open3DFaceAssignmentService:
             rows = list(getattr(self.editor, "rows", []) or [])
             if not (0 <= row_index < len(rows)):
                 return False
+            # bugs/0652: every element row (not the Object/Image planes) offers its
+            # six-view DXF sheet; a lens row exports the whole row group.
+            export_added = False
+            if str(getattr(rows[row_index], "surface", "")) not in ("Object", "Image"):
+                menu.add_command(
+                    label="Export Component DXF (6 Views)...",
+                    command=lambda idx=row_index: self.editor.export_component_six_view_dxf(
+                        row_index=idx
+                    ),
+                )
+                export_added = True
             if self.editor._file_backed_stl_row_at(row_index) is not None:
                 menu.add_command(
                     label="Open Face Editor...",
@@ -1358,7 +1377,7 @@ class Open3DFaceAssignmentService:
                 return True
             # flag_20260814: PLAIN surface rows (ordinary lenses/mirrors) used to fall
             # through with NO element actions -- give them the Place/Orient verbs too.
-            added = False
+            added = export_added
             try:
                 added = self.append_selection_actions(menu) or added
                 added = self.append_row_place_orient_actions(menu, row_index) or added

@@ -785,6 +785,84 @@ class LayoutImportExportMixin:
         except Exception:
             pass
 
+    def export_component_six_view_dxf(
+        self, *, step_label: str | None = None, row_index: int | None = None
+    ) -> None:
+        """bugs/0652: right-click a component -> a DXF R12 sheet with its six
+        orthographic views (third-angle layout, true mm). The component is a STEP
+        overlay label or a row (a lens row exports its whole row group)."""
+        inspector = getattr(self, "_three_d_inspector", None)
+        alive = False
+        try:
+            alive = inspector is not None and bool(inspector.winfo_exists())
+        except Exception:
+            alive = False
+        if not alive:
+            messagebox.showinfo(
+                "Export Component DXF",
+                "Open the 3D view first -- the six views are projected from the 3D "
+                "scene's geometry.",
+                parent=self,
+            )
+            return
+        row_indices = None
+        display = ""
+        if step_label is not None:
+            try:
+                display = self._step_overlay_display_label(step_label)
+            except Exception:
+                display = str(step_label)
+        elif row_index is not None:
+            try:
+                row_indices = [int(i) for i in self._lens_row_group_for_row(int(row_index))]
+            except Exception:
+                row_indices = [int(row_index)]
+            try:
+                display = str(getattr(self.rows[int(row_index)], "name", "") or f"S{row_index}")
+            except Exception:
+                display = f"S{row_index}"
+        else:
+            return
+        safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in display).strip("_") or "component"
+        stem = safe
+        if self.current_layout_file is not None:
+            stem = f"{self.current_layout_file.stem}_{safe}"
+        try:
+            SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        path = filedialog.asksaveasfilename(
+            title=f"Export {display} as Six-View DXF",
+            initialdir=str(SCREENSHOT_DIR),
+            initialfile=f"{stem}_6views.dxf",
+            defaultextension=".dxf",
+            filetypes=[("DXF R12", "*.dxf"), ("All files", "*")],
+            parent=self,
+        )
+        if not path:
+            return
+        try:
+            from KrakenOS.UI.services.dxf_viewport_export import export_component_six_view_dxf
+
+            summary = export_component_six_view_dxf(
+                inspector,
+                Path(path).expanduser(),
+                step_label=step_label,
+                row_indices=row_indices,
+                display_name=display,
+            )
+        except Exception as exc:
+            self.status_var.set(f"Component DXF export failed: {exc}")
+            messagebox.showerror(
+                "Export Component DXF", f"Component DXF export failed:\n\n{exc}", parent=self
+            )
+            return
+        self.status_var.set(summary)
+        try:
+            self.append_progress(summary)
+        except Exception:
+            pass
+
     def export_3d_step(self) -> None:
         """Export the current 3D viewer geometry as a STEP assembly."""
         worker = getattr(self, "_step_export_thread", None)

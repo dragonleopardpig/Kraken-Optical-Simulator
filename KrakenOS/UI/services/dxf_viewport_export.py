@@ -744,6 +744,17 @@ def write_dxf_r12(path, layers: dict[str, dict[str, object]]) -> dict[str, int]:
                 tag(10, f"{x:.4f}"); tag(20, f"{y:.4f}"); tag(30, "0.0")
             tag(0, "SEQEND")
             n += 1
+        # bugs/0652: view captions for the six-view component sheet -- centre-aligned
+        # R12 TEXT (72=1 needs the second alignment point 11/21).
+        for txt in spec.get("texts", []):
+            x, y = (float(v) for v in txt["pos"])
+            tag(0, "TEXT"); tag(8, name)
+            tag(10, f"{x:.4f}"); tag(20, f"{y:.4f}"); tag(30, "0.0")
+            tag(40, f"{float(txt.get('height', 3.5)):.2f}")
+            tag(1, str(txt["text"]))
+            tag(72, 1)
+            tag(11, f"{x:.4f}"); tag(21, f"{y:.4f}"); tag(31, "0.0")
+            n += 1
         counts[name] = n
     tag(0, "ENDSEC")
     tag(0, "EOF")
@@ -764,4 +775,244 @@ def export_viewport_to_dxf(inspector, path) -> str:
         f"({parts}). True-scale mm in the view plane; DASHED axes; bodies as feature "
         f"edges. (DXF R12 -- opens in AutoCAD/FreeCAD/LibreCAD; convert to DWG there "
         f"if needed.)"
+    )
+
+
+# ---------------------------------------------------------------------------------
+# bugs/0652: right-click a component -> one DXF sheet with all six orthographic
+# views (third-angle: TOP over FRONT, BOTTOM under, LEFT/RIGHT beside, BACK past
+# RIGHT). World-axis views -- folded scenes keep their legs axis-aligned, so the
+# part reads naturally; a tilted BS shows its diagonal, which is the truth.
+
+# (name, view direction INTO the screen, screen right, screen up); for every view
+# right x up == -direction (toward the viewer), so the projections are proper
+# right-handed camera frames and adjacent views share their common world axis
+# (FRONT/LEFT/RIGHT/BACK all have up=+Z; TOP/BOTTOM share FRONT's right=+X).
+SIX_VIEW_BASES: tuple = (
+    ("FRONT", (0.0, 1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+    ("BACK", (0.0, -1.0, 0.0), (-1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+    ("LEFT", (1.0, 0.0, 0.0), (0.0, -1.0, 0.0), (0.0, 0.0, 1.0)),
+    ("RIGHT", (-1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
+    ("TOP", (0.0, 0.0, -1.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)),
+    ("BOTTOM", (0.0, 0.0, 1.0), (1.0, 0.0, 0.0), (0.0, -1.0, 0.0)),
+)
+
+
+def place_six_views(bounds: dict[str, tuple], gap: float) -> dict[str, tuple]:
+    """Third-angle sheet offsets for each view's RAW projected coordinates.
+
+    Raw coordinates already align adjacent views along their shared world axis
+    (side views share height = world Z; top/bottom share width = world X), so a
+    side view gets only an x shift and top/bottom only a y shift -- the views stay
+    PROJECTIONALLY aligned like a drafted sheet, not merely arranged in a grid.
+    ``bounds``: name -> (min_x, max_x, min_y, max_y). Views absent from ``bounds``
+    are skipped."""
+    if "FRONT" not in bounds:
+        return {name: (0.0, 0.0) for name in bounds}
+    fb = bounds["FRONT"]
+    offsets: dict[str, tuple] = {"FRONT": (0.0, 0.0)}
+    if "LEFT" in bounds:
+        offsets["LEFT"] = (fb[0] - gap - bounds["LEFT"][1], 0.0)
+    if "RIGHT" in bounds:
+        offsets["RIGHT"] = (fb[1] + gap - bounds["RIGHT"][0], 0.0)
+    if "BACK" in bounds:
+        if "RIGHT" in bounds:
+            anchor = offsets["RIGHT"][0] + bounds["RIGHT"][1]
+        else:
+            anchor = fb[1]
+        offsets["BACK"] = (anchor + gap - bounds["BACK"][0], 0.0)
+    if "TOP" in bounds:
+        offsets["TOP"] = (0.0, fb[3] + gap - bounds["TOP"][2])
+    if "BOTTOM" in bounds:
+        offsets["BOTTOM"] = (0.0, fb[2] - gap - bounds["BOTTOM"][3])
+    return offsets
+
+
+def collect_component_six_view_layers(
+    inspector, *, step_label: str | None = None, row_indices=None
+) -> dict[str, dict[str, object]]:
+    """Collect ONE component's geometry as six orthographic view projections.
+
+    The component is named either by its STEP-overlay label or by its row indices
+    (a lens block passes its whole row group). Actor selection reuses the bugs/0650
+    registries: ``_actor_step_map`` (key -> step label), ``_actor_row_map`` /
+    ``_row_actor_map`` for rows, plus the round-7 bounds-containment rule so a STEP
+    body's follow-only companion edge actors come along with it."""
+    renderer = getattr(inspector, "_renderer", None)
+    if renderer is None:
+        raise RuntimeError("the 3D view has no renderer")
+    step_label = str(step_label).strip().lower() if step_label else None
+    row_set = {int(i) for i in (row_indices or [])}
+    actor_step = dict(getattr(inspector, "_actor_step_map", None) or {})
+    actor_row = dict(getattr(inspector, "_actor_row_map", None) or {})
+    row_actor = dict(getattr(inspector, "_row_actor_map", None) or {})
+    ray_keys = set(getattr(inspector, "_actor_ray_map", None) or {})
+    for keys in (getattr(inspector, "_ray_actor_map", None) or {}).values():
+        ray_keys.update(keys)
+    axis_keys = set(getattr(inspector, "_actor_optical_axis_map", None) or {})
+    want_keys: set = set()
+    if step_label:
+        want_keys.update(k for k, lab in actor_step.items() if str(lab).strip().lower() == step_label)
+    if row_set:
+        want_keys.update(k for k, r in actor_row.items() if int(r) in row_set)
+        for idx in row_set:
+            want_keys.update(row_actor.get(idx, []) or [])
+
+    props = renderer.GetViewProps()
+    props.InitTraversal()
+    pending = []
+    while True:
+        prop = props.GetNextProp()
+        if prop is None:
+            break
+        pending.append(prop)
+    meshes: list[tuple] = []  # (polydata, actor_matrix)
+    line_actors: list[tuple] = []  # (prop, polydata, actor_matrix) -- deferred containment
+    mesh_bounds: list[np.ndarray] = []
+    while pending:
+        actor = pending.pop(0)
+        try:
+            parts = actor.GetParts() if hasattr(actor, "GetParts") else None
+            if parts is not None:
+                parts.InitTraversal()
+                while True:
+                    part = parts.GetNextProp3D()
+                    if part is None:
+                        break
+                    pending.append(part)
+                continue
+        except Exception:
+            pass
+        try:
+            if not actor.GetVisibility():
+                continue
+            mapper = actor.GetMapper() if hasattr(actor, "GetMapper") else None
+            polydata = mapper.GetInput() if mapper is not None else None
+            if polydata is None:
+                continue
+        except Exception:
+            continue
+        try:
+            key = inspector._actor_key(actor)
+        except Exception:
+            key = None
+        if key in ray_keys or key in axis_keys:
+            continue
+        actor_matrix = _vtk_matrix_to_numpy(actor.GetMatrix())
+        n_polys = 0
+        try:
+            n_polys = int(polydata.GetNumberOfPolys())
+        except Exception:
+            n_polys = 0
+        if key in want_keys:
+            if n_polys:
+                meshes.append((polydata, actor_matrix))
+                try:
+                    mesh_bounds.append(np.asarray(actor.GetBounds(), dtype=float))
+                except Exception:
+                    pass
+            else:
+                line_actors.append((polydata, actor_matrix, True))
+        elif step_label and n_polys == 0 and key not in actor_step and key not in actor_row:
+            # Unregistered lines-only actor: keep it only if it sits inside THIS
+            # component's mesh bounds (the round-7 companion-edge rule, scoped to
+            # the one body being exported).
+            line_actors.append((polydata, actor_matrix, False))
+    if not meshes and not any(flag for _, _, flag in line_actors):
+        raise RuntimeError("no visible geometry found for this component")
+
+    def _contained(polydata, actor_matrix, margin: float = 2.0) -> bool:
+        strips = polydata_line_strips(polydata)
+        if not strips:
+            return False
+        pts = np.vstack(strips)
+        if actor_matrix is not None:
+            pts = (actor_matrix[:3, :3] @ pts.T).T + actor_matrix[:3, 3]
+        lo, hi = pts.min(axis=0), pts.max(axis=0)
+        for sb in mesh_bounds:
+            if (
+                lo[0] >= sb[0] - margin and hi[0] <= sb[1] + margin
+                and lo[1] >= sb[2] - margin and hi[1] <= sb[3] + margin
+                and lo[2] >= sb[4] - margin and hi[2] <= sb[5] + margin
+            ):
+                return True
+        return False
+
+    line_strips_world: list[np.ndarray] = []
+    for polydata, actor_matrix, selected in line_actors:
+        if not selected and not _contained(polydata, actor_matrix):
+            continue
+        for strip in polydata_line_strips(polydata):
+            pts = np.asarray(strip, dtype=float)
+            if actor_matrix is not None:
+                pts = (actor_matrix[:3, :3] @ pts.T).T + actor_matrix[:3, 3]
+            line_strips_world.append(pts)
+
+    view_polys: dict[str, list[dict]] = {}
+    view_bounds: dict[str, tuple] = {}
+    for name, vdir, right, up in SIX_VIEW_BASES:
+        right_v = np.asarray(right, dtype=float)
+        up_v = np.asarray(up, dtype=float)
+        raw: list[dict] = []
+        for polydata, actor_matrix in meshes:
+            for strip in mesh_outline_strips(polydata, vdir, actor_matrix):
+                flat = np.stack([strip @ right_v, strip @ up_v], axis=1)
+                raw.append({"points": flat, "color": None})
+        for pts in line_strips_world:
+            flat = np.stack([pts @ right_v, pts @ up_v], axis=1)
+            raw.append({"points": flat, "color": None})
+        polys = _postprocess_layer_polylines(raw, decompose=True)
+        if not polys:
+            continue
+        allp = np.vstack([q["points"] for q in polys])
+        view_polys[name] = polys
+        view_bounds[name] = (
+            float(allp[:, 0].min()), float(allp[:, 0].max()),
+            float(allp[:, 1].min()), float(allp[:, 1].max()),
+        )
+    if not view_polys:
+        raise RuntimeError("the component projected to no line work")
+
+    max_dim = max(
+        max(b[1] - b[0], b[3] - b[2]) for b in view_bounds.values()
+    )
+    gap = max(0.35 * max_dim, 15.0)
+    text_height = max(0.05 * max_dim, 2.5)
+    offsets = place_six_views(view_bounds, gap)
+    layers: dict[str, dict[str, object]] = {
+        "KRAKEN_BODIES": {"ltype": "CONTINUOUS", "color": 8, "polylines": []},
+        "KRAKEN_LABELS": {"ltype": "CONTINUOUS", "color": 3, "polylines": [], "texts": []},
+    }
+    for name, polys in view_polys.items():
+        ox, oy = offsets.get(name, (0.0, 0.0))
+        shift = np.array([ox, oy])
+        for q in polys:
+            layers["KRAKEN_BODIES"]["polylines"].append(
+                {"points": q["points"] + shift, "color": None}
+            )
+        b = view_bounds[name]
+        layers["KRAKEN_LABELS"]["texts"].append(
+            {
+                "pos": ((b[0] + b[1]) / 2.0 + ox, b[2] + oy - 0.45 * gap),
+                "height": text_height,
+                "text": name,
+            }
+        )
+    return layers
+
+
+def export_component_six_view_dxf(
+    inspector, path, *, step_label: str | None = None, row_indices=None, display_name: str = ""
+) -> str:
+    """Write one component's six orthographic views as a DXF R12 sheet; returns a summary."""
+    layers = collect_component_six_view_layers(
+        inspector, step_label=step_label, row_indices=row_indices
+    )
+    counts = write_dxf_r12(path, layers)
+    views = len(layers["KRAKEN_LABELS"]["texts"])
+    what = display_name or (step_label or "component")
+    return (
+        f"Exported {what} to {Path(path).name}: {views} views "
+        f"({counts.get('KRAKEN_BODIES', 0)} polylines), third-angle layout, true-scale "
+        f"mm. (DXF R12 -- opens in AutoCAD/FreeCAD/LibreCAD.)"
     )
