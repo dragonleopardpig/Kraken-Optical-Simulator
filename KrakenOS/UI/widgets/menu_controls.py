@@ -24,9 +24,15 @@ class MenuCheckbutton:
 
 
 def create_popup_menu(parent: tk.Misc, *, tearoff: bool = False) -> tk.Menu:
-    """Create a non-tearoff popup/dropdown menu using the project default."""
+    """Create a non-tearoff popup/dropdown menu using the project default.
 
-    return tk.Menu(parent, tearoff=tearoff)
+    bugs/0659 (Refs.png): on this Linux Tk theme the check/radio indicator fill
+    (``selectcolor``) defaults to a grey indistinguishable from the menu background,
+    so every checkbutton looked UNCHECKED -- the user read the Overlays menu as "all
+    overlays off" while "Refs" was still on and its object-plane disc kept drawing.
+    A saturated fill makes the checked state legible."""
+
+    return tk.Menu(parent, tearoff=tearoff, selectcolor="#1a7f37")
 
 
 def add_menu_commands(menu: tk.Menu, items: Iterable[MenuCommand | None]) -> tk.Menu:
