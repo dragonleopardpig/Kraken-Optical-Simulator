@@ -399,6 +399,95 @@ def model_designation_cardinals(text: str) -> tuple[float | None, float | None]:
     return None, None
 
 
+# bugs/0653: flange focal distances for the mounts a fixed-conjugate sheet can name.
+# The image plane of a machine-vision lens designed for a named mount sits this far
+# behind its mount shoulder -- the vendor's own design constraint, not a guess.
+_MOUNT_FLANGE_MM = {
+    "C": 17.526,
+    "CS": 12.526,
+    "TFL": 17.526,  # TFL (M35x0.75) keeps the C-mount flange distance by definition
+    "F": 46.5,
+}
+
+
+def telecentric_conjugate_cardinals(text: str) -> DatasheetCardinals | None:
+    """bugs/0653 (error.png, Edmund #67-304 CompactTL): derive the EFL of a
+    fixed-conjugate TELECENTRIC sheet that states NO focal length anywhere.
+
+    Such a sheet pins the whole first order mechanically instead: a fixed
+    magnification m, the working distance WD (object -> front housing), the housing
+    length L, and a named mount whose flange focal distance FFD fixes where the
+    vendor intends the sensor. The total conjugate is then T = WD + L + FFD, and
+    with coincident principal planes (HH' = 0, the same nominal the bugs/0565
+    designation path accepts) the thin-lens identity T = f(2 + m + 1/m) gives
+
+        f = (WD + L + FFD) / (2 + m + 1/m).
+
+    The import-time bugs/0647 refit then re-anchors the front principal to the
+    housing (principal-behind-rim = f(1+1/m) - WD), so the surrogate delivers the
+    sheet's own contract -- m at WD with the image at the flange -- regardless of
+    the HH' nominal. Every value is corroborated before use (the title repeats
+    "<m>X, <WD>mm WD" on this format); anything missing or ambiguous refuses, and
+    the caller keeps its honest "cannot derive the lens optics" error.
+    """
+    if not text or re.search(r"(?i)telecentric", text) is None:
+        return None
+    mag = _first_float(text, r"(?i)Primary\s+Magnification\s+PMAG\s*:?\s*(\d+\.?\d*)\s*X")
+    if mag is None:
+        mag = _first_float(text, r"(?i)Telecentric\s+Lens\s+Magnification\s*:?\s*(\d+\.?\d*)")
+    if mag is None:
+        mag = _first_float(text, r"(?i)\bMagnification\s*:?\s*(\d+\.?\d*)\s*X")
+    if mag is None or not (0.05 <= mag <= 20.0):
+        return None
+    wd = _first_float(text, r"(?i)Working\s+Distance\s*\(\s*mm\s*\)\s*:?\s*(\d+\.?\d*)")
+    if wd is None or not (1.0 <= wd <= 5000.0):
+        return None
+    # Corroboration (the bugs/0565 lesson -- a wrong prescription is far worse than a
+    # clear refusal): the title of this format repeats both numbers as "0.75X, 110mm WD".
+    if re.search(rf"{re.escape(f'{wd:g}')}\s*mm\s+WD", text) is None:
+        return None
+    if re.search(rf"(?<![\d.]){re.escape(f'{mag:g}')}X", text) is None:
+        return None
+    length = _first_float(text, r"(?i)(?<![a-z] )Length\s*\(\s*mm\s*\)\s*:?\s*(\d+\.?\d*)")
+    if length is None or not (5.0 <= length <= 2000.0):
+        return None
+    mount = re.search(r"(?i)Mount\s*:?\s*(C|CS|TFL|F)\s*-?\s*Mount", text)
+    if mount is None:
+        return None
+    flange = _MOUNT_FLANGE_MM.get(mount.group(1).upper())
+    if flange is None:
+        return None
+    total = wd + length + flange
+    effl = total / (2.0 + mag + 1.0 / mag)
+    if not (1.0 <= effl <= 2000.0):
+        return None
+    # The bugs/0647 registration law must be satisfiable: 0 < f(1+1/m) - WD < f.
+    offset = effl * (1.0 + 1.0 / mag) - wd
+    if not (0.0 < offset < effl):
+        return None
+    cardinals = DatasheetCardinals(effl=round(effl, 4))
+    cardinals.magnification = -abs(mag)  # a finite-conjugate lens inverts
+    cardinals.optimum_wd = wd
+    cardinals.optimum_wd_mag = abs(mag)
+    # The housing length is the honest vertex span: a telecentric barrel is far
+    # longer than its EFL (here 160 mm vs 70.4), and both the STEP-extent span (the
+    # body's Z can be its DIAMETER when the CAD axis is not Z) and the 0.7*EFL cap
+    # produce a block too short to hold the principal f(1+1/m)-WD behind the rim --
+    # the bugs/0647 refit then has no room and falls back to the advisory.
+    cardinals.span = round(length, 4)
+    cardinals.fno = _first_float(text, r"(?i)Aperture\s*\(\s*f\s*/#\s*\)\s*:?\s*f?\s*/?\s*(\d+\.?\d*)")
+    cardinals.image_circle = _first_float(
+        text, r"(?i)Maximum\s+Image\s+Circle\s*\(\s*mm\s*\)\s*:?\s*(\d+\.?\d*)"
+    )
+    stock = re.search(r"#(\d{2}-\d{3})", text)
+    if stock is not None:
+        cardinals.lens_id = stock.group(1)
+    title = re.search(r"([\d.]+X,\s*\d+\.?\d*mm\s+WD[^#]{0,80}?Telecentric\s+Lens)", text)
+    if title is not None:
+        cardinals.title = title.group(1).strip()
+    return cardinals
+
+
 def parse_datasheet_cardinals(path: str | Path) -> DatasheetCardinals | None:
     """Scrape first-order cardinals from a vendor datasheet PDF.
 
@@ -425,6 +514,13 @@ def parse_datasheet_cardinals(path: str | Path) -> DatasheetCardinals | None:
         # bugs/0565: LAST resort -- a drawing title block whose labels and values were
         # delaminated by the flattened text extraction. See model_designation_cardinals.
         effl, designation_fno = model_designation_cardinals(text)
+    if effl is None:
+        # bugs/0653: a fixed-conjugate TELECENTRIC sheet (Edmund CompactTL) states no
+        # focal length at all -- the conjugates derive it. Fully self-contained
+        # (magnification + WD + housing length + mount flange, all corroborated).
+        telecentric = telecentric_conjugate_cardinals(text)
+        if telecentric is not None:
+            return telecentric
     if effl is None or not (math.isfinite(effl) and abs(effl) > 1e-6):
         return None
 
