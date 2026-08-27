@@ -90,11 +90,18 @@ def run_checks() -> tuple[bool, list[str]]:
         failures.append("toggle must return False (with a status line) when no lens STEP is imported")
 
     # --- builder maps the flag to front_face --------------------------------------
+    # bugs/0568 consolidated the alignment inputs into _lens_step_alignment_params (ONE
+    # place for both the display builder and the axis probe); the mapping lives there
+    # now. This check chased the old location and reported stale failures (0654 triage).
     build_src = inspect.getsource(LayoutPolylineDisplayMixin._transformed_imported_lens_step_mesh)
-    if 'lens_step_reverse_direction' not in build_src or 'front_face = "min" if reverse else "max"' not in build_src:
-        failures.append("the lens builder does not map lens_step_reverse_direction to front_face")
-    if "front_face=front_face" not in build_src:
-        failures.append("the lens builder does not pass the reverse-aware front_face to the alignment")
+    params_src = inspect.getsource(LayoutPolylineDisplayMixin._lens_step_alignment_params)
+    if (
+        "lens_step_reverse_direction" not in params_src
+        or '"front_face": "min" if reverse else "max"' not in params_src
+    ):
+        failures.append("the alignment params do not map lens_step_reverse_direction to front_face")
+    if "_lens_step_alignment_params()" not in build_src:
+        failures.append("the lens builder does not take its alignment inputs from the shared params")
     if "reverse," not in build_src.split("signature = (", 1)[-1].split("def build", 1)[0]:
         failures.append("the reverse flag is not in the transformed-mesh cache signature")
 

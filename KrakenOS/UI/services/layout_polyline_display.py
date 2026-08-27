@@ -14,6 +14,17 @@ from pathlib import Path
 
 import numpy as np
 
+# bugs/0377/0654: a STEP barrel "closely tracks" its glass when the body's axial span is
+# at most this multiple of the glass span. Close barrel => the GLASS is the registration
+# (0374 glass-centre pin; the 0500 flip shift keeps it fixed across a flip). Real barrel
+# (Edmund 15056, the #67-304 telecentric: body 164 mm around 65 mm of glass) => the
+# AUTHORED BODY FACE is the registration, and a flip simply seats the opposite face on
+# the datum. The pin (_lens_step_display_front_z) and the flip shift
+# (_lens_step_flip_axial_shift) MUST branch on the SAME ratio: 0654 was the two
+# disagreeing -- the face-pinned telecentric got the glass-preserving shift and slid
+# 94.5 mm off its surrogate.
+_CLOSE_BARREL_RATIO = 1.6
+
 from KrakenOS.UI.camera_database import (
     CAMERA_NONE_LABEL,
     camera_record,
@@ -1543,7 +1554,7 @@ class LayoutPolylineDisplayMixin:
         # registration; only re-centre when the body closely tracks the glass extent.
         glass_span = float(metrics["glass_hi"]) - float(metrics["glass_lo"])
         body_span = float(metrics["body_hi"]) - float(metrics["body_lo"])
-        if glass_span <= 1e-6 or body_span > 1.6 * glass_span:
+        if glass_span <= 1e-6 or body_span > _CLOSE_BARREL_RATIO * glass_span:
             return front_datum_z
         glass_center_u = 0.5 * (float(metrics["glass_lo"]) + float(metrics["glass_hi"]))
         delta = float(metrics["body_hi"]) - glass_center_u
@@ -1580,9 +1591,24 @@ class LayoutPolylineDisplayMixin:
         try:
             body_lo = float(metrics["body_lo"])
             body_hi = float(metrics["body_hi"])
-            glass_center = 0.5 * (float(metrics["glass_lo"]) + float(metrics["glass_hi"]))
+            glass_lo = float(metrics["glass_lo"])
+            glass_hi = float(metrics["glass_hi"])
         except Exception:
             return 0.0
+        # bugs/0654 (flag_20260827_131036 "Flipped the lens, lens surrogate and body
+        # detached"): this glass-preserving mirror only applies when the GLASS is the
+        # registration -- the close-barrel branch. A REAL barrel (body span beyond
+        # _CLOSE_BARREL_RATIO x the glass span; the #67-304 telecentric is 164 mm of
+        # body around 65 mm of glass) is registered by its AUTHORED BODY FACE
+        # (bugs/0377), and its flip must simply seat the opposite face on the datum --
+        # the bugs/0373 contract. Applying the mirror there faithfully preserved the
+        # glass's WRONG pre-flip station (+94.5 mm) and dragged the body off the
+        # surrogate. Same ratio as _lens_step_display_front_z, by construction.
+        glass_span = glass_hi - glass_lo
+        body_span = body_hi - body_lo
+        if glass_span <= 1e-6 or body_span > _CLOSE_BARREL_RATIO * glass_span:
+            return 0.0
+        glass_center = 0.5 * (glass_lo + glass_hi)
         shift = (body_hi - glass_center) - (glass_center - body_lo)
         return float(shift) if np.isfinite(shift) else 0.0
 
