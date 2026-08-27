@@ -92,7 +92,12 @@ class Open3DTopControlsPanel:
         add_menu_checkbuttons(
             overlay_menu,
             (
-                MenuCheckbutton("Refs", self.inspector.show_reference_surfaces_var, self.inspector._on_scene_visibility_changed),
+                # bugs/0659 (flag_20260827_153106 "all overlays off, why still have a
+                # big green circle?"): the circle was the OBJECT-PLANE reference disc
+                # and its toggle was this checkbox -- labelled just "Refs", which
+                # nobody connects to the object plane. Mechanism verified correct
+                # (off = disc hides on both refresh paths); the LABEL was the bug.
+                MenuCheckbutton("Obj/Img planes (Refs)", self.inspector.show_reference_surfaces_var, self.inspector._on_scene_visibility_changed),
                 MenuCheckbutton("Det", self.inspector.show_detector_overlays_var, self.inspector._on_scene_visibility_changed),
                 MenuCheckbutton("Miss", self.inspector.show_terminal_diagnostics_var, self.inspector._on_scene_visibility_changed),
                 # Clipped rays share the 2D show_clipped_rays_var (via _editor_var)
