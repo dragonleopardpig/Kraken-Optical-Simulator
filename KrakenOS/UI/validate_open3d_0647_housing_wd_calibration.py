@@ -21,7 +21,8 @@ Checks (display-free):
   C  the calibration method: routes the shift through translate_step_overlay (bodies move
      via the real mover, 0644 rebuild included), cross-checks the sheet EFL against the
      scene (a wrong PDF must not "calibrate"), and never touches optics rows.
-  D  both entry points (folder import + lens swap) invoke the calibration.
+  D  both entry points refit (import persists to the library .py; swap refits
+     BEFORE its auto-refocus so focus + re-learn see the corrected optics).
 
 Run:  .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_0647_housing_wd_calibration
 """
@@ -133,19 +134,28 @@ def run_checks():
         missing.append("import does not refit to the WD law")
     if "_write_layout_file(" not in import_src:
         missing.append("import does not persist the refit into the library .py")
-    # The SWAP path must stay ADVISORY: refitting a block inside a FROZEN scene moves the
-    # aperture stop within desp-baked rows and the pupil-referenced launch machinery then
-    # mis-verifies the next solve (measured: object->rim driven to 169 while the ruler
-    # claimed 20x20). Until that interaction is solved, a swap only reports the offset.
-    if "calibrate_lens_housing_to_datasheet_wd(" not in swap_src:
-        missing.append("swap lost the advisory bench note")
-    if "refit_lens_principal_to_datasheet_wd(" in swap_src:
-        missing.append("swap refits a frozen-scene block (the mis-verified-solve hazard)")
+    # Follow-up (user 2026-08-27 "proceed swap-path auto WD-refit"): the swap REFITS
+    # like the import. The frozen-scene hazard this check used to pin (the refit moving
+    # the stop inside desp-baked rows + stale learned state mis-verifying the next
+    # solve) is owned by the refit itself now -- frozen desp re-bake, learned-state
+    # clear, relearn pending -- so pinning the swap to the advisory would have
+    # preserved a workaround, not a safety property. The advisory remains as the
+    # refit's own internal fallback (checked in E). ORDER is the surviving hazard: a
+    # refit AFTER the auto-refocus would focus the machine on stale optics.
+    refit_pos = swap_src.find("refit_lens_principal_to_datasheet_wd(")
+    refocus_pos = swap_src.find("_swap_auto_refocus_to_best_focus(")
+    if refit_pos < 0:
+        missing.append("swap does not refit to the WD law")
+    elif 0 <= refocus_pos < refit_pos:
+        missing.append("swap refits AFTER the auto-refocus (focus solved on stale optics)")
     if missing:
         ok = False
         notes.append(f"FAIL: D (bugs/0647): {missing}")
     else:
-        notes.append("PASS: D: import refits + persists; swap stays advisory (frozen-scene hazard)")
+        notes.append(
+            "PASS: D: import refits + persists; swap refits BEFORE its auto-refocus "
+            "(advisory = the refit's own fallback)"
+        )
 
     # ---------------------------------------------------------------- E: the refit itself
     refit_src = inspect.getsource(ScenePlacementMixin.refit_lens_principal_to_datasheet_wd)

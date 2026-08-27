@@ -148,3 +148,29 @@ STILL OPEN (the original frame-split finding stands): solve messages quote the
 prescription-frame object distance (17.35 mm short of world on this scene) and the
 delivered-m correction absorbs that split — the object-side world-truth reader
 (the 0447/0478 image-side doctrine mirrored) remains to be built.
+
+## Follow-up (2026-08-27) — the SWAP path refits too
+
+The swap path had been left ADVISORY-only, with the hazard spelled out in its comment:
+refitting a frozen scene's block moved the aperture stop inside desp-baked rows and the
+stale learned state mis-verified the next solve (object->rim driven to 169 while the
+ruler claimed 20x20). That hazard was fixed INSIDE the refit the same day (frozen desp
+re-bake with row 0 untouched, learned m-correction + field centre cleared, re-measure
+marked pending) -- the pin on the swap path was a leftover workaround, not a live
+safety property.
+
+Change: `swap_imaging_lens_from_folder` now calls `refit_lens_principal_to_datasheet_wd()`
+(advisory remains as the refit's own internal fallback), placed BEFORE
+`_swap_auto_refocus_to_best_focus()` so best focus and the m re-learn run on the
+corrected optics. Guard 0647 check D inverted: it now REQUIRES the refit in the swap and
+enforces the ordering (refit before refocus -- the one surviving hazard).
+
+Verified (headless, real scenes):
+- Pyrite90 (unfrozen) -> swap to ELS-85: message carries the refit note; post-swap
+  registration mismatch -0.00 (principal 28.0 mm behind rim = vendor law, was 37.4);
+  20x20 solve honest (diag 28.284 = want). Swap to a no-WD PYRITE folder stays silent.
+- machine_vision_ELS85 (FROZEN -- the hazard scenario): post-swap mismatch +0.00;
+  internal rows ON the leg (worst transverse 0.0000 mm; the broken refit lifted them
+  9-17 mm); 20x20 solve honest (28.280 vs 28.284); object->rim 106.5 mm, not the 169
+  hazard signature.
+- Guards 0647 (A-E) and 0594 (incl. E's four real swaps, now through the refit) pass.

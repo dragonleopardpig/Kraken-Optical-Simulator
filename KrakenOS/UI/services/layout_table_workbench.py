@@ -2012,21 +2012,26 @@ class LayoutTableWorkbenchMixin:
             self.append_debug(f"swap fold-clearance skipped: {exc}")
         self._sync_table()
         self.load_layouts()  # discover the new library surrogate (also insertable later)
-        # bugs/0647: ADVISORY bench note only on the swap path. The full refit is applied
-        # at fresh IMPORT (unfrozen scene) -- measured on the frozen ELS85: refitting the
-        # block moves the aperture stop ~12 mm inside desp-baked rows, and the frozen
-        # scene's pupil-referenced launch/measure machinery then mis-verifies the next
-        # solve (ruler claimed 20x20 where the grid mapping and first order said m~0.83;
-        # the solve drove object->rim to 169). Until that interaction is solved, a swap
-        # reports the honest bench offset instead of rewriting the block.
+        # bugs/0647 follow-up (user 2026-08-27): the swap REFITS to the vendor
+        # working-distance law, exactly like a fresh import. The frozen-scene hazard
+        # that kept this path advisory (the refit moved the aperture stop inside
+        # desp-baked rows and the stale learned state mis-verified the next solve to
+        # object->rim 169) was fixed INSIDE the refit the same day it was observed:
+        # frozen scenes re-bake the internal rows' desp onto the leg (row 0
+        # untouched), and the learned m-correction + field centre are cleared with
+        # the re-measure marked pending -- the user's frozen ELS85 was refit that way
+        # and its next solve verified honest. Ordering matters: refit BEFORE the
+        # auto-refocus below, so best focus and the m re-learn run on the corrected
+        # optics. Non-two-group blocks fall back to the advisory note inside the
+        # refit itself.
         housing_note = ""
         try:
-            _hnote = self.calibrate_lens_housing_to_datasheet_wd()
+            _hnote = self.refit_lens_principal_to_datasheet_wd()
             if _hnote:
                 self.append_debug("WD registration: " + _hnote)
                 housing_note = " " + _hnote
         except Exception as exc:
-            self.append_debug(f"swap WD note skipped: {exc}")
+            self.append_debug(f"swap WD refit skipped: {exc}")
         self._commit_history_capture()
         # bugs/0388: the swapped lens focuses at a different plane; 0383 kept the camera/mounts
         # at their absolute positions, so the image is defocused on the sensor. Auto re-solve
