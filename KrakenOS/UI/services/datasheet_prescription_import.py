@@ -515,6 +515,13 @@ def parse_datasheet_cardinals(path: str | Path) -> DatasheetCardinals | None:
         effl = _first_float(
             text, r"(?i)focal\s+len\w*\s*f?['’]?\s*[\[(]\s*mm\s*[\])]\s*(-?\d+\.?\d*)"
         )
+    if effl is None:
+        # bugs/0658 (error.png #85-869): the Edmund FIXED-FOCAL stock page writes the
+        # row as "Focal Length FL (mm):35.00" -- the FL token between the label and
+        # the parenthesised unit defeats every pattern above.
+        effl = _first_float(
+            text, r"(?i)Focal\s+Length\s+FL\s*\(\s*mm\s*\)\s*:?\s*(-?\d+\.?\d*)"
+        )
     designation_fno: float | None = None
     if effl is None:
         # bugs/0565: LAST resort -- a drawing title block whose labels and values were
@@ -554,6 +561,12 @@ def parse_datasheet_cardinals(path: str | Path) -> DatasheetCardinals | None:
     cardinals.span = _first_float(text, r"Σ\s*(-?\d[\d.]*)")
     cardinals.fno = _first_float(text, r"F/(\d+\.?\d*)\s*\.\.\.\s*F/")
     if cardinals.fno is None:
+        # bugs/0658: the Edmund stock-page row "Aperture (f/#):f/1.8 - f/16" -- the
+        # leading value is the fastest stop, the "fastest F-number" this field means.
+        cardinals.fno = _first_float(
+            text, r"(?i)Aperture\s*\(\s*f\s*/#\s*\)\s*:?\s*f?\s*/?\s*(\d+\.?\d*)"
+        )
+    if cardinals.fno is None:
         # bugs/0565: the designation carries the aperture too ("ELS-85/4.5"), and it is the
         # only F-number a drawing title block exposes to the flattened text.
         cardinals.fno = designation_fno
@@ -562,6 +575,11 @@ def parse_datasheet_cardinals(path: str | Path) -> DatasheetCardinals | None:
         # bugs/0371: "image circle max. (mm) 82" spelling.
         cardinals.image_circle = _first_float(
             text, r"(?i)image\s+circle\s+max\.?\s*[\[(]\s*mm\s*[\])]\s*(\d+\.?\d*)"
+        )
+    if cardinals.image_circle is None:
+        # bugs/0658: the Edmund row "Maximum Image Circle (mm):11.00".
+        cardinals.image_circle = _first_float(
+            text, r"(?i)Maximum\s+Image\s+Circle\s*\(\s*mm\s*\)\s*:?\s*(\d+\.?\d*)"
         )
 
     lens_id = re.search(r"ID \[standard\]\s*(\d+)", text)

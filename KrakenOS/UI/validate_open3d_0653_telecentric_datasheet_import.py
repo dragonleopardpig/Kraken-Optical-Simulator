@@ -134,6 +134,49 @@ def run_checks():
     else:
         notes.append("PASS: C: ELS-85 designation path untouched; non-telecentric text stays out")
 
+    # ---------------------------------------------------------------- E: 0658 rows
+    # error.png #2 (#85-869, "Is your fix general enough?" -- it was not): the ORDINARY
+    # Edmund fixed-focal stock page writes "Focal Length FL (mm):35.00" -- the FL token
+    # defeats every earlier focal-length pattern -- and its Aperture / Maximum Image
+    # Circle rows must parse in the GENERAL parser, not only the telecentric branch.
+    # A variable-focus lens (WD "100 - <inf>") must NOT gain a fixed-conjugate law.
+    e_problems = []
+    ff_text = (
+        "35mm Focal Length#85-869Fixed Focal Length Lens"
+        "Length (mm):43.70Maximum Diameter (mm):38"
+        "Focal Length FL (mm):35.00Working Distance (mm):100 - ∞"
+        "Aperture (f/#):f/1.8 - f/16Maximum Image Circle (mm):11.00Mount:C-Mount"
+    )
+    import KrakenOS.UI.services.datasheet_prescription_import as _dpi
+
+    _orig = _dpi.extract_pdf_text
+    try:
+        _dpi.extract_pdf_text = lambda path: ff_text
+        ff = _dpi.parse_datasheet_cardinals("stub.pdf")
+    finally:
+        _dpi.extract_pdf_text = _orig
+    if ff is None:
+        e_problems.append("the fixed-focal stock page yields no cardinals (error.png #2)")
+    else:
+        if ff.effl != 35.0:
+            e_problems.append(f"'Focal Length FL (mm)' row misread: {ff.effl}")
+        if ff.fno != 1.8:
+            e_problems.append(f"Aperture row misread (want the fastest stop): {ff.fno}")
+        if ff.image_circle != 11.0:
+            e_problems.append(f"Maximum Image Circle row misread: {ff.image_circle}")
+        if ff.mount_flange_mm is not None or ff.optimum_wd is not None:
+            e_problems.append(
+                "a VARIABLE-focus lens gained a fixed-conjugate law (mount/WD must be None)"
+            )
+    if e_problems:
+        ok = False
+        notes.append(f"FAIL: E (bugs/0658): {e_problems}")
+    else:
+        notes.append(
+            "PASS: E: the ordinary Edmund fixed-focal page parses (FL row, fastest "
+            "stop, image circle); no fabricated fixed-conjugate law"
+        )
+
     # ---------------------------------------------------------------- D: wiring
     import inspect as _inspect
 
