@@ -15245,7 +15245,21 @@ def _phase_from_standalone(number: int, title: str, module_name: str, guard_labe
         result = PhaseResult(name=f"Phase {number}: {title}")
         try:
             module = __import__(module_name, fromlist=["run_checks"])
-            passed, notes = module.run_checks()
+            # bugs/0661: a standalone guard that needs the LIVE embedded inspector cannot
+            # open a second one inside this harness ("3D inspector did not open") --
+            # hand it the harness's app/inspector when its run_checks accepts them.
+            import inspect as _insp
+
+            try:
+                params = _insp.signature(module.run_checks).parameters
+            except (TypeError, ValueError):
+                params = {}
+            kwargs = {}
+            if "app" in params:
+                kwargs["app"] = app
+            if "inspector" in params:
+                kwargs["inspector"] = inspector
+            passed, notes = module.run_checks(**kwargs)
         except Exception as exc:  # pragma: no cover - defensive
             result.passed = False
             result.notes.append(f"{guard_label} guard raised: {exc!r}")

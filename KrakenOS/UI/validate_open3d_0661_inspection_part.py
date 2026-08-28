@@ -97,7 +97,7 @@ def _check_settings(ok, notes) -> None:
     )
 
 
-def _check_real_scene(ok, notes) -> None:
+def _check_real_scene(ok, notes, app=None, inspector=None) -> None:
     if not SCENE.exists():
         notes.append("SKIP: C: the Basler_Telecentric scene is not in this checkout")
         return
@@ -108,12 +108,29 @@ def _check_real_scene(ok, notes) -> None:
 
     editor = None
     editor2 = None
+    own_editor = app is None or inspector is None
+    if not own_editor:
+        # Inside the penta harness: a SECOND embedded inspector cannot open, and loading
+        # another layout into the harness's live app tears down its VTK Tk widget
+        # (measured: segfault). The render checks run STANDALONE (the strong
+        # verification, see the module docstring); the harness phase keeps the
+        # wiring checks.
+        notes.append(
+            "SKIP: %s: render checks run standalone only (the harness owns the single "
+            "embedded inspector) -- run this module directly for them" % "C"
+        )
+        return
     try:
-        editor = KrakenLayoutEditor()
-        editor._prompt_for_missing_cad_assets = lambda: None
+        # Inside the penta harness the ONE embedded inspector already exists -- a second
+        # one cannot open ("3D inspector did not open"); drive the harness's instead.
+        if own_editor:
+            editor = KrakenLayoutEditor()
+            editor._prompt_for_missing_cad_assets = lambda: None
+        else:
+            editor = app
         editor.layout_files["_0661"] = SCENE
         editor.load_layout_by_name("_0661")
-        insp = _open_3d_inspector(editor)
+        insp = _open_3d_inspector(editor) if own_editor else inspector
         insp.refresh_from_editor(sampling_mode=editor._preview_3d_sampling_mode(), force_retrace=True)
         _settle(insp)
         editor.set_inspection_part_spec(
@@ -153,7 +170,7 @@ def _check_real_scene(ok, notes) -> None:
             f"C4: the layout file round-trips the part ({spec})",
         )
     finally:
-        for e in (editor, editor2):
+        for e in ((editor if own_editor else None), editor2):
             try:
                 if e is not None:
                     e.destroy()
@@ -188,7 +205,10 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
 
     for section, fn in (("A", _check_geometry), ("B", _check_settings), ("C", _check_real_scene), ("D", _check_wiring)):
         try:
-            fn(ok, notes)
+            if section == "C":
+                fn(ok, notes, app=app, inspector=inspector)
+            else:
+                fn(ok, notes)
         except Exception as exc:  # pragma: no cover - environment
             notes.append(f"FAIL: section {section} raised ({type(exc).__name__}: {exc})")
 
