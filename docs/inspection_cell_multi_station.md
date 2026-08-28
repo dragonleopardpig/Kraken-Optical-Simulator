@@ -1,0 +1,61 @@
+# Inspection Cell — a 3D part with six camera stations
+
+User request (2026-08-27): *"6 cameras looking at an object 3D rectangular 6-side to
+inspect the defect."* → *"I want to realize a 3D object instead of existing 2D object
+plane. Then blow out 6 optical axis for user to place lens and cameras."*
+
+## The constraint the design respects
+
+A KrakenOS layout is ONE imaging chain: Object row → optics → Image. That engine is
+correct and battle-tested (solves, mount law, overlays, exports all assume it). The
+cell is therefore built **around** it, on the precedent of the two-arm architecture
+(`project_two_arm_display_fold`: per-arm SEQUENTIAL traces composed by display
+transforms) — never by teaching the row chain about six objects.
+
+## Phase 1 — SHIPPED (0661): the part + blow-out axes inside a station
+
+`KrakenOS/UI/services/inspection_part.py`
+
+- **Model:** a W × H × D box. Its **active face coincides with the object plane** —
+  face centre at the object point, outward normal along the station axis
+  (object → lens). The box extends behind the plane. So the current layout IS the
+  station for that face; the object plane's size is the face's size.
+- **Blow-out axes:** every face gets a dotted, pickable optical-axis record
+  (`axis_kind = inspection_part_face`, `axis:part:<face>`) from its centre along its
+  outward normal — the user sees where the other five stations sit; the Measure
+  tool and axis-snap verbs work on them like any axis.
+- **UI:** Actions → *Inspection Part (3D object)…* (enable, W/H/D, face, reach, *Apply +
+  Solve FOV to this face*); right-click the box → *Inspect <Face> (w × h)* for all six,
+  *Solve FOV to the inspected face*, *Settings…*. "Inspect this face" re-poses the box
+  so that face sits on the object plane (Front/Back = W×H, Left/Right = D×H,
+  Top/Bottom = W×D).
+- **Persistence:** `inspection_part` in the layout settings (round-trips).
+- **Guard:** phase 495 (`validate_open3d_0661_inspection_part`).
+
+Workflow today: design each face's station in its own layout with the part enabled
+on that face (opposite faces share a design → three layouts for a box), solve the FOV
+to the face, verify with the overlays, export STEP per station, assemble in CAD.
+
+## Phase 2 — NEXT: the cell view (six chains, one scene)
+
+- **Cell file** (`*.cell.json`): the part spec + `stations: {face: layout_path}`.
+- **Composition:** for each station, load its layout headlessly, build its scene
+  bundle, and render its actors into ONE renderer under a rigid transform
+  T_face that maps the station's object point → the face centre and its object axis
+  → the face's outward normal (the `_mesh_with_world_transform` machinery used by the
+  display fold). Per-station traces stay sequential and independent — exactly the
+  two-arm pattern.
+- **Editing:** double-click a station → opens its own layout editor (all existing
+  tools); the cell view re-composes on save. No new placement machinery needed:
+  "place lens and camera on the face axis" = design that face's station.
+- **Cell export:** composite STEP (all stations + the part) and six-view DXF of the
+  cell; interference report between station bodies (bounds first, mesh later).
+- **Guard:** composite pose invariants (each station's object plane lands on its
+  face; axes coincide), export round-trip.
+
+## Phase 3 — later
+
+- Cell-level solve: given the part + a resolution target, run the System Selection
+  Calculator per face and pre-fill each station.
+- Non-flat parts: import a STEP of the part; faces become picked planar regions.
+- Shared illumination: one LED lighting several faces; ray-level cross-talk checks.

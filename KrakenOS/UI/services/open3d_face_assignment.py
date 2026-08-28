@@ -107,6 +107,49 @@ class Open3DFaceAssignmentService:
             return
         setattr(self._inspector, name, value)
 
+    def _maybe_show_inspection_part_menu(self, event) -> bool:
+        """bugs/0661: a right-click ON the inspection part box / a face outline offers
+        "Inspect this face" for all six faces plus the part settings."""
+        keys = set(getattr(self._inspector, "_inspection_part_actor_keys", None) or [])
+        if not keys or self._picker is None or self._renderer is None or self._vtk_interactor is None:
+            return False
+        try:
+            self._vtk_interactor.SetEventInformationFlipY(int(event.x), int(event.y), 0, 0, chr(0), 0, None)
+            x, y = self._vtk_interactor.GetEventPosition()
+            self._picker.Pick(x, y, 0.0, self._renderer)
+            actor_key = self._actor_key(self._picker.GetActor())
+        except Exception:
+            return False
+        if actor_key is None or actor_key not in keys:
+            return False
+        from KrakenOS.UI.services.inspection_part import FACE_ORDER, face_dims, normalize_inspection_part_spec
+
+        spec = normalize_inspection_part_spec(getattr(self.editor, "inspection_part_spec", None))
+        menu = tk.Menu(self, tearoff=False)
+        menu.add_command(
+            label=f"Inspection Part {spec['width_mm']:g} x {spec['height_mm']:g} x {spec['depth_mm']:g} mm",
+            state="disabled",
+        )
+        menu.add_separator()
+        for face in FACE_ORDER:
+            w, h = face_dims(spec, face)
+            mark = "* " if face == spec["active_face"] else "   "
+            menu.add_command(
+                label=f"{mark}Inspect {face.capitalize()} face ({w:g} x {h:g} mm)",
+                command=lambda f=face: self.editor.set_inspection_part_active_face(f),
+            )
+        menu.add_separator()
+        menu.add_command(
+            label="Solve FOV to the inspected face",
+            command=lambda: self.editor.solve_fov_to_inspection_face(),
+        )
+        menu.add_command(
+            label="Inspection Part Settings...",
+            command=lambda: self.editor.open_inspection_part_dialog(),
+        )
+        self._popup_context_menu(menu, event)
+        return True
+
     def _maybe_show_scene_source_menu(self, event) -> bool:
         """bugs/0537: a right-click ON a scene-source glyph opens the source's menu.
 
@@ -478,6 +521,12 @@ class Open3DFaceAssignmentService:
         # its role (Independent / Dependent / Constant) instead of a CAD face.
         try:
             if self._maybe_show_quick_estimation_role_menu(event):
+                return "break"
+        except Exception:
+            pass
+        # bugs/0661: right-clicking the 3D inspection part -> pick the inspected face.
+        try:
+            if self._maybe_show_inspection_part_menu(event):
                 return "break"
         except Exception:
             pass

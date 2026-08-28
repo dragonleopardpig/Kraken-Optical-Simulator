@@ -877,6 +877,11 @@ class Open3DSceneRefreshService:
         # Sources group. Always drawn -- per-source visibility is re-applied by
         # _apply_scene_element_visibility below, so this is not a toggle-gated analysis overlay.
         scene_source_glyph_actors = self._add_scene_source_glyphs(system, scene_bundle)
+        # bugs/0661: the 3D inspection part (box on the object plane, six blow-out axes).
+        try:
+            self._add_inspection_part_glyphs(system, scene_bundle)
+        except Exception as exc:
+            self.editor.append_debug(f"inspection part glyphs skipped: {exc}")
         # One combined, expanding legend for every analysis overlay queued above (replaces the
         # per-overlay billboards that overlapped when several were on).
         analysis_overlay_label_actors = self._add_grouped_analysis_overlay_label()

@@ -8503,6 +8503,61 @@ class LayoutTableWorkbenchMixin:
 
         open_system_selection_dialog(self)
 
+    # ---- bugs/0661: the 3D inspection part --------------------------------------
+    def open_inspection_part_dialog(self) -> None:
+        """User feature (2026-08-27): a 3D rectangular object at the object plane with
+        six blow-out optical axes, one per face, for placing lens + camera stations."""
+        from KrakenOS.UI.services.inspection_part import open_inspection_part_dialog
+
+        open_inspection_part_dialog(self)
+
+    def set_inspection_part_spec(self, spec) -> None:
+        from KrakenOS.UI.services.inspection_part import normalize_inspection_part_spec
+
+        self._begin_history_capture()
+        self.inspection_part_spec = normalize_inspection_part_spec(spec)
+        self._commit_history_capture()
+        self._refresh_open_3d_views()
+
+    def set_inspection_part_active_face(self, face: str) -> None:
+        """Re-target the current station onto another face of the part: that face now
+        sits on the object plane (the box re-poses around it)."""
+        from KrakenOS.UI.services.inspection_part import face_dims, normalize_inspection_part_spec
+
+        spec = normalize_inspection_part_spec(getattr(self, "inspection_part_spec", None))
+        spec["active_face"] = str(face).strip().lower()
+        spec["enabled"] = True
+        spec = normalize_inspection_part_spec(spec)
+        self.set_inspection_part_spec(spec)
+        w, h = face_dims(spec, spec["active_face"])
+        self.status_var.set(
+            f"Inspecting the {spec['active_face']} face ({w:g} x {h:g} mm) -- solve the FOV "
+            "to it from the part menu or the FOV dialog."
+        )
+
+    def solve_fov_to_inspection_face(self) -> tuple[bool, str]:
+        """Solve the object-plane FOV to the inspected face's size (+5% alignment margin)."""
+        from KrakenOS.UI.services.inspection_part import face_dims, normalize_inspection_part_spec
+        from KrakenOS.UI.services.quick_estimation import QuickEstimationService
+        from types import SimpleNamespace
+
+        spec = normalize_inspection_part_spec(getattr(self, "inspection_part_spec", None))
+        w, h = face_dims(spec, spec["active_face"])
+        margin = 1.05
+        inspector = getattr(self, "_three_d_inspector", None)
+        try:
+            qe = inspector._quick_estimation_service() if inspector is not None else QuickEstimationService(SimpleNamespace(editor=self))
+        except Exception:
+            qe = QuickEstimationService(SimpleNamespace(editor=self))
+        ok, msg = qe.fov_solve("object", "thickness", w * margin, h * margin)
+        note = f"FOV solved to the {spec['active_face']} face {w:g} x {h:g} mm (+5%): " if ok else f"FOV solve to the {spec['active_face']} face refused: "
+        self.status_var.set(note + str(msg))
+        try:
+            self.refresh_plot()
+        except Exception:
+            pass
+        return bool(ok), note + str(msg)
+
     def open_camera_lens_matcher(self) -> None:
         """bugs/0634 (user feature): list every registered camera × catalog lens
         combination that meets a FOV / resolution / minimum-WD requirement."""

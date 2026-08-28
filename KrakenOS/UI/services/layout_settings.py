@@ -6,6 +6,13 @@ from pathlib import Path
 from typing import Any
 
 
+
+def _normalize_inspection_part(spec):
+    """bugs/0661: canonical inspection-part spec (lazy import keeps this module light)."""
+    from KrakenOS.UI.services.inspection_part import normalize_inspection_part_spec
+
+    return normalize_inspection_part_spec(spec)
+
 def _layout_module():
     from KrakenOS.UI import layout_editor as layout_editor_module
 
@@ -223,6 +230,8 @@ class LayoutSettingsService:
             "source_angular_weight": self._left_mode_text("source_angular_weight_var", SOURCE_ANGULAR_WEIGHT_DEFAULT),
             "scene_sources": list(getattr(self, "layout_scene_source_specs", []) or []),
             "scene_row_order": normalize_source_row_order(getattr(self, "layout_scene_row_order", SOURCE_ROW_ORDER_DEFAULT)),
+            # bugs/0661: the 3D inspection part (box at the object plane + six blow-out axes).
+            "inspection_part": _normalize_inspection_part(getattr(self, "inspection_part_spec", None)),
             "analysis_surface": self.analysis_surface_var.get().strip(),
             "analysis_branch_filter": self._current_analysis_branch_filter(),
             "ray_display_mode": self._current_ray_display_mode(),
@@ -420,6 +429,7 @@ class LayoutSettingsService:
         self.metal_catalogs = _normalize_metal_catalog_specs(settings.get("metal_catalogs", []))
         self.layout_scene_source_specs = self._normalize_scene_source_specs(settings.get("scene_sources", []))
         self.layout_scene_row_order = normalize_source_row_order(settings.get("scene_row_order", SOURCE_ROW_ORDER_DEFAULT))
+        self.inspection_part_spec = _normalize_inspection_part(settings.get("inspection_part", None))  # bugs/0661
 
         def _parse_bool(value) -> bool:
             if isinstance(value, str):

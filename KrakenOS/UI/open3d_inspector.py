@@ -606,6 +606,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._cached_traced_axis_signature: tuple = ()
         self._optical_axis_highlight_actor = None
         self._actor_by_key: dict[str, object] = {}
+        # bugs/0661: actor keys of the 3D inspection part (box + face outlines) so the
+        # right-click can offer "Inspect this face" / settings.
+        self._inspection_part_actor_keys: set[str] = set()
         self._actor_step_map: dict[str, str] = {}
         self._step_actor_map: dict[str, list[str]] = {}
         # Scene-component browser hide/unhide: rows + STEP labels whose body
@@ -12761,7 +12764,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if pv is None:
             return 0
         count = 0
-        for record in self._optical_axis_records_for_3d(scene_bundle):
+        records = list(self._optical_axis_records_for_3d(scene_bundle))
+        try:
+            records.extend(self._inspection_part_axis_records(scene_bundle))  # bugs/0661
+        except Exception as exc:
+            self.editor.append_debug(f"inspection part axes skipped: {exc}")
+        for record in records:
             points = np.asarray(record.get("points"), dtype=float)
             if points.ndim != 2 or points.shape[0] < 2 or points.shape[1] < 3:
                 continue
@@ -16791,6 +16799,122 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     count += 1
             except Exception:
                 continue
+        return count
+
+    def _inspection_part_pose(self, system, scene_bundle: SceneBundle | None):
+        """(object point, outward axis) the part's active face is pinned to -- the object
+        plane centre and its true normal (the scene bundle's object target, the
+        bugs/0196 convention), falling back to the object->image diagonal."""
+        rows = getattr(self.editor, "rows", None) or []
+        if len(rows) < 2:
+            return None
+        try:
+            obj_pt = np.asarray(self.editor._surface_reference_world_point(0, system=system), dtype=float).reshape(3)
+            img_pt = np.asarray(
+                self.editor._surface_reference_world_point(len(rows) - 1, system=system), dtype=float
+            ).reshape(3)
+        except Exception:
+            return None
+        axis = img_pt - obj_pt
+        for target_row in (getattr(scene_bundle, "targets", None) or []):
+            if not getattr(target_row, "is_object", False):
+                continue
+            n = getattr(target_row, "normal_world", None)
+            if n is None:
+                continue
+            try:
+                n = np.asarray(n, dtype=float).reshape(3)
+            except Exception:
+                continue
+            if np.all(np.isfinite(n)) and float(np.linalg.norm(n)) > 1e-9:
+                # the object normal may point either way; keep the object->lens sense
+                axis = n if float(np.dot(n, axis)) >= 0.0 else -n
+                break
+        if float(np.linalg.norm(axis)) <= 1e-9 or not np.all(np.isfinite(obj_pt)):
+            return None
+        return obj_pt, axis
+
+    def _inspection_part_axis_records(self, scene_bundle: SceneBundle | None) -> list[dict[str, object]]:
+        """bugs/0661: the six blow-out axes as dotted, pickable guide records."""
+        from KrakenOS.UI.services.inspection_part import axis_records, normalize_inspection_part_spec
+
+        spec = normalize_inspection_part_spec(getattr(self.editor, "inspection_part_spec", None))
+        if not spec["enabled"]:
+            return []
+        pose = self._inspection_part_pose(self.__dict__.get("_current_system"), scene_bundle)
+        if pose is None:
+            return []
+        return axis_records(spec, pose[0], pose[1])
+
+    def _add_inspection_part_glyphs(self, system, scene_bundle: SceneBundle | None) -> int:
+        """bugs/0661: draw the inspection part -- a translucent W x H x D box whose active
+        face sits ON the object plane, that face outlined in green, the others in grey."""
+        from KrakenOS.UI.services.inspection_part import (
+            box_corners,
+            face_frames,
+            normalize_inspection_part_spec,
+        )
+
+        self._inspection_part_actor_keys = set()
+        if self._renderer is None or pv is None:
+            return 0
+        spec = normalize_inspection_part_spec(getattr(self.editor, "inspection_part_spec", None))
+        if not spec["enabled"]:
+            return 0
+        pose = self._inspection_part_pose(system, scene_bundle)
+        if pose is None:
+            return 0
+        obj_pt, axis = pose
+        corners = box_corners(spec, obj_pt, axis)
+        count = 0
+        try:
+            box = pv.PolyData(corners)
+            # corners ordered (sx, sy, sz) nested -> index = 4*ix + 2*iy + iz
+            faces = np.asarray(
+                [
+                    4, 0, 1, 3, 2,  # -x
+                    4, 4, 6, 7, 5,  # +x
+                    4, 0, 4, 5, 1,  # -y
+                    4, 2, 3, 7, 6,  # +y
+                    4, 0, 2, 6, 4,  # -z
+                    4, 1, 5, 7, 3,  # +z
+                ],
+                dtype=np.int64,
+            )
+            box.faces = faces
+            actor = self._add_mesh_actor(
+                box, color=(0.55, 0.60, 0.70), opacity=0.22, flat_shading=True, backface_culling=False
+            )
+            if actor is not None:
+                key = self._actor_key(actor)
+                if key:
+                    self._inspection_part_actor_keys.add(key)
+                count += 1
+        except Exception as exc:
+            self.editor.append_debug(f"inspection part box skipped: {exc}")
+        frames = face_frames(spec, obj_pt, axis)
+        for face, fr in frames.items():
+            try:
+                c, u, v = fr["center"], fr["u"], fr["v"]
+                hw, hh = 0.5 * fr["width"], 0.5 * fr["height"]
+                loop = np.asarray(
+                    [c - u * hw - v * hh, c + u * hw - v * hh, c + u * hw + v * hh, c - u * hw + v * hh],
+                    dtype=float,
+                )
+                outline = pv.PolyData(loop)
+                outline.lines = np.asarray([5, 0, 1, 2, 3, 0], dtype=np.int64)
+                color = (0.15, 0.85, 0.35) if fr["active"] else (0.45, 0.50, 0.60)
+                actor = self._add_mesh_actor(
+                    outline, color=color, opacity=1.0, line_width=3.0 if fr["active"] else 1.5,
+                    wireframe=True, backface_culling=False,
+                )
+                if actor is not None:
+                    key = self._actor_key(actor)
+                    if key:
+                        self._inspection_part_actor_keys.add(key)
+                    count += 1
+            except Exception as exc:
+                self.editor.append_debug(f"inspection part face {face} skipped: {exc}")
         return count
 
     def _add_scene_source_glyphs(self, system, scene_bundle: SceneBundle | None) -> int:
