@@ -62,6 +62,12 @@ double-click-to-edit remain phase 3.
 `KrakenOS/UI/panels/inspection_cell_window.py`: Tk/VTK window, transplanted composition,
 double-click a station to open its layout, re-compose on save (mtime watch).
 
+### Cell-level solve — SHIPPED (0665, phase 498)
+
+`services/inspection_cell_solve.py`: part + defect size → camera + lens per face (height-aware m,
+fixed-magnification lenses judged at their own field, telecentric preferred) → station layouts
+built by the importers → cell file. Dialog section "Solve stations from the part + defect size".
+
 ### Remaining
 
 - Cell-level solve: given the part + a resolution target, run the System Selection

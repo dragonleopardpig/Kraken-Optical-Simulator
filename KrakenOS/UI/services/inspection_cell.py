@@ -579,6 +579,62 @@ def open_inspection_cell_dialog(editor):
         editor.inspection_cell_spec = cell
         status_var.set(f"Cell loaded: {Path(path).name}")
 
+    # bugs/0665: the cell-level SOLVE -- defect size + px/defect + min WD -> camera + lens per
+    # face from the registered cameras and the lens catalog, stations built and slotted.
+    solve = ttk.LabelFrame(body, text="Solve stations from the part + defect size", padding=8)
+    solve.grid(row=8, column=0, columnspan=3, sticky="we", pady=(10, 0))
+    defect_var = tk.StringVar(value="0.1")
+    ppd_var = tk.StringVar(value="3")
+    wdmin_var = tk.StringVar(value="0")
+    outdir_var = tk.StringVar(value=str(Path(getattr(editor, "SCREENSHOT_DIR", "attachment")).parent / "attachment" / "cells" / "solved"))
+    try:
+        from KrakenOS.UI.layout_editor import SCREENSHOT_DIR as _SD  # noqa: F401
+
+        outdir_var.set(str(Path(__file__).resolve().parents[3] / "attachment" / "cells" / "solved"))
+    except Exception:
+        pass
+    for col, (label, var, width) in enumerate(
+        (("Smallest defect (mm)", defect_var, 8), ("px per defect", ppd_var, 5), ("Min WD (mm, 0 = any)", wdmin_var, 8))
+    ):
+        ttk.Label(solve, text=label).grid(row=0, column=2 * col, sticky="w", padx=(0, 4))
+        ttk.Entry(solve, textvariable=var, width=width).grid(row=0, column=2 * col + 1, sticky="w", padx=(0, 12))
+    ttk.Label(solve, text="Output folder").grid(row=1, column=0, sticky="w", pady=(6, 0))
+    ttk.Entry(solve, textvariable=outdir_var, width=58).grid(row=1, column=1, columnspan=5, sticky="we", pady=(6, 0))
+
+    def _solve_build():
+        from KrakenOS.UI.services.inspection_cell_solve import choice_summary, solve_and_build_cell
+
+        cell = _read()
+        try:
+            defect = float(defect_var.get())
+            ppd = float(ppd_var.get())
+            wdmin = float(wdmin_var.get() or 0.0)
+        except ValueError:
+            status_var.set("Enter numeric defect size / px per defect / min WD.")
+            return
+        status_var.set("Solving each face against the registered cameras and the lens catalog...")
+        dialog.update_idletasks()
+        try:
+            new_cell, report = solve_and_build_cell(
+                cell["part"], defect, outdir_var.get(), px_per_defect=ppd,
+                wd_min_mm=(wdmin if wdmin > 0 else None), name="solved",
+                progress=lambda msg: (status_var.set(msg), dialog.update_idletasks()),
+            )
+        except Exception as exc:
+            status_var.set(f"Cell solve failed: {exc}")
+            return
+        for face in FACE_ORDER:
+            layout_vars[face].set(new_cell["stations"][face]["layout"])
+            enabled_vars[face].set(new_cell["stations"][face]["enabled"])
+        editor.inspection_cell_spec = new_cell
+        lines = [choice_summary(report["choices"])]
+        for err in report.get("errors", []):
+            lines.append("NOTE " + err)
+        lines.append(f"Stations built: {len(report['built'])}; cell saved: {Path(report['cell_path']).name}")
+        status_var.set("\n".join(lines))
+
+    ttk.Button(solve, text="Solve & build stations", command=_solve_build).grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
+
     buttons = ttk.Frame(body)
     buttons.grid(row=9, column=0, columnspan=3, sticky="w", pady=(10, 4))
     for col, (text, cmd) in enumerate((("Open Cell View", _view), ("Interference Report", _report),

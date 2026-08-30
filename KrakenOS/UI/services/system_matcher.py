@@ -44,6 +44,7 @@ class CameraSpec:
     sensor_h_mm: float
     pixels_w: int
     pixels_h: int
+    folder: str | None = None               # bugs/0665: the vendor folder (for station building)
 
     @property
     def sensor_diagonal_mm(self) -> float:
@@ -58,6 +59,7 @@ class LensSpec:
     fnumber: float | None = None            # nominal (infinity) f/#
     mag_min: float | None = None            # for a fixed-magnification lens
     mag_max: float | None = None
+    folder: str | None = None               # bugs/0665: the catalog folder (for station building)
 
 
 @dataclass(frozen=True)
@@ -111,7 +113,10 @@ def match_combination(req: MatchRequirement, cam: CameraSpec, lens: LensSpec) ->
     if lens.image_circle_mm is None:
         image_circle_ok = True  # unknown -> do not fail on it (reported as unknown)
     else:
-        image_circle_ok = lens.image_circle_mm >= cam.sensor_diagonal_mm - 1e-9
+        # bugs/0665: a 1% corner tolerance -- vendor "max sensor format" pairings put the
+        # sensor corners AT the circle (Edmund 11.0 mm circle vs the IMX264's 11.02 mm
+        # diagonal); refusing the vendor's own pairing over 0.2% is not a fit judgement.
+        image_circle_ok = lens.image_circle_mm >= cam.sensor_diagonal_mm * 0.99 - 1e-9
 
     # Diffraction budget (advisory): compare the lens NOMINAL f/# to the max nominal f/#
     # whose Airy disk stays ~2 px at the required pixel pitch.
@@ -224,7 +229,19 @@ def enumerate_cameras() -> list[CameraSpec]:
         except (TypeError, ValueError, KeyError, IndexError):
             continue
         if sw > 0 and sh > 0 and nx > 0 and ny > 0:
-            out.append(CameraSpec(str(name), sw, sh, nx, ny))
+            folder = None
+            step_path = rec.get("step_path")
+            if step_path:
+                try:
+                    from pathlib import Path as _P
+
+                    candidate = _P(str(step_path))
+                    if not candidate.is_absolute():
+                        candidate = _P(__file__).resolve().parents[3] / candidate
+                    folder = str(candidate.parent) if candidate.parent.exists() else None
+                except Exception:
+                    folder = None
+            out.append(CameraSpec(str(name), sw, sh, nx, ny, folder=folder))
     return out
 
 
@@ -280,6 +297,7 @@ def enumerate_lenses(*, use_cache: bool = True) -> list[LensSpec]:
             out.append(LensSpec(
                 name=name, focal_length_mm=efl, image_circle_mm=ic, fnumber=fno,
                 mag_min=(mag[0] if mag else None), mag_max=(mag[1] if mag else None),
+                folder=str(folder),
             ))
     _LENS_CATALOG_CACHE[key] = list(out)
     return out
