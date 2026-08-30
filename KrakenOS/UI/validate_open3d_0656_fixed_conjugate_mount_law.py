@@ -96,6 +96,15 @@ def _check_import(ok, notes) -> None:
             abs(float(rows[0].thickness) - (110.0 + float(reg["rim_s"]))) <= 0.05,
             f"A5: the object leg is the vendor WD ({float(rows[0].thickness):.3f})",
         )
+        # bugs/0662: the surrogate discs must COVER the field the lens images --
+        # image circle 11 mm at 0.75x = 14.7 mm object-side, plus the pupil -- not the
+        # 1.4x-pupil that drew 3.5 mm rings the rays visibly passed beyond.
+        disc = min(float(rows[i].diameter) for i in (first, first + 1, first + 3, first + 4))
+        ok(
+            disc >= 11.0 / 0.75 + 0.9 * (70.417 / 13.3),
+            f"A6 (0662): datum/group discs cover the imaged field "
+            f"(min {disc:.2f} mm >= image circle/|m| + pupil ~ {11.0/0.75 + 70.417/13.3:.2f})",
+        )
     finally:
         try:
             if editor is not None:

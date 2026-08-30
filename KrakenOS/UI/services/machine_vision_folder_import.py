@@ -787,6 +787,9 @@ def _core_from_prescription_data(assets: LensFolderAssets) -> _SurrogateCore:
     lens_aperture = _positive(data.epd, stop_diameter * 1.4)
     field_radius = _positive(data.paraxial_image_height or data.max_radial_field, lens_aperture)
     image_diameter = round(2.0 * field_radius, 4)
+    if data.paraxial_image_height or data.max_radial_field:
+        # bugs/0662: elements cover the stated field (see the datasheet path).
+        lens_aperture = round(max(float(lens_aperture), image_diameter + stop_diameter), 4)
     object_diameter = (
         image_diameter if object_mode == "Finite" else round(max(lens_aperture, image_diameter), 4)
     )
@@ -895,10 +898,21 @@ def _core_from_datasheet_cardinals(
     aperture_type, aperture_value = "FNO", _fmt(fno)
 
     lens_aperture = round(stop_diameter * 1.4, 4)
+    # bugs/0662 (flag_20260830_180206 "rays are passing beyond the diameter of the
+    # first and last lens surrogate"): 1.4x the STOP is the pupil footprint on-axis;
+    # a finite-conjugate lens's front/rear elements must also cover the FIELD they
+    # image (a 1x telecentric with a 2.5 mm pupil images an 11 mm circle -- its
+    # elements are >= 13.5 mm, not 3.5). The trace was already right (bugs/0624
+    # extends blackbox apertures); the DRAWN discs were the pupil, not the glass.
+    if cardinals.image_circle and cardinals.image_circle > 0.0:
+        field_cover = float(cardinals.image_circle)
+        if cardinals.magnification and abs(float(cardinals.magnification)) > 1e-9:
+            field_cover *= max(1.0, 1.0 / abs(float(cardinals.magnification)))
+        lens_aperture = round(max(lens_aperture, field_cover + stop_diameter), 4)
     image_diameter = (
         round(float(cardinals.image_circle), 4)
         if (cardinals.image_circle and cardinals.image_circle > 0.0)
-        else lens_aperture
+        else round(stop_diameter * 1.4, 4)
     )
     if object_mode == "Finite" and cardinals.magnification:
         object_diameter = round(image_diameter / abs(float(cardinals.magnification)), 4)
