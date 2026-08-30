@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-08-26T13:31:40+00:00",
+  "generated_at": "2026-08-30T14:53:23+00:00",
   "phases": {
     "0": "pass",
     "1": "fail",
@@ -315,7 +315,7 @@
     "311": "pass",
     "312": "pass",
     "313": "pass",
-    "314": "fail",
+    "314": "pass",
     "315": "pass",
     "316": "pass",
     "317": "pass",
@@ -488,7 +488,19 @@
     "484": "pass",
     "485": "pass",
     "486": "pass",
-    "487": "pass"
+    "487": "pass",
+    "488": "pass",
+    "489": "pass",
+    "490": "pass",
+    "491": "pass",
+    "492": "pass",
+    "493": "pass",
+    "494": "pass",
+    "495": "pass",
+    "496": "pass",
+    "497": "pass",
+    "498": "pass",
+    "499": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -977,6 +989,18 @@
     "484": "loads are fast: rays + the 0625 re-measure deferred to Trace Now / first consumer (0646)",
     "485": "the lens housing registers to the vendor working-distance law (0647)",
     "486": "the Measure crosshair is the cursor's projection onto the axis (0649)",
-    "487": "the current 3D viewport exports to a DXF R12 vector drawing (0650)"
+    "487": "the current 3D viewport exports to a DXF R12 vector drawing (0650)",
+    "488": "right-click a component -> six-view third-angle DXF sheet (0652)",
+    "489": "a telecentric datasheet with no focal length imports via its conjugates (0653)",
+    "490": "flipping a real-barrel lens STEP re-pins the opposite body face (0654)",
+    "491": "a camera folder imports from an Edmund stock page; every PDF is tried (0655)",
+    "492": "a fixed-magnification lens MOUNTS to the camera; FOV is stated, never solved (0656)",
+    "493": "body rotations pivot on the clear-aperture axis, not the port-skewed centroid (0657)",
+    "494": "the Quick-Estimation FOV discs are owned, killable, and never accumulate (0660)",
+    "495": "a 3D inspection part on the object plane with six blow-out axes (0661)",
+    "496": "an inspection cell composes six station layouts around one part (0663)",
+    "497": "the embedded cell view transplants the composition, opens stations on double-click, re-composes on save (0664)",
+    "498": "the cell-level solve picks a camera + lens per face and builds the stations (0665)",
+    "499": "a STEP of the real part sizes the six-face model and replaces the box (0666)"
   }
 }
