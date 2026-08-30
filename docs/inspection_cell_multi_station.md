@@ -57,7 +57,12 @@ double-click-to-edit remain phase 3.
 - **Guard:** composite pose invariants (each station's object plane lands on its
   face; axes coincide), export round-trip.
 
-## Phase 3 — later
+## Phase 3 — embedded view SHIPPED (0664, phase 497); the rest open
+
+`KrakenOS/UI/panels/inspection_cell_window.py`: Tk/VTK window, transplanted composition,
+double-click a station to open its layout, re-compose on save (mtime watch).
+
+### Remaining
 
 - Cell-level solve: given the part + a resolution target, run the System Selection
   Calculator per face and pre-fill each station.

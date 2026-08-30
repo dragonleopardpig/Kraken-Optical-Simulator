@@ -234,7 +234,7 @@ def compose_cell_plotter(cell_spec: dict[str, Any], *, off_screen: bool = False,
         plotter.set_background("white")
     except Exception:
         pass
-    report: dict[str, Any] = {"stations": [], "errors": [], "interferences": []}
+    report: dict[str, Any] = {"stations": [], "errors": [], "interferences": [], "station_actor_keys": {}}
 
     # the part: translucent box + six dotted blow-out axes at the cell origin
     corners = cell_part_corners(part)
@@ -271,6 +271,7 @@ def compose_cell_plotter(cell_spec: dict[str, Any], *, off_screen: bool = False,
                 except Exception:
                     pass
             new_keys = [k for k in plotter.renderer.actors.keys() if k not in before]
+            report["station_actor_keys"][face] = list(new_keys)  # the embedded view maps picks to faces
             matrix = _vtk_matrix(station.transform)
             for key in new_keys:
                 try:
@@ -498,18 +499,22 @@ def open_inspection_cell_dialog(editor):
 
     def _view():
         cell = _read()
-        status_var.set("Composing the cell (each station is loaded and traced)...")
+        status_var.set("Opening the embedded cell view (each station is loaded and traced)...")
         dialog.update_idletasks()
+        # bugs/0664 (phase 3): the embedded Tk/VTK window -- double-click a station to
+        # edit it, saves re-compose. Falls back to the pyvista window on its own.
         try:
-            plotter, report = compose_cell_plotter(cell)
+            from KrakenOS.UI.panels.inspection_cell_window import open_inspection_cell_window
+
+            window = open_inspection_cell_window(editor, cell)
         except Exception as exc:
             status_var.set(f"Cell view failed: {exc}")
             return
-        status_var.set(cell_summary(report))
-        try:
-            plotter.show(title="KrakenOS Inspection Cell")
-        except Exception as exc:
-            status_var.set(f"Cell view window failed: {exc}")
+        if window is not None:
+            status_var.set(window.status_var.get() or "Cell view open.")
+            editor.inspection_cell_window = window
+        else:
+            status_var.set("Cell shown in the pyvista window (embedded view unavailable).")
 
     def _report():
         cell = _read()
