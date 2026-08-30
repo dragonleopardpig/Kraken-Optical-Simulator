@@ -257,28 +257,46 @@ def compose_cell_plotter(cell_spec: dict[str, Any], *, off_screen: bool = False,
             continue
         try:
             before = set(plotter.renderer.actors.keys())
-            station.editor._populate_legacy_3d_plotter_scene(
+            info = station.editor._populate_legacy_3d_plotter_scene(
                 plotter, station.system, station.rays,
                 scene_bundle=station.bundle, add_clip_plane=False, add_labels=False,
-            )
-            new_keys = [k for k in plotter.renderer.actors.keys() if k not in before]
-            matrix = _vtk_matrix(station.transform)
-            bounds = None
-            for key in new_keys:
-                actor = plotter.renderer.actors[key]
+            ) or {}
+            # The station's own dotted optical-axis guide is hundreds of mm long; six
+            # of them transformed blew the scene extent up until the stations were
+            # sub-pixel and polluted the interference boxes (measured 4809 mm
+            # "overlaps"). The cell draws the face axes itself -- drop the helpers.
+            for helper in list(info.get("helper_actors") or []):
                 try:
-                    actor.SetUserMatrix(matrix)
-                except Exception:
-                    continue
-                try:
-                    b = np.asarray(actor.GetBounds(), dtype=float)
-                    if b.size == 6 and np.all(np.isfinite(b)):
-                        bounds = b if bounds is None else np.array(
-                            [min(bounds[0], b[0]), max(bounds[1], b[1]), min(bounds[2], b[2]),
-                             max(bounds[3], b[3]), min(bounds[4], b[4]), max(bounds[5], b[5])]
-                        )
+                    plotter.remove_actor(helper, render=False)
                 except Exception:
                     pass
+            new_keys = [k for k in plotter.renderer.actors.keys() if k not in before]
+            matrix = _vtk_matrix(station.transform)
+            for key in new_keys:
+                try:
+                    plotter.renderer.actors[key].SetUserMatrix(matrix)
+                except Exception:
+                    continue
+            # Interference boxes: CAD BODIES only (lens/camera STEP meshes + any lens
+            # or mirror solids) -- never rays, planes, or guides.
+            bounds = None
+            body_actors = []
+            for entries in (info.get("cad_step_actors") or {}).values():
+                for kind, actor in list(entries or []):
+                    if str(kind) == "mesh":
+                        body_actors.append(actor)
+            for key in ("lens_actors", "mirror_actors"):
+                body_actors.extend(list(info.get(key) or []))
+            for actor in body_actors:
+                try:
+                    b = np.asarray(actor.GetBounds(), dtype=float)
+                except Exception:
+                    continue
+                if b.size == 6 and np.all(np.isfinite(b)):
+                    bounds = b if bounds is None else np.array(
+                        [min(bounds[0], b[0]), max(bounds[1], b[1]), min(bounds[2], b[2]),
+                         max(bounds[3], b[3]), min(bounds[4], b[4]), max(bounds[5], b[5])]
+                    )
             report["stations"].append(
                 {
                     "face": face,
