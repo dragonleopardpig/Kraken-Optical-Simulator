@@ -68,6 +68,11 @@ double-click a station to open its layout, re-compose on save (mtime watch).
 fixed-magnification lenses judged at their own field, telecentric preferred) → station layouts
 built by the importers → cell file. Dialog section "Solve stations from the part + defect size".
 
+### STEP part import — SHIPPED (0666, phase 499)
+
+`inspection_part.step_path`: the real part's STEP; bounds → W×H×D (x→W, y→H, z→D, +z=Front); the
+mesh replaces the box in the station scene, the cell view and the cell STEP.
+
 ### Remaining
 
 - Cell-level solve: given the part + a resolution target, run the System Selection

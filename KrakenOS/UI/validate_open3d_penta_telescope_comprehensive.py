@@ -15801,6 +15801,10 @@ phase_498_inspection_cell_solve = _phase_from_standalone(
     498, "the cell-level solve picks a camera + lens per face and builds the stations (0665)",
     "KrakenOS.UI.validate_open3d_0665_inspection_cell_solve",
     "inspection_cell_solve")
+phase_499_inspection_part_step = _phase_from_standalone(
+    499, "a STEP of the real part sizes the six-face model and replaces the box (0666)",
+    "KrakenOS.UI.validate_open3d_0666_inspection_part_step",
+    "inspection_part_step")
 phase_461_swap_prompts_for_fov = _phase_from_standalone(
     461, "an interactive swap ASKS for the FOV you want (prefilled with the delivered field) (0609)",
     "KrakenOS.UI.validate_open3d_0609_swap_prompts_for_fov",
@@ -16362,6 +16366,7 @@ def main() -> int:
             phase_496_inspection_cell,
             phase_497_inspection_cell_window,
             phase_498_inspection_cell_solve,
+            phase_499_inspection_part_step,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

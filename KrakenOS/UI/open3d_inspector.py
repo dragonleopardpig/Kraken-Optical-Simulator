@@ -16867,6 +16867,31 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         obj_pt, axis = pose
         corners = box_corners(spec, obj_pt, axis)
         count = 0
+        # bugs/0666: a STEP of the real part replaces the box (the outlines + axes stay).
+        part_mesh = None
+        try:
+            from KrakenOS.UI.services.inspection_part import part_mesh_world, resolve_part_step_path
+
+            step_path = resolve_part_step_path(spec)
+            if step_path is not None:
+                native = self.editor._load_step_mesh(step_path, largest_component=False)
+                if native is not None and int(getattr(native, "n_points", 0)) > 0:
+                    part_mesh = part_mesh_world(native, spec, obj_pt, axis)
+        except Exception as exc:
+            self.editor.append_debug(f"inspection part STEP skipped: {exc}")
+            part_mesh = None
+        if part_mesh is not None:
+            try:
+                actor = self._add_mesh_actor(
+                    part_mesh, color=(0.62, 0.66, 0.74), opacity=0.55, flat_shading=False, backface_culling=False
+                )
+                if actor is not None:
+                    key = self._actor_key(actor)
+                    if key:
+                        self._inspection_part_actor_keys.add(key)
+                    count += 1
+            except Exception as exc:
+                self.editor.append_debug(f"inspection part STEP actor skipped: {exc}")
         try:
             box = pv.PolyData(corners)
             # corners ordered (sx, sy, sz) nested -> index = 4*ix + 2*iy + iz
@@ -16883,7 +16908,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             )
             box.faces = faces
             actor = self._add_mesh_actor(
-                box, color=(0.55, 0.60, 0.70), opacity=0.22, flat_shading=True, backface_culling=False
+                box, color=(0.55, 0.60, 0.70), opacity=(0.06 if part_mesh is not None else 0.22),
+                flat_shading=True, backface_culling=False,
             )
             if actor is not None:
                 key = self._actor_key(actor)

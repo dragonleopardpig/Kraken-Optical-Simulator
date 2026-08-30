@@ -17,6 +17,7 @@ Pure geometry lives here (guarded display-free); the Tk dialog at the bottom.
 from __future__ import annotations
 
 import math
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -41,7 +42,14 @@ DEFAULT_SPEC: dict[str, Any] = {
     "depth_mm": 20.0,
     "active_face": "front",
     "axis_reach_mm": 0.0,  # 0 = auto (2.5 x the largest dimension, min 80 mm)
+    # bugs/0666: an optional STEP of the REAL part. Its native bounding box supplies
+    # W x H x D (x -> W, y -> H, z -> D, front = +z) so the six-face model is unchanged,
+    # and the real mesh is drawn in place of the box. Portable: relative to the project
+    # root when inside it.
+    "step_path": "",
 }
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 def normalize_inspection_part_spec(spec: Any) -> dict[str, Any]:
@@ -63,6 +71,83 @@ def normalize_inspection_part_spec(spec: Any) -> dict[str, Any]:
             out[key] = float(DEFAULT_SPEC[key])
     face = str(spec.get("active_face", "front") or "front").strip().lower()
     out["active_face"] = face if face in _FACE_DEFS else "front"
+    out["step_path"] = portable_part_step_text(spec.get("step_path", ""))
+    return out
+
+
+def portable_part_step_text(value: Any) -> str:
+    """The part STEP path as stored: project-relative when inside the project."""
+    text = str(value or "").strip()
+    if not text or text.lower() in {"none", "null"}:
+        return ""
+    path = Path(text).expanduser()
+    if not path.is_absolute():
+        return path.as_posix()
+    try:
+        return path.resolve(strict=False).relative_to(PROJECT_ROOT.resolve()).as_posix()
+    except Exception:
+        return str(path)
+
+
+def resolve_part_step_path(spec: dict[str, Any]) -> Path | None:
+    """Absolute path of the part STEP, or None when the part is the plain box."""
+    text = str((spec or {}).get("step_path", "") or "").strip()
+    if not text:
+        return None
+    path = Path(text).expanduser()
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+    return path if path.exists() else None
+
+
+def part_frame(spec: dict[str, Any], object_point, object_axis) -> tuple[np.ndarray, np.ndarray]:
+    """(R, centre): world = R @ local + centre for the part's own frame (local x = W,
+    y = H, z = D, front = +z), given the ACTIVE face's pose on the object plane."""
+    spec = normalize_inspection_part_spec(spec)
+    active = spec["active_face"]
+    O = np.asarray(object_point, dtype=float).reshape(3)
+    a = _unit(object_axis)
+    u, v = plane_basis(a)
+    d_active = _FACE_DEFS[active]
+    local = np.column_stack([d_active["p"], d_active["q"], d_active["n"]]).astype(float)
+    world = np.column_stack([u, v, a])
+    R = world @ local.T
+    half = {"width": 0.5 * spec["width_mm"], "height": 0.5 * spec["height_mm"], "depth": 0.5 * spec["depth_mm"]}
+    center = O - a * half[d_active["extent"]]
+    return R, center
+
+
+def step_bounds_dims(mesh) -> tuple[float, float, float] | None:
+    """(W, H, D) from a part mesh's native bounding box (x, y, z extents)."""
+    try:
+        pts = np.asarray(mesh.points, dtype=float)
+    except Exception:
+        return None
+    if pts.ndim != 2 or pts.shape[0] == 0:
+        return None
+    ext = pts.max(axis=0) - pts.min(axis=0)
+    if not np.all(np.isfinite(ext)) or np.any(ext <= 1e-9):
+        return None
+    return float(ext[0]), float(ext[1]), float(ext[2])
+
+
+def apply_step_bounds(spec: dict[str, Any], mesh) -> dict[str, Any]:
+    """Size the part from its STEP mesh (native AABB); the spec is returned normalized."""
+    out = normalize_inspection_part_spec(spec)
+    dims = step_bounds_dims(mesh)
+    if dims is not None:
+        out["width_mm"], out["height_mm"], out["depth_mm"] = (round(v, 4) for v in dims)
+    return out
+
+
+def part_mesh_world(mesh, spec: dict[str, Any], object_point, object_axis):
+    """A copy of the part mesh placed in the world: native AABB centre -> the part
+    centre, native axes -> the part frame (so the STEP's +z face is the Front face)."""
+    R, center = part_frame(spec, object_point, object_axis)
+    out = mesh.copy(deep=True)
+    pts = np.asarray(out.points, dtype=float)
+    c0 = 0.5 * (pts.min(axis=0) + pts.max(axis=0))
+    out.points = (R @ (pts - c0).T).T + center
     return out
 
 
@@ -206,6 +291,7 @@ def open_inspection_part_dialog(editor):
     d_var = tk.StringVar(value=f"{spec['depth_mm']:g}")
     reach_var = tk.StringVar(value=f"{spec['axis_reach_mm']:g}")
     face_var = tk.StringVar(value=spec["active_face"])
+    step_var = tk.StringVar(value=str(spec.get("step_path", "") or ""))
     status_var = tk.StringVar(value="")
 
     body = ttk.Frame(dialog, padding=12)
@@ -220,6 +306,31 @@ def open_inspection_part_dialog(editor):
     ):
         ttk.Label(body, text=label).grid(row=r, column=0, sticky="w", pady=2)
         ttk.Entry(body, textvariable=var, width=12).grid(row=r, column=1, sticky="w", pady=2)
+    # bugs/0666: the real part's STEP -- bounds size the box, the mesh replaces it.
+    ttk.Label(body, text="Part STEP (optional)").grid(row=9, column=0, sticky="w", pady=(6, 2))
+    step_row = ttk.Frame(body)
+    step_row.grid(row=9, column=1, sticky="w", pady=(6, 2))
+    ttk.Entry(step_row, textvariable=step_var, width=34).grid(row=0, column=0)
+
+    def _browse_step():
+        from tkinter import filedialog
+
+        path = filedialog.askopenfilename(
+            title="Part STEP", filetypes=[("STEP", "*.step *.stp *.STEP *.STP"), ("All files", "*")], parent=dialog,
+        )
+        if not path:
+            return
+        step_var.set(path)
+        try:
+            mesh = editor._load_step_mesh(Path(path), largest_component=False)
+            sized = apply_step_bounds({"width_mm": w_var.get(), "height_mm": h_var.get(), "depth_mm": d_var.get()}, mesh)
+            w_var.set(f"{sized['width_mm']:g}"); h_var.set(f"{sized['height_mm']:g}"); d_var.set(f"{sized['depth_mm']:g}")
+            enabled_var.set(True)
+            status_var.set(f"Dims from the STEP bounds: {sized['width_mm']:g} x {sized['height_mm']:g} x {sized['depth_mm']:g} mm (x=W, y=H, z=D; +z = Front)")
+        except Exception as exc:
+            status_var.set(f"Part STEP set, but its bounds could not be read: {exc}")
+
+    ttk.Button(step_row, text="Browse...", command=_browse_step).grid(row=0, column=1, padx=(4, 0))
     ttk.Label(body, text="Inspected face (on the object plane)").grid(row=5, column=0, sticky="w", pady=(8, 2))
     ttk.Combobox(body, textvariable=face_var, values=list(FACE_ORDER), state="readonly", width=10).grid(
         row=5, column=1, sticky="w", pady=(8, 2)
@@ -239,6 +350,7 @@ def open_inspection_part_dialog(editor):
             "depth_mm": d_var.get(),
             "axis_reach_mm": reach_var.get(),
             "active_face": face_var.get(),
+            "step_path": step_var.get(),
         }
         return normalize_inspection_part_spec(raw)
 

@@ -241,6 +241,8 @@ def compose_cell_plotter(cell_spec: dict[str, Any], *, off_screen: bool = False,
     faces = np.asarray([4, 0, 1, 3, 2, 4, 4, 6, 7, 5, 4, 0, 4, 5, 1, 4, 2, 3, 7, 6, 4, 0, 2, 6, 4, 4, 1, 5, 7, 3])
     box = pv.PolyData(corners, faces)
     plotter.add_mesh(box, color=(0.55, 0.60, 0.70), opacity=0.25, name="cell_part")
+    report["part_mesh"] = False
+    part_step = None  # bugs/0666: the real part mesh is added once a station editor can load it
     for rec in cell_axis_records(part):
         pts = np.asarray(rec["points"], dtype=float)
         seg = pv.lines_from_points(pts)
@@ -256,6 +258,28 @@ def compose_cell_plotter(cell_spec: dict[str, Any], *, off_screen: bool = False,
             report["errors"].append(f"{face}: {exc}")
             continue
         try:
+            if part_step is None:
+                from KrakenOS.UI.services.inspection_part import part_mesh_world, resolve_part_step_path
+
+                step_path = resolve_part_step_path(part)
+                if step_path is not None:
+                    try:
+                        native = station.editor._load_step_mesh(step_path, largest_component=False)
+                        if native is not None and int(getattr(native, "n_points", 0)) > 0:
+                            part_front = dict(part, active_face="front")
+                            mesh = part_mesh_world(native, part_front, np.array([0.0, 0.0, 0.5 * part["depth_mm"]]), np.array([0.0, 0.0, 1.0]))
+                            plotter.add_mesh(mesh, color=(0.62, 0.66, 0.74), opacity=0.6, name="cell_part_step")
+                            try:
+                                plotter.renderer.actors["cell_part"].GetProperty().SetOpacity(0.06)
+                            except Exception:
+                                pass
+                            report["part_mesh"] = True
+                            part_step = step_path
+                    except Exception as exc:
+                        report["errors"].append(f"part STEP: {exc}")
+                        part_step = False
+                else:
+                    part_step = False
             before = set(plotter.renderer.actors.keys())
             info = station.editor._populate_legacy_3d_plotter_scene(
                 plotter, station.system, station.rays,
@@ -391,7 +415,29 @@ def export_cell_step(cell_spec: dict[str, Any], target_path: str | Path) -> dict
     report: dict[str, Any] = {"stations": [], "errors": []}
     corners = cell_part_corners(part)
     lo, hi = corners.min(axis=0), corners.max(axis=0)
-    builder.Add(compound, BRepPrimAPI_MakeBox(gp_Pnt(*lo), gp_Pnt(*hi)).Shape())
+    from KrakenOS.UI.services.inspection_part import resolve_part_step_path
+
+    part_step = resolve_part_step_path(part)
+    if part_step is not None:
+        # bugs/0666: the real part, its native AABB centre moved to the cell origin
+        # (the cell frame IS the part's native frame: front = +z).
+        try:
+            shape = _read_step_shape(part_step)
+            from OCC.Core.Bnd import Bnd_Box
+            from OCC.Core.BRepBndLib import brepbndlib
+
+            bnd = Bnd_Box()
+            brepbndlib.Add(shape, bnd)
+            x0, y0, z0, x1, y1, z1 = bnd.Get()
+            T = np.eye(4)
+            T[:3, 3] = -0.5 * np.array([x0 + x1, y0 + y1, z0 + z1])
+            builder.Add(compound, _shape_with_affine(shape, T))
+            report["part_mesh"] = True
+        except Exception as exc:
+            report["errors"].append(f"part STEP: {exc}")
+            builder.Add(compound, BRepPrimAPI_MakeBox(gp_Pnt(*lo), gp_Pnt(*hi)).Shape())
+    else:
+        builder.Add(compound, BRepPrimAPI_MakeBox(gp_Pnt(*lo), gp_Pnt(*hi)).Shape())
     with tempfile.TemporaryDirectory() as tmp:
         for face in FACE_ORDER:
             entry = spec["stations"][face]
@@ -469,6 +515,29 @@ def open_inspection_cell_dialog(editor):
     dims.grid(row=0, column=1, columnspan=3, sticky="w")
     for col, var in enumerate((w_var, h_var, d_var)):
         ttk.Entry(dims, textvariable=var, width=8).grid(row=0, column=col, padx=(0, 4))
+    # bugs/0666: a STEP of the real part (bounds -> dims; the mesh replaces the box).
+    step_var = tk.StringVar(value=str(spec["part"].get("step_path", "") or ""))
+    ttk.Label(dims, text="Part STEP (optional)").grid(row=0, column=3, padx=(12, 4))
+    ttk.Entry(dims, textvariable=step_var, width=30).grid(row=0, column=4)
+
+    def _browse_part_step():
+        from KrakenOS.UI.services.inspection_part import apply_step_bounds
+
+        path = filedialog.askopenfilename(
+            title="Part STEP", filetypes=[("STEP", "*.step *.stp *.STEP *.STP"), ("All files", "*")], parent=dialog,
+        )
+        if not path:
+            return
+        step_var.set(path)
+        try:
+            mesh = editor._load_step_mesh(Path(path), largest_component=False)
+            sized = apply_step_bounds({"width_mm": w_var.get(), "height_mm": h_var.get(), "depth_mm": d_var.get()}, mesh)
+            w_var.set(f"{sized['width_mm']:g}"); h_var.set(f"{sized['height_mm']:g}"); d_var.set(f"{sized['depth_mm']:g}")
+            status_var.set(f"Part dims from the STEP bounds: {sized['width_mm']:g} x {sized['height_mm']:g} x {sized['depth_mm']:g} mm")
+        except Exception as exc:
+            status_var.set(f"Part STEP loaded but bounds failed: {exc}")
+
+    ttk.Button(dims, text="Browse...", command=_browse_part_step).grid(row=0, column=5, padx=(4, 0))
     ttk.Label(body, text="Face").grid(row=1, column=0, sticky="w", pady=(8, 2))
     ttk.Label(body, text="Station layout (.py)").grid(row=1, column=1, sticky="w", pady=(8, 2))
     for r, face in enumerate(FACE_ORDER, start=2):
@@ -489,7 +558,8 @@ def open_inspection_cell_dialog(editor):
 
     def _read() -> dict[str, Any]:
         raw = {
-            "part": {"enabled": True, "width_mm": w_var.get(), "height_mm": h_var.get(), "depth_mm": d_var.get()},
+            "part": {"enabled": True, "width_mm": w_var.get(), "height_mm": h_var.get(), "depth_mm": d_var.get(),
+                     "step_path": step_var.get()},
             "stations": {face: {"layout": layout_vars[face].get().strip(), "enabled": bool(enabled_vars[face].get())}
                          for face in FACE_ORDER},
         }
@@ -573,6 +643,7 @@ def open_inspection_cell_dialog(editor):
             return
         w_var.set(f"{cell['part']['width_mm']:g}"); h_var.set(f"{cell['part']['height_mm']:g}")
         d_var.set(f"{cell['part']['depth_mm']:g}")
+        step_var.set(str(cell["part"].get("step_path", "") or ""))
         for face in FACE_ORDER:
             layout_vars[face].set(cell["stations"][face]["layout"])
             enabled_vars[face].set(cell["stations"][face]["enabled"])
