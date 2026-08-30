@@ -8558,6 +8558,13 @@ class LayoutTableWorkbenchMixin:
             pass
         return bool(ok), note + str(msg)
 
+    def open_inspection_cell_dialog(self) -> None:
+        """bugs/0663 (phase 2 of the multi-station cell): six station layouts composed
+        around one 3D part -- cell view, cell STEP, interference report."""
+        from KrakenOS.UI.services.inspection_cell import open_inspection_cell_dialog
+
+        open_inspection_cell_dialog(self)
+
     def open_camera_lens_matcher(self) -> None:
         """bugs/0634 (user feature): list every registered camera × catalog lens
         combination that meets a FOV / resolution / minimum-WD requirement."""

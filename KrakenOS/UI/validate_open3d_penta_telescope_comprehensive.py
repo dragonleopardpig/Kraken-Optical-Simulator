@@ -15789,6 +15789,10 @@ phase_495_inspection_part = _phase_from_standalone(
     495, "a 3D inspection part on the object plane with six blow-out axes (0661)",
     "KrakenOS.UI.validate_open3d_0661_inspection_part",
     "inspection_part")
+phase_496_inspection_cell = _phase_from_standalone(
+    496, "an inspection cell composes six station layouts around one part (0663)",
+    "KrakenOS.UI.validate_open3d_0663_inspection_cell",
+    "inspection_cell")
 phase_461_swap_prompts_for_fov = _phase_from_standalone(
     461, "an interactive swap ASKS for the FOV you want (prefilled with the delivered field) (0609)",
     "KrakenOS.UI.validate_open3d_0609_swap_prompts_for_fov",
@@ -16347,6 +16351,7 @@ def main() -> int:
             phase_493_rotation_pivot_clear_aperture,
             phase_494_qe_overlay_lifecycle,
             phase_495_inspection_part,
+            phase_496_inspection_cell,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

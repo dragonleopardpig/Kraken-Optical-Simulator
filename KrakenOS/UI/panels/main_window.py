@@ -121,6 +121,7 @@ class MainWindowBuilder:
         action_menu.add_command(label="System Selection Calculator...", command=self.open_system_selection_calculator)
         action_menu.add_command(label="Camera + Lens Matcher...", command=self.open_camera_lens_matcher)
         action_menu.add_command(label="Inspection Part (3D object)...", command=self.open_inspection_part_dialog)
+        action_menu.add_command(label="Inspection Cell (6 stations)...", command=self.open_inspection_cell_dialog)
         action_menu.add_command(label="Paraxial Matrix Report", command=self.open_paraxial_matrix_report)
         action_menu.add_command(label="Gaussian Beam Report", command=self.open_gaussian_beam_report)
         action_menu.add_command(label="Branch Gaussian Q Report", command=self.open_branch_gaussian_q_report)

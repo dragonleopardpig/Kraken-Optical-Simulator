@@ -36,7 +36,11 @@ Workflow today: design each face's station in its own layout with the part enabl
 on that face (opposite faces share a design → three layouts for a box), solve the FOV
 to the face, verify with the overlays, export STEP per station, assemble in CAD.
 
-## Phase 2 — NEXT: the cell view (six chains, one scene)
+## Phase 2 — SHIPPED v1 (0663, phase 496): the cell view (six chains, one scene)
+
+Implemented in `KrakenOS/UI/services/inspection_cell.py`; Actions → *Inspection Cell (6
+stations)…*. The design below is what shipped; the embedded (Tk) view and
+double-click-to-edit remain phase 3.
 
 - **Cell file** (`*.cell.json`): the part spec + `stations: {face: layout_path}`.
 - **Composition:** for each station, load its layout headlessly, build its scene
