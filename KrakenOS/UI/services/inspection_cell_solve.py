@@ -44,6 +44,7 @@ class StationChoice:
     resolution_um_per_px: float
     passes: bool
     reasons: tuple[str, ...]
+    fixed_magnification: bool = False   # the lens has ONE design m -- build it at its own field
 
 
 def face_requirements(
@@ -145,6 +146,7 @@ def choose_station(
                     lens=lens.name, lens_folder=lens.folder, magnification=result.magnification,
                     working_distance_mm=result.working_distance_mm, delivered_fov_mm=delivered,
                     resolution_um_per_px=res, passes=result.passes, reasons=result.reasons,
+                    fixed_magnification=_is_fixed_magnification(lens),
                 ),
             ))
     if not candidates:
@@ -235,6 +237,20 @@ def build_station_layout(choice: StationChoice, part_spec: dict[str, Any], out_p
         if reg and reg.get("fixed_magnification"):
             report["mode"] = "fixed-magnification (mount law)"
             report["wd_mismatch"] = reg.get("mismatch")
+        elif choice.fixed_magnification:
+            # A catalog lens with ONE design magnification but no datasheet mount law
+            # (e.g. a "1x" lens without a WD row): keep it at ITS field -- sensor/m --
+            # never drive it to the face size (a 1x lens solved to a 10 mm face would
+            # run at 2.2x, off its design point). The face fits inside by selection.
+            from types import SimpleNamespace
+
+            from KrakenOS.UI.services.quick_estimation import QuickEstimationService
+
+            fw, fh = choice.delivered_fov_mm
+            qe = QuickEstimationService(SimpleNamespace(editor=editor))
+            solved, msg = qe.fov_solve("object", "thickness", fw, fh)
+            report["mode"] = f"fixed {choice.magnification:.3g}x lens at its own field" if solved else "FOV solve refused"
+            report["solve_message"] = str(msg)[:160]
         else:
             solved, msg = editor.solve_fov_to_inspection_face()
             report["mode"] = "solved FOV to face" if solved else "FOV solve refused"
