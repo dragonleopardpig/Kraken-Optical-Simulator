@@ -73,9 +73,23 @@ built by the importers → cell file. Dialog section "Solve stations from the pa
 `inspection_part.step_path`: the real part's STEP; bounds → W×H×D (x→W, y→H, z→D, +z=Front); the
 mesh replaces the box in the station scene, the cell view and the cell STEP.
 
+### Axis = station handle — SHIPPED (0667, phase 500)
+
+"Add components on each axis independently", as one gesture: right-click a blow-out
+axis → *Create/Open station for this face…* (`open_station_for_face`). It opens the
+cell-linked station if one exists; otherwise it creates
+`attachment/cells/<stem>/station_<face>.py` seeded from the current scene with the
+part re-targeted onto the face, links BOTH stations into `<stem>.cell.json` beside
+it, and loads the new station. The axis menu also offers *Inspect this face
+(re-target THIS chain)* and *Solve FOV*. A lens import replaces the whole layout, so
+it now carries an enabled `inspection_part` across — a fresh station no longer loses
+its part on the first import.
+
+Workflow: enable the part once → right-click an axis → Create/Open station → import
+lens/camera/LED on that chain → Save → the Cell View re-composes.
+
 ### Remaining
 
-- Cell-level solve: given the part + a resolution target, run the System Selection
-  Calculator per face and pre-fill each station.
-- Non-flat parts: import a STEP of the part; faces become picked planar regions.
+- Non-flat parts: faces become picked planar regions of the part STEP.
 - Shared illumination: one LED lighting several faces; ray-level cross-talk checks.
+- Station labels in the cell view.
