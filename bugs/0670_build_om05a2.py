@@ -56,9 +56,9 @@ def edit_scene():
     for name, t in SEGS[1:]:
         glass = "AIR" if name == "air" else "N-BK7"
         inserts.append(clone(obj, surface="Standard", name=name, thickness=t, glass=glass,
-                             diameter=80.0, rc=0.0, element=""))
+                             diameter=30.0, rc=0.0, element=""))
     inserts.append(clone(obj, surface="Standard", name="to lens (unfolded RA mirror 1)",
-                         thickness=tail, glass="AIR", diameter=80.0, rc=0.0, element=""))
+                         thickness=tail, glass="AIR", diameter=30.0, rc=0.0, element=""))
     editor.rows[1:1] = inserts
 
     rear = editor.rows[-2]

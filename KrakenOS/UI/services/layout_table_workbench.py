@@ -596,7 +596,15 @@ class LayoutTableWorkbenchMixin:
         if not append_to_existing and hasattr(self, "_current_camera_model"):
             loaded_camera = self._current_camera_model()
             if loaded_camera != CAMERA_NONE_LABEL:
-                self._apply_camera_coverage_autofill(loaded_camera)
+                # bugs/0673 (flag "where is the usual 9 point imaging ray?"): a layout
+                # SAVED with a deliberately authored field (the om05a split-field scenes
+                # sample the two device faces at +-4.4 mm, not the sensor corners) must
+                # keep it -- user-authored wins (the bugs/0615 doctrine). The autofill
+                # still re-couples every scene whose saved field IS the autofill's own
+                # value (the bugs/0312 signature), which is every interactively coupled
+                # camera scene, so bug-0033 load/pick parity is preserved for them.
+                if self._field_matches_camera_autofill_signature():
+                    self._apply_camera_coverage_autofill(loaded_camera)
         # bugs/0625: a load CLEARS the learned machine state above, but nothing re-measured
         # it, so a freshly loaded folded scene traced with the RAW first order until the
         # user's next solve -- measured on the flagged Apo75: the launch grid sat decentred

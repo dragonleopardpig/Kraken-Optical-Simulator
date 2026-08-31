@@ -142,10 +142,24 @@ def build():
     m2.advanced = dict(m2.advanced or {})
     m2.advanced["StepOverlayPromotion"] = {"center_world": [0.0, 272.8, 94.9]}
     print(f"  mirror2 pinned free-placed at (0, 272.8, 94.9), tilt_x=-90 first-surface (z_station {z_station:.2f})")
+    # bugs/0673: the launch-measure probes need WIDE first apertures (dia 46
+    # broke the aim: 2% reach; dia 80 works) -- keep dia 80 but HIDE the plate
+    # discs (drawing=0); the real prism assembly is the visible geometry.
+    for r in editor.rows:
+        if "prism" in str(r.name).lower() and str(r.glass) == "N-BK7":
+            r.diameter = 80.0
+            r.drawing = 0.0
+    # bugs/0673 flag: the usual 9-POINT imaging sampling on the device faces
+    # (field 4.3 image = the face edges at object +-10; count 3 -> 3x3 folded grid).
+    # Survives loads via the authored-field-wins fix (autofill signature mismatch).
+    for var, value in (("field_value_var", "4.3"), ("field_count_var", "3")):
+        w = editor.__dict__.get(var)
+        if w is not None:
+            w.set(value)
     editor._sync_table()
     editor._write_layout_file(SCENE.resolve())
     editor.destroy()
-    print("saved (no trace in the mutating process)")
+    print("saved (field 4.3 x 3 = 9-point; no trace in the mutating process)")
 
 
 def verify():

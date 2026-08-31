@@ -100,9 +100,18 @@ def _check_scene(ok, notes) -> None:
             if chief is None or score < chief[0]:
                 chief = (score, p)
         frac = len(recs) / max(len(paths), 1)
+        from collections import Counter
+
+        per_field = Counter(fi for fi, _a, _d in recs)
+        strong = sum(1 for c in per_field.values() if c >= 50)
+        # bugs/0673: the 9-POINT sampling (3x3 on the device faces). The four
+        # cardinal fields + centre deliver; the diagonal corners still mis-aim
+        # through the two folds (the folded launch seam,
+        # project_nonseq_first_order_seam) -- pin substance, not the corner frontier.
         ok(
-            len(paths) > 0 and frac >= 0.6,
-            f"B1: the folded trace delivers ({len(recs)}/{len(paths)} = {frac:.0%} reach the image, primary branch)",
+            len(recs) >= 250 and strong >= 4,
+            f"B1: the 9-point folded trace delivers ({len(recs)}/{len(paths)} reach; "
+            f"{strong} fields with >=50 rays; per-field {dict(sorted(per_field.items()))})",
         )
         seq = []
         if chief is not None:

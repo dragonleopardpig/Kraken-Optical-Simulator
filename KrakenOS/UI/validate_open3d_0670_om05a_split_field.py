@@ -115,19 +115,19 @@ def _check_scene(ok, notes) -> None:
             f"B2: the MEASURED magnification recovers the lens's designation and the user's FOV "
             f"(|m| {m_meas:.4f}, conjugate {conj:.1f} mm ~ LEN-MV85-280, FOV {fov:.1f} ~ 54 x 54)",
         )
+        # bugs/0673: the AUTHORED field (11.52 = sensor half-height, the 54x54 FOV)
+        # survives the load -- the camera autofill defers to a user-authored field.
         inverted = all(cents[fi][1] * obj_y[fi] < 0 for fi in cents if abs(obj_y[fi]) > 1.0)
         ys = sorted(c[1] for c in cents.values())
         y_max = max(abs(y) for y in ys)
         pos = [y for y in ys if y > 0.4]
         neg = [y for y in ys if y < -0.4]
-        # A REGISTERED camera re-couples the field on every load to its image-circle
-        # half-diagonal (16.29) -- the app's own coverage convention; pin that circle.
         ok(
-            inverted and len(pos) >= 2 and len(neg) >= 2 and y_max <= 16.4,
-            f"B3: a REAL inverted image; the coupled camera's coverage fills the image circle and "
-            f"the two faces land on OPPOSITE halves "
+            inverted and len(pos) >= 2 and len(neg) >= 2 and y_max <= 11.6,
+            f"B3: a REAL inverted image; the authored 54 mm FOV fills the sensor height and the "
+            f"two faces land on OPPOSITE halves "
             f"(+{min(pos) if pos else 0:.1f}..+{max(pos) if pos else 0:.1f} / "
-            f"{max(neg) if neg else 0:.1f}..{min(neg) if neg else 0:.1f} mm; half-diag 16.29)",
+            f"{max(neg) if neg else 0:.1f}..{min(neg) if neg else 0:.1f} mm; half-height 11.52)",
         )
     finally:
         try:
