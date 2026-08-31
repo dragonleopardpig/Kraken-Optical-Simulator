@@ -6,11 +6,12 @@ need to inspect object opposite 2-side" -- the om05a assembly (Prism Assembly + 
 mirror + MV85 imaging lens + filter + RA mirror + 25MP camera). Unfolding its five
 folds yields ONE sequential chain (0297: one shared first order): the two opposite
 device end faces sit SIDE BY SIDE in one object plane (the CAD's equal path lengths
-guarantee one conjugate), pass the three prism glasses as plates, the MV85 (EFL 85;
-object->H = f(1+1/|m|) = 280.0 -- the lens's own designation), the 48-926 filter, and
-land on opposite halves of the one sensor. The folds are geometry, not prescription;
-the focus is the TRACED convergence (0109), which the build measured to land 3.4 mm
-past the no-glass conjugate -- matching t(1-1/n)*m^2 + filter to 0.2 mm.
+guarantee one conjugate), pass the three prism glasses as plates, the REAL PYRITE
+4.5/85 0.5x-2.0x V38 (1072517, user-identified; exact two-group from its datasheet
+SF/S'F'/span), the 48-926 filter, and land on opposite halves of the one sensor.
+The folds are geometry, not prescription; the focus is the TRACED convergence
+(0109). The measured |m| 0.430 = an effective glass-corrected conjugate of 283 mm --
+the assembly lens's own "LEN-MV85-280" designation recovered from CAD + physics.
 
 Checks (scene checks skip when the attachment scene is absent -- it is Filen-synced,
 not git-tracked):
@@ -18,8 +19,8 @@ not git-tracked):
      glass, the 25MP sensor diagonal, discs within the lens barrel, and the CAD
      component STEPs wired for display.
   B  TRACE (the physics pins): per-FIELD rms at the sensor < 5 um (in focus); the
-     traced magnification matches 85/195 within 2%; the two face patches land on
-     OPPOSITE sensor halves, inside the sensor.
+     MEASURED |m| recovers the 280 mm designation within 12 mm; a real INVERTED
+     image with the two face patches on OPPOSITE sensor halves, inside the sensor.
 
 Run:  xvfb-run -a .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_0670_om05a_split_field
 """
@@ -68,8 +69,8 @@ def _check_scene(ok, notes) -> None:
         cam = str(getattr(editor, "imported_camera_step_path", "") or "")
         lens = str(getattr(editor, "imported_lens_step_path", "") or "")
         ok(
-            "camera_sv25mccxp" in cam and "lens_mv85_280" in lens,
-            "A4: the extracted CAD bodies (camera + lens) are wired for display",
+            "camera_sv25mccxp" in cam and "1072517" in lens,
+            f"A4: the real CAD bodies are wired (camera SV25 + PYRITE 1072517 barrel)",
         )
 
         # B: trace physics
@@ -79,46 +80,50 @@ def _check_scene(ok, notes) -> None:
             pass
         system, rays, bundle = editor._build_preview_system_rays_bundle(trace_rays=True)
         z_img = sum(float(r.thickness) for r in rows[:-1])
-        groups: dict[int, list[np.ndarray]] = {}
+        groups: dict[int, list] = {}
         for rp in (getattr(bundle, "ray_paths", None) or []):
             p = np.asarray(getattr(rp, "points_world", rp), dtype=float)
-            if p.ndim != 2 or p.shape[0] < 2 or not np.all(np.isfinite(p[-2:])):
+            if p.ndim != 2 or p.shape[0] < 2 or not np.all(np.isfinite(p[-2:])) or not np.all(np.isfinite(p[0])):
                 continue
             a, b = p[-2], p[-1]
             d = b - a
             if abs(d[2]) < 1e-9:
                 continue
             t = (z_img - a[2]) / d[2]
-            groups.setdefault(int(getattr(rp, "field_index", 0)), []).append(a[:2] + t * d[:2])
+            groups.setdefault(int(getattr(rp, "field_index", 0)), []).append((float(p[0][1]), a[:2] + t * d[:2]))
         cents = {}
+        obj_y = {}
         rms_all = []
-        for fi, pts in groups.items():
-            arr = np.asarray(pts)
+        for fi, recs in groups.items():
+            arr = np.asarray([r[1] for r in recs])
             if len(arr) < 4:
                 continue
             cents[fi] = arr.mean(axis=0)
+            obj_y[fi] = float(np.mean([r[0] for r in recs]))
             rms_all.append(float(np.sqrt(((arr - arr.mean(axis=0)) ** 2).sum(axis=1).mean())))
         ok(
             rms_all and max(rms_all) < 0.005,
             f"B1: every field is IN FOCUS at the sensor (worst per-field rms "
             f"{max(rms_all) * 1000 if rms_all else float('nan'):.1f} um < 5)",
         )
-        ys = sorted(c[1] for c in cents.values())
-        m_expected = 85.0 / 195.0
-        y_max = max(abs(y) for y in ys)
-        # outermost field = 4.4 mm image height by the scene's field_value
+        ms = [abs(cents[fi][1] / obj_y[fi]) for fi in cents if abs(obj_y[fi]) > 1.0]
+        m_meas = float(np.mean(ms)) if ms else float("nan")
+        conj = 85.13 * (1.0 + 1.0 / m_meas) if ms else float("nan")
         ok(
-            abs(y_max - 4.4) / 4.4 < 0.02,
-            f"B2: the traced magnification matches the 280 mm conjugate "
-            f"(edge field lands at {y_max:.3f} mm vs 4.400; m = {m_expected:.4f})",
+            ms and 0.41 <= m_meas <= 0.45 and abs(conj - 280.0) <= 12.0,
+            f"B2: the MEASURED magnification recovers the lens's designation "
+            f"(|m| {m_meas:.4f}, effective conjugate {conj:.1f} mm ~ LEN-MV85-280)",
         )
+        inverted = all(cents[fi][1] * obj_y[fi] < 0 for fi in cents if abs(obj_y[fi]) > 1.0)
+        ys = sorted(c[1] for c in cents.values())
+        y_max = max(abs(y) for y in ys)
         pos = [y for y in ys if y > 0.4]
         neg = [y for y in ys if y < -0.4]
         ok(
-            len(pos) >= 2 and len(neg) >= 2 and y_max < 11.52,
-            f"B3: the two device faces land on OPPOSITE sensor halves, inside the sensor "
-            f"(+{min(pos) if pos else 0:.1f}..+{max(pos) if pos else 0:.1f} / "
-            f"{max(neg) if neg else 0:.1f}..{min(neg) if neg else 0:.1f} mm; half-diag 11.52 x sqrt2)",
+            inverted and len(pos) >= 2 and len(neg) >= 2 and y_max < 11.52,
+            f"B3: a REAL inverted image; the two faces land on OPPOSITE sensor halves, "
+            f"inside the sensor (+{min(pos) if pos else 0:.1f}..+{max(pos) if pos else 0:.1f} / "
+            f"{max(neg) if neg else 0:.1f}..{min(neg) if neg else 0:.1f} mm)",
         )
     finally:
         try:

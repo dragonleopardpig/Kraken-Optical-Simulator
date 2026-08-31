@@ -53,3 +53,25 @@ Folded DISPLAY over this straight trace — the two-arm display-fold pattern
 generalised to the five om05a folds (its `fold_points` assumes one +Y fold today),
 so the 3D canvas shows the REAL folded geometry with the prism assembly, mirrors,
 and camera in their CAD poses while the trace stays this verified chain.
+
+## v2 — the REAL lens (user: "the MV85 lens is PYRITE F4.5/85 mm/0.5x-2.0x V38, ID 1072517")
+
+Rebuilt on `attachment/Lens/PYRITE_45_85_05x-20x_V38_1072517`: exact two-group from
+its datasheet (EFL 85.13, SF −62.45, S'F' 63.18, span 39.52, f/4.5), its own barrel
+STEP wired for display. The object leg is the CAD-measured geometric path
+face→front rim = 275.4 mm (5.35 | outer 10.5 | 1.0 | lower 15 | 12.0 | centre 18 |
+213.55 to the unfolded RA mirror 1); the image side is the traced convergence.
+
+**Measured (guard re-pinned):** per-field rms 0.1–0.2 µm at the sensor; |m| =
+0.4298 → **effective glass-corrected conjugate 283.2 mm ≈ the assembly lens's own
+"LEN-MV85-280" designation** — recovered purely from CAD geometry + datasheet
+cardinals + plate physics (face→H 298 geometric − 14.8 mm equivalent-air shift).
+The image INVERTS (real lens): device face at +y object → −y sensor half. The rear
+leg converged to 21.6 + 1 + 77.5 ≈ 100 mm — matching the CAD rear-leg estimate.
+Note |m| 0.43 sits just under the lens's rated 0.5–2.0 range: the designed operating
+point per the CAD, worth confirming against the vendor's OEM spec.
+
+**Loading:** File → Open → `attachment/om05a_two_side.py`. Loads defer the trace
+(0646) — press **Trace Now** for rays. The PYRITE barrel + SV25 camera bodies draw;
+the prisms appear as their unfolded TUNNEL DIAGRAM (glass plates) — the honest
+straight-chain representation; the folded display over this trace is the follow-up.
