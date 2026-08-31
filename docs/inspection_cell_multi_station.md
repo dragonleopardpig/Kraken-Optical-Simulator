@@ -99,8 +99,22 @@ switches (0667). The generic axis right-click gains *Inspection Part (3D object)
 so the part is enabled from 3D too. One window end-to-end: part → ghosts → axis →
 Create/Open station → edit. The separate cell window remains for review/solve/export.
 
+### om05a two-side split-field station — SHIPPED v1 (0670, phase 503)
+
+The user's real target: inspect a device's two OPPOSITE sides with one camera
+(`attachment/om05a_26_1_r03_2s_lr_asm.stp`: prism assembly + RA mirror + MV85 +
+filter + RA mirror + 25 MP camera). Equal CAD path lengths ⇒ the five folds unfold
+to ONE chain: both end faces side by side in one object plane (patches ±5.5 mm),
+three prism glass plates, MV85 at its designated 280 mm conjugate, filter, sensor.
+Scene `attachment/om05a_two_side.py` + extracted component STEPs in
+`attachment/om05a_components/`. Verified: 0.7 µm per-field focus at the traced
+convergence (+3.4 mm glass shift, matches t(1−1/n)·m²), m to 0.02%, faces on
+opposite sensor halves. See `bugs/0670_om05a_split_field.md`.
+
 ### Remaining
 
+- om05a folded DISPLAY: generalise the two-arm display-fold to the five om05a folds
+  so the canvas shows the real folded geometry over this verified straight trace.
 - Non-flat parts: faces become picked planar regions of the part STEP.
 - Shared illumination: one LED lighting several faces; ray-level cross-talk checks.
 - Station labels in the cell view (and on ghosts in the live canvas).
