@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc" data-category="resonator" data-figure="68">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc" data-category="mode_density_2d" data-figure="68">
   <title id="title">Figure 68 — Exercise 10.3-1: Two-dimensional mode density</title>
   <desc id="desc">Figure 68, a concept diagram for Exercise 10.3-1, Two-dimensional mode density. The input, physical model, output, variables, and verification method are labeled.</desc>
   <defs>
@@ -18,15 +18,15 @@
   <text class="tag" x="70" y="153">GIVEN / DEFINITIONS</text>
   <text class="tag" x="475" y="153">MODEL / OPERATION</text>
   <text class="tag" x="880" y="153">RESULT / INTERPRETATION</text>
-  <text class="label" x="195"><tspan x="195" y="272">mirror geometry and</tspan><tspan x="195" y="299">seed ray</tspan></text>
-  <text class="label" x="607"><tspan x="607" y="390">round-trip condition</tspan></text>
-  <text class="label" x="1005"><tspan x="1005" y="285">resonant modes</tspan></text>
+  <text class="label" x="195"><tspan x="195" y="272">two-dimensional cavity</tspan><tspan x="195" y="299">of area A</tspan></text>
+  <text class="label" x="607"><tspan x="607" y="377">count quarter-circle</tspan><tspan x="607" y="404">k-space states</tspan></text>
+  <text class="label" x="1005"><tspan x="1005" y="272">modes per area per</tspan><tspan x="1005" y="299">hertz</tspan></text>
   <line class="flow" x1="345" y1="270" x2="440" y2="270"/>
   <line class="flow" x1="765" y1="270" x2="845" y2="270"/>
-  <path class="optic" d="M500 185 Q535 270 500 355 M720 185 Q685 270 720 355"/><path class="accent" d="M535 270 H685"/><path class="accent2" d="M540 270 C555 230 570 310 585 270 S615 230 630 270 S660 230 680 270"/><circle class="point" cx="535" cy="270" r="5"/><circle class="point" cx="685" cy="270" r="5"/>
-  <g id="variable-labels"><line class="callout" x1="535" y1="365" x2="685" y2="365"/><path class="tick" d="M535 359 V371 M685 359 V371"/><text class="var" x="610" y="355">L</text><text class="var" x="500" y="205">R₁</text><text class="var" x="720" y="205">R₂</text><text class="var smallvar" x="550" y="230">g₁</text><text class="var smallvar" x="670" y="230">g₂</text><text class="var" x="620" y="215">ν</text></g>
+  <path class="axis" d="M505 345 V190 M495 335 H735"/><path class="accent" d="M505 205 A130 130 0 0 1 635 335"/><path class="thin" stroke-dasharray="5 5" d="M505 305 H635 M535 335 V205 M505 275 H635 M565 335 V205 M505 245 H635 M595 335 V205 M625 335 V205"/><circle class="point" cx="535" cy="305" r="5"/><circle class="point" cx="565" cy="305" r="5"/><circle class="point" cx="595" cy="305" r="5"/><circle class="point" cx="535" cy="275" r="5"/><circle class="point" cx="565" cy="275" r="5"/><circle class="point" cx="595" cy="275" r="5"/><circle class="point" cx="535" cy="245" r="5"/><circle class="point" cx="565" cy="245" r="5"/><rect class="layer1" x="660" y="225" width="70" height="70"/>
+  <g id="variable-labels"><text class="var" x="500" y="190">kᵧ</text><text class="var" x="720" y="350">kₓ</text><text class="var smallvar" x="545" y="325">qₓ</text><text class="var smallvar" x="520" y="275">qᵧ</text><text class="var" x="635" y="220">ν</text><text class="var" x="695" y="260">A</text><text class="var smallvar" x="695" y="320">M₂</text></g>
 
   <rect class="band" x="45" y="430" width="1110" height="115" rx="12"/>
-  <text class="legend" x="65"><tspan x="65" y="462">Variables labeled on model — L: cavity length • R₁,R₂: radii • g₁,g₂: stability factors • ν: frequency</tspan></text>
-  <text class="check" x="65"><tspan x="65" y="522">Independent check — round-trip phase, stability interval, and mode spacing</tspan></text>
+  <text class="legend" x="65"><tspan x="65" y="462">Variables labeled on model — A: cavity area • kₓ,kᵧ: wavevector components • qₓ,qᵧ: mode indices • ν: frequency •</tspan><tspan x="65" y="484">M₂: mode count</tspan></text>
+  <text class="check" x="65"><tspan x="65" y="522">Independent check — include two polarizations, then differentiate the quarter-disk state count</tspan></text>
 </svg>

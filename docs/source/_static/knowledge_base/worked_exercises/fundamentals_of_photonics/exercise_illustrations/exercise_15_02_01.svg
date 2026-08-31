@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc" data-category="laser" data-figure="89">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc" data-category="laser_band" data-figure="89">
   <title id="title">Figure 89 — Exercise 15.2-1: Gas-laser oscillation band</title>
   <desc id="desc">Figure 89, a concept diagram for Exercise 15.2-1, Gas-laser oscillation band. The input, physical model, output, variables, and verification method are labeled.</desc>
   <defs>
@@ -18,15 +18,15 @@
   <text class="tag" x="70" y="153">GIVEN / DEFINITIONS</text>
   <text class="tag" x="475" y="153">MODEL / OPERATION</text>
   <text class="tag" x="880" y="153">RESULT / INTERPRETATION</text>
-  <text class="label" x="195"><tspan x="195" y="272">pump, gain, and cavity</tspan><tspan x="195" y="299">loss</tspan></text>
-  <text class="label" x="607"><tspan x="607" y="390">threshold / pulse dynamics</tspan></text>
-  <text class="label" x="1005"><tspan x="1005" y="285">laser modes or pulse</tspan></text>
+  <text class="label" x="195"><tspan x="195" y="272">Gaussian gain and</tspan><tspan x="195" y="299">cavity-mode comb</tspan></text>
+  <text class="label" x="607"><tspan x="607" y="377">gain exceeds loss inside</tspan><tspan x="607" y="404">band B</tspan></text>
+  <text class="label" x="1005"><tspan x="1005" y="272">oscillating modes in</tspan><tspan x="1005" y="299">the band</tspan></text>
   <line class="flow" x1="345" y1="270" x2="440" y2="270"/>
   <line class="flow" x1="765" y1="270" x2="845" y2="270"/>
-  <path class="optic" d="M495 190 Q525 270 495 350 M720 190 Q690 270 720 350"/><rect class="layer1" x="570" y="225" width="75" height="90"/><path class="accent" d="M505 270 H710"/><path class="accent2" d="M607 350 V315"/>
-  <g id="variable-labels"><text class="var" x="590" y="255">N</text><text class="var" x="625" y="255">g</text><text class="var" x="607" y="340">τ</text><text class="var" x="485" y="205">R</text><text class="var" x="700" y="255">P</text></g>
+  <path class="axis" d="M485 345 H735 M500 355 V185"/><path class="accent" d="M500 340 C535 338 550 300 575 230 C590 188 630 188 645 230 C670 300 685 338 725 340"/><line class="accent2" x1="500" y1="285" x2="725" y2="285"/><path class="thin" d="M560 345 V315 M578 345 V300 M596 345 V292 M614 345 V292 M632 345 V300 M650 345 V315"/><path class="callout" d="M550 305 V325 H660 V305"/>
+  <g id="variable-labels"><text class="var" x="590" y="205">γ₀</text><text class="var smallvar" x="705" y="275">αr</text><text class="var smallvar" x="540" y="245">ΔνD</text><text class="var" x="605" y="320">B</text><text class="var smallvar" x="615" y="365">νF</text></g>
 
   <rect class="band" x="45" y="430" width="1110" height="115" rx="12"/>
-  <text class="legend" x="65"><tspan x="65" y="462">Variables labeled on model — N: inversion • g: gain • τ: lifetime • R: reflectance • P: power</tspan></text>
-  <text class="check" x="65"><tspan x="65" y="522">Independent check — threshold balance, energy conservation, and time scale</tspan></text>
+  <text class="legend" x="65"><tspan x="65" y="462">Variables labeled on model — γ₀: peak gain • αr: resonator loss • ΔνD: Doppler FWHM • B: oscillation bandwidth •</tspan><tspan x="65" y="484">νF: cavity FSR</tspan></text>
+  <text class="check" x="65"><tspan x="65" y="522">Independent check — gain equals αr at both band edges and mode spacing is νF=c/(2nd)</tspan></text>
 </svg>

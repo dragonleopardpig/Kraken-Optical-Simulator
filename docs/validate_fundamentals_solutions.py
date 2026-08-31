@@ -64,7 +64,7 @@ EQUATION_LABEL_RE = re.compile(r"^   :label: (fop-[a-z0-9-]+)$", re.MULTILINE)
 
 EXPECTED_VISIBLE_VARIABLES = {
     "ray": ("n₁", "n₂", "θ₁", "θ₂"),
-    "mirror": ("y", "θᵢ", "θᵣ", "R", "f"),
+    "mirror": ("y₁", "y₂", "z₁", "z₂", "R", "f"),
     "lens": ("n", "y", "R₁", "R₂", "f"),
     "refracting": ("n₁", "n₂", "θ₁", "θ₂", "y", "R", "z₁", "z₂"),
     "cartesian_oval": ("n₁", "n₂", "y", "z", "z₁", "z₂"),
@@ -83,11 +83,19 @@ EXPECTED_VISIBLE_VARIABLES = {
     "waveguide": ("n₁", "n₂", "d", "a", "β", "V"),
     "fiber": ("a", "NA", "β", "L"),
     "resonator": ("L", "R₁", "R₂", "g₁", "g₂", "ν"),
+    "ring_resonator": ("Lₒ", "Nₘ", "q", "νq", "νF"),
+    "fabry_perot": ("d", "R₁", "R₂", "νF", "ℱ", "Δν"),
+    "plano_concave": ("d", "R₂", "z₀", "W₀", "W₂", "λ"),
+    "mode_density_2d": ("A", "kₓ", "kᵧ", "qₓ", "qᵧ", "ν", "M₂"),
     "statistical": ("J", "g", "Tᶜ", "Δν"),
     "quantum": ("hν", "p", "P", "σ"),
     "atomic": ("Eᵢ", "ν", "Nᵢ", "T"),
     "amplifier": ("Nᵢ", "Rₚ", "σ", "G"),
     "laser": ("N", "g", "τ", "R", "P"),
+    "ruby_threshold": ("d", "A", "n", "R₁", "R₂", "α₀", "σ₀", "αr", "tp", "Nt"),
+    "laser_band": ("γ₀", "αr", "ΔνD", "B", "νF"),
+    "q_switch": ("Ni", "Nt", "n", "tp", "P", "E"),
+    "mode_locking": ("Aq", "q", "νF", "A(t)", "TR"),
     "semiconductor": ("Eᶜ", "Eᵥ", "Fₙ", "Fₚ", "n", "p"),
     "source": ("Eᵧ", "Fₙ", "Fₚ", "λ", "η"),
     "detector": ("Φ", "η", "ℛ", "B", "i"),
@@ -104,9 +112,10 @@ CATEGORY_GEOMETRY_TOKENS = {
         'd="M566 270 A44 44 0 0 1 571 250 M654 270 A44 44 0 0 1 651 285"',
     ),
     "mirror": (
-        'd="M690 185 Q625 225 625 270 Q625 315 690 355"',
-        'x1="625" y1="190" x2="625" y2="350"',
-        'd="M480 205 L625 270 L480 335"',
+        'd="M625 185 Q690 225 690 270 Q690 315 625 355"',
+        'd="M480 240 H685 L635 270 L580 303 M480 240 L690 270 L580 286"',
+        'C</text>',
+        'F</text>',
     ),
     "lens": (
         'x1="604" y1="185" x2="604" y2="355"',
@@ -139,14 +148,50 @@ CATEGORY_GEOMETRY_TOKENS = {
         'd="M478 230 L590 230 L710 270 M478 310 L590 310 L710 270"',
     ),
     "resonator": (
-        'd="M535 270 H685"',
-        'cx="535" cy="270" r="5"',
-        'cx="685" cy="270" r="5"',
+        'd="M535 185 Q500 225 500 270 Q500 315 535 355 M685 185 Q720 225 720 270 Q720 315 685 355"',
+        'd="M510 270 H710"',
+        "both concave faces point inward",
+    ),
+    "ring_resonator": (
+        'd="M485 315 L530 200 L580 315 Z M615 210 L725 315 L615 315 L725 210 Z"',
+    ),
+    "fabry_perot": (
+        'x1="515" y1="190" x2="515" y2="350"',
+        'x1="705" y1="190" x2="705" y2="350"',
+        "plane reflecting faces",
+    ),
+    "plano_concave": (
+        'x1="515" y1="190" x2="515" y2="350"',
+        'd="M665 190 Q720 230 720 270 Q720 310 665 350"',
+        "waist at plane mirror",
+    ),
+    "mode_density_2d": (
+        'd="M505 205 A130 130 0 0 1 635 335"',
+        'x="660" y="225" width="70" height="70"',
+    ),
+    "ruby_threshold": (
+        'x="545" y="230" width="130" height="80"',
+        'x1="535" y1="205" x2="535" y2="335"',
+        'x1="685" y1="205" x2="685" y2="335"',
+    ),
+    "laser_band": (
+        'd="M500 340 C535 338 550 300 575 230 C590 188 630 188 645 230 C670 300 685 338 725 340"',
+        'x1="500" y1="285" x2="725" y2="285"',
+    ),
+    "q_switch": (
+        'd="M500 220 H585 V315 C610 330 655 330 725 330"',
+        'd="M500 340 C570 340 580 338 590 320 C600 295 604 205 614 195',
+    ),
+    "mode_locking": (
+        'd="M485 330 V310 M495 330 V295 M505 330 V275 M515 330 V245',
+        'd="M625 330 C640 330 642 205 655 205 C668 205 670 330 682 330',
     ),
     "waveguide": (
         'd="M480 270 L530 248 L580 297 L630 248 L680 297 L735 270"',
     ),
 }
+
+CUSTOM_ILLUSTRATIONS = {"exercise_15_04_01.svg"}
 
 
 def fail(message: str) -> None:
@@ -271,45 +316,56 @@ def main() -> None:
                     fail(f"{identity} illustration is invalid XML: {error}")
                 svg_root = svg_tree.getroot()
                 exercise_svg = svg_path.read_text(encoding="utf-8")
-                for required_svg_text in (
+                required_svg_texts = [
                     f"Figure {expected_figure_number}",
                     f"Exercise {id_chapter}.{section}-{item}",
-                    "GIVEN / DEFINITIONS",
-                    "MODEL / OPERATION",
-                    "RESULT / INTERPRETATION",
-                    "Variables labeled on model —",
-                    "Independent check —",
-                ):
+                ]
+                if svg_name not in CUSTOM_ILLUSTRATIONS:
+                    required_svg_texts.extend(
+                        (
+                            "GIVEN / DEFINITIONS",
+                            "MODEL / OPERATION",
+                            "RESULT / INTERPRETATION",
+                            "Variables labeled on model —",
+                            "Independent check —",
+                        )
+                    )
+                for required_svg_text in required_svg_texts:
                     if required_svg_text not in exercise_svg:
                         fail(f"{identity} illustration omits {required_svg_text}")
                 if svg_root.get("data-figure") != str(expected_figure_number):
                     fail(f"{identity} SVG carries the wrong figure number")
-                category = svg_root.get("data-category")
-                if category not in EXPECTED_VISIBLE_VARIABLES:
-                    fail(f"{identity} SVG has unknown category {category!r}")
-                variable_group = next(
-                    (
-                        element
-                        for element in svg_root.iter()
-                        if element.get("id") == "variable-labels"
-                    ),
-                    None,
-                )
-                if variable_group is None:
-                    fail(f"{identity} SVG has no variable-labels group")
-                visible_variable_text = " ".join(variable_group.itertext())
-                for variable in EXPECTED_VISIBLE_VARIABLES[category]:
-                    if variable not in visible_variable_text:
+                if svg_name not in CUSTOM_ILLUSTRATIONS:
+                    category = svg_root.get("data-category")
+                    if category not in EXPECTED_VISIBLE_VARIABLES:
+                        fail(f"{identity} SVG has unknown category {category!r}")
+                    variable_group = next(
+                        (
+                            element
+                            for element in svg_root.iter()
+                            if element.get("id") == "variable-labels"
+                        ),
+                        None,
+                    )
+                    if variable_group is None:
                         fail(
-                            f"{identity} lists {variable} but does not label it "
-                            "on the model"
+                            f"{identity} SVG has no variable-labels group"
                         )
-                for geometry_token in CATEGORY_GEOMETRY_TOKENS.get(category, ()):
-                    if geometry_token not in exercise_svg:
-                        fail(
-                            f"{identity} {category} geometry regression: "
-                            f"missing {geometry_token}"
-                        )
+                    visible_variable_text = " ".join(variable_group.itertext())
+                    for variable in EXPECTED_VISIBLE_VARIABLES[category]:
+                        if variable not in visible_variable_text:
+                            fail(
+                                f"{identity} lists {variable} but does not "
+                                "label it on the model"
+                            )
+                    for geometry_token in CATEGORY_GEOMETRY_TOKENS.get(
+                        category, ()
+                    ):
+                        if geometry_token not in exercise_svg:
+                            fail(
+                                f"{identity} {category} geometry regression: "
+                                f"missing {geometry_token}"
+                            )
                 illustrated_exercises += 1
 
             # Every displayed equation must carry a Sphinx label immediately

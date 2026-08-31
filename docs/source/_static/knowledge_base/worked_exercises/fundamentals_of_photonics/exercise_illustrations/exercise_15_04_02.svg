@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc" data-category="laser" data-figure="91">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc" data-category="q_switch" data-figure="91">
   <title id="title">Figure 91 — Exercise 15.4-2: Q-switched ruby pulse</title>
   <desc id="desc">Figure 91, a concept diagram for Exercise 15.4-2, Q-switched ruby pulse. The input, physical model, output, variables, and verification method are labeled.</desc>
   <defs>
@@ -18,15 +18,15 @@
   <text class="tag" x="70" y="153">GIVEN / DEFINITIONS</text>
   <text class="tag" x="475" y="153">MODEL / OPERATION</text>
   <text class="tag" x="880" y="153">RESULT / INTERPRETATION</text>
-  <text class="label" x="195"><tspan x="195" y="272">pump, gain, and cavity</tspan><tspan x="195" y="299">loss</tspan></text>
-  <text class="label" x="607"><tspan x="607" y="390">threshold / pulse dynamics</tspan></text>
-  <text class="label" x="1005"><tspan x="1005" y="285">laser modes or pulse</tspan></text>
+  <text class="label" x="195"><tspan x="195" y="272">stored inversion</tspan><tspan x="195" y="299">Ni/Nt=6</tspan></text>
+  <text class="label" x="607"><tspan x="607" y="377">switch rapidly from low Q</tspan><tspan x="607" y="404">to high Q</tspan></text>
+  <text class="label" x="1005"><tspan x="1005" y="272">short, high-power</tspan><tspan x="1005" y="299">laser pulse</tspan></text>
   <line class="flow" x1="345" y1="270" x2="440" y2="270"/>
   <line class="flow" x1="765" y1="270" x2="845" y2="270"/>
-  <path class="optic" d="M495 190 Q525 270 495 350 M720 190 Q690 270 720 350"/><rect class="layer1" x="570" y="225" width="75" height="90"/><path class="accent" d="M505 270 H710"/><path class="accent2" d="M607 350 V315"/>
-  <g id="variable-labels"><text class="var" x="590" y="255">N</text><text class="var" x="625" y="255">g</text><text class="var" x="607" y="340">τ</text><text class="var" x="485" y="205">R</text><text class="var" x="700" y="255">P</text></g>
+  <path class="axis" d="M485 345 H735 M500 355 V185"/><path class="accent2" d="M500 220 H585 V315 C610 330 655 330 725 330"/><path class="accent" d="M500 340 C570 340 580 338 590 320 C600 295 604 205 614 195 C624 205 628 295 638 320 C648 338 665 340 725 340"/><path class="thin" stroke-dasharray="7 6" d="M585 185 V345"/><path class="callout" d="M600 220 H628"/>
+  <g id="variable-labels"><text class="var smallvar" x="535" y="210">Ni/Nt=6</text><text class="var" x="565" y="305">n</text><text class="var smallvar" x="585" y="180">tp</text><text class="var" x="615" y="190">P</text><text class="var" x="640" y="250">E</text><text class="annotation" x="550" y="335">low Q</text><text class="annotation" x="675" y="335">high Q</text></g>
 
   <rect class="band" x="45" y="430" width="1110" height="115" rx="12"/>
-  <text class="legend" x="65"><tspan x="65" y="462">Variables labeled on model — N: inversion • g: gain • τ: lifetime • R: reflectance • P: power</tspan></text>
-  <text class="check" x="65"><tspan x="65" y="522">Independent check — threshold balance, energy conservation, and time scale</tspan></text>
+  <text class="legend" x="65"><tspan x="65" y="462">Variables labeled on model — Ni,Nt: initial/threshold inversion • n: photon density • tp: photon lifetime • P:</tspan><tspan x="65" y="484">output power • E: pulse energy</tspan></text>
+  <text class="check" x="65"><tspan x="65" y="522">Independent check — read normalized coordinates first, then dimensionalize time, power, and energy</tspan></text>
 </svg>

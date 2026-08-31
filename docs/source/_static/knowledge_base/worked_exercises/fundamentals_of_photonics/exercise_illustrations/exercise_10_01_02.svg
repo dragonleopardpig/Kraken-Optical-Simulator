@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc" data-category="resonator" data-figure="63">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc" data-category="fabry_perot" data-figure="63">
   <title id="title">Figure 63 — Exercise 10.1-2: One-metre Fabry–Perot</title>
   <desc id="desc">Figure 63, a concept diagram for Exercise 10.1-2, One-metre Fabry–Perot. The input, physical model, output, variables, and verification method are labeled.</desc>
   <defs>
@@ -18,15 +18,15 @@
   <text class="tag" x="70" y="153">GIVEN / DEFINITIONS</text>
   <text class="tag" x="475" y="153">MODEL / OPERATION</text>
   <text class="tag" x="880" y="153">RESULT / INTERPRETATION</text>
-  <text class="label" x="195"><tspan x="195" y="272">mirror geometry and</tspan><tspan x="195" y="299">seed ray</tspan></text>
-  <text class="label" x="607"><tspan x="607" y="390">round-trip condition</tspan></text>
-  <text class="label" x="1005"><tspan x="1005" y="285">resonant modes</tspan></text>
+  <text class="label" x="195"><tspan x="195" y="272">d=1 m and two plane</tspan><tspan x="195" y="299">reflectors</tspan></text>
+  <text class="label" x="607"><tspan x="607" y="377">repeated plane-parallel</tspan><tspan x="607" y="404">round trips</tspan></text>
+  <text class="label" x="1005"><tspan x="1005" y="272">FSR, finesse, and</tspan><tspan x="1005" y="299">linewidth</tspan></text>
   <line class="flow" x1="345" y1="270" x2="440" y2="270"/>
   <line class="flow" x1="765" y1="270" x2="845" y2="270"/>
-  <path class="optic" d="M500 185 Q535 270 500 355 M720 185 Q685 270 720 355"/><path class="accent" d="M535 270 H685"/><path class="accent2" d="M540 270 C555 230 570 310 585 270 S615 230 630 270 S660 230 680 270"/><circle class="point" cx="535" cy="270" r="5"/><circle class="point" cx="685" cy="270" r="5"/>
-  <g id="variable-labels"><line class="callout" x1="535" y1="365" x2="685" y2="365"/><path class="tick" d="M535 359 V371 M685 359 V371"/><text class="var" x="610" y="355">L</text><text class="var" x="500" y="205">R₁</text><text class="var" x="720" y="205">R₂</text><text class="var smallvar" x="550" y="230">g₁</text><text class="var smallvar" x="670" y="230">g₂</text><text class="var" x="620" y="215">ν</text></g>
+  <line class="optic" x1="515" y1="190" x2="515" y2="350"/><line class="optic" x1="705" y1="190" x2="705" y2="350"/><path class="thin" d="M502 200 l13 8 M502 220 l13 8 M502 320 l13 8 M502 340 l13 8 M705 208 l13 -8 M705 228 l13 -8 M705 328 l13 -8 M705 348 l13 -8"/><path class="accent" d="M525 245 H695 M695 295 H525"/><path class="accent2" d="M535 270 C550 230 565 310 580 270 S610 230 625 270 S655 230 670 270 S685 245 695 270"/>
+  <g id="variable-labels"><line class="callout" x1="515" y1="365" x2="705" y2="365"/><path class="tick" d="M515 359 V371 M705 359 V371"/><text class="var" x="610" y="355">d</text><text class="var" x="535" y="205">R₁</text><text class="var" x="685" y="205">R₂</text><text class="var smallvar" x="555" y="235">νF</text><text class="var smallvar" x="610" y="235">ℱ</text><text class="var smallvar" x="665" y="235">Δν</text><text class="annotation" x="610" y="335">plane reflecting faces</text></g>
 
   <rect class="band" x="45" y="430" width="1110" height="115" rx="12"/>
-  <text class="legend" x="65"><tspan x="65" y="462">Variables labeled on model — L: cavity length • R₁,R₂: radii • g₁,g₂: stability factors • ν: frequency</tspan></text>
-  <text class="check" x="65"><tspan x="65" y="522">Independent check — round-trip phase, stability interval, and mode spacing</tspan></text>
+  <text class="legend" x="65"><tspan x="65" y="462">Variables labeled on model — d: mirror separation • R₁,R₂: power reflectances • νF: free spectral range • ℱ:</tspan><tspan x="65" y="484">finesse • Δν: FWHM</tspan></text>
+  <text class="check" x="65"><tspan x="65" y="522">Independent check — νF=c/(2d), Δν=νF/ℱ, and both reflecting faces point inward</tspan></text>
 </svg>

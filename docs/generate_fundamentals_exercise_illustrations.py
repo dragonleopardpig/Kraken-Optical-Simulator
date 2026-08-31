@@ -33,6 +33,13 @@ ENTRY_RE = re.compile(
     re.MULTILINE,
 )
 
+# These audited entries use hand-tuned geometry or explanatory captions.  Keep
+# their SVGs and captions intact when the generic set is regenerated.
+CUSTOM_EXERCISE_SVGS = {
+    "exercise_02_04_01.svg",
+    "exercise_15_04_01.svg",
+}
+
 
 @dataclass(frozen=True)
 class DiagramMeta:
@@ -217,11 +224,11 @@ META = {
 # These variants share the ray-optics variable set but use distinct physical
 # icons so a mirror is never drawn as a lens (and vice versa).
 META["mirror"] = DiagramMeta(
-    "object and incident ray",
-    "reflection at mirror",
-    "image or reflected ray",
-    "y: ray height • θᵢ,θᵣ: incidence/reflection angles • R: radius • f: focal length",
-    "reflection symmetry, sign convention, and paraxial limit",
+    "object height and distance",
+    "concave-mirror ray construction",
+    "inverted paraxial image",
+    "y₁,y₂: object/image heights • z₁,z₂: conjugate distances • R: radius • f: focal length",
+    "the reflecting bowl faces the object; 1/z₁+1/z₂=2/R=1/f",
 )
 META["lens"] = DiagramMeta(
     "object or incident beam",
@@ -278,6 +285,62 @@ META["grin_fiber_acceptance"] = DiagramMeta(
     "accepted oscillating ray",
     "n₀: axial index • a: gradient constant • aₑ: fibre radius • θ₀: launch angle • NA: numerical aperture",
     "the ray remains within |y|≤aₑ and NA≃n₀aaₑ",
+)
+META["ring_resonator"] = DiagramMeta(
+    "three- and four-mirror closed paths",
+    "round-trip phase equals 2πq",
+    "resonance frequencies and FSR",
+    "Lₒ: round-trip optical length • Nₘ: mirror count • q: longitudinal order • νq: resonance • νF: free spectral range",
+    "νq=c(q−Nₘ/2)/Lₒ and adjacent orders differ by νF=c/Lₒ",
+)
+META["fabry_perot"] = DiagramMeta(
+    "d=1 m and two plane reflectors",
+    "repeated plane-parallel round trips",
+    "FSR, finesse, and linewidth",
+    "d: mirror separation • R₁,R₂: power reflectances • νF: free spectral range • ℱ: finesse • Δν: FWHM",
+    "νF=c/(2d), Δν=νF/ℱ, and both reflecting faces point inward",
+)
+META["plano_concave"] = DiagramMeta(
+    "one plane and one concave mirror",
+    "Gaussian waist at plane mirror",
+    "stable length and spot sizes",
+    "d: separation • R₂: concave radius • z₀: Rayleigh range • W₀,W₂: beam radii • λ: wavelength",
+    "0<d<|R₂|, z₀²=d(|R₂|−d), and the curved face opens toward the plane mirror",
+)
+META["mode_density_2d"] = DiagramMeta(
+    "two-dimensional cavity of area A",
+    "count quarter-circle k-space states",
+    "modes per area per hertz",
+    "A: cavity area • kₓ,kᵧ: wavevector components • qₓ,qᵧ: mode indices • ν: frequency • M₂: mode count",
+    "include two polarizations, then differentiate the quarter-disk state count",
+)
+META["ruby_threshold"] = DiagramMeta(
+    "10 cm ruby rod with R₁=R₂=0.80",
+    "plane coated ends; gain balances loss",
+    "σ₀, αr, tp, and threshold Nt",
+    "d: rod length • A: area • n: index • R₁,R₂: end reflectances • α₀: absorption • σ₀: cross section • αr: resonator loss • tp: photon lifetime • Nt: threshold inversion",
+    "e^(−2αr d)=R₁R₂, tp=n/(cαr), and Nt=αr/σ₀; no curved mirrors are specified",
+)
+META["laser_band"] = DiagramMeta(
+    "Gaussian gain and cavity-mode comb",
+    "gain exceeds loss inside band B",
+    "oscillating modes in the band",
+    "γ₀: peak gain • αr: resonator loss • ΔνD: Doppler FWHM • B: oscillation bandwidth • νF: cavity FSR",
+    "gain equals αr at both band edges and mode spacing is νF=c/(2nd)",
+)
+META["q_switch"] = DiagramMeta(
+    "stored inversion Ni/Nt=6",
+    "switch rapidly from low Q to high Q",
+    "short, high-power laser pulse",
+    "Ni,Nt: initial/threshold inversion • n: photon density • tp: photon lifetime • P: output power • E: pulse energy",
+    "read normalized coordinates first, then dimensionalize time, power, and energy",
+)
+META["mode_locking"] = DiagramMeta(
+    "eleven longitudinal amplitudes Aq",
+    "lock modal phases",
+    "periodic coherent pulse train",
+    "Aq: modal amplitude • q: mode index • νF: mode spacing • A(t): total field • TR=1/νF: repetition period",
+    "sum q=−5…5 coherently and normalize by Σ|Aq|²",
 )
 
 
@@ -352,13 +415,31 @@ def category_for(chapter: int, title: str) -> str:
         return "prism"
     if chapter == 2 and "grin" in lower:
         return "grin"
+    if chapter == 10:
+        if "ring and bow-tie" in lower:
+            return "ring_resonator"
+        if "fabry" in lower:
+            return "fabry_perot"
+        if "plano-concave" in lower:
+            return "plano_concave"
+        if "two-dimensional mode density" in lower:
+            return "mode_density_2d"
+    if chapter == 15:
+        if "ruby threshold" in lower:
+            return "ruby_threshold"
+        if "oscillation band" in lower:
+            return "laser_band"
+        if "q-switched" in lower:
+            return "q_switch"
+        if "mode-locking" in lower:
+            return "mode_locking"
     return CHAPTER_CATEGORY[chapter]
 
 
 def icon_markup(category: str) -> str:
     icons = {
         "ray": '<line class="optic" x1="610" y1="180" x2="610" y2="360"/><line class="axis" x1="475" y1="270" x2="740" y2="270" stroke-dasharray="8 7"/><path class="accent" d="M480 205 L610 270 L738 315"/><path class="accent2" d="M566 270 A44 44 0 0 1 571 250 M654 270 A44 44 0 0 1 651 285"/>',
-        "mirror": '<path class="optic" d="M690 185 Q625 225 625 270 Q625 315 690 355"/><line class="axis" x1="475" y1="270" x2="735" y2="270" stroke-dasharray="8 7"/><line class="thin" x1="625" y1="190" x2="625" y2="350" stroke-dasharray="8 7"/><path class="accent" d="M480 205 L625 270 L480 335"/><path class="accent2" d="M580 270 A45 45 0 0 1 584 252 M580 270 A45 45 0 0 0 584 288"/><line class="callout" x1="625" y1="270" x2="720" y2="270"/><circle class="point" cx="625" cy="270" r="6"/><circle class="point" cx="672" cy="270" r="4"/><circle class="point" cx="720" cy="270" r="5"/>',
+        "mirror": '<path class="optic" d="M625 185 Q690 225 690 270 Q690 315 625 355"/><line class="axis" x1="470" y1="270" x2="735" y2="270" stroke-dasharray="8 7"/><path class="accent" d="M480 240 H685 L635 270 L580 303 M480 240 L690 270 L580 286"/><path class="accent2" d="M480 270 V240 M616 270 V281"/><path class="thin" d="M625 185 l16 8 M616 202 l17 8 M625 355 l16 -8 M616 338 l17 -8"/><circle class="point" cx="580" cy="270" r="4"/><circle class="point" cx="635" cy="270" r="4"/><circle class="point" cx="690" cy="270" r="5"/><circle class="point" cx="616" cy="281" r="5"/>',
         "lens": '<path class="accent" d="M482 235 L604 270 L700 305 L735 318"/><path class="optic" d="M604 188 Q585 270 604 352 M604 188 Q623 270 604 352"/><line class="thin" x1="604" y1="185" x2="604" y2="355" stroke-dasharray="7 6"/><line class="axis" x1="475" y1="305" x2="735" y2="305"/><circle class="point" cx="604" cy="270" r="5"/><circle class="point" cx="700" cy="305" r="6"/>',
         "refracting": '<path class="optic" d="M700 175 A95 95 0 0 0 605 270 A95 95 0 0 0 700 365"/><line class="axis" x1="475" y1="270" x2="740" y2="270" stroke-dasharray="8 7"/><line class="thin" x1="579" y1="201" x2="657" y2="245" stroke-dasharray="7 6"/><path class="accent" d="M480 223 L618 223 L738 262"/><path class="accent2" d="M573 223 A45 45 0 0 1 579 201 M660 247 A48 48 0 0 0 664 238"/><line class="callout" x1="618" y1="223" x2="700" y2="270"/><circle class="point" cx="618" cy="223" r="6"/><circle class="point" cx="700" cy="270" r="5"/>',
         "cartesian_oval": '<path class="optic" d="M660 185 C585 210 585 330 660 355"/><path class="accent" d="M480 270 L625 205 L730 270 M480 270 L610 270 L730 270 M480 270 L625 335 L730 270"/><line class="axis" x1="475" y1="270" x2="740" y2="270" stroke-dasharray="8 7"/><circle class="point" cx="480" cy="270" r="7"/><circle class="point" cx="730" cy="270" r="7"/>',
@@ -376,12 +457,20 @@ def icon_markup(category: str) -> str:
         "fiber_acceptance": '<rect class="layer2" x="565" y="195" width="170" height="40"/><rect class="layer1" x="565" y="235" width="170" height="70"/><rect class="layer2" x="565" y="305" width="170" height="40"/><line class="optic" x1="565" y1="195" x2="565" y2="345"/><line class="axis" x1="475" y1="270" x2="740" y2="270" stroke-dasharray="8 7"/><line class="thin" x1="700" y1="270" x2="700" y2="340" stroke-dasharray="7 6"/><path class="accent2" stroke-dasharray="8 6" d="M480 190 L565 250 M480 350 L565 290"/><path class="accent" d="M480 190 L565 250 L700 305 L735 291"/><path class="accent2" d="M530 250 A35 35 0 0 1 536 230 M600 250 A35 35 0 0 1 597 263 M700 275 A30 30 0 0 0 672 294"/><circle class="point" cx="565" cy="250" r="5"/><circle class="point" cx="700" cy="305" r="5"/>',
         "grin_fiber_acceptance": '<rect class="layer2" x="550" y="205" width="185" height="130"/><rect class="layer1" x="550" y="220" width="185" height="100"/><line class="optic" x1="550" y1="205" x2="550" y2="335"/><line class="axis" x1="475" y1="270" x2="740" y2="270" stroke-dasharray="8 7"/><path class="accent2" stroke-dasharray="8 6" d="M480 205 L550 245 M480 335 L550 295"/><path class="accent" d="M480 205 L550 245 C590 220 610 320 650 295 S705 230 735 250"/>',
         "fiber": '<circle class="layer2" cx="610" cy="270" r="105"/><circle class="layer1" cx="610" cy="270" r="62"/><path class="accent" d="M492 270 L548 235 L610 300 L672 235 L728 270"/>',
-        "resonator": '<path class="optic" d="M500 185 Q535 270 500 355 M720 185 Q685 270 720 355"/><path class="accent" d="M535 270 H685"/><path class="accent2" d="M540 270 C555 230 570 310 585 270 S615 230 630 270 S660 230 680 270"/><circle class="point" cx="535" cy="270" r="5"/><circle class="point" cx="685" cy="270" r="5"/>',
+        "resonator": '<path class="optic" d="M535 185 Q500 225 500 270 Q500 315 535 355 M685 185 Q720 225 720 270 Q720 315 685 355"/><path class="accent" d="M510 270 H710"/><path class="accent2" d="M515 270 C530 230 545 310 560 270 S590 230 605 270 S635 230 650 270 S680 230 705 270"/><path class="thin" d="M535 185 l-14 8 M685 185 l14 8 M535 355 l-14 -8 M685 355 l14 -8"/><circle class="point" cx="500" cy="270" r="5"/><circle class="point" cx="720" cy="270" r="5"/>',
+        "ring_resonator": '<path class="accent" d="M485 315 L530 200 L580 315 Z M615 210 L725 315 L615 315 L725 210 Z"/><circle class="point" cx="485" cy="315" r="7"/><circle class="point" cx="530" cy="200" r="7"/><circle class="point" cx="580" cy="315" r="7"/><circle class="point" cx="615" cy="210" r="7"/><circle class="point" cx="725" cy="315" r="7"/><circle class="point" cx="615" cy="315" r="7"/><circle class="point" cx="725" cy="210" r="7"/><path class="accent2" d="M515 282 l12 -7 l-2 14 M667 260 l13 1 l-8 10"/>',
+        "fabry_perot": '<line class="optic" x1="515" y1="190" x2="515" y2="350"/><line class="optic" x1="705" y1="190" x2="705" y2="350"/><path class="thin" d="M502 200 l13 8 M502 220 l13 8 M502 320 l13 8 M502 340 l13 8 M705 208 l13 -8 M705 228 l13 -8 M705 328 l13 -8 M705 348 l13 -8"/><path class="accent" d="M525 245 H695 M695 295 H525"/><path class="accent2" d="M535 270 C550 230 565 310 580 270 S610 230 625 270 S655 230 670 270 S685 245 695 270"/>',
+        "plano_concave": '<line class="optic" x1="515" y1="190" x2="515" y2="350"/><path class="optic" d="M665 190 Q720 230 720 270 Q720 310 665 350"/><path class="thin" d="M502 200 l13 8 M502 220 l13 8 M502 320 l13 8 M502 340 l13 8 M665 190 l16 8 M665 350 l16 -8"/><path class="accent" d="M525 270 H710"/><path class="accent2" d="M525 250 Q610 235 710 200 M525 290 Q610 305 710 340"/>',
+        "mode_density_2d": '<path class="axis" d="M505 345 V190 M495 335 H735"/><path class="accent" d="M505 205 A130 130 0 0 1 635 335"/><path class="thin" stroke-dasharray="5 5" d="M505 305 H635 M535 335 V205 M505 275 H635 M565 335 V205 M505 245 H635 M595 335 V205 M625 335 V205"/><circle class="point" cx="535" cy="305" r="5"/><circle class="point" cx="565" cy="305" r="5"/><circle class="point" cx="595" cy="305" r="5"/><circle class="point" cx="535" cy="275" r="5"/><circle class="point" cx="565" cy="275" r="5"/><circle class="point" cx="595" cy="275" r="5"/><circle class="point" cx="535" cy="245" r="5"/><circle class="point" cx="565" cy="245" r="5"/><rect class="layer1" x="660" y="225" width="70" height="70"/>',
         "statistical": '<path class="axis" d="M480 335 H738 M500 350 V180"/><path class="accent" d="M500 335 C535 332 550 300 575 245 C600 185 635 185 660 245 C685 300 700 332 738 335"/><path class="accent2" d="M510 285 C540 245 570 325 600 275 S660 235 705 295"/>',
         "quantum": '<path class="accent" d="M480 270 H575 M595 250 L625 280 M595 280 L625 250 M625 265 L718 205 M625 265 L718 330"/><circle class="point" cx="480" cy="270" r="11"/><circle class="point" cx="718" cy="205" r="11"/><circle class="point" cx="718" cy="330" r="11"/>',
         "atomic": '<path class="thin" d="M500 335 H720 M525 270 H695 M550 205 H670"/><path class="accent" d="M570 325 V220"/><path class="accent2" d="M645 215 V260"/>',
         "amplifier": '<path class="accent2" d="M500 325 V215"/><rect class="layer1" x="560" y="205" width="105" height="130"/><path class="accent" d="M480 270 H560 M665 270 H738"/><path class="thin" d="M580 305 H645 M590 270 H635 M600 235 H625"/>',
-        "laser": '<path class="optic" d="M495 190 Q525 270 495 350 M720 190 Q690 270 720 350"/><rect class="layer1" x="570" y="225" width="75" height="90"/><path class="accent" d="M505 270 H710"/><path class="accent2" d="M607 350 V315"/>',
+        "laser": '<path class="optic" d="M525 190 Q495 230 495 270 Q495 310 525 350 M690 190 Q720 230 720 270 Q720 310 690 350"/><rect class="layer1" x="570" y="225" width="75" height="90"/><path class="accent" d="M505 270 H710"/><path class="accent2" d="M607 350 V315"/>',
+        "ruby_threshold": '<rect class="layer1" x="545" y="230" width="130" height="80" rx="8"/><line class="optic" x1="535" y1="205" x2="535" y2="335"/><line class="optic" x1="685" y1="205" x2="685" y2="335"/><path class="thin" d="M522 215 l13 8 M522 235 l13 8 M522 305 l13 8 M522 325 l13 8 M685 223 l13 -8 M685 243 l13 -8 M685 313 l13 -8 M685 333 l13 -8"/><path class="accent" d="M542 255 H678 M678 285 H542"/><path class="accent2" d="M565 350 V315"/>',
+        "laser_band": '<path class="axis" d="M485 345 H735 M500 355 V185"/><path class="accent" d="M500 340 C535 338 550 300 575 230 C590 188 630 188 645 230 C670 300 685 338 725 340"/><line class="accent2" x1="500" y1="285" x2="725" y2="285"/><path class="thin" d="M560 345 V315 M578 345 V300 M596 345 V292 M614 345 V292 M632 345 V300 M650 345 V315"/><path class="callout" d="M550 305 V325 H660 V305"/>',
+        "q_switch": '<path class="axis" d="M485 345 H735 M500 355 V185"/><path class="accent2" d="M500 220 H585 V315 C610 330 655 330 725 330"/><path class="accent" d="M500 340 C570 340 580 338 590 320 C600 295 604 205 614 195 C624 205 628 295 638 320 C648 338 665 340 725 340"/><path class="thin" stroke-dasharray="7 6" d="M585 185 V345"/><path class="callout" d="M600 220 H628"/>',
+        "mode_locking": '<path class="axis" d="M480 330 H590 M620 330 H738"/><path class="thin" d="M485 330 V310 M495 330 V295 M505 330 V275 M515 330 V245 M525 330 V220 M535 330 V205 M545 330 V220 M555 330 V245 M565 330 V275 M575 330 V295 M585 330 V310"/><path class="flow" d="M593 270 H620"/><path class="accent" d="M625 330 C640 330 642 205 655 205 C668 205 670 330 682 330 C695 330 697 205 710 205 C723 205 725 330 738 330"/><path class="accent2" d="M485 290 H585"/>',
         "semiconductor": '<path class="accent" d="M485 225 Q610 185 735 225 M485 315 Q610 355 735 315"/><line class="thin" x1="485" y1="255" x2="735" y2="255" stroke-dasharray="8 7"/><line class="thin" x1="485" y1="285" x2="735" y2="285" stroke-dasharray="8 7"/><path class="accent2" d="M610 305 V235"/>',
         "source": '<path class="accent" d="M485 220 Q610 185 735 220 M485 320 Q610 355 735 320"/><path class="accent2" d="M580 305 V235"/><path class="thin" d="M610 245 L685 190 M625 265 L710 230"/>',
         "detector": '<path class="accent" d="M480 215 L555 255 M480 255 L555 285"/><path class="optic" d="M585 205 V335 M640 205 V335"/><path class="thin" d="M585 270 H555 M640 270 H720 M680 235 V305"/>',
@@ -396,7 +485,7 @@ def icon_markup(category: str) -> str:
 
 VISIBLE_VARIABLES = {
     "ray": ("n₁", "n₂", "θ₁", "θ₂"),
-    "mirror": ("y", "θᵢ", "θᵣ", "R", "f"),
+    "mirror": ("y₁", "y₂", "z₁", "z₂", "R", "f"),
     "lens": ("n", "y", "R₁", "R₂", "f"),
     "refracting": ("n₁", "n₂", "θ₁", "θ₂", "y", "R", "z₁", "z₂"),
     "cartesian_oval": ("n₁", "n₂", "y", "z", "z₁", "z₂"),
@@ -415,11 +504,19 @@ VISIBLE_VARIABLES = {
     "waveguide": ("n₁", "n₂", "d", "a", "β", "V"),
     "fiber": ("a", "NA", "β", "L"),
     "resonator": ("L", "R₁", "R₂", "g₁", "g₂", "ν"),
+    "ring_resonator": ("Lₒ", "Nₘ", "q", "νq", "νF"),
+    "fabry_perot": ("d", "R₁", "R₂", "νF", "ℱ", "Δν"),
+    "plano_concave": ("d", "R₂", "z₀", "W₀", "W₂", "λ"),
+    "mode_density_2d": ("A", "kₓ", "kᵧ", "qₓ", "qᵧ", "ν", "M₂"),
     "statistical": ("J", "g", "Tᶜ", "Δν"),
     "quantum": ("hν", "p", "P", "σ"),
     "atomic": ("Eᵢ", "ν", "Nᵢ", "T"),
     "amplifier": ("Nᵢ", "Rₚ", "σ", "G"),
     "laser": ("N", "g", "τ", "R", "P"),
+    "ruby_threshold": ("d", "A", "n", "R₁", "R₂", "α₀", "σ₀", "αr", "tp", "Nt"),
+    "laser_band": ("γ₀", "αr", "ΔνD", "B", "νF"),
+    "q_switch": ("Ni", "Nt", "n", "tp", "P", "E"),
+    "mode_locking": ("Aq", "q", "νF", "A(t)", "TR"),
     "semiconductor": ("Eᶜ", "Eᵥ", "Fₙ", "Fₚ", "n", "p"),
     "source": ("Eᵧ", "Fₙ", "Fₚ", "λ", "η"),
     "detector": ("Φ", "η", "ℛ", "B", "i"),
@@ -436,7 +533,7 @@ def variable_markup(category: str) -> str:
 
     labels = {
         "ray": '<text class="var" x="505" y="190">n₁</text><text class="var" x="690" y="342">n₂ &gt; n₁</text><text class="var" x="548" y="245">θ₁</text><text class="var" x="670" y="300">θ₂</text>',
-        "mirror": '<line class="callout" x1="505" y1="270" x2="505" y2="216"/><text class="var" x="492" y="242">y</text><text class="var" x="566" y="247">θᵢ</text><text class="var" x="566" y="306">θᵣ</text><text class="var" x="680" y="255">R</text><text class="var" x="672" y="300">f</text><text class="annotation" x="650" y="195">tangent at P</text><text class="annotation" x="535" y="287">local normal</text>',
+        "mirror": '<text class="var smallvar" x="490" y="230">y₁</text><text class="var smallvar" x="570" y="303">y₂</text><line class="callout" x1="480" y1="340" x2="690" y2="340"/><path class="tick" d="M480 334 V346 M690 334 V346"/><text class="var smallvar" x="585" y="332">z₁</text><line class="callout" x1="616" y1="318" x2="690" y2="318"/><path class="tick" d="M616 312 V324 M690 312 V324"/><text class="var smallvar" x="653" y="310">z₂</text><text class="var smallvar" x="607" y="292">R</text><text class="var smallvar" x="663" y="292">f</text><text class="annotation" x="580" y="260">C</text><text class="annotation" x="635" y="260">F</text><text class="annotation" x="705" y="260">V</text><text class="annotation" x="650" y="195">reflecting face opens left</text>',
         "lens": '<line class="callout" x1="500" y1="305" x2="500" y2="240"/><text class="var" x="487" y="270">y</text><text class="var" x="607" y="230">n</text><text class="var" x="555" y="205">R₁</text><text class="var" x="650" y="205">R₂</text><line class="callout" x1="604" y1="335" x2="700" y2="335"/><path class="tick" d="M604 329 V341 M700 329 V341"/><text class="var" x="652" y="355">f</text>',
         "refracting": '<text class="var" x="500" y="205">n₁</text><text class="var" x="710" y="335">n₂</text><text class="var" x="565" y="190">θ₁</text><text class="var" x="683" y="230">θ₂</text><line class="callout" x1="605" y1="223" x2="605" y2="270"/><path class="tick" d="M599 223 H611 M599 270 H611"/><text class="var" x="592" y="252">y</text><text class="var" x="660" y="270">R</text><text class="var smallvar" x="530" y="292">z₁</text><text class="var smallvar" x="675" y="302">z₂</text><text class="annotation" x="625" y="203">P</text><text class="annotation" x="620" y="180">local normal PC</text><text class="annotation" x="718" y="285">C</text>',
         "cartesian_oval": '<text class="var" x="510" y="190">n₁</text><text class="var" x="700" y="190">n₂</text><text class="var" x="600" y="205">y</text><text class="var" x="645" y="335">z</text><text class="var smallvar" x="525" y="300">z₁</text><text class="var smallvar" x="700" y="300">z₂</text>',
@@ -454,12 +551,20 @@ def variable_markup(category: str) -> str:
         "multilayer": '<text class="var smallvar" x="535" y="210">nᵢ</text><text class="var smallvar" x="542" y="345">dᵢ</text><text class="var" x="485" y="225">r</text><text class="var" x="715" y="255">t</text><text class="var" x="620" y="180">Λ</text>',
         "waveguide": '<text class="var" x="495" y="230">n₂</text><text class="var" x="495" y="285">n₁</text><text class="var" x="715" y="230">n₂</text><text class="var" x="560" y="330">d, a</text><text class="var" x="650" y="255">β →</text><text class="var" x="700" y="330">V</text>',
         "fiber": '<line class="callout" x1="610" y1="270" x2="672" y2="270"/><text class="var" x="640" y="260">a</text><text class="var" x="505" y="210">NA</text><text class="var" x="680" y="225">β →</text><text class="var" x="700" y="330">L</text>',
-        "resonator": '<line class="callout" x1="535" y1="365" x2="685" y2="365"/><path class="tick" d="M535 359 V371 M685 359 V371"/><text class="var" x="610" y="355">L</text><text class="var" x="500" y="205">R₁</text><text class="var" x="720" y="205">R₂</text><text class="var smallvar" x="550" y="230">g₁</text><text class="var smallvar" x="670" y="230">g₂</text><text class="var" x="620" y="215">ν</text>',
+        "resonator": '<line class="callout" x1="500" y1="365" x2="720" y2="365"/><path class="tick" d="M500 359 V371 M720 359 V371"/><text class="var" x="610" y="355">L</text><text class="var" x="520" y="205">R₁</text><text class="var" x="700" y="205">R₂</text><text class="var smallvar" x="535" y="230">g₁</text><text class="var smallvar" x="685" y="230">g₂</text><text class="var" x="620" y="215">ν</text><text class="annotation" x="610" y="338">both concave faces point inward</text>',
+        "ring_resonator": '<text class="var smallvar" x="530" y="185">Nₘ=3</text><text class="var smallvar" x="680" y="195">Nₘ=4</text><text class="var smallvar" x="525" y="345">Lₒ</text><text class="var smallvar" x="610" y="195">q</text><text class="var smallvar" x="620" y="345">νq</text><text class="var smallvar" x="700" y="345">νF</text>',
+        "fabry_perot": '<line class="callout" x1="515" y1="365" x2="705" y2="365"/><path class="tick" d="M515 359 V371 M705 359 V371"/><text class="var" x="610" y="355">d</text><text class="var" x="535" y="205">R₁</text><text class="var" x="685" y="205">R₂</text><text class="var smallvar" x="555" y="235">νF</text><text class="var smallvar" x="610" y="235">ℱ</text><text class="var smallvar" x="665" y="235">Δν</text><text class="annotation" x="610" y="335">plane reflecting faces</text>',
+        "plano_concave": '<line class="callout" x1="515" y1="365" x2="720" y2="365"/><path class="tick" d="M515 359 V371 M720 359 V371"/><text class="var" x="615" y="355">d</text><text class="var" x="690" y="205">R₂</text><text class="var smallvar" x="585" y="255">z₀</text><text class="var smallvar" x="535" y="245">W₀</text><text class="var smallvar" x="695" y="230">W₂</text><text class="var" x="625" y="295">λ</text><text class="annotation" x="610" y="335">waist at plane mirror</text>',
+        "mode_density_2d": '<text class="var" x="500" y="190">kᵧ</text><text class="var" x="720" y="350">kₓ</text><text class="var smallvar" x="545" y="325">qₓ</text><text class="var smallvar" x="520" y="275">qᵧ</text><text class="var" x="635" y="220">ν</text><text class="var" x="695" y="260">A</text><text class="var smallvar" x="695" y="320">M₂</text>',
         "statistical": '<text class="var" x="540" y="210">J</text><text class="var" x="635" y="205">g</text><text class="var" x="555" y="315">Tᶜ</text><text class="var" x="680" y="315">Δν</text>',
         "quantum": '<text class="var" x="500" y="255">hν</text><text class="var" x="545" y="255">p →</text><text class="var" x="690" y="190">P</text><text class="var" x="690" y="350">σ</text>',
         "atomic": '<text class="var" x="715" y="330">Eᵢ</text><text class="var" x="552" y="270">ν</text><text class="var" x="690" y="260">Nᵢ</text><text class="var" x="690" y="195">T</text>',
         "amplifier": '<text class="var" x="600" y="255">Nᵢ</text><text class="var" x="485" y="315">Rₚ</text><text class="var" x="645" y="200">σ</text><text class="var" x="705" y="255">G</text>',
-        "laser": '<text class="var" x="590" y="255">N</text><text class="var" x="625" y="255">g</text><text class="var" x="607" y="340">τ</text><text class="var" x="485" y="205">R</text><text class="var" x="700" y="255">P</text>',
+        "laser": '<text class="var" x="590" y="255">N</text><text class="var" x="625" y="255">g</text><text class="var" x="607" y="340">τ</text><text class="var" x="515" y="205">R</text><text class="var" x="700" y="255">P</text><text class="annotation" x="610" y="335">concave faces point inward</text>',
+        "ruby_threshold": '<line class="callout" x1="535" y1="360" x2="685" y2="360"/><path class="tick" d="M535 354 V366 M685 354 V366"/><text class="var smallvar" x="610" y="352">d=10 cm</text><text class="var smallvar" x="555" y="210">R₁=.80</text><text class="var smallvar" x="665" y="210">R₂=.80</text><text class="var smallvar" x="610" y="245">n=1.76</text><text class="var smallvar" x="610" y="305">A=1 cm²</text><text class="var smallvar" x="565" y="330">α₀</text><text class="var smallvar" x="610" y="330">σ₀</text><text class="var smallvar" x="655" y="330">αr</text><text class="var smallvar" x="715" y="255">tp</text><text class="var smallvar" x="715" y="300">Nt</text>',
+        "laser_band": '<text class="var" x="590" y="205">γ₀</text><text class="var smallvar" x="705" y="275">αr</text><text class="var smallvar" x="540" y="245">ΔνD</text><text class="var" x="605" y="320">B</text><text class="var smallvar" x="615" y="365">νF</text>',
+        "q_switch": '<text class="var smallvar" x="535" y="210">Ni/Nt=6</text><text class="var" x="565" y="305">n</text><text class="var smallvar" x="585" y="180">tp</text><text class="var" x="615" y="190">P</text><text class="var" x="640" y="250">E</text><text class="annotation" x="550" y="335">low Q</text><text class="annotation" x="675" y="335">high Q</text>',
+        "mode_locking": '<text class="var smallvar" x="535" y="195">Aq</text><text class="var" x="485" y="350">q</text><text class="var smallvar" x="535" y="350">νF</text><text class="var smallvar" x="625" y="250">A(t)</text><line class="callout" x1="655" y1="185" x2="710" y2="185"/><path class="tick" d="M655 179 V191 M710 179 V191"/><text class="var smallvar" x="682" y="175">TR</text>',
         "semiconductor": '<text class="var" x="500" y="210">Eᶜ</text><text class="var" x="500" y="340">Eᵥ</text><text class="var" x="680" y="250">Fₙ</text><text class="var" x="680" y="305">Fₚ</text><text class="var" x="580" y="225">n</text><text class="var" x="625" y="330">p</text>',
         "source": '<text class="var" x="500" y="270">Eᵧ</text><text class="var" x="680" y="245">Fₙ</text><text class="var" x="680" y="300">Fₚ</text><text class="var" x="680" y="190">λ</text><text class="var" x="715" y="235">η</text>',
         "detector": '<text class="var" x="490" y="195">Φ</text><text class="var" x="565" y="245">η</text><text class="var" x="660" y="245">ℛ</text><text class="var" x="690" y="215">B</text><text class="var" x="715" y="290">i</text>',
@@ -686,25 +791,28 @@ def transform_chapter(
             if chapter == 1 and section == "1" and item == "1":
                 new_body = number_snell_figure(body, figure_number)
             else:
-                category = category_for(chapter, title)
                 filename = (
                     f"exercise_{chapter:02d}_{int(section):02d}_{int(item):02d}.svg"
                 )
-                svg_path = ASSET_DIR / filename
-                svg = svg_for(
-                    f"Exercise {chapter}.{section}-{item}",
-                    title,
-                    category,
-                    figure_number,
-                )
-                if (
-                    not svg_path.exists()
-                    or svg_path.read_text(encoding="utf-8") != svg
-                ):
-                    svg_path.write_text(svg, encoding="utf-8")
-                new_body = transform_exercise_body(
-                    body, chapter, section, item, title, figure_number
-                )
+                if filename in CUSTOM_EXERCISE_SVGS:
+                    new_body = body
+                else:
+                    category = category_for(chapter, title)
+                    svg_path = ASSET_DIR / filename
+                    svg = svg_for(
+                        f"Exercise {chapter}.{section}-{item}",
+                        title,
+                        category,
+                        figure_number,
+                    )
+                    if (
+                        not svg_path.exists()
+                        or svg_path.read_text(encoding="utf-8") != svg
+                    ):
+                        svg_path.write_text(svg, encoding="utf-8")
+                    new_body = transform_exercise_body(
+                        body, chapter, section, item, title, figure_number
+                    )
             entry_changed = new_body != body
             body = new_body
         entry_header = entry_heading(

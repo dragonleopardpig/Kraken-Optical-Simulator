@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc" data-category="laser" data-figure="88">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc" data-category="ruby_threshold" data-figure="88">
   <title id="title">Figure 88 — Exercise 15.1-1: Ruby threshold</title>
   <desc id="desc">Figure 88, a concept diagram for Exercise 15.1-1, Ruby threshold. The input, physical model, output, variables, and verification method are labeled.</desc>
   <defs>
@@ -18,15 +18,15 @@
   <text class="tag" x="70" y="153">GIVEN / DEFINITIONS</text>
   <text class="tag" x="475" y="153">MODEL / OPERATION</text>
   <text class="tag" x="880" y="153">RESULT / INTERPRETATION</text>
-  <text class="label" x="195"><tspan x="195" y="272">pump, gain, and cavity</tspan><tspan x="195" y="299">loss</tspan></text>
-  <text class="label" x="607"><tspan x="607" y="390">threshold / pulse dynamics</tspan></text>
-  <text class="label" x="1005"><tspan x="1005" y="285">laser modes or pulse</tspan></text>
+  <text class="label" x="195"><tspan x="195" y="272">10 cm ruby rod with</tspan><tspan x="195" y="299">R₁=R₂=0.80</tspan></text>
+  <text class="label" x="607"><tspan x="607" y="377">plane coated ends; gain</tspan><tspan x="607" y="404">balances loss</tspan></text>
+  <text class="label" x="1005"><tspan x="1005" y="272">σ₀, αr, tp, and</tspan><tspan x="1005" y="299">threshold Nt</tspan></text>
   <line class="flow" x1="345" y1="270" x2="440" y2="270"/>
   <line class="flow" x1="765" y1="270" x2="845" y2="270"/>
-  <path class="optic" d="M495 190 Q525 270 495 350 M720 190 Q690 270 720 350"/><rect class="layer1" x="570" y="225" width="75" height="90"/><path class="accent" d="M505 270 H710"/><path class="accent2" d="M607 350 V315"/>
-  <g id="variable-labels"><text class="var" x="590" y="255">N</text><text class="var" x="625" y="255">g</text><text class="var" x="607" y="340">τ</text><text class="var" x="485" y="205">R</text><text class="var" x="700" y="255">P</text></g>
+  <rect class="layer1" x="545" y="230" width="130" height="80" rx="8"/><line class="optic" x1="535" y1="205" x2="535" y2="335"/><line class="optic" x1="685" y1="205" x2="685" y2="335"/><path class="thin" d="M522 215 l13 8 M522 235 l13 8 M522 305 l13 8 M522 325 l13 8 M685 223 l13 -8 M685 243 l13 -8 M685 313 l13 -8 M685 333 l13 -8"/><path class="accent" d="M542 255 H678 M678 285 H542"/><path class="accent2" d="M565 350 V315"/>
+  <g id="variable-labels"><line class="callout" x1="535" y1="360" x2="685" y2="360"/><path class="tick" d="M535 354 V366 M685 354 V366"/><text class="var smallvar" x="610" y="352">d=10 cm</text><text class="var smallvar" x="555" y="210">R₁=.80</text><text class="var smallvar" x="665" y="210">R₂=.80</text><text class="var smallvar" x="610" y="245">n=1.76</text><text class="var smallvar" x="610" y="305">A=1 cm²</text><text class="var smallvar" x="565" y="330">α₀</text><text class="var smallvar" x="610" y="330">σ₀</text><text class="var smallvar" x="655" y="330">αr</text><text class="var smallvar" x="715" y="255">tp</text><text class="var smallvar" x="715" y="300">Nt</text></g>
 
   <rect class="band" x="45" y="430" width="1110" height="115" rx="12"/>
-  <text class="legend" x="65"><tspan x="65" y="462">Variables labeled on model — N: inversion • g: gain • τ: lifetime • R: reflectance • P: power</tspan></text>
-  <text class="check" x="65"><tspan x="65" y="522">Independent check — threshold balance, energy conservation, and time scale</tspan></text>
+  <text class="legend" x="65"><tspan x="65" y="462">Variables labeled on model — d: rod length • A: area • n: index • R₁,R₂: end reflectances • α₀: absorption • σ₀:</tspan><tspan x="65" y="484">cross section • αr: resonator loss • tp: photon lifetime • Nt: threshold inversion</tspan></text>
+  <text class="check" x="65"><tspan x="65" y="522">Independent check — e^(−2αr d)=R₁R₂, tp=n/(cαr), and Nt=αr/σ₀; no curved mirrors are specified</tspan></text>
 </svg>
