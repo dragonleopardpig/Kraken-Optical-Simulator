@@ -8653,6 +8653,33 @@ class LayoutTableWorkbenchMixin:
 
         open_inspection_cell_dialog(self)
 
+    def open_folded_assembly_view(self) -> None:
+        """bugs/0671: the folded assembly view -- the current STRAIGHT trace re-arranged
+        into the real CAD world by the layout's per-arm fold planes (display only, an
+        isometry of the traced polylines), drawn through the assembly STEP body."""
+        spec = getattr(self, "display_fold_spec", None)
+        if not (isinstance(spec, dict) and (spec.get("arms") or [])):
+            self.status_var.set(
+                "This layout carries no display_fold_spec -- the folded view needs the "
+                "per-arm fold planes (see the om05a two-side scene)."
+            )
+            return
+        from KrakenOS.UI.services.folded_display_compose import compose_folded_assembly_plotter
+
+        try:
+            plotter, report = compose_folded_assembly_plotter(self)
+        except Exception as exc:
+            self.status_var.set(f"Folded view failed: {exc}")
+            return
+        self.status_var.set(
+            f"Folded assembly view: {report['rays']} rays folded across "
+            f"{len(report['arms'])} arm(s)"
+            + (", assembly body drawn" if report.get("body") else "")
+            + (f"; {len(report['errors'])} warnings" if report.get("errors") else "")
+            + "."
+        )
+        plotter.show(title="KrakenOS Folded Assembly View")
+
     def open_camera_lens_matcher(self) -> None:
         """bugs/0634 (user feature): list every registered camera × catalog lens
         combination that meets a FOV / resolution / minimum-WD requirement."""

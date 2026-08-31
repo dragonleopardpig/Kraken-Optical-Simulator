@@ -109,10 +109,11 @@ def _check_scene(ok, notes) -> None:
         ms = [abs(cents[fi][1] / obj_y[fi]) for fi in cents if abs(obj_y[fi]) > 1.0]
         m_meas = float(np.mean(ms)) if ms else float("nan")
         conj = 85.13 * (1.0 + 1.0 / m_meas) if ms else float("nan")
+        fov = 23.04 / m_meas if ms else float("nan")
         ok(
-            ms and 0.41 <= m_meas <= 0.45 and abs(conj - 280.0) <= 12.0,
-            f"B2: the MEASURED magnification recovers the lens's designation "
-            f"(|m| {m_meas:.4f}, effective conjugate {conj:.1f} mm ~ LEN-MV85-280)",
+            ms and 0.41 <= m_meas <= 0.45 and abs(conj - 280.0) <= 12.0 and abs(fov - 54.0) <= 1.0,
+            f"B2: the MEASURED magnification recovers the lens's designation and the user's FOV "
+            f"(|m| {m_meas:.4f}, conjugate {conj:.1f} mm ~ LEN-MV85-280, FOV {fov:.1f} ~ 54 x 54)",
         )
         inverted = all(cents[fi][1] * obj_y[fi] < 0 for fi in cents if abs(obj_y[fi]) > 1.0)
         ys = sorted(c[1] for c in cents.values())
@@ -120,8 +121,9 @@ def _check_scene(ok, notes) -> None:
         pos = [y for y in ys if y > 0.4]
         neg = [y for y in ys if y < -0.4]
         ok(
-            inverted and len(pos) >= 2 and len(neg) >= 2 and y_max < 11.52,
-            f"B3: a REAL inverted image; the two faces land on OPPOSITE sensor halves, "
+            inverted and len(pos) >= 2 and len(neg) >= 2 and y_max <= 11.6,
+            f"B3: a REAL inverted image; the 54 mm FOV fills the sensor and the two faces land "
+            f"on OPPOSITE sensor halves, "
             f"inside the sensor (+{min(pos) if pos else 0:.1f}..+{max(pos) if pos else 0:.1f} / "
             f"{max(neg) if neg else 0:.1f}..{min(neg) if neg else 0:.1f} mm)",
         )

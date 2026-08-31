@@ -232,6 +232,8 @@ class LayoutSettingsService:
             "scene_row_order": normalize_source_row_order(getattr(self, "layout_scene_row_order", SOURCE_ROW_ORDER_DEFAULT)),
             # bugs/0661: the 3D inspection part (box at the object plane + six blow-out axes).
             "inspection_part": _normalize_inspection_part(getattr(self, "inspection_part_spec", None)),
+            # bugs/0671: per-arm fold planes for the folded assembly view (data, not physics).
+            "display_fold_spec": getattr(self, "display_fold_spec", None),
             "analysis_surface": self.analysis_surface_var.get().strip(),
             "analysis_branch_filter": self._current_analysis_branch_filter(),
             "ray_display_mode": self._current_ray_display_mode(),
@@ -430,6 +432,7 @@ class LayoutSettingsService:
         self.layout_scene_source_specs = self._normalize_scene_source_specs(settings.get("scene_sources", []))
         self.layout_scene_row_order = normalize_source_row_order(settings.get("scene_row_order", SOURCE_ROW_ORDER_DEFAULT))
         self.inspection_part_spec = _normalize_inspection_part(settings.get("inspection_part", None))  # bugs/0661
+        self.display_fold_spec = settings.get("display_fold_spec", None)  # bugs/0671
 
         def _parse_bool(value) -> bool:
             if isinstance(value, str):
