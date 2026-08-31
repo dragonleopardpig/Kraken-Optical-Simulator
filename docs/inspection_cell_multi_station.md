@@ -88,8 +88,20 @@ its part on the first import.
 Workflow: enable the part once → right-click an axis → Create/Open station → import
 lens/camera/LED on that chain → Save → the Cell View re-composes.
 
+### The cell in the live canvas — SHIPPED (0669, phase 502)
+
+"Can't we do everything to existing 3D canvas?" — yes: right-click the part or a
+blow-out axis → *Show the other stations here (ghosts)*. Every other station is
+composed headlessly and transplanted into the LIVE renderer as translucent,
+non-pickable context under `T_live⁻¹ @ T_ghost`; cached per face, re-seated on every
+scene refresh, rebuilt on station-file mtime change, re-keyed when the live face
+switches (0667). The generic axis right-click gains *Inspection Part (3D object)…*
+so the part is enabled from 3D too. One window end-to-end: part → ghosts → axis →
+Create/Open station → edit. The separate cell window remains for review/solve/export.
+
 ### Remaining
 
 - Non-flat parts: faces become picked planar regions of the part STEP.
 - Shared illumination: one LED lighting several faces; ray-level cross-talk checks.
-- Station labels in the cell view.
+- Station labels in the cell view (and on ghosts in the live canvas).
+- Async ghost compose (background the ~70 s first build; today it blocks with status).

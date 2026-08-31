@@ -882,6 +882,12 @@ class Open3DSceneRefreshService:
             self._add_inspection_part_glyphs(system, scene_bundle)
         except Exception as exc:
             self.editor.append_debug(f"inspection part glyphs skipped: {exc}")
+        # bugs/0669: the cell's OTHER stations re-seated as ghost context (cached
+        # actors -- rebuilt only when a station file changed or the live face moved).
+        try:
+            self._add_cell_ghost_glyphs(system, scene_bundle)
+        except Exception as exc:
+            self.editor.append_debug(f"cell ghosts skipped: {exc}")
         # One combined, expanding legend for every analysis overlay queued above (replaces the
         # per-overlay billboards that overlapped when several were on).
         analysis_overlay_label_actors = self._add_grouped_analysis_overlay_label()

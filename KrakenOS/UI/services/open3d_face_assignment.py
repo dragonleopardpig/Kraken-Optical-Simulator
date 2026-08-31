@@ -149,6 +149,12 @@ class Open3DFaceAssignmentService:
                 normalize_inspection_part_spec(getattr(self.editor, "inspection_part_spec", None))["active_face"]
             ),
         )
+        ghosts_on = bool(getattr(self._inspector, "_cell_ghosts_enabled", False))
+        menu.add_command(
+            label=("Hide the other stations (ghosts)" if ghosts_on
+                   else "Show the other stations here (ghosts)"),
+            command=lambda: self._inspector.toggle_cell_ghosts(),
+        )
         menu.add_command(
             label="Inspection Part Settings...",
             command=lambda: self.editor.open_inspection_part_dialog(),
@@ -1894,6 +1900,12 @@ class Open3DFaceAssignmentService:
             label="Solve FOV to the inspected face",
             command=lambda: self.editor.solve_fov_to_inspection_face(),
         )
+        ghosts_on = bool(getattr(self._inspector, "_cell_ghosts_enabled", False))
+        menu.add_command(
+            label=("Hide the other stations (ghosts)" if ghosts_on
+                   else "Show the other stations here (ghosts)"),
+            command=lambda: self._inspector.toggle_cell_ghosts(),
+        )
         self._popup_context_menu(menu, event)
         return True
 
@@ -1968,6 +1980,12 @@ class Open3DFaceAssignmentService:
         menu.add_command(
             label="Move Elements Axis → Axis…",
             command=_wrap(self._inspector.start_axis_to_axis_move),
+        )
+        # bugs/0669: enabling the 3D part is a 3D-canvas gesture too -- no 2D menu trip.
+        menu.add_separator()
+        menu.add_command(
+            label="Inspection Part (3D object)…",
+            command=_wrap(self.editor.open_inspection_part_dialog),
         )
         self._popup_context_menu(menu, event)
         return True

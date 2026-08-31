@@ -609,6 +609,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # bugs/0661: actor keys of the 3D inspection part (box + face outlines) so the
         # right-click can offer "Inspect this face" / settings.
         self._inspection_part_actor_keys: set[str] = set()
+        # bugs/0669: the cell's OTHER stations shown as ghosts in THIS canvas.
+        self._cell_ghosts_enabled: bool = False
+        self._cell_ghost_cache: dict[str, dict] = {}
         self._actor_step_map: dict[str, str] = {}
         self._step_actor_map: dict[str, list[str]] = {}
         # Scene-component browser hide/unhide: rows + STEP labels whose body
@@ -16941,6 +16944,130 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     count += 1
             except Exception as exc:
                 self.editor.append_debug(f"inspection part face {face} skipped: {exc}")
+        return count
+
+    def _remove_cell_ghost_actors(self) -> None:
+        """bugs/0669: detach every cached ghost actor from the live renderer."""
+        for rec in (self.__dict__.get("_cell_ghost_cache") or {}).values():
+            for actor in rec.get("actors") or []:
+                try:
+                    self._remove_renderer_view_prop(actor)
+                except Exception:
+                    pass
+
+    def toggle_cell_ghosts(self) -> None:
+        """bugs/0669: show/hide the OTHER cell stations as ghosts in THIS canvas."""
+        enabled = not bool(self.__dict__.get("_cell_ghosts_enabled"))
+        self._cell_ghosts_enabled = enabled
+        if not enabled:
+            self._remove_cell_ghost_actors()
+            self._cell_ghost_cache = {}
+            self.editor.status_var.set("Cell ghost stations hidden.")
+        else:
+            self._add_cell_ghost_glyphs(
+                self.__dict__.get("_current_system"), self.__dict__.get("_current_scene_bundle")
+            )
+        self.render()
+
+    def _add_cell_ghost_glyphs(self, system, scene_bundle: SceneBundle | None) -> int:
+        """bugs/0669: the cell's OTHER stations drawn as translucent, non-pickable
+        ghosts around the live part -- the separate cell window's composition brought
+        into the live canvas. Idempotent per scene refresh: cached ghost actors are
+        re-parented (a rebuild clears the renderer, not the cache), rebuilt only when
+        their station file's mtime changes, and re-posed from the LIVE part pose so a
+        station switch (0667) re-seats every ghost."""
+        cache: dict[str, dict] = self.__dict__.setdefault("_cell_ghost_cache", {})
+        if not bool(self.__dict__.get("_cell_ghosts_enabled")):
+            if cache:
+                self._remove_cell_ghost_actors()
+                self._cell_ghost_cache = {}
+            return 0
+        if self._renderer is None:
+            return 0
+        from KrakenOS.UI.services import inspection_cell_ghosts as icg
+        from KrakenOS.UI.services.inspection_part import normalize_inspection_part_spec
+
+        spec = normalize_inspection_part_spec(getattr(self.editor, "inspection_part_spec", None))
+        if not spec["enabled"]:
+            self._remove_cell_ghost_actors()
+            self._cell_ghost_cache = {}
+            return 0
+        pose = self._inspection_part_pose(system, scene_bundle)
+        if pose is None:
+            return 0
+        cell = getattr(self.editor, "inspection_cell_spec", None)
+        if not (isinstance(cell, dict) and (cell.get("stations") or {})):
+            cell = icg.find_cell_for_layout(getattr(self.editor, "current_layout_file", "") or "")
+            if cell is not None:
+                self.editor.inspection_cell_spec = cell
+        if not (isinstance(cell, dict) and (cell.get("stations") or {})):
+            self.editor.status_var.set(
+                "No cell references this layout yet -- right-click a blow-out axis and create a station first."
+            )
+            return 0
+        active = spec["active_face"]
+        wanted: dict[str, tuple[str, float]] = {}
+        for face, entry in (cell.get("stations") or {}).items():
+            entry = entry or {}
+            if face == active or not entry.get("enabled") or not entry.get("layout"):
+                continue
+            layout = Path(str(entry["layout"])).expanduser()
+            try:
+                wanted[face] = (str(layout), layout.stat().st_mtime)
+            except Exception:
+                continue
+        for face in list(cache.keys()):
+            rec = cache[face]
+            fresh = (
+                face in wanted
+                and rec.get("layout") == wanted[face][0]
+                and rec.get("mtime") == wanted[face][1]
+            )
+            if not fresh:
+                for actor in rec.get("actors") or []:
+                    try:
+                        self._remove_renderer_view_prop(actor)
+                    except Exception:
+                        pass
+                cache.pop(face, None)
+        for face, (layout, _mtime) in wanted.items():
+            if face in cache:
+                continue
+            self.editor.status_var.set(f"Composing cell ghost station: {face}...")
+            try:
+                self.editor.update_idletasks()
+            except Exception:
+                pass
+            try:
+                cache[face] = icg.build_ghost_station(face, layout, dict(spec))
+            except Exception as exc:
+                self.editor.append_debug(f"cell ghost {face} failed: {exc}")
+        count = 0
+        for face, rec in cache.items():
+            try:
+                matrix = icg.vtk_matrix(
+                    icg.ghost_world_transform(pose[0], pose[1], active, dict(spec), rec["transform_cell"])
+                )
+            except Exception as exc:
+                self.editor.append_debug(f"cell ghost {face} transform failed: {exc}")
+                continue
+            for actor in rec.get("actors") or []:
+                try:
+                    actor.SetUserMatrix(matrix)
+                    actor.PickableOff()
+                    prop = actor.GetProperty()
+                    if prop is not None and float(prop.GetOpacity()) > 0.35:
+                        prop.SetOpacity(0.35)
+                except Exception:
+                    pass
+                try:
+                    if not self._renderer.HasViewProp(actor):
+                        self._add_renderer_view_prop(actor)
+                except Exception:
+                    self._add_renderer_view_prop(actor)
+                count += 1
+        if cache:
+            self.editor.status_var.set(f"Cell ghosts: {len(cache)} station(s) shown around the part.")
         return count
 
     def _add_scene_source_glyphs(self, system, scene_bundle: SceneBundle | None) -> int:
