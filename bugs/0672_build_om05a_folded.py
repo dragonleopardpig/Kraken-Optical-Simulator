@@ -146,9 +146,10 @@ def build():
     # broke the aim: 2% reach; dia 80 works) -- keep dia 80 but HIDE the plate
     # discs (drawing=0); the real prism assembly is the visible geometry.
     for r in editor.rows:
-        if "prism" in str(r.name).lower() and str(r.glass) == "N-BK7":
+        nm = str(r.name).lower()
+        if ("prism" in nm and str(r.glass) == "N-BK7") or nm == "air" or nm.startswith("to lens"):
             r.diameter = 80.0
-            r.drawing = 0.0
+            r.drawing = 0.0  # probes need the aperture; the geometry is the real assembly
     # bugs/0673 flag: the usual 9-POINT imaging sampling on the device faces
     # (field 4.3 image = the face edges at object +-10; count 3 -> 3x3 folded grid).
     # Survives loads via the authored-field-wins fix (autofill signature mismatch).

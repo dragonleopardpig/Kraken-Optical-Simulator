@@ -1920,6 +1920,14 @@ class ThreeDSceneToolsMixin:
                     continue
             if not include_reference_surfaces and row.surface in {"Object", "Image"}:
                 continue
+            # bugs/0674: honor the row's Drawing flag in 3D like the 2D pane does --
+            # a bookkeeping aperture (the om05a launch-probe plates, drawing=0) must
+            # not render an 80 mm disc stack over the scene.
+            try:
+                if float(getattr(row, "drawing", 1.0) or 0.0) == 0.0:
+                    continue
+            except Exception:
+                pass
             row_transform = optical_solid_output_port_runtime_transform_override(system, self.rows, index)
             mesh = None
             advanced = row.advanced if isinstance(row.advanced, dict) else {}
@@ -1967,8 +1975,28 @@ class ThreeDSceneToolsMixin:
             file_backed_optical_solid = self._scene_graph_value_present(advanced.get("Solid_3d_stl"))
             if row.surface == "Mirror":
                 mesh = self._folded_preview_mirror_mesh_for_row(index, row, system=system)
+            runtime_disc_mesh = False
             if mesh is None and (file_backed_optical_solid or index in pose_overrides):
                 mesh = ThreeDSceneToolsMixin._runtime_trace_surface_mesh(system, index)
+                runtime_disc_mesh = mesh is not None and not file_backed_optical_solid
+            if runtime_disc_mesh:
+                # bugs/0674 (flag "the lens surrogate is oversized"): the core's EEE
+                # runtime surface mesh renders at TWICE the row diameter (measured:
+                # a 48.56 datum drew a 97.1 disc, the 50.8 filter drew 101.5) --
+                # only override-posed FOLDED rows take this path, so straight
+                # scenes never showed it. Display-only: rescale about the mesh's
+                # own centre so the drawn disc equals row.diameter.
+                try:
+                    target = max(float(getattr(row, "diameter", 0.0) or 0.0), 0.0)
+                    b = mesh.bounds
+                    current = max(b[1] - b[0], b[3] - b[2], b[5] - b[4])
+                    if target > 1e-9 and current > 1e-9 and abs(current - target) / target > 0.05:
+                        centre = np.asarray(mesh.center, dtype=float)
+                        mesh.points = (np.asarray(mesh.points, dtype=float) - centre) * (
+                            target / current
+                        ) + centre
+                except Exception:
+                    pass
             if row_transform is None:
                 row_transform = transforms[index]
             # A parked uncoated solid is dropped from the optical trace
