@@ -743,6 +743,12 @@ class LayoutTableWorkbenchMixin:
         Returns the built :class:`SurrogateModel` on success, or ``None`` when the
         chooser was cancelled or the surrogate could not be built.
         """
+        # bugs/0667: a lens import REPLACES the whole layout; an enabled inspection
+        # part (the 3D object the station inspects) must survive it, or a station
+        # created on a face loses its part the moment the user imports the lens.
+        from KrakenOS.UI.services.inspection_part import normalize_inspection_part_spec as _norm_part
+
+        _carried_part = _norm_part(getattr(self, "inspection_part_spec", None))
         parent = dialog_parent if dialog_parent is not None else self
         # bugs/0381: Import REPLACES the whole scene (it loads a fresh single-lens layout).
         # When the working scene is a real assembly (beam splitter / camera / LED / promoted
@@ -807,6 +813,13 @@ class LayoutTableWorkbenchMixin:
                     self.refresh_plot(suppress_analysis=True, defer_trace=True)
         except Exception as exc:
             self.append_debug(f"import WD refit skipped: {exc}")
+        if _carried_part.get("enabled"):
+            self.inspection_part_spec = _carried_part
+            try:
+                self._refresh_open_3d_views()
+            except Exception:
+                pass
+            housing_note += " Inspection part carried across the import."
         message = (
             f"Imported {model.title} (EFL {model.effl:.4g} mm) from "
             f"{Path(folder).name}; surrogate saved as {model.filename}." + housing_note
@@ -8557,6 +8570,81 @@ class LayoutTableWorkbenchMixin:
         except Exception:
             pass
         return bool(ok), note + str(msg)
+
+    def open_station_for_face(self, face: str) -> bool:
+        """bugs/0667 (user: "add components on each axis independently"): one click on a
+        blow-out axis creates -- or opens -- that face's STATION layout, pre-linked into
+        the cell. A created station is seeded from the CURRENT scene with the part
+        re-targeted onto the face (same part, a working chain to adapt); the cell file
+        is written beside it so the Cell View finds every station."""
+        from KrakenOS.UI.services.inspection_cell import normalize_cell_spec, save_cell
+        from KrakenOS.UI.services.inspection_part import (
+            FACE_ORDER,
+            PROJECT_ROOT as _PART_ROOT,
+            face_dims,
+            normalize_inspection_part_spec,
+        )
+
+        face = str(face).strip().lower()
+        if face not in FACE_ORDER:
+            return False
+        part = normalize_inspection_part_spec(getattr(self, "inspection_part_spec", None))
+        cell = normalize_cell_spec(
+            getattr(self, "inspection_cell_spec", None) or {"part": dict(part, enabled=True)}
+        )
+        if part["enabled"]:
+            cell["part"] = dict(normalize_inspection_part_spec(dict(part, active_face="front")), enabled=True)
+        entry = cell["stations"].get(face) or {}
+        existing = str(entry.get("layout") or "")
+        if existing and Path(existing).exists():
+            name = f"cell_{face}"
+            self.layout_files[name] = Path(existing)
+            self.load_layout_by_name(name)
+            self.inspection_cell_spec = cell
+            self.status_var.set(
+                f"Opened the {face} station ({Path(existing).name}) -- its chain is this "
+                f"face's axis; Save Layout and the cell picks the change up."
+            )
+            return True
+        stem = (self.current_layout_file.stem if self.current_layout_file is not None else "cell")
+        stem = stem.replace(" ", "_")
+        if stem.startswith("station_"):
+            stem = "cell"
+        out_dir = _PART_ROOT / "attachment" / "cells" / stem
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
+            self.status_var.set(f"Station folder could not be created: {exc}")
+            return False
+        path = out_dir / f"station_{face}.py"
+        prev_face = part["active_face"]
+        prev_enabled = part["enabled"]
+        # seed = the current scene, part re-targeted to the new face (write-only swap)
+        self.inspection_part_spec = normalize_inspection_part_spec(dict(part, enabled=True, active_face=face))
+        try:
+            self._write_layout_file(path)
+        finally:
+            self.inspection_part_spec = normalize_inspection_part_spec(
+                dict(part, enabled=prev_enabled, active_face=prev_face)
+            )
+        cell["stations"][face] = {"layout": str(path), "enabled": True}
+        # the scene we seeded FROM is this part's station for ITS face -- link it too
+        if prev_enabled and self.current_layout_file is not None:
+            current_entry = cell["stations"].get(prev_face) or {}
+            if not current_entry.get("layout"):
+                cell["stations"][prev_face] = {"layout": str(self.current_layout_file), "enabled": True}
+        cell_path = save_cell(out_dir / stem, cell)
+        self.inspection_cell_spec = cell
+        name = f"cell_{face}"
+        self.layout_files[name] = path
+        self.load_layout_by_name(name)
+        w, h = face_dims(cell["part"], face)
+        self.status_var.set(
+            f"Created the {face} station ({path.name}, face {w:g} x {h:g} mm) seeded from the "
+            f"current chain -- swap/import the lens and camera for this axis, then Save Layout. "
+            f"Cell: {cell_path.name}."
+        )
+        return True
 
     def open_inspection_cell_dialog(self) -> None:
         """bugs/0663 (phase 2 of the multi-station cell): six station layouts composed

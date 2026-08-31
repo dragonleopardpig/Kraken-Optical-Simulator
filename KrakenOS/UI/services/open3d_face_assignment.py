@@ -144,6 +144,12 @@ class Open3DFaceAssignmentService:
             command=lambda: self.editor.solve_fov_to_inspection_face(),
         )
         menu.add_command(
+            label="Create/Open station for the inspected face...",
+            command=lambda: self.editor.open_station_for_face(
+                normalize_inspection_part_spec(getattr(self.editor, "inspection_part_spec", None))["active_face"]
+            ),
+        )
+        menu.add_command(
             label="Inspection Part Settings...",
             command=lambda: self.editor.open_inspection_part_dialog(),
         )
@@ -1863,6 +1869,34 @@ class Open3DFaceAssignmentService:
             return best[1]
         return None
 
+    def _show_inspection_part_axis_menu(self, event, axis_info) -> bool:
+        """bugs/0667: the blow-out axis IS the station handle -- one click creates or
+        opens that face's station layout, pre-linked into the cell."""
+        from KrakenOS.UI.services.inspection_part import face_dims, normalize_inspection_part_spec
+
+        face = str(axis_info.get("face", "") or "").strip().lower()
+        if not face:
+            return False
+        spec = normalize_inspection_part_spec(getattr(self.editor, "inspection_part_spec", None))
+        w, h = face_dims(spec, face)
+        menu = tk.Menu(self, tearoff=False)
+        menu.add_command(label=f"Face {face.capitalize()} axis ({w:g} x {h:g} mm)", state="disabled")
+        menu.add_separator()
+        menu.add_command(
+            label="Create/Open station for this face...",
+            command=lambda f=face: self.editor.open_station_for_face(f),
+        )
+        menu.add_command(
+            label="Inspect this face (re-target THIS chain)",
+            command=lambda f=face: self.editor.set_inspection_part_active_face(f),
+        )
+        menu.add_command(
+            label="Solve FOV to the inspected face",
+            command=lambda: self.editor.solve_fov_to_inspection_face(),
+        )
+        self._popup_context_menu(menu, event)
+        return True
+
     def _maybe_show_optical_axis_menu(self, event) -> bool:
         """bugs/0638 (user request): a right-click ON an optical axis offers axis-level
         verbs -- chiefly ADD ELEMENTS onto that axis (a stock lens, a CAD/STL solid, a
@@ -1892,6 +1926,10 @@ class Open3DFaceAssignmentService:
                 axis_info = None
         if not axis_info:
             return False
+        # bugs/0667: a part-face BLOW-OUT axis gets its own menu -- create/open the
+        # station for that face, re-target, solve -- instead of the generic axis verbs.
+        if str(axis_info.get("axis_kind", "") or "") == "inspection_part_face":
+            return self._show_inspection_part_axis_menu(event, axis_info)
         label = (str(axis_info.get("axis_label", "") or "").strip() or "Optical Axis")
         branch_path = str(axis_info.get("branch_path", "") or "").strip()
 
