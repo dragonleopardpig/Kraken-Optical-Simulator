@@ -310,6 +310,10 @@ class DatasheetCardinals:
     # housing rear face, so the camera MOUNTS to the lens instead of being solved
     # toward it. None for ordinary variable-conjugate lenses.
     mount_flange_mm: float | None = None
+    # bugs/0668: only an object-space TELECENTRIC's front glass spans the object
+    # field (its chief rays are parallel); an ordinary lens funnels the field
+    # through its pupil. The disc-sizing rule branches on this.
+    telecentric: bool = False
 
     @property
     def ppa(self) -> float | None:
@@ -471,6 +475,7 @@ def telecentric_conjugate_cardinals(text: str) -> DatasheetCardinals | None:
     if not (0.0 < offset < effl):
         return None
     cardinals = DatasheetCardinals(effl=round(effl, 4))
+    cardinals.telecentric = True
     cardinals.magnification = -abs(mag)  # a finite-conjugate lens inverts
     cardinals.optimum_wd = wd
     cardinals.optimum_wd_mag = abs(mag)
@@ -538,6 +543,7 @@ def parse_datasheet_cardinals(path: str | Path) -> DatasheetCardinals | None:
         return None
 
     cardinals = DatasheetCardinals(effl=abs(effl))
+    cardinals.telecentric = re.search(r"(?i)telecentric", text) is not None
     cardinals.front_focal = _first_float(text, r"(?<![A-Za-z'])SF\s*\[mm\]\s*(-?\d[\d.]*)")
     cardinals.back_focal = _first_float(text, r"S'F'\s*\[mm\]\s*(-?\d[\d.]*)")
     cardinals.hh = _first_float(text, r"HH'\s*\[mm\]\s*(-?\d[\d.]*)")

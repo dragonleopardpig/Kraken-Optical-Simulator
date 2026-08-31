@@ -484,10 +484,9 @@ def solve_symmetric_two_groups(
     return solution, ppa, ppp
 
 
-def _step_optical_axis_extent(step_path: Path | str) -> float | None:
-    """The STEP body's extent along the optical (Z) axis, used as the surrogate
-    span when a mechanical body is bundled.  Lazy OCC import; ``None`` on any
-    failure so the caller can fall back to an EFL-derived default."""
+def _step_bounds_extents(step_path: Path | str) -> list[float] | None:
+    """The STEP body's axis-aligned bounding-box extents ``[dx, dy, dz]``.
+    Lazy OCC import; ``None`` on any failure so callers can fall back."""
     try:
         from OCC.Core.STEPControl import STEPControl_Reader
         from OCC.Core.Bnd import Bnd_Box
@@ -505,11 +504,29 @@ def _step_optical_axis_extent(step_path: Path | str) -> float | None:
         xmin, ymin, zmin, xmax, ymax, zmax = box.Get()
     except Exception:
         return None
-    extents = [
-        abs(xmax - xmin),
-        abs(ymax - ymin),
-        abs(zmax - zmin),
-    ]
+    return [abs(xmax - xmin), abs(ymax - ymin), abs(zmax - zmin)]
+
+
+def _step_transverse_extent(step_path: Path | str) -> float | None:
+    """The STEP body's transverse (barrel) diameter: the MIDDLE of the three
+    bounding-box extents.  A barrel is round, so two extents are its diameter and
+    one its length -- the middle extent is the diameter whether the barrel is
+    longer or shorter than it is wide, independent of which CAD axis is the
+    optical one (bugs/0668)."""
+    extents = _step_bounds_extents(step_path)
+    if extents is None:
+        return None
+    mid = sorted(extents)[1]
+    return float(mid) if math.isfinite(mid) and mid > 1e-3 else None
+
+
+def _step_optical_axis_extent(step_path: Path | str) -> float | None:
+    """The STEP body's extent along the optical (Z) axis, used as the surrogate
+    span when a mechanical body is bundled; ``None`` on any failure so the
+    caller can fall back to an EFL-derived default."""
+    extents = _step_bounds_extents(step_path)
+    if extents is None:
+        return None
     z_extent = extents[2]
     # Lens STEPs are conventionally authored along Z (the import sets rotation 0);
     # if Z is degenerate fall back to the largest extent so we still get a span.
@@ -790,6 +807,13 @@ def _core_from_prescription_data(assets: LensFolderAssets) -> _SurrogateCore:
     if data.paraxial_image_height or data.max_radial_field:
         # bugs/0662: elements cover the stated field (see the datasheet path).
         lens_aperture = round(max(float(lens_aperture), image_diameter + stop_diameter), 4)
+    # bugs/0668: no lens's glass exceeds its barrel -- same clamp as the
+    # datasheet path (never below the pupil footprint).
+    housing = (
+        _step_transverse_extent(assets.primary_step) if assets.primary_step else None
+    )
+    if housing:
+        lens_aperture = round(max(stop_diameter * 1.4, min(float(lens_aperture), housing)), 4)
     object_diameter = (
         image_diameter if object_mode == "Finite" else round(max(lens_aperture, image_diameter), 4)
     )
@@ -906,9 +930,27 @@ def _core_from_datasheet_cardinals(
     # extends blackbox apertures); the DRAWN discs were the pupil, not the glass.
     if cardinals.image_circle and cardinals.image_circle > 0.0:
         field_cover = float(cardinals.image_circle)
-        if cardinals.magnification and abs(float(cardinals.magnification)) > 1e-9:
+        if (
+            getattr(cardinals, "telecentric", False)
+            and cardinals.magnification
+            and abs(float(cardinals.magnification)) > 1e-9
+        ):
+            # bugs/0668: ONLY a telecentric's chief rays run parallel off the
+            # object, so only its front glass spans the object-side field. An
+            # ordinary lens funnels the whole field through its pupil -- scaling
+            # by 1/|m| drew 320 mm discs for the PYRITE 4.5/90/0.3x (90 mm sensor
+            # at 0.3x) whose barrel is 50 mm.
             field_cover *= max(1.0, 1.0 / abs(float(cardinals.magnification)))
         lens_aperture = round(max(lens_aperture, field_cover + stop_diameter), 4)
+    # bugs/0668: no lens's glass exceeds its barrel -- clamp to the bundled STEP
+    # body's transverse extent (never below the pupil footprint).
+    housing = (
+        _step_transverse_extent(assets.primary_step) if assets.primary_step else None
+    )
+    if housing:
+        lens_aperture = round(
+            max(stop_diameter * 1.4, min(lens_aperture, housing)), 4
+        )
     image_diameter = (
         round(float(cardinals.image_circle), 4)
         if (cardinals.image_circle and cardinals.image_circle > 0.0)
