@@ -23,7 +23,7 @@ def extract_mirror2_s():
         if str(name) != "MIRROR_40X40X40":
             continue
         rot = gp_Trsf()
-        rot.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(0, 1, 0)), math.radians(90.0))
+        rot.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(0, 1, 0)), math.radians(-90.0))
         rotated = shape.Moved(TopLoc_Location(rot))
         box = Bnd_Box()
         brepbndlib.Add(rotated, box)
@@ -32,8 +32,8 @@ def extract_mirror2_s():
         tr.SetTranslation(gp_Vec(-(x0 + x1) / 2, -(y0 + y1) / 2, -(z0 + z1) / 2))
         w = STEPControl_Writer()
         w.Transfer(rotated.Moved(TopLoc_Location(tr)), STEPControl_AsIs)
-        w.Write(str(COMP / "mirror2_chain_s.step"))
-        print("mirror2_chain.step re-extracted (true S: leg3 anti-parallel to leg1)")
+        w.Write(str(COMP / "mirror2_chain_s2.step"))
+        print("mirror2_chain.step re-extracted (true S: R_y(-90), fresh filename (STL cache keys on NAME))")
         return
     raise SystemExit("mirror2 not found")
 
@@ -51,7 +51,24 @@ def face_at_45(faces, want_sign):
     return best
 
 
-def insert_mirror(editor, *, after_name, gap_before, gap_after, step_name, label, want_sign=None):
+def _mark_port(face_list, normal, role):
+    import numpy as _np
+    best = None
+    for rec in face_list or []:
+        n = _np.asarray(rec.get("normal") or [0, 0, 0], dtype=float)
+        score = float(n @ _np.asarray(normal, dtype=float))
+        if best is None or score > best[0]:
+            best = (score, rec)
+    if best and best[0] > 0.9:
+        best[1]["port_role"] = role
+        print(f"    {role}: {best[1].get('face_id')} n={_np.round(_np.asarray(best[1]['normal'], dtype=float), 3)}")
+        return best[1]
+    print(f"    !! no face for {role} toward {normal}")
+    return None
+
+
+def insert_mirror(editor, *, after_name, gap_before, gap_after, step_name, label, want_sign=None,
+                  input_normal=None, output_normal=None):
     from KrakenOS.UI.services.optical_solid_workflow import _optical_solid_mesh_path_from_source
 
     rows = editor.rows
@@ -78,6 +95,13 @@ def insert_mirror(editor, *, after_name, gap_before, gap_after, step_name, label
     hyp["role"] = "Mirror"
     hyp["port_role"] = "Interaction Surface"
     hyp["assignment_source"] = "manual"
+    # bugs/0672: the follower sweep NORMALIZES the solid's orientation (the mesh
+    # authoring cannot choose the fold direction) -- only EXPLICIT user-authored
+    # ports steer it. Mark the entry + exit faces when the caller specifies them.
+    if input_normal is not None:
+        _mark_port(face_list, input_normal, "Input Port")
+    if output_normal is not None:
+        _mark_port(face_list, output_normal, "Output Port")
     print(f"  {label}: {hyp.get('face_id')} n={np.round(np.asarray(hyp['normal'], dtype=float), 3)} -> Mirror")
     editor.rows.insert(idx + 1, row)
 
@@ -96,8 +120,28 @@ def build():
                   gap_after=180.47, step_name="mirror1_chain.step", label="RA mirror 1 (50 mm)")
     # NB insert_mirror set the PRECEDING row ('to lens') to 33.08 -- but mirror1 must
     # follow the CENTRE PRISM leg; the 'to lens' row IS that leg, correct as is.
+    # mirror 2 is a FREE-PLACED second fold (bugs/0213): a chain-authored follower
+    # gets SWEPT and its orientation normalized (the canonical fold direction);
+    # only a solid with a recorded drop-point keeps its OWN pose, and the beam
+    # reflects off THAT orientation. Pin it at its real folded-world pose:
+    # cube centre (0, 272.8, 94.9), tilt_x=-90 puts the coated hypotenuse
+    # FACING the beam (first-surface -- tilt_x=+90 reflected off the INSIDE and
+    # added the 40 mm BK7 traversal, a +13.6 mm focus shift) and folds leg2 (+y)
+    # into leg3 (-z), the TRUE S of the om05a assembly.
     insert_mirror(editor, after_name="to camera (unfolded RA mirror 2)", gap_before=31.11,
-                  gap_after=47.40, step_name="mirror2_chain_s.step", label="RA mirror 2 (40 mm)")
+                  gap_after=46.40, step_name="mirror2_chain_s2.step", label="RA mirror 2 (40 mm)")
+    from KrakenOS.UI.nonseq_output_ports import row_z_positions
+
+    m2 = next(r for r in editor.rows if str(r.name) == "RA mirror 2 (40 mm)")
+    zs = row_z_positions(editor.rows)
+    z_station = float(zs[editor.rows.index(m2)])
+    m2.tilt_x = -90.0  # hyp outward (0,-.707,-.707): FACES the beam (first-surface, no glass) and reflects -z
+    m2.desp_x = 0.0
+    m2.desp_y = 272.8
+    m2.desp_z = 94.9 - z_station
+    m2.advanced = dict(m2.advanced or {})
+    m2.advanced["StepOverlayPromotion"] = {"center_world": [0.0, 272.8, 94.9]}
+    print(f"  mirror2 pinned free-placed at (0, 272.8, 94.9), tilt_x=-90 first-surface (z_station {z_station:.2f})")
     editor._sync_table()
     editor._write_layout_file(SCENE.resolve())
     editor.destroy()

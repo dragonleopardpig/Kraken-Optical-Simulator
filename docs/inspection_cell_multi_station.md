@@ -111,6 +111,15 @@ Scene `attachment/om05a_two_side.py` + extracted component STEPs in
 convergence (+3.4 mm glass shift, matches t(1−1/n)·m²), m to 0.02%, faces on
 opposite sensor halves. See `bugs/0670_om05a_split_field.md`.
 
+### om05a folded-only scene — SHIPPED (0672, phase 505)
+
+`attachment/om05a_folded.py`: the machine_vision_Pyrite85 pattern — real RA-mirror
+optical solids fold the chain IN-SCENE (mirror1 chain-authored, mirror2 FREE-PLACED
+per bugs/0213 so its own orientation steers the second fold; tilt_x=−90 = coated
+hypotenuse first-surface into the beam). True S (+z, +y, −z), 69% primary-branch
+reach, 0.9 µm per-field focus ON the image row. Key contracts in
+`bugs/0672_om05a_folded_scene_wip.md`.
+
 ### Remaining
 
 - om05a folded DISPLAY: generalise the two-arm display-fold to the five om05a folds

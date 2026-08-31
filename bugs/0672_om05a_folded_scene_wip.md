@@ -77,3 +77,34 @@ _fold_spec_om05a / _regen_all + the 0672 scripts). ORDER: build → refocus×2 �
 fix_flag2 (camera) → set_fov54 LAST (a registered camera's load-coupling re-derives
 the field to its image-circle half-diagonal 16.29 — guard B3 now pins that circle,
 the app's own convention).
+
+## SHIPPED (2026-08-31 late) -- guard = phase 505, all green
+
+The mystery fell to instrumentation (`bugs/0672_diag_mirror2_frame.py` + a pure-math
+orientation scan):
+
+1. **The follower sweep NORMALIZES a chain-authored solid's orientation**
+   (`_downstream_pose_from_frame` seats the body from its face metadata relative to
+   the incoming frame) -- mesh authoring CANNOT choose a second fold's direction,
+   and explicit Input/Output ports are shadowed by the interaction-reflection
+   branch. The earlier "invariance" was real machinery behaviour, compounded by the
+   filename-keyed STL cache masking two mesh flips.
+2. **The designed lever is the FREE-PLACED solid** (bugs/0213):
+   `advanced["StepOverlayPromotion"] = {"center_world": [...]}` + the world pose in
+   desp/tilts pins the body, and the beam reflects off THAT orientation.
+   Mirror2: centre (0, 272.8, 94.9), desp_z = 94.9 - z_station, tilt_x = -90.
+3. **tilt_x sign = first-surface vs glass**: +90 seated the coated hypotenuse away
+   from the beam -- the trace entered the BK7 cube (refract-reflect-refract) and
+   the focus shifted +13.6 mm = 40*(1-1/n), which the CAD's closed distances
+   disprove; -90 faces the hypotenuse into the beam = first-surface, focus back on
+   the row. The pure-math scan (rotate the face-record normal by
+   `rotation_matrix_from_kraken_tilts`, check outward.d_in < 0 and reflect()) picks
+   the tilt without trial traces.
+4. Image gap 46.40 (the pin offsets the fold vertex ~1 mm; 0109: sensor AT the
+   traced convergence).
+
+**Final:** `attachment/om05a_folded.py` -- object -> 3 prism plates -> 50 mm RA
+mirror (chain-authored fold) -> PYRITE 4.5/85 -> filter -> 40 mm RA mirror
+(free-placed fold) -> SV25. Chief legs +z, +y, -z (the om05a S); 69% of rays reach
+the image on the primary branch; best focus ON the image row, per-field rms 0.9 um.
+Load: File -> Open -> attachment/om05a_folded.py, Trace Now.
