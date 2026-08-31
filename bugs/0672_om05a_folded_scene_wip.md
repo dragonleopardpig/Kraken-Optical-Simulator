@@ -1,0 +1,65 @@
+# 0672 — om05a FOLDED-ONLY scene (WIP, continue on M90aPro)
+
+**User:** "I want folded only scene, just like machine_vision_Pyrite85.py." Build
+`attachment/om05a_folded.py` (Filen-synced) with the two RA mirrors as REAL
+optical-solid folds (the Pyrite85 promoted-solid pattern), prisms as plates on the
+first leg, then the full trace on the folded geometry.
+
+## State: ~85% traces through both folds; one open mystery
+
+Builder: `bugs/0672_build_om05a_folded.py` (mutate → save → reload FRESH → trace;
+tracing after in-place row edits without a model-change apply gave a stale-cache
+non-seq explosion — re-learned). Diagnostics: `bugs/0672_diag_output_ports.py`
+(face/port contract vs the reference), `bugs/0672_diag_trace_mode.py` (trace mode +
+pose overrides + chief hits — has a small numpy truthiness bug at the end, fix
+`or []` on `surface_ids`).
+
+**What WORKS now** (verified headless):
+- Both mirrors extracted from the assembly STEP chain-oriented
+  (`attachment/om05a_components/mirror1_chain.step`, `mirror2_chain_s.step`) and
+  inserted as optical-solid rows via `_optical_stl_solid_row` at the CAD chain
+  positions (mirror1 hyp z=94.93, mirror2 z=367.63, image 415.03).
+- **The face contract that makes a fold work** (found by diffing the working
+  Pyrite85 mirror): the mirror face = `function 'Mirror'` + `role 'Mirror'` +
+  `port_role 'Interaction Surface'`; EVERY OTHER face must be `Transmit/Port` +
+  `port_role 'Auto'`. The import default made all faces Interaction Surface → no
+  output port could be inferred → downstream rows never re-posed → all rays
+  `missed_image`. With the contract: **11754/13689 rays reach the image**, legs
+  (0,0,1)→(0,1,0)→(0,0,1), image endpoint (0.7, 273.8, 142.2) — fold distances
+  exact (94.93 + 272.7 + 47.4).
+
+## The open mystery (next session's first task)
+
+The trace is BYTE-IDENTICAL for both mirror2 face-plane signs (n=(0,1,±1)) and both
+solved sequential tilts (±45): endpoint always (0.7, 273.8, 142.2), leg3 always +z.
+Physically impossible if the reflection came from the face plane. The diag shows
+why: the Image row's pose override (row 16) has
+`frame_source: 'interaction_reflection_fallback'` → origin (0, 273.8, 142.2),
+normal +z; mirror2's own override (row 15) says `frame_source:
+'downstream_row_frame'`. The fallback derives the post-mirror2 frame WITHOUT the
+face's reflection sign — hence the invariance. (Also beware: `_optical_solid_mesh
+_path_from_source` caches STEP→STL by FILENAME — overwriting a STEP silently keeps
+the old mesh; cache-bust by renaming, hence `mirror2_chain_s.step`.)
+
+The REAL om05a is an S (leg3 anti-parallel to leg1: down / along / up); the scene
+currently draws a staircase (leg3 parallel). Next: root-cause why mirror2's output
+frame resolves via the fallback instead of the Mirror interaction reflection
+(nonseq_output_ports.py: `build_optical_solid_output_port_pose_overrides`,
+`select_optical_solid_output_face`, `_trace_row_exit_frame`) — mirror1 resolves
+correctly; the difference is mirror2 sits in an ALREADY-FOLDED incoming frame.
+
+## Remaining after the fold is right
+
+1. Focus check at the folded image (per-field rms; the plates/lens are unchanged so
+   it should match the straight scene's 1-2 um).
+2. Carry the SV25 camera (`camera_model` CAM-SV25MCCXP — registered in
+   `attachment/Cameras/imported_cameras.json` with front_to_sensor 17.6) and
+   confirm the camera body seats on the folded image leg.
+3. Renders + eyeball; guard `validate_open3d_0672_*` (phase 505); docs; memory.
+4. The scene copy dropped `display_fold_spec` deliberately (this scene IS folded).
+
+## Context from the same session (already shipped)
+
+0670 straight split-field scene (+FOV 54x54, 13 fields), 0671 Folded Assembly View,
+SV25 camera registration, lens flip per user. Scenes + components are
+Filen-synced under attachment/; repo work is committed through 0671.
