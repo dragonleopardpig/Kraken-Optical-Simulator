@@ -1,32 +1,60 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc" data-category="laser" data-figure="90">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650" role="img" aria-labelledby="title desc" data-category="laser" data-figure="90">
   <title id="title">Figure 90 — Exercise 15.4-1: Four-level population equation</title>
-  <desc id="desc">Figure 90, a concept diagram for Exercise 15.4-1, Four-level population equation. The input, physical model, output, variables, and verification method are labeled.</desc>
+  <desc id="desc">A four-level energy diagram, atom bookkeeping, and the resulting population-difference rate equation show why the stimulated term has no factor of two.</desc>
   <defs>
+    <marker id="blue-arrow" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" refX="11" refY="6" orient="auto"><path d="M0 0L12 6L0 12z" fill="#286f9e"/></marker>
+    <marker id="red-arrow" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" refX="11" refY="6" orient="auto"><path d="M0 0L12 6L0 12z" fill="#c24d3c"/></marker>
+    <marker id="green-arrow" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" refX="11" refY="6" orient="auto"><path d="M0 0L12 6L0 12z" fill="#2b7a78"/></marker>
     <style>
-      .bg{fill:#f7fafc}.card{fill:#fff;stroke:#b9c7d6;stroke-width:2}.band{fill:#eaf2f8}.figureid{font:700 14px sans-serif;fill:#286f9e;letter-spacing:1.2px}.head{font:700 25px sans-serif;fill:#18324a}.sub{font:17px sans-serif;fill:#486581}.tag{font:700 16px sans-serif;fill:#286f9e;letter-spacing:1px}.label{font:700 20px sans-serif;fill:#243b53;text-anchor:middle}.legend{font:16px sans-serif;fill:#334e68}.check{font:15px sans-serif;fill:#486581}.accent{fill:none;stroke:#d9485f;stroke-width:5;stroke-linecap:round;stroke-linejoin:round}.accent2{fill:none;stroke:#8b5cf6;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.optic{fill:none;stroke:#286f9e;stroke-width:5}.thin{fill:none;stroke:#61788a;stroke-width:3}.axis{fill:none;stroke:#8295a5;stroke-width:2}.point{fill:#173f5f}.iconbox{fill:#edf7ff;stroke:#286f9e;stroke-width:3}.opticfill{fill:#286f9e}.layer1{fill:#d9ecff;stroke:#286f9e;stroke-width:2}.layer2{fill:#e7f7ee;stroke:#2b7a78;stroke-width:2}.icontext{font:italic 22px serif;fill:#6d28d9}.var{font:italic 20px serif;fill:#54278f;text-anchor:middle;paint-order:stroke;stroke:#fff;stroke-width:5px;stroke-linejoin:round}.smallvar{font-size:17px}.annotation{font:14px sans-serif;fill:#486581;text-anchor:middle;paint-order:stroke;stroke:#fff;stroke-width:4px}.callout{fill:none;stroke:#54278f;stroke-width:2}.tick{fill:none;stroke:#54278f;stroke-width:2}.flow{stroke:#334e68;stroke-width:3;marker-end:url(#arrow)}
+      .bg{fill:#f7fafc}.card{fill:#fff;stroke:#b9c7d6;stroke-width:2}.band{fill:#eaf2f8}.figureid{font:700 14px sans-serif;fill:#286f9e;letter-spacing:1.2px}.head{font:700 25px sans-serif;fill:#18324a}.sub{font:17px sans-serif;fill:#486581}.tag{font:700 15px sans-serif;fill:#286f9e;letter-spacing:1px}.label{font:700 17px sans-serif;fill:#243b53}.text{font:15px sans-serif;fill:#334e68}.small{font:13px sans-serif;fill:#486581}.eq{font:italic 20px serif;fill:#243b53}.result{font:italic 22px serif;fill:#173f5f}.level{stroke:#243b53;stroke-width:5}.pump{stroke:#286f9e;stroke-width:4;fill:none;marker-end:url(#blue-arrow)}.laser{stroke:#c24d3c;stroke-width:4;fill:none;marker-end:url(#red-arrow)}.decay{stroke:#2b7a78;stroke-width:4;fill:none;stroke-dasharray:7 5;marker-end:url(#green-arrow)}.rule{stroke:#b9c7d6;stroke-width:2}.minus{fill:#fbe8e5;stroke:#c24d3c;stroke-width:2}.plus{fill:#e7f7ee;stroke:#2b7a78;stroke-width:2}.box{fill:#edf7ff;stroke:#286f9e;stroke-width:2}
     </style>
-    <marker id="arrow" markerUnits="userSpaceOnUse" markerWidth="13" markerHeight="13" refX="13" refY="6.5" orient="auto"><path d="M0,0 L13,6.5 L0,13 Z" fill="#334e68"/></marker>
   </defs>
-  <rect class="bg" width="1200" height="560" rx="18"/>
-  <text class="figureid" x="55" y="25">FIGURE 90</text>
-  <text class="head" x="55" y="55">Four-level population equation</text>
-  <text class="sub" x="55" y="84">Exercise 15.4-1 • illustrated calculation map</text>
+  <rect class="bg" width="1200" height="650" rx="18"/>
+  <text class="figureid" x="45" y="25">FIGURE 90</text>
+  <text class="head" x="45" y="55">Four-level inversion: the lower laser level empties rapidly</text>
+  <text class="sub" x="45" y="84">Exercise 15.4-1 • derive the rate equation and explain the missing factor of 2</text>
 
-  <rect class="card" x="45" y="120" width="300" height="295" rx="16"/>
-  <rect class="card" x="450" y="120" width="315" height="295" rx="16"/>
-  <rect class="card" x="855" y="120" width="300" height="295" rx="16"/>
-  <text class="tag" x="70" y="153">GIVEN / DEFINITIONS</text>
-  <text class="tag" x="475" y="153">MODEL / OPERATION</text>
-  <text class="tag" x="880" y="153">RESULT / INTERPRETATION</text>
-  <text class="label" x="195"><tspan x="195" y="272">pump, gain, and cavity</tspan><tspan x="195" y="299">loss</tspan></text>
-  <text class="label" x="607"><tspan x="607" y="390">threshold / pulse dynamics</tspan></text>
-  <text class="label" x="1005"><tspan x="1005" y="285">laser modes or pulse</tspan></text>
-  <line class="flow" x1="345" y1="270" x2="440" y2="270"/>
-  <line class="flow" x1="765" y1="270" x2="845" y2="270"/>
-  <path class="optic" d="M495 190 Q525 270 495 350 M720 190 Q690 270 720 350"/><rect class="layer1" x="570" y="225" width="75" height="90"/><path class="accent" d="M505 270 H710"/><path class="accent2" d="M607 350 V315"/>
-  <g id="variable-labels"><text class="var" x="590" y="255">N</text><text class="var" x="625" y="255">g</text><text class="var" x="607" y="340">τ</text><text class="var" x="485" y="205">R</text><text class="var" x="700" y="255">P</text></g>
+  <rect class="card" x="35" y="110" width="350" height="415" rx="16"/>
+  <text class="tag" x="60" y="142">FOUR-LEVEL ENERGY SCHEME</text>
+  <text class="label" x="225" y="174" text-anchor="middle">3  pump level</text><line class="level" x1="135" y1="185" x2="315" y2="185"/>
+  <text class="label" x="225" y="254" text-anchor="middle">2  upper laser level</text><line class="level" x1="135" y1="265" x2="315" y2="265"/>
+  <text class="label" x="225" y="364" text-anchor="middle">1  lower laser level</text><line class="level" x1="135" y1="375" x2="315" y2="375"/>
+  <text class="label" x="225" y="464" text-anchor="middle">0  ground</text><line class="level" x1="135" y1="475" x2="315" y2="475"/>
+  <path class="pump" d="M105 470V195"/><text class="label" x="92" y="220" text-anchor="end">pump R</text>
+  <path class="decay" d="M225 195V250"/><text class="small" x="238" y="226">rapid 3→2</text>
+  <path class="laser" d="M190 275V360"/><text class="small" x="135" y="324">laser: W<tspan baseline-shift="sub" font-size="10">i</tspan></text>
+  <path class="decay" d="M270 275V360"/><text class="small" x="282" y="326">t<tspan baseline-shift="sub" font-size="10">sp</tspan></text>
+  <path class="decay" d="M225 385V460"/><text class="small" x="238" y="426">τ<tspan baseline-shift="sub" font-size="10">1</tspan> ≪ t<tspan baseline-shift="sub" font-size="10">sp</tspan></text>
+  <text class="text" x="62" y="510">Fast emptying keeps N<tspan baseline-shift="sub" font-size="11">1</tspan> ≈ 0.</text>
 
-  <rect class="band" x="45" y="430" width="1110" height="115" rx="12"/>
-  <text class="legend" x="65"><tspan x="65" y="462">Variables labeled on model — N: inversion • g: gain • τ: lifetime • R: reflectance • P: power</tspan></text>
-  <text class="check" x="65"><tspan x="65" y="522">Independent check — threshold balance, energy conservation, and time scale</tspan></text>
+  <rect class="card" x="425" y="110" width="350" height="415" rx="16"/>
+  <text class="tag" x="450" y="142">ONE STIMULATED TRANSITION</text>
+  <rect class="minus" x="455" y="170" width="290" height="92" rx="10"/>
+  <text class="label" x="475" y="198">1. Stimulated transition</text>
+  <text class="eq" x="475" y="230">N<tspan baseline-shift="sub" font-size="14">2</tspan> ↓ 1,  N<tspan baseline-shift="sub" font-size="14">1</tspan> ↑ 1</text>
+  <text class="text" x="475" y="252">instantaneous ΔN = −2</text>
+  <path class="decay" d="M600 270V303"/>
+  <rect class="plus" x="455" y="310" width="290" height="92" rx="10"/>
+  <text class="label" x="475" y="338">2. Lower level empties rapidly</text>
+  <text class="eq" x="475" y="370">N<tspan baseline-shift="sub" font-size="14">1</tspan> ↓ 1</text>
+  <text class="text" x="475" y="392">cleanup contributes ΔN = +1</text>
+  <line class="rule" x1="470" y1="432" x2="730" y2="432"/>
+  <text class="label" x="475" y="463">Net on the laser timescale</text>
+  <text class="result" x="475" y="497">ΔN = −2 + 1 = −1</text>
+
+  <rect class="card" x="815" y="110" width="350" height="415" rx="16"/>
+  <text class="tag" x="840" y="142">POPULATION-DIFFERENCE RATE</text>
+  <text class="text" x="842" y="180">Since N<tspan baseline-shift="sub" font-size="11">1</tspan> ≈ 0, use N ≈ N<tspan baseline-shift="sub" font-size="11">2</tspan>:</text>
+  <text class="eq" x="842" y="220">dN/dt = R − N/t<tspan baseline-shift="sub" font-size="14">sp</tspan> − W<tspan baseline-shift="sub" font-size="14">i</tspan>N</text>
+  <text class="text" x="842" y="258">Insert N<tspan baseline-shift="sub" font-size="11">0</tspan> = Rt<tspan baseline-shift="sub" font-size="11">sp</tspan> and</text>
+  <text class="eq" x="842" y="292">W<tspan baseline-shift="sub" font-size="14">i</tspan> = n/(N<tspan baseline-shift="sub" font-size="14">t</tspan>t<tspan baseline-shift="sub" font-size="14">p</tspan>)</text>
+  <rect class="box" x="838" y="322" width="304" height="105" rx="10"/>
+  <text class="result" x="860" y="360">dN/dt = (N<tspan baseline-shift="sub" font-size="15">0</tspan>−N)/t<tspan baseline-shift="sub" font-size="15">sp</tspan></text>
+  <text class="result" x="917" y="397">− (N/N<tspan baseline-shift="sub" font-size="15">t</tspan>)(n/t<tspan baseline-shift="sub" font-size="15">p</tspan>)</text>
+  <text class="text" x="842" y="463">No factor 2: one atom leaves N<tspan baseline-shift="sub" font-size="11">2</tspan>,</text>
+  <text class="text" x="842" y="487">but it does not remain in N<tspan baseline-shift="sub" font-size="11">1</tspan>.</text>
+
+  <rect class="band" x="35" y="548" width="1130" height="78" rx="12"/>
+  <text class="text" x="58" y="580">Checks: n = 0 gives relaxation to N<tspan baseline-shift="sub" font-size="11">0</tspan> with lifetime t<tspan baseline-shift="sub" font-size="11">sp</tspan>.</text>
+  <text class="text" x="58" y="608">Steady lasing gives N = N<tspan baseline-shift="sub" font-size="11">t</tspan> and n<tspan baseline-shift="sub" font-size="11">ss</tspan> = (N<tspan baseline-shift="sub" font-size="11">0</tspan> − N<tspan baseline-shift="sub" font-size="11">t</tspan>)t<tspan baseline-shift="sub" font-size="11">p</tspan>/t<tspan baseline-shift="sub" font-size="11">sp</tspan>, twice the three-level value.</text>
 </svg>

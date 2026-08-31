@@ -85,7 +85,16 @@ band; the given He--Ne parameters supply the requested count.
 Exercise 15.4-1 — Four-level population equation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Use the four-level scheme of Fig. 14.2-6:
+the pump transfers atoms from level 0 through the short-lived level 3 into the
+upper laser level 2 at the effective rate :math:`R`.  The laser transition is
+:math:`2\rightarrow1`, and the lower laser level empties to level 0 with
+:math:`\tau_1\ll t_{sp}`.  Here :math:`N_i` is the population density of level
+:math:`i`, :math:`N=N_2-N_1` is the population difference, :math:`W_i` is the
+induced-transition probability per atom, :math:`n` is the resonator photon
+density, :math:`N_t` is the threshold population difference, and :math:`t_p`
+is the photon lifetime.  As in the surrounding textbook derivation, assume
+that :math:`R` is independent of :math:`N`.
 
 .. _fop-exercise-15-4-1-illustration:
 
@@ -94,28 +103,103 @@ Exercise 15.4-1 — Four-level population equation
    :align: center
    :width: 95%
 
-   **Figure 90 — Exercise 15.4-1: Four-level population equation.** The
-   diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route. Every
-   symbol in the variable strip is labeled on the model itself.
+   **Figure 90 — Exercise 15.4-1: Four-level population equation.**  The lower
+   laser level does not retain the atom delivered by a stimulated transition.
+   Its rapid :math:`1\rightarrow0` decay changes the initial inversion change
+   of :math:`-2` into a net slow-timescale change of :math:`-1`.
 
-**Step 2 — Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+**Step 2 — Mathematical formulas used.**  Write a rate balance for each laser
+level, use adiabatic elimination for the short-lived lower level, and then use
+the textbook relation
 
-**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. math::
+   :label: fop-exercise-15-4-1-induced-rate
 
-Fast emptying makes :math:`N_1\simeq0`, so one stimulated transition changes
-:math:`N=N_2-N_1\simeq N_2` by one atom, not two.  Thus
-:math:`\dot N=(N_0-N)/t_{sp}-\sigma c nN`, without the two-level factor 2.
+   W_i=\frac{n}{N_t t_p}
+
+from Eq. (15.4-2).  The algebra and units can be checked with
+:ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+
+**Step 3 — Worked derivation.**  Start with separate upper- and lower-level
+balances.  Pumping adds atoms to level 2; spontaneous decay and net induced
+transitions remove them.  The same two processes feed level 1, which rapidly
+empties to level 0:
+
+.. math::
+   :label: fop-exercise-15-4-1-level-rates
+
+   \frac{dN_2}{dt}
+   &=R-\frac{N_2}{t_{sp}}-W_i(N_2-N_1),\\
+   \frac{dN_1}{dt}
+   &=\frac{N_2}{t_{sp}}+W_i(N_2-N_1)-\frac{N_1}{\tau_1}.
+
+Because :math:`\tau_1` is the shortest timescale, level 1 follows the other
+variables almost instantaneously.  Set :math:`dN_1/dt\simeq0` in the second
+equation to obtain
+
+.. math::
+   :label: fop-exercise-15-4-1-lower-population
+
+   N_1\simeq\tau_1\left(\frac{N_2}{t_{sp}}+W_iN\right)
+   \ll N_2.
+
+Thus :math:`N=N_2-N_1\simeq N_2` and, on timescales long compared with
+:math:`\tau_1`, :math:`dN/dt\simeq dN_2/dt`.  The first equation in
+:eq:`fop-exercise-15-4-1-level-rates` therefore reduces to
+
+.. math::
+   :label: fop-exercise-15-4-1-reduced-rate
+
+   \frac{dN}{dt}=R-\frac{N}{t_{sp}}-W_iN.
+
+For the assumed population-independent pump, Eq. (14.2-13) gives the
+small-signal population difference :math:`N_0=Rt_{sp}`.  Substitute this
+definition and
+:eq:`fop-exercise-15-4-1-induced-rate` into
+:eq:`fop-exercise-15-4-1-reduced-rate`:
+
+.. math::
+   :label: fop-exercise-15-4-1-derived-rate
+
+   \frac{dN}{dt}
+   =\frac{N_0-N}{t_{sp}}-W_iN
+   =\frac{N_0-N}{t_{sp}}
+    -\frac{N}{N_t}\frac{n}{t_p}.
+
+The missing factor of 2 is physical, not algebraic.  In a three-level laser,
+one stimulated emission event changes :math:`N_2\mapsto N_2-1` and
+:math:`N_1\mapsto N_1+1`, so :math:`N_2-N_1` initially falls by two.  In the
+four-level laser, the atom added to level 1 immediately decays to level 0;
+that cleanup raises :math:`N_2-N_1` by one again.  The net change observed on
+the laser timescale is therefore only :math:`\Delta N=-1` per generated
+photon.
 
 **Step 4 — State the numbered result.**  The principal result obtained in the working is
 
 .. math::
    :label: fop-exercise-15-4-1-result
 
-   \dot N=(N_0-N)/t_{sp}-\sigma c nN
+   \boxed{
+   \frac{dN}{dt}
+   =\frac{N_0-N}{t_{sp}}
+    -\frac{N}{N_t}\frac{n}{t_p}},
+   \qquad N_0=Rt_{sp}.
 
 
-**Step 5 — Check.**  Equation :eq:`fop-exercise-15-4-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
+**Step 5 — Check.**  With no resonator field (:math:`n=0`),
+:eq:`fop-exercise-15-4-1-result` gives
+:math:`N(t)=N_0+[N(0)-N_0]e^{-t/t_{sp}}`, so the unilluminated inversion tends
+to :math:`N_0` with the correct lifetime.  During nonzero steady lasing,
+Eq. (15.4-3) requires :math:`N=N_t`; the result above then gives
+
+.. math::
+   :label: fop-exercise-15-4-1-steady-check
+
+   n_{ss}=(N_0-N_t)\frac{t_p}{t_{sp}},
+
+which is twice the three-level value following Eq. (15.4-6), exactly as
+expected when the factor of 2 is absent.  Finally, every term in
+:eq:`fop-exercise-15-4-1-result` has units of population density per unit time.
 
 Exercise 15.4-2 — Q-switched ruby pulse
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
