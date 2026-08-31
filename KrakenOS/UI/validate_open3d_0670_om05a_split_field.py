@@ -120,12 +120,14 @@ def _check_scene(ok, notes) -> None:
         y_max = max(abs(y) for y in ys)
         pos = [y for y in ys if y > 0.4]
         neg = [y for y in ys if y < -0.4]
+        # A REGISTERED camera re-couples the field on every load to its image-circle
+        # half-diagonal (16.29) -- the app's own coverage convention; pin that circle.
         ok(
-            inverted and len(pos) >= 2 and len(neg) >= 2 and y_max <= 11.6,
-            f"B3: a REAL inverted image; the 54 mm FOV fills the sensor and the two faces land "
-            f"on OPPOSITE sensor halves, "
-            f"inside the sensor (+{min(pos) if pos else 0:.1f}..+{max(pos) if pos else 0:.1f} / "
-            f"{max(neg) if neg else 0:.1f}..{min(neg) if neg else 0:.1f} mm)",
+            inverted and len(pos) >= 2 and len(neg) >= 2 and y_max <= 16.4,
+            f"B3: a REAL inverted image; the coupled camera's coverage fills the image circle and "
+            f"the two faces land on OPPOSITE halves "
+            f"(+{min(pos) if pos else 0:.1f}..+{max(pos) if pos else 0:.1f} / "
+            f"{max(neg) if neg else 0:.1f}..{min(neg) if neg else 0:.1f} mm; half-diag 16.29)",
         )
     finally:
         try:
