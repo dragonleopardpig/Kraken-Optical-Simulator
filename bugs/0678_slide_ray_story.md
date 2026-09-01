@@ -52,3 +52,19 @@ from the main scene:
 
 Remaining for the full slide picture in-scene: the second arm (blocked by the two
 documented trace-mode frontiers) and the red LED illumination paths.
+
+## CORRECTION (same day) — blocker #2 RETRACTED; measurement-filter error
+
+Chain rays carry `source_id='source:0'` (the launch grid is itself a source). My
+probes classified "chain" as EMPTY source_id, so they reported "0 chain paths" on
+healthy scenes -- including the A/B that "proved" a scene source kills the chain.
+That conclusion is RETRACTED pending a clean re-run with correct accounting
+(`source:0` = the imaging chain; `source:faceB` = the second arm). The swapped
+`om05a_folded.py` (real five-fold bends + chunk + 50x50x1 device) traces 243
+paths / 68 reach RIGHT NOW. Blocker #1 (the 0224 sign-agnostic backward-line
+fold) was observed directly on the chief legs and STANDS.
+
+User's clarified architecture (mid-flag): symmetric 2-sided -- each side gets its
+3 assigned mirror surfaces; ONE FOV sees the two object planes (the 50x1 side
+faces). Next session: re-run the faceB-source experiment with correct accounting;
+if the chain survives, the full symmetric scene lands.

@@ -106,7 +106,7 @@ def build():
 
     import shutil
 
-    shutil.copyfile("attachment/om05a_folded.py", SCENE)
+    shutil.copyfile("attachment/om05a_unfolded_tunnel.py", SCENE)  # the tunnel is the base (om05a_folded.py is now the armA scene)
     editor = KrakenLayoutEditor()
     editor._prompt_for_missing_cad_assets = lambda: None
     editor.layout_files["p"] = SCENE.resolve()
