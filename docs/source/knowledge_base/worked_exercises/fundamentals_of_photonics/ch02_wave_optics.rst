@@ -200,7 +200,18 @@ Equation
 Exercise 2.4-2 — Double-convex lens
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Let
+:math:`\rho^2=x^2+y^2`.  Put the vertex of the front surface at :math:`z=0`
+and the vertex of the rear surface at :math:`z=d_0`, where :math:`d_0` is the
+central lens thickness.  At radius :math:`\rho`, the two surface positions are
+:math:`z_1(\rho)` and :math:`z_2(\rho)`, so the local glass thickness is
+:math:`d(\rho)=z_2(\rho)-z_1(\rho)`.
+
+The textbook sign convention gives :math:`R_1>0` for the front convex
+surface and :math:`R_2<0` for the rear surface in Fig. 2.4-8.  The lens has
+uniform refractive index :math:`n`, is surrounded by air, and is thin and
+paraxial: :math:`\rho\ll |R_1|,|R_2|`.  Surface reflection and absorption are
+neglected, exactly as in the derivation of textbook Eq. (2.4-5).
 
 .. _fop-exercise-2-4-2-illustration:
 
@@ -209,28 +220,154 @@ Exercise 2.4-2 — Double-convex lens
    :align: center
    :width: 95%
 
-   **Figure 20 — Exercise 2.4-2: Double-convex lens.** The
-   diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route. Every
-   symbol in the variable strip is labeled on the model itself.
+   **Figure 20 — Exercise 2.4-2: Double-convex lens.**  The signed surface
+   radii determine the two paraxial sags.  Their difference gives the local
+   thickness :math:`d(\rho)`, whose quadratic part becomes the lens phase.
 
-**Step 2 — Mathematical formulas used.**  The working uses :ref:`exponential, logarithmic, and phasor identities <fop-formula-exponentials>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+**Step 2 — Mathematical formulas used.**  The requested starting point is
+the variable-thickness plate law, textbook Eq. (2.4-5), printed p. 53:
 
-**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. math::
+   :label: fop-exercise-2-4-2-plate-law
 
-Adding the two parabolic surface sags leaves the quadratic phase
-:math:`t=h_0\exp[-jk_0(x^2+y^2)/(2f)]`, where
-:math:`\boxed{f^{-1}=(n-1)(R_1^{-1}-R_2^{-1})}`.
+   t(x,y)\simeq h_{\mathrm{air}}
+   \exp[-j(n-1)k_0d(x,y)],
+   \qquad h_{\mathrm{air}}=e^{-jk_0d_0}.
 
-**Step 4 — State the numbered result.**  The principal result obtained in the working is
+The target is the thin-lens transmittance in textbook Eq. (2.4-9), with the
+focal length required by Eq. (2.4-11), printed p. 55.  The only approximation
+needed for the geometry is the Taylor expansion
+:math:`\sqrt{1-u}\simeq1-u/2` for :math:`|u|\ll1`.  The algebra also uses
+:ref:`phasor identities <fop-formula-exponentials>` and
+:ref:`small-angle identities <fop-formula-trigonometry>`.
+
+**Step 3 — Worked derivation.**
+
+**Route A: use the general variable-thickness formula.**  For either signed
+spherical radius :math:`R_i`, the surface sag measured from its vertex is
+
+.. math::
+   :label: fop-exercise-2-4-2-surface-sag
+
+   s_i(\rho)
+   =R_i-\operatorname{sgn}(R_i)
+    \sqrt{R_i^2-\rho^2}
+   \simeq \frac{\rho^2}{2R_i}.
+
+For :math:`R_1>0`, this sag is positive, so the front surface moves toward
+:math:`+z` away from its vertex.  For :math:`R_2<0`, it is negative, so the
+rear surface moves toward :math:`-z`.  Therefore
+
+.. math::
+   :label: fop-exercise-2-4-2-surface-positions
+
+   z_1(\rho)&\simeq\frac{\rho^2}{2R_1},\\
+   z_2(\rho)&\simeq d_0+\frac{\rho^2}{2R_2}.
+
+Subtracting the front position from the rear position gives the glass
+thickness:
+
+.. math::
+   :label: fop-exercise-2-4-2-thickness
+
+   d(\rho)
+   &=z_2(\rho)-z_1(\rho)\\
+   &\simeq d_0-\frac{\rho^2}{2}
+      \left(\frac{1}{R_1}-\frac{1}{R_2}\right).
+
+Because :math:`R_2<0`, the quantity in parentheses is positive.  Thus the
+double-convex lens is thickest on axis and becomes thinner as :math:`\rho`
+increases, as it should.
+
+Insert :eq:`fop-exercise-2-4-2-thickness` into the plate law
+:eq:`fop-exercise-2-4-2-plate-law`:
+
+.. math::
+   :label: fop-exercise-2-4-2-direct-phase
+
+   t(x,y)
+   &\simeq h_{\mathrm{air}}e^{-j(n-1)k_0d_0}
+   \exp\!\left[
+      \frac{jk_0\rho^2}{2}(n-1)
+      \left(\frac{1}{R_1}-\frac{1}{R_2}\right)
+   \right]\\
+   &=h_0\exp\!\left(\frac{jk_0\rho^2}{2f}\right),
+   \qquad h_0=e^{-jnk_0d_0},
+
+provided that
+
+.. math::
+   :label: fop-exercise-2-4-2-lens-power
+
+   \frac{1}{f}
+   =(n-1)\left(\frac{1}{R_1}-\frac{1}{R_2}\right).
+
+This is exactly textbook Eq. (2.4-9) with the focal length of Eq. (2.4-11).
+The positive sign in the quadratic exponent is required by the book's
+:math:`e^{-j\boldsymbol k\cdot\boldsymbol r}` convention.
+
+**Route B: cascade two plano-convex lenses.**  Split the lens at an internal
+plane.  The front plano-convex part has power :math:`(n-1)/R_1`.  The rear
+part is reversed; its positive physical curvature magnitude is
+:math:`-R_2`, because :math:`R_2<0`.  Hence
+
+.. math::
+   :label: fop-exercise-2-4-2-cascade-powers
+
+   \frac{1}{f_{\mathrm{front}}}=\frac{n-1}{R_1},
+   \qquad
+   \frac{1}{f_{\mathrm{rear}}}=\frac{n-1}{-R_2}.
+
+Each part contributes a transmittance of the form (2.4-9).  Their
+coordinate-independent phase factors combine into the single constant
+:math:`h_0`; multiplying the two transmittances adds their quadratic phases:
+
+.. math::
+   :label: fop-exercise-2-4-2-cascade-phase
+
+   t_{\mathrm{front}}t_{\mathrm{rear}}
+   &=h_0\exp\!\left[
+      \frac{jk_0\rho^2}{2}
+      \left(\frac{1}{f_{\mathrm{front}}}
+           +\frac{1}{f_{\mathrm{rear}}}\right)
+   \right]\\
+   &=h_0\exp\!\left[
+      \frac{jk_0\rho^2}{2}(n-1)
+      \left(\frac{1}{R_1}-\frac{1}{R_2}\right)
+   \right].
+
+Thus the cascade proof gives the same phase and the same focal length as the
+direct thickness proof.
+
+**Step 4 — State the numbered result.**  The requested complex amplitude
+transmittance and focal length are
 
 .. math::
    :label: fop-exercise-2-4-2-result
 
-   \boxed{f^{-1}=(n-1)(R_1^{-1}-R_2^{-1})}
+   \boxed{
+   t(x,y)\simeq h_0
+   \exp\!\left[\frac{jk_0}{2f}(x^2+y^2)\right]},
+   \qquad h_0=e^{-jnk_0d_0},
+   \qquad
+   \boxed{
+   \frac{1}{f}=(n-1)
+   \left(\frac{1}{R_1}-\frac{1}{R_2}\right)}.
 
 
-**Step 5 — Check.**  Equation :eq:`fop-exercise-2-4-2-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.
+**Step 5 — Check.**
+
+* **Symmetric double-convex lens:** if :math:`R_1=R` and :math:`R_2=-R`,
+  then :math:`1/f=2(n-1)/R>0`.  Both surfaces add positive converging power;
+  they do not cancel.
+* **Plano-convex limit:** letting :math:`R_2\rightarrow\infty` gives
+  :math:`f=R_1/(n-1)`, which is textbook Eq. (2.4-10).
+* **No index contrast:** as :math:`n\rightarrow1`, :math:`1/f\rightarrow0`
+  and the transverse quadratic phase disappears.
+* **Dimensions and phase sign:** each :math:`1/R_i` and :math:`1/f` has units
+  of inverse length, while :math:`k_0\rho^2/f` is dimensionless.  With the
+  textbook phasor convention, the positive quadratic phase in
+  :eq:`fop-exercise-2-4-2-result` is the converging-lens phase of Eq. (2.4-9).
 
 Exercise 2.4-3 — Lens focusing
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

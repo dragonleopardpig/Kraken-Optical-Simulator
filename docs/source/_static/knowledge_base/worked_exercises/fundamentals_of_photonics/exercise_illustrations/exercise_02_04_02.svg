@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc" data-category="lens" data-figure="20">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc" data-category="double_convex" data-figure="20">
   <title id="title">Figure 20 — Exercise 2.4-2: Double-convex lens</title>
   <desc id="desc">Figure 20, a concept diagram for Exercise 2.4-2, Double-convex lens. The input, physical model, output, variables, and verification method are labeled.</desc>
   <defs>
@@ -18,15 +18,15 @@
   <text class="tag" x="70" y="153">GIVEN / DEFINITIONS</text>
   <text class="tag" x="475" y="153">MODEL / OPERATION</text>
   <text class="tag" x="880" y="153">RESULT / INTERPRETATION</text>
-  <text class="label" x="195"><tspan x="195" y="272">object or incident</tspan><tspan x="195" y="299">beam</tspan></text>
-  <text class="label" x="607"><tspan x="607" y="390">refraction by lens</tspan></text>
-  <text class="label" x="1005"><tspan x="1005" y="285">image or focused beam</tspan></text>
+  <text class="label" x="195"><tspan x="195" y="272">R₁&gt;0, R₂&lt;0, and</tspan><tspan x="195" y="299">central thickness d₀</tspan></text>
+  <text class="label" x="607"><tspan x="607" y="377">subtract the two paraxial</tspan><tspan x="607" y="404">surface sags</tspan></text>
+  <text class="label" x="1005"><tspan x="1005" y="272">quadratic phase and</tspan><tspan x="1005" y="299">focal length</tspan></text>
   <line class="flow" x1="345" y1="270" x2="440" y2="270"/>
   <line class="flow" x1="765" y1="270" x2="845" y2="270"/>
-  <path class="accent" d="M482 235 L604 270 L700 305 L735 318"/><path class="optic" d="M604 188 Q585 270 604 352 M604 188 Q623 270 604 352"/><line class="thin" x1="604" y1="185" x2="604" y2="355" stroke-dasharray="7 6"/><line class="axis" x1="475" y1="305" x2="735" y2="305"/><circle class="point" cx="604" cy="270" r="5"/><circle class="point" cx="700" cy="305" r="6"/>
-  <g id="variable-labels"><line class="callout" x1="500" y1="305" x2="500" y2="240"/><text class="var" x="487" y="270">y</text><text class="var" x="607" y="230">n</text><text class="var" x="555" y="205">R₁</text><text class="var" x="650" y="205">R₂</text><line class="callout" x1="604" y1="335" x2="700" y2="335"/><path class="tick" d="M604 329 V341 M700 329 V341"/><text class="var" x="652" y="355">f</text></g>
+  <path class="layer1" d="M600 185 Q555 225 555 270 Q555 315 600 355 Q665 315 665 270 Q665 225 600 185 Z"/><line class="axis" x1="480" y1="270" x2="740" y2="270" stroke-dasharray="8 7"/><line class="thin" x1="555" y1="185" x2="555" y2="355" stroke-dasharray="6 6"/><line class="thin" x1="665" y1="185" x2="665" y2="355" stroke-dasharray="6 6"/><line class="accent2" x1="575" y1="225" x2="645" y2="225"/><line class="accent2" x1="563" y1="315" x2="650" y2="315"/><path class="accent" d="M665 220 L730 270 L665 320"/><circle class="point" cx="730" cy="270" r="6"/>
+  <g id="variable-labels"><line class="callout" x1="525" y1="270" x2="525" y2="215"/><path class="tick" d="M519 270 H531 M519 215 H531"/><text class="var" x="510" y="245">ρ</text><text class="var smallvar" x="540" y="205">R₁&gt;0</text><text class="var smallvar" x="680" y="205">R₂&lt;0</text><text class="var smallvar" x="575" y="245">z₁</text><text class="var smallvar" x="645" y="245">z₂</text><text class="var smallvar" x="610" y="217">d(ρ)</text><text class="var" x="610" y="290">n</text><text class="var smallvar" x="610" y="337">d₀</text><line class="callout" x1="665" y1="340" x2="730" y2="340"/><path class="tick" d="M665 334 V346 M730 334 V346"/><text class="var smallvar" x="698" y="332">f</text></g>
 
   <rect class="band" x="45" y="430" width="1110" height="115" rx="12"/>
-  <text class="legend" x="65"><tspan x="65" y="462">Variables labeled on model — n: lens index • y: ray height • R₁,R₂: surface radii • f: focal length</tspan></text>
-  <text class="check" x="65"><tspan x="65" y="522">Independent check — thin-lens limit, ray intersection, and dimensions</tspan></text>
+  <text class="legend" x="65"><tspan x="65" y="462">Variables labeled on model — ρ: radial coordinate • z₁,z₂: surface positions • d(ρ): local thickness • d₀: central</tspan><tspan x="65" y="484">thickness • n: lens index • R₁,R₂: signed radii • f: focal length</tspan></text>
+  <text class="check" x="65"><tspan x="65" y="522">Independent check — R₁=R, R₂=−R gives 1/f=2(n−1)/R; a plane surface gives the plano-convex limit</tspan></text>
 </svg>
