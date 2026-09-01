@@ -32,7 +32,7 @@ def extract_mirror2_s():
         tr.SetTranslation(gp_Vec(-(x0 + x1) / 2, -(y0 + y1) / 2, -(z0 + z1) / 2))
         w = STEPControl_Writer()
         w.Transfer(rotated.Moved(TopLoc_Location(tr)), STEPControl_AsIs)
-        w.Write(str(COMP / "mirror2_chain_s2.step"))
+        w.Write(str(COMP / "mirror2_cleanb.step"))
         print("mirror2_chain.step re-extracted (true S: R_y(-90), fresh filename (STL cache keys on NAME))")
         return
     raise SystemExit("mirror2 not found")
@@ -117,7 +117,7 @@ def build():
     editor.display_fold_spec = None  # this scene IS folded; the straight scene keeps the view spec
     # mirror 1 between the centre prism and the lens: hypotenuse at chain z=94.93
     insert_mirror(editor, after_name="to lens (unfolded RA mirror 1)", gap_before=33.08,
-                  gap_after=180.47, step_name="mirror1_chain.step", label="RA mirror 1 (50 mm)")
+                  gap_after=180.47, step_name="mirror1_cleanb.step", label="RA mirror 1 (50 mm)")
     # NB insert_mirror set the PRECEDING row ('to lens') to 33.08 -- but mirror1 must
     # follow the CENTRE PRISM leg; the 'to lens' row IS that leg, correct as is.
     # mirror 2 is a FREE-PLACED second fold (bugs/0213): a chain-authored follower
@@ -129,7 +129,7 @@ def build():
     # added the 40 mm BK7 traversal, a +13.6 mm focus shift) and folds leg2 (+y)
     # into leg3 (-z), the TRUE S of the om05a assembly.
     insert_mirror(editor, after_name="to camera (unfolded RA mirror 2)", gap_before=31.11,
-                  gap_after=46.40, step_name="mirror2_chain_s2.step", label="RA mirror 2 (40 mm)")
+                  gap_after=46.40, step_name="mirror2_cleanb.step", label="RA mirror 2 (40 mm)")
     from KrakenOS.UI.nonseq_output_ports import row_z_positions
 
     m2 = next(r for r in editor.rows if str(r.name) == "RA mirror 2 (40 mm)")
