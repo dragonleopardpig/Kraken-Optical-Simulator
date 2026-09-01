@@ -108,15 +108,20 @@ def _check_scene(ok, notes) -> None:
             f"A3: the three B-side stations END-inserted (after mirror2, before Image), free-placed "
             f"at the CAD poses with ONE Mirror/Interaction fold face each ({b_ok}/3)",
         )
+        # bugs/0686: the far halves must be PLAIN glass -- the beam_splitter mark routes
+        # a row into the branch machinery (every crossing ray spawns split children: the
+        # 7300-ray super-lag). The 0686 walk gate (an off-beam pinned inferred output
+        # never re-sources the frame) is what protects the Image instead.
+        far_rows = [spec for _i, spec in solids if "far half" in str(spec.get("name", ""))]
         far_marked = sum(
-            1 for _i, spec in solids
-            if "far half" in str(spec.get("name", ""))
-            and bool(((spec.get("advanced") or {}).get("StepOverlayPromotion") or {}).get("beam_splitter"))
+            1 for spec in far_rows
+            if bool(((spec.get("advanced") or {}).get("StepOverlayPromotion") or {}).get("beam_splitter"))
+            or bool((spec.get("advanced") or {}).get("OpticalSolidBeamSplitter"))
         )
         ok(
-            far_marked == 2,
-            f"A3b: both BS far halves carry the beam_splitter walk mark (0397/0398) so their "
-            f"cement face never folds the Image ({far_marked}/2)",
+            len(far_rows) == 2 and far_marked == 0,
+            f"A3b: both BS far halves present as PLAIN glass -- no beam_splitter branch mark "
+            f"({len(far_rows)} rows, {far_marked} marked)",
         )
         cam_var = editor.__dict__.get("camera_model_var")
         ok(
@@ -170,13 +175,16 @@ def _check_scene(ok, notes) -> None:
         # object->image diagonal (which points backwards in a folded scene).
         part_box = None
         try:
+            from types import SimpleNamespace
+
+            from KrakenOS.UI.open3d_inspector import Kraken3DInspector
             from KrakenOS.UI.services.inspection_part import box_corners, normalize_inspection_part_spec
 
-            editor.open_3d_view()
-            editor.update_idletasks()
-            editor.update()
-            inspector = editor._three_d_inspector
-            pose = inspector._inspection_part_pose(system, bundle) if inspector is not None else None
+            # the REAL pose method, called through a shim -- it only reads self.editor,
+            # and a second live Tk inspector cannot open inside the penta harness
+            pose = Kraken3DInspector._inspection_part_pose(
+                SimpleNamespace(editor=editor), system, bundle
+            )
             if pose is not None:
                 spec = normalize_inspection_part_spec(getattr(editor, "inspection_part_spec", None))
                 corners = np.asarray(box_corners(spec, pose[0], pose[1]), dtype=float)

@@ -136,10 +136,11 @@ def main():
         row.tilt_x = row.tilt_y = row.tilt_z = 0.0
         flag_faces(row, None, centre)
         adv = dict(row.advanced or {})
-        # the far half IS the beam-splitter body: the 0397/0398 mark makes the frame
-        # walk skip it as a fold source -- otherwise its big 45-degree cement face is
-        # picked as an INFERRED output and folds the Image onto the cube (chain 0 reach)
-        adv["StepOverlayPromotion"] = {"center_world": centre.tolist(), "beam_splitter": True}
+        # bugs/0686: NO beam_splitter mark -- the mark routes the row into the branch
+        # machinery (every crossing ray spawns split children: the user's 7300-ray lag).
+        # The 0686 walk gate (an off-beam pinned inferred output never re-sources the
+        # frame) is what keeps the far half's cement face from folding the Image.
+        adv["StepOverlayPromotion"] = {"center_world": centre.tolist()}
         row.advanced = adv
         insert_at = image_index
         editor.rows.insert(insert_at, row)

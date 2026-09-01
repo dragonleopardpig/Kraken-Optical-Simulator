@@ -2290,6 +2290,30 @@ def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict
                         frame_source = "interaction_reflection_fallback"
                         row_index = follower_index
                     elif follower_output_face is not None:
+                        # bugs/0686: a PINNED follower with only an INFERRED output that
+                        # the running beam line MISSES is optically inert -- the 0224
+                        # principle extended from full mirrors to ANY free-placed glass.
+                        # Re-sourcing the frame from an off-beam inferred face swept the
+                        # Image onto the parked solid (the om05a BS far half, whose
+                        # biggest face is its 45-degree cement plane: chain 0 reach).
+                        # Explicit user-authored ports still re-source unconditionally.
+                        if pinned_pose is not None and explicit_follower_output is None:
+                            face_center = np.asarray(
+                                follower_output_face.get("centroid_world", (0.0, 0.0, 0.0)), dtype=float
+                            ).reshape(3)
+                            face_normal = _unit_vector(
+                                follower_output_face.get("normal_world", (0.0, 0.0, 1.0))
+                            )
+                            crossing = _plane_crossing(
+                                frame_origin,
+                                frame_rotation[:, 2],
+                                face_center,
+                                face_normal,
+                                hit_radius=_face_hit_radius(follower_output_face),
+                            )
+                            if crossing is None:
+                                follower_index += 1
+                                continue
                         output_face = follower_output_face
                         output_center = np.asarray(output_face.get("centroid_world", (0.0, 0.0, 0.0)), dtype=float).reshape(3)
                         output_normal = _unit_vector(output_face.get("normal_world", (0.0, 0.0, 1.0)))

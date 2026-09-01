@@ -485,6 +485,59 @@ def normalize_optical_solid_virtual_plane_record(record: dict[str, object]) -> d
     }
 
 
+# bugs/0686 (om05a super-lag): ONE scene load ran normalize_optical_solid_face_record
+# 1.25 MILLION times (64 s) -- the real CAD solids carry ~45-130 analytic face records
+# each, and every paraxial/coverage query re-normalizes every record of every solid.
+# Memoize per RAW record: keyed by the record's identity plus a fingerprint of the
+# user-editable assignment fields (the fields the face dialogs write IN PLACE); any
+# structural change replaces the record dict and re-keys naturally. Hits return a
+# SHALLOW copy, exactly the aliasing the un-cached path produced (nested values like
+# analytic_parameters were already shared), so callers that mutate their copy -- e.g.
+# _demote_parallel_duplicate_splitter_planes -- never poison the cache.
+_NORMALIZED_FACE_RECORD_CACHE: dict[int, tuple[object, tuple, dict]] = {}
+_NORMALIZED_FACE_RECORD_CACHE_MAX = 8192
+
+
+def _face_record_fingerprint(record: dict[str, object]) -> tuple:
+    coating_table = record.get("coating_table")
+    diffuse = record.get("diffuse_scatter")
+    return (
+        len(record),
+        record.get("function"),
+        record.get("role"),
+        record.get("port_role"),
+        record.get("side_2d"),
+        record.get("fit_reference"),
+        record.get("coating"),
+        record.get("material"),
+        record.get("split_ratio"),
+        record.get("loss"),
+        record.get("phase_deg"),
+        record.get("clear_aperture_mm"),
+        record.get("input_offset_u_mm"),
+        record.get("input_offset_v_mm"),
+        record.get("flip_normal"),
+        record.get("assignment_source"),
+        record.get("suggested_function"),
+        record.get("suggested_port_role"),
+        id(coating_table) if coating_table is not None else None,
+        id(diffuse) if diffuse is not None else None,
+    )
+
+
+def _normalized_face_record_cached(record: dict[str, object]) -> dict[str, object]:
+    key = id(record)
+    fingerprint = _face_record_fingerprint(record)
+    entry = _NORMALIZED_FACE_RECORD_CACHE.get(key)
+    if entry is not None and entry[0] is record and entry[1] == fingerprint:
+        return dict(entry[2])
+    normalized = normalize_optical_solid_face_record(record)
+    if len(_NORMALIZED_FACE_RECORD_CACHE) >= _NORMALIZED_FACE_RECORD_CACHE_MAX:
+        _NORMALIZED_FACE_RECORD_CACHE.clear()
+    _NORMALIZED_FACE_RECORD_CACHE[key] = (record, fingerprint, normalized)
+    return dict(normalized)
+
+
 def normalize_optical_solid_face_metadata(
     value,
     candidates: list[object] | None = None,
@@ -502,7 +555,7 @@ def normalize_optical_solid_face_metadata(
     for item in raw_faces:
         if not isinstance(item, dict):
             continue
-        normalized = normalize_optical_solid_face_record(item)
+        normalized = _normalized_face_record_cached(item)
         if normalized["face_id"]:
             by_id[str(normalized["face_id"])] = normalized
     output_faces: list[dict[str, object]] = []
@@ -1577,7 +1630,71 @@ def _row_rotation_and_offset(row: object, z_station: float) -> tuple[np.ndarray,
     return rotation, offset
 
 
+# bugs/0686 (om05a super-lag, part 2): one load calls this 9,620 times -- the paraxial
+# reference, coverage blocks and source anchors all re-derive every solid's world faces
+# per query, and the real CAD solids carry ~45-130 records each. Memoize the WORLD
+# records per (row, assigned_only): the fingerprint covers the row pose (tilts/desps +
+# station) and, per raw face record, its identity + the user-editable assignment fields
+# (_face_record_fingerprint) -- a replaced faces list or record re-keys by id, an
+# in-place assignment edit changes the fingerprint. Hits return per-record SHALLOW
+# copies, the same aliasing the uncached path produced. Entries hold references to the
+# row and faces list so a recycled id() can never false-hit.
+_WORLD_FACE_RECORDS_CACHE: dict[tuple[int, bool], tuple[object, object, tuple, list]] = {}
+_WORLD_FACE_RECORDS_CACHE_MAX = 1024
+
+
+def _world_records_fingerprint(row: object, raw_faces: list, z_station: float) -> tuple:
+    pose = (
+        round(float(getattr(row, "tilt_x", 0.0) or 0.0), 9),
+        round(float(getattr(row, "tilt_y", 0.0) or 0.0), 9),
+        round(float(getattr(row, "tilt_z", 0.0) or 0.0), 9),
+        round(float(getattr(row, "desp_x", 0.0) or 0.0), 9),
+        round(float(getattr(row, "desp_y", 0.0) or 0.0), 9),
+        round(float(getattr(row, "desp_z", 0.0) or 0.0), 9),
+        round(float(z_station), 9),
+    )
+    faces_fp = tuple(
+        (id(face),) + _face_record_fingerprint(face)
+        for face in raw_faces
+        if isinstance(face, dict)
+    )
+    return pose + (len(raw_faces),) + (faces_fp,)
+
+
 def optical_solid_face_world_records(
+    row: object,
+    z_station: float,
+    *,
+    assigned_only: bool = True,
+) -> list[dict[str, object]]:
+    raw_faces_container = None
+    advanced = getattr(row, "advanced", None)
+    if isinstance(advanced, dict):
+        stored = advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR)
+        if isinstance(stored, dict):
+            raw_faces_container = stored.get("faces")
+    if isinstance(raw_faces_container, list):
+        cache_key = (id(row), bool(assigned_only))
+        fingerprint = _world_records_fingerprint(row, raw_faces_container, z_station)
+        entry = _WORLD_FACE_RECORDS_CACHE.get(cache_key)
+        if (
+            entry is not None
+            and entry[0] is row
+            and entry[1] is raw_faces_container
+            and entry[2] == fingerprint
+        ):
+            return [dict(face) for face in entry[3]]
+        world_faces = _compute_optical_solid_face_world_records(
+            row, z_station, assigned_only=assigned_only
+        )
+        if len(_WORLD_FACE_RECORDS_CACHE) >= _WORLD_FACE_RECORDS_CACHE_MAX:
+            _WORLD_FACE_RECORDS_CACHE.clear()
+        _WORLD_FACE_RECORDS_CACHE[cache_key] = (row, raw_faces_container, fingerprint, world_faces)
+        return [dict(face) for face in world_faces]
+    return _compute_optical_solid_face_world_records(row, z_station, assigned_only=assigned_only)
+
+
+def _compute_optical_solid_face_world_records(
     row: object,
     z_station: float,
     *,
