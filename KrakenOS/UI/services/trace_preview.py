@@ -436,6 +436,13 @@ class TracePreviewService:
                     "bundles": [tuple(np.asarray(part, dtype=float) for part in bundle) for bundle in bundles],
                     "bundle_sources": None if bundle_sources is None else list(bundle_sources),
                     "system_id": id(system),
+                    # bugs/0688: the replay matches records BY CLASS (imaging vs the
+                    # additive append pass) -- world_cone's capture pass makes MORE
+                    # imaging calls than the replay (its envelope->selected flow is
+                    # data-dependent and the capture never really traces), so a purely
+                    # positional pop fed the ENVELOPE record to the additive call: the
+                    # face-B arm vanished and 147 envelope rays traced as the append.
+                    "append": bool(append),
                 }
             )
             self._last_preview_trace_backend = "async-capture"
@@ -447,12 +454,20 @@ class TracePreviewService:
             return
         replay = getattr(self.editor, "_preview_trace_bundle_replay", None)
         if isinstance(replay, list):
-            if not replay:
+            # bugs/0688: pop the first record of the SAME class (append vs imaging) --
+            # positional-only popping cross-contaminated the classes when the capture
+            # and replay passes made different numbers of imaging calls (world_cone).
+            pick = next(
+                (i for i, candidate in enumerate(replay)
+                 if bool(candidate.get("append")) == bool(append)),
+                None,
+            )
+            if pick is None:
                 raise RuntimeError(
                     "async trace replay underrun: the worker sampling made more "
                     "_trace_preview_bundles calls than the main thread captured"
                 )
-            replay_call = replay.pop(0)
+            replay_call = replay.pop(pick)
             bundles = [
                 tuple(np.asarray(part, dtype=float) for part in bundle)
                 for bundle in replay_call.get("bundles", [])
