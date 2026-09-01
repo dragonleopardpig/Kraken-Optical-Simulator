@@ -33,3 +33,22 @@ the Prism_Assembly.png ray story.
 - Fields for one face (face A centred at origin): field 1.9 × 3 instead of the
   tunnel's 4.3; per-face patch semantics.
 - Guard + phase; renders; docs.
+
+## Session 2 progress (0677 flag follow-through)
+
+- **The 155.9 um "blur" was a metric artifact + REAL vignetting**: the central
+  field spot is ~10 um sharp (measured ray-by-ray, all real glass in path). The
+  launch fan spans the SENSOR's object-side FOV (+-26.8, by the 0625 coverage
+  convention -- field_value is bypassed in this trace mode), and its edges clip at
+  the REAL 50-mm mirror width (x +-25): true mechanical vignetting of the om05a;
+  the 50-wide device sits inside it untouched.
+- Field/device: field 0.25 x 3 authored (face A of the 50x50x1 plate); the
+  inspection part on the scene is now 50 x 1 x 50.
+- **The prism-assembly chunk is seated in the ARM-A world** (second orientation
+  export `prism_assembly_chunk_armA.step`; overlay z-min normalization compensated
+  by placement offset z = authored z-min). Here it aligns with the REAL folds.
+
+## Still open
+
+- Nice render angle + labels; guard + phase for armA; the edge-vignetting census
+  as a documented number; arm B (the mirror-image five-fold chain) someday.

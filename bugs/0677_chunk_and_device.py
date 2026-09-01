@@ -86,3 +86,67 @@ def wire_scene():
 if __name__ == "__main__":
     extract_chunk()
     wire_scene()
+
+
+def extract_chunk_armA():
+    """The same 9-component chunk oriented for the ARM-A world:
+    scene = (-x_CAD, -y_CAD, z_CAD) + (-89.3, 160.95, -30.4)."""
+    import math
+
+    from OCC.Core.BRep import BRep_Builder
+    from OCC.Core.Bnd import Bnd_Box
+    from OCC.Core.BRepBndLib import brepbndlib
+    from OCC.Core.STEPControl import STEPControl_AsIs, STEPControl_Writer
+    from OCC.Core.TopLoc import TopLoc_Location
+    from OCC.Core.TopoDS import TopoDS_Compound
+    from OCC.Core.gp import gp_Ax1, gp_Dir, gp_Pnt, gp_Trsf, gp_Vec
+    from OCC.Extend.DataExchange import read_step_file_with_names_colors
+
+    shapes = read_step_file_with_names_colors("attachment/om05a_26_1_r03_2s_lr_asm.stp")
+    comp = TopoDS_Compound()
+    builder = BRep_Builder()
+    builder.MakeCompound(comp)
+    n = 0
+    for shape, (name, _c) in shapes.items():
+        box = Bnd_Box()
+        brepbndlib.Add(shape, box)
+        x0, y0, z0, x1, y1, z1 = box.Get()
+        if abs((x0 + x1) / 2 + 89.3) < 3.0 and (y0 + y1) / 2 > 115.0 and "MIR" not in str(name):
+            builder.Add(comp, shape)
+            n += 1
+    rot = gp_Trsf()
+    rot.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)), math.radians(180.0))
+    tr = gp_Trsf()
+    tr.SetTranslation(gp_Vec(-89.3, 160.95, -30.4))
+    final = comp.Moved(TopLoc_Location(rot)).Moved(TopLoc_Location(tr))
+    w = STEPControl_Writer()
+    w.Transfer(final, STEPControl_AsIs)
+    w.Write("attachment/om05a_components/prism_assembly_chunk_armA.step")
+    box = Bnd_Box()
+    brepbndlib.Add(final, box)
+    b = [round(v, 2) for v in box.Get()]
+    print(f"armA chunk ({n} parts) authored bounds:", b)
+    return b
+
+
+def wire_armA():
+    from pathlib import Path as _P
+
+    from KrakenOS.UI.layout_editor import KrakenLayoutEditor
+
+    b = extract_chunk_armA()
+    zmin = b[2]
+    editor = KrakenLayoutEditor()
+    editor._prompt_for_missing_cad_assets = lambda: None
+    editor.layout_files["p"] = _P("attachment/om05a_folded_armA.py").resolve()
+    editor.load_layout_by_name("p")
+    editor.imported_optical_step_path = _P("attachment/om05a_components/prism_assembly_chunk_armA.step").resolve()
+    editor.optical_step_rotation_x_deg = 0.0
+    editor.optical_step_rotation_y_deg = 0.0
+    editor.optical_step_rotation_z_deg = 0.0
+    # the overlay normalizes authored z-min to 0; restore the authored pose
+    editor.optical_step_placement_offset_xyz = [0.0, 0.0, float(zmin)]
+    editor._sync_table()
+    editor._write_layout_file(_P("attachment/om05a_folded_armA.py").resolve())
+    editor.destroy()
+    print("armA scene wired with the chunk")
