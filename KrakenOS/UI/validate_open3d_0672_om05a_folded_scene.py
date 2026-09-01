@@ -114,6 +114,27 @@ def _check_scene(ok, notes) -> None:
             "bounded to the 50x1 face",
         )
 
+        # flag 124838 ("3D object relocated"): the prism-assembly chunk decoration must
+        # render at its AUTHORED pose -- the overlay placement centres the transverse
+        # (x, y) on the axis (barrel behavior), so the scene's axis_offset_xy must
+        # restore the chunk's authored y-centre (+27.8, housing wrapping the trains and
+        # the mirror-1 mount), not leave it sunk around the device plate.
+        chunk_seat = None
+        try:
+            chunk_mesh = editor._transformed_imported_step_mesh_for_label("optical")
+            if chunk_mesh is not None:
+                cb = chunk_mesh.bounds
+                chunk_seat = (0.5 * (cb[2] + cb[3]), 0.5 * (cb[4] + cb[5]))
+        except Exception:
+            chunk_seat = None
+        ok(
+            chunk_seat is not None
+            and abs(chunk_seat[0] - 27.77) < 1.0
+            and abs(chunk_seat[1] + 28.9) < 1.5,
+            f"A6: the prism-assembly chunk decoration sits at its AUTHORED seat "
+            f"(y-centre ~27.8 wrapping the trains; drawn centre {chunk_seat})",
+        )
+
         try:
             editor._preview_trace_deferred_until_requested = False
         except Exception:

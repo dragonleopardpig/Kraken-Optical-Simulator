@@ -147,7 +147,7 @@ def wire_armA():
     from KrakenOS.UI.layout_editor import KrakenLayoutEditor
 
     b = extract_chunk_armA()
-    zmin = b[2]
+    xmin, ymin, zmin, xmax, ymax, zmax = b
     editor = KrakenLayoutEditor()
     editor._prompt_for_missing_cad_assets = lambda: None
     editor.layout_files["p"] = _P("attachment/om05a_folded_armA.py").resolve()
@@ -156,8 +156,15 @@ def wire_armA():
     editor.optical_step_rotation_x_deg = 0.0
     editor.optical_step_rotation_y_deg = 0.0
     editor.optical_step_rotation_z_deg = 0.0
-    # the overlay normalizes authored z-min to 0; restore the authored pose
+    # the overlay normalizes authored z-min to 0 AND centres the transverse (x, y)
+    # on the axis (barrel behavior; axis_offset_xy is SUBTRACTED after centring) --
+    # restore the FULL authored pose (flag 124838: the housing rendered 27.8 mm low,
+    # sunk around the device plate, "3D object relocated")
     editor.optical_step_placement_offset_xyz = [0.0, 0.0, float(zmin)]
+    editor.optical_step_axis_offset_xy = (
+        -0.5 * (float(xmin) + float(xmax)),
+        -0.5 * (float(ymin) + float(ymax)),
+    )
     editor._sync_table()
     editor._write_layout_file(_P("attachment/om05a_folded_armA.py").resolve())
     editor.destroy()
