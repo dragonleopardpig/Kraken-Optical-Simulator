@@ -2308,14 +2308,16 @@ class SourceModelingMixin:
                 except (TypeError, ValueError):
                     plane_z = None
                 if plane_z is not None and np.isfinite(plane_z):
-                    # the physical emitting face bounds the mirrored launch: the chain
-                    # grid covers the camera's full FOV, but only launch points on the
-                    # actual face (|x| <= radius_x, |y| <= radius_y) exist as light
+                    # bugs/0687: the launch bounds are their OWN keys -- radius_x/y size
+                    # the source GLYPH (reusing them as bounds first clipped the edge
+                    # field bundles by their pupil spread, then a radius=1000 workaround
+                    # drew a giant emitter panel). `mirror_bound_x/y` filter mirrored
+                    # launch POINTS; absent = unbounded on that axis.
                     half_x = self._source_spec_float(
-                        settings, ("radius_x", "half_width_x", "source_radius_x"), float("inf")
+                        settings, ("mirror_bound_x",), float("inf")
                     )
                     half_y = self._source_spec_float(
-                        settings, ("radius_y", "half_width_y", "source_radius_y"), float("inf")
+                        settings, ("mirror_bound_y",), float("inf")
                     )
                     for chain_bundle in list(getattr(self, "_last_imaging_launch_bundles", None) or []):
                         x, y, z, l, m, n = (

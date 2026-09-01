@@ -12,20 +12,21 @@ symmetric face-B arm: three free-placed B wedges pinned at the chain END (after
 mirror 2, before Image -- mid-chain they fold the frame walk, the sign-agnostic
 bugs/0224 line test) plus an ADDITIVE scene source (`additive: True`) whose launch
 is the chain's own calibrated bundle MIRRORED through the prism-train symmetry
-plane z=-28.9 and bounded to the physical 50x1 face. The additive trace appends to
-the imaging keeper; the imaging chain must be byte-identical to the source-free
-scene (the additive contract).
+plane. bugs/0684 remodelled the stations to the REAL components; bugs/0687
+anchored the world on the PART (face A = z 0, face B = -50, symmetry plane -25),
+rebuilt the four fold mirrors as clean first-surface prisms on the CAD coated
+planes, opened the mirrored faceB launch to the FULL 3x3 grid, and authored the
+calculated one-side FOV bands on both part faces.
 
 Checks (skip when the scene is absent):
-  A  STRUCTURE: 8 optical-solid rows; mirror2 free-placed at the CAD pose; the
-     three B wedges end-inserted + free-placed at the CAD B-train poses, one
-     Mirror/Interaction hyp each; filter + camera intact; the faceB additive
-     mirrored source spec present.
-  B  TRACE: chain (non-faceB) delivers >=60 reachers landing the arm-A strip
-     (z ~ -20 on the y=-11 image plane) with central-field spot rms < 50 um; the
-     chief folds the TRUE S (+z, +y, -z); faceB launches are bounded to the
-     physical face (|x|<=25, |y|<=0.5 at z=-57.8) and >=3 complete to the arm-B
-     strip (z ~ -10); both source families coexist in ONE live bundle.
+  A  STRUCTURE: 10 optical-solid rows; mirror2 + the B stations free-placed at
+     the part-anchored CAD poses, one Mirror/Interaction fold face each; far
+     halves PLAIN glass; camera + faceB additive mirrored source; chunk seat;
+     part = the world anchor; both FOV bands.
+  B  TRACE: chain delivers >=900 reachers on the arm-A strip (z ~ -15.4 on the
+     y=-11.4 image plane); central-field waist near the row; the chief folds the
+     TRUE S; faceB launches the full mirrored grid from face B and >=10 complete
+     to the arm-B strip (z ~ -7); both source families in ONE live bundle.
 
 Run:  xvfb-run -a .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_0672_om05a_folded_scene
 """
@@ -45,12 +46,14 @@ SCENE = PROJECT_ROOT / "attachment/om05a_folded.py"
 # (TIR fold at the cement plane) + its far half (marked beam_splitter so the walk
 # never folds on it), a first-surface outer mirror slab on the CAD coated plane,
 # and the CAD centre V-block halves.
+# bugs/0687: the world is anchored on the PART (face A = z 0, face B = -50, the
+# symmetry plane -25); the outer/centre mirrors are clean extruded-triangle prisms
+# whose hypotenuse sits ON the CAD coated plane (the 3 mm slab's Mirror face never
+# armed -- the beam TIR'd at its BACK plane, the user's "second surface").
 B_TRAIN = {
-    "BS cube B": (0.0, 0.24, -62.91),
-    # the outer mirror row is the synthesized SLAB on the CAD coated plane (its
-    # bbox centre = face centroid + half thickness, not the CAD body centre)
-    "Outer RA mirror B": (0.0, 13.23, -62.10),
-    "Centre RA mirror B": (0.05, 13.73, -34.92),
+    "BS cube B": (0.0, 0.24, -59.01),
+    "Outer RA mirror B": (0.0, 12.16, -57.14),
+    "Centre RA mirror B": (0.05, 13.69, -31.06),
 }
 
 
@@ -84,8 +87,8 @@ def _check_scene(ok, notes) -> None:
 
         m2 = next((spec for _i, spec in solids if str(spec.get("name", "")) == "RA mirror 2 (40 mm)"), {})
         ok(
-            np.allclose(_centre(m2), (-272.7, 52.75, -28.9), atol=0.5),
-            f"A2: mirror2 is FREE-PLACED at the CAD folded pose ({np.round(_centre(m2), 1).tolist()})",
+            np.allclose(_centre(m2), (-272.7, 52.75, -25.0), atol=0.5),
+            f"A2: mirror2 is FREE-PLACED at the part-anchored CAD pose ({np.round(_centre(m2), 1).tolist()})",
         )
         image_index = next(i for i, r in enumerate(rows) if str(r.surface) == "Image")
         m2_index = next((i for i, r in enumerate(rows) if str(r.name) == "RA mirror 2 (40 mm)"), -1)
@@ -134,11 +137,9 @@ def _check_scene(ok, notes) -> None:
         face_b = next((s for s in source_specs if str(s.get("source_id", "")) == "source:faceB"), {})
         ok(
             bool(face_b.get("additive", False))
-            and abs(float(face_b.get("mirror_launch_plane_z", 0.0)) + 28.9) < 1e-6
-            and abs(float(face_b.get("radius_x", 0.0)) - 25.0) < 1e-6
-            and abs(float(face_b.get("radius_y", 0.0)) - 0.5) < 1e-6,
-            "A5: the faceB source is ADDITIVE + mirrors the chain launch through z=-28.9, "
-            "bounded to the 50x1 face",
+            and abs(float(face_b.get("mirror_launch_plane_z", 0.0)) + 25.0) < 1e-6,
+            "A5: the faceB source is ADDITIVE + mirrors the FULL chain launch through the "
+            "part symmetry plane z=-25",
         )
 
         # flag 124838 ("3D object relocated"): the prism-assembly chunk decoration must
@@ -157,7 +158,7 @@ def _check_scene(ok, notes) -> None:
         ok(
             chunk_seat is not None
             and abs(chunk_seat[0] - 27.77) < 1.0
-            and abs(chunk_seat[1] + 28.9) < 1.5,
+            and abs(chunk_seat[1] + 25.0) < 1.5,
             f"A6: the prism-assembly chunk decoration sits at its AUTHORED seat "
             f"(y-centre ~27.8 wrapping the trains; drawn centre {chunk_seat})",
         )
@@ -196,11 +197,11 @@ def _check_scene(ok, notes) -> None:
         # face A sits 3.9 mm behind the focus plane until the WD recalibration).
         ok(
             part_box is not None
-            and abs(float(part_box[1][2]) + 3.9) < 0.5
-            and abs(float(part_box[0][2]) + 53.9) < 0.5
+            and abs(float(part_box[1][2]) - 0.0) < 0.5
+            and abs(float(part_box[0][2]) + 50.0) < 0.5
             and abs(float(part_box[0][0]) + 25.0) < 0.5
             and abs(float(part_box[1][1]) - 0.5) < 0.5,
-            f"A7: the device part sits CENTRED in the prism gap -- body z -53.9..-3.9 "
+            f"A7: the part IS the world anchor -- face A on z=0, body z 0..-50 "
             f"(drawn {None if part_box is None else [np.round(part_box[0], 1).tolist(), np.round(part_box[1], 1).tolist()]})",
         )
         # bugs/0683/0684: the authored partial-FOV bands -- the MEASURED delivered field
@@ -210,18 +211,18 @@ def _check_scene(ok, notes) -> None:
         band_ok = (
             len(bands) == 2
             and all(
-                abs(float(b.get("v_lo", 99.0)) + 4.0) < 0.6
-                and abs(float(b.get("v_hi", 99.0)) - 3.0) < 0.6
-                and abs(float(b.get("half_width", 0.0)) - 26.8) < 0.5
+                abs(float(b.get("v_lo", 99.0)) + 5.25) < 0.6
+                and abs(float(b.get("v_hi", 99.0)) - 3.1) < 0.6
+                and abs(float(b.get("half_width", 0.0)) - 27.5) < 0.5
                 for b in bands
             )
             and abs(float(bands[0].get("center", [0, 0, 99])[2]) - 0.0) < 0.5
-            and abs(float(bands[1].get("center", [0, 0, 99])[2]) + 57.8) < 0.5
+            and abs(float(bands[1].get("center", [0, 0, 99])[2]) + 50.0) < 0.5
         )
         ok(
             band_ok,
-            f"A8: both faces carry the authored partial-FOV band (y -4..+3, half-width 26.8, "
-            f"at z=0 and z=-57.8) ({len(bands)} bands)",
+            f"A8: both PART faces carry the calculated one-side FOV band (55.0 x 8.35, y -5.25..+3.1, "
+            f"at z=0 and z=-50) ({len(bands)} bands)",
         )
         paths = list(getattr(bundle, "ray_paths", None) or [])
         chain_paths = 0
@@ -237,7 +238,7 @@ def _check_scene(ok, notes) -> None:
             if sid == "source:faceB":
                 face_b_launch.append(p[0])
                 end = p[-1]
-                if abs(end[1] + 11.0) < 1.0 and end[0] < -250.0 and -13.5 < end[2] < -7.5:
+                if abs(end[1] + 11.4) < 1.0 and end[0] < -250.0 and -9.4 < end[2] < -5.4:
                     face_b_reach.append(end)
                 continue
             chain_paths += 1
@@ -247,9 +248,9 @@ def _check_scene(ok, notes) -> None:
             score = abs(float(p[0][0])) + abs(float(p[0][1]))
             if chief is None or score < chief[0]:
                 chief = (score, p)
-        strip = [end for _fi, _start, end in chain_reach if abs(end[1] + 11.0) < 1.0 and -22.5 < end[2] < -17.5]
+        strip = [end for _fi, _start, end in chain_reach if abs(end[1] + 11.4) < 1.0 and -17.5 < end[2] < -13.5]
         ok(
-            len(chain_reach) >= 60 and len(strip) >= 55,
+            len(chain_reach) >= 900 and len(strip) >= 890,
             f"B1: the chain delivers the arm-A strip on the y=-11 plane at z~-20 "
             f"({len(chain_reach)}/{chain_paths} reach; {len(strip)} on-strip)",
         )
@@ -307,18 +308,18 @@ def _check_scene(ok, notes) -> None:
         launches = np.asarray(face_b_launch) if face_b_launch else np.zeros((0, 3))
         bounded = bool(
             len(launches)
-            and np.all(np.abs(launches[:, 0]) <= 25.01)
-            and np.all(np.abs(launches[:, 1]) <= 0.51)
-            and np.allclose(launches[:, 2], -57.8, atol=0.1)
+            and np.all(np.abs(launches[:, 0]) <= 45.0)
+            and np.all(np.abs(launches[:, 1]) <= 8.5)
+            and np.allclose(launches[:, 2], -50.0, atol=0.2)
         )
         ok(
-            50 <= len(launches) <= 600 and bounded,
-            f"B4: faceB launches are the MIRRORED chain bundle bounded to the physical face "
+            500 <= len(launches) <= 2000 and bounded,
+            f"B4: faceB mirrors the y=0 field row (3 launch points) from face B (z=-50, mirror_bound_y) "
             f"({len(launches)} rays, bounded={bounded})",
         )
         ok(
-            len(face_b_reach) >= 3,
-            f"B5: faceB rays complete the five B folds to the arm-B sensor strip at z~-10 "
+            len(face_b_reach) >= 10,
+            f"B5: faceB rays complete the five B folds to the arm-B sensor strip at z~-7 "
             f"({len(face_b_reach)} reach; both arms live in ONE bundle with the chain intact)",
         )
     finally:
