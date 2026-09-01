@@ -2486,6 +2486,16 @@ class ThreeDSceneToolsMixin:
             if not include_reference_surfaces and row.surface in {"Object", "Image"}:
                 side_index += 1
                 continue
+            # bugs/0678 (flag "remove those fake lenses"): the revolved BBB glass
+            # body must honor Drawing=0 like the surface caps (bugs/0674) -- a
+            # hidden bookkeeping aperture row otherwise still renders a glassy
+            # cylinder stack.
+            try:
+                if float(getattr(row, "drawing", 1.0) or 0.0) == 0.0:
+                    side_index += 1
+                    continue
+            except Exception:
+                pass
             advanced = row.advanced if isinstance(row.advanced, dict) else {}
             if self._geometry_value_present(advanced.get("Solid_3d_stl")):
                 side_index += 1
