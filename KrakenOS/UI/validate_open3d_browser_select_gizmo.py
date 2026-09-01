@@ -1,15 +1,17 @@
-"""Guard: selecting a promoted solid FROM THE BROWSER raises its move/rotate gizmo (bugs/0424).
+"""Guard: browser-select targets the move/rotate gizmo WITHOUT forcing the mode (0424 + 0685).
 
-Flag flag_20260723_131812 + follow-up "click the right browser only highlight it, no gizmo": clicking a
-promoted optical solid (e.g. a beam splitter occluded by the LED) in the Scene Components browser only
-highlighted it -- no in-canvas placement handles -- so the user could not move it without hiding the LED
-and 3D-picking. The gizmo builds during a scene rebuild for `_placement_handle_selected_row_index` in
-whole-body handle mode; a 3D pick set both, the browser path set neither.
+bugs/0424 (flag_20260723_131812): clicking a promoted optical solid in the Scene Components browser
+only highlighted it -- no in-canvas placement handles -- so the user could not move an occluded body.
+The fix set `_placement_handle_selected_row_index` and rebuilt, so the gizmo raises.
+bugs/0685 (user, 2026-09-01): 0424 ALSO force-enabled the "Move/Rotate whole body" checkbox on every
+browser click, overriding an explicit uncheck ("auto re-enable ... not the correct behaviour"). The
+contract now: browser-select sets the gizmo target + rebuilds; the handles appear only when the
+user's checkbox is ON.
 
 Checks
 ------
-* WIRING -- `select_promoted_step_row_from_admin` sets `_placement_handle_selected_row_index`, enables the
-  whole-body handle mode, and rebuilds the scene (`refresh_from_editor`).
+* WIRING -- `select_promoted_step_row_from_admin` sets `_placement_handle_selected_row_index` and
+  rebuilds the scene (`refresh_from_editor`), and does NOT set the handle-mode checkbox.
 * GATE   -- `_show_scene_placement_handles` builds the gizmo for `_placement_handle_selected_row_index`
   (so setting it actually raises the handles), gated on the handle mode + a promoted-solid row.
 
@@ -28,14 +30,22 @@ def _check_wiring(failures, notes):
     src = inspect.getsource(Kraken3DInspector.select_promoted_step_row_from_admin)
     need = {
         "the gizmo target row": "_placement_handle_selected_row_index = row_index",
-        "the whole-body handle mode": "show_rotation_handles_var.set(True)",
         "the scene rebuild": "self.refresh_from_editor()",
     }
     missing = [label for label, token in need.items() if token not in src]
     if missing:
         failures.append("WIRING: select_promoted_step_row_from_admin is missing " + ", ".join(missing))
-    else:
-        notes.append("wiring = browser-select sets the gizmo row + handle mode + rebuilds the scene")
+    # bugs/0685: browser-select must RESPECT the user's "Move/Rotate whole body"
+    # checkbox -- the 0424 force-enable kept overriding an explicit uncheck.
+    if "show_rotation_handles_var.set(True)" in src:
+        failures.append(
+            "WIRING: select_promoted_step_row_from_admin must NOT force-enable the whole-body "
+            "handle mode (bugs/0685: the user's checkbox was overridden on every browser click)"
+        )
+    if not [f for f in failures if f.startswith("WIRING")]:
+        notes.append(
+            "wiring = browser-select sets the gizmo row + rebuilds; the handle-mode checkbox is respected"
+        )
 
 
 def _check_gate(failures, notes):

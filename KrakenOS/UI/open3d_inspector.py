@@ -7078,21 +7078,25 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # bugs/0424: also RAISE the move/rotate gizmo, not just the highlight -- browser-select used to
         # only highlight ("click the right browser only highlight it, no gizmo"). The in-canvas handles
         # target `_placement_handle_selected_row_index` and only build in whole-body handle mode during a
-        # scene rebuild; a 3D pick set both, the browser path set neither. Selecting a body FROM the
-        # browser is an explicit "I want to manipulate this", so enable the handle mode + rebuild.
+        # scene rebuild; a 3D pick set both, the browser path set neither.
+        # bugs/0685 (user, 2026-09-01): but browser-select must RESPECT the user's checkbox -- 0424
+        # force-enabled "Move/Rotate whole body" on every click, so unchecking it kept being overridden
+        # ("auto re-enable ... which is not the correct behaviour"). The gizmo target is still set, so
+        # the handles raise whenever the mode IS on; with it off the click selects + highlights only.
         self._placement_handle_selected_row_index = row_index
         self._selected_source_id = None  # bugs/0426: a row gizmo clears any source move gizmo
+        handles_on = False
         try:
-            if not self._show_rotation_handles():
-                self.show_rotation_handles_var.set(True)
+            handles_on = bool(self._show_rotation_handles())
         except Exception:
-            pass
+            handles_on = False
         self.refresh_from_editor()
         self.highlight_row(row_index)
         self.refresh_step_admin_panel()
         self.status_var.set(
-            f"Selected promoted STEP row S{row_index}: {getattr(row, 'name', '') or 'optical solid'} "
-            "(move/rotate handles shown)."
+            f"Selected promoted STEP row S{row_index}: {getattr(row, 'name', '') or 'optical solid'}"
+            + (" (move/rotate handles shown)." if handles_on
+               else " -- enable 'Move/Rotate whole body' to show its handles.")
         )
         return True
 
