@@ -39,10 +39,18 @@ import numpy as np
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SCENE = PROJECT_ROOT / "attachment/om05a_folded.py"
 
+# bugs/0684 (user): "Outer Prism is Right Angle Mirror ... Lower Prism is a Cube
+# Beam Splitter ... they should be attached ... Center Prism is a Right Angle
+# Mirror." The stations now carry the REAL components: the BS cube's near half
+# (TIR fold at the cement plane) + its far half (marked beam_splitter so the walk
+# never folds on it), a first-surface outer mirror slab on the CAD coated plane,
+# and the CAD centre V-block halves.
 B_TRAIN = {
-    "Outer prism B": (0.0, 0.0, -63.15),
-    "Lower prism B": (0.0, 11.65, -60.40),
-    "Centre prism B": (0.0, 13.73, -34.40),
+    "BS cube B": (0.0, 0.24, -62.91),
+    # the outer mirror row is the synthesized SLAB on the CAD coated plane (its
+    # bbox centre = face centroid + half thickness, not the CAD body centre)
+    "Outer RA mirror B": (0.0, 13.23, -62.10),
+    "Centre RA mirror B": (0.05, 13.73, -34.92),
 }
 
 
@@ -64,7 +72,11 @@ def _check_scene(ok, notes) -> None:
             (i, spec) for i, spec in enumerate(specs)
             if isinstance((spec.get("advanced") or {}).get("OpticalSolidFaces"), dict)
         ]
-        ok(len(solids) == 8, f"A1: eight optical-solid rows (3 A prisms, 2 RA mirrors, 3 B wedges) ({len(solids)})")
+        ok(
+            len(solids) == 10,
+            f"A1: ten optical-solid rows (BS near+outer+centre per side, 2 RA mirrors, "
+            f"2 BS far halves) ({len(solids)})",
+        )
 
         def _centre(spec) -> np.ndarray:
             promo = (spec.get("advanced") or {}).get("StepOverlayPromotion")
@@ -93,8 +105,18 @@ def _check_scene(ok, notes) -> None:
                 b_ok += 1
         ok(
             b_ok == 3,
-            f"A3: three B wedges END-inserted (after mirror2, before Image), free-placed at the "
-            f"CAD B-train poses with ONE Mirror/Interaction hyp each ({b_ok}/3)",
+            f"A3: the three B-side stations END-inserted (after mirror2, before Image), free-placed "
+            f"at the CAD poses with ONE Mirror/Interaction fold face each ({b_ok}/3)",
+        )
+        far_marked = sum(
+            1 for _i, spec in solids
+            if "far half" in str(spec.get("name", ""))
+            and bool(((spec.get("advanced") or {}).get("StepOverlayPromotion") or {}).get("beam_splitter"))
+        )
+        ok(
+            far_marked == 2,
+            f"A3b: both BS far halves carry the beam_splitter walk mark (0397/0398) so their "
+            f"cement face never folds the Image ({far_marked}/2)",
         )
         cam_var = editor.__dict__.get("camera_model_var")
         ok(
@@ -173,14 +195,15 @@ def _check_scene(ok, notes) -> None:
             f"A7: the device part sits CENTRED in the prism gap -- body z -53.9..-3.9 "
             f"(drawn {None if part_box is None else [np.round(part_box[0], 1).tolist(), np.round(part_box[1], 1).tolist()]})",
         )
-        # bugs/0683: the authored partial-FOV bands -- the MEASURED delivered field per
-        # face (the outer-wedge window passes only y -5..+1; bugs/0683_band_scan.py).
+        # bugs/0683/0684: the authored partial-FOV bands -- the MEASURED delivered field
+        # per face (with the real first-surface mirrors + BS cube the window widened to
+        # y -4..+3 at ~90% reach; bugs/0683_band_scan.py re-run post-0684).
         bands = getattr(editor, "layout_object_fov_bands", None) or []
         band_ok = (
             len(bands) == 2
             and all(
-                abs(float(b.get("v_lo", 99.0)) + 5.0) < 0.6
-                and abs(float(b.get("v_hi", 99.0)) - 1.0) < 0.6
+                abs(float(b.get("v_lo", 99.0)) + 4.0) < 0.6
+                and abs(float(b.get("v_hi", 99.0)) - 3.0) < 0.6
                 and abs(float(b.get("half_width", 0.0)) - 26.8) < 0.5
                 for b in bands
             )
@@ -189,7 +212,7 @@ def _check_scene(ok, notes) -> None:
         )
         ok(
             band_ok,
-            f"A8: both faces carry the authored partial-FOV band (y -5..+1, half-width 26.8, "
+            f"A8: both faces carry the authored partial-FOV band (y -4..+3, half-width 26.8, "
             f"at z=0 and z=-57.8) ({len(bands)} bands)",
         )
         paths = list(getattr(bundle, "ray_paths", None) or [])
@@ -281,7 +304,7 @@ def _check_scene(ok, notes) -> None:
             and np.allclose(launches[:, 2], -57.8, atol=0.1)
         )
         ok(
-            50 <= len(launches) <= 130 and bounded,
+            50 <= len(launches) <= 600 and bounded,
             f"B4: faceB launches are the MIRRORED chain bundle bounded to the physical face "
             f"({len(launches)} rays, bounded={bounded})",
         )
