@@ -67,6 +67,7 @@ EXPECTED_VISIBLE_VARIABLES = {
     "mirror": ("y₁", "y₂", "z₁", "z₂", "R", "f"),
     "lens": ("n", "y", "R₁", "R₂", "f"),
     "double_convex": ("ρ", "z₁", "z₂", "d(ρ)", "d₀", "n", "R₁", "R₂", "f"),
+    "doppler": ("ν₀", "λ₀", "Δν", "vᵣ", "Iᴸᴼ", "Iᵣ", "fᵦ"),
     "refracting": ("n₁", "n₂", "θ₁", "θ₂", "y", "R", "z₁", "z₂"),
     "cartesian_oval": ("n₁", "n₂", "y", "z", "z₁", "z₂"),
     "tir": ("n=3.6", "nₒᵤₜ=1", "θᵢ", "θᶜ=16.13°", "Ωᶜ", "ηₑₓₜ=11.81%"),
@@ -127,6 +128,13 @@ CATEGORY_GEOMETRY_TOKENS = {
         'x1="575" y1="225" x2="645" y2="225"',
         "R₁&gt;0",
         "R₂&lt;0",
+    ),
+    "doppler": (
+        'd="M565 245 L590 270 L565 295 L540 270 Z"',
+        'x1="715" y1="205" x2="715" y2="330"',
+        'd="M715 282 H590 V320 H585"',
+        "moving target",
+        ">PD</text>",
     ),
     "refracting": (
         'd="M700 175 A95 95 0 0 0 605 270 A95 95 0 0 0 700 365"',
@@ -299,12 +307,35 @@ def main() -> None:
                 ):
                     if required_part not in body:
                         fail(f"{identity} omits {required_part}")
+            if identity == "Exercise 2.6-1":
+                for required_part in (
+                    "fop-exercise-2-6-1-intensity-expansion",
+                    "fop-exercise-2-6-1-beat-speed",
+                    "fop-exercise-2-6-1-michelson-intensity",
+                    "fop-exercise-2-6-1-michelson-beat",
+                    "in-phase and",
+                    "quadrature detector",
+                ):
+                    if required_part not in body:
+                        fail(f"{identity} omits {required_part}")
             structured_entries += 1
 
             if kind == "Exercise" and (id_chapter, section, item) != ("1", "1", "1"):
+                step_positions = []
                 for step in range(1, 6):
-                    if f"**Step {step} —" not in body:
+                    marker = f"**Step {step} —"
+                    if marker not in body:
                         fail(f"{identity} omits explicit Step {step}")
+                    step_positions.append(body.index(marker))
+                if step_positions != sorted(step_positions):
+                    fail(f"{identity} has steps outside numerical order")
+                problems_heading = body.find("\nEnd-of-chapter problems\n")
+                if (
+                    identity == "Exercise 2.6-1"
+                    and problems_heading != -1
+                    and problems_heading < step_positions[-1]
+                ):
+                    fail(f"{identity} ends before Step 5")
                 stepwise_exercises += 1
 
                 svg_name = (

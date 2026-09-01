@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc" data-category="wave" data-figure="28">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc" data-category="doppler" data-figure="28">
   <title id="title">Figure 28 — Exercise 2.6-1: Optical Doppler radar</title>
   <desc id="desc">Figure 28, a concept diagram for Exercise 2.6-1, Optical Doppler radar. The input, physical model, output, variables, and verification method are labeled.</desc>
   <defs>
@@ -18,15 +18,15 @@
   <text class="tag" x="70" y="153">GIVEN / DEFINITIONS</text>
   <text class="tag" x="475" y="153">MODEL / OPERATION</text>
   <text class="tag" x="880" y="153">RESULT / INTERPRETATION</text>
-  <text class="label" x="195"><tspan x="195" y="272">incident amplitude and</tspan><tspan x="195" y="299">phase</tspan></text>
-  <text class="label" x="607"><tspan x="607" y="390">propagation or interference</tspan></text>
-  <text class="label" x="1005"><tspan x="1005" y="285">field or intensity</tspan></text>
+  <text class="label" x="195"><tspan x="195" y="272">laser ν₀ and signed</tspan><tspan x="195" y="299">target velocity vᵣ</tspan></text>
+  <text class="label" x="607"><tspan x="607" y="377">mix LO with the Doppler-</tspan><tspan x="607" y="404">shifted return</tspan></text>
+  <text class="label" x="1005"><tspan x="1005" y="272">photodiode beat</tspan><tspan x="1005" y="299">fᵦ=|Δν|=2|vᵣ|/λ₀</tspan></text>
   <line class="flow" x1="345" y1="270" x2="440" y2="270"/>
   <line class="flow" x1="765" y1="270" x2="845" y2="270"/>
-  <path class="accent" d="M478 270 C505 210 535 330 565 270 S625 210 655 270 S715 330 738 270"/><line class="axis" x1="478" y1="270" x2="738" y2="270"/>
-  <g id="variable-labels"><text class="var" x="500" y="220">A</text><text class="var" x="530" y="315">λ</text><text class="var" x="650" y="215">k →</text><text class="var" x="705" y="315">I</text></g>
+  <rect class="iconbox" x="475" y="250" width="42" height="40" rx="6"/><path class="layer1" d="M565 245 L590 270 L565 295 L540 270 Z"/><line class="thin" x1="548" y1="287" x2="582" y2="253"/><line class="optic" x1="517" y1="270" x2="540" y2="270"/><path class="accent" d="M590 258 H715"/><path class="accent2" d="M715 282 H590 V320 H585"/><path class="accent" d="M565 245 V195 H620 V245"/><line class="optic" x1="715" y1="205" x2="715" y2="330"/><path class="thin" d="M715 215 l14 -8 M715 235 l14 -8 M715 255 l14 -8 M715 295 l14 -8 M715 315 l14 -8"/><path class="accent2" d="M735 270 H750 M744 262 L752 270 L744 278"/><rect class="iconbox" x="545" y="305" width="40" height="30" rx="5"/>
+  <g id="variable-labels"><text class="var smallvar" x="496" y="242">ν₀, λ₀</text><text class="var smallvar" x="620" y="248">ν₀</text><text class="var smallvar" x="652" y="302">ν₀+Δν</text><text class="var smallvar" x="626" y="190">Iᴸᴼ</text><text class="var smallvar" x="670" y="322">Iᵣ</text><text class="var smallvar" x="745" y="250">vᵣ</text><text class="var smallvar" x="565" y="357">fᵦ</text><text class="annotation" x="565" y="326">PD</text><text class="annotation" x="705" y="195">moving target</text></g>
 
   <rect class="band" x="45" y="430" width="1110" height="115" rx="12"/>
-  <text class="legend" x="65"><tspan x="65" y="462">Variables labeled on model — A: field amplitude • k: wavenumber • λ: wavelength • I: intensity</tspan></text>
-  <text class="check" x="65"><tspan x="65" y="522">Independent check — phase sign, symmetry, and conservation of power</tspan></text>
+  <text class="legend" x="65"><tspan x="65" y="462">Variables labeled on model — ν₀: laser frequency • λ₀: wavelength • Δν: Doppler shift • vᵣ: radial velocity •</tspan><tspan x="65" y="484">Iᴸᴼ,Iᵣ: mixing intensities • fᵦ: beat frequency</tspan></text>
+  <text class="check" x="65"><tspan x="65" y="522">Independent check — vᵣ=0 gives no beat; mirror motion changes the round-trip path at 2vᵣ</tspan></text>
 </svg>

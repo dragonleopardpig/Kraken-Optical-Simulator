@@ -625,7 +625,31 @@ Adjacent planes add path :math:`2\Lambda\sin\theta`, so
 Exercise 2.6-1 — Optical Doppler radar
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  The textbook uses the similar-looking
+symbols :math:`\nu` for optical frequency and :math:`v` for speed.  To keep
+them distinct here, let
+
+* :math:`\nu_0` be the transmitted optical frequency and
+  :math:`\lambda_0=c/\nu_0` its wavelength;
+* :math:`v_r` be the signed line-of-sight target velocity, positive for motion
+  **toward** the observer and negative for motion **away**;
+* :math:`\Delta\nu` be the signed Doppler shift, so that the returned
+  frequency is :math:`\nu_{\mathrm r}=\nu_0+\Delta\nu`;
+* :math:`I_{\mathrm{LO}}` and :math:`I_{\mathrm r}` be the intensities of the
+  unshifted local-reference and returned waves at the detector; and
+* :math:`\phi_0` be their constant phase offset at :math:`t=0`.
+
+The exercise supplies the monostatic (out-and-back) optical Doppler relation
+
+.. math::
+   :label: fop-exercise-2-6-1-doppler-shift
+
+   \Delta\nu=\frac{2v_r}{c}\nu_0
+   =\frac{2v_r}{\lambda_0}.
+
+The factor of two occurs because the moving target Doppler-shifts the light on
+the outward and return parts of the path.  This relation assumes
+:math:`|v_r|\ll c` and a target moving along the line of sight.
 
 .. _fop-exercise-2-6-1-illustration:
 
@@ -634,33 +658,172 @@ Exercise 2.6-1 — Optical Doppler radar
    :align: center
    :width: 95%
 
-   **Figure 28 — Exercise 2.6-1: Optical Doppler radar.** The
-   diagram identifies the input quantities, physical operation, requested
-   result, variable meanings, and an independent verification route. Every
-   symbol in the variable strip is labeled on the model itself.
+   **Figure 28 — Exercise 2.6-1: Optical Doppler radar.**  The
+   unshifted local oscillator and the return at :math:`\nu_0+\Delta\nu`
+   meet at the photodiode.  The target's signed radial velocity determines
+   the electrical beat frequency; its round-trip path gives the factor two.
 
-**Step 2 — Mathematical formulas used.**  The working uses :ref:`trigonometric and small-angle identities <fop-formula-trigonometry>` and :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+**Step 2 — Mathematical formulas used.**  Use the two-frequency interference
+law, textbook Eq. (2.6-12), together with the moving-delay interference law,
+textbook Eq. (2.5-6):
 
-**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. math::
+   :label: fop-exercise-2-6-1-textbook-laws
 
-Superposing reference and return fields gives
-:math:`I=I_1+I_2+2\sqrt{I_1I_2}\cos(2\pi\Delta\nu t+\phi)`.
-Measure the electrical beat frequency and use
-:math:`\boxed{v=c|\Delta\nu|/(2\nu)=\lambda|\Delta\nu|/2}`; quadrature phase
-or a frequency offset resolves the velocity sign.
+   I(t)&=I_1+I_2+2\sqrt{I_1I_2}
+   \cos[2\pi(\nu_2-\nu_1)t+\phi_0],\\
+   I(d)&=2I_0\left[1+\cos\left(\frac{2\pi d}{\lambda_0}\right)\right].
 
-End-of-chapter problems
------------------------
+Here :math:`d` is the difference between the distances travelled by the two
+interferometer waves.  The required algebra uses
+:ref:`phasor identities <fop-formula-exponentials>`,
+:ref:`trigonometric identities <fop-formula-trigonometry>`, and
+:ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
 
-**Step 4 — State the numbered result.**  The principal result obtained in the working is
+**Step 3 — Worked derivation.**
+
+**Part A: superpose the original and reflected waves.**  At a fixed point on
+the detector, write the complex waves in the normalization
+:math:`I=|U|^2`:
+
+.. math::
+   :label: fop-exercise-2-6-1-fields
+
+   U_{\mathrm{LO}}(t)
+   &=\sqrt{I_{\mathrm{LO}}}\,
+     e^{j(2\pi\nu_0t+\phi_{\mathrm{LO}})},\\
+   U_{\mathrm r}(t)
+   &=\sqrt{I_{\mathrm r}}\,
+     e^{j[2\pi(\nu_0+\Delta\nu)t+\phi_{\mathrm r}]}.
+
+The detector receives :math:`U=U_{\mathrm{LO}}+U_{\mathrm r}`.  Since a
+photodetector responds to the time-averaged squared magnitude of the optical
+field,
+
+.. math::
+   :label: fop-exercise-2-6-1-intensity-expansion
+
+   I(t)
+   &=|U_{\mathrm{LO}}+U_{\mathrm r}|^2\\
+   &=(U_{\mathrm{LO}}+U_{\mathrm r})
+     (U_{\mathrm{LO}}^*+U_{\mathrm r}^*)\\
+   &=I_{\mathrm{LO}}+I_{\mathrm r}
+     +U_{\mathrm{LO}}U_{\mathrm r}^*
+     +U_{\mathrm{LO}}^*U_{\mathrm r}\\
+   &=I_{\mathrm{LO}}+I_{\mathrm r}
+     +2\sqrt{I_{\mathrm{LO}}I_{\mathrm r}}
+      \cos(2\pi\Delta\nu t+\phi_0),
+
+where :math:`\phi_0=\phi_{\mathrm r}-\phi_{\mathrm{LO}}`; changing its sign
+only changes the arbitrary choice of time origin.  The optical-frequency
+terms near :math:`\nu_0` are too fast for the detector electronics, but the
+cross terms leave an electrical oscillation at the difference frequency.
+Consequently, the measured beat-frequency magnitude is
+
+.. math::
+   :label: fop-exercise-2-6-1-beat-speed
+
+   f_{\mathrm b}=|\Delta\nu|
+   =\frac{2|v_r|}{\lambda_0},
+   \qquad
+   |v_r|=\frac{\lambda_0f_{\mathrm b}}{2}
+   =\frac{cf_{\mathrm b}}{2\nu_0}.
+
+If the reference and return have equal intensity :math:`I_0`, the result
+reduces to
+
+.. math::
+   :label: fop-exercise-2-6-1-equal-intensity
+
+   I(t)=2I_0[1+\cos(2\pi\Delta\nu t+\phi_0)]
+   =4I_0\cos^2\!\left(\pi\Delta\nu t+\frac{\phi_0}{2}\right).
+
+**Part B: turn the result into a radar measurement.**  Split a narrow-linewidth
+laser into two paths.  Send one path to the target and collect the reflection;
+retain the other path as a strong local oscillator (LO).  Recombine the LO
+and return on a fast photodiode, then measure :math:`f_{\mathrm b}` with an
+electrical spectrum analyser or frequency counter.  Equation
+:eq:`fop-exercise-2-6-1-beat-speed` gives the magnitude of the radial velocity.
+
+A single real-valued cosine does not reveal the velocity sign because
+:math:`\cos(-x)=\cos x`.  Direction can be recovered with an in-phase and
+quadrature detector, which measures the phase rotation direction, or by
+shifting the LO through a known offset :math:`f_{\mathrm{off}}` with an
+acousto-optic modulator.  The Doppler shift then moves the electrical line to
+one side or the other of the known offset.
+
+**Part C: prove the Michelson result from Eq. (2.5-6).**  Let the moving mirror
+have axial position
+:math:`x(t)=x_0+v_mt`, with signed velocity :math:`v_m`.  Moving that mirror
+by :math:`x` changes its arm's round-trip path by :math:`2x`; therefore the
+path difference in Eq. (2.5-6) is
+
+.. math::
+   :label: fop-exercise-2-6-1-michelson-delay
+
+   d(t)=d_0+2v_mt.
+
+Substitute this into Eq. (2.5-6):
+
+.. math::
+   :label: fop-exercise-2-6-1-michelson-intensity
+
+   I_{\mathrm M}(t)
+   =2I_0\left\{1+
+   \cos\left[\frac{2\pi d_0}{\lambda_0}
+              +\frac{4\pi v_m}{\lambda_0}t\right]\right\}.
+
+The signed temporal frequency is the coefficient of :math:`2\pi t` inside
+the cosine.  Thus
+
+.. math::
+   :label: fop-exercise-2-6-1-michelson-beat
+
+   f_{\mathrm M}
+   =\frac{1}{2\pi}\frac{d}{dt}
+     \left(\frac{2\pi d(t)}{\lambda_0}\right)
+   =\frac{2v_m}{\lambda_0}
+   =\frac{2v_m}{c}\nu_0.
+
+For mirror velocities :math:`v_m=\pm v`, this is precisely the requested
+:math:`f_{\mathrm M}=\pm(2v/c)\nu_0`.  An ordinary intensity detector reports
+the positive oscillation frequency :math:`|f_{\mathrm M}|`; the sign describes
+the direction of phase evolution.
+
+**Step 4 — State the numbered result.**  All three parts requested in the
+exercise are summarized by
 
 .. math::
    :label: fop-exercise-2-6-1-result
 
-   \boxed{v=c|\Delta\nu|/(2\nu)=\lambda|\Delta\nu|/2}
+   \boxed{
+   I(t)=I_{\mathrm{LO}}+I_{\mathrm r}
+   +2\sqrt{I_{\mathrm{LO}}I_{\mathrm r}}
+    \cos(2\pi\Delta\nu t+\phi_0)},
+   \qquad
+   \boxed{|v_r|=\frac{\lambda_0f_{\mathrm b}}{2}},
+   \qquad
+   \boxed{f_{\mathrm M}=\frac{2v_m}{c}\nu_0}.
 
 
-**Step 5 — Check.**  Equation :eq:`fop-exercise-2-6-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  The zero-angle or paraxial limit supplies an independent sign and magnitude check whenever that limit is part of the model.
+**Step 5 — Check.**
+
+* **Stationary target:** :math:`v_r=0` gives :math:`\Delta\nu=0`; the
+  interference is constant rather than beating.
+* **Intensity limits:** for equal component intensities, the intensity varies
+  between :math:`0` and :math:`4I_0`, matching two-wave interference.
+* **Units:** :math:`\lambda_0f_{\mathrm b}` has units
+  :math:`\mathrm{m\,s^{-1}}`, as required for velocity.
+* **Round-trip factor:** a mirror displacement of :math:`\lambda_0/2` changes
+  the round-trip path by one wavelength and produces one full fringe.  A
+  mirror moving at speed :math:`|v_m|` therefore produces
+  :math:`2|v_m|/\lambda_0` fringes per second.
+* **Direction:** replacing :math:`v_r` by :math:`-v_r` reverses the phase
+  evolution but leaves a single-channel cosine unchanged, explaining why
+  quadrature or an offset reference is needed to measure the sign.
+
+End-of-chapter problems
+-----------------------
 
 Problem 2.2-3 — Spherical Helmholtz solution
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

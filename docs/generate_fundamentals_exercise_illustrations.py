@@ -241,6 +241,13 @@ META["double_convex"] = DiagramMeta(
     "ρ: radial coordinate • z₁,z₂: surface positions • d(ρ): local thickness • d₀: central thickness • n: lens index • R₁,R₂: signed radii • f: focal length",
     "R₁=R, R₂=−R gives 1/f=2(n−1)/R; a plane surface gives the plano-convex limit",
 )
+META["doppler"] = DiagramMeta(
+    "laser ν₀ and signed target velocity vᵣ",
+    "mix LO with the Doppler-shifted return",
+    "photodiode beat fᵦ=|Δν|=2|vᵣ|/λ₀",
+    "ν₀: laser frequency • λ₀: wavelength • Δν: Doppler shift • vᵣ: radial velocity • Iᴸᴼ,Iᵣ: mixing intensities • fᵦ: beat frequency",
+    "vᵣ=0 gives no beat; mirror motion changes the round-trip path at 2vᵣ",
+)
 META["refracting"] = DiagramMeta(
     "object and curved interface",
     "Snell refraction at height y",
@@ -415,6 +422,8 @@ def category_for(chapter: int, title: str) -> str:
             return "waveguide"
     if chapter == 2 and "double-convex" in lower:
         return "double_convex"
+    if chapter == 2 and "optical doppler" in lower:
+        return "doppler"
     if chapter == 2 and "lens" in lower:
         return "lens"
     if chapter == 2 and "prism" in lower:
@@ -448,6 +457,7 @@ def icon_markup(category: str) -> str:
         "mirror": '<path class="optic" d="M625 185 Q690 225 690 270 Q690 315 625 355"/><line class="axis" x1="470" y1="270" x2="735" y2="270" stroke-dasharray="8 7"/><path class="accent" d="M480 240 H685 L635 270 L580 303 M480 240 L690 270 L580 286"/><path class="accent2" d="M480 270 V240 M616 270 V281"/><path class="thin" d="M625 185 l16 8 M616 202 l17 8 M625 355 l16 -8 M616 338 l17 -8"/><circle class="point" cx="580" cy="270" r="4"/><circle class="point" cx="635" cy="270" r="4"/><circle class="point" cx="690" cy="270" r="5"/><circle class="point" cx="616" cy="281" r="5"/>',
         "lens": '<path class="accent" d="M482 235 L604 270 L700 305 L735 318"/><path class="optic" d="M604 188 Q585 270 604 352 M604 188 Q623 270 604 352"/><line class="thin" x1="604" y1="185" x2="604" y2="355" stroke-dasharray="7 6"/><line class="axis" x1="475" y1="305" x2="735" y2="305"/><circle class="point" cx="604" cy="270" r="5"/><circle class="point" cx="700" cy="305" r="6"/>',
         "double_convex": '<path class="layer1" d="M600 185 Q555 225 555 270 Q555 315 600 355 Q665 315 665 270 Q665 225 600 185 Z"/><line class="axis" x1="480" y1="270" x2="740" y2="270" stroke-dasharray="8 7"/><line class="thin" x1="555" y1="185" x2="555" y2="355" stroke-dasharray="6 6"/><line class="thin" x1="665" y1="185" x2="665" y2="355" stroke-dasharray="6 6"/><line class="accent2" x1="575" y1="225" x2="645" y2="225"/><line class="accent2" x1="563" y1="315" x2="650" y2="315"/><path class="accent" d="M665 220 L730 270 L665 320"/><circle class="point" cx="730" cy="270" r="6"/>',
+        "doppler": '<rect class="iconbox" x="475" y="250" width="42" height="40" rx="6"/><path class="layer1" d="M565 245 L590 270 L565 295 L540 270 Z"/><line class="thin" x1="548" y1="287" x2="582" y2="253"/><line class="optic" x1="517" y1="270" x2="540" y2="270"/><path class="accent" d="M590 258 H715"/><path class="accent2" d="M715 282 H590 V320 H585"/><path class="accent" d="M565 245 V195 H620 V245"/><line class="optic" x1="715" y1="205" x2="715" y2="330"/><path class="thin" d="M715 215 l14 -8 M715 235 l14 -8 M715 255 l14 -8 M715 295 l14 -8 M715 315 l14 -8"/><path class="accent2" d="M735 270 H750 M744 262 L752 270 L744 278"/><rect class="iconbox" x="545" y="305" width="40" height="30" rx="5"/>',
         "refracting": '<path class="optic" d="M700 175 A95 95 0 0 0 605 270 A95 95 0 0 0 700 365"/><line class="axis" x1="475" y1="270" x2="740" y2="270" stroke-dasharray="8 7"/><line class="thin" x1="579" y1="201" x2="657" y2="245" stroke-dasharray="7 6"/><path class="accent" d="M480 223 L618 223 L738 262"/><path class="accent2" d="M573 223 A45 45 0 0 1 579 201 M660 247 A48 48 0 0 0 664 238"/><line class="callout" x1="618" y1="223" x2="700" y2="270"/><circle class="point" cx="618" cy="223" r="6"/><circle class="point" cx="700" cy="270" r="5"/>',
         "cartesian_oval": '<path class="optic" d="M660 185 C585 210 585 330 660 355"/><path class="accent" d="M480 270 L625 205 L730 270 M480 270 L610 270 L730 270 M480 270 L625 335 L730 270"/><line class="axis" x1="475" y1="270" x2="740" y2="270" stroke-dasharray="8 7"/><circle class="point" cx="480" cy="270" r="7"/><circle class="point" cx="730" cy="270" r="7"/>',
         "tir": '<rect class="layer1" x="480" y="215" width="260" height="145"/><line class="optic" x1="480" y1="215" x2="740" y2="215"/><path class="layer2" opacity="0.48" d="M610 315 L580 215 L640 215 Z"/><line class="axis" x1="610" y1="175" x2="610" y2="345" stroke-dasharray="8 7"/><path class="accent2" stroke-dasharray="8 6" d="M610 315 L580 215 M610 315 L640 215"/><path class="accent" d="M610 315 L610 175 M520 345 L570 215 L650 345"/><path class="accent2" d="M610 280 A35 35 0 0 1 620 282"/><circle class="point" cx="610" cy="315" r="6"/>',
@@ -495,6 +505,7 @@ VISIBLE_VARIABLES = {
     "mirror": ("y₁", "y₂", "z₁", "z₂", "R", "f"),
     "lens": ("n", "y", "R₁", "R₂", "f"),
     "double_convex": ("ρ", "z₁", "z₂", "d(ρ)", "d₀", "n", "R₁", "R₂", "f"),
+    "doppler": ("ν₀", "λ₀", "Δν", "vᵣ", "Iᴸᴼ", "Iᵣ", "fᵦ"),
     "refracting": ("n₁", "n₂", "θ₁", "θ₂", "y", "R", "z₁", "z₂"),
     "cartesian_oval": ("n₁", "n₂", "y", "z", "z₁", "z₂"),
     "tir": ("n=3.6", "nₒᵤₜ=1", "θᵢ", "θᶜ=16.13°", "Ωᶜ", "ηₑₓₜ=11.81%"),
@@ -544,6 +555,7 @@ def variable_markup(category: str) -> str:
         "mirror": '<text class="var smallvar" x="490" y="230">y₁</text><text class="var smallvar" x="570" y="303">y₂</text><line class="callout" x1="480" y1="340" x2="690" y2="340"/><path class="tick" d="M480 334 V346 M690 334 V346"/><text class="var smallvar" x="585" y="332">z₁</text><line class="callout" x1="616" y1="318" x2="690" y2="318"/><path class="tick" d="M616 312 V324 M690 312 V324"/><text class="var smallvar" x="653" y="310">z₂</text><text class="var smallvar" x="607" y="292">R</text><text class="var smallvar" x="663" y="292">f</text><text class="annotation" x="580" y="260">C</text><text class="annotation" x="635" y="260">F</text><text class="annotation" x="705" y="260">V</text><text class="annotation" x="650" y="195">reflecting face opens left</text>',
         "lens": '<line class="callout" x1="500" y1="305" x2="500" y2="240"/><text class="var" x="487" y="270">y</text><text class="var" x="607" y="230">n</text><text class="var" x="555" y="205">R₁</text><text class="var" x="650" y="205">R₂</text><line class="callout" x1="604" y1="335" x2="700" y2="335"/><path class="tick" d="M604 329 V341 M700 329 V341"/><text class="var" x="652" y="355">f</text>',
         "double_convex": '<line class="callout" x1="525" y1="270" x2="525" y2="215"/><path class="tick" d="M519 270 H531 M519 215 H531"/><text class="var" x="510" y="245">ρ</text><text class="var smallvar" x="540" y="205">R₁&gt;0</text><text class="var smallvar" x="680" y="205">R₂&lt;0</text><text class="var smallvar" x="575" y="245">z₁</text><text class="var smallvar" x="645" y="245">z₂</text><text class="var smallvar" x="610" y="217">d(ρ)</text><text class="var" x="610" y="290">n</text><text class="var smallvar" x="610" y="337">d₀</text><line class="callout" x1="665" y1="340" x2="730" y2="340"/><path class="tick" d="M665 334 V346 M730 334 V346"/><text class="var smallvar" x="698" y="332">f</text>',
+        "doppler": '<text class="var smallvar" x="496" y="242">ν₀, λ₀</text><text class="var smallvar" x="620" y="248">ν₀</text><text class="var smallvar" x="652" y="302">ν₀+Δν</text><text class="var smallvar" x="626" y="190">Iᴸᴼ</text><text class="var smallvar" x="670" y="322">Iᵣ</text><text class="var smallvar" x="745" y="250">vᵣ</text><text class="var smallvar" x="565" y="357">fᵦ</text><text class="annotation" x="565" y="326">PD</text><text class="annotation" x="705" y="195">moving target</text>',
         "refracting": '<text class="var" x="500" y="205">n₁</text><text class="var" x="710" y="335">n₂</text><text class="var" x="565" y="190">θ₁</text><text class="var" x="683" y="230">θ₂</text><line class="callout" x1="605" y1="223" x2="605" y2="270"/><path class="tick" d="M599 223 H611 M599 270 H611"/><text class="var" x="592" y="252">y</text><text class="var" x="660" y="270">R</text><text class="var smallvar" x="530" y="292">z₁</text><text class="var smallvar" x="675" y="302">z₂</text><text class="annotation" x="625" y="203">P</text><text class="annotation" x="620" y="180">local normal PC</text><text class="annotation" x="718" y="285">C</text>',
         "cartesian_oval": '<text class="var" x="510" y="190">n₁</text><text class="var" x="700" y="190">n₂</text><text class="var" x="600" y="205">y</text><text class="var" x="645" y="335">z</text><text class="var smallvar" x="525" y="300">z₁</text><text class="var smallvar" x="700" y="300">z₂</text>',
         "tir": '<text class="var" x="700" y="245">n=3.6</text><text class="var" x="515" y="200">nₒᵤₜ=1</text><text class="var smallvar" x="660" y="285">θᶜ=16.13°</text><text class="var" x="625" y="255">Ωᶜ</text><text class="var smallvar" x="680" y="335">ηₑₓₜ=11.81%</text><text class="annotation" x="684" y="203">escape cone at one of 6 faces</text><text class="annotation" x="525" y="245">θᵢ&gt;θᶜ: TIR</text>',
@@ -679,6 +691,11 @@ def figure_block(
         caption = f'''**Figure {figure_number} — Exercise 2.4-2: Double-convex lens.**  The signed surface
    radii determine the two paraxial sags.  Their difference gives the local
    thickness :math:`d(\\rho)`, whose quadratic part becomes the lens phase.'''
+    elif (chapter, section, item) == (2, "6", "1"):
+        caption = f'''**Figure {figure_number} — Exercise 2.6-1: Optical Doppler radar.**  The
+   unshifted local oscillator and the return at :math:`\\nu_0+\\Delta\\nu`
+   meet at the photodiode.  The target's signed radial velocity determines
+   the electrical beat frequency; its round-trip path gives the factor two.'''
     else:
         caption = f'''**Figure {figure_number} — Exercise {chapter}.{section}-{item}: {title}.** The
    diagram identifies the input quantities, physical operation, requested
