@@ -91,6 +91,18 @@ if __name__ == "__main__":
 def extract_chunk_armA():
     """The same 9-component chunk oriented for the ARM-A world:
     scene = (-x_CAD, -y_CAD, z_CAD) + (-89.3, 160.95, -30.4)."""
+    from pathlib import Path as _P
+    out = _P("attachment/om05a_components/prism_assembly_chunk_armA.step")
+    if out.exists():
+        # bugs/0679: re-extracting bumps the mtime -> a NEW mesh-cache key every
+        # run -> the app rebuilds the cache at launch (and once raced its reader)
+        from OCC.Core.Bnd import Bnd_Box as _BB
+        from OCC.Core.BRepBndLib import brepbndlib as _bl
+        from OCC.Extend.DataExchange import read_step_file as _rd
+        box = _BB(); _bl.Add(_rd(str(out)), box)
+        b = [round(v, 2) for v in box.Get()]
+        print(f"armA chunk exists, reusing (bounds {b})")
+        return b
     import math
 
     from OCC.Core.BRep import BRep_Builder

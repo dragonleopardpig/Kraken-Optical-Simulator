@@ -986,8 +986,18 @@ class LayoutPolylineDisplayMixin:
                         except Exception:
                             pass
                         try:
+                            # bugs/0679: ATOMIC cache write (temp + os.replace). A reader in
+                            # another process/thread hitting a half-written .vtp spewed VTK
+                            # XML parse errors on app launch (the byte index GREW between
+                            # its retries -- it was racing this very writer).
+                            import os as _os
+
                             analytic_cache_path.parent.mkdir(parents=True, exist_ok=True)
-                            mesh.save(str(analytic_cache_path))
+                            _tmp = analytic_cache_path.with_suffix(
+                                analytic_cache_path.suffix + f".tmp{_os.getpid()}"
+                            )
+                            mesh.save(str(_tmp))
+                            _os.replace(str(_tmp), str(analytic_cache_path))
                         except Exception as exc:
                             self.append_debug(
                                 f"Analytic STEP display cache write skipped for {source_path.name}: {exc}"
