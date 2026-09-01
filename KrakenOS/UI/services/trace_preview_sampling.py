@@ -954,6 +954,7 @@ class TracePreviewSamplingMixin:
         bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
         *,
         bundle_sources: list[SceneSource3D | None] | None = None,
+        append: bool = False,
     ) -> None:
         self._trace_preview_service()._trace_preview_bundles(
             system,
@@ -961,6 +962,7 @@ class TracePreviewSamplingMixin:
             wavelength,
             bundles,
             bundle_sources=bundle_sources,
+            append=append,
         )
 
     def _build_pupilcalc_preview_bundles(self, system, wavelength: float, pattern: str):

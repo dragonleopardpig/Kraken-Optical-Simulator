@@ -689,6 +689,7 @@ class ThreeDSceneToolsMixin:
             self._trace_preview_rays(
                 system, rays, wavelength, max_radius, sampling_mode=sampling_mode
             )
+            self._trace_additive_imaging_source_rays(system, rays, wavelength)
             return rays, None
         # bugs/0203 (#2): the fold breaks rotational symmetry, so the preview must
         # launch the area-filling pupil disk (not the flat meridional fan). Keep the
@@ -707,7 +708,43 @@ class ThreeDSceneToolsMixin:
         finally:
             self._force_folded_cone_preview_trace = False
             self.__dict__.pop("_folded_preview_ray_count_override", None)
+        self._trace_additive_imaging_source_rays(system, rays, wavelength)
         return rays, None
+
+    def _trace_additive_imaging_source_rays(self, system, rays, wavelength: float) -> None:
+        """bugs/0680: append the explicitly ADDITIVE scene sources to the imaging keeper.
+
+        The om05a device is imaged on two opposite faces through one camera: the Object
+        row drives face A's chain, and face B's light enters through its own prism train
+        as an additive source. Its bundles trace non-sequentially (they bounce through
+        the scene solids) INTO the same keeper the imaging trace just filled, so both
+        arms display, census and analyse as one live bundle -- the imaging conjugates
+        stay untouched."""
+        try:
+            bundles, sources = self._build_additive_imaging_source_bundles(float(wavelength))
+        except Exception:
+            return
+        if not bundles:
+            return
+        prior_force = self.__dict__.get("_force_nonseq_preview_trace", False)
+        self.__dict__["_force_nonseq_preview_trace"] = True
+        try:
+            self._trace_preview_bundles(
+                system,
+                rays,
+                float(wavelength),
+                bundles,
+                bundle_sources=sources,
+                append=True,
+            )
+        finally:
+            self.__dict__["_force_nonseq_preview_trace"] = prior_force
+        try:
+            self._preview_field_bundle_count = int(
+                getattr(self, "_preview_field_bundle_count", 1) or 1
+            ) + len(bundles)
+        except Exception:
+            pass
 
     def _folded_preview_ray_count_cap(self) -> int:
         """bugs/0410: the sparse ray count for an expensive folded/prism 3D preview. CAPS the user's
@@ -4305,8 +4342,11 @@ class ThreeDSceneToolsMixin:
             coupled_bundles, coupled_sources = self._build_coupled_illumination_source_bundles(
                 float(wavelength)
             )
-            bundles = [*bundles, *coupled_bundles]
-            sources = [*sources, *coupled_sources]
+            additive_bundles, additive_sources = self._build_additive_imaging_source_bundles(
+                float(wavelength)
+            )
+            bundles = [*bundles, *coupled_bundles, *additive_bundles]
+            sources = [*sources, *coupled_sources, *additive_sources]
             if not bundles:
                 return []
             rays_illum = Kos.raykeeper(system)

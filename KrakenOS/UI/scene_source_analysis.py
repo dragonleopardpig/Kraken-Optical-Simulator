@@ -286,6 +286,31 @@ def scene_source_spec_couples_to_imaging_launch(spec: object) -> bool:
     return bool(enabled and coaxial_illuminator_descriptor(settings) is not None)
 
 
+def scene_source_spec_is_additive_to_imaging(spec: object) -> bool:
+    """Return whether a physical source is explicitly ADDITIVE to the imaging launch.
+
+    bugs/0680: a scene can image MORE object geometry than the Object row covers -- the
+    om05a device is inspected on two opposite faces through one camera, and the second
+    face's rays enter through their own prism train. An additive source represents that
+    extra light: the Object-driven imaging launch stays exactly as it is (conjugates,
+    detector, axis untouched) and the source's rays are traced non-sequentially INTO the
+    same preview keeper on top. Opt-in per spec (``additive: True``) because an ordinary
+    physical source is itself the primary trace (stray-light / source-to-detector
+    layouts) and must keep replacing the imaging launch.
+    """
+    if isinstance(spec, dict):
+        settings: object = spec
+    else:
+        settings = getattr(spec, "settings", None)
+    if not isinstance(settings, dict):
+        return False
+    return source_spec_bool(
+        settings,
+        ("additive", "additive_to_imaging", "imaging_additive"),
+        False,
+    )
+
+
 def scene_source_from_spec(
     spec: dict[str, object],
     index: int,

@@ -402,7 +402,11 @@ class TracePreviewService:
         bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
         *,
         bundle_sources: list[SceneSource3D | None] | None = None,
+        append: bool = False,
     ) -> None:
+        # bugs/0680: ``append=True`` traces on TOP of the keeper's existing rays (the
+        # additive imaging-source pass) -- no clean, and the launch field mapping is
+        # extended rather than replaced, so the appended bundles keep distinct colours.
         le = _layout_module()
         NonSequentialTracePreviewError = le.NonSequentialTracePreviewError
         _short_error_message = le._short_error_message
@@ -420,6 +424,13 @@ class TracePreviewService:
         #    dispatcher branch; the rays actually traced are exactly the main thread's.
         capture = getattr(self.editor, "_preview_trace_bundle_capture", None)
         if isinstance(capture, list):
+            if not append:
+                # bugs/0680: keep the mirrored-additive stash fresh on the capture pass
+                # too -- the additive sampling runs right after and reflects these.
+                try:
+                    self.editor._last_imaging_launch_bundles = list(bundles)
+                except Exception:
+                    pass
             capture.append(
                 {
                     "bundles": [tuple(np.asarray(part, dtype=float) for part in bundle) for bundle in bundles],
@@ -447,6 +458,14 @@ class TracePreviewService:
                 for bundle in replay_call.get("bundles", [])
             ]
             bundle_sources = replay_call.get("bundle_sources")
+        if not append:
+            # bugs/0680: stash the imaging launch so a mirrored additive source
+            # (mirror_launch_plane_z) can reflect the SAME calibrated bundles into the
+            # symmetric second arm.
+            try:
+                self.editor._last_imaging_launch_bundles = list(bundles)
+            except Exception:
+                pass
         bundle_lengths = [int(len(np.asarray(bundle[0]))) for bundle in bundles]
         total_rays = int(sum(bundle_lengths))
         # bugs/0558: the LAUNCH knows which field each ray belongs to -- one bundle per field --
@@ -458,9 +477,13 @@ class TracePreviewService:
         # appends corner probes to some fields. Record the real mapping instead; it is exact for
         # ragged bundles and cannot go stale, because it is produced by the same call that traces.
         try:
-            field_by_source_ray: list[int] = []
+            existing_mapping: list[int] = []
+            if append:
+                existing_mapping = list(getattr(self.editor, "_preview_field_index_by_source_ray", None) or [])
+            base_index = (max(existing_mapping) + 1) if existing_mapping else 0
+            field_by_source_ray: list[int] = list(existing_mapping)
             for bundle_index, length in enumerate(bundle_lengths):
-                field_by_source_ray.extend([int(bundle_index)] * max(int(length), 0))
+                field_by_source_ray.extend([int(base_index + bundle_index)] * max(int(length), 0))
             self.editor._preview_field_index_by_source_ray = field_by_source_ray
         except Exception:
             pass
@@ -474,7 +497,8 @@ class TracePreviewService:
             bundle_lengths_truncated=len(bundle_lengths) > 16,
         )
         if not bundles:
-            rays.clean()
+            if not append:
+                rays.clean()
             open3d_timing_event(
                 "trace_preview_bundles_done",
                 duration_ms=round(float((time.perf_counter() - trace_start) * 1000.0), 3),
@@ -513,8 +537,11 @@ class TracePreviewService:
                 }
 
             if bool(trace_state.get("use_nonseq")):
-                rays.clean()
-                clean = 1
+                if append:
+                    clean = 0
+                else:
+                    rays.clean()
+                    clean = 1
                 restore_nonseq_settings = self._apply_nonseq_trace_settings(system)
                 terminal_policy = self._trace_terminal_policy_metadata(trace_state)
                 try:
@@ -587,7 +614,8 @@ class TracePreviewService:
                     return
                 except Exception as exc:
                     status = "error"
-                    rays.clean()
+                    if not append:
+                        rays.clean()
                     reason_text = ", ".join(str(reason) for reason in trace_state.get("reasons", ()) or ()) or "non-sequential scene request"
                     detail = _short_error_message(exc)
                     message = f"NsTraceLoop failed for {reason_text}: {detail}"
@@ -621,7 +649,7 @@ class TracePreviewService:
                 trace_loop = Kos.TraceLoop if scalar_required else getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
                 self._last_preview_trace_backend = "Scalar TraceLoop" if trace_loop is Kos.TraceLoop else "BatchTraceLoop"
                 try:
-                    clean = 1
+                    clean = 0 if append else 1
                     for bundle_index, bundle in enumerate(bundles):
                         bundle_start = time.perf_counter()
                         bundle_ray_count = int(len(np.asarray(bundle[0])))
@@ -653,13 +681,14 @@ class TracePreviewService:
                     restore_image_catch()
                 return
 
-            rays.clean()
+            if not append:
+                rays.clean()
             executor = self._ensure_analysis_executor(worker_count)
             if executor is None:
                 trace_loop = Kos.TraceLoop if scalar_required else getattr(Kos, "BatchTraceLoop", Kos.TraceLoop)
                 self._last_preview_trace_backend = "Scalar TraceLoop" if trace_loop is Kos.TraceLoop else "BatchTraceLoop"
                 try:
-                    clean = 1
+                    clean = 0 if append else 1
                     for bundle_index, bundle in enumerate(bundles):
                         bundle_start = time.perf_counter()
                         bundle_ray_count = int(len(np.asarray(bundle[0])))

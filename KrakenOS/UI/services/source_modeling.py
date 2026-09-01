@@ -23,6 +23,7 @@ from KrakenOS.UI.scene_source_analysis import (
     scene_source_from_spec,
     scene_source_setting_value,
     scene_source_spec_couples_to_imaging_launch,
+    scene_source_spec_is_additive_to_imaging,
     scene_source_spec_is_face_bound_marker,
     scene_sources_summary_text,
     source_panel_summary_text,
@@ -1478,6 +1479,7 @@ class SourceModelingMixin:
                 and bool(source.physical)
                 and not scene_source_spec_is_face_bound_marker(source)
                 and not scene_source_spec_couples_to_imaging_launch(source)
+                and not scene_source_spec_is_additive_to_imaging(source)
                 for source in sources
             ):
                 return sources
@@ -1486,6 +1488,7 @@ class SourceModelingMixin:
                 for source in sources
                 if scene_source_spec_is_face_bound_marker(source)
                 or scene_source_spec_couples_to_imaging_launch(source)
+                or scene_source_spec_is_additive_to_imaging(source)
             ]
         stats = self._source_statistics(sample_count=sample_count, wavelength=wavelength_value)
         source_model = str(stats.get("source_model", self._current_source_model()))
@@ -1895,6 +1898,80 @@ class SourceModelingMixin:
             np.asarray(n_values, dtype=float),
         )
 
+    @staticmethod
+    def _source_spec_aim_point(settings: dict[str, object]) -> np.ndarray | None:
+        """bugs/0680: optional WORLD-space aim point (``aim_x``/``aim_y``/``aim_z``) for a
+        random-family source. None unless all three keys are present and finite."""
+        values = []
+        for key in ("aim_x", "aim_y", "aim_z"):
+            if key not in settings:
+                return None
+            try:
+                value = float(settings.get(key))
+            except (TypeError, ValueError):
+                return None
+            if not np.isfinite(value):
+                return None
+            values.append(value)
+        return np.asarray(values, dtype=float)
+
+    @staticmethod
+    def _aim_source_cone_directions(
+        origin,
+        direction,
+        aim_world,
+        x_values,
+        y_values,
+        z_values,
+        l_values,
+        m_values,
+        n_values,
+    ):
+        """bugs/0680: per-point AIMED launch. Every sampled point re-centres its cone on
+        the direction toward ONE world-space aim point -- the apparent entrance pupil the
+        emitting face sees through its fold train (the om05a face-B arm). The sampled cone
+        (l,m,n around local +z, already carrying cone_deg + angular weight) is rigidly
+        rotated onto each point's own aim axis, so the angular DISTRIBUTION is preserved:
+        this is importance sampling of the diffuse emission the lens stop would select,
+        not new physics."""
+        u, v, w = SourceModelingMixin._source_frame_vectors_from_direction(direction)
+        origin_arr = np.asarray(origin, dtype=float).reshape(-1)[:3]
+        delta = np.asarray(aim_world, dtype=float).reshape(-1)[:3] - origin_arr
+        aim_local = np.array([float(delta @ u), float(delta @ v), float(delta @ w)])
+        points = np.column_stack(
+            (
+                np.asarray(x_values, dtype=float),
+                np.asarray(y_values, dtype=float),
+                np.asarray(z_values, dtype=float),
+            )
+        )
+        axes = aim_local[None, :] - points
+        axis_norms = np.linalg.norm(axes, axis=1)
+        axes = axes / np.where(axis_norms > 1e-12, axis_norms, 1.0)[:, None]
+        cone = np.column_stack(
+            (
+                np.asarray(l_values, dtype=float),
+                np.asarray(m_values, dtype=float),
+                np.asarray(n_values, dtype=float),
+            )
+        )
+        # Rodrigues: rotate each cone sample by the rotation taking local +z onto axes[i]
+        az = axes[:, 2]
+        k = np.column_stack((-axes[:, 1], axes[:, 0], np.zeros(len(axes))))
+        s = np.linalg.norm(k, axis=1)
+        k_hat = k / np.where(s > 1e-12, s, 1.0)[:, None]
+        cross = np.cross(k_hat, cone)
+        dot = (k_hat * cone).sum(axis=1)
+        rotated = cone * az[:, None] + cross * s[:, None] + k_hat * (dot * (1.0 - az))[:, None]
+        degenerate = s <= 1e-12
+        if np.any(degenerate):
+            flip = degenerate & (az < 0.0)
+            rotated[degenerate] = cone[degenerate]
+            rotated[flip] *= np.array([1.0, -1.0, -1.0])[None, :]
+        norms = np.linalg.norm(rotated, axis=1)
+        rotated = rotated / np.where(norms > 1e-12, norms, 1.0)[:, None]
+        return rotated[:, 0], rotated[:, 1], rotated[:, 2]
+
     def _build_scene_source_bundle(self, source: SceneSource3D, *, full_count: bool = False):
         settings = dict(source.settings or {})
         model = str(source.model or settings.get("source_model", "Collimated disk source"))
@@ -2101,6 +2178,19 @@ class SourceModelingMixin:
         else:
             x_values = np.zeros(ray_count, dtype=float)
             y_values = np.zeros(ray_count, dtype=float)
+        aim_point = self._source_spec_aim_point(settings)
+        if aim_point is not None:
+            l_values, m_values, n_values = self._aim_source_cone_directions(
+                origin,
+                direction,
+                aim_point,
+                np.asarray(x_values, dtype=float),
+                np.asarray(y_values, dtype=float),
+                z_values,
+                np.asarray(l_values, dtype=float),
+                np.asarray(m_values, dtype=float),
+                np.asarray(n_values, dtype=float),
+            )
         return self._orient_source_points_and_dirs_for_source(
             origin,
             direction,
@@ -2148,6 +2238,11 @@ class SourceModelingMixin:
                 # Letting it reach the preview service's source early-return would replace the imaging
                 # conjugates it is meant to illuminate.
                 continue
+            if scene_source_spec_is_additive_to_imaging(source):
+                # bugs/0680: an explicitly additive source keeps the imaging launch too -- it is
+                # appended to the preview keeper AFTER the imaging trace
+                # (_trace_additive_imaging_source_rays), never launched in its place.
+                continue
             bundle = self._build_scene_source_bundle(source, full_count=full_count)
             if bundle is None or len(np.asarray(bundle[0])) <= 0:
                 continue
@@ -2171,6 +2266,75 @@ class SourceModelingMixin:
                 continue
             if not scene_source_spec_couples_to_imaging_launch(source):
                 continue
+            bundle = self._build_scene_source_bundle(source, full_count=full_count)
+            if bundle is None or len(np.asarray(bundle[0])) <= 0:
+                continue
+            bundles.append(bundle)
+            sources.append(source)
+        return bundles, sources
+
+    def _build_additive_imaging_source_bundles(
+        self, wavelength: float, *, full_count: bool = False
+    ) -> tuple[
+        list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
+        list[SceneSource3D],
+    ]:
+        """bugs/0680: bundles for sources explicitly ADDITIVE to the imaging launch.
+
+        These trace non-sequentially INTO the imaging preview keeper after the imaging
+        trace (the om05a second-face arm) -- they never replace it, and they are not
+        gated by the "Illum rays" master switch: the user opted in per spec, and the
+        rays ARE the scene's imaging light, not an illumination overlay.
+
+        A spec carrying ``mirror_launch_plane_z`` does not sample its own model at all:
+        the scene is mirror-symmetric about that world plane (the om05a shared lens leg),
+        so the EXACT second-arm imaging bundle is the chain's own calibrated launch
+        reflected through it (z -> 2*zp - z, n -> -n). The chain bundles are stashed by
+        the trace service on every imaging launch."""
+        if not self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", [])):
+            return [], []
+        bundles = []
+        sources = []
+        for source in self._collect_scene_sources(wavelength=wavelength):
+            if not (bool(source.enabled) and bool(source.physical)):
+                continue
+            if not scene_source_spec_is_additive_to_imaging(source):
+                continue
+            settings = dict(source.settings or {})
+            mirror_plane = settings.get("mirror_launch_plane_z", None)
+            if mirror_plane is not None:
+                try:
+                    plane_z = float(mirror_plane)
+                except (TypeError, ValueError):
+                    plane_z = None
+                if plane_z is not None and np.isfinite(plane_z):
+                    # the physical emitting face bounds the mirrored launch: the chain
+                    # grid covers the camera's full FOV, but only launch points on the
+                    # actual face (|x| <= radius_x, |y| <= radius_y) exist as light
+                    half_x = self._source_spec_float(
+                        settings, ("radius_x", "half_width_x", "source_radius_x"), float("inf")
+                    )
+                    half_y = self._source_spec_float(
+                        settings, ("radius_y", "half_width_y", "source_radius_y"), float("inf")
+                    )
+                    for chain_bundle in list(getattr(self, "_last_imaging_launch_bundles", None) or []):
+                        x, y, z, l, m, n = (
+                            np.asarray(part, dtype=float).copy() for part in chain_bundle
+                        )
+                        if len(x) <= 0:
+                            continue
+                        keep = np.ones(len(x), dtype=bool)
+                        if np.isfinite(half_x):
+                            keep &= np.abs(x) <= float(half_x) + 1e-9
+                        if np.isfinite(half_y):
+                            keep &= np.abs(y) <= float(half_y) + 1e-9
+                        if not np.any(keep):
+                            continue
+                        z = 2.0 * plane_z - z
+                        n = -n
+                        bundles.append(tuple(part[keep] for part in (x, y, z, l, m, n)))
+                        sources.append(source)
+                    continue
             bundle = self._build_scene_source_bundle(source, full_count=full_count)
             if bundle is None or len(np.asarray(bundle[0])) <= 0:
                 continue
