@@ -34,3 +34,21 @@ View; the armA scene is the real-glass single-arm trace. The RED (LED
 illumination) paths of the slide are a future addition on the same foundations
 (their Pyrite85 scene shows the LED-source machinery works in chain scenes -- the
 conflict here is specific to this folded-solid scene type).
+
+## flag_101659 "Ray tracing is wrong" + Prism_Assembly_Ray.png comparison
+
+The user compared the TUNNEL scene's straight leg-1 rays against the slide: rays
+must BEND through the prisms. Verdict accepted -- the tunnel fiction is retired
+from the main scene:
+
+- `attachment/om05a_folded.py` is now the REAL five-fold arm-A scene (rays bend
+  at the outer prism, run inward, drop at the centre prism, fold at both mirrors
+  -- the slide's green path, one arm, traced through real glass).
+- The old straight-leg version is preserved as
+  `attachment/om05a_unfolded_tunnel.py` (reference; its physics remain valid as
+  the unfolded prescription).
+- `attachment/om05a_bends_view.png` = the head-on render matching the user's
+  comparison framing.
+
+Remaining for the full slide picture in-scene: the second arm (blocked by the two
+documented trace-mode frontiers) and the red LED illumination paths.
