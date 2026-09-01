@@ -42,6 +42,11 @@ DEFAULT_SPEC: dict[str, Any] = {
     "depth_mm": 20.0,
     "active_face": "front",
     "axis_reach_mm": 0.0,  # 0 = auto (2.5 x the largest dimension, min 80 mm)
+    # bugs/0683: offset of the ACTIVE face along the axis (+ toward the lens). Lets the
+    # part sit where the MACHINE holds it (the om05a device centred in the prism slot,
+    # its face 3.9 mm behind the focus plane) while the object plane stays the optical
+    # conjugate. May be negative.
+    "axis_offset_mm": 0.0,
     # bugs/0666: an optional STEP of the REAL part. Its native bounding box supplies
     # W x H x D (x -> W, y -> H, z -> D, front = +z) so the six-face model is unchanged,
     # and the real mesh is drawn in place of the box. Portable: relative to the project
@@ -66,6 +71,11 @@ def normalize_inspection_part_spec(spec: Any) -> dict[str, Any]:
         if not math.isfinite(value) or value < 0.0:
             value = float(out[key])
         out[key] = value
+    try:
+        offset = float(spec.get("axis_offset_mm", 0.0))
+    except (TypeError, ValueError):
+        offset = 0.0
+    out["axis_offset_mm"] = offset if math.isfinite(offset) else 0.0
     for key in ("width_mm", "height_mm", "depth_mm"):
         if out[key] <= 1e-6:
             out[key] = float(DEFAULT_SPEC[key])
@@ -105,8 +115,8 @@ def part_frame(spec: dict[str, Any], object_point, object_axis) -> tuple[np.ndar
     y = H, z = D, front = +z), given the ACTIVE face's pose on the object plane."""
     spec = normalize_inspection_part_spec(spec)
     active = spec["active_face"]
-    O = np.asarray(object_point, dtype=float).reshape(3)
     a = _unit(object_axis)
+    O = np.asarray(object_point, dtype=float).reshape(3) + a * float(spec["axis_offset_mm"])
     u, v = plane_basis(a)
     d_active = _FACE_DEFS[active]
     local = np.column_stack([d_active["p"], d_active["q"], d_active["n"]]).astype(float)
@@ -184,8 +194,8 @@ def face_frames(spec: dict[str, Any], object_point, object_axis) -> dict[str, di
     """
     spec = normalize_inspection_part_spec(spec)
     active = spec["active_face"]
-    O = np.asarray(object_point, dtype=float).reshape(3)
     a = _unit(object_axis)
+    O = np.asarray(object_point, dtype=float).reshape(3) + a * float(spec["axis_offset_mm"])
     u, v = plane_basis(a)
     # world = R @ local, with R mapping the active face's (p, q, n) onto (u, v, a)
     d_active = _FACE_DEFS[active]
@@ -290,6 +300,7 @@ def open_inspection_part_dialog(editor):
     h_var = tk.StringVar(value=f"{spec['height_mm']:g}")
     d_var = tk.StringVar(value=f"{spec['depth_mm']:g}")
     reach_var = tk.StringVar(value=f"{spec['axis_reach_mm']:g}")
+    offset_var = tk.StringVar(value=f"{spec['axis_offset_mm']:g}")
     face_var = tk.StringVar(value=spec["active_face"])
     step_var = tk.StringVar(value=str(spec.get("step_path", "") or ""))
     status_var = tk.StringVar(value="")
@@ -301,7 +312,8 @@ def open_inspection_part_dialog(editor):
     )
     for r, (label, var) in enumerate(
         (("Width W (mm)", w_var), ("Height H (mm)", h_var), ("Depth D (mm)", d_var),
-         ("Axis reach (mm, 0 = auto)", reach_var)),
+         ("Axis reach (mm, 0 = auto)", reach_var),
+         ("Face offset along axis (mm)", offset_var)),
         start=1,
     ):
         ttk.Label(body, text=label).grid(row=r, column=0, sticky="w", pady=2)
@@ -331,16 +343,16 @@ def open_inspection_part_dialog(editor):
             status_var.set(f"Part STEP set, but its bounds could not be read: {exc}")
 
     ttk.Button(step_row, text="Browse...", command=_browse_step).grid(row=0, column=1, padx=(4, 0))
-    ttk.Label(body, text="Inspected face (on the object plane)").grid(row=5, column=0, sticky="w", pady=(8, 2))
+    ttk.Label(body, text="Inspected face (on the object plane)").grid(row=6, column=0, sticky="w", pady=(8, 2))
     ttk.Combobox(body, textvariable=face_var, values=list(FACE_ORDER), state="readonly", width=10).grid(
-        row=5, column=1, sticky="w", pady=(8, 2)
+        row=6, column=1, sticky="w", pady=(8, 2)
     )
     ttk.Label(
         body,
         text="Front/Back show W x H, Left/Right show D x H, Top/Bottom show W x D.\n"
              "Each face gets a dashed blow-out axis for its own camera station.",
         justify="left",
-    ).grid(row=6, column=0, columnspan=2, sticky="w", pady=(6, 8))
+    ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(6, 8))
 
     def _read() -> dict[str, Any]:
         raw = {
@@ -349,6 +361,7 @@ def open_inspection_part_dialog(editor):
             "height_mm": h_var.get(),
             "depth_mm": d_var.get(),
             "axis_reach_mm": reach_var.get(),
+            "axis_offset_mm": offset_var.get(),
             "active_face": face_var.get(),
             "step_path": step_var.get(),
         }

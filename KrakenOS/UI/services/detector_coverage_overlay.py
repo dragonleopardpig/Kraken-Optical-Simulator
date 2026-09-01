@@ -560,6 +560,50 @@ class DetectorCoverageOverlayService:
             self.editor.append_debug(f"Detector coverage label skipped: {exc}")
             return False
 
+    def _normalized_object_fov_bands(self) -> list[dict[str, Any]]:
+        """bugs/0683: validated authored partial-FOV bands (`object_fov_bands` layout
+        setting). Each entry: ``center`` (3, world), ``axis`` (3, the band plane's
+        normal), ``half_width`` (> 0, along the horizontal basis), ``v_lo`` < ``v_hi``
+        (band extent along the vertical basis), optional ``name``. Invalid entries are
+        dropped, never raised."""
+        raw = getattr(self.editor, "layout_object_fov_bands", None)
+        if not isinstance(raw, (list, tuple)):
+            return []
+        bands: list[dict[str, Any]] = []
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            try:
+                center = np.asarray(entry.get("center"), dtype=float).reshape(3)
+                axis = np.asarray(entry.get("axis"), dtype=float).reshape(3)
+                half_width = float(entry.get("half_width"))
+                v_lo = float(entry.get("v_lo"))
+                v_hi = float(entry.get("v_hi"))
+            except Exception:
+                continue
+            if not (
+                np.all(np.isfinite(center))
+                and np.all(np.isfinite(axis))
+                and float(np.linalg.norm(axis)) > 1e-9
+                and np.isfinite(half_width)
+                and half_width > 1e-9
+                and np.isfinite(v_lo)
+                and np.isfinite(v_hi)
+                and v_hi > v_lo
+            ):
+                continue
+            bands.append(
+                {
+                    "name": str(entry.get("name", "") or ""),
+                    "center": center,
+                    "axis": axis,
+                    "half_width": half_width,
+                    "v_lo": v_lo,
+                    "v_hi": v_hi,
+                }
+            )
+        return bands
+
     def add_overlays(self, system: Any, scene_bundle: Any = None) -> int:
         if scene_bundle is None:
             return 0
@@ -614,10 +658,35 @@ class DetectorCoverageOverlayService:
                 self.editor.append_debug(f"Detector coverage overlay reference points unavailable: {exc}")
                 return 0
         ou, ov = _basis(object_axis)
+        # bugs/0683 (flag 133605 "one side of the 50x1mm should attach the usual green
+        # transparent partial FOV"): a split-field scene AUTHORS its measured
+        # delivered-field bands (`object_fov_bands`, one per inspected face -- the
+        # prism windows pass only a one-sided band of the camera FOV). When present,
+        # each band draws the green FOV edge + faint pickable fill AT ITS FACE and the
+        # misleading full-FOV rectangle at the object plane is suppressed.
+        fov_bands = self._normalized_object_fov_bands()
+        bands_active = bool(fov_bands)
         sys_mag = self._magnification() if finite else None
         sys_image_radius = self._image_circle_radius()
         last_row = len(rows) - 1
         count = 0
+        for band in fov_bands:
+            b_u, b_v = _basis(band["axis"])
+            band_mid = (
+                np.asarray(band["center"], dtype=float).reshape(3)
+                + b_u * (0.5 * (band["v_lo"] + band["v_hi"]))
+            )
+            band_half_h = 0.5 * (band["v_hi"] - band["v_lo"])
+            points = _rect_points(band_mid, b_v, b_u, band["half_width"], band_half_h)
+            if self._line_actor(points, _OBJECT_FOV, 2.5, False):
+                count += 1
+            if self._pick_fill_actor(band_mid, b_u, b_v, band["half_width"], band_half_h, _OBJECT_FOV, 0):
+                count += 1
+            name = str(band.get("name", "") or "").strip()
+            if name:
+                anchor = band_mid + b_v * band["half_width"]
+                if self._label_actor(anchor, name, _OBJECT_FOV):
+                    count += 1
         # One detector for single-axis scenes; one PER ARM for a two-arm splitter fold, each at
         # its OWN folded position with its OWN magnification (stored in the target metadata).
         for target in detectors:
@@ -678,13 +747,20 @@ class DetectorCoverageOverlayService:
                 obj_pt, img_pt, metrics, object_mode_finite=finite,
                 object_axis=object_axis, image_axis=image_axis,
             ):
+                if bands_active and spec["kind"] == "object_fov_rect":
+                    continue  # bugs/0683: the authored bands replace the full FOV box
                 if self._line_actor(spec["points"], spec["color"], spec["line_width"], bool(spec["dashed"])):
                     count += 1
 
             # bugs/0055 follow-up: faint, filled, *pickable* squares for the Object FOV (object
             # axis) and the Image FOV (this detector's axis) so they hover-highlight + accept the
             # double-click FOV popup.
-            if finite and metrics.object_fov_half_width > 1e-9 and metrics.object_fov_half_height > 1e-9:
+            if (
+                not bands_active
+                and finite
+                and metrics.object_fov_half_width > 1e-9
+                and metrics.object_fov_half_height > 1e-9
+            ):
                 if self._pick_fill_actor(obj_pt, ou, ov, metrics.object_fov_half_width, metrics.object_fov_half_height, _OBJECT_FOV, 0):
                     count += 1
             img_half = max(metrics.image_circle_radius, metrics.sensor_half_diagonal)

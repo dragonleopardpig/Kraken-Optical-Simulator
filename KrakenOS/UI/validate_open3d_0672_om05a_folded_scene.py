@@ -161,14 +161,36 @@ def _check_scene(ok, notes) -> None:
                 part_box = (corners.min(axis=0), corners.max(axis=0))
         except Exception:
             part_box = None
+        # bugs/0683 (flag 133605 "not centered in the gap"): the device is CENTRED in
+        # the prism slot (gap z -57.9..+0.1 -> part z -53.9..-3.9, axis_offset_mm -3.9;
+        # face A sits 3.9 mm behind the focus plane until the WD recalibration).
         ok(
             part_box is not None
-            and abs(float(part_box[1][2]) - 0.0) < 0.5
-            and abs(float(part_box[0][2]) + 50.0) < 0.5
+            and abs(float(part_box[1][2]) + 3.9) < 0.5
+            and abs(float(part_box[0][2]) + 53.9) < 0.5
             and abs(float(part_box[0][0]) + 25.0) < 0.5
             and abs(float(part_box[1][1]) - 0.5) < 0.5,
-            f"A7: the device part sits IN the prism gap -- face A on the object plane, body "
-            f"z -50..0 (drawn {None if part_box is None else [np.round(part_box[0], 1).tolist(), np.round(part_box[1], 1).tolist()]})",
+            f"A7: the device part sits CENTRED in the prism gap -- body z -53.9..-3.9 "
+            f"(drawn {None if part_box is None else [np.round(part_box[0], 1).tolist(), np.round(part_box[1], 1).tolist()]})",
+        )
+        # bugs/0683: the authored partial-FOV bands -- the MEASURED delivered field per
+        # face (the outer-wedge window passes only y -5..+1; bugs/0683_band_scan.py).
+        bands = getattr(editor, "layout_object_fov_bands", None) or []
+        band_ok = (
+            len(bands) == 2
+            and all(
+                abs(float(b.get("v_lo", 99.0)) + 5.0) < 0.6
+                and abs(float(b.get("v_hi", 99.0)) - 1.0) < 0.6
+                and abs(float(b.get("half_width", 0.0)) - 26.8) < 0.5
+                for b in bands
+            )
+            and abs(float(bands[0].get("center", [0, 0, 99])[2]) - 0.0) < 0.5
+            and abs(float(bands[1].get("center", [0, 0, 99])[2]) + 57.8) < 0.5
+        )
+        ok(
+            band_ok,
+            f"A8: both faces carry the authored partial-FOV band (y -5..+1, half-width 26.8, "
+            f"at z=0 and z=-57.8) ({len(bands)} bands)",
         )
         paths = list(getattr(bundle, "ray_paths", None) or [])
         chain_paths = 0
