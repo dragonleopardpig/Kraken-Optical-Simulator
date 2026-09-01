@@ -16807,18 +16807,40 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def _inspection_part_pose(self, system, scene_bundle: SceneBundle | None):
         """(object point, outward axis) the part's active face is pinned to -- the object
         plane centre and its true normal (the scene bundle's object target, the
-        bugs/0196 convention), falling back to the object->image diagonal."""
+        bugs/0196 convention).
+
+        bugs/0682 (flag 131224 "still dislocate, not in the center big gap"): the
+        object->lens SENSE comes from the FIRST LEG (object -> first downstream
+        element), not the object->image diagonal. In a folded scene the image sits
+        around several corners, the diagonal picks up a backward component, the sign
+        test flips the object normal and the part body extends INTO the first prism
+        instead of the device slot. The first leg is the launch direction in every
+        scene and needs no traced rays (fast-load safe)."""
         rows = getattr(self.editor, "rows", None) or []
         if len(rows) < 2:
             return None
         try:
             obj_pt = np.asarray(self.editor._surface_reference_world_point(0, system=system), dtype=float).reshape(3)
-            img_pt = np.asarray(
-                self.editor._surface_reference_world_point(len(rows) - 1, system=system), dtype=float
-            ).reshape(3)
         except Exception:
             return None
-        axis = img_pt - obj_pt
+        if not np.all(np.isfinite(obj_pt)):
+            return None
+        axis = None
+        for index in range(1, len(rows)):
+            try:
+                candidate = np.asarray(
+                    self.editor._surface_reference_world_point(index, system=system), dtype=float
+                ).reshape(3)
+            except Exception:
+                continue
+            if not np.all(np.isfinite(candidate)):
+                continue
+            delta = candidate - obj_pt
+            if float(np.linalg.norm(delta)) > 1.0:
+                axis = delta
+                break
+        if axis is None:
+            return None
         for target_row in (getattr(scene_bundle, "targets", None) or []):
             if not getattr(target_row, "is_object", False):
                 continue
@@ -16833,7 +16855,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 # the object normal may point either way; keep the object->lens sense
                 axis = n if float(np.dot(n, axis)) >= 0.0 else -n
                 break
-        if float(np.linalg.norm(axis)) <= 1e-9 or not np.all(np.isfinite(obj_pt)):
+        if float(np.linalg.norm(axis)) <= 1e-9:
             return None
         return obj_pt, axis
 

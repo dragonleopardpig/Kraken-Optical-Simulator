@@ -140,6 +140,36 @@ def _check_scene(ok, notes) -> None:
         except Exception:
             pass
         system, rays, bundle = editor._build_preview_system_rays_bundle(trace_rays=True)
+
+        # flag 131224 / bugs/0682 ("still dislocate, not in the center big gap"): the
+        # 50x50x1 device box must occupy the slot BETWEEN the two outer prisms
+        # (z -58..0, face A on the object plane), not extend +z through prism A --
+        # the part pose's object->lens sense comes from the FIRST LEG, never the
+        # object->image diagonal (which points backwards in a folded scene).
+        part_box = None
+        try:
+            from KrakenOS.UI.services.inspection_part import box_corners, normalize_inspection_part_spec
+
+            editor.open_3d_view()
+            editor.update_idletasks()
+            editor.update()
+            inspector = editor._three_d_inspector
+            pose = inspector._inspection_part_pose(system, bundle) if inspector is not None else None
+            if pose is not None:
+                spec = normalize_inspection_part_spec(getattr(editor, "inspection_part_spec", None))
+                corners = np.asarray(box_corners(spec, pose[0], pose[1]), dtype=float)
+                part_box = (corners.min(axis=0), corners.max(axis=0))
+        except Exception:
+            part_box = None
+        ok(
+            part_box is not None
+            and abs(float(part_box[1][2]) - 0.0) < 0.5
+            and abs(float(part_box[0][2]) + 50.0) < 0.5
+            and abs(float(part_box[0][0]) + 25.0) < 0.5
+            and abs(float(part_box[1][1]) - 0.5) < 0.5,
+            f"A7: the device part sits IN the prism gap -- face A on the object plane, body "
+            f"z -50..0 (drawn {None if part_box is None else [np.round(part_box[0], 1).tolist(), np.round(part_box[1], 1).tolist()]})",
+        )
         paths = list(getattr(bundle, "ray_paths", None) or [])
         chain_paths = 0
         chain_reach = []
