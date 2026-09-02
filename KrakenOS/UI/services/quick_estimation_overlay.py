@@ -154,6 +154,17 @@ class QuickEstimationOverlayService:
         qe = self.inspector._quick_estimation_service()
         if not qe.is_enabled():
             return 0
+        # bugs/0692 (flag 103541 "big green circle in A object plane"): a SPLIT-FIELD
+        # scene authors its delivered-field bands (`object_fov_bands`, 0683) -- the
+        # single-axis FOV/image circles are the wrong model there (each face sees a
+        # one-sided band through its own arm), so the QE circles stand down and the
+        # coverage bands carry the story.
+        try:
+            bands = getattr(self.editor, "layout_object_fov_bands", None)
+            if isinstance(bands, (list, tuple)) and len(bands) > 0:
+                return 0
+        except Exception:
+            pass
         rows = getattr(self.editor, "rows", None) or []
         if len(rows) < 3:
             return 0

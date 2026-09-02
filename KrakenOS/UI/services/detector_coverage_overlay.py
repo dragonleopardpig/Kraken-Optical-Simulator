@@ -592,16 +592,48 @@ class DetectorCoverageOverlayService:
                 and v_hi > v_lo
             ):
                 continue
-            bands.append(
-                {
-                    "name": str(entry.get("name", "") or ""),
-                    "center": center,
-                    "axis": axis,
-                    "half_width": half_width,
-                    "v_lo": v_lo,
-                    "v_hi": v_hi,
-                }
-            )
+            band = {
+                "name": str(entry.get("name", "") or ""),
+                "center": center,
+                "axis": axis,
+                "half_width": half_width,
+                "v_lo": v_lo,
+                "v_hi": v_hi,
+            }
+            # bugs/0692 (user: "draw 2 dotted line edge at the Sensor to indicate
+            # actual cover area"): a band may AUTHOR its measured image strip -- where
+            # this band's field actually lands on the sensor. Same vocabulary as the
+            # band: world ``center`` (on the sensor plane), ``axis_v`` (world in-plane
+            # strip-offset direction), ``v_lo`` < ``v_hi`` along it, ``half_width``
+            # along the perpendicular in-plane direction. Invalid strips are dropped.
+            strip = entry.get("image_strip")
+            if isinstance(strip, dict):
+                try:
+                    s_center = np.asarray(strip.get("center"), dtype=float).reshape(3)
+                    s_axis_v = np.asarray(strip.get("axis_v"), dtype=float).reshape(3)
+                    s_half_w = float(strip.get("half_width"))
+                    s_v_lo = float(strip.get("v_lo"))
+                    s_v_hi = float(strip.get("v_hi"))
+                    if (
+                        np.all(np.isfinite(s_center))
+                        and np.all(np.isfinite(s_axis_v))
+                        and float(np.linalg.norm(s_axis_v)) > 1e-9
+                        and np.isfinite(s_half_w)
+                        and s_half_w > 1e-9
+                        and np.isfinite(s_v_lo)
+                        and np.isfinite(s_v_hi)
+                        and s_v_hi > s_v_lo
+                    ):
+                        band["image_strip"] = {
+                            "center": s_center,
+                            "axis_v": s_axis_v / float(np.linalg.norm(s_axis_v)),
+                            "half_width": s_half_w,
+                            "v_lo": s_v_lo,
+                            "v_hi": s_v_hi,
+                        }
+                except Exception:
+                    pass
+            bands.append(band)
         return bands
 
     def add_overlays(self, system: Any, scene_bundle: Any = None) -> int:
@@ -670,6 +702,7 @@ class DetectorCoverageOverlayService:
         sys_image_radius = self._image_circle_radius()
         last_row = len(rows) - 1
         count = 0
+        image_strips_drawn = False  # bugs/0692: world-authored, draw once, not per detector
         for band in fov_bands:
             b_u, b_v = _basis(band["axis"])
             band_mid = (
@@ -749,6 +782,12 @@ class DetectorCoverageOverlayService:
             ):
                 if bands_active and spec["kind"] == "object_fov_rect":
                     continue  # bugs/0683: the authored bands replace the full FOV box
+                if bands_active and "circle" in str(spec["kind"]):
+                    # bugs/0692: the single-axis image-circle model is wrong for a
+                    # split-field scene (two off-axis strips share the sensor) -- and
+                    # its metric degenerates on the seated scene (the user's
+                    # "Image circle O0.5 (short) / Needs O32.6" + rings everywhere).
+                    continue
                 if self._line_actor(spec["points"], spec["color"], spec["line_width"], bool(spec["dashed"])):
                     count += 1
 
@@ -773,8 +812,46 @@ class DetectorCoverageOverlayService:
                 obj_pt, img_pt, metrics, object_mode_finite=finite,
                 object_axis=object_axis, image_axis=image_axis,
             ):
+                text = str(label.get("text", "") or "")
+                if bands_active and (
+                    "circle" in text.lower() or text.startswith("Needs") or text.startswith("FOV ")
+                ):
+                    # bugs/0692: circle/needs/full-FOV readouts stand down with the
+                    # authored split-field bands (which carry their own names).
+                    continue
                 if self._label_actor(label["anchor"], label["text"], label["color"]):
                     count += 1
+
+            # bugs/0692 (user request): dashed COVERED-AREA edges on the sensor. Each
+            # band's authored image strip draws its two edge lines (v_lo / v_hi) in the
+            # band green, so the covered strips read directly against the sensor square
+            # -- the split-field answer to "does the FOV cover the full sensor?".
+            if metrics.sensor_is_real and not image_strips_drawn:
+                normal = image_axis / max(float(np.linalg.norm(image_axis)), 1e-9)
+                for band in fov_bands:
+                    strip = band.get("image_strip")
+                    if not strip:
+                        continue
+                    av = np.asarray(strip["axis_v"], dtype=float).reshape(3)
+                    av = av - normal * float(np.dot(av, normal))  # keep it in the sensor plane
+                    n_av = float(np.linalg.norm(av))
+                    if n_av < 1e-9:
+                        continue
+                    av = av / n_av
+                    au = np.cross(normal, av)
+                    s_center = np.asarray(strip["center"], dtype=float).reshape(3)
+                    for vv in (strip["v_lo"], strip["v_hi"]):
+                        p0 = s_center + vv * av - strip["half_width"] * au
+                        p1 = s_center + vv * av + strip["half_width"] * au
+                        if self._line_actor(np.asarray((p0, p1)), _OBJECT_FOV, 2.0, True):
+                            count += 1
+                    name = str(band.get("name", "") or "").strip()
+                    if name:
+                        mid_v = 0.5 * (strip["v_lo"] + strip["v_hi"])
+                        anchor = s_center + mid_v * av + (strip["half_width"] + 1.5) * au
+                        if self._label_actor(anchor, name, _OBJECT_FOV):
+                            count += 1
+                    image_strips_drawn = True
 
             if metrics.sensor_is_real and not metrics.covers and metrics.image_circle_radius > 0.0:
                 self.editor.append_debug(

@@ -224,6 +224,29 @@ def _check_scene(ok, notes) -> None:
             f"A8: both PART faces carry the calculated one-side FOV band (55.0 x 8.35, y -5.25..+3.1, "
             f"at z=0 and z=-50) ({len(bands)} bands)",
         )
+        # bugs/0692: each band also AUTHORS its measured sensor cover strip (the image of
+        # the band -- bugs/0692_sensor_reach_sweep.py: arm A z -30.3..-27.1 razor spots,
+        # arm B z -22.8..-18.2 at the compromise focus), drawn by the coverage overlay as
+        # two dashed edges on the sensor die ("actual cover area" -- user request).
+        strips = [b.get("image_strip") or {} for b in bands]
+        strip_ok = (
+            len(strips) == 2
+            and all(
+                abs(float(s.get("center", [99, 99, 99])[0]) + 272.65) < 0.5
+                and abs(float(s.get("center", [99, 99, 99])[1]) + 9.9) < 0.5
+                and abs(float(s.get("half_width", 0.0)) - 11.52) < 0.1
+                for s in strips
+            )
+            and abs(float(strips[0].get("v_lo", 99.0)) + 5.3) < 0.6
+            and abs(float(strips[0].get("v_hi", 99.0)) + 2.1) < 0.6
+            and abs(float(strips[1].get("v_lo", 99.0)) - 2.2) < 0.6
+            and abs(float(strips[1].get("v_hi", 99.0)) - 6.8) < 0.6
+        )
+        ok(
+            strip_ok,
+            "A8b: both bands author their MEASURED sensor cover strip on the die "
+            "(A z -30.3..-27.1, B z -22.8..-18.2 about centre -25)",
+        )
         paths = list(getattr(bundle, "ray_paths", None) or [])
         chain_paths = 0
         chain_reach = []

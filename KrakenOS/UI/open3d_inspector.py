@@ -12296,6 +12296,39 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         s = (e - b * d) / denom
         return 0.5 * ((p1 + t * d1) + (p2 + s * d2))
 
+    @staticmethod
+    def _axis_branch_junction_feet(p1, d1, p2, d2):
+        """bugs/0692: closest-approach FEET of two consecutive branch lines --
+        ``(foot_on_line_1, foot_on_line_2)``. Intersecting folds return the same
+        point twice. SKEW legs return distinct feet: a vendor lens seat (bugs/0690)
+        steps the axis LATERALLY between legs -- the approach leg rides the arm's
+        field line while the seated block rides the shared lens axis -- and the
+        old single closest-approach midpoint hovered mid-air between them,
+        slanting both adjacent segments (flag_20260902_103541). Near-parallel
+        legs fall back to the anchor midpoint for both feet."""
+        p1 = np.asarray(p1, dtype=float).reshape(3)
+        p2 = np.asarray(p2, dtype=float).reshape(3)
+        d1 = np.asarray(d1, dtype=float).reshape(3)
+        d2 = np.asarray(d2, dtype=float).reshape(3)
+        n1 = float(np.linalg.norm(d1))
+        n2 = float(np.linalg.norm(d2))
+        if not (n1 > 1e-9 and n2 > 1e-9):
+            mid = 0.5 * (p1 + p2)
+            return mid, mid
+        d1 = d1 / n1
+        d2 = d2 / n2
+        r = p1 - p2
+        b = float(d1 @ d2)
+        denom = 1.0 - b * b
+        if abs(denom) < 1e-9:  # parallel legs -> no unique geometry
+            mid = 0.5 * (p1 + p2)
+            return mid, mid
+        d = float(d1 @ r)
+        e = float(d2 @ r)
+        t = (b * e - d) / denom
+        s = (e - b * d) / denom
+        return p1 + t * d1, p2 + s * d2
+
     def _folded_multifold_axis_guide_records(self, bounds, fold_point_z):
         """The MIDDLE + OUTGOING dotted optical-axis segments for a CHAIN of >=2 promoted
         mirror folds (bugs/0216).
@@ -12342,10 +12375,33 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return []
         rows = getattr(self.editor, "rows", []) or []
 
+        # bugs/0692 (flag_20260902_103541): a FREE-PLACED solid (StepOverlayPromotion
+        # center_world) or a frozen/snapped row is scene furniture the walk does not
+        # pose -- its fold transform is None, so its anchor sits at (0,0,z) on the
+        # long-dead UNFOLDED axis and fabricates a phantom straight branch (the om05a
+        # BS far halves injected a +Z branch and dragged two vertices mid-air, the
+        # long diagonal across the scene). The 0691 frame_seat rows STAY: the walk
+        # does pose them and their anchors are the seat truth.
+        def _row_is_axis_station(row) -> bool:
+            advanced = getattr(row, "advanced", None) or {}
+            if not isinstance(advanced, dict):
+                return True
+            promo = advanced.get("StepOverlayPromotion")
+            if isinstance(promo, dict) and promo.get("center_world") is not None:
+                return False
+            placement = advanced.get("ScenePlacement")
+            if isinstance(placement, dict) and bool(
+                placement.get("stay_put_freeze") or placement.get("last_axis_to_axis_move")
+            ):
+                return False
+            return True
+
         # Straight branches from the NON-mirror rows (the mirror rows are the fold vertices).
         branches = []  # each: [centroid_point, direction, [anchors]]
         for row_index in range(len(rows)):
             if row_index in mirror_rows or row_index in bs_rows or not (0 <= row_index < len(z_positions)):
+                continue
+            if not _row_is_axis_station(rows[row_index]):
                 continue
             anchor, direction = self._folded_axis_row_anchor_direction(row_index, z_positions)
             if direction is None:
@@ -12359,15 +12415,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         for branch in branches:
             branch[0] = np.mean(np.asarray(branch[2], dtype=float), axis=0)
 
-        # Fold vertices = closest-approach intersections of consecutive branch lines.
-        vertices = []
+        # Fold junctions = closest-approach FEET of consecutive branch lines (bugs/0692).
+        # Orthogonal folds intersect exactly (feet coincide -- the classic vertex). A
+        # vendor-seat junction is SKEW: each segment must stay ON its own leg line and
+        # the junction is bridged by an explicit jog segment below, not a mid-air
+        # midpoint that slants both neighbours.
+        junctions = []
         for j in range(len(branches) - 1):
-            vertex = self._axis_branch_line_vertex(
+            feet = self._axis_branch_junction_feet(
                 branches[j][0], branches[j][1], branches[j + 1][0], branches[j + 1][1]
             )
-            if vertex is None or not np.all(np.isfinite(vertex)):
+            if feet is None or not np.all(np.isfinite(np.asarray(feet, dtype=float))):
                 return []
-            vertices.append(np.asarray(vertex, dtype=float))
+            junctions.append((np.asarray(feet[0], dtype=float), np.asarray(feet[1], dtype=float)))
 
         corners = np.asarray(
             [
@@ -12382,10 +12442,24 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         records = []
         last = len(branches) - 1
         for b in range(1, len(branches)):
-            start = np.asarray(vertices[b - 1], dtype=float)
+            foot_prev, start = junctions[b - 1]  # feet on the previous / THIS branch line
+            if float(np.linalg.norm(start - foot_prev)) > 0.5:
+                # bugs/0692: the legs do not meet -- draw the lateral jog (the vendor
+                # seat's step from the arm's field line onto the shared lens axis).
+                records.append(
+                    {
+                        "axis_id": f"axis:global:reflected:jog{b}",
+                        "axis_label": "Optical Axis",
+                        "axis_kind": "dotted_global_guide",
+                        "branch_path": "",
+                        "source_id": "",
+                        "ray_index": -1,
+                        "points": np.asarray((foot_prev, start), dtype=float),
+                    }
+                )
             direction = np.asarray(branches[b][1], dtype=float)
             if b < last:
-                end = np.asarray(vertices[b], dtype=float)  # bounded middle segment
+                end = np.asarray(junctions[b][0], dtype=float)  # bounded middle segment
             else:
                 reach = float(np.max((corners - start) @ direction))  # outgoing -> scene extent
                 if not (reach > 1e-6):
