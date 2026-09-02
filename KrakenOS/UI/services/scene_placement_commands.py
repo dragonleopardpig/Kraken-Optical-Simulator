@@ -3097,7 +3097,19 @@ class ScenePlacementMixin:
             return None
         current_angles = self._step_rotation_deg_tuple(label)
         current_matrix = self._step_rotation_matrix_from_angles(*current_angles)
-        delta_matrix = self._world_axis_rotation_matrix(axis_key, delta)
+        # bugs/0698 (flag 075132 "green arrow ... suppose to rotate via Y-axis, but
+        # it rotates around Z-axis"): the per-axis rotation fields apply in the
+        # body's PRE-FOLD placement frame (the 0693 contract), so composing the
+        # world delta raw made the drawn rotation happen about R @ axis instead --
+        # on the folded camera leg the fold maps pre-fold Y to world Z. Conjugate
+        # the delta into the placement frame: R.T @ D_world @ R renders as a TRUE
+        # world-axis rotation of the drawn body. Identity frames are byte-identical.
+        frame_rotation = np.asarray(self._step_offset_world_rotation(label), dtype=float)
+        delta_matrix = (
+            frame_rotation.T
+            @ self._world_axis_rotation_matrix(axis_key, delta)
+            @ frame_rotation
+        )
         next_angles = self._step_angles_from_rotation_matrix(delta_matrix @ current_matrix)
         current_offset = np.asarray(self._step_placement_offset_xyz(label), dtype=float).reshape(3)
         current_center = self._step_rotation_pivot_world(label)
@@ -3113,7 +3125,10 @@ class ScenePlacementMixin:
             and np.all(np.isfinite(current_center))
             and np.all(np.isfinite(rotated_center))
         ):
-            next_offset = current_offset + (current_center - rotated_center)
+            # bugs/0698: the pivot residual is a WORLD vector; the offset translates
+            # PRE-FOLD (0693) -- convert, or the in-place pivot drags sideways on a
+            # folded leg.
+            next_offset = current_offset + frame_rotation.T @ (current_center - rotated_center)
         self._begin_history_capture()
         self._set_step_rotation_deg_tuple(label, next_angles)
         self._set_step_placement_offset_xyz(label, next_offset)

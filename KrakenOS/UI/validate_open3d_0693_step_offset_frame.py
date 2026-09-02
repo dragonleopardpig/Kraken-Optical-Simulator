@@ -144,13 +144,39 @@ def _check_carry_anchor_wiring(ok, notes) -> None:
     )
 
 
+def _check_world_axis_rotation_conjugation(ok, notes) -> None:
+    """E (bugs/0698, flag 075132): `rotate_step_world_axis` must conjugate the
+    world delta into the body's PRE-FOLD frame (R.T @ D @ R) and convert the
+    pivot residual the same way -- composing raw made the green (Y) arc rotate
+    the folded camera about world Z, and the pivot compensation dragged the
+    body sideways. Source-pinned like D."""
+    import inspect
+
+    from KrakenOS.UI.services.scene_placement_commands import ScenePlacementMixin
+
+    src = inspect.getsource(ScenePlacementMixin.rotate_step_world_axis)
+    ok(
+        "self._step_offset_world_rotation(label)" in src
+        and "frame_rotation.T" in src
+        and "@ frame_rotation" in src,
+        "E1: the world-axis delta is conjugated into the placement frame "
+        "(R.T @ D_world @ R)",
+    )
+    ok(
+        "frame_rotation.T @ (current_center - rotated_center)" in src,
+        "E2: the in-place pivot residual converts world -> placement frame before "
+        "landing in the offset",
+    )
+
+
 def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, list[str]]":
     notes: list[str] = []
 
     def ok(condition: bool, message: str) -> None:
         notes.append(("PASS: " if condition else "FAIL: ") + message)
 
-    for check in (_check_writers, _check_frame_lookup, _check_carry_anchor_wiring):
+    for check in (_check_writers, _check_frame_lookup, _check_carry_anchor_wiring,
+                  _check_world_axis_rotation_conjugation):
         try:
             check(ok, notes)
         except Exception as exc:

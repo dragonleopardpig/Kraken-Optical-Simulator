@@ -147,7 +147,18 @@ class Open3DTopControlsPanel:
         overlay_menu.add_separator()
         add_menu_commands(
             overlay_menu,
-            (MenuCommand("Normal to Sensor", self.inspector.view_normal_to_sensor),),
+            (
+                MenuCommand("Normal to Sensor", self.inspector.view_normal_to_sensor),
+                # bugs/0697 follow-up ("I don't find any toggle to turn off the
+                # placement-handle"): the selection-driven handle rail/gizmo had no
+                # discoverable off switch -- give the Esc gesture a menu home in the
+                # REAL Overlays dropdown (the first attempt landed in the right-click
+                # mirror menu only).
+                MenuCommand(
+                    "Clear selection / hide handles (Esc)",
+                    self.inspector.cancel_active_3d_operation,
+                ),
+            ),
         )
         pack_menubutton(view_toolbar, "Overlays", overlay_menu, padx=(8, 0))
         self.inspector._open3d_overlay_menu = overlay_menu
