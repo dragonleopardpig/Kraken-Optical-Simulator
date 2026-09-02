@@ -15841,6 +15841,10 @@ phase_508_split_field_sensor_strips = _phase_from_standalone(
     508, "split-field bands retire the FOV/image circles; measured cover strips edge the sensor (0692)",
     "KrakenOS.UI.validate_open3d_0692_split_field_sensor_strips",
     "split_field_sensor_strips")
+phase_509_step_offset_frame = _phase_from_standalone(
+    509, "STEP-body offset writers convert world deltas into the applied (pre-fold) frame (0693)",
+    "KrakenOS.UI.validate_open3d_0693_step_offset_frame",
+    "step_offset_frame")
 phase_461_swap_prompts_for_fov = _phase_from_standalone(
     461, "an interactive swap ASKS for the FOV you want (prefilled with the delivered field) (0609)",
     "KrakenOS.UI.validate_open3d_0609_swap_prompts_for_fov",
@@ -16412,6 +16416,7 @@ def main() -> int:
             phase_506_disc_display_size,
             phase_507_additive_imaging_source,
             phase_508_split_field_sensor_strips,
+            phase_509_step_offset_frame,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

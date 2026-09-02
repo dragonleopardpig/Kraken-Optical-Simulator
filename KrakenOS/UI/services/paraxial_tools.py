@@ -1339,11 +1339,58 @@ class ParaxialToolsMixin:
         row.desp_y = float(target[1])
         row.desp_z = float(target[2] - z)
 
+    def _step_body_anchor_world_transform(self, label: str):
+        """bugs/0693: the 4x4 world transform the displayed body's alignment is
+        pushed through (``_mesh_with_world_transform``) -- the LENS rides its front
+        datum row's fold transform, the CAMERA its branch transform (else the Image
+        row's fold). ``optical``/``led`` draw straight in world -> None. This is the
+        frame ``*_step_placement_offset_xyz`` translates in, and the frame a carry
+        must express "the body follows its rows" in."""
+        key = str(label).strip().lower()
+        try:
+            if key == "lens":
+                return self._optical_axis_fold_world_transform_for_row(
+                    self._lens_front_datum_row_index()
+                )
+            if key == "camera":
+                transform = self._camera_branch_world_transform()
+                if transform is None:
+                    transform = self._optical_axis_fold_world_transform_for_row(
+                        self._image_plane_row_index()
+                    )
+                return transform
+        except Exception:
+            return None
+        return None
+
+    def _step_offset_world_rotation(self, label: str):
+        """bugs/0693: the 3x3 rotation the displayed body pushes its persisted
+        placement offset through. The ``lens``/``camera`` overlays align in the
+        PLACEMENT frame and are then folded to world (``_mesh_with_world_transform``),
+        so ``*_step_placement_offset_xyz`` translates in the PRE-fold frame --
+        a WORLD delta written raw into it comes out rotated on a folded leg
+        (flag_20260902_115321: rotating RA mirror 1 swung the leg -x -> -z and the
+        seated lens body landed with permuted offset components, displaced from its
+        surrogate). ``optical``/``led`` draw straight in world. Identity when there
+        is no fold."""
+        transform = self._step_body_anchor_world_transform(label)
+        if transform is not None:
+            try:
+                rotation = np.asarray(transform, dtype=float).reshape(4, 4)[:3, :3]
+                if np.all(np.isfinite(rotation)) and abs(float(np.linalg.det(rotation))) > 1e-9:
+                    return rotation
+            except Exception:
+                pass
+        return np.eye(3)
+
     def _shift_step_offset(self, label: str, delta) -> bool:
-        """Translate a STEP overlay body's persisted placement offset by a world delta."""
+        """Translate a STEP overlay body's persisted placement offset by a world delta
+        (bugs/0693: converted into the frame the offset is APPLIED in)."""
         try:
             cur = np.asarray(self._step_placement_offset_xyz(label), dtype=float).reshape(3)
-            self._set_step_placement_offset_xyz(label, cur + np.asarray(delta, dtype=float).reshape(3))
+            world = np.asarray(delta, dtype=float).reshape(3)
+            local = self._step_offset_world_rotation(label).T @ world
+            self._set_step_placement_offset_xyz(label, cur + local)
             return True
         except Exception:
             return False
@@ -1377,7 +1424,11 @@ class ParaxialToolsMixin:
         try:
             goal = np.asarray(target, dtype=float).reshape(3)
             cur_off = np.asarray(self._step_placement_offset_xyz(label), dtype=float).reshape(3)
-            self._set_step_placement_offset_xyz(label, cur_off + (goal - current))
+            # bugs/0693: the residual is a WORLD vector, but the offset translates in
+            # the body's placement frame (pre-fold) -- convert, or a folded leg rotates
+            # the correction and the body lands displaced from its surrogate.
+            local = self._step_offset_world_rotation(label).T @ (goal - current)
+            self._set_step_placement_offset_xyz(label, cur_off + local)
             return True
         except Exception:
             return False

@@ -214,7 +214,17 @@ class ScenePlacementMixin:
                 except Exception:
                     rides = True  # a classification failure must not silently strand a body
                 if rides:
-                    bodies[label] = centre
+                    # bugs/0693: ALSO capture the body's anchor-frame transform. On a
+                    # walk-posed scene the body's target is "follow your rows' frame",
+                    # not an independently derived rigid fold-point rotation -- the two
+                    # disagree (om05a rotation: walk leg y 43.34 vs rigid goal y 52.8)
+                    # and the rigid goal pushed the seated lens 17.5 mm off its rows.
+                    try:
+                        anchor = self._step_body_anchor_world_transform(label)
+                        anchor = None if anchor is None else np.asarray(anchor, dtype=float).reshape(4, 4)
+                    except Exception:
+                        anchor = None
+                    bodies[label] = (centre, anchor)
             return (
                 carried,
                 np.asarray(spec["origin"], dtype=float).reshape(3),
@@ -284,14 +294,27 @@ class ScenePlacementMixin:
             # Seated ABSOLUTELY against the pre-move capture (bugs/0456): the seater corrects by
             # the residual, so the body lands on its intended pose whatever the row translation
             # above already did to it.
-            for label, before_centre in (bodies_before or {}).items():
+            # bugs/0693: a body whose overlay rides an anchor-frame transform (lens on its
+            # datum row's fold, camera on its branch) must follow ITS ROWS' frame change --
+            # goal = T_after @ inv(T_before) @ centre -- because the walk, not the rigid
+            # fold-point rotation, decides where the rows land (the vendor seat's frame-desp
+            # rides the walk; the two models differ by the seat lateral on om05a). Bodies
+            # with no anchor transform keep the 0488 rigid fold-point carry.
+            for label, captured_body in (bodies_before or {}).items():
+                before_centre, anchor_before = captured_body
                 try:
-                    self._seat_step_body_world_center(
-                        label,
-                        self._fold_carry_transform_point(
+                    goal = None
+                    if anchor_before is not None:
+                        anchor_after = self._step_body_anchor_world_transform(label)
+                        if anchor_after is not None:
+                            anchor_after = np.asarray(anchor_after, dtype=float).reshape(4, 4)
+                            centre_h = np.append(np.asarray(before_centre, dtype=float), 1.0)
+                            goal = (anchor_after @ np.linalg.inv(anchor_before) @ centre_h)[:3]
+                    if goal is None or not np.all(np.isfinite(goal)):
+                        goal = self._fold_carry_transform_point(
                             np.asarray(before_centre, dtype=float), fold_before, fold_after, rotation
-                        ),
-                    )
+                        )
+                    self._seat_step_body_world_center(label, goal)
                 except Exception:
                     continue
         finally:
