@@ -50,10 +50,14 @@ SCENE = PROJECT_ROOT / "attachment/om05a_folded.py"
 # symmetry plane -25); the outer/centre mirrors are clean extruded-triangle prisms
 # whose hypotenuse sits ON the CAD coated plane (the 3 mm slab's Mirror face never
 # armed -- the beam TIR'd at its BACK plane, the user's "second surface").
+# bugs/0695: the user's clarified architecture + VENDOR-TRUE solids (OPT-ILS8275
+# section): window station = FIRST RA MIRROR (first-surface plate, one prism);
+# lower station = CUBE BS near half (coated hyp) + far half; centre = the true
+# 11.89 mm half-V prism. Plus a flat LED panel per side under the BS.
 B_TRAIN = {
-    "BS cube B": (0.0, 0.24, -59.01),
-    "Outer RA mirror B": (0.0, 12.16, -57.14),
-    "Centre RA mirror B": (0.05, 13.69, -31.06),
+    "First RA mirror B": (0.0, 0.42, -59.0),
+    "BS cube B": (0.0, 12.52, -57.25),
+    "Centre RA mirror B": (0.0, 14.0, -30.97),
 }
 
 
@@ -76,9 +80,9 @@ def _check_scene(ok, notes) -> None:
             if isinstance((spec.get("advanced") or {}).get("OpticalSolidFaces"), dict)
         ]
         ok(
-            len(solids) == 10,
-            f"A1: ten optical-solid rows (BS near+outer+centre per side, 2 RA mirrors, "
-            f"2 BS far halves) ({len(solids)})",
+            len(solids) == 12,
+            f"A1: twelve optical-solid rows (RA mirror + BS near + centre per side, "
+            f"2 big RA mirrors, 2 BS far halves, 2 LED panels -- 0695 vendor-true) ({len(solids)})",
         )
 
         def _centre(spec) -> np.ndarray:
@@ -247,6 +251,12 @@ def _check_scene(ok, notes) -> None:
             "A8b: both bands author their MEASURED sensor cover strip on the die "
             "(A z -30.3..-27.1, B z -22.8..-18.2 about centre -25)",
         )
+        # bugs/0695: the sensor plane is derived LIVE from the Image row -- the
+        # vendor-true rebuild moved it (and any future refocus moves it again).
+        _img_row = next(i for i, r in enumerate(rows) if str(r.surface) == "Image")
+        sensor_y = float(np.asarray(
+            editor._surface_reference_world_point(_img_row, system=system), dtype=float
+        )[1])
         paths = list(getattr(bundle, "ray_paths", None) or [])
         chain_paths = 0
         chain_reach = []
@@ -261,7 +271,7 @@ def _check_scene(ok, notes) -> None:
             if sid == "source:faceB":
                 face_b_launch.append(p[0])
                 end = p[-1]
-                if abs(end[1] + 9.9) < 1.0 and end[0] < -250.0 and -22.5 < end[2] < -19.0:
+                if abs(end[1] - sensor_y) < 1.0 and end[0] < -250.0 and -21.7 < end[2] < -20.1:
                     face_b_reach.append(end)
                 continue
             chain_paths += 1
@@ -271,11 +281,11 @@ def _check_scene(ok, notes) -> None:
             score = abs(float(p[0][0])) + abs(float(p[0][1]))
             if chief is None or score < chief[0]:
                 chief = (score, p)
-        strip = [end for _fi, _start, end in chain_reach if abs(end[1] + 9.9) < 1.0 and -30.4 < end[2] < -27.4]
+        strip = [end for _fi, _start, end in chain_reach if abs(end[1] - sensor_y) < 1.0 and -29.5 < end[2] < -28.3]
         ok(
-            len(chain_reach) >= 450 and len(strip) >= 440,
-            f"B1: the chain delivers the arm-A strip on the sensor at z~-28.8 (vendor seat) "
-            f"({len(chain_reach)}/{chain_paths} reach; {len(strip)} on-strip)",
+            len(chain_reach) >= 700 and len(strip) >= 700,
+            f"B1: the chain delivers the arm-A strip on the sensor at z~-28.9 (vendor-true "
+            f"prisms, 0695) ({len(chain_reach)}/{chain_paths} reach; {len(strip)} on-strip)",
         )
         # central-field focus: the cone converges along the final -y leg; scan y planes
         # around the row (y=-11) for the waist -- the row plane itself carries a small
@@ -295,7 +305,7 @@ def _check_scene(ok, notes) -> None:
                 if abs(d[1]) > 1e-9:
                     central_segs.append((a, d))
         best = None
-        for y_plane in np.linspace(-14.0, -8.0, 121):
+        for y_plane in np.linspace(sensor_y - 3.0, sensor_y + 3.0, 121):
             pts = []
             for a, d in central_segs:
                 t = (y_plane - a[1]) / d[1]
@@ -309,7 +319,7 @@ def _check_scene(ok, notes) -> None:
         # apertures (bugs/0680 notes; the vendor-true lens seat at z=-28.9 owns the
         # improvement path) -- pin regression, not aspiration
         ok(
-            best is not None and best[1] < 0.2 and abs(best[0] + 11.0) <= 1.5,
+            best is not None and best[1] < 0.2 and abs(best[0] - sensor_y) <= 1.5,
             f"B2: central-field WAIST < 200 um within 1.5 mm of the image row "
             f"(best y {best[0] if best else 0:.2f}, rms {best[1] * 1000 if best else 0:.1f} um, "
             f"{len(central_segs)} rays)",
@@ -341,8 +351,9 @@ def _check_scene(ok, notes) -> None:
             f"({len(launches)} rays, bounded={bounded})",
         )
         ok(
-            len(face_b_reach) >= 350,
-            f"B5: faceB reaches NEAR-PARITY with arm A on its strip at z~-20.7 (vendor seat) "
+            len(face_b_reach) >= 500,
+            f"B5: faceB reaches its strip at z~-20.8 on the live sensor plane (0695 "
+            f"vendor-true; absolute B focus pending the 0696 launcher rework) "
             f"({len(face_b_reach)} reach; both arms live in ONE bundle with the chain intact)",
         )
     finally:

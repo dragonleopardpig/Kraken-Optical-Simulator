@@ -2274,7 +2274,8 @@ class SourceModelingMixin:
         return bundles, sources
 
     def _build_additive_imaging_source_bundles(
-        self, wavelength: float, *, full_count: bool = False
+        self, wavelength: float, *, full_count: bool = False,
+        imaging_bundles: "list | None" = None,
     ) -> tuple[
         list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
         list[SceneSource3D],
@@ -2319,7 +2320,17 @@ class SourceModelingMixin:
                     half_y = self._source_spec_float(
                         settings, ("mirror_bound_y",), float("inf")
                     )
-                    for chain_bundle in list(getattr(self, "_last_imaging_launch_bundles", None) or []):
+                    # bugs/0695: prefer EXPLICIT imaging bundles rebuilt by the caller in
+                    # THIS build -- the cross-call stash proved unreliable across the
+                    # sync/async/headless build topologies (it held a stale merged
+                    # aggregate, so the mirrored faceB cone came out 2.5x narrower and
+                    # unaimed, focusing the whole B arm 19 mm behind the sensor).
+                    chain_source = (
+                        list(imaging_bundles)
+                        if imaging_bundles
+                        else list(getattr(self, "_last_imaging_launch_bundles", None) or [])
+                    )
+                    for chain_bundle in chain_source:
                         x, y, z, l, m, n = (
                             np.asarray(part, dtype=float).copy() for part in chain_bundle
                         )

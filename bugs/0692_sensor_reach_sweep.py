@@ -34,6 +34,7 @@ def main():
         editor._surface_reference_world_point(len(rows) - 1, system=system), dtype=float
     ).reshape(3)
     print("sensor row centre:", np.round(img_pt, 2), "(square 23.04 x 23.04 in x/z)")
+    sensor_y = float(img_pt[1])
 
     arms = {
         "A": {y: [0, 0, [], []] for y in ys},
@@ -51,7 +52,7 @@ def main():
         end = p[-1]
         on_sensor = (
             bool(np.all(np.isfinite(end)))
-            and abs(float(end[1]) + 9.9) < 1.0
+            and abs(float(end[1]) - sensor_y) < 1.0
             and float(end[0]) < -250.0
         )
         if abs(lx) < 0.6:

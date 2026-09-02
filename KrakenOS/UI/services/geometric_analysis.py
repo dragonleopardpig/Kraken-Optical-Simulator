@@ -707,7 +707,10 @@ class GeometricAnalysisMixin:
             return empties
         rays = Kos.raykeeper(system)
         try:
-            self._trace_preview_bundles(system, rays, float(wavelength), [bundle])
+            self._trace_preview_bundles(
+                system, rays, float(wavelength), [bundle],
+                stash_launch=False,  # bugs/0695: analysis probe, not the imaging launch
+            )
         except Exception:
             return empties
         xs: list[float] = []

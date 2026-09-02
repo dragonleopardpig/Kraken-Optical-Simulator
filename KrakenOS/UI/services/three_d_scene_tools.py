@@ -721,6 +721,15 @@ class ThreeDSceneToolsMixin:
         arms display, census and analyse as one live bundle -- the imaging conjugates
         stay untouched."""
         try:
+            # bugs/0695 note: the mirrored faceB arm reflects `_last_imaging_launch_bundles`.
+            # Measured limitation (bugs/0696 owed): across the sync/async/headless build
+            # topologies that stash can hold a NON-final launch (unaimed, 2.5x narrower
+            # than the traced chain cone), so the B arm's absolute focus is not yet
+            # trustworthy -- its per-cone waists are sharp but sit late. An explicit
+            # same-build rebuild was attempted and reverted (the world-mode builders do
+            # not reproduce the launch outside the sampler's own context; the B arm
+            # vanished). The clean fix is a FIRST-CLASS faceB launcher aimed through the
+            # B train, replacing the mirror trick.
             bundles, sources = self._build_additive_imaging_source_bundles(float(wavelength))
         except Exception:
             return
@@ -4354,7 +4363,8 @@ class ThreeDSceneToolsMixin:
             self.__dict__["_force_nonseq_preview_trace"] = True
             try:
                 self._trace_preview_bundles(
-                    system, rays_illum, float(wavelength), bundles, bundle_sources=sources
+                    system, rays_illum, float(wavelength), bundles, bundle_sources=sources,
+                    stash_launch=False,  # bugs/0695: NOT the imaging launch -- never clobber the mirror stash
                 )
             finally:
                 self.__dict__["_force_nonseq_preview_trace"] = prior_force
@@ -4939,7 +4949,10 @@ class ThreeDSceneToolsMixin:
         except Exception:
             pass
         try:
-            self._trace_preview_bundles(system, rays_illum, wavelength, bundles, bundle_sources=sources)
+            self._trace_preview_bundles(
+                system, rays_illum, wavelength, bundles, bundle_sources=sources,
+                stash_launch=False,  # bugs/0695: illumination re-trace, not the imaging launch
+            )
         except Exception:
             return []
         finally:

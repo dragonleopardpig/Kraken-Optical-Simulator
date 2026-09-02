@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any
 
@@ -56,6 +57,9 @@ class TracePreviewService:
             system=system,
             wavelength=wavelength,
         )
+        # bugs/0695: the additive mirrored-arm rebuild needs THIS build's resolved
+        # pupil radius (re-resolving with a made-up max_radius collapsed the cone).
+        self._last_resolved_preview_pupil_radius = float(pupil_radius)
         preview_bundles: list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = []
         mode = str(sampling_mode or "display_slice").strip().lower()
         self._active_preview_sampling_mode = mode
@@ -403,10 +407,17 @@ class TracePreviewService:
         *,
         bundle_sources: list[SceneSource3D | None] | None = None,
         append: bool = False,
+        stash_launch: bool = True,
     ) -> None:
         # bugs/0680: ``append=True`` traces on TOP of the keeper's existing rays (the
         # additive imaging-source pass) -- no clean, and the launch field mapping is
         # extended rather than replaced, so the appended bundles keep distinct colours.
+        # bugs/0695: ``stash_launch=False`` marks a call whose bundles are NOT the
+        # imaging launch (the isolated illumination analysis re-traces EVERYTHING in
+        # one call, and single-bundle geometric probes run between builds) -- those
+        # were clobbering ``_last_imaging_launch_bundles``, so the NEXT build's
+        # mirrored faceB arm reflected an unaimed aggregate: its cone came out 2.5x
+        # narrower than the chain's and the B arm focused 19 mm behind the sensor.
         le = _layout_module()
         NonSequentialTracePreviewError = le.NonSequentialTracePreviewError
         _short_error_message = le._short_error_message
@@ -424,13 +435,24 @@ class TracePreviewService:
         #    dispatcher branch; the rays actually traced are exactly the main thread's.
         capture = getattr(self.editor, "_preview_trace_bundle_capture", None)
         if isinstance(capture, list):
-            if not append:
+            if not append and stash_launch:
                 # bugs/0680: keep the mirrored-additive stash fresh on the capture pass
                 # too -- the additive sampling runs right after and reflects these.
                 try:
                     self.editor._last_imaging_launch_bundles = list(bundles)
                 except Exception:
                     pass
+                if os.environ.get("KRAKEN_0695_STASH_DEBUG"):
+                    try:
+                        import traceback as _tb
+
+                        _total = sum(int(len(np.asarray(b[0]))) for b in bundles)
+                        _frames = " > ".join(
+                            f"{f.name}:{f.lineno}" for f in _tb.extract_stack()[-5:-1]
+                        )
+                        print(f"CAPTURE-STASH<{_total} rays> via {_frames}", flush=True)
+                    except Exception:
+                        pass
             capture.append(
                 {
                     "bundles": [tuple(np.asarray(part, dtype=float) for part in bundle) for bundle in bundles],
@@ -473,7 +495,7 @@ class TracePreviewService:
                 for bundle in replay_call.get("bundles", [])
             ]
             bundle_sources = replay_call.get("bundle_sources")
-        if not append:
+        if not append and stash_launch:
             # bugs/0680: stash the imaging launch so a mirrored additive source
             # (mirror_launch_plane_z) can reflect the SAME calibrated bundles into the
             # symmetric second arm.
@@ -481,6 +503,17 @@ class TracePreviewService:
                 self.editor._last_imaging_launch_bundles = list(bundles)
             except Exception:
                 pass
+            if os.environ.get("KRAKEN_0695_STASH_DEBUG"):
+                try:
+                    import traceback as _tb
+
+                    _total = sum(int(len(np.asarray(b[0]))) for b in bundles)
+                    _frames = " > ".join(
+                        f"{f.name}:{f.lineno}" for f in _tb.extract_stack()[-5:-1]
+                    )
+                    print(f"STASH<{_total} rays> via {_frames}", flush=True)
+                except Exception:
+                    pass
         bundle_lengths = [int(len(np.asarray(bundle[0]))) for bundle in bundles]
         total_rays = int(sum(bundle_lengths))
         # bugs/0558: the LAUNCH knows which field each ray belongs to -- one bundle per field --

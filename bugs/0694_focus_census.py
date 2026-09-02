@@ -22,7 +22,10 @@ def main():
     editor._preview_trace_deferred_until_requested = False
     system, rays, bundle = editor._build_preview_system_rays_bundle(trace_rays=True)
 
-    SENSOR_Y = -9.9
+    img_row = next(i for i, r in enumerate(editor.rows) if str(r.surface) == "Image")
+    SENSOR_Y = float(np.asarray(
+        editor._surface_reference_world_point(img_row, system=system), dtype=float)[1])
+    print(f"live sensor y {SENSOR_Y:.3f}")
     groups = defaultdict(list)  # (arm, field) -> [(p_last-1, p_last)]
     launch_y = {}
     for rp in (getattr(bundle, "ray_paths", None) or []):
@@ -38,7 +41,7 @@ def main():
         a, b = p[-2], p[-1]
         if abs(float(b[1] - a[1])) < 1e-9:
             continue
-        key = (arm, round(float(p[0][0]) / 4.0) * 4)  # group by LAUNCH X, not field_index
+        key = (arm, round(float(p[0][0]) / 4.0) * 4, round(float(p[0][1]) / 2.0) * 2)
         groups[key].append((a, b, end, p.shape[0]))
         launch_y.setdefault(key, (round(float(p[0][0]), 1), round(float(p[0][1]), 1)))
 
@@ -70,11 +73,11 @@ def main():
             pts = A + t[:, None] * D
             c = pts.mean(axis=0)
             rms_plane = float(np.sqrt(np.mean((pts[:, 0] - c[0]) ** 2 + (pts[:, 2] - c[2]) ** 2)))
-        arm, field = key
+        arm = key[0]; field = f"{key[1]}/{key[2]}"
         dv = best[0] - SENSOR_Y
         end_note = (f" end x {ends[:,0].mean():+7.1f} z {ends[:,2].mean():+6.1f}"
                     f" verts {nv.min()}-{nv.max()} (med {int(np.median(nv))})")
-        print(f"{arm:>3} {field:>5} {str(launch_y.get(key, '?')):>12} {len(segs):>5} | "
+        print(f"{arm:>3} {field:>7} {str(launch_y.get(key, '?')):>12} {len(segs):>5} | "
               f"{best[0]:>8.2f} {dv:>+8.2f} {best[1] * 1000:>8.1f}um | {rms_plane * 1000:>8.1f}um" + end_note)
     editor.destroy()
 

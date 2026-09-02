@@ -955,7 +955,11 @@ class TracePreviewSamplingMixin:
         *,
         bundle_sources: list[SceneSource3D | None] | None = None,
         append: bool = False,
+        stash_launch: bool = True,
     ) -> None:
+        # bugs/0695 + the 0319 rule: a new service kwarg MUST thread through this
+        # mixin wrapper -- without it the stash_launch=False call sites raised a
+        # swallowed TypeError and the illumination analysis silently returned [].
         self._trace_preview_service()._trace_preview_bundles(
             system,
             rays,
@@ -963,6 +967,7 @@ class TracePreviewSamplingMixin:
             bundles,
             bundle_sources=bundle_sources,
             append=append,
+            stash_launch=stash_launch,
         )
 
     def _build_pupilcalc_preview_bundles(self, system, wavelength: float, pattern: str):
