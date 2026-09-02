@@ -225,12 +225,39 @@ class ScenePlacementMixin:
                     except Exception:
                         anchor = None
                     bodies[label] = (centre, anchor)
+            # bugs/0693 follow-up (mirror2 off-leg): an ANCHOR walk frame for the emitted
+            # leg -- the fold transform of a walk-posed row riding this leg (the om05a lens
+            # block). The apply step maps every carried frozen row by T_after @ inv(T_before)
+            # so followers land where the WALK says the leg goes; the rigid fold-point model
+            # disagrees with the walk on a seated scene by the seat lateral (mirror2 landed
+            # 18.7 mm off the new leg, in its own mirror plane). None -> rigid fallback,
+            # byte-identical on fully-frozen scenes (no walk transforms there).
+            leg_anchor = None
+            try:
+                z_positions = self._row_z_positions()
+                for index in range(len(self.rows)):
+                    if int(index) == int(row_index):
+                        continue
+                    transform = self._optical_axis_fold_world_transform_for_row(index)
+                    if transform is None:
+                        continue
+                    matrix = np.asarray(transform, dtype=float).reshape(4, 4)
+                    if not np.all(np.isfinite(matrix)):
+                        continue
+                    z = float(z_positions[index]) if index < len(z_positions) else 0.0
+                    point = (matrix @ np.asarray((0.0, 0.0, z, 1.0), dtype=float))[:3]
+                    if axis_tree.point_on_emitted_leg(tree, int(row_index), point):
+                        leg_anchor = (int(index), matrix)
+                        break
+            except Exception:
+                leg_anchor = None
             return (
                 carried,
                 np.asarray(spec["origin"], dtype=float).reshape(3),
                 bodies,
                 self._fold_slide_conjugates(),
                 np.asarray(spec["direction"], dtype=float).reshape(3),
+                leg_anchor,
             )
         except Exception:
             return None
@@ -250,7 +277,7 @@ class ScenePlacementMixin:
         """
         if not captured:
             return
-        carried, fold_before, bodies_before, conjugates_before, direction_before = captured
+        carried, fold_before, bodies_before, conjugates_before, direction_before, leg_anchor = captured
         try:
             from KrakenOS.UI.nonseq_output_ports import axis_fold_emissions
         except Exception:
@@ -274,6 +301,36 @@ class ScenePlacementMixin:
         # 10 deg turns its emitted leg exactly 20.000 deg (the reflection law, which the
         # derivation already got right for free) while the sensor stayed put, 17.614 mm off the
         # beam that now feeds it.
+        # bugs/0693 follow-up: with a leg-anchor walk frame captured, carried rows map by
+        # T_after @ inv(T_before) -- "follow the walk" -- so a frozen follower (mirror2)
+        # lands ON the leg the walk actually emits, seat lateral included. The rigid
+        # fold-point transform stays as the fallback (fully-frozen scenes have no walk
+        # transforms and keep the proven 0488 behaviour byte-identical).
+        # PIVOT CORRECTION ONLY: keep the 0488 rigid transform (rotation = the minimal
+        # leg turn) but pivot it on the ANCHOR WALK-FRAME ORIGINS instead of the raw
+        # emission origin. Measured on the om05a -90 y rotation, this is exactly what
+        # was wrong with each alternative:
+        #  - emission-origin pivot (old code): the emission rides the ARM chief, 9.46 mm
+        #    off the walk axis, so mirror2 landed 18.7 mm off the new leg IN-plane and
+        #    the lens-rear -> mirror2 arc shrank 35.2 -> 25.7 mm (a hidden 9.5 mm
+        #    defocus);
+        #  - full T_after @ inv(T_before) map: the walk's transverse frame convention
+        #    injected a spurious 180-degree ROLL (sensor leg folded UP, 62.66 mm above
+        #    mirror2 where the design sits 62.65 BELOW; the one-sided split-field band
+        #    flipped sides and killed the faceB arm 381 -> 0).
+        # The walk-frame ORIGINS are on the axis (roll-invariant) at the anchor row's
+        # station (arc-exact), and the rigid rotation keeps the physical parity.
+        anchor_origins = None
+        if leg_anchor is not None:
+            try:
+                anchor_after = self._optical_axis_fold_world_transform_for_row(int(leg_anchor[0]))
+                if anchor_after is not None:
+                    o_before = np.asarray(leg_anchor[1], dtype=float).reshape(4, 4)[:3, 3]
+                    o_after = np.asarray(anchor_after, dtype=float).reshape(4, 4)[:3, 3]
+                    if np.all(np.isfinite(o_before)) and np.all(np.isfinite(o_after)):
+                        anchor_origins = (o_before, o_after)
+            except Exception:
+                anchor_origins = None
         self._fold_slide_carry_active = True
         try:
             for carried_index in carried:
@@ -283,7 +340,12 @@ class ScenePlacementMixin:
                 pose = self._fold_carry_row_world_pose(int(carried_index))
                 if pose is None:
                     continue
-                moved = self._fold_carry_transform_point(pose, fold_before, fold_after, rotation)
+                if anchor_origins is not None:
+                    moved = self._fold_carry_transform_point(
+                        pose, anchor_origins[0], anchor_origins[1], rotation
+                    )
+                else:
+                    moved = self._fold_carry_transform_point(pose, fold_before, fold_after, rotation)
                 shift = moved - pose
                 follower.desp_x = float(follower.desp_x) + float(shift[0])
                 follower.desp_y = float(follower.desp_y) + float(shift[1])

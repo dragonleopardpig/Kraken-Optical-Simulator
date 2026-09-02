@@ -113,13 +113,44 @@ def _check_frame_lookup(ok, notes) -> None:
     ok(np.allclose(r, np.eye(3)), "C4: a missing transform degrades to identity")
 
 
+def _check_carry_anchor_wiring(ok, notes) -> None:
+    """D (mirror2 follow-up): the fold-carry captures a leg-anchor walk frame and maps
+    carried rows by T_after @ inv(T_before), with the 0488 rigid transform as fallback --
+    source-pinned like 0487/0491/0496 (the om05a rotation repro is the behavioural proof:
+    mirror2 lands ON the swung leg instead of 18.7 mm off it)."""
+    import inspect
+
+    from KrakenOS.UI.services.scene_placement_commands import ScenePlacementMixin
+
+    before_src = inspect.getsource(ScenePlacementMixin._fold_slide_carry_before)
+    apply_src = inspect.getsource(ScenePlacementMixin._fold_slide_carry_apply)
+    ok(
+        "leg_anchor" in before_src
+        and "point_on_emitted_leg(tree, int(row_index), point)" in before_src,
+        "D1: the before-capture derives a leg-anchor walk frame via the SAME membership "
+        "primitive the bodies use",
+    )
+    ok(
+        "anchor_origins[0], anchor_origins[1], rotation" in apply_src
+        and "self._fold_carry_transform_point(pose, fold_before, fold_after, rotation)" in apply_src,
+        "D2: the apply pivots the rigid carry on the anchor walk-frame ORIGINS (roll-"
+        "invariant, arc-exact) and keeps the emission-origin fallback",
+    )
+    ok(
+        "anchor_rotation" not in apply_src
+        and "self._fold_carry_rotate_row_tilts(follower, rotation)" in apply_src,
+        "D3: carried tilts turn ONLY with the rigid leg rotation -- the walk frame's "
+        "roll convention must never reach an orientation (it folded the sensor leg UP)",
+    )
+
+
 def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, list[str]]":
     notes: list[str] = []
 
     def ok(condition: bool, message: str) -> None:
         notes.append(("PASS: " if condition else "FAIL: ") + message)
 
-    for check in (_check_writers, _check_frame_lookup):
+    for check in (_check_writers, _check_frame_lookup, _check_carry_anchor_wiring):
         try:
             check(ok, notes)
         except Exception as exc:

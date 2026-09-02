@@ -47,12 +47,44 @@ the carry works). Repro matches the flag EXACTLY: m2 desp (9.2197, 43.5303,
   your rows"), falling back to the 0488 rigid fold-point transform only when no
   anchor frame exists. Identity/None frames are byte-identical to the old code.
 
-## Known follow-up (optically neutral, visually off)
-Mirror2 (a frozen follower ROW) still carries by the rigid model: it lands
-~18.7 mm off the new leg IN ITS OWN MIRROR PLANE (plane unchanged — the fold
-still works, rays reach the sensor; verified in the flag itself). The drawn
-prism sits visibly off the beam; carrying frozen follower rows anchor-relative
-is the next step if the user flags it.
+## Part 2 (user: "proceed with item 3") — frozen follower ROWS follow the walk too
+Mirror2 (a frozen follower ROW) still carried by the rigid model: it landed
+~18.7 mm off the new leg IN ITS OWN MIRROR PLANE (optically neutral — the flag
+itself showed rays reaching the sensor — but drawn visibly off the beam).
+Fix, same principle as the bodies: `_fold_slide_carry_before` captures a
+LEG-ANCHOR walk frame (the fold transform of a walk-posed row riding the
+emitted leg, membership decided by the same `point_on_emitted_leg` primitive
+the bodies use), and `_fold_slide_carry_apply` maps every carried row by
+T_after @ inv(T_before) — position AND tilts (anchor rotation). The rigid
+0488 fold-point transform remains the fallback when no walk frame exists
+(fully-frozen scenes stay byte-identical).
+
+Three carry models measured (bugs/0693_repro_rotation.py) before the final one:
+- EMISSION-ORIGIN rigid (old): mirror2 18.7 mm off-leg; lens-rear→mirror2 arc
+  shrank 35.2 → 25.7 mm (a hidden 9.5 mm defocus nobody had measured).
+- FULL T_after@inv(T_before) map: position + arc exact, but the walk frame's
+  transverse convention injected a spurious 180° ROLL — the sensor leg folded
+  UP (y +106, 62.66 above mirror2 where the design sits 62.65 BELOW) and the
+  one-sided split-field band flipped sides. Euler triples ((-180,0,-180) vs
+  (180,0,0)) must be settled by TRACING, never by reading angles.
+- FINAL: the rigid carry PIVOTED ON THE ANCHOR WALK-FRAME ORIGINS (on-axis =
+  roll-invariant; at the anchor row's station = arc-exact) with the rigid leg
+  rotation for tilts. Measured: mirror2 (-9.456, 43.294, -297.7), off-leg
+  0.050 mm (= its authored CAD offset), arc 35.24 mm ✓, sensor folds DOWN to
+  y -19.36 ✓, chain reach 580/1083 vs 521 baseline (a centred mirror2
+  vignettes less), lens body rides its rows (residual ~1e-15).
+
+## Known limitation — faceB's mirrored launch under a PARTIAL rotation
+Post-rotation faceB reach is 0: the additive mirrored-launch instrument
+(`mirror_launch_plane_z: -25`, 0680) assumes the SHARED train lies in the
+symmetry plane — true for the saved scene (lens axis in z=-25), broken when
+only the shared train swings. Face B's light physically still images (it joins
+the common junction), but the mirror-trick launch aims at a stale mirrored
+stop. Moot for production: the real second station rotates the WHOLE assembly
+(part + both trains), which preserves the symmetry — the planned "rotate
+station about the device axis" verb is the correct vehicle (and should carry
+the mirror-plane spec with it). The 0672 guard's canonical-scene B5 (381)
+stays green.
 
 ## Guards
 `validate_open3d_0693_step_offset_frame` (penta phase 509): seater/shift write

@@ -59,6 +59,18 @@ def main():
             print(f"[{tag}] lens BODY centre {np.round([(b[0]+b[1])/2, (b[2]+b[3])/2, (b[4]+b[5])/2], 3)}")
         except Exception as exc:
             print(f"[{tag}] lens body mesh FAILED {exc}")
+        # 0693 follow-up: mirror2 must sit ON the lens leg (the shared axis), not
+        # 18.7 mm off it -- measure its perpendicular distance to the rows' line.
+        try:
+            m2_pose = np.asarray(editor._fold_carry_row_world_pose(m2), dtype=float)
+            a = np.asarray(editor._surface_reference_world_point(lens_rows[0]), dtype=float)
+            b2 = np.asarray(editor._surface_reference_world_point(lens_rows[-1]), dtype=float)
+            d = b2 - a
+            d = d / max(np.linalg.norm(d), 1e-9)
+            off = (m2_pose - a) - np.dot(m2_pose - a, d) * d
+            print(f"[{tag}] m2 world {np.round(m2_pose, 3)}  off-leg {np.linalg.norm(off):.3f} mm")
+        except Exception as exc:
+            print(f"[{tag}] m2 off-leg FAILED {exc}")
 
     snap("before")
 
@@ -77,9 +89,30 @@ def main():
     print(f"calling rotate_scene_row_pose_world_axis(row={m1}, axis={axis_name!r}, delta={signed:.1f})")
     result = editor.rotate_scene_row_pose_world_axis(m1, axis_name, signed)
     print("command result:", str(result)[:200])
-    editor._build_preview_system_rays_bundle(trace_rays=True)
+    system2, rays2, bundle2 = editor._build_preview_system_rays_bundle(trace_rays=True)
 
     snap("after")
+    # the fold must still DELIVER after the rotation -- reach census per arm.
+    # NOTE: additive faceB rays never set reaches_image (the 0672 B5 guard counts
+    # ENDPOINTS) -- measure faceB by end-point distance to the (moved) Image row.
+    img_row = len(editor.rows) - 1
+    img_pt = np.asarray(editor._surface_reference_world_point(img_row, system=system2), dtype=float)
+    chain_reach = face_b_reach = chain_total = face_b_total = 0
+    for rp in (getattr(bundle2, "ray_paths", None) or []):
+        sid = str(getattr(rp, "source_id", "") or "")
+        p = np.asarray(getattr(rp, "points_world", rp), dtype=float)
+        if p.ndim != 2 or p.shape[0] < 2 or not np.all(np.isfinite(p[-1])):
+            continue
+        near_sensor = float(np.linalg.norm(p[-1] - img_pt)) < 30.0
+        if sid == "source:faceB":
+            face_b_total += 1
+            face_b_reach += int(near_sensor)
+        else:
+            chain_total += 1
+            chain_reach += int(bool(getattr(rp, "reaches_image", False)))
+    print(f"[after] sensor ref {np.round(img_pt, 2)}; reach: chain {chain_reach}/{chain_total} "
+          f"(baseline 521/1083), faceB endpoints-near-sensor {face_b_reach}/{face_b_total} "
+          f"(baseline 381)")
     r1 = rows[m1]
     print(f"m1 tilt now ({float(r1.tilt_x):.1f}, {float(r1.tilt_y):.1f}, {float(r1.tilt_z):.1f}) "
           f"(flag says (-90, 0, 0))")
