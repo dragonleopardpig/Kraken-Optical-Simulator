@@ -827,19 +827,21 @@ class DetectorCoverageOverlayService:
             # band green, so the covered strips read directly against the sensor square
             # -- the split-field answer to "does the FOV cover the full sensor?".
             if metrics.sensor_is_real and not image_strips_drawn:
+                # bugs/0697 (flag 212316 "after rotation, the 4 green lines are not
+                # moved together"): anchor on the LIVE detector pose -- the authored
+                # world center/axis go stale the moment the train is rotated (the
+                # strips floated at the old sensor spot while the die followed the
+                # detector). v_lo/v_hi are authored along the detector's OWN in-plane
+                # strip axis (iv), half_width along the width axis; the authored
+                # center/axis_v fields remain as documentation of the stamping frame.
                 normal = image_axis / max(float(np.linalg.norm(image_axis)), 1e-9)
                 for band in fov_bands:
                     strip = band.get("image_strip")
                     if not strip:
                         continue
-                    av = np.asarray(strip["axis_v"], dtype=float).reshape(3)
-                    av = av - normal * float(np.dot(av, normal))  # keep it in the sensor plane
-                    n_av = float(np.linalg.norm(av))
-                    if n_av < 1e-9:
-                        continue
-                    av = av / n_av
+                    av = np.asarray(iv, dtype=float).reshape(3)
                     au = np.cross(normal, av)
-                    s_center = np.asarray(strip["center"], dtype=float).reshape(3)
+                    s_center = np.asarray(img_pt, dtype=float).reshape(3)
                     for vv in (strip["v_lo"], strip["v_hi"]):
                         p0 = s_center + vv * av - strip["half_width"] * au
                         p1 = s_center + vv * av + strip["half_width"] * au

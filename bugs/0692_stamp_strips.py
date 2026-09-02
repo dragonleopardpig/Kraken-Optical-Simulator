@@ -23,23 +23,33 @@ def main():
     import numpy as np
     editor._preview_trace_deferred_until_requested = False
     system, _rays, _bundle = editor._build_preview_system_rays_bundle(trace_rays=True)
+    from KrakenOS.UI.services.detector_coverage_overlay import _basis
+
     img_row = next(i for i, r in enumerate(editor.rows) if str(r.surface) == "Image")
     centre = np.asarray(
         editor._surface_reference_world_point(img_row, system=system), dtype=float
     )
     cz = float(centre[2])
-    print(f"live sensor centre: {np.round(centre, 3)}")
+    # bugs/0697: v_lo/v_hi are authored along the DETECTOR'S OWN in-plane strip
+    # axis (the overlay reconstructs it from the live pose after any rotation).
+    det = next(t2 for t2 in (getattr(_bundle, "targets", []) or [])
+               if bool(getattr(t2, "is_detector", False)))
+    normal = np.asarray(det.normal_world, dtype=float).reshape(3)
+    _iu, iv = _basis(normal)
+    z_hat_v = float(iv[2])  # how world z projects onto the strip axis
+    assert abs(z_hat_v) > 0.9, f"strip axis not z-aligned on the saved scene: iv={iv}"
+    print(f"live sensor centre: {np.round(centre, 3)}; iv {np.round(iv, 3)}")
     bands = list(getattr(editor, "layout_object_fov_bands", []) or [])
     assert len(bands) == 2, f"expected 2 bands, found {len(bands)}"
     ABS_Z = {
         "Face A field": (-30.25, -27.25),
         "Face B field": (-23.29, -20.18),
     }
-    strips = {
-        name: {"v_lo": round(lo - cz, 3), "v_hi": round(hi - cz, 3)}
-        for name, (lo, hi) in ABS_Z.items()
-    }
-    print("strips:", strips)
+    strips = {}
+    for name, (lo, hi) in ABS_Z.items():
+        a, b = (lo - cz) * z_hat_v, (hi - cz) * z_hat_v
+        strips[name] = {"v_lo": round(min(a, b), 3), "v_hi": round(max(a, b), 3)}
+    print("strips (detector frame):", strips)
     stamped = 0
     for band in bands:
         strip = strips.get(str(band.get("name", "")))

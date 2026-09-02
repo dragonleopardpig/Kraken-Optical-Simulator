@@ -241,15 +241,16 @@ def _check_scene(ok, notes) -> None:
                 and abs(float(s.get("half_width", 0.0)) - 11.52) < 0.1
                 for s in strips
             )
-            and abs(float(strips[0].get("v_lo", 99.0)) + 3.845) < 0.6
-            and abs(float(strips[0].get("v_hi", 99.0)) + 0.845) < 0.6
-            and abs(float(strips[1].get("v_lo", 99.0)) - 3.115) < 0.6
-            and abs(float(strips[1].get("v_hi", 99.0)) - 6.225) < 0.6
+            and abs(float(strips[0].get("v_lo", 99.0)) - 0.845) < 0.6
+            and abs(float(strips[0].get("v_hi", 99.0)) - 3.845) < 0.6
+            and abs(float(strips[1].get("v_lo", 99.0)) + 6.224) < 0.6
+            and abs(float(strips[1].get("v_hi", 99.0)) + 3.114) < 0.6
         )
         ok(
             strip_ok,
-            "A8b: both bands author their MEASURED sensor cover strip on the die "
-            "(0696 balanced: A z -30.25..-27.25, B z -23.29..-20.18 about centre -26.4)",
+            "A8b: both bands author their MEASURED cover strip in the DETECTOR frame "
+            "(0697: the overlay anchors on the LIVE pose so rotations carry the strips; "
+            "A z -30.25..-27.25, B z -23.29..-20.18 on the saved scene)",
         )
         # bugs/0695: the sensor plane is derived LIVE from the Image row -- the
         # vendor-true rebuild moved it (and any future refocus moves it again).
