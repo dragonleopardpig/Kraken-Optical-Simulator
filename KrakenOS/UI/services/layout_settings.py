@@ -237,6 +237,9 @@ class LayoutSettingsService:
             # bugs/0683: authored partial-FOV bands (a split-field scene's MEASURED
             # delivered field per face); replaces the full object-FOV rectangle.
             "object_fov_bands": getattr(self, "layout_object_fov_bands", None),
+            # bugs/0690: transverse pupil-aim offset (launch-frame x/y) -- a shared
+            # split-field lens sits OFF each arm's walk axis; the cones aim here.
+            "launch_pupil_aim_offset": getattr(self, "layout_launch_pupil_aim_offset", None),
             "analysis_surface": self.analysis_surface_var.get().strip(),
             "analysis_branch_filter": self._current_analysis_branch_filter(),
             "ray_display_mode": self._current_ray_display_mode(),
@@ -437,6 +440,7 @@ class LayoutSettingsService:
         self.inspection_part_spec = _normalize_inspection_part(settings.get("inspection_part", None))  # bugs/0661
         self.display_fold_spec = settings.get("display_fold_spec", None)  # bugs/0671
         self.layout_object_fov_bands = settings.get("object_fov_bands", None)  # bugs/0683
+        self.layout_launch_pupil_aim_offset = settings.get("launch_pupil_aim_offset", None)  # bugs/0690
 
         def _parse_bool(value) -> bool:
             if isinstance(value, str):

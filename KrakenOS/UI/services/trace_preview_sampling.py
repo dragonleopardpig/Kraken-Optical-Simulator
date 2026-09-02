@@ -1488,6 +1488,23 @@ class TracePreviewSamplingMixin:
                 anchor_x, anchor_y = float(_anchor[0]), float(_anchor[1])
             except Exception:
                 anchor_x = anchor_y = 0.0
+            # bugs/0690 (om05a vendor lens seat): an authored TRANSVERSE PUPIL-AIM
+            # OFFSET (launch-frame x/y at the pupil depth). A split-field machine
+            # seats ONE shared lens midway between its arms, so each arm's chief must
+            # converge on a pupil OFF the arm's own walk axis -- without this offset
+            # the cones aim at the on-axis pupil and the off-axis stop rejects
+            # everything. The mirrored face-B launch reuses the chain bundles, and
+            # the fold parity of the two trains maps the SAME launch-frame offset
+            # onto the shared pupil from both sides.
+            aim_off_x = aim_off_y = 0.0
+            try:
+                _aim_offset = getattr(self, "layout_launch_pupil_aim_offset", None)
+                if isinstance(_aim_offset, (list, tuple)) and len(_aim_offset) >= 2:
+                    _ox, _oy = float(_aim_offset[0]), float(_aim_offset[1])
+                    if np.isfinite(_ox) and np.isfinite(_oy):
+                        aim_off_x, aim_off_y = _ox, _oy
+            except Exception:
+                aim_off_x = aim_off_y = 0.0
             field_launches: list[tuple[float, float, np.ndarray]] = [
                 (float(fx), float(fy), pupil_points) for fx, fy in pairs
             ]
@@ -1553,7 +1570,12 @@ class TracePreviewSamplingMixin:
                 n_vals: list[float] = []
                 for pupil_x, pupil_y in launch_points[:, :2]:
                     target = np.array(
-                        [anchor_x + float(pupil_x), anchor_y + float(pupil_y), aim_z], dtype=float
+                        [
+                            anchor_x + aim_off_x + float(pupil_x),
+                            anchor_y + aim_off_y + float(pupil_y),
+                            aim_z,
+                        ],
+                        dtype=float,
                     )
                     direction = target - origin
                     norm = float(np.linalg.norm(direction))

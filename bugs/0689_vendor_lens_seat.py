@@ -16,22 +16,21 @@ folded non-seq scene -- rays looped at the filter.)
 Also: mirror_bound_y 8 -> 5.2 (the cyan "leak" fan = mirrored launch overspill
 beyond the BS acceptance window).
 """
+import os
 from pathlib import Path
 
 import numpy as np
 
 SCENE = Path("attachment/om05a_folded.py")
 AXIS_Z = -25.0
-SEAT_ROWS = (
-    "Front Optical Vertex Datum",
-    "Blackbox Group 1",
-    "Aperture Stop",
-    "Blackbox Group 2",
-    "Rear Optical Vertex Datum",
-    "Filter 48-926",
-    "to camera (unfolded RA mirror 2)",
-    "Image / Sensor",
-)
+# bugs/0690: the launch cones must aim at the OFF-AXIS shared pupil (the fold
+# parity maps a launch-frame y offset onto the column z where the pupil sits).
+AIM_OFF_Y = float(os.environ.get("KRAKEN_0690_AIM_Y", "-9.46"))
+# ONLY the first row of the contiguous follower block: the walk's carried frame
+# ADVANCES FROM EACH POSED ROW'S CENTRE (nonseq_output_ports ~2321), so a desp on
+# every row COMPOUNDS (-9.46 x 7 = the v2 failure); one desp shifts the whole
+# downstream train -- lens, filter, mirror-2 fold, image -- onto the new axis.
+SEAT_ROWS = ("Front Optical Vertex Datum",)
 
 
 def main():
@@ -69,6 +68,7 @@ def main():
         if str(spec.get("source_id", "")) == "source:faceB":
             spec["mirror_bound_y"] = 5.2
     editor.layout_scene_source_specs = specs
+    editor.layout_launch_pupil_aim_offset = [0.0, AIM_OFF_Y]
 
     editor._sync_table()
     editor._write_layout_file(SCENE.resolve())
