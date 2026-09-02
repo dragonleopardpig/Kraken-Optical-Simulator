@@ -1,0 +1,56 @@
+{
+  "width": 256,
+  "height": 128,
+  "complex_coefficients": 32768,
+  "real_harmonic_groups": 16386,
+  "self_conjugate_bins": 4,
+  "numerically_nonzero_coefficients": 32768,
+  "thresholds_total_energy": [
+    {
+      "target": 0.9,
+      "groups": 2,
+      "coefficients": 3,
+      "energy": 0.9409228029655134
+    },
+    {
+      "target": 0.95,
+      "groups": 3,
+      "coefficients": 5,
+      "energy": 0.954978308261439
+    },
+    {
+      "target": 0.99,
+      "groups": 142,
+      "coefficients": 283,
+      "energy": 0.9900024211413159
+    },
+    {
+      "target": 0.999,
+      "groups": 3965,
+      "coefficients": 7927,
+      "energy": 0.9990002690991489
+    }
+  ],
+  "thresholds_contrast_energy_excluding_dc": [
+    {
+      "target": 0.9,
+      "groups": 96,
+      "coefficients": 192
+    },
+    {
+      "target": 0.95,
+      "groups": 324,
+      "coefficients": 648
+    },
+    {
+      "target": 0.99,
+      "groups": 3225,
+      "coefficients": 6448
+    },
+    {
+      "target": 0.999,
+      "groups": 10785,
+      "coefficients": 21568
+    }
+  ]
+}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -19,6 +20,14 @@ EXERCISE_ASSETS = (
     / "worked_exercises"
     / "fundamentals_of_photonics"
     / "exercise_illustrations"
+)
+FOURIER_DECOMPOSITION = (
+    SOURCE
+    / "_static"
+    / "knowledge_base"
+    / "worked_exercises"
+    / "fundamentals_of_photonics"
+    / "fourier_picture_decomposition"
 )
 
 # Counts come from an OCR-normalized inventory of every boxed exercise and
@@ -450,6 +459,45 @@ def main() -> None:
             "expected 130 remaining stepwise illustrated exercises, found "
             f"{stepwise_exercises} stepwise and {illustrated_exercises} illustrated"
         )
+
+    chapter_four = (COLLECTION / "ch04_fourier_optics.rst").read_text(
+        encoding="utf-8"
+    )
+    for required_text in (
+        "Figure 4.0-2 worked example: decomposing a picture",
+        r"N_{\mathrm{complex}}=N_xN_y=256(128)=\boxed{32{,}768}",
+        r"=\boxed{16{,}386}",
+        "figure_4_0_2_fourier_decomposition.png",
+        "figure_4_0_2_strongest_harmonics.png",
+    ):
+        if required_text not in chapter_four:
+            fail(f"Chapter 4 Figure 4.0-2 example omits {required_text}")
+    for asset_name in (
+        "figure_4_0_2_fourier_decomposition.png",
+        "figure_4_0_2_strongest_harmonics.png",
+        "figure_4_0_2_counts.json",
+    ):
+        if not (FOURIER_DECOMPOSITION / asset_name).is_file():
+            fail(f"Chapter 4 Figure 4.0-2 asset is missing: {asset_name}")
+    fourier_counts = json.loads(
+        (FOURIER_DECOMPOSITION / "figure_4_0_2_counts.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    expected_fourier_counts = {
+        "width": 256,
+        "height": 128,
+        "complex_coefficients": 32768,
+        "real_harmonic_groups": 16386,
+        "self_conjugate_bins": 4,
+        "numerically_nonzero_coefficients": 32768,
+    }
+    for key, expected_value in expected_fourier_counts.items():
+        if fourier_counts.get(key) != expected_value:
+            fail(
+                f"Chapter 4 Figure 4.0-2 {key} is "
+                f"{fourier_counts.get(key)!r}, expected {expected_value}"
+            )
 
     collection_index = (COLLECTION / "index.rst").read_text(encoding="utf-8")
     for path in chapter_files:

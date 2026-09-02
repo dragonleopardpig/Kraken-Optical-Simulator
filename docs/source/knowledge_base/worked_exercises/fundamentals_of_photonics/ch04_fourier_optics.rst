@@ -4,6 +4,175 @@ Chapter 4: Fourier Optics
 Source: Saleh and Teich, *Fundamentals of Photonics*, second edition,
 Chapter 4.  Fourier frequency is in cycles per unit length.
 
+Figure 4.0-2 worked example: decomposing a picture
+---------------------------------------------------
+
+Textbook Figure 4.0-2 says that an arbitrary two-dimensional function is a
+sum of spatial harmonics.  The schematic is exact, but it leaves an important
+practical question unanswered: **how many harmonics does one picture have?**
+
+The answer depends first on whether the picture is continuous or sampled.
+A continuous function :math:`f(x,y)` generally requires the continuum of a
+two-dimensional Fourier integral, so there is no finite component count.  A
+sampled :math:`N_x\times N_y` picture instead has a finite two-dimensional
+discrete Fourier transform (DFT):
+
+.. math::
+   :label: fop-figure-4-0-2-dft
+
+   F[p,q]
+   &=\sum_{n=0}^{N_y-1}\sum_{m=0}^{N_x-1}
+     f[n,m]\exp\!\left[-j2\pi\left(
+       \frac{qm}{N_x}+\frac{pn}{N_y}\right)\right],\\
+   f[n,m]
+   &=\frac{1}{N_xN_y}
+     \sum_{p=0}^{N_y-1}\sum_{q=0}^{N_x-1}
+     F[p,q]\exp\!\left[+j2\pi\left(
+       \frac{qm}{N_x}+\frac{pn}{N_y}\right)\right].
+
+Thus one complex spatial-harmonic component is
+
+.. math::
+   :label: fop-figure-4-0-2-one-component
+
+   h_{p,q}[n,m]
+   =\frac{F[p,q]}{N_xN_y}
+    \exp\!\left[+j2\pi\left(
+      \frac{qm}{N_x}+\frac{pn}{N_y}\right)\right].
+
+NumPy uses the signs displayed above.  The textbook writes the spatial
+harmonic with the opposite sign; relabeling :math:`(p,q)` as
+:math:`(-p,-q)` makes the two conventions identical and does not change any
+amplitude, energy, or component count.
+
+The arbitrary test picture below is a reproducible grayscale landscape with
+:math:`N_x=256` columns and :math:`N_y=128` rows.  It was generated for this
+example rather than copied from the textbook or an external photograph.
+
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/fourier_picture_decomposition/figure_4_0_2_fourier_decomposition.png
+   :alt: A grayscale landscape, its two-dimensional Fourier spectrum, cumulative spectral energy, and four progressively more detailed reconstructions
+   :align: center
+   :width: 100%
+
+   **Worked decomposition of textbook Figure 4.0-2.**  The upper row shows
+   the sampled picture, centered log-magnitude spectrum, cumulative energy,
+   and the DC component alone.  The lower row reconstructs the picture after
+   retaining the strongest conjugate-paired real harmonics.  Low-frequency
+   terms establish average brightness and broad gradients; many weaker
+   high-frequency terms restore edges and fine texture.
+
+Exact count
+^^^^^^^^^^^
+
+The DFT array contains exactly
+
+.. math::
+   :label: fop-figure-4-0-2-exact-count
+
+   N_{\mathrm{complex}}=N_xN_y=256(128)=\boxed{32{,}768}
+
+complex coefficients.  For this generated picture, all 32,768 coefficients
+are nonzero above a numerical tolerance of :math:`10^{-12}` times the largest
+coefficient.  Exact zeros are possible for specially symmetric pictures, but
+the DFT still has 32,768 available harmonic slots and exact reconstruction
+uses the complete array.
+
+Because the picture is real valued,
+:math:`F[-p,-q]=F^*[p,q]`.  Most complex exponentials therefore occur in
+conjugate pairs that combine into one real cosine with an amplitude and a
+phase.  Since both dimensions are even, four bins are self-conjugate: the DC
+bin and the three combinations of horizontal and vertical Nyquist frequency.
+The independent real-harmonic group count is consequently
+
+.. math::
+   :label: fop-figure-4-0-2-real-count
+
+   N_{\mathrm{real\ groups}}
+   =\frac{32{,}768-4}{2}+4
+   =\boxed{16{,}386}.
+
+The two boxed numbers answer different conventions:
+
+* **32,768 complex spatial harmonics** is the direct answer in the complex
+  exponential language used by textbook Figure 4.0-2.
+* **16,386 real-harmonic groups** is the same information after conjugate
+  partners are combined into real cosines.
+
+For an RGB picture of the same size treated as three separate channels, the
+direct count would be :math:`3(32{,}768)=98{,}304` complex channel
+coefficients.  The pixel pitch is not specified here, so frequencies are in
+cycles/pixel.  For physical pitches :math:`\Delta x` and :math:`\Delta y`, a
+signed DFT bin :math:`(\widetilde q,\widetilde p)` represents
+:math:`\nu_x=\widetilde q/(N_x\Delta x)` and
+:math:`\nu_y=\widetilde p/(N_y\Delta y)`.
+
+How many are needed for a recognizable picture?
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+There is no unique number until an error or retained-energy criterion is
+chosen.  Parseval's theorem makes the coefficient energy
+:math:`|F[p,q]|^2`.  Sorting conjugate pairs by their combined energy gives
+the following minimum counts for this particular picture:
+
+.. list-table:: Minimum harmonic counts at selected energy thresholds
+   :header-rows: 1
+   :widths: 14 20 20 23 23
+
+   * - Energy target
+     - Total-intensity groups
+     - Complex coefficients
+     - Contrast-only groups
+     - Contrast coefficients
+   * - 90%
+     - 2
+     - 3
+     - 96
+     - 192
+   * - 95%
+     - 3
+     - 5
+     - 324
+     - 648
+   * - 99%
+     - 142
+     - 283
+     - 3,225
+     - 6,448
+   * - 99.9%
+     - 3,965
+     - 7,927
+     - 10,785
+     - 21,568
+
+The total-intensity columns include DC.  The contrast columns first subtract
+the mean brightness and measure only non-DC energy; add the one DC group when
+forming a normally illuminated reconstruction.  This is why “90% energy” can
+be misleading: DC and a broad vertical gradient contain much of the raw
+numerical energy even though they do not yet make the scene recognizable.
+The 99% and 99.9% reconstructions show the more useful practical progression.
+
+What do individual components look like?
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/fourier_picture_decomposition/figure_4_0_2_strongest_harmonics.png
+   :alt: Eight sinusoidal patterns corresponding to the strongest non-DC spatial harmonics in the example picture
+   :align: center
+   :width: 100%
+
+   **Eight strongest non-DC real harmonics.**  Each panel is one conjugate
+   pair reconstructed by itself.  It is independently normalized so that its
+   stripe orientation and period remain visible; the percentages in the
+   titles, not the displayed color scale, give their true relative energy.
+   Vertical variation in the scene produces horizontal stripes, horizontal
+   variation produces vertical stripes, and simultaneous :math:`x` and
+   :math:`y` variation produces diagonal stripes.
+
+The complete picture is not stored inside any one component.  Every harmonic
+extends across the whole image; localized mountains, trees, the house, and
+the boat emerge only after many different amplitudes and phases are added.
+The figures and counts are reproducible with
+``docs/generate_fourier_picture_decomposition.py``.
+
 In-text exercises
 -----------------
 
