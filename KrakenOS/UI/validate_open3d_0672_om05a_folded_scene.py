@@ -237,19 +237,19 @@ def _check_scene(ok, notes) -> None:
             len(strips) == 2
             and all(
                 abs(float(s.get("center", [99, 99, 99])[0]) + 272.65) < 0.5
-                and abs(float(s.get("center", [99, 99, 99])[1]) + 1.2) < 0.5
+                and abs(float(s.get("center", [99, 99, 99])[1]) + 1.655) < 0.5
                 and abs(float(s.get("half_width", 0.0)) - 11.52) < 0.1
                 for s in strips
             )
-            and abs(float(strips[0].get("v_lo", 99.0)) + 3.74) < 0.6
-            and abs(float(strips[0].get("v_hi", 99.0)) + 0.87) < 0.6
-            and abs(float(strips[1].get("v_lo", 99.0)) - 2.71) < 0.6
-            and abs(float(strips[1].get("v_hi", 99.0)) - 8.04) < 0.6
+            and abs(float(strips[0].get("v_lo", 99.0)) + 3.845) < 0.6
+            and abs(float(strips[0].get("v_hi", 99.0)) + 0.845) < 0.6
+            and abs(float(strips[1].get("v_lo", 99.0)) - 3.115) < 0.6
+            and abs(float(strips[1].get("v_hi", 99.0)) - 6.225) < 0.6
         )
         ok(
             strip_ok,
             "A8b: both bands author their MEASURED sensor cover strip on the die "
-            "(0695 vendor-true: A z -30.1..-27.3, B z -23.7..-18.4 about centre -26.4)",
+            "(0696 balanced: A z -30.25..-27.25, B z -23.29..-20.18 about centre -26.4)",
         )
         # bugs/0695: the sensor plane is derived LIVE from the Image row -- the
         # vendor-true rebuild moved it (and any future refocus moves it again).
@@ -271,7 +271,7 @@ def _check_scene(ok, notes) -> None:
             if sid == "source:faceB":
                 face_b_launch.append(p[0])
                 end = p[-1]
-                if abs(end[1] - sensor_y) < 1.0 and end[0] < -250.0 and -21.7 < end[2] < -20.1:
+                if abs(end[1] - sensor_y) < 1.0 and end[0] < -250.0 and -22.2 < end[2] < -21.0:
                     face_b_reach.append(end)
                 continue
             chain_paths += 1
@@ -283,9 +283,10 @@ def _check_scene(ok, notes) -> None:
                 chief = (score, p)
         strip = [end for _fi, _start, end in chain_reach if abs(end[1] - sensor_y) < 1.0 and -29.5 < end[2] < -28.3]
         ok(
-            len(chain_reach) >= 700 and len(strip) >= 700,
-            f"B1: the chain delivers the arm-A strip on the sensor at z~-28.9 (vendor-true "
-            f"prisms, 0695) ({len(chain_reach)}/{chain_paths} reach; {len(strip)} on-strip)",
+            len(chain_reach) >= 250 and len(strip) >= 250,
+            f"B1: the chain delivers the arm-A strip at z~-28.9 (0696 honest reach -- the "
+            f"pre-AIR counts were phantom-glass inflated) "
+            f"({len(chain_reach)}/{chain_paths} reach; {len(strip)} on-strip)",
         )
         # central-field focus: the cone converges along the final -y leg; scan y planes
         # around the row (y=-11) for the waist -- the row plane itself carries a small
@@ -351,9 +352,9 @@ def _check_scene(ok, notes) -> None:
             f"({len(launches)} rays, bounded={bounded})",
         )
         ok(
-            len(face_b_reach) >= 500,
-            f"B5: faceB reaches its strip at z~-20.8 on the live sensor plane (0695 "
-            f"vendor-true; absolute B focus pending the 0696 launcher rework) "
+            len(face_b_reach) >= 600,
+            f"B5: faceB reaches its strip at z~-21.6 IN FOCUS (0696: phantom glass fixed, "
+            f"balanced +-0.4 mm, ~18 um at plane) "
             f"({len(face_b_reach)} reach; both arms live in ONE bundle with the chain intact)",
         )
     finally:

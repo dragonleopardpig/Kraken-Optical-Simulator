@@ -53,6 +53,16 @@ def mirror_b(z):
     return 2.0 * SPLIT - z
 
 
+def mirror_profile(profile):
+    """Mirror a (z, y) profile across the split line WITH REVERSED winding --
+    a bare z-flip is a reflection and turns the extruded solid INSIDE-OUT
+    (the memorized 0684 lesson: mirrored pairs trace inside-out). Measured on
+    om05a: every B-side solid had inverted inside/outside bookkeeping, so the
+    first-surface centre fold left B rays 'in glass' and a spurious refraction
+    at the next crossing defocused the whole arm 19.2 mm."""
+    return [(mirror_b(z), y) for (z, y) in reversed(profile)]
+
+
 def extruded_solid(profile_zy, length=BAR_LEN):
     """Extrude a scene-frame (z, y) polygon along scene x, LOCAL-CENTRED about its
     bbox centre (the promotion convention: mesh local, pose in the manifest --
@@ -85,7 +95,7 @@ def main():
     manifest = {}
 
     def emit(name, profile, side):
-        prof = profile if side == "A" else [(mirror_b(z), y) for (z, y) in profile]
+        prof = profile if side == "A" else mirror_profile(profile)
         shape, (cx, cy, cz) = extruded_solid(prof)
         save_step(shape, f"{name}_{side}_0695v.step")
         manifest[f"{name}_{side}_0695v"] = [0.0, round(cy, 4), round(cz, 4)]
@@ -127,7 +137,7 @@ def main():
     # scene face the diffuser side; drawn as a thin slab, 75 long)
     led = [scene_pt(20.9, 0.0), scene_pt(39.0, 0.0), scene_pt(39.0, -1.6), scene_pt(20.9, -1.6)]
     for side in ("A", "B"):
-        prof = led if side == "A" else [(mirror_b(z), y) for (z, y) in led]
+        prof = led if side == "A" else mirror_profile(led)
         shape, (cx, cy, cz) = extruded_solid(prof, length=75.0)
         save_step(shape, f"led_panel_{side}_0695v.step")
         manifest[f"led_panel_{side}_0695v"] = [0.0, round(cy, 4), round(cz, 4)]

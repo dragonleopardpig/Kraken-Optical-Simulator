@@ -711,6 +711,46 @@ class ThreeDSceneToolsMixin:
         self._trace_additive_imaging_source_rays(system, rays, wavelength)
         return rays, None
 
+    @staticmethod
+    def _keeper_imaging_launch_bundles(rays):
+        """bugs/0696: the traced imaging launch, read back from the raykeeper's own
+        per-ray SOURCE_XYZ/SOURCE_LMN metadata. Branch pushes record multiple rows
+        per physical launch (same SOURCE_RAY index) -- keep the first per index.
+        Returns a one-bundle list, or None when the keeper carries no usable launch."""
+        xyz_list = list(getattr(rays, "SOURCE_XYZ", None) or [])
+        lmn_list = list(getattr(rays, "SOURCE_LMN", None) or [])
+        idx_list = list(getattr(rays, "SOURCE_RAY", None) or [])
+        n = min(len(xyz_list), len(lmn_list))
+        if n <= 0:
+            return None
+        seen: set = set()
+        pts, dirs = [], []
+        for i in range(n):
+            try:
+                key = int(np.asarray(idx_list[i]).reshape(-1)[0]) if i < len(idx_list) else i
+            except Exception:
+                key = i
+            if key in seen:
+                continue
+            try:
+                p = np.asarray(xyz_list[i], dtype=float).reshape(-1)[:3]
+                d = np.asarray(lmn_list[i], dtype=float).reshape(-1)[:3]
+            except Exception:
+                continue
+            if not (np.all(np.isfinite(p)) and np.all(np.isfinite(d))):
+                continue
+            norm = float(np.linalg.norm(d))
+            if norm <= 1e-12:
+                continue
+            seen.add(key)
+            pts.append(p)
+            dirs.append(d / norm)
+        if len(pts) < 8:
+            return None
+        P = np.asarray(pts, dtype=float)
+        D = np.asarray(dirs, dtype=float)
+        return [(P[:, 0], P[:, 1], P[:, 2], D[:, 0], D[:, 1], D[:, 2])]
+
     def _trace_additive_imaging_source_rays(self, system, rays, wavelength: float) -> None:
         """bugs/0680: append the explicitly ADDITIVE scene sources to the imaging keeper.
 
@@ -721,15 +761,9 @@ class ThreeDSceneToolsMixin:
         arms display, census and analyse as one live bundle -- the imaging conjugates
         stay untouched."""
         try:
-            # bugs/0695 note: the mirrored faceB arm reflects `_last_imaging_launch_bundles`.
-            # Measured limitation (bugs/0696 owed): across the sync/async/headless build
-            # topologies that stash can hold a NON-final launch (unaimed, 2.5x narrower
-            # than the traced chain cone), so the B arm's absolute focus is not yet
-            # trustworthy -- its per-cone waists are sharp but sit late. An explicit
-            # same-build rebuild was attempted and reverted (the world-mode builders do
-            # not reproduce the launch outside the sampler's own context; the B arm
-            # vanished). The clean fix is a FIRST-CLASS faceB launcher aimed through the
-            # B train, replacing the mirror trick.
+            # bugs/0696: mirrored-additive specs are traced INLINE with the imaging
+            # call now (`_inline_mirrored_additive_bundles`); this pass serves only
+            # NON-mirror additive sources.
             bundles, sources = self._build_additive_imaging_source_bundles(float(wavelength))
         except Exception:
             return

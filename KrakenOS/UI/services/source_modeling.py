@@ -2273,9 +2273,67 @@ class SourceModelingMixin:
             sources.append(source)
         return bundles, sources
 
+    def _inline_mirrored_additive_bundles(self, bundles, wavelength: float):
+        """bugs/0696: mirrored twins of THIS imaging call's launch bundles.
+
+        Called by `_trace_preview_bundles` on every non-append imaging trace, so
+        the second arm launches the EXACT bundles the kept pass traces -- mirrored
+        through `mirror_launch_plane_z` (z -> 2*zp - z, n -> -n), bound-filtered by
+        `mirror_bound_x/y`. This replaces the post-hoc stash mirror, which could
+        reflect a DIFFERENT pass's launch (measured on om05a: the PupilCalc
+        fallback, cone 2.17 deg aimed at the unfolded 293 mm object distance
+        instead of the traced 4.9 deg at the ~130 mm reduced stop -- the whole
+        faceB arm focused 19.2 mm behind the sensor). Returns
+        (extra_bundles, extra_sources); empty on any failure."""
+        extra_bundles: list = []
+        extra_sources: list = []
+        try:
+            if not self._normalize_scene_source_specs(
+                getattr(self, "layout_scene_source_specs", [])
+            ):
+                return [], []
+            for source in self._collect_scene_sources(wavelength=wavelength):
+                if not (bool(source.enabled) and bool(source.physical)):
+                    continue
+                if not scene_source_spec_is_additive_to_imaging(source):
+                    continue
+                settings = dict(source.settings or {})
+                mirror_plane = settings.get("mirror_launch_plane_z", None)
+                if mirror_plane is None:
+                    continue
+                try:
+                    plane_z = float(mirror_plane)
+                except (TypeError, ValueError):
+                    continue
+                if not np.isfinite(plane_z):
+                    continue
+                half_x = self._source_spec_float(settings, ("mirror_bound_x",), float("inf"))
+                half_y = self._source_spec_float(settings, ("mirror_bound_y",), float("inf"))
+                for chain_bundle in list(bundles or []):
+                    x, y, z, l, m, n = (
+                        np.asarray(part, dtype=float).copy() for part in chain_bundle
+                    )
+                    if len(x) <= 0:
+                        continue
+                    keep = np.ones(len(x), dtype=bool)
+                    if np.isfinite(half_x):
+                        keep &= np.abs(x) <= float(half_x) + 1e-9
+                    if np.isfinite(half_y):
+                        keep &= np.abs(y) <= float(half_y) + 1e-9
+                    if not np.any(keep):
+                        continue
+                    z = 2.0 * plane_z - z
+                    n = -n
+                    extra_bundles.append(tuple(part[keep] for part in (x, y, z, l, m, n)))
+                    extra_sources.append(source)
+        except Exception:
+            return [], []
+        return extra_bundles, extra_sources
+
     def _build_additive_imaging_source_bundles(
         self, wavelength: float, *, full_count: bool = False,
-        imaging_bundles: "list | None" = None,
+        imaging_bundles: "list | None" = None,  # bugs/0696: retained for signature
+        # stability; mirrored specs are handled inline at trace time now.
     ) -> tuple[
         list[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]],
         list[SceneSource3D],
@@ -2304,50 +2362,14 @@ class SourceModelingMixin:
             settings = dict(source.settings or {})
             mirror_plane = settings.get("mirror_launch_plane_z", None)
             if mirror_plane is not None:
-                try:
-                    plane_z = float(mirror_plane)
-                except (TypeError, ValueError):
-                    plane_z = None
-                if plane_z is not None and np.isfinite(plane_z):
-                    # bugs/0687: the launch bounds are their OWN keys -- radius_x/y size
-                    # the source GLYPH (reusing them as bounds first clipped the edge
-                    # field bundles by their pupil spread, then a radius=1000 workaround
-                    # drew a giant emitter panel). `mirror_bound_x/y` filter mirrored
-                    # launch POINTS; absent = unbounded on that axis.
-                    half_x = self._source_spec_float(
-                        settings, ("mirror_bound_x",), float("inf")
-                    )
-                    half_y = self._source_spec_float(
-                        settings, ("mirror_bound_y",), float("inf")
-                    )
-                    # bugs/0695: prefer EXPLICIT imaging bundles rebuilt by the caller in
-                    # THIS build -- the cross-call stash proved unreliable across the
-                    # sync/async/headless build topologies (it held a stale merged
-                    # aggregate, so the mirrored faceB cone came out 2.5x narrower and
-                    # unaimed, focusing the whole B arm 19 mm behind the sensor).
-                    chain_source = (
-                        list(imaging_bundles)
-                        if imaging_bundles
-                        else list(getattr(self, "_last_imaging_launch_bundles", None) or [])
-                    )
-                    for chain_bundle in chain_source:
-                        x, y, z, l, m, n = (
-                            np.asarray(part, dtype=float).copy() for part in chain_bundle
-                        )
-                        if len(x) <= 0:
-                            continue
-                        keep = np.ones(len(x), dtype=bool)
-                        if np.isfinite(half_x):
-                            keep &= np.abs(x) <= float(half_x) + 1e-9
-                        if np.isfinite(half_y):
-                            keep &= np.abs(y) <= float(half_y) + 1e-9
-                        if not np.any(keep):
-                            continue
-                        z = 2.0 * plane_z - z
-                        n = -n
-                        bundles.append(tuple(part[keep] for part in (x, y, z, l, m, n)))
-                        sources.append(source)
-                    continue
+                # bugs/0696: mirrored-additive specs are now handled INLINE by
+                # `_trace_preview_bundles` (`_inline_mirrored_additive_bundles`) --
+                # every non-append imaging call traces its own mirrored twin in the
+                # SAME call, so the second arm can never desynchronize from the kept
+                # launch. The old post-hoc mirror here reflected whatever stash/keeper
+                # state happened to exist (measured: the PupilCalc-FALLBACK launch,
+                # 19.2 mm of faceB defocus). Skip: never mirror here again.
+                continue
             bundle = self._build_scene_source_bundle(source, full_count=full_count)
             if bundle is None or len(np.asarray(bundle[0])) <= 0:
                 continue

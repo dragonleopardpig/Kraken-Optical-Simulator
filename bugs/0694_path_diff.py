@@ -21,7 +21,9 @@ def main():
     editor._preview_trace_deferred_until_requested = False
     system, rays, bundle = editor._build_preview_system_rays_bundle(trace_rays=True)
 
-    SENSOR_Y = -9.9
+    img_row = next(i for i, r in enumerate(editor.rows) if str(r.surface) == "Image")
+    SENSOR_Y = float(np.asarray(
+        editor._surface_reference_world_point(img_row, system=system), dtype=float)[1])
     groups = defaultdict(list)
     for rp in (getattr(bundle, "ray_paths", None) or []):
         sid = str(getattr(rp, "source_id", "") or "")

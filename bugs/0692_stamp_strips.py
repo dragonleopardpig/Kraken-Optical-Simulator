@@ -1,9 +1,9 @@
 """0692: author the MEASURED sensor cover strips into the om05a bands.
 
-Numbers from bugs/0692_sensor_reach_sweep.py (0695 vendor-true rebuild):
-  arm A clean landings  z -30.14 .. -27.27  (object y -4..+3, ZERO per-field spread)
-  arm B clean landings  z -23.69 .. -18.36  (~1.6 mm blur pending the 0696 launcher)
-Sensor row centre [-272.65, -1.2, -26.4], die 23.04 x 23.04 in world x/z.
+Numbers from bugs/0692_sensor_reach_sweep.py (0696 phantom-glass fix + balance):
+  arm A clean landings  z -30.25 .. -27.25  (band y -4..+4, razor per field)
+  arm B clean landings  z -23.29 .. -20.18  (band, 76% uniform reach)
+The strip centre is read LIVE from the Image row (the balance stamp moves it).
 The coverage overlay draws each strip's two dashed edges (user: "draw 2 dotted
 line edge at the Sensor to indicate actual cover area").
 """
@@ -20,19 +20,33 @@ def main():
     editor.layout_files["p"] = SCENE.resolve()
     editor.load_layout_by_name("p")
 
+    import numpy as np
+    editor._preview_trace_deferred_until_requested = False
+    system, _rays, _bundle = editor._build_preview_system_rays_bundle(trace_rays=True)
+    img_row = next(i for i, r in enumerate(editor.rows) if str(r.surface) == "Image")
+    centre = np.asarray(
+        editor._surface_reference_world_point(img_row, system=system), dtype=float
+    )
+    cz = float(centre[2])
+    print(f"live sensor centre: {np.round(centre, 3)}")
     bands = list(getattr(editor, "layout_object_fov_bands", []) or [])
     assert len(bands) == 2, f"expected 2 bands, found {len(bands)}"
-    strips = {
-        "Face A field": {"v_lo": -3.74, "v_hi": -0.87},
-        "Face B field": {"v_lo": 2.71, "v_hi": 8.04},
+    ABS_Z = {
+        "Face A field": (-30.25, -27.25),
+        "Face B field": (-23.29, -20.18),
     }
+    strips = {
+        name: {"v_lo": round(lo - cz, 3), "v_hi": round(hi - cz, 3)}
+        for name, (lo, hi) in ABS_Z.items()
+    }
+    print("strips:", strips)
     stamped = 0
     for band in bands:
         strip = strips.get(str(band.get("name", "")))
         if strip is None:
             continue
         band["image_strip"] = {
-            "center": [-272.65, -1.2, -26.4],
+            "center": [float(centre[0]), float(centre[1]), float(cz)],
             "axis_v": [0.0, 0.0, 1.0],
             "half_width": 11.52,
             "v_lo": strip["v_lo"],

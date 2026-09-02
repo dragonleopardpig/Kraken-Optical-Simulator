@@ -140,7 +140,10 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         )
 
         # mirrored launch: reflection of the stashed imaging bundles, face-bounded
-        mirrored = {**ADDITIVE_SPEC, "mirror_launch_plane_z": -10.0, "radius_x": 4.0, "radius_y": 0.5}
+        # bugs/0687 split the keys: mirror_bound_x/y are the LAUNCH bounds
+        # (radius_x/y only size the glyph); bugs/0696 keeps that contract.
+        mirrored = {**ADDITIVE_SPEC, "mirror_launch_plane_z": -10.0,
+                    "mirror_bound_x": 4.0, "mirror_bound_y": 0.5}
         editor.layout_scene_source_specs = [mirrored]
         stash = [(
             np.array([0.0, 0.2, 8.0]),   # x: inside bound
@@ -150,8 +153,10 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
             np.array([0.0, 0.0, 0.1]),
             np.array([1.0, 1.0, 1.0]),
         )]
-        editor._last_imaging_launch_bundles = stash
-        mir_bundles, _ms = editor._build_additive_imaging_source_bundles(0.55)
+        # bugs/0696: the mirror is INLINE now -- `_trace_preview_bundles` mirrors
+        # each imaging call's OWN bundles via `_inline_mirrored_additive_bundles`
+        # (the post-hoc stash mirror reflected a stale pass: 19.2 mm faceB defocus).
+        mir_bundles, _ms = editor._inline_mirrored_additive_bundles(stash, 0.55)
         mirrored_ok = False
         if mir_bundles:
             x, y, z, l, m, n = (np.asarray(part, dtype=float) for part in mir_bundles[0])
@@ -164,9 +169,15 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
             )
         ok(
             mirrored_ok,
-            f"C8: mirror_launch_plane_z reflects the stashed imaging launch (z -> 2*zp - z, n -> -n) "
-            f"and drops launch points off the physical face "
+            f"C8: the INLINE mirror reflects the imaging call's own bundles (z -> 2*zp - z, "
+            f"n -> -n) and drops launch points off the physical face "
             f"({len(np.asarray(mir_bundles[0][0])) if mir_bundles else 0} of 3 kept)",
+        )
+        legacy_bundles, _ls = editor._build_additive_imaging_source_bundles(0.55)
+        ok(
+            not legacy_bundles,
+            f"C8b: the additive-append builder SKIPS mirror specs (inline handles them; "
+            f"no double-trace) ({len(legacy_bundles)} bundles)",
         )
     finally:
         try:

@@ -433,6 +433,37 @@ class TracePreviewService:
         #  - REPLAY (worker process): substitute the captured launch arrays for the locally
         #    sampled ones, then trace normally. The worker's own sampling only picked the
         #    dispatcher branch; the rays actually traced are exactly the main thread's.
+        _dbg = os.environ.get("KRAKEN_0696_DEBUG_FILE")
+        if _dbg:
+            try:
+                with open(_dbg, "a") as _fh:
+                    _fh.write(
+                        f"SVC pid={os.getpid()} append={append} stash={stash_launch} "
+                        f"bundles={len(bundles)} rays={sum(int(len(np.asarray(b[0]))) for b in bundles)}\n"
+                    )
+            except Exception:
+                pass
+        # bugs/0696: every non-append imaging call carries its own MIRRORED-ADDITIVE
+        # twin (the om05a faceB arm) in the SAME call -- appended before the capture
+        # branch so the captured record (and hence the worker replay) includes it,
+        # and skipped during replay (the record already carries the twin). The old
+        # post-hoc mirror desynchronized from the kept launch in every topology.
+        if (
+            not append
+            and stash_launch
+            and not isinstance(getattr(self.editor, "_preview_trace_bundle_replay", None), list)
+        ):
+            try:
+                extra_b, extra_s = self.editor._inline_mirrored_additive_bundles(
+                    bundles, float(wavelength)
+                )
+            except Exception:
+                extra_b, extra_s = [], []
+            if extra_b:
+                if bundle_sources is None:
+                    bundle_sources = [None] * len(bundles)
+                bundles = list(bundles) + list(extra_b)
+                bundle_sources = list(bundle_sources) + list(extra_s)
         capture = getattr(self.editor, "_preview_trace_bundle_capture", None)
         if isinstance(capture, list):
             if not append and stash_launch:

@@ -960,6 +960,14 @@ class TracePreviewSamplingMixin:
         # bugs/0695 + the 0319 rule: a new service kwarg MUST thread through this
         # mixin wrapper -- without it the stash_launch=False call sites raised a
         # swallowed TypeError and the illumination analysis silently returned [].
+        import os as _os
+        _dbg = _os.environ.get("KRAKEN_0696_DEBUG_FILE")
+        if _dbg:
+            try:
+                with open(_dbg, "a") as _fh:
+                    _fh.write(f"WRAP pid={_os.getpid()} append={append} bundles={len(bundles)}\n")
+            except Exception:
+                pass
         self._trace_preview_service()._trace_preview_bundles(
             system,
             rays,
