@@ -17165,7 +17165,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         ) is not None:
             drawn = True
         # Emission-direction arrow (which way the source shines).
-        arrow_len = 1.6 * max(rx, ry, 1.0)
+        # bugs/0691: a THIN emitter panel (the om05a 50x1 face-B sliver) got a
+        # 40 mm arrow (1.6 x its 25 mm half-width) towering over the assembly --
+        # the user read it as a misplaced LED. Key the arrow to the smaller panel
+        # dimension too, so slab emitters keep a modest direction marker while
+        # ordinary LED panels are unchanged.
+        arrow_len = min(1.6 * max(rx, ry, 1.0), 8.0 * min(rx, ry) + 4.0)
         try:
             arrow = pv.Arrow(start=origin, direction=d, scale=float(arrow_len))
             if self._add_mesh_actor(

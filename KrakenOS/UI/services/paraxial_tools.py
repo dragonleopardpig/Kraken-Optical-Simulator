@@ -305,8 +305,15 @@ class ParaxialToolsMixin:
             placement = (getattr(row, "advanced", None) or {}).get("ScenePlacement")
             if not isinstance(placement, dict):
                 return False
+            # bugs/0691: ``frame_seat`` = a WALK-FRAME decenter that seats a follower
+            # block on a different axis (the om05a vendor lens seat). Placement, not
+            # prescription -- the paraxial reference unfolds it -- but unlike the
+            # axis-snap breadcrumbs it must NOT make the fold walk skip the row
+            # (the walk's frame-desp pose IS the seat).
             return bool(
-                placement.get("stay_put_freeze") or placement.get("last_axis_to_axis_move")
+                placement.get("stay_put_freeze")
+                or placement.get("last_axis_to_axis_move")
+                or placement.get("frame_seat")
             )
         except Exception:
             return False
