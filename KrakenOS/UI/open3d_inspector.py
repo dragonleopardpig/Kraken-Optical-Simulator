@@ -16302,6 +16302,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         handle_count += self._add_scene_placement_rotate_handles(primary, center=center, spacing=spacing, extent=extent)
         if handle_count:
             summary += f" | handles {handle_count}"
+        # bugs/0697 follow-up ("I don't find any toggle to turn off the
+        # placement-handle"): the rail is selection-driven and Esc clears it, but
+        # nothing SAID so -- self-document the exit right in the status line.
+        summary += " | Esc clears"
         return 0, summary
 
     def _add_scene_detector_overlays(
@@ -22091,6 +22095,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         display-toggle gate. The exaggeration submenu lets the user pick visibility (auto
         magnifies the sub-mm aberrations) vs true scale (×1 = no apparent 'detachment'
         from the flat image circle)."""
+        # bugs/0697 follow-up: the placement-handle rail (selection-driven) had no
+        # discoverable off switch -- give the Esc gesture a menu home too.
+        menu.add_command(
+            label="Clear selection / hide handles (Esc)",
+            command=self.cancel_active_3d_operation,
+        )
         menu.add_separator()
         menu.add_command(label="3D image-plane analyses", state="disabled")
         menu.add_checkbutton(
