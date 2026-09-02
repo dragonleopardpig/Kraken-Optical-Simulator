@@ -1,4 +1,4 @@
-# 0695 — vendor-true prism rebuild (WIP: commit-and-continue on M90aPro)
+# 0695 — vendor-true prism rebuild (COMPLETE; 0696 faceB launcher owed)
 
 ## User architecture (flag series 2026-09-02 + clarification)
 Per side, from the Object Plane: (1) FIRST RA MIRROR only (the extra right-angle
@@ -50,14 +50,23 @@ REFOCUS (bugs/0695_refocus.py) -> census (bugs/0694_focus_census.py).
   disk; world-mode builders outside the sampler context killed the B arm).
   => bugs/0696: give faceB a FIRST-CLASS launcher aimed through the B train.
 
-## Remaining (continue on M90aPro)
-1. Strips restamp: bugs/0692_sensor_reach_sweep.py (patched for the live
-   sensor plane) -> stamp via bugs/0692_stamp_strips.py with NEW numbers ->
-   re-pin guard A8b (still pins the old strips).
-2. Guard: A1/A3/B1/B2/B5 re-pinned this commit (12 solids, new B_TRAIN names,
-   live sensor_y) — RUN IT; A8b will fail until step 1.
-3. Render with the user's layout (bugs/0692_snap_verify.py pattern) + eyeball.
-4. Doc finalization + penta phases 505/508/509 smoke + full re-cut later.
-5. bugs/0696 faceB launcher rework (the 19.2 mm B focus).
-6. Backlog: whole-station rotate verb; env-gated KRAKEN_0695_STASH_DEBUG prints
-   remain in trace_preview.py (harmless, useful for 0696).
+## Completion (M90aPro, 2026-09-02 evening)
+Sweep on the vendor-true scene (sensor centre (-272.65, -1.2, -26.4)):
+- arm A: band y -4..+3 at a uniform 266/361 (74%), ZERO per-field landing
+  spread, strip z -30.14..-27.27. The 0694 x-asymmetry is GONE: object
+  x = -27.5 AND +27.5 both land razor-sharp just inside the die
+  (-283.91 / -261.39 vs die -284.17..-261.13).
+- arm B: 269-302/361 (~80%), strip z -23.69..-18.36 (~1.6 mm blur pending
+  0696).
+Strips restamped + guard A8b re-pinned; FULL GUARD 16/16 PASS (A1 twelve
+solids incl. LED panels, new B_TRAIN, live sensor plane, B1 794/794 on-strip,
+B2 waist 0.4 um at -1.15, B5 faceB 633).
+
+## Owed
+- bugs/0696: first-class faceB launcher (B arm's absolute focus 19.2 mm late;
+  the mirrored-launch stash reflects a non-final launch). All measurements in
+  this doc's Measured state section.
+- Whole-station rotate verb (production Top/Bottom station).
+- Penta full baseline re-cut for phases 500-509.
+- env-gated KRAKEN_0695_STASH_DEBUG prints remain in trace_preview.py
+  (harmless; useful for 0696).

@@ -237,19 +237,19 @@ def _check_scene(ok, notes) -> None:
             len(strips) == 2
             and all(
                 abs(float(s.get("center", [99, 99, 99])[0]) + 272.65) < 0.5
-                and abs(float(s.get("center", [99, 99, 99])[1]) + 9.9) < 0.5
+                and abs(float(s.get("center", [99, 99, 99])[1]) + 1.2) < 0.5
                 and abs(float(s.get("half_width", 0.0)) - 11.52) < 0.1
                 for s in strips
             )
-            and abs(float(strips[0].get("v_lo", 99.0)) + 5.3) < 0.6
-            and abs(float(strips[0].get("v_hi", 99.0)) + 2.1) < 0.6
-            and abs(float(strips[1].get("v_lo", 99.0)) - 2.2) < 0.6
-            and abs(float(strips[1].get("v_hi", 99.0)) - 6.8) < 0.6
+            and abs(float(strips[0].get("v_lo", 99.0)) + 3.74) < 0.6
+            and abs(float(strips[0].get("v_hi", 99.0)) + 0.87) < 0.6
+            and abs(float(strips[1].get("v_lo", 99.0)) - 2.71) < 0.6
+            and abs(float(strips[1].get("v_hi", 99.0)) - 8.04) < 0.6
         )
         ok(
             strip_ok,
             "A8b: both bands author their MEASURED sensor cover strip on the die "
-            "(A z -30.3..-27.1, B z -22.8..-18.2 about centre -25)",
+            "(0695 vendor-true: A z -30.1..-27.3, B z -23.7..-18.4 about centre -26.4)",
         )
         # bugs/0695: the sensor plane is derived LIVE from the Image row -- the
         # vendor-true rebuild moved it (and any future refocus moves it again).

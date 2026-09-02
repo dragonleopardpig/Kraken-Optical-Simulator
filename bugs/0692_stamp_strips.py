@@ -1,9 +1,9 @@
 """0692: author the MEASURED sensor cover strips into the om05a bands.
 
-Numbers from bugs/0692_sensor_reach_sweep.py (post-seat, focused scene):
-  arm A clean landings  z -30.3 .. -27.1  (object y -4.5..+3, razor spots)
-  arm B clean landings  z -22.8 .. -18.2  (compromise focus, ~0.9 mm blur)
-Sensor row centre [-272.65, -9.9, -25.0], die 23.04 x 23.04 in world x/z.
+Numbers from bugs/0692_sensor_reach_sweep.py (0695 vendor-true rebuild):
+  arm A clean landings  z -30.14 .. -27.27  (object y -4..+3, ZERO per-field spread)
+  arm B clean landings  z -23.69 .. -18.36  (~1.6 mm blur pending the 0696 launcher)
+Sensor row centre [-272.65, -1.2, -26.4], die 23.04 x 23.04 in world x/z.
 The coverage overlay draws each strip's two dashed edges (user: "draw 2 dotted
 line edge at the Sensor to indicate actual cover area").
 """
@@ -23,8 +23,8 @@ def main():
     bands = list(getattr(editor, "layout_object_fov_bands", []) or [])
     assert len(bands) == 2, f"expected 2 bands, found {len(bands)}"
     strips = {
-        "Face A field": {"v_lo": -5.3, "v_hi": -2.1},
-        "Face B field": {"v_lo": 2.2, "v_hi": 6.8},
+        "Face A field": {"v_lo": -3.74, "v_hi": -0.87},
+        "Face B field": {"v_lo": 2.71, "v_hi": 8.04},
     }
     stamped = 0
     for band in bands:
@@ -32,7 +32,7 @@ def main():
         if strip is None:
             continue
         band["image_strip"] = {
-            "center": [-272.65, -9.9, -25.0],
+            "center": [-272.65, -1.2, -26.4],
             "axis_v": [0.0, 0.0, 1.0],
             "half_width": 11.52,
             "v_lo": strip["v_lo"],
