@@ -8702,30 +8702,70 @@ class LayoutTableWorkbenchMixin:
             row.advanced = advanced
             return placement
 
-        # The far-train membership is classified ONCE from the pristine symmetric
-        # geometry (twin pairing about the gap centre) and STAMPED -- after a big
-        # slide a far element can CROSS the centre and the geometric pairing
-        # would misclassify it on the next resize.
-        stamped = [
+        # Membership is classified ONCE from the pristine symmetric geometry
+        # (twin pairing about the gap centre) and STAMPED -- after a big slide a
+        # far element can CROSS the centre and the geometric pairing would
+        # misclassify it on the next resize. TWO stamps (bugs/0709, flag 144408
+        # "the ray go hay wire"): the INNERMOST pair is the CENTRE-V assembly --
+        # two halves 0.1 mm apart astride the gap midplane, a SINGLE routing
+        # element that belongs to NEITHER tower. It rides the MIRROR PLANE
+        # (half the face delta, BOTH halves), while the outer far-tower pairs
+        # ride the far face (full delta). Sliding the far V-half with its tower
+        # rammed it through the near half -- overlapping glass scattered the
+        # trace everywhere.
+        far_tower = [
             (index, row, z)
             for index, row, z in solid_rows
             if bool((_placement(row)).get("far_tower"))
         ]
-        if not stamped:
+        centre_v = [
+            (index, row, z)
+            for index, row, z in solid_rows
+            if bool((_placement(row)).get("centre_v"))
+        ]
+        if not far_tower and not centre_v:
             zs = np.asarray([z for _index, _row, z in solid_rows], dtype=float)
-            for index, row, z in solid_rows:
+            pairs: list[tuple[float, int]] = []  # (distance from centre, far row pos)
+            for position, (index, row, z) in enumerate(solid_rows):
                 if z >= centre_old - 1e-6:
-                    continue  # the near tower stays with face A
+                    continue  # near-side member; pairs are keyed by their far member
                 twin = 2.0 * centre_old - z
                 if not bool(np.any(np.abs(zs - twin) < 0.25)):
                     continue  # no symmetric partner -> not part of the tower pair
-                _placement(row)["far_tower"] = True
-                stamped.append((index, row, z))
+                pairs.append((centre_old - z, position))
+            if not pairs:
+                return []
+            innermost_distance = min(distance for distance, _position in pairs)
+            for distance, position in pairs:
+                index, row, z = solid_rows[position]
+                if abs(distance - innermost_distance) < 1.0:
+                    # the centre V: stamp BOTH halves (the far one and its twin)
+                    _placement(row)["centre_v"] = True
+                    centre_v.append((index, row, z))
+                    twin_z = 2.0 * centre_old - z
+                    for index2, row2, z2 in solid_rows:
+                        if abs(z2 - twin_z) < 0.25 and row2 is not row:
+                            _placement(row2)["centre_v"] = True
+                            centre_v.append((index2, row2, z2))
+                else:
+                    _placement(row)["far_tower"] = True
+                    far_tower.append((index, row, z))
         moved: list[str] = []
-        for index, row, z in stamped:
+        half_delta = 0.5 * float(delta)
+        for index, row, z in far_tower:
             row.desp_z = float(row.desp_z) + float(delta)
             moved.append(
                 f"S{index} {str(getattr(row, 'name', '') or '').strip()} -> z={z + float(delta):g}"
+            )
+        for index, row, z in centre_v:
+            row.desp_z = float(row.desp_z) + half_delta
+            moved.append(
+                f"S{index} {str(getattr(row, 'name', '') or '').strip()} (centre V) -> z={z + half_delta:g}"
+            )
+        if moved and abs(float(delta)) > 5.0:
+            moved.append(
+                "CAUTION: large re-seat -- verify clearances in 3D (the vendor "
+                "assembly was built for the original device depth)"
             )
         return moved
 

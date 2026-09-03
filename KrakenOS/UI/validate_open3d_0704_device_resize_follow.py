@@ -135,10 +135,19 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     zs = {str(r.name): float(r.desp_z) for r in stub.rows}
     ok(
         abs(zs["First RA mirror B"] + 24.0) < 1e-9
-        and abs(zs["BS cube B"] + 22.25) < 1e-9
-        and abs(zs["Centre RA mirror B"] - 4.03) < 1e-6,
-        f"A3a: the PAIRED far-tower solids slide +35 with the far face "
-        f"({zs['First RA mirror B']}, {zs['BS cube B']}, {zs['Centre RA mirror B']})",
+        and abs(zs["BS cube B"] + 22.25) < 1e-9,
+        f"A3a: the far-TOWER solids slide +35 with the far face "
+        f"({zs['First RA mirror B']}, {zs['BS cube B']})",
+    )
+    # bugs/0709 (flag 144408 "the ray go hay wire"): the CENTRE V is one routing
+    # assembly astride the gap midplane -- BOTH halves ride the MIRROR PLANE
+    # (half delta = +17.5), staying 0.1 mm apart instead of ramming through
+    # each other.
+    ok(
+        abs(zs["Centre RA mirror B"] + 13.47) < 1e-6
+        and abs(zs["Centre RA mirror A"] + 1.53) < 1e-6,
+        f"A3c: the centre-V halves ride the mirror plane together "
+        f"(A {zs['Centre RA mirror A']}, B {zs['Centre RA mirror B']} astride -7.5)",
     )
     ok(
         abs(zs["First RA mirror A"] - 9.0) < 1e-9
@@ -146,18 +155,22 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         and abs(zs["stray far solid"] + 45.0) < 1e-9,
         "A3b: the near tower, the tilted leg fold and an unpaired far solid never move",
     )
-    # A4: a SECOND resize (15 -> 30) is consistent from the new state.
+    # A4: a SECOND resize (15 -> 30) is consistent from the new state (stamps).
     moved2 = LayoutTableWorkbenchMixin._retarget_split_field_to_part(
         stub, {"depth_mm": 15.0, "width_mm": 15.0, "height_mm": 1.0},
         {"depth_mm": 30.0, "width_mm": 30.0, "height_mm": 1.0},
     )
+    zs2 = {str(r.name): float(r.desp_z) for r in stub.rows}
     ok(
         bool(moved2)
         and abs(near["center"][2] - 0.0) < 1e-9
         and abs(far["center"][2] + 30.0) < 1e-9
-        and abs(spec["mirror_launch_plane_z"] + 15.0) < 1e-9,
-        f"A4: a second resize stays face-A-anchored (far {far['center'][2]}, "
-        f"mirror {spec['mirror_launch_plane_z']})",
+        and abs(spec["mirror_launch_plane_z"] + 15.0) < 1e-9
+        and abs(zs2["Centre RA mirror A"] + 9.03) < 1e-6
+        and abs(zs2["Centre RA mirror B"] + 20.97) < 1e-6,
+        f"A4: a second resize stays consistent via the stamps (far {far['center'][2]}, "
+        f"mirror {spec['mirror_launch_plane_z']}, V {zs2['Centre RA mirror A']}/"
+        f"{zs2['Centre RA mirror B']} astride -15)",
     )
 
     # B: bands not on the part's faces -> hands off
