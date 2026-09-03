@@ -151,9 +151,14 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     )
     ok(
         abs(zs["First RA mirror A"] - 9.0) < 1e-9
-        and abs(zs["RA mirror 2"] + 26.4) < 1e-9
         and abs(zs["stray far solid"] + 45.0) < 1e-9,
-        "A3b: the near tower, the tilted leg fold and an unpaired far solid never move",
+        "A3b: the near tower and an unpaired far solid never move",
+    )
+    # bugs/0710 ("the two big RA mirror decentered"): the tilted LEG FOLD mirrors
+    # route the shared leg at the centre-V's z -- they ride the mirror plane.
+    ok(
+        abs(zs["RA mirror 2"] + 8.9) < 1e-6,
+        f"A3d: the tilted leg-fold mirror rides the mirror plane (+17.5 -> {zs['RA mirror 2']})",
     )
     # A4: a SECOND resize (15 -> 30) is consistent from the new state (stamps).
     moved2 = LayoutTableWorkbenchMixin._retarget_split_field_to_part(
@@ -167,10 +172,11 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         and abs(far["center"][2] + 30.0) < 1e-9
         and abs(spec["mirror_launch_plane_z"] + 15.0) < 1e-9
         and abs(zs2["Centre RA mirror A"] + 9.03) < 1e-6
-        and abs(zs2["Centre RA mirror B"] + 20.97) < 1e-6,
+        and abs(zs2["Centre RA mirror B"] + 20.97) < 1e-6
+        and abs(zs2["RA mirror 2"] + 16.4) < 1e-6,
         f"A4: a second resize stays consistent via the stamps (far {far['center'][2]}, "
         f"mirror {spec['mirror_launch_plane_z']}, V {zs2['Centre RA mirror A']}/"
-        f"{zs2['Centre RA mirror B']} astride -15)",
+        f"{zs2['Centre RA mirror B']} astride -15, leg fold {zs2['RA mirror 2']})",
     )
 
     # B: bands not on the part's faces -> hands off

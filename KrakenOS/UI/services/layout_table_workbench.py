@@ -8681,17 +8681,20 @@ class LayoutTableWorkbenchMixin:
         rows = list(getattr(self, "rows", []) or [])
         stations = self._row_z_positions()
         solid_rows = []
+        tilted_rows = []
         for index, row in enumerate(rows):
             advanced = row.advanced if isinstance(getattr(row, "advanced", None), dict) else {}
             if not advanced.get("Solid_3d_stl"):
                 continue
+            station = float(stations[index]) if index < len(stations) else 0.0
+            z = station + float(row.desp_z)
             if any(
                 abs(float(getattr(row, field, 0.0) or 0.0)) > 1e-9
                 for field in ("tilt_x", "tilt_y", "tilt_z")
             ):
+                tilted_rows.append((index, row, z))
                 continue
-            station = float(stations[index]) if index < len(stations) else 0.0
-            solid_rows.append((index, row, station + float(row.desp_z)))
+            solid_rows.append((index, row, z))
 
         def _placement(row) -> dict:
             advanced = dict(row.advanced or {})
@@ -8723,6 +8726,11 @@ class LayoutTableWorkbenchMixin:
             for index, row, z in solid_rows
             if bool((_placement(row)).get("centre_v"))
         ]
+        leg_folds = [
+            (index, row, z)
+            for index, row, z in tilted_rows
+            if bool((_placement(row)).get("leg_fold"))
+        ]
         if not far_tower and not centre_v:
             zs = np.asarray([z for _index, _row, z in solid_rows], dtype=float)
             pairs: list[tuple[float, int]] = []  # (distance from centre, far row pos)
@@ -8750,6 +8758,20 @@ class LayoutTableWorkbenchMixin:
                 else:
                     _placement(row)["far_tower"] = True
                     far_tower.append((index, row, z))
+            # bugs/0710 (flag 151255 "the two big RA mirror decentered"): the
+            # tilted LEG FOLD mirrors route the SHARED leg, which runs at the
+            # centre-V's z -- they (and everything walking from them: the lens
+            # block, the camera, the sensor) ride the MIRROR PLANE like the V.
+            # Classifier: a tilted world-placed solid whose z lies inside the
+            # old tower span is a leg fold; stamped for the same
+            # crossed-the-centre reason as the others.
+            if solid_rows:
+                span_lo = min(z for _i, _r, z in solid_rows) - 5.0
+                span_hi = max(z for _i, _r, z in solid_rows) + 5.0
+                for index, row, z in tilted_rows:
+                    if span_lo <= z <= span_hi:
+                        _placement(row)["leg_fold"] = True
+                        leg_folds.append((index, row, z))
         moved: list[str] = []
         half_delta = 0.5 * float(delta)
         for index, row, z in far_tower:
@@ -8761,6 +8783,11 @@ class LayoutTableWorkbenchMixin:
             row.desp_z = float(row.desp_z) + half_delta
             moved.append(
                 f"S{index} {str(getattr(row, 'name', '') or '').strip()} (centre V) -> z={z + half_delta:g}"
+            )
+        for index, row, z in leg_folds:
+            row.desp_z = float(row.desp_z) + half_delta
+            moved.append(
+                f"S{index} {str(getattr(row, 'name', '') or '').strip()} (leg fold) -> z={z + half_delta:g}"
             )
         if moved and abs(float(delta)) > 5.0:
             moved.append(
