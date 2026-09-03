@@ -110,7 +110,7 @@ def _cached_cad_mesh_path(path: Path) -> Path:
 # on-disk caches (keyed only by source path + mtime, not code version) are
 # regenerated instead of silently reused. v2: recover the beam-splitter cube's
 # interior 45-deg coating as a tessellated, selectable face (bugs/0064).
-_ANALYTIC_MESH_CACHE_VERSION = "v2"
+_ANALYTIC_MESH_CACHE_VERSION = "v3"  # bugs/0716: free shells now included
 
 # bugs/0220: the camera STEP tracks the paraxial focus (not the prescription Image row) only when
 # the focus is at least this far BEFORE the row -- the trailing-mirror-plate overshoot that the
@@ -131,7 +131,7 @@ def _cached_analytic_cad_mesh_path(path: Path, *, largest_component: bool = Fals
 # the same mtime+size-stamped base path as the mesh cache (so an edited STEP auto-invalidates);
 # reload is ~0.1 s (355x). Bump the version when StepAnalyticFace/StepAnalyticDocument change so a
 # stale pickle layout is regenerated rather than mis-loaded.
-_ANALYTIC_DOCUMENT_CACHE_VERSION = "v1"
+_ANALYTIC_DOCUMENT_CACHE_VERSION = "v2"  # bugs/0716: free shells now included
 
 
 def _cached_analytic_document_path(path: Path) -> Path:

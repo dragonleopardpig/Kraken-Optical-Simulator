@@ -388,7 +388,34 @@ def load_step_analytic_document(
     mesher.Perform()
 
     solids = list(_explore_shapes(shape, TopAbs_SOLID))
-    solid_sources = solids if solids else [shape]
+    # bugs/0716 (flag 074059 "LENS-10F238 looks different to freecad"): a vendor
+    # assembly routinely mixes SOLID breps with SHELL-BASED components (10F238:
+    # 25 solids + 10 shell models -- the purple focus ring and friends). The old
+    # "solids if solids else [shape]" DROPPED every free shell whenever any
+    # solid existed, so whole housing parts vanished from the mesh while
+    # FreeCAD (which draws all products) showed them. Enumerate solids PLUS
+    # every shell not owned by a solid, each as its own face source.
+    free_shells: list = []
+    try:
+        from OCC.Core.TopAbs import TopAbs_SHELL
+        from OCC.Core.TopTools import TopTools_IndexedMapOfShape
+
+        try:
+            from OCC.Core.TopExp import topexp as _topexp
+
+            _map_shapes = _topexp.MapShapes
+        except Exception:
+            from OCC.Core.TopExp import topexp_MapShapes as _map_shapes
+
+        owned = TopTools_IndexedMapOfShape()
+        for solid_shape in solids:
+            _map_shapes(solid_shape, TopAbs_SHELL, owned)
+        for shell_shape in _explore_shapes(shape, TopAbs_SHELL):
+            if not owned.Contains(shell_shape):
+                free_shells.append(shell_shape)
+    except Exception:
+        free_shells = []
+    solid_sources = (solids + free_shells) if (solids or free_shells) else [shape]
     raw_faces: list[_RawFace] = []
     global_face_index = 0
     for solid_index, solid_shape in enumerate(solid_sources, start=1):
@@ -403,7 +430,11 @@ def load_step_analytic_document(
             area, centroid = _face_area_centroid(face_shape)
             normal, reversed_orientation = _face_normal(surface, face_shape, u_range, v_range)
             plane_offset = float(np.dot(np.asarray(normal, dtype=float), np.asarray(centroid, dtype=float)))
-            face_id = f"S{solid_index:03d}/F{local_face_index:03d}" if solids else f"F{local_face_index:03d}"
+            face_id = (
+                f"S{solid_index:03d}/F{local_face_index:03d}"
+                if (solids or free_shells)
+                else f"F{local_face_index:03d}"
+            )
             raw_faces.append(
                 _RawFace(
                     shape=face_shape,
