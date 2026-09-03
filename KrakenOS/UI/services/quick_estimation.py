@@ -2698,6 +2698,25 @@ class QuickEstimationService:
             "folded first order disagrees with the traced machine; bugs/0591)."
         )
 
+    def _update_split_field_band_widths(self, width) -> None:
+        """bugs/0704 (flag 110804 "Let user to input required FOV as usual"): the
+        split-field bands ARE the FOV's face-anchored drawing, so a successful
+        object-FOV solve writes the delivered width into both bands -- the green
+        planes on the device faces resize with the field the user asked for.
+        Scenes without authored bands are untouched."""
+        try:
+            bands = list(getattr(self.editor, "layout_object_fov_bands", None) or [])
+            if not bands:
+                return
+            half = 0.5 * float(width)
+            if not (np.isfinite(half) and half > 1e-9):
+                return
+            for band in bands:
+                band["half_width"] = half
+            self.editor.layout_object_fov_bands = bands
+        except Exception:
+            pass
+
     def fov_solve(
         self,
         plane: str,
@@ -2776,6 +2795,7 @@ class QuickEstimationService:
                 if ok:
                     msg += self._refine_folded_field_fill(semi, float(sensor))
                     self.set_target_fov(semi)
+                    self._update_split_field_band_widths(obj_w)
                     msg = f"Object {obj_w:.6g} x {obj_h:.6g} mm fills the sensor. " + msg
                 return ok, msg
             if mode == "sensor":

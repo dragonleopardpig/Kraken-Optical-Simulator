@@ -8568,10 +8568,84 @@ class LayoutTableWorkbenchMixin:
     def set_inspection_part_spec(self, spec) -> None:
         from KrakenOS.UI.services.inspection_part import normalize_inspection_part_spec
 
+        old_spec = normalize_inspection_part_spec(getattr(self, "inspection_part_spec", None))
         self._begin_history_capture()
         self.inspection_part_spec = normalize_inspection_part_spec(spec)
+        try:
+            moved = self._retarget_split_field_to_part(old_spec, self.inspection_part_spec)
+        except Exception as exc:
+            moved = []
+            self.append_debug(f"split-field part retarget skipped: {exc}")
         self._commit_history_capture()
+        if moved:
+            self.status_var.set(
+                "Device resized -- " + "; ".join(moved) + ". Solve/set the FOV as usual."
+            )
         self._refresh_open_3d_views()
+
+    def _retarget_split_field_to_part(self, old_spec: dict, new_spec: dict) -> list[str]:
+        """bugs/0704 (flag 110804 "add device size changing option. The green object
+        plane should attach automatically to new device side location"): on a
+        SPLIT-FIELD scene (two authored object-FOV bands on the part's opposite
+        faces + a mirrored faceB launch), a device size change re-anchors the
+        far-face geometry:
+
+          * the far band's centre moves to the NEW back face (face A stays the
+            object-plane anchor at its authored position);
+          * the mirrored faceB source follows: launch plane at the new face,
+            symmetry plane at half the new depth, aperture at the new face size.
+
+        The FOV (band half-width) is deliberately NOT touched here -- the user
+        inputs the required FOV as usual and `solve_fov_to_inspection_face` /
+        the QE solve write it. Scenes without the split-field shape are left
+        byte-identical (returns []). Hardware (the B-arm prisms) is never moved
+        -- re-seating the vendor train for a new device is the user's design
+        decision, and the trace will honestly show any mismatch."""
+        old_depth = float(old_spec.get("depth_mm", 0.0) or 0.0)
+        new_depth = float(new_spec.get("depth_mm", 0.0) or 0.0)
+        new_width = float(new_spec.get("width_mm", 0.0) or 0.0)
+        new_height = float(new_spec.get("height_mm", 0.0) or 0.0)
+        moved: list[str] = []
+        bands = list(getattr(self, "layout_object_fov_bands", None) or [])
+        if len(bands) != 2 or new_depth <= 0.0 or old_depth <= 0.0:
+            return moved
+        # Identify near (face A, at the object plane) and far (face B) bands by
+        # their authored centres along the part depth axis (-z from face A).
+        def _center_z(band) -> float:
+            try:
+                return float((band.get("center") or (0.0, 0.0, 0.0))[2])
+            except Exception:
+                return 0.0
+
+        near = min(bands, key=lambda b: abs(_center_z(b)))
+        far = max(bands, key=lambda b: abs(_center_z(b)))
+        if near is far or abs(abs(_center_z(far)) - old_depth) > 1e-6:
+            return moved  # bands are not anchored on this part's faces -- hands off
+        if abs(new_depth - old_depth) > 1e-9:
+            center = list(far.get("center") or (0.0, 0.0, 0.0))
+            center[2] = _center_z(near) - new_depth
+            far["center"] = center
+            self.layout_object_fov_bands = bands
+            moved.append(f"far face band -> z={center[2]:g}")
+        specs = list(getattr(self, "layout_scene_source_specs", None) or [])
+        for source_spec in specs:
+            if not isinstance(source_spec, dict):
+                continue
+            if source_spec.get("mirror_launch_plane_z", None) is None:
+                continue
+            source_spec["source_z"] = _center_z(near) - new_depth
+            source_spec["mirror_launch_plane_z"] = _center_z(near) - 0.5 * new_depth
+            if new_width > 0.0:
+                source_spec["radius_x"] = 0.5 * new_width
+                source_spec["radius"] = 0.5 * new_width
+            if new_height > 0.0:
+                source_spec["radius_y"] = 0.5 * new_height
+            self.layout_scene_source_specs = specs
+            moved.append(
+                f"faceB launch -> z={source_spec['source_z']:g} (mirror plane "
+                f"{source_spec['mirror_launch_plane_z']:g})"
+            )
+        return moved
 
     def set_inspection_part_active_face(self, face: str) -> None:
         """Re-target the current station onto another face of the part: that face now
