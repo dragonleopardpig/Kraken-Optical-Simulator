@@ -826,7 +826,31 @@ class AnalysisReportsMixin:
             return []
 
     def _active_ray_analysis_records(self) -> list[dict[str, object]]:
-        return self._ray_analysis_records_for_trace(system=self.last_system, rays=self.last_rays)
+        # bugs/0700 ("Ctrl-Z to undo the rotation is super slow"): one refresh_plot
+        # consults these records SEVERAL times (branch choices, detector-aperture /
+        # throughput / illumination reports), and each call rebuilt a full scene
+        # bundle from the raykeeper (~23 s each on om05a). Memoise per trace,
+        # identity-anchored on the live (last_system, last_rays) pair -- both are
+        # strong refs, so `is` cannot alias a recycled id -- plus the keeper's
+        # stored-ray count, so an in-place append (an additive trace topping up the
+        # SAME keeper) invalidates. A new trace replaces last_rays and misses.
+        system = self.last_system
+        rays = self.last_rays
+        try:
+            ray_count = len(getattr(rays, "CC", ()) or ())
+        except Exception:
+            ray_count = -1
+        cached = self.__dict__.get("_active_ray_analysis_records_cache")
+        if (
+            cached is not None
+            and cached[0] is system
+            and cached[1] is rays
+            and cached[2] == ray_count
+        ):
+            return cached[3]
+        records = self._ray_analysis_records_for_trace(system=system, rays=rays)
+        self._active_ray_analysis_records_cache = (system, rays, ray_count, records)
+        return records
 
     def _main_ray_trace_inspector_dialogs(self) -> MainRayTraceInspectorDialogs:
         dialog = self.__dict__.get("_main_ray_trace_inspector_dialogs_instance")

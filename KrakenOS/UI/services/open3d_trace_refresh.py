@@ -375,11 +375,24 @@ class Open3DTraceRefreshService:
     ) -> Open3DRefreshResult:
         include_live_step_overlays = False
         requires_open3d_retrace = self.has_promoted_step_optical_solid_rows()
+        # bugs/0700 ("Ctrl-Z to undo the rotation is super slow"): products passed
+        # EXPLICITLY are the trace refresh_plot finished milliseconds ago -- since
+        # bugs/0201/0243 the 2D preview runs the SAME folded-aware trace on the REAL
+        # system that Open 3D would rebuild, so nulling them on promoted-STEP scenes
+        # (the pre-0243 detector-miss-continuation defence from f35ffdec) re-ran a
+        # full non-sequential trace and DOUBLED every history restore (245 s -> 2
+        # traces on om05a). Trust the explicit fresh handoff; the promoted-STEP rule
+        # still refuses the CACHED trace below, and the sampling-mode gate still
+        # rejects a fan that cannot feed the 3D cone.
+        explicit_products = (
+            system is not None and rays is not None and scene_bundle is not None
+        )
         if not self._active_trace_can_feed_open3d():
             system = None
             rays = None
             scene_bundle = None
-        if requires_open3d_retrace:
+            explicit_products = False
+        if requires_open3d_retrace and not explicit_products:
             system = None
             rays = None
             scene_bundle = None

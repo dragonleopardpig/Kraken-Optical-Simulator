@@ -59,6 +59,7 @@ class _FakeEditor:
         sampling_mode: str | None,
         update_state: bool,
         include_live_step_overlays: bool,
+        trace_rays: bool = True,
     ) -> tuple[str, str, str]:
         self.build_calls += 1
         self.build_kwargs.append(
@@ -106,14 +107,33 @@ def validate_promoted_step_refresh() -> list[PromotedStepRefreshCheck]:
         )
     )
 
+    # bugs/0700 ("Ctrl-Z to undo the rotation is super slow"): since bugs/0201/0243
+    # the 2D preview traces the SAME folded-aware real system Open 3D would rebuild,
+    # so products passed EXPLICITLY (the trace refresh_plot finished a moment ago)
+    # must be TRUSTED even on promoted-STEP scenes -- discarding them re-ran a full
+    # non-sequential trace and doubled every history restore (245 s on om05a).
     result = promoted_service.current_or_rebuild_scene(
-        system="supplied-2d-system",
-        rays="supplied-2d-rays",
-        scene_bundle="supplied-2d-detector-miss-bundle",
+        system="supplied-fresh-system",
+        rays="supplied-fresh-rays",
+        scene_bundle="supplied-fresh-bundle",
     )
     checks.append(
         PromotedStepRefreshCheck(
-            "open inspector sync ignores supplied 2D bundle for promoted STEP rows",
+            "open inspector sync trusts an explicitly supplied fresh bundle (0700)",
+            result.scene_bundle == "supplied-fresh-bundle"
+            and promoted_editor.build_calls == 1
+            and promoted_editor.current_preview_calls == 0,
+            "Plot-refresh hands Open 3D the trace it just ran; re-tracing it doubled undo/redo wall time.",
+        )
+    )
+
+    # The CACHED-trace path keeps the f35ffdec defence: with promoted STEP rows and
+    # no explicit products, the sync must rebuild through the Open 3D trace path,
+    # never adopt _current_preview_scene_trace().
+    result = promoted_service.current_or_rebuild_scene()
+    checks.append(
+        PromotedStepRefreshCheck(
+            "no-args sync still rebuilds for promoted STEP rows (cached trace refused)",
             result.scene_bundle == "rebuilt-open3d-bundle"
             and promoted_editor.build_calls == 2
             and promoted_editor.current_preview_calls == 0
@@ -123,7 +143,25 @@ def validate_promoted_step_refresh() -> list[PromotedStepRefreshCheck]:
                 "update_state": False,
                 "include_live_step_overlays": False,
             },
-            "Plot-refresh sync must not push a cached 2D detector-miss bundle into Open 3D for row-backed CAD solids.",
+            "Opening Open 3D without a fresh handoff must not reuse stale cached preview state.",
+        )
+    )
+
+    # A supplied bundle whose sampling mode cannot feed the 3D scene is still
+    # rejected -- the trust extends only to a mode-compatible fresh trace.
+    promoted_editor._active_preview_sampling_mode = "display_slice"
+    result = promoted_service.current_or_rebuild_scene(
+        system="supplied-fan-system",
+        rays="supplied-fan-rays",
+        scene_bundle="supplied-fan-bundle",
+    )
+    promoted_editor._active_preview_sampling_mode = "world_envelope"
+    checks.append(
+        PromotedStepRefreshCheck(
+            "mode-incompatible supplied bundle is still rebuilt",
+            result.scene_bundle == "rebuilt-open3d-bundle"
+            and promoted_editor.build_calls == 3,
+            "The sampling-mode gate outranks the explicit-products trust.",
         )
     )
 
