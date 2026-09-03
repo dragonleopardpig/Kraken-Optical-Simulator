@@ -2093,6 +2093,32 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 except Exception:
                     pass
 
+    def refresh_step_overlay_display_only(self, reason: str = "step_display_edit") -> None:
+        """bugs/0703 (flag: "after clicking flip, not functioning ... any STEP
+        manipulation should stop ray tracing"): a DECORATION-only STEP overlay
+        change (flip front/rear, display pose nudge) re-renders the CACHED scene.
+        The trace runs on the layout rows -- the overlay mesh is display -- yet
+        ``refresh_from_editor()`` on a promoted-STEP scene forces the full
+        non-sequential retrace (``has_promoted_step_optical_solid_rows``), so the
+        om05a lens flip vanished under minutes of tracing and read as broken.
+        Same fast path as the bugs/0166 display toggles; falls back to the full
+        refresh when no valid cached scene exists."""
+        try:
+            reusable = self.editor._open3d_trace_refresh_service().can_reuse_current_scene_for_display_toggle(self)
+        except Exception:
+            reusable = False
+        if reusable:
+            self._debug_trace("step_overlay_display_only_refresh", reason=str(reason))
+            self.refresh_scene(
+                self.__dict__.get("_current_system"),
+                self.__dict__.get("_current_rays"),
+                list(self.__dict__.get("_current_row_names", []) or []),
+                scene_bundle=self.__dict__.get("_current_scene_bundle"),
+                reset_camera=False,
+            )
+            return
+        self.refresh_from_editor()
+
     def _on_clipped_rays_changed(self) -> None:
         # "Show clipped rays" is the *shared* 2D var (KrakenLayoutEditor.
         # show_clipped_rays_var), bound here via _editor_var so the 3D toggle and

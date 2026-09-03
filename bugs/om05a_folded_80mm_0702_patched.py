@@ -1255,7 +1255,7 @@ def build_system():
     s8.Grating_D = 0.0
     s8.Grating_Angle = 0.0
     s8.Thickness = 11.86102
-    s8.Diameter = 46.0
+    s8.Diameter = 23.8169
     s8.InDiameter = 0.0
     s8.Drawing = 1.0
     s8.TiltX = 0.0
@@ -1266,7 +1266,7 @@ def build_system():
     s8.DespZ = 0.0
     s8.AxisMove = 0.0
     s8.Glass = 'AIR'
-    surfaces.append({'surface': 'Standard', 'element': '', 'name': 'Front Optical Vertex Datum', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 11.86102, 'diameter': 46.0, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': -6.08, 'desp_y': -4.999280605327569e-17, 'desp_z': -0.38849999999999996, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+    surfaces.append({'surface': 'Standard', 'element': '', 'name': 'Front Optical Vertex Datum', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 11.86102, 'diameter': 23.8169, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {'ScenePlacement': {'frame_seat': {'axis': 'vendor_leg_z-25'}}}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': -6.08, 'desp_y': -4.999280605327569e-17, 'desp_z': -0.38849999999999996, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
 
     s9 = Kos.surf()
     s9.Name = 'Blackbox Group 1'
@@ -1277,7 +1277,7 @@ def build_system():
     s9.Grating_D = 0.0
     s9.Grating_Angle = 0.0
     s9.Thickness = 9.73398
-    s9.Diameter = 46.0
+    s9.Diameter = 23.8169
     s9.InDiameter = 0.0
     s9.Drawing = 1.0
     s9.TiltX = 0.0
@@ -1290,7 +1290,7 @@ def build_system():
     s9.Glass = 'AIR'
     s9.Thin_Lens = 154.39102
     s9.Rc = 0.0
-    surfaces.append({'surface': 'Thin Lens', 'element': '', 'name': 'Blackbox Group 1', 'rc': 154.39102, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 9.73398, 'diameter': 46.0, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+    surfaces.append({'surface': 'Thin Lens', 'element': '', 'name': 'Blackbox Group 1', 'rc': 154.39102, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 9.73398, 'diameter': 23.8169, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
 
     s10 = Kos.surf()
     s10.Name = 'Aperture Stop'
@@ -1323,7 +1323,7 @@ def build_system():
     s11.Grating_D = 0.0
     s11.Grating_Angle = 0.0
     s11.Thickness = 11.86102
-    s11.Diameter = 46.0
+    s11.Diameter = 23.8169
     s11.InDiameter = 0.0
     s11.Drawing = 1.0
     s11.TiltX = 0.0
@@ -1336,7 +1336,7 @@ def build_system():
     s11.Glass = 'AIR'
     s11.Thin_Lens = 154.39102
     s11.Rc = 0.0
-    surfaces.append({'surface': 'Thin Lens', 'element': '', 'name': 'Blackbox Group 2', 'rc': 154.39102, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 11.86102, 'diameter': 46.0, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+    surfaces.append({'surface': 'Thin Lens', 'element': '', 'name': 'Blackbox Group 2', 'rc': 154.39102, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 11.86102, 'diameter': 23.8169, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
 
     s12 = Kos.surf()
     s12.Name = 'Rear Optical Vertex Datum'
@@ -1347,7 +1347,7 @@ def build_system():
     s12.Grating_D = 0.0
     s12.Grating_Angle = 0.0
     s12.Thickness = 17.93
-    s12.Diameter = 46.0
+    s12.Diameter = 23.8169
     s12.InDiameter = 0.0
     s12.Drawing = 1.0
     s12.TiltX = 0.0
@@ -1358,7 +1358,7 @@ def build_system():
     s12.DespZ = 0.0
     s12.AxisMove = 0.0
     s12.Glass = 'AIR'
-    surfaces.append({'surface': 'Standard', 'element': '', 'name': 'Rear Optical Vertex Datum', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 17.93, 'diameter': 46.0, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+    surfaces.append({'surface': 'Standard', 'element': '', 'name': 'Rear Optical Vertex Datum', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 17.93, 'diameter': 23.8169, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
 
     s13 = Kos.surf()
     s13.Name = 'Filter 48-926'

@@ -74,6 +74,7 @@ def _check_rule(ok, notes) -> None:
 def _check_real_folders(ok, notes) -> None:
     from KrakenOS.UI.services.machine_vision_folder_import import (
         _step_barrel_diameter,
+        _step_glass_aperture,
         _step_transverse_extent,
         build_surrogate_from_assets,
         scan_lens_folder,
@@ -81,27 +82,44 @@ def _check_real_folders(ok, notes) -> None:
 
     if PYRITE.exists():
         model = build_surrogate_from_assets(scan_lens_folder(PYRITE))
-        # bugs/0702: the clamp now measures the REAL barrel (largest substantial
-        # co-axial cylinder face -- 46.0 on the PYRITE family) instead of the bbox
-        # middle extent (50.06 -- for x-authored / square-flanged CAD that number
-        # is the axial length or the flange, not the glass housing).
+        # bugs/0702: the clamp measures the REAL barrel (largest substantial
+        # co-axial cylinder face) instead of the bbox middle extent (the axial
+        # length / flange on x-authored square-flanged CAD). bugs/0703: the
+        # measured GLASS aperture outranks both -- the drawn disc is the
+        # vendor's visible glass (PYRITE 4.5/90: 28.4 mm glass in a 46 mm
+        # collar); rays the vendor would vignette are honestly shown passing
+        # the rim (the 0624 trace extension refracts them regardless).
         step = next(PYRITE.glob("*.stp"))
-        barrel = _step_barrel_diameter(step) or _step_transverse_extent(step)
+        cap = (
+            _step_glass_aperture(step)
+            or _step_barrel_diameter(step)
+            or _step_transverse_extent(step)
+        )
         ok(
-            barrel is not None
-            and abs(model.front_aperture - barrel) < 0.01
+            cap is not None
+            and abs(model.front_aperture - cap) < 0.01
             and model.front_aperture >= 1.4 * model.stop_diameter
             and model.front_aperture < 60.0,
-            f"B1: the PYRITE 4.5/90/0.3x disc is its cylinder barrel ({model.front_aperture:.2f} mm "
-            f"vs barrel {barrel}; was 320.18, then bbox 50.06)",
+            f"B1: the PYRITE 4.5/90/0.3x disc is its measured glass ({model.front_aperture:.2f} mm "
+            f"vs cap {cap}; was 320.18, then bbox 50.06, then collar 46.0)",
         )
     else:
         notes.append("SKIP: B1: the PYRITE folder is not in this checkout")
     if TELE_075.exists():
         model = build_surrogate_from_assets(scan_lens_folder(TELE_075))
+        tele_step = next(
+            (p for ext in ("*.stp", "*.STEP", "*.step") for p in TELE_075.glob(ext)), None
+        )
+        glass = _step_glass_aperture(tele_step) if tele_step is not None else None
+        # bugs/0703: the glass cap (14.89) still COVERS the 0662 object-side
+        # field (11/0.75 = 14.67) -- the vendor's front glass is exactly the
+        # field it guarantees; the old +stop pad exceeded the physical glass.
         ok(
-            model.front_aperture >= 11.0 / 0.75 + 0.9 * model.stop_diameter,
-            f"B2: the 0.75x telecentric KEEPS its 0662 field-sized disc ({model.front_aperture:.2f} mm)",
+            glass is not None
+            and abs(model.front_aperture - glass) < 0.01
+            and model.front_aperture >= 11.0 / 0.75,
+            f"B2: the 0.75x telecentric disc is its glass and still covers the "
+            f"0662 object field ({model.front_aperture:.2f} mm >= {11.0/0.75:.2f})",
         )
     else:
         notes.append("SKIP: B2: the 67304 folder is not in this checkout")

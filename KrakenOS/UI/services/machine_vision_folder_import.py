@@ -629,6 +629,65 @@ def _step_barrel_diameter(step_path: Path | str) -> float | None:
         return None
 
 
+def _step_glass_aperture(step_path: Path | str) -> float | None:
+    """The lens's visible GLASS aperture: the transverse extent of the largest
+    substantial spherical face in the vendor STEP (bugs/0703, the user's third
+    oversized-surrogate flag in one morning: even barrel-clamped 46 mm discs
+    read ~2x the ~24 mm glass the PYRITE STEP actually shows). Reads the
+    bugs/0368 analytic-document pickle cache when present, else the raw loader.
+    Small caps (a protective window) are area-gated out. ``None`` on any
+    failure so callers fall back to the cylinder barrel / bbox extent."""
+    try:
+        import pickle
+
+        import numpy as np
+
+        from KrakenOS.UI.services.layout_polyline_display import (
+            _cached_analytic_document_path,
+        )
+
+        source = Path(step_path).expanduser()
+        doc = None
+        cache = _cached_analytic_document_path(source)
+        if cache.exists() and cache.stat().st_size > 0:
+            try:
+                doc = pickle.loads(cache.read_bytes())
+            except Exception:
+                doc = None
+        if doc is None:
+            from KrakenOS.UI.services.step_analytic_geometry import (
+                load_step_analytic_document,
+            )
+
+            doc = load_step_analytic_document(source)
+        spheres: list[tuple[float, float]] = []
+        for face in getattr(doc, "faces", []) or []:
+            if str(getattr(face, "surface_type", "")).strip().lower() != "sphere":
+                continue
+            bbox = np.asarray(getattr(face, "bbox", ()), dtype=float).reshape(-1)
+            if bbox.size != 6 or not bool(np.all(np.isfinite(bbox))):
+                continue
+            extents = sorted(
+                [abs(bbox[3] - bbox[0]), abs(bbox[4] - bbox[1]), abs(bbox[5] - bbox[2])]
+            )
+            # A spherical cap's two LATERAL extents are its aperture diameter;
+            # the small extent is the sag. The middle extent is the safe read.
+            diameter = float(extents[1])
+            area = float(getattr(face, "area_mm2", 0.0) or 0.0)
+            if diameter > 1.0 and area > 1e-6 and math.isfinite(diameter):
+                spheres.append((diameter, area))
+        if not spheres:
+            return None
+        area_max = max(area for _diameter, area in spheres)
+        substantial = [d for d, area in spheres if area >= 0.25 * area_max]
+        if not substantial:
+            return None
+        glass = float(max(substantial))
+        return glass if math.isfinite(glass) and glass > 1e-3 else None
+    except Exception:
+        return None
+
+
 def _step_transverse_extent(step_path: Path | str) -> float | None:
     """The STEP body's transverse (barrel) diameter: the MIDDLE of the three
     bounding-box extents.  A barrel is round, so two extents are its diameter and
@@ -934,8 +993,18 @@ def _core_from_prescription_data(assets: LensFolderAssets) -> _SurrogateCore:
     # bugs/0702: prefer the REAL barrel (largest substantial co-axial cylinder
     # face) over the bbox middle extent, which for x-authored / square-flanged
     # CAD returns the axial length or the flange, not the glass housing.
+    # bugs/0703 (the user's third oversized flag): prefer the measured GLASS
+    # aperture over both -- the drawn disc is the vendor's visible glass (the
+    # PYRITE STEPs show ~22-28 mm glass inside a 46 mm collar). The 0624 trace
+    # extension keeps every ray refracting regardless of drawn size; a corner
+    # ray drawn passing the glass rim is the vendor's own vignette, honestly
+    # shown.
     housing = (
-        (_step_barrel_diameter(assets.primary_step) or _step_transverse_extent(assets.primary_step))
+        (
+            _step_glass_aperture(assets.primary_step)
+            or _step_barrel_diameter(assets.primary_step)
+            or _step_transverse_extent(assets.primary_step)
+        )
         if assets.primary_step
         else None
     )
@@ -1074,8 +1143,18 @@ def _core_from_datasheet_cardinals(
     # bugs/0702: prefer the REAL barrel (largest substantial co-axial cylinder
     # face) over the bbox middle extent, which for x-authored / square-flanged
     # CAD returns the axial length or the flange, not the glass housing.
+    # bugs/0703 (the user's third oversized flag): prefer the measured GLASS
+    # aperture over both -- the drawn disc is the vendor's visible glass (the
+    # PYRITE STEPs show ~22-28 mm glass inside a 46 mm collar). The 0624 trace
+    # extension keeps every ray refracting regardless of drawn size; a corner
+    # ray drawn passing the glass rim is the vendor's own vignette, honestly
+    # shown.
     housing = (
-        (_step_barrel_diameter(assets.primary_step) or _step_transverse_extent(assets.primary_step))
+        (
+            _step_glass_aperture(assets.primary_step)
+            or _step_barrel_diameter(assets.primary_step)
+            or _step_transverse_extent(assets.primary_step)
+        )
         if assets.primary_step
         else None
     )

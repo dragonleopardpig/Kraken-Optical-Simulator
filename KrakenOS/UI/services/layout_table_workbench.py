@@ -1971,6 +1971,21 @@ class LayoutTableWorkbenchMixin:
                     setattr(new_block[0], field, float(getattr(old_front_row, field, 0.0) or 0.0))
                 except Exception:
                     pass
+            # The seat is desp + its ScenePlacement breadcrumb TOGETHER: without the
+            # 0691 ``frame_seat`` marker the carried desp reads as a hand-tilted
+            # prescription and the paraxial reference REFUSES the whole layout --
+            # shared first order None -> magnification None -> the imaging launch
+            # grid collapses to a single field point per face.
+            try:
+                old_placement = (getattr(old_front_row, "advanced", None) or {}).get("ScenePlacement")
+                if isinstance(old_placement, dict) and old_placement:
+                    import copy as _copy
+
+                    advanced = dict(new_block[0].advanced or {})
+                    advanced["ScenePlacement"] = _copy.deepcopy(old_placement)
+                    new_block[0].advanced = advanced
+            except Exception:
+                pass
         # bugs/0383: preserve the DOWNSTREAM elements' axial positions across the swap.
         # The old lens block's Rear Datum thickness is the SCENE gap to whatever follows
         # the lens -- a fold mirror, camera or image the user placed -- NOT part of the

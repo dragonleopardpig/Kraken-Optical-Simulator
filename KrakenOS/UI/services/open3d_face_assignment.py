@@ -2202,24 +2202,27 @@ class Open3DFaceAssignmentService:
 
     def _flip_lens_step_direction_from_context(self) -> None:
         """bugs/0373: toggle the imported lens STEP front/rear and re-render. A pure
-        display flip -- the surrogate optics are unchanged -- so no retrace."""
+        display flip -- the surrogate optics are unchanged -- so no retrace.
+        bugs/0703: `refresh_from_editor()` BROKE that promise on a promoted-STEP
+        scene (it forces the full NS retrace) -- route through the render-only
+        cached-scene refresh instead."""
         if not self.editor.toggle_imported_lens_step_direction():
             return
         self._debug_trace("flip_lens_step_direction_from_context")
         try:
-            self.refresh_from_editor()
+            self.refresh_step_overlay_display_only("lens_flip")
         except Exception:
             pass
 
     def _flip_camera_step_direction_from_context(self) -> None:
         """bugs/0615: toggle the imported camera STEP front/rear and re-render. A pure
         display flip -- the trace runs on the layout rows + registered sensor -- so no
-        retrace (the lens-flip pattern, bugs/0373)."""
+        retrace (the lens-flip pattern, bugs/0373; render-only per bugs/0703)."""
         if not self.editor.toggle_imported_camera_step_direction():
             return
         self._debug_trace("flip_camera_step_direction_from_context")
         try:
-            self.refresh_from_editor()
+            self.refresh_step_overlay_display_only("camera_flip")
         except Exception:
             pass
 
