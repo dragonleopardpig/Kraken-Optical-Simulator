@@ -720,6 +720,21 @@ class DetectorCoverageOverlayService:
                 anchor = band_mid + b_v * band["half_width"]
                 if self._label_actor(anchor, name, _OBJECT_FOV):
                     count += 1
+            # bugs/0701 (flag 091545 "As usual practice, please put in FOV values
+            # above the green object plane for each A and B side"): the split-field
+            # bands rightly suppress the single-axis "FOV WxH" readout (bugs/0692,
+            # the label filter below), but that also removed the object-plane FOV
+            # numbers entirely. Restore them PER BAND -- each face's delivered field
+            # is the band's own authored extent -- anchored just past the band edge
+            # on the -Y side (away from the prism towers = "above" in the user's
+            # working view).
+            fov_w = 2.0 * float(band["half_width"])
+            fov_h = float(band["v_hi"] - band["v_lo"])
+            if fov_w > 1e-9 and fov_h > 1e-9:
+                up = -b_u if float(b_u[1]) >= 0.0 else b_u
+                fov_anchor = band_mid + up * (band_half_h + 3.0)
+                if self._label_actor(fov_anchor, f"FOV {fov_w:.1f}×{fov_h:.1f}", _OBJECT_FOV):
+                    count += 1
         # One detector for single-axis scenes; one PER ARM for a two-arm splitter fold, each at
         # its OWN folded position with its OWN magnification (stored in the target metadata).
         for target in detectors:

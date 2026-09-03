@@ -103,8 +103,11 @@ class _RecordingCoverage:
         svc = self._svc
         svc._line_actor = lambda points, color, width, dashed: (
             svc.lines.append((np.asarray(points, dtype=float), bool(dashed))) or True)
+        svc.label_anchors = []
         svc._label_actor = lambda anchor, text, color: (
-            svc.labels.append(str(text)) or True)
+            svc.labels.append(str(text))
+            or svc.label_anchors.append((str(text), np.asarray(anchor, dtype=float).reshape(3)))
+            or True)
         svc._pick_fill_actor = lambda *a, **k: True
         svc._arrow_cone = lambda *a, **k: True
         svc._sensor_dimensions = lambda target: (23.04, 23.04)
@@ -153,10 +156,16 @@ def _check_coverage_draw(ok, notes) -> None:
         if dashed and pts.shape[0] == 2 and np.allclose(pts[:, 1], -9.9, atol=0.2)
     ]
     edge_zs = sorted(round(float(np.mean(pts[:, 2])), 1) for pts in strip_edges)
-    want_zs = sorted([-25.0 - 5.3, -25.0 - 2.1, -25.0 + 2.2, -25.0 + 6.8])
+    # bugs/0697: strip v offsets ride the LIVE detector's own in-plane basis (iv),
+    # not the authored axis_v -- for normal (0,1,0) the shared _basis gives
+    # iv = (0,0,-1), so an authored v maps to sensor z = center_z - v. (This stub
+    # expectation had kept the pre-0697 +z mapping and failed at HEAD; scenes are
+    # stamped in the detector frame, bugs/0692_stamp_strips.)
+    want_zs = sorted([-25.0 + 5.3, -25.0 + 2.1, -25.0 - 2.2, -25.0 - 6.8])
     forbidden = [t for t in svc.labels
-                 if "circle" in t.lower() or t.startswith("Needs") or t.startswith("FOV ")]
+                 if "circle" in t.lower() or t.startswith("Needs")]
     names = [t for t in svc.labels if t in ("Face A field", "Face B field")]
+    fov_labels = [(t, a) for t, a in svc.label_anchors if t.startswith("FOV ")]
 
     ok(not circles, f"C1: no circle polyline drawn under bands ({len(circles)} found)")
     # The REAL sensor square is the detector-footprint actor's job (a different
@@ -176,8 +185,30 @@ def _check_coverage_draw(ok, notes) -> None:
         f"C3: four dashed cover-strip edges at the authored sensor-plane offsets "
         f"({len(strip_edges)} edges at z {edge_zs}, want {[round(w, 1) for w in want_zs]})",
     )
-    ok(not forbidden, f"C4: no Image-circle/Needs/FOV labels under bands ({forbidden[:3]})")
+    ok(not forbidden, f"C4: no Image-circle/Needs labels under bands ({forbidden[:3]})")
     ok(len(names) >= 2, f"C5: the band names label faces AND strips ({len(names)} name labels)")
+    # bugs/0701 (flag 091545 "put in FOV values above the green object plane for each
+    # A and B side"): each band now carries its own "FOV WxH" readout, anchored past
+    # the band's -Y edge (above the plane, away from the prism towers). The old
+    # single-axis full-FOV label stays suppressed -- these are the per-band values.
+    want_text = f"FOV {2 * 27.5:.1f}×{3.1 - (-5.25):.1f}"
+    texts_ok = len(fov_labels) == 2 and all(t == want_text for t, _a in fov_labels)
+    band_top_y = -5.25  # v_lo: the band's -Y edge (b_u = +Y for a z-facing band)
+    anchors_ok = (
+        len(fov_labels) == 2
+        and all(float(a[1]) < band_top_y - 0.5 for _t, a in fov_labels)
+        and sorted(round(float(a[2]), 1) for _t, a in fov_labels) == [-50.0, 0.0]
+    )
+    ok(
+        texts_ok,
+        f"C6: one per-band FOV value label per face, band-sized "
+        f"({[t for t, _a in fov_labels]}, want 2x {want_text!r})",
+    )
+    ok(
+        anchors_ok,
+        f"C7: FOV labels anchor ABOVE each band (-Y past the edge) at both faces "
+        f"({[(round(float(a[1]), 1), round(float(a[2]), 1)) for _t, a in fov_labels]})",
+    )
 
 
 def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, list[str]]":

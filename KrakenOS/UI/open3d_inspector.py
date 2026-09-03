@@ -17200,6 +17200,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if not source_id:
             return False
         settings = dict(getattr(source, "settings", {}) or {})
+        if settings.get("mirror_launch_plane_z", None) is not None:
+            # bugs/0701 (flag 091545 "I still see the golden line ... at side B top
+            # prism"): a mirrored-launch spec (the om05a faceB twin) never samples its
+            # own model -- its rays are the chain's calibrated launch reflected through
+            # the symmetry plane (bugs/0696 inline twin). Drawing its aperture as a
+            # gold emitter panel shows a supernatural emitter lying on the device
+            # plane; the face's green object FOV band already marks the field there.
+            # The spec stays LISTED in the scene-source browser (management handle),
+            # it just draws no LED glyph.
+            return False
         origin = np.asarray(getattr(source, "origin", (0.0, 0.0, 0.0)), dtype=float).reshape(3)
         d, u, v = self._scene_source_glyph_basis(getattr(source, "direction", (0.0, 0.0, 1.0)))
 

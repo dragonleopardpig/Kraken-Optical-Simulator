@@ -30,6 +30,7 @@ Exit: 0 = pass, 1 = regression.
 from __future__ import annotations
 
 import inspect
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -190,6 +191,23 @@ def _check_basis(failures: list[str], notes: list[str]) -> None:
     d, u, v = Kraken3DInspector._scene_source_glyph_basis((0.0, 0.0, -1.0))
     if abs(float(np.asarray(u, float)[1])) > 1e-9:
         failures.append("BASIS: z-facing source puts radius_x along vertical (0699 golden stripe)")
+    # bugs/0701 (flag 091545 "I still see the golden line"): a mirrored-launch spec
+    # (mirror_launch_plane_z) never samples its own model -- its rays are the chain's
+    # launch reflected through the symmetry plane -- so it must draw NO emitter glyph.
+    # The gate returns before any renderer/basis work, so a bare None self proves it.
+    mirror_source = SimpleNamespace(
+        source_id="source:faceB",
+        settings={"mirror_launch_plane_z": -25.0, "radius_x": 25.0, "radius_y": 0.5},
+        origin=(0.0, 0.0, -50.0),
+        direction=(0.0, 0.0, -1.0),
+    )
+    try:
+        drew = Kraken3DInspector._add_one_scene_source_glyph(None, mirror_source)
+    except Exception as exc:
+        failures.append(f"BASIS: mirror-spec glyph gate raised {type(exc).__name__}: {exc}")
+    else:
+        if drew is not False:
+            failures.append("BASIS: mirrored-launch spec still draws an emitter glyph (0701 golden line)")
     if not [f for f in failures if f.startswith("BASIS")]:
         notes.append("basis: (d,u,v) orthonormal, matches the sampler frame; z-facing radius_x is horizontal")
 
