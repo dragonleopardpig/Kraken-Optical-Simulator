@@ -117,12 +117,16 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     def ok(condition: bool, message: str) -> None:
         notes.append(("PASS: " if condition else "FAIL: ") + message)
 
-    # A (bugs/0708, superseding the 0706 display-offset scheme): FACE A stays on
-    # the walk origin -- where the imaging launch physically starts (flag 133247
-    # "the ray is no launching from the Object Plane") -- and the FAR TOWER
-    # slides with the far face, so the device stays in the middle of the gap
-    # (the 0706 ask) the physical way, keeping the mirrored launch exact.
+    # A (bugs/0712, USER DIRECTIVE superseding 0708-0711): "the vendor provided
+    # STEP file should remain constant, no modification (including sliding of
+    # element) is allowed. The only change is the device itself." The device box
+    # stays CENTRED in the fixed gap (faces at centre +/- depth/2), the bands
+    # attach to its faces, the faceB marker follows the far face, the mirror
+    # plane IS the fixed hardware symmetry plane, and NO row moves.
     stub = _Stub(_bands(50.0), _specs(50.0, 50.0), rows=_tower_rows())
+    rows_before = {str(r.name): (float(r.desp_x), float(r.desp_y), float(r.desp_z),
+                                 float(r.tilt_x), float(r.tilt_y), float(r.tilt_z))
+                   for r in stub.rows}
     moved = LayoutTableWorkbenchMixin._retarget_split_field_to_part(
         stub, _old(), {"depth_mm": 15.0, "width_mm": 15.0, "height_mm": 1.0}
     )
@@ -131,74 +135,46 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     spec = stub.layout_scene_source_specs[0]
     ok(
         bool(moved)
-        and abs(near["center"][2] - 0.0) < 1e-9
-        and abs(far["center"][2] + 15.0) < 1e-9,
-        f"A1: face A stays on the launch plane, far face -> z=-15 "
-        f"(near {near['center']}, far {far['center']})",
+        and abs(near["center"][2] + 17.5) < 1e-9
+        and abs(far["center"][2] + 32.5) < 1e-9,
+        f"A1: device faces land centred in the FIXED gap "
+        f"(near {near['center']}, far {far['center']} about -25)",
     )
     ok(
-        abs(spec["source_z"] + 15.0) < 1e-9
-        and abs(spec["mirror_launch_plane_z"] + 7.5) < 1e-9
+        abs(spec["source_z"] + 32.5) < 1e-9
+        and abs(spec["mirror_launch_plane_z"] + 25.0) < 1e-9
         and abs(spec["radius_x"] - 7.5) < 1e-9
         and abs(spec["radius_y"] - 0.5) < 1e-9,
-        f"A2: faceB launch on the new face, mirror plane at -7.5 "
-        f"(z {spec['source_z']}, mirror {spec['mirror_launch_plane_z']}, "
-        f"rx {spec['radius_x']}, ry {spec['radius_y']})",
-    )
-    zs = {str(r.name): float(r.desp_z) for r in stub.rows}
-    ok(
-        abs(zs["First RA mirror B"] + 24.0) < 1e-9
-        and abs(zs["BS cube B"] + 22.25) < 1e-9,
-        f"A3a: the far-TOWER solids slide +35 with the far face "
-        f"({zs['First RA mirror B']}, {zs['BS cube B']})",
-    )
-    # bugs/0709 (flag 144408 "the ray go hay wire"): the CENTRE V is one routing
-    # assembly astride the gap midplane -- BOTH halves ride the MIRROR PLANE
-    # (half delta = +17.5), staying 0.1 mm apart instead of ramming through
-    # each other.
-    ok(
-        abs(zs["Centre RA mirror B"] + 13.47) < 1e-6
-        and abs(zs["Centre RA mirror A"] + 1.53) < 1e-6,
-        f"A3c: the centre-V halves ride the mirror plane together "
-        f"(A {zs['Centre RA mirror A']}, B {zs['Centre RA mirror B']} astride -7.5)",
+        f"A2: faceB marker on the far face, mirror plane FIXED at the hardware "
+        f"symmetry plane (z {spec['source_z']}, mirror {spec['mirror_launch_plane_z']})",
     )
     ok(
-        abs(zs["First RA mirror A"] - 9.0) < 1e-9
-        and abs(zs["stray far solid"] + 45.0) < 1e-9,
-        "A3b: the near tower and an unpaired far solid never move",
+        abs(float(stub.inspection_part_spec["axis_offset_mm"]) + 17.5) < 1e-9,
+        f"A3: the part box re-centres via axis_offset only "
+        f"({stub.inspection_part_spec['axis_offset_mm']})",
     )
-    # bugs/0710 ("the two big RA mirror decentered"): the tilted LEG FOLD mirrors
-    # route the shared leg at the centre-V's z -- they ride the mirror plane.
+    rows_after = {str(r.name): (float(r.desp_x), float(r.desp_y), float(r.desp_z),
+                                float(r.tilt_x), float(r.tilt_y), float(r.tilt_z))
+                  for r in stub.rows}
     ok(
-        abs(zs["RA mirror 2"] + 8.9) < 1e-6,
-        f"A3d: the tilted leg-fold mirror rides the mirror plane (+17.5 -> {zs['RA mirror 2']})",
+        rows_after == rows_before and not stub._three_d_inspector.hidden,
+        "A4: NO row/solid moves and NO overlay is hidden -- the vendor hardware "
+        "is byte-identical (the user directive)",
     )
-    # A4: a SECOND resize (15 -> 30) is consistent from the new state (stamps).
+    # A5: a SECOND resize (15 -> 30) stays centred about the fixed plane.
     moved2 = LayoutTableWorkbenchMixin._retarget_split_field_to_part(
         stub, {"depth_mm": 15.0, "width_mm": 15.0, "height_mm": 1.0},
         {"depth_mm": 30.0, "width_mm": 30.0, "height_mm": 1.0},
     )
-    zs2 = {str(r.name): float(r.desp_z) for r in stub.rows}
     ok(
         bool(moved2)
-        and abs(near["center"][2] - 0.0) < 1e-9
-        and abs(far["center"][2] + 30.0) < 1e-9
-        and abs(spec["mirror_launch_plane_z"] + 15.0) < 1e-9
-        and abs(zs2["Centre RA mirror A"] + 9.03) < 1e-6
-        and abs(zs2["Centre RA mirror B"] + 20.97) < 1e-6
-        and abs(zs2["RA mirror 2"] + 16.4) < 1e-6,
-        f"A4: a second resize stays consistent via the stamps (far {far['center'][2]}, "
-        f"mirror {spec['mirror_launch_plane_z']}, V {zs2['Centre RA mirror A']}/"
-        f"{zs2['Centre RA mirror B']} astride -15, leg fold {zs2['RA mirror 2']})",
-    )
-
-    # A5 (bugs/0711 "duplicated RA mirrors"): the rigid vendor-assembly CAD
-    # decoration models the ORIGINAL depth -- a re-seat hides it and says so.
-    ok(
-        ("optical", True) in stub._three_d_inspector.hidden
-        and any("vendor assembly CAD hidden" in m for m in moved + moved2),
-        f"A5: the stale vendor decoration overlay is hidden on a re-seat "
-        f"({stub._three_d_inspector.hidden})",
+        and abs(near["center"][2] + 10.0) < 1e-9
+        and abs(far["center"][2] + 40.0) < 1e-9
+        and abs(spec["mirror_launch_plane_z"] + 25.0) < 1e-9
+        and abs(float(stub.inspection_part_spec["axis_offset_mm"]) + 10.0) < 1e-9,
+        f"A5: a second resize stays centred about the fixed plane -25 "
+        f"(near {near['center'][2]}, far {far['center'][2]}, "
+        f"offset {stub.inspection_part_spec['axis_offset_mm']})",
     )
 
     # B: bands not on the part's faces -> hands off

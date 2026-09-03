@@ -8584,23 +8584,28 @@ class LayoutTableWorkbenchMixin:
         self._refresh_open_3d_views()
 
     def _retarget_split_field_to_part(self, old_spec: dict, new_spec: dict) -> list[str]:
-        """bugs/0704 (flag 110804 "add device size changing option. The green object
-        plane should attach automatically to new device side location"): on a
-        SPLIT-FIELD scene (two authored object-FOV bands on the part's opposite
-        faces + a mirrored faceB launch), a device size change re-anchors the
-        far-face geometry:
+        """bugs/0712 (user directive, 2026-09-03): "the vendor provided STEP file
+        should remain constant, no modification (including sliding of element) is
+        allowed. The only change is the device itself. Everything should remain
+        where they are."
 
-          * the far band's centre moves to the NEW back face (face A stays the
-            object-plane anchor at its authored position);
-          * the mirrored faceB source follows: launch plane at the new face,
-            symmetry plane at half the new depth, aperture at the new face size.
+        On a SPLIT-FIELD scene (two authored object-FOV bands on the part's
+        opposite faces + a mirrored faceB launch), a device size change touches
+        ONLY the device and its markers:
 
-        The FOV (band half-width) is deliberately NOT touched here -- the user
-        inputs the required FOV as usual and `solve_fov_to_inspection_face` /
-        the QE solve write it. Scenes without the split-field shape are left
-        byte-identical (returns []). Hardware (the B-arm prisms) is never moved
-        -- re-seating the vendor train for a new device is the user's design
-        decision, and the trace will honestly show any mismatch."""
+          * the device box stays CENTRED in the fixed gap between the two towers
+            (the 0706 ask): faces at gap-centre +/- depth/2, via the part's
+            ``axis_offset_mm``;
+          * both green bands attach to the device faces;
+          * the faceB launch marker follows the far face; the mirror plane IS the
+            hardware's fixed symmetry plane and NEVER changes;
+          * NO row, solid, overlay or decoration moves -- the vendor hardware is
+            immutable. The as-built optics keep imaging their as-built object
+            planes; bringing focus onto the new faces is the user's next step
+            (refocus / solve / lens selection), and the status says so.
+
+        The FOV (band half-width) is written by the FOV solve, not here. Scenes
+        without the split-field shape are left byte-identical (returns [])."""
         old_depth = float(old_spec.get("depth_mm", 0.0) or 0.0)
         new_depth = float(new_spec.get("depth_mm", 0.0) or 0.0)
         new_width = float(new_spec.get("width_mm", 0.0) or 0.0)
@@ -8620,30 +8625,47 @@ class LayoutTableWorkbenchMixin:
         far = min(bands, key=_center_z)
         if near is far:
             return moved
-        # bugs/0708 (flag 133247 "the ray is no launching from the Object Plane",
-        # superseding the 0706 display-offset scheme): FACE A stays ON the walk
-        # origin -- that is where the imaging launch physically starts, and a
-        # band that drifts off it draws a plane no ray comes from. The 0706 ask
-        # ("the device always at the middle of the big gap of the two top RA
-        # mirrors") is honoured the physical way instead: the FAR TOWER SLIDES
-        # with the far face, so the gap re-centres around the device. That is
-        # also the correct new station design -- and it keeps the mirrored faceB
-        # launch EXACT, because the hardware becomes symmetric about the new
-        # mirror plane by construction.
-        near_z = _center_z(near)
-        far_z_old = _center_z(far)
-        if abs((near_z - far_z_old) - old_depth) > 1e-6:
+        # The gap centre is the HARDWARE symmetry plane -- fixed for the life of
+        # the scene. Read it from the mirrored-launch spec (authored once, never
+        # rewritten), falling back to the bands' midpoint.
+        centre = None
+        for source_spec in list(getattr(self, "layout_scene_source_specs", None) or []):
+            if isinstance(source_spec, dict) and source_spec.get("mirror_launch_plane_z", None) is not None:
+                try:
+                    centre = float(source_spec["mirror_launch_plane_z"])
+                except Exception:
+                    centre = None
+                break
+        if centre is None:
+            centre = 0.5 * (_center_z(near) + _center_z(far))
+        if (
+            abs(_center_z(near) - (centre + 0.5 * old_depth)) > 1e-6
+            or abs(_center_z(far) - (centre - 0.5 * old_depth)) > 1e-6
+        ):
             return moved  # bands are not on this part's faces -- hands off
-        far_z = near_z - new_depth
-        centre = near_z - 0.5 * new_depth
-        delta_far = far_z - far_z_old
+        near_z_old = _center_z(near)
+        near_z = centre + 0.5 * new_depth
+        far_z = centre - 0.5 * new_depth
         if abs(new_depth - old_depth) > 1e-9:
-            center_v = list(far.get("center") or (0.0, 0.0, 0.0))
-            center_v[2] = far_z
-            far["center"] = center_v
+            for band, z in ((near, near_z), (far, far_z)):
+                center_v = list(band.get("center") or (0.0, 0.0, 0.0))
+                center_v[2] = z
+                band["center"] = center_v
             self.layout_object_fov_bands = bands
-            moved.append(f"far face band -> z={far_z:g}")
-            moved.extend(self._slide_far_tower_rows(near_z, far_z_old, delta_far))
+            moved.append(f"device faces -> z={near_z:g} / z={far_z:g} (gap centre {centre:g}, hardware untouched)")
+            # The drawn part box anchors its active face at object_point +
+            # axis_offset: shift ONLY the offset so the box stays centred in the
+            # fixed gap.
+            try:
+                offset = float(self.inspection_part_spec.get("axis_offset_mm", 0.0) or 0.0)
+                self.inspection_part_spec["axis_offset_mm"] = offset + (near_z - near_z_old)
+                moved.append(f"part offset -> {self.inspection_part_spec['axis_offset_mm']:g}")
+            except Exception:
+                pass
+            moved.append(
+                "as-built optics still image their original object planes -- "
+                "refocus / solve FOV / select a lens to focus on the new faces"
+            )
         specs = list(getattr(self, "layout_scene_source_specs", None) or [])
         for source_spec in specs:
             if not isinstance(source_spec, dict):
@@ -8651,167 +8673,14 @@ class LayoutTableWorkbenchMixin:
             if source_spec.get("mirror_launch_plane_z", None) is None:
                 continue
             source_spec["source_z"] = far_z
-            source_spec["mirror_launch_plane_z"] = centre
+            # mirror_launch_plane_z NOT rewritten: the hardware symmetry plane is fixed.
             if new_width > 0.0:
                 source_spec["radius_x"] = 0.5 * new_width
                 source_spec["radius"] = 0.5 * new_width
             if new_height > 0.0:
                 source_spec["radius_y"] = 0.5 * new_height
             self.layout_scene_source_specs = specs
-            moved.append(
-                f"faceB launch -> z={source_spec['source_z']:g} (mirror plane {centre:g})"
-            )
-        return moved
-
-    def _slide_far_tower_rows(self, near_z, far_z_old, delta) -> list[str]:
-        """bugs/0708: slide the FAR TOWER with the far face so the device stays in
-        the middle of the gap (the 0706 ask) while face A stays on the walk origin
-        where the imaging launch starts. General classifier, no scene names: a
-        world-placed UNTILTED optical-solid row on the far side of the old gap
-        centre whose z mirrors (about that centre) onto another solid row's z is
-        half of a symmetric tower pair -- the vendor A/B trains. Unpaired far-side
-        rows (a fold mirror on the camera leg, the lens block) never move; a
-        tilted solid (a leg fold) never moves. Stations are untouched (no
-        thickness changes), so this is a pure world slide: desp_z += delta."""
-        import numpy as np
-
-        if abs(float(delta)) <= 1e-9:
-            return []
-        centre_old = 0.5 * (float(near_z) + float(far_z_old))
-        rows = list(getattr(self, "rows", []) or [])
-        stations = self._row_z_positions()
-        solid_rows = []
-        tilted_rows = []
-        for index, row in enumerate(rows):
-            advanced = row.advanced if isinstance(getattr(row, "advanced", None), dict) else {}
-            if not advanced.get("Solid_3d_stl"):
-                continue
-            station = float(stations[index]) if index < len(stations) else 0.0
-            z = station + float(row.desp_z)
-            if any(
-                abs(float(getattr(row, field, 0.0) or 0.0)) > 1e-9
-                for field in ("tilt_x", "tilt_y", "tilt_z")
-            ):
-                tilted_rows.append((index, row, z))
-                continue
-            solid_rows.append((index, row, z))
-
-        def _placement(row) -> dict:
-            advanced = dict(row.advanced or {})
-            placement = advanced.get("ScenePlacement")
-            if not isinstance(placement, dict):
-                placement = {}
-            advanced["ScenePlacement"] = placement
-            row.advanced = advanced
-            return placement
-
-        # Membership is classified ONCE from the pristine symmetric geometry
-        # (twin pairing about the gap centre) and STAMPED -- after a big slide a
-        # far element can CROSS the centre and the geometric pairing would
-        # misclassify it on the next resize. TWO stamps (bugs/0709, flag 144408
-        # "the ray go hay wire"): the INNERMOST pair is the CENTRE-V assembly --
-        # two halves 0.1 mm apart astride the gap midplane, a SINGLE routing
-        # element that belongs to NEITHER tower. It rides the MIRROR PLANE
-        # (half the face delta, BOTH halves), while the outer far-tower pairs
-        # ride the far face (full delta). Sliding the far V-half with its tower
-        # rammed it through the near half -- overlapping glass scattered the
-        # trace everywhere.
-        far_tower = [
-            (index, row, z)
-            for index, row, z in solid_rows
-            if bool((_placement(row)).get("far_tower"))
-        ]
-        centre_v = [
-            (index, row, z)
-            for index, row, z in solid_rows
-            if bool((_placement(row)).get("centre_v"))
-        ]
-        leg_folds = [
-            (index, row, z)
-            for index, row, z in tilted_rows
-            if bool((_placement(row)).get("leg_fold"))
-        ]
-        if not far_tower and not centre_v:
-            zs = np.asarray([z for _index, _row, z in solid_rows], dtype=float)
-            pairs: list[tuple[float, int]] = []  # (distance from centre, far row pos)
-            for position, (index, row, z) in enumerate(solid_rows):
-                if z >= centre_old - 1e-6:
-                    continue  # near-side member; pairs are keyed by their far member
-                twin = 2.0 * centre_old - z
-                if not bool(np.any(np.abs(zs - twin) < 0.25)):
-                    continue  # no symmetric partner -> not part of the tower pair
-                pairs.append((centre_old - z, position))
-            if not pairs:
-                return []
-            innermost_distance = min(distance for distance, _position in pairs)
-            for distance, position in pairs:
-                index, row, z = solid_rows[position]
-                if abs(distance - innermost_distance) < 1.0:
-                    # the centre V: stamp BOTH halves (the far one and its twin)
-                    _placement(row)["centre_v"] = True
-                    centre_v.append((index, row, z))
-                    twin_z = 2.0 * centre_old - z
-                    for index2, row2, z2 in solid_rows:
-                        if abs(z2 - twin_z) < 0.25 and row2 is not row:
-                            _placement(row2)["centre_v"] = True
-                            centre_v.append((index2, row2, z2))
-                else:
-                    _placement(row)["far_tower"] = True
-                    far_tower.append((index, row, z))
-            # bugs/0710 (flag 151255 "the two big RA mirror decentered"): the
-            # tilted LEG FOLD mirrors route the SHARED leg, which runs at the
-            # centre-V's z -- they (and everything walking from them: the lens
-            # block, the camera, the sensor) ride the MIRROR PLANE like the V.
-            # Classifier: a tilted world-placed solid whose z lies inside the
-            # old tower span is a leg fold; stamped for the same
-            # crossed-the-centre reason as the others.
-            if solid_rows:
-                span_lo = min(z for _i, _r, z in solid_rows) - 5.0
-                span_hi = max(z for _i, _r, z in solid_rows) + 5.0
-                for index, row, z in tilted_rows:
-                    if span_lo <= z <= span_hi:
-                        _placement(row)["leg_fold"] = True
-                        leg_folds.append((index, row, z))
-        moved: list[str] = []
-        half_delta = 0.5 * float(delta)
-        for index, row, z in far_tower:
-            row.desp_z = float(row.desp_z) + float(delta)
-            moved.append(
-                f"S{index} {str(getattr(row, 'name', '') or '').strip()} -> z={z + float(delta):g}"
-            )
-        for index, row, z in centre_v:
-            row.desp_z = float(row.desp_z) + half_delta
-            moved.append(
-                f"S{index} {str(getattr(row, 'name', '') or '').strip()} (centre V) -> z={z + half_delta:g}"
-            )
-        for index, row, z in leg_folds:
-            row.desp_z = float(row.desp_z) + half_delta
-            moved.append(
-                f"S{index} {str(getattr(row, 'name', '') or '').strip()} (leg fold) -> z={z + half_delta:g}"
-            )
-        # bugs/0711 (flag 160711 "the prism now shows duplicated RA mirrors, and
-        # other nonsense"): the decorative vendor-assembly STEP overlay is ONE
-        # rigid CAD of the ORIGINAL device depth -- it visually contains the same
-        # mirrors the traced solid rows just slid away from, so after a re-seat
-        # it draws stale duplicates. A monolith cannot be resized: hide it and
-        # say so (display follows physics; the traced solids ARE the new
-        # geometry). The browser can unhide it any time.
-        if moved and getattr(self, "imported_optical_step_path", None) is not None:
-            inspector = getattr(self, "_three_d_inspector", None)
-            try:
-                if inspector is not None and inspector.winfo_exists():
-                    inspector.set_step_label_hidden("optical", True)
-                    moved.append(
-                        "vendor assembly CAD hidden (it models the original device "
-                        "depth) -- unhide it from the Scene Components browser if wanted"
-                    )
-            except Exception:
-                pass
-        if moved and abs(float(delta)) > 5.0:
-            moved.append(
-                "CAUTION: large re-seat -- verify clearances in 3D (the vendor "
-                "assembly was built for the original device depth)"
-            )
+            moved.append(f"faceB launch marker -> z={far_z:g} (mirror plane fixed at {centre:g})")
         return moved
 
     def set_inspection_part_active_face(self, face: str) -> None:
