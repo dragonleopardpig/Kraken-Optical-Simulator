@@ -310,10 +310,15 @@ def open_inspection_part_dialog(editor):
     ttk.Checkbutton(body, text="Show the 3D part at the object plane", variable=enabled_var).grid(
         row=0, column=0, columnspan=2, sticky="w", pady=(0, 6)
     )
+    # bugs/0708 (flag 133247 "better to put FOV in the change device size pop up
+    # dialog so that user can input both values"): the required FOV rides along;
+    # blank keeps the default face-size + 5% solve target.
+    fov_var = tk.StringVar(value="")
     for r, (label, var) in enumerate(
         (("Width W (mm)", w_var), ("Height H (mm)", h_var), ("Depth D (mm)", d_var),
          ("Axis reach (mm, 0 = auto)", reach_var),
-         ("Face offset along axis (mm)", offset_var)),
+         ("Face offset along axis (mm)", offset_var),
+         ("Required FOV (mm, blank = face +5%)", fov_var)),
         start=1,
     ):
         ttk.Label(body, text=label).grid(row=r, column=0, sticky="w", pady=2)
@@ -343,16 +348,16 @@ def open_inspection_part_dialog(editor):
             status_var.set(f"Part STEP set, but its bounds could not be read: {exc}")
 
     ttk.Button(step_row, text="Browse...", command=_browse_step).grid(row=0, column=1, padx=(4, 0))
-    ttk.Label(body, text="Inspected face (on the object plane)").grid(row=6, column=0, sticky="w", pady=(8, 2))
+    ttk.Label(body, text="Inspected face (on the object plane)").grid(row=10, column=0, sticky="w", pady=(8, 2))
     ttk.Combobox(body, textvariable=face_var, values=list(FACE_ORDER), state="readonly", width=10).grid(
-        row=6, column=1, sticky="w", pady=(8, 2)
+        row=10, column=1, sticky="w", pady=(8, 2)
     )
     ttk.Label(
         body,
         text="Front/Back show W x H, Left/Right show D x H, Top/Bottom show W x D.\n"
              "Each face gets a dashed blow-out axis for its own camera station.",
         justify="left",
-    ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(6, 8))
+    ).grid(row=11, column=0, columnspan=2, sticky="w", pady=(6, 8))
 
     def _read() -> dict[str, Any]:
         raw = {
@@ -374,16 +379,22 @@ def open_inspection_part_dialog(editor):
 
     def _solve():
         editor.set_inspection_part_spec(_read())
-        ok, msg = editor.solve_fov_to_inspection_face()
+        fov = None
+        try:
+            raw = str(fov_var.get() or "").strip()
+            fov = float(raw) if raw else None
+        except Exception:
+            fov = None
+        ok, msg = editor.solve_fov_to_inspection_face(fov=fov)
         status_var.set(msg)
 
     buttons = ttk.Frame(body)
-    buttons.grid(row=7, column=0, columnspan=2, sticky="w")
+    buttons.grid(row=12, column=0, columnspan=2, sticky="w")
     ttk.Button(buttons, text="Apply", command=_apply).grid(row=0, column=0, padx=(0, 6))
     ttk.Button(buttons, text="Apply + Solve FOV to this face", command=_solve).grid(row=0, column=1, padx=(0, 6))
     ttk.Button(buttons, text="Close", command=dialog.destroy).grid(row=0, column=2)
     ttk.Label(body, textvariable=status_var, wraplength=420, justify="left").grid(
-        row=8, column=0, columnspan=2, sticky="w", pady=(8, 0)
+        row=13, column=0, columnspan=2, sticky="w", pady=(8, 0)
     )
     try:
         editor._show_centered_dialog(dialog)

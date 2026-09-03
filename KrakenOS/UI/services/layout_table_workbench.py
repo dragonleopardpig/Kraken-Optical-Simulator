@@ -8620,47 +8620,30 @@ class LayoutTableWorkbenchMixin:
         far = min(bands, key=_center_z)
         if near is far:
             return moved
-        # bugs/0705 follow-up (flag 125205 "make the device shrink SYMMETRICALLY
-        # so that the device is always at the middle of the big gap of the two
-        # top RA mirrors"): the anchor is the GAP CENTRE, not face A. The
-        # authored mirror-launch symmetry plane IS that centre (the towers'
-        # midplane) and stays INVARIANT under a symmetric resize -- which also
-        # keeps the mirrored faceB launch exact for every device size (a plane
-        # at centre+d/2 mirrors onto centre-d/2 by construction).
-        centre = None
-        for source_spec in list(getattr(self, "layout_scene_source_specs", None) or []):
-            if isinstance(source_spec, dict) and source_spec.get("mirror_launch_plane_z", None) is not None:
-                try:
-                    centre = float(source_spec["mirror_launch_plane_z"])
-                except Exception:
-                    centre = None
-                break
-        if centre is None:
-            centre = 0.5 * (_center_z(near) + _center_z(far))
-        if (
-            abs(_center_z(near) - (centre + 0.5 * old_depth)) > 1e-6
-            or abs(_center_z(far) - (centre - 0.5 * old_depth)) > 1e-6
-        ):
+        # bugs/0708 (flag 133247 "the ray is no launching from the Object Plane",
+        # superseding the 0706 display-offset scheme): FACE A stays ON the walk
+        # origin -- that is where the imaging launch physically starts, and a
+        # band that drifts off it draws a plane no ray comes from. The 0706 ask
+        # ("the device always at the middle of the big gap of the two top RA
+        # mirrors") is honoured the physical way instead: the FAR TOWER SLIDES
+        # with the far face, so the gap re-centres around the device. That is
+        # also the correct new station design -- and it keeps the mirrored faceB
+        # launch EXACT, because the hardware becomes symmetric about the new
+        # mirror plane by construction.
+        near_z = _center_z(near)
+        far_z_old = _center_z(far)
+        if abs((near_z - far_z_old) - old_depth) > 1e-6:
             return moved  # bands are not on this part's faces -- hands off
-        near_z_old = _center_z(near)
-        near_z = centre + 0.5 * new_depth
-        far_z = centre - 0.5 * new_depth
+        far_z = near_z - new_depth
+        centre = near_z - 0.5 * new_depth
+        delta_far = far_z - far_z_old
         if abs(new_depth - old_depth) > 1e-9:
-            for band, z in ((near, near_z), (far, far_z)):
-                center_v = list(band.get("center") or (0.0, 0.0, 0.0))
-                center_v[2] = z
-                band["center"] = center_v
+            center_v = list(far.get("center") or (0.0, 0.0, 0.0))
+            center_v[2] = far_z
+            far["center"] = center_v
             self.layout_object_fov_bands = bands
-            moved.append(f"face bands -> z={near_z:g} / z={far_z:g} (centre {centre:g})")
-            # The drawn part box anchors its active face at object_point +
-            # axis_offset -- shift the offset so the box centre stays on the
-            # gap centre with the faces.
-            try:
-                offset = float(self.inspection_part_spec.get("axis_offset_mm", 0.0) or 0.0)
-                self.inspection_part_spec["axis_offset_mm"] = offset + (near_z - near_z_old)
-                moved.append(f"part offset -> {self.inspection_part_spec['axis_offset_mm']:g}")
-            except Exception:
-                pass
+            moved.append(f"far face band -> z={far_z:g}")
+            moved.extend(self._slide_far_tower_rows(near_z, far_z_old, delta_far))
         specs = list(getattr(self, "layout_scene_source_specs", None) or [])
         for source_spec in specs:
             if not isinstance(source_spec, dict):
@@ -8680,6 +8663,72 @@ class LayoutTableWorkbenchMixin:
             )
         return moved
 
+    def _slide_far_tower_rows(self, near_z, far_z_old, delta) -> list[str]:
+        """bugs/0708: slide the FAR TOWER with the far face so the device stays in
+        the middle of the gap (the 0706 ask) while face A stays on the walk origin
+        where the imaging launch starts. General classifier, no scene names: a
+        world-placed UNTILTED optical-solid row on the far side of the old gap
+        centre whose z mirrors (about that centre) onto another solid row's z is
+        half of a symmetric tower pair -- the vendor A/B trains. Unpaired far-side
+        rows (a fold mirror on the camera leg, the lens block) never move; a
+        tilted solid (a leg fold) never moves. Stations are untouched (no
+        thickness changes), so this is a pure world slide: desp_z += delta."""
+        import numpy as np
+
+        if abs(float(delta)) <= 1e-9:
+            return []
+        centre_old = 0.5 * (float(near_z) + float(far_z_old))
+        rows = list(getattr(self, "rows", []) or [])
+        stations = self._row_z_positions()
+        solid_rows = []
+        for index, row in enumerate(rows):
+            advanced = row.advanced if isinstance(getattr(row, "advanced", None), dict) else {}
+            if not advanced.get("Solid_3d_stl"):
+                continue
+            if any(
+                abs(float(getattr(row, field, 0.0) or 0.0)) > 1e-9
+                for field in ("tilt_x", "tilt_y", "tilt_z")
+            ):
+                continue
+            station = float(stations[index]) if index < len(stations) else 0.0
+            solid_rows.append((index, row, station + float(row.desp_z)))
+
+        def _placement(row) -> dict:
+            advanced = dict(row.advanced or {})
+            placement = advanced.get("ScenePlacement")
+            if not isinstance(placement, dict):
+                placement = {}
+            advanced["ScenePlacement"] = placement
+            row.advanced = advanced
+            return placement
+
+        # The far-train membership is classified ONCE from the pristine symmetric
+        # geometry (twin pairing about the gap centre) and STAMPED -- after a big
+        # slide a far element can CROSS the centre and the geometric pairing
+        # would misclassify it on the next resize.
+        stamped = [
+            (index, row, z)
+            for index, row, z in solid_rows
+            if bool((_placement(row)).get("far_tower"))
+        ]
+        if not stamped:
+            zs = np.asarray([z for _index, _row, z in solid_rows], dtype=float)
+            for index, row, z in solid_rows:
+                if z >= centre_old - 1e-6:
+                    continue  # the near tower stays with face A
+                twin = 2.0 * centre_old - z
+                if not bool(np.any(np.abs(zs - twin) < 0.25)):
+                    continue  # no symmetric partner -> not part of the tower pair
+                _placement(row)["far_tower"] = True
+                stamped.append((index, row, z))
+        moved: list[str] = []
+        for index, row, z in stamped:
+            row.desp_z = float(row.desp_z) + float(delta)
+            moved.append(
+                f"S{index} {str(getattr(row, 'name', '') or '').strip()} -> z={z + float(delta):g}"
+            )
+        return moved
+
     def set_inspection_part_active_face(self, face: str) -> None:
         """Re-target the current station onto another face of the part: that face now
         sits on the object plane (the box re-poses around it)."""
@@ -8696,8 +8745,12 @@ class LayoutTableWorkbenchMixin:
             "to it from the part menu or the FOV dialog."
         )
 
-    def solve_fov_to_inspection_face(self) -> tuple[bool, str]:
-        """Solve the object-plane FOV to the inspected face's size (+5% alignment margin)."""
+    def solve_fov_to_inspection_face(self, fov=None) -> tuple[bool, str]:
+        """Solve the object-plane FOV to the inspected face's size (+5% alignment
+        margin), or to an EXPLICIT ``fov`` (mm, square) when the user typed one --
+        bugs/0708: the device-size dialog carries a Required FOV field so both
+        values go in together (a 15x15x1 device with ~20 mm FOV for positioning
+        error, the user's stated production case)."""
         from KrakenOS.UI.services.inspection_part import face_dims, normalize_inspection_part_spec
         from KrakenOS.UI.services.quick_estimation import QuickEstimationService
         from types import SimpleNamespace
@@ -8705,6 +8758,12 @@ class LayoutTableWorkbenchMixin:
         spec = normalize_inspection_part_spec(getattr(self, "inspection_part_spec", None))
         w, h = face_dims(spec, spec["active_face"])
         margin = 1.05
+        try:
+            if fov is not None and float(fov) > 0.0:
+                w = h = float(fov)
+                margin = 1.0  # the user's number is authoritative
+        except Exception:
+            pass
         inspector = getattr(self, "_three_d_inspector", None)
         try:
             qe = inspector._quick_estimation_service() if inspector is not None else QuickEstimationService(SimpleNamespace(editor=self))
