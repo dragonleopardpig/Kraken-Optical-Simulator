@@ -670,6 +670,29 @@ class Open3DStepAdminPanel:
                 tree.insert(category_iids["sources"], "end", iid=f"source:{source_id}", text=source_name,
                             tags=self._item_hidden_tag(source_id=source_id))
                 category_counts["sources"] += 1
+            # bugs/0705 (flag: "unable to select the Device on the scene, it is not
+            # appeared in right panel browser as well"): the inspection part (the
+            # DEVICE under test) is a first-class browser row. On the om05a the part
+            # box sits INSIDE the prism-assembly meshes, so a canvas click lands on
+            # the STEP overlays first -- the browser row is the reliable handle:
+            # right-click = the same face/size/FOV menu as the canvas part menu.
+            try:
+                from KrakenOS.UI.services.inspection_part import normalize_inspection_part_spec
+
+                part = normalize_inspection_part_spec(getattr(self.editor, "inspection_part_spec", None))
+                if part["enabled"]:
+                    tree.insert(
+                        "",
+                        "end",
+                        iid="inspection-part",
+                        text=(
+                            f"Device {part['width_mm']:g} × {part['height_mm']:g} × "
+                            f"{part['depth_mm']:g} mm (inspect: {part['active_face']})"
+                        ),
+                        open=True,
+                    )
+            except Exception:
+                pass
             for key, parent_iid in category_iids.items():
                 if category_counts.get(key, 0) <= 0:
                     tree.insert(parent_iid, "end", iid=f"empty:{key}", text="(empty)")
@@ -773,6 +796,23 @@ class Open3DStepAdminPanel:
                 self.inspector.status_var.set(f"Select source failed: {exc}")
             self._update_properties("")
             return
+        if iid == "inspection-part":
+            # bugs/0705: the Device row -- right-click carries the verbs (0619 rule).
+            self._selected_item_id = iid
+            try:
+                from KrakenOS.UI.services.inspection_part import face_dims, normalize_inspection_part_spec
+
+                part = normalize_inspection_part_spec(getattr(self.editor, "inspection_part_spec", None))
+                w, h = face_dims(part, part["active_face"])
+                self.inspector.status_var.set(
+                    f"Device {part['width_mm']:g} x {part['height_mm']:g} x {part['depth_mm']:g} mm -- "
+                    f"inspecting the {part['active_face']} face ({w:g} x {h:g} mm). "
+                    "Right-click for size / faces / FOV."
+                )
+            except Exception:
+                pass
+            self._update_properties("")
+            return
         if iid == self._selected_item_id and iid == self._current_browser_selection_iid():
             self._update_properties(iid)
             return
@@ -827,6 +867,16 @@ class Open3DStepAdminPanel:
             return "break"
         if not iid or iid.startswith("empty:"):
             return "break"
+        if iid == "inspection-part":
+            # bugs/0705: the Device row's menu = the canvas part menu's verbs.
+            try:
+                tree.selection_set(iid)
+                tree.focus(iid)
+            except Exception:
+                pass
+            self._on_tree_select()
+            self._show_inspection_part_context_menu(event)
+            return "break"
         if iid.startswith("category:"):
             # bugs/0361: category headers ("Optical Element", "Imaging Lens", ...) must
             # reach the 0360 group Hide/Show menu -- the old gate swallowed the click
@@ -858,6 +908,45 @@ class Open3DStepAdminPanel:
                 self.inspector.status_var.set(f"Edit Source failed: {exc}")
             except Exception:
                 pass
+
+    def _show_inspection_part_context_menu(self, event) -> None:
+        """bugs/0705: the browser Device row's right-click menu -- the same verbs as
+        the 0661 canvas part menu (which needs a clean canvas pick the om05a's
+        overlapping prism meshes never grant): inspect-face per face, device size
+        (the Inspection Part dialog), solve FOV, open the face's station."""
+        from KrakenOS.UI.services.inspection_part import FACE_ORDER, face_dims, normalize_inspection_part_spec
+
+        spec = normalize_inspection_part_spec(getattr(self.editor, "inspection_part_spec", None))
+        menu = tk.Menu(self.inspector, tearoff=False)
+        menu.add_command(
+            label=f"Device {spec['width_mm']:g} x {spec['height_mm']:g} x {spec['depth_mm']:g} mm",
+            state="disabled",
+        )
+        menu.add_separator()
+        menu.add_command(
+            label="Device size / part settings...",
+            command=self.editor.open_inspection_part_dialog,
+        )
+        menu.add_separator()
+        for face in FACE_ORDER:
+            w, h = face_dims(spec, face)
+            mark = "* " if face == spec["active_face"] else "   "
+            menu.add_command(
+                label=f"{mark}Inspect {face.capitalize()} face ({w:g} x {h:g} mm)",
+                command=lambda f=face: self.editor.set_inspection_part_active_face(f),
+            )
+        menu.add_separator()
+        menu.add_command(
+            label="Solve FOV to the inspected face",
+            command=lambda: self.editor.solve_fov_to_inspection_face(),
+        )
+        menu.add_command(
+            label="Create/Open station for the inspected face...",
+            command=lambda: self.editor.open_station_for_face(
+                normalize_inspection_part_spec(getattr(self.editor, "inspection_part_spec", None))["active_face"]
+            ),
+        )
+        self.inspector._popup_scene_component_menu(menu, event)  # bugs/0403: robust dismiss
 
     def _show_scene_sources_context_menu(self, event) -> None:
         """bugs/0284: the Scene Sources group's right-click menu. "Add Illumination Source (LED)" creates
