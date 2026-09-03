@@ -8609,32 +8609,66 @@ class LayoutTableWorkbenchMixin:
         bands = list(getattr(self, "layout_object_fov_bands", None) or [])
         if len(bands) != 2 or new_depth <= 0.0 or old_depth <= 0.0:
             return moved
-        # Identify near (face A, at the object plane) and far (face B) bands by
-        # their authored centres along the part depth axis (-z from face A).
+
         def _center_z(band) -> float:
             try:
                 return float((band.get("center") or (0.0, 0.0, 0.0))[2])
             except Exception:
                 return 0.0
 
-        near = min(bands, key=lambda b: abs(_center_z(b)))
-        far = max(bands, key=lambda b: abs(_center_z(b)))
-        if near is far or abs(abs(_center_z(far)) - old_depth) > 1e-6:
-            return moved  # bands are not anchored on this part's faces -- hands off
+        near = max(bands, key=_center_z)
+        far = min(bands, key=_center_z)
+        if near is far:
+            return moved
+        # bugs/0705 follow-up (flag 125205 "make the device shrink SYMMETRICALLY
+        # so that the device is always at the middle of the big gap of the two
+        # top RA mirrors"): the anchor is the GAP CENTRE, not face A. The
+        # authored mirror-launch symmetry plane IS that centre (the towers'
+        # midplane) and stays INVARIANT under a symmetric resize -- which also
+        # keeps the mirrored faceB launch exact for every device size (a plane
+        # at centre+d/2 mirrors onto centre-d/2 by construction).
+        centre = None
+        for source_spec in list(getattr(self, "layout_scene_source_specs", None) or []):
+            if isinstance(source_spec, dict) and source_spec.get("mirror_launch_plane_z", None) is not None:
+                try:
+                    centre = float(source_spec["mirror_launch_plane_z"])
+                except Exception:
+                    centre = None
+                break
+        if centre is None:
+            centre = 0.5 * (_center_z(near) + _center_z(far))
+        if (
+            abs(_center_z(near) - (centre + 0.5 * old_depth)) > 1e-6
+            or abs(_center_z(far) - (centre - 0.5 * old_depth)) > 1e-6
+        ):
+            return moved  # bands are not on this part's faces -- hands off
+        near_z_old = _center_z(near)
+        near_z = centre + 0.5 * new_depth
+        far_z = centre - 0.5 * new_depth
         if abs(new_depth - old_depth) > 1e-9:
-            center = list(far.get("center") or (0.0, 0.0, 0.0))
-            center[2] = _center_z(near) - new_depth
-            far["center"] = center
+            for band, z in ((near, near_z), (far, far_z)):
+                center_v = list(band.get("center") or (0.0, 0.0, 0.0))
+                center_v[2] = z
+                band["center"] = center_v
             self.layout_object_fov_bands = bands
-            moved.append(f"far face band -> z={center[2]:g}")
+            moved.append(f"face bands -> z={near_z:g} / z={far_z:g} (centre {centre:g})")
+            # The drawn part box anchors its active face at object_point +
+            # axis_offset -- shift the offset so the box centre stays on the
+            # gap centre with the faces.
+            try:
+                offset = float(self.inspection_part_spec.get("axis_offset_mm", 0.0) or 0.0)
+                self.inspection_part_spec["axis_offset_mm"] = offset + (near_z - near_z_old)
+                moved.append(f"part offset -> {self.inspection_part_spec['axis_offset_mm']:g}")
+            except Exception:
+                pass
         specs = list(getattr(self, "layout_scene_source_specs", None) or [])
         for source_spec in specs:
             if not isinstance(source_spec, dict):
                 continue
             if source_spec.get("mirror_launch_plane_z", None) is None:
                 continue
-            source_spec["source_z"] = _center_z(near) - new_depth
-            source_spec["mirror_launch_plane_z"] = _center_z(near) - 0.5 * new_depth
+            source_spec["source_z"] = far_z
+            source_spec["mirror_launch_plane_z"] = centre
             if new_width > 0.0:
                 source_spec["radius_x"] = 0.5 * new_width
                 source_spec["radius"] = 0.5 * new_width
@@ -8642,8 +8676,7 @@ class LayoutTableWorkbenchMixin:
                 source_spec["radius_y"] = 0.5 * new_height
             self.layout_scene_source_specs = specs
             moved.append(
-                f"faceB launch -> z={source_spec['source_z']:g} (mirror plane "
-                f"{source_spec['mirror_launch_plane_z']:g})"
+                f"faceB launch -> z={source_spec['source_z']:g} (mirror plane {centre:g})"
             )
         return moved
 
