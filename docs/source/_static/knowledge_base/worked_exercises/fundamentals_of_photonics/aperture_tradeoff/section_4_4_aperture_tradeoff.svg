@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650" role="img" aria-labelledby="title desc">
+  <title id="title">Why small and large apertures can each improve image quality</title>
+  <desc id="desc">Comparison of geometrical defocus blur, which grows with aperture diameter, and focused diffraction blur, which shrinks with aperture diameter.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f7f3e9}.card{fill:#fffdf8;stroke:#bdc9cf;stroke-width:2}.band{fill:#e8f1ef;stroke:#8aa9a3;stroke-width:2}.head{font:700 26px Georgia,serif;fill:#17324d}.subhead{font:700 20px Georgia,serif;fill:#17324d}.body{font:16px Georgia,serif;fill:#30485a}.small{font:14px Georgia,serif;fill:#496274}.math{font:italic 18px Georgia,serif;fill:#713b28}.axis{stroke:#718391;stroke-width:2}.lens{fill:#d9eaf2;stroke:#2a6f97;stroke-width:3}.plane{stroke:#263f52;stroke-width:5}.large{fill:none;stroke:#c85d3b;stroke-width:4;stroke-linecap:round}.smallray{fill:none;stroke:#277da1;stroke-width:4;stroke-linecap:round}.dash{fill:none;stroke:#718391;stroke-width:2;stroke-dasharray:8 7}.bracket{fill:none;stroke:#713b28;stroke-width:2}.spotlarge{fill:#f1c6b8;stroke:#c85d3b;stroke-width:3}.spotsmall{fill:#b9dce9;stroke:#277da1;stroke-width:3}.arrow{stroke:#30485a;stroke-width:2;marker-end:url(#arrow)}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#30485a"/></marker>
+  </defs>
+  <rect class="bg" width="1200" height="650" rx="18"/>
+  <text class="head" x="600" y="42" text-anchor="middle">Section 4.4: the aperture conclusions use different limits</text>
+  <text class="body" x="600" y="70" text-anchor="middle">Same aperture diameter D; different focus condition and different blur mechanism</text>
+
+  <rect class="card" x="35" y="95" width="550" height="445" rx="16"/>
+  <text class="subhead" x="60" y="130">A. Ray optics: defocused, ε ≠ 0</text>
+  <text class="body" x="60" y="156">The sensor plane is not at the true focus d₂₀.</text>
+  <line class="axis" x1="75" y1="300" x2="550" y2="300"/>
+  <circle cx="80" cy="300" r="6" fill="#17324d"/>
+  <path class="lens" d="M275 190 Q250 300 275 410 Q300 300 275 190 Z"/>
+  <line class="plane" x1="470" y1="205" x2="470" y2="395"/>
+  <line class="dash" x1="530" y1="205" x2="530" y2="395"/>
+  <circle cx="530" cy="300" r="6" fill="#17324d"/>
+  <path class="large" d="M80 300 L275 205 L530 300 M80 300 L275 395 L530 300"/>
+  <path class="smallray" d="M80 300 L275 260 L530 300 M80 300 L275 340 L530 300"/>
+  <line class="large" x1="470" y1="278" x2="470" y2="322"/>
+  <line class="smallray" x1="463" y1="291" x2="463" y2="309"/>
+  <path class="bracket" d="M448 278 h-8 v44 h8"/>
+  <text class="math" x="421" y="305" text-anchor="end">ρₛ ∝ D</text>
+  <text class="small" x="278" y="184" text-anchor="middle">aperture / lens</text>
+  <text class="small" x="450" y="420" text-anchor="middle">actual sensor d₂</text>
+  <text class="small" x="530" y="440" text-anchor="middle">true focus d₂₀</text>
+  <text class="small" x="315" y="224" fill="#c85d3b">large D</text>
+  <text class="small" x="315" y="270" fill="#277da1">small D</text>
+  <text class="math" x="310" y="470" text-anchor="middle">|ρₛ| = ½ |ε| d₂ D</text>
+  <text class="body" x="310" y="503" text-anchor="middle">Smaller D → smaller defocus patch</text>
+
+  <rect class="card" x="615" y="95" width="550" height="445" rx="16"/>
+  <text class="subhead" x="640" y="130">C. Wave optics: focused, ε = 0</text>
+  <text class="body" x="640" y="156">The remaining point spread is diffraction.</text>
+  <line class="axis" x1="650" y1="300" x2="1125" y2="300"/>
+  <path class="lens" d="M755 190 Q730 300 755 410 Q780 300 755 190 Z"/>
+  <line class="plane" x1="1080" y1="205" x2="1080" y2="395"/>
+  <path class="large" d="M650 210 L755 210 L1080 300 M650 390 L755 390 L1080 300"/>
+  <path class="smallray" d="M650 260 L755 260 L1080 300 M650 340 L755 340 L1080 300"/>
+  <ellipse class="spotsmall" cx="1080" cy="300" rx="15" ry="44"/>
+  <ellipse class="spotlarge" cx="1080" cy="300" rx="7" ry="14"/>
+  <text class="small" x="755" y="184" text-anchor="middle">circular aperture D</text>
+  <text class="small" x="1080" y="420" text-anchor="middle">focused image plane d₂</text>
+  <text class="small" x="825" y="224" fill="#c85d3b">large D</text>
+  <text class="small" x="825" y="270" fill="#277da1">small D</text>
+  <line x1="1095" y1="265" x2="1120" y2="245" stroke="#277da1" stroke-width="2"/>
+  <text class="small" x="1125" y="235" text-anchor="middle" fill="#277da1">small D: broad spot</text>
+  <line x1="1088" y1="312" x2="1115" y2="335" stroke="#c85d3b" stroke-width="2"/>
+  <text class="small" x="1115" y="354" text-anchor="middle" fill="#c85d3b">large D: narrow spot</text>
+  <text class="math" x="890" y="470" text-anchor="middle">ρₛ = 1.22 λd₂ / D</text>
+  <text class="body" x="890" y="503" text-anchor="middle">Larger D → narrower diffraction spot</text>
+
+  <rect class="band" x="85" y="565" width="1030" height="60" rx="12"/>
+  <text class="head" x="600" y="590" text-anchor="middle">No contradiction</text>
+  <text class="body" x="600" y="614" text-anchor="middle">Small aperture reduces sensitivity to defocus; large aperture improves resolution at exact focus.</text>
+</svg>

@@ -472,6 +472,33 @@ def main() -> None:
     ):
         if required_text not in chapter_four:
             fail(f"Chapter 4 Figure 4.0-2 example omits {required_text}")
+    for required_text in (
+        "Section 4.4: why the aperture advice reverses",
+        "fop-section-4-4-geometrical-blur",
+        "fop-section-4-4-diffraction-blur",
+        "fop-section-4-4-generalized-pupil",
+        r"\epsilon\ne0` versus :math:`\epsilon=0",
+        "section_4_4_aperture_tradeoff.svg",
+    ):
+        if required_text not in chapter_four:
+            fail(f"Chapter 4 aperture comparison omits {required_text}")
+    aperture_figure = (
+        FOURIER_DECOMPOSITION.parent
+        / "aperture_tradeoff"
+        / "section_4_4_aperture_tradeoff.svg"
+    )
+    if not aperture_figure.is_file():
+        fail("Chapter 4 aperture-comparison figure is missing")
+    aperture_svg = aperture_figure.read_text(encoding="utf-8")
+    for required_text in (
+        "Ray optics: defocused",
+        "Wave optics: focused",
+        "|ρₛ| = ½ |ε| d₂ D",
+        "ρₛ = 1.22 λd₂ / D",
+        "No contradiction",
+    ):
+        if required_text not in aperture_svg:
+            fail(f"Chapter 4 aperture-comparison figure omits {required_text}")
     for asset_name in (
         "figure_4_0_2_fourier_decomposition.png",
         "figure_4_0_2_strongest_harmonics.png",

@@ -173,6 +173,189 @@ the boat emerge only after many different amplitudes and phases are added.
 The figures and counts are reproducible with
 ``docs/generate_fourier_picture_decomposition.py``.
 
+Section 4.4: why the aperture advice reverses
+----------------------------------------------
+
+Two sentences in Sec. 4.4 appear to give opposite advice:
+
+* Sec. 4.4A says that image quality may be improved with a **small aperture**.
+* Example 4.4-1 in Sec. 4.4C says that a smaller F-number, and therefore a
+  **larger aperture**, gives better image quality.
+
+They do not describe the same limit.  Section A studies geometrical blur when
+the system is **not in focus**.  Section C studies diffraction blur after the
+system has been set **exactly in focus**.
+
+.. figure:: /_static/knowledge_base/worked_exercises/fundamentals_of_photonics/aperture_tradeoff/section_4_4_aperture_tradeoff.svg
+   :alt: Comparison of aperture diameter effects on ray-optics defocus blur and focused diffraction blur
+   :align: center
+   :width: 100%
+
+   **Why the aperture conclusions reverse.**  On the left, the sensor is
+   displaced from the true image plane, so a wider ray cone makes a wider
+   geometrical patch.  On the right, the system is focused and the finite
+   aperture produces diffraction; a wider aperture makes the diffraction
+   spot narrower.  The colors identify the aperture cases, not two different
+   wavelengths.
+
+What Sec. 4.4A holds fixed: nonzero focusing error
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The section first says that a focused system is ideal within ray theory: each
+object point maps to one image point.  It then changes the condition with the
+sentence “Suppose now that the system is not in focus” and defines, in
+textbook Eq. (4.4-1),
+
+.. math::
+   :label: fop-section-4-4-focusing-error
+
+   \epsilon=\frac{1}{d_1}+\frac{1}{d_2}-\frac{1}{f}.
+
+Here :math:`d_2` is the actual lens-to-image-plane distance.  The correctly
+focused plane would instead be at :math:`d_{20}`, where
+:math:`1/d_1+1/d_{20}=1/f`.  A ray passing through the aperture at radius
+:math:`\rho` reaches the actual image plane at blur radius :math:`\rho_s`.
+The similar-triangle calculation printed immediately below Fig. 4.4-2 gives
+
+.. math::
+   :label: fop-section-4-4-ray-scaling
+
+   \frac{\rho_s}{\rho}
+   =\frac{d_{20}-d_2}{d_{20}}
+   =\epsilon d_2.
+
+For a circular aperture, the edge ray has :math:`\rho=D/2`.  Textbook
+Eq. (4.4-3) is therefore
+
+.. math::
+   :label: fop-section-4-4-geometrical-blur
+
+   \rho_{s,\mathrm{ray}}=\frac{1}{2}\epsilon d_2D,
+   \qquad
+   |\rho_{s,\mathrm{ray}}|
+   =\frac{1}{2}|\epsilon|d_2D.
+
+The second form makes explicit that a physical radius is nonnegative; the
+sign of :math:`\epsilon` identifies which side of focus contains the image
+plane.  With :math:`\epsilon\ne0` and :math:`d_2` held fixed,
+
+.. math::
+   :label: fop-section-4-4-small-aperture-scaling
+
+   |\rho_{s,\mathrm{ray}}|\propto D.
+
+Halving :math:`D` halves this geometrical defocus patch.  This is the precise
+reason Sec. 4.4A associates a small aperture with reduced sensitivity to
+focusing error and increased depth of focus.  If :math:`\epsilon=0`, however,
+Eq. :eq:`fop-section-4-4-geometrical-blur` gives zero ray-optics blur for
+**every** aperture diameter.  The ray model then has nothing more to say
+about the spot size.
+
+What Example 4.4-1 holds fixed: exact focus
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Section 4.4C first defines the generalized pupil in textbook Eq. (4.4-10):
+
+.. math::
+   :label: fop-section-4-4-generalized-pupil
+
+   p_1(x,y)=p(x,y)
+   \exp\!\left[-j\pi\epsilon\frac{x^2+y^2}{\lambda}\right].
+
+Immediately before Example 4.4-1, the book explicitly sets
+:math:`\epsilon=0`; hence :math:`p_1=p`.  The example title also specifies a
+“Focused Imaging System.”  The geometrical defocus term has therefore been
+removed before the circular-aperture result is calculated.
+
+For a circular pupil of diameter :math:`D`, textbook Eq. (4.4-13) gives the
+focused amplitude impulse response
+
+.. math::
+   :label: fop-section-4-4-circular-impulse-response
+
+   h(x,y)=h(0,0)
+   \frac{2J_1(\pi D\rho/\lambda d_2)}
+        {\pi D\rho/\lambda d_2},
+   \qquad \rho=\sqrt{x^2+y^2}.
+
+Its first zero occurs at the radius in textbook Eq. (4.4-14),
+
+.. math::
+   :label: fop-section-4-4-diffraction-blur
+
+   \rho_{s,\mathrm{wave}}=1.22\frac{\lambda d_2}{D}.
+
+For focus at infinity, :math:`d_1=\infty` and :math:`d_2=f`, so textbook
+Eq. (4.4-15) becomes
+
+.. math::
+   :label: fop-section-4-4-f-number-blur
+
+   \rho_{s,\mathrm{wave}}
+   =1.22\lambda\frac{f}{D}
+   =1.22\lambda F\#,
+   \qquad F\#=\frac{f}{D}.
+
+With :math:`\lambda` and :math:`d_2` fixed,
+
+.. math::
+   :label: fop-section-4-4-large-aperture-scaling
+
+   \rho_{s,\mathrm{wave}}\propto\frac{1}{D}.
+
+Halving :math:`D` now doubles the diffraction spot.  This is why the focused
+wave-optics example favors a larger aperture.  The book immediately qualifies
+this conclusion by requiring that the larger lens not introduce geometrical
+aberrations.
+
+Exact comparison
+^^^^^^^^^^^^^^^^
+
+.. list-table:: What changes between the two textbook conclusions
+   :header-rows: 1
+   :widths: 22 34 22 22
+
+   * - Question
+     - Sec. 4.4A
+     - Sec. 4.4C, Example 4.4-1
+     - Aperture advice
+   * - Focus condition
+     - Defocused, :math:`\epsilon\ne0`
+     - Focused, :math:`\epsilon=0`
+     - Different conditions
+   * - Optical description
+     - Ray optics
+     - Wave optics
+     - Different models
+   * - Source of finite spot
+     - Aperture shadow at the wrong image plane
+     - Diffraction of a circular pupil at the correct image plane
+     - Different mechanisms
+   * - Radius scaling
+     - :math:`|\rho_s|\propto D`
+     - :math:`\rho_s\propto1/D`
+     - Small versus large
+   * - What improves
+     - Tolerance to focusing error; depth of focus
+     - Focused resolving power when geometrical aberrations remain negligible
+     - Different performance limits
+
+.. important::
+
+   **The exact distinction is not merely “ray optics versus wave optics.”**
+   It is also :math:`\epsilon\ne0` versus :math:`\epsilon=0`, meaning an
+   incorrectly located image plane versus the correctly focused plane.  The
+   aperture diameter :math:`D` is the same kind of quantity in both formulas,
+   but the finite spot has a different cause.
+
+When both finite aperture and defocus are present, Sec. 4.4C points back to
+the generalized pupil :eq:`fop-section-4-4-generalized-pupil`: the pupil
+boundary supplies diffraction while its quadratic phase contains the
+focusing error.  Therefore, the two limiting sentences alone do not imply a
+universal best aperture and their two spot radii should not simply be added.
+The generalized pupil must be propagated for the specified
+:math:`D`, :math:`\epsilon`, :math:`\lambda`, and :math:`d_2`.
+
 In-text exercises
 -----------------
 
