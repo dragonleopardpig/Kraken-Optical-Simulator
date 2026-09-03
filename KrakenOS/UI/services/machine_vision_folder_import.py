@@ -507,6 +507,128 @@ def _step_bounds_extents(step_path: Path | str) -> list[float] | None:
     return [abs(xmax - xmin), abs(ymax - ymin), abs(zmax - zmin)]
 
 
+def _step_barrel_diameter(step_path: Path | str) -> float | None:
+    """The lens body's REAL barrel diameter: twice the largest cylinder radius in
+    the dominant co-axial cylinder cluster (bugs/0702, flag 094237 "lens surrogate
+    is oversized ... re-occurrence, multiple times").
+
+    The bugs/0668 bounding-box "middle extent" heuristic mis-measures real vendor
+    CAD: the PYRITE 5.6/80 is authored along X with axial length 47 mm ~= its
+    square flange (46 x 50), so the middle extent returned the AXIAL LENGTH and the
+    clamp let the discs (47 mm) overhang the visible ~36 mm barrel rings all
+    around. A lens barrel is many concentric cylindrical FACES (outer wall, ring
+    grooves, threads); the dominant collinear cluster's largest radius is the
+    outer barrel wall -- CAD truth, immune to flanges/lugs (planar faces) and to
+    the authoring axis. Cluster logic mirrors the bugs/0372 axis derivation in
+    ``layout_polyline_display._step_primary_cylinder_axis_frame``.
+    ``None`` on any failure so callers fall back to the bbox heuristic."""
+    try:
+        import numpy as np
+        from OCC.Core.BRepAdaptor import BRepAdaptor_Surface
+        from OCC.Core.BRepBndLib import brepbndlib
+        from OCC.Core.BRepGProp import brepgprop
+        from OCC.Core.Bnd import Bnd_Box
+        from OCC.Core.GProp import GProp_GProps
+        from OCC.Core.GeomAbs import GeomAbs_Cylinder
+        from OCC.Core.STEPControl import STEPControl_Reader
+        from OCC.Core.TopAbs import TopAbs_FACE
+        from OCC.Core.TopExp import TopExp_Explorer
+    except Exception:
+        return None
+    try:
+        reader = STEPControl_Reader()
+        if reader.ReadFile(str(step_path)) != 1:  # IFSelect_RetDone
+            return None
+        reader.TransferRoots()
+        shape = reader.OneShape()
+        box = Bnd_Box()
+        brepbndlib.Add(shape, box)
+        bx0, by0, bz0, bx1, by1, bz1 = box.Get()
+        body_center = np.array(
+            [(bx0 + bx1) * 0.5, (by0 + by1) * 0.5, (bz0 + bz1) * 0.5], dtype=float
+        )
+        body_diag = float(np.linalg.norm([bx1 - bx0, by1 - by0, bz1 - bz0]))
+        axes: list[tuple[float, "np.ndarray", "np.ndarray"]] = []
+        explorer = TopExp_Explorer(shape, TopAbs_FACE)
+        while explorer.More():
+            face = explorer.Current()
+            surface = BRepAdaptor_Surface(face)
+            if surface.GetType() == GeomAbs_Cylinder:
+                cylinder = surface.Cylinder()
+                direction = cylinder.Axis().Direction()
+                vector = np.array(
+                    [direction.X(), direction.Y(), direction.Z()], dtype=float
+                )
+                location = cylinder.Axis().Location()
+                raw_point = np.array(
+                    [location.X(), location.Y(), location.Z()], dtype=float
+                )
+                norm = float(np.linalg.norm(vector))
+                radius = float(cylinder.Radius())
+                if (
+                    norm > 1e-12
+                    and math.isfinite(radius)
+                    and radius > 1.0
+                    # bugs/0372: a near-planar face / huge blend fillet
+                    # misclassifies as an absurd-radius cylinder.
+                    and radius <= max(1.5 * body_diag, 10.0)
+                    and bool(np.all(np.isfinite(raw_point)))
+                ):
+                    props = GProp_GProps()
+                    brepgprop.SurfaceProperties(face, props)
+                    area = float(props.Mass())
+                    unit = vector / norm
+                    near = raw_point + float(np.dot(body_center - raw_point, unit)) * unit
+                    axes.append((radius, area, unit, near))
+            explorer.Next()
+        if not axes:
+            return None
+        groups: list[dict] = []
+        for radius, area, unit, near_point in axes:
+            placed = False
+            for group in groups:
+                group_dir = group["dir"]
+                oriented = unit if float(np.dot(group_dir, unit)) >= 0.0 else -unit
+                if abs(float(np.dot(group_dir, oriented))) < 0.985:
+                    continue
+                delta = near_point - group["point"]
+                perp = float(
+                    np.linalg.norm(delta - float(np.dot(delta, group_dir)) * group_dir)
+                )
+                if perp > max(2.0, 0.15 * body_diag):
+                    continue
+                group["weight"] += radius
+                group["members"].append((radius, area))
+                placed = True
+                break
+            if not placed:
+                groups.append(
+                    {
+                        "dir": unit.copy(),
+                        "point": near_point.copy(),
+                        "weight": radius,
+                        "members": [(radius, area)],
+                    }
+                )
+        dominant = max(groups, key=lambda group: group["weight"])
+        members = dominant["members"]
+        area_max = max(area for _radius, area in members)
+        if not (math.isfinite(area_max) and area_max > 1e-6):
+            return None
+        # The barrel WALL is a long cylinder (large lateral area); a flange-plate
+        # BORE is wide but short. Gate on area so short wide bores cannot pose as
+        # the barrel, then take the widest substantial cylinder.
+        substantial = [
+            radius for radius, area in members if area >= 0.25 * area_max
+        ]
+        if not substantial:
+            return None
+        barrel = 2.0 * float(max(substantial))
+        return barrel if math.isfinite(barrel) and barrel > 1e-3 else None
+    except Exception:
+        return None
+
+
 def _step_transverse_extent(step_path: Path | str) -> float | None:
     """The STEP body's transverse (barrel) diameter: the MIDDLE of the three
     bounding-box extents.  A barrel is round, so two extents are its diameter and
@@ -809,8 +931,13 @@ def _core_from_prescription_data(assets: LensFolderAssets) -> _SurrogateCore:
         lens_aperture = round(max(float(lens_aperture), image_diameter + stop_diameter), 4)
     # bugs/0668: no lens's glass exceeds its barrel -- same clamp as the
     # datasheet path (never below the pupil footprint).
+    # bugs/0702: prefer the REAL barrel (largest substantial co-axial cylinder
+    # face) over the bbox middle extent, which for x-authored / square-flanged
+    # CAD returns the axial length or the flange, not the glass housing.
     housing = (
-        _step_transverse_extent(assets.primary_step) if assets.primary_step else None
+        (_step_barrel_diameter(assets.primary_step) or _step_transverse_extent(assets.primary_step))
+        if assets.primary_step
+        else None
     )
     if housing:
         lens_aperture = round(max(stop_diameter * 1.4, min(float(lens_aperture), housing)), 4)
@@ -944,8 +1071,13 @@ def _core_from_datasheet_cardinals(
         lens_aperture = round(max(lens_aperture, field_cover + stop_diameter), 4)
     # bugs/0668: no lens's glass exceeds its barrel -- clamp to the bundled STEP
     # body's transverse extent (never below the pupil footprint).
+    # bugs/0702: prefer the REAL barrel (largest substantial co-axial cylinder
+    # face) over the bbox middle extent, which for x-authored / square-flanged
+    # CAD returns the axial length or the flange, not the glass housing.
     housing = (
-        _step_transverse_extent(assets.primary_step) if assets.primary_step else None
+        (_step_barrel_diameter(assets.primary_step) or _step_transverse_extent(assets.primary_step))
+        if assets.primary_step
+        else None
     )
     if housing:
         lens_aperture = round(

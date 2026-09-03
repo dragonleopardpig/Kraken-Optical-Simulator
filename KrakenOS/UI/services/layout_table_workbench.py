@@ -1953,6 +1953,24 @@ class LayoutTableWorkbenchMixin:
         if new_block and raw_block:
             new_block[0].surface = raw_block[0].surface
             new_block[-1].surface = raw_block[-1].surface
+        # bugs/0702 (flag 094237, om05a 80 mm swap): the outgoing FRONT DATUM can
+        # carry the scene's vendor-seat FRAME-DESP (the 0689 seat is ONE desp on the
+        # first follower row -- a property of the LEG, not of the particular lens).
+        # The 0547 frozen-frame restore only engages when a block row is marked
+        # WORLD-placed; on a scene whose lens block walks sequentially from a frozen
+        # fold row it returns None, the fresh block lands with desp 0, and the seat
+        # calibration silently vanishes on EVERY swap (reproduced:
+        # (-6.08, 0, -0.3885) -> zeros). Carry the old front datum's desp + tilt
+        # onto the replacement front datum; the frozen-frame path, when it does
+        # engage, still runs later and overwrites -- this is its sequential-walk
+        # complement, not a competitor. Straight scenes carry zeros (no-op).
+        if new_block:
+            old_front_row = self.rows[front]
+            for field in ("desp_x", "desp_y", "desp_z", "tilt_x", "tilt_y", "tilt_z"):
+                try:
+                    setattr(new_block[0], field, float(getattr(old_front_row, field, 0.0) or 0.0))
+                except Exception:
+                    pass
         # bugs/0383: preserve the DOWNSTREAM elements' axial positions across the swap.
         # The old lens block's Rear Datum thickness is the SCENE gap to whatever follows
         # the lens -- a fold mirror, camera or image the user placed -- NOT part of the

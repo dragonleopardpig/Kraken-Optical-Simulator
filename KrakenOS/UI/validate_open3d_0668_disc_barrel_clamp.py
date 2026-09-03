@@ -73,6 +73,7 @@ def _check_rule(ok, notes) -> None:
 
 def _check_real_folders(ok, notes) -> None:
     from KrakenOS.UI.services.machine_vision_folder_import import (
+        _step_barrel_diameter,
         _step_transverse_extent,
         build_surrogate_from_assets,
         scan_lens_folder,
@@ -80,14 +81,19 @@ def _check_real_folders(ok, notes) -> None:
 
     if PYRITE.exists():
         model = build_surrogate_from_assets(scan_lens_folder(PYRITE))
-        barrel = _step_transverse_extent(next(PYRITE.glob("*.stp")))
+        # bugs/0702: the clamp now measures the REAL barrel (largest substantial
+        # co-axial cylinder face -- 46.0 on the PYRITE family) instead of the bbox
+        # middle extent (50.06 -- for x-authored / square-flanged CAD that number
+        # is the axial length or the flange, not the glass housing).
+        step = next(PYRITE.glob("*.stp"))
+        barrel = _step_barrel_diameter(step) or _step_transverse_extent(step)
         ok(
             barrel is not None
             and abs(model.front_aperture - barrel) < 0.01
             and model.front_aperture >= 1.4 * model.stop_diameter
             and model.front_aperture < 60.0,
-            f"B1: the PYRITE 4.5/90/0.3x disc is its barrel ({model.front_aperture:.2f} mm "
-            f"vs extent {barrel}; was 320.18)",
+            f"B1: the PYRITE 4.5/90/0.3x disc is its cylinder barrel ({model.front_aperture:.2f} mm "
+            f"vs barrel {barrel}; was 320.18, then bbox 50.06)",
         )
     else:
         notes.append("SKIP: B1: the PYRITE folder is not in this checkout")
