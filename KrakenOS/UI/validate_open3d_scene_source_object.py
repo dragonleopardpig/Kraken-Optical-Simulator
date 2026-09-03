@@ -168,7 +168,9 @@ def _check_descriptors(failures: list[str], notes: list[str]) -> None:
 
 
 def _check_basis(failures: list[str], notes: list[str]) -> None:
-    for direction in ((0.0, 0.0, 1.0), (-0.7071, 0.0, 0.7071), (0.0, 1.0, 0.0)):
+    from KrakenOS.UI.services.source_modeling import SourceModelingMixin
+
+    for direction in ((0.0, 0.0, 1.0), (0.0, 0.0, -1.0), (-0.7071, 0.0, 0.7071), (0.0, 1.0, 0.0)):
         d, u, v = Kraken3DInspector._scene_source_glyph_basis(direction)
         d = np.asarray(d, float); u = np.asarray(u, float); v = np.asarray(v, float)
         if abs(np.linalg.norm(d) - 1.0) > 1e-6:
@@ -179,8 +181,17 @@ def _check_basis(failures: list[str], notes: list[str]) -> None:
             failures.append(f"BASIS: aperture plane not perpendicular to emission dir for {direction}")
         if abs(float(np.dot(u, v))) > 1e-6:
             failures.append(f"BASIS: aperture axes u,v not orthogonal for {direction}")
+        # bugs/0699: the glyph frame MUST be the frame the ray sampler orients bundles with --
+        # a divergent construction drew the om05a faceB 50x1 emitter as a 1x50 vertical stripe.
+        su, sv, sw = SourceModelingMixin._source_frame_vectors_from_direction(direction)
+        if not (np.allclose(u, su, atol=1e-9) and np.allclose(v, sv, atol=1e-9)
+                and np.allclose(d, sw, atol=1e-9)):
+            failures.append(f"BASIS: glyph frame diverges from the sampler frame for {direction}")
+    d, u, v = Kraken3DInspector._scene_source_glyph_basis((0.0, 0.0, -1.0))
+    if abs(float(np.asarray(u, float)[1])) > 1e-9:
+        failures.append("BASIS: z-facing source puts radius_x along vertical (0699 golden stripe)")
     if not [f for f in failures if f.startswith("BASIS")]:
-        notes.append("basis: (d,u,v) orthonormal, aperture plane perpendicular to the emission direction")
+        notes.append("basis: (d,u,v) orthonormal, matches the sampler frame; z-facing radius_x is horizontal")
 
 
 def _check_visibility(failures: list[str], notes: list[str]) -> None:

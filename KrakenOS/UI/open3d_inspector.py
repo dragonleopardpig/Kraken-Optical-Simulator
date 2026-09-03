@@ -16694,19 +16694,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     @staticmethod
     def _scene_source_glyph_basis(direction):
         """Orthonormal (d, u, v): d = the unit emission direction, u/v span the emitting aperture
-        plane perpendicular to it. Used to place the source glyph exactly along the launch direction
-        so the drawn aperture is the plane the trace samples over (display follows physics)."""
-        d = np.asarray(direction, dtype=float).reshape(3)
-        norm = float(np.linalg.norm(d))
-        d = d / norm if norm > 1e-9 else np.asarray((0.0, 0.0, 1.0))
-        helper = np.asarray((0.0, 0.0, 1.0)) if abs(float(d[2])) < 0.9 else np.asarray((1.0, 0.0, 0.0))
-        u = np.cross(helper, d)
-        un = float(np.linalg.norm(u))
-        u = u / un if un > 1e-9 else np.asarray((1.0, 0.0, 0.0))
-        v = np.cross(d, u)
-        vn = float(np.linalg.norm(v))
-        v = v / vn if vn > 1e-9 else np.asarray((0.0, 1.0, 0.0))
-        return d, u, v
+        plane perpendicular to it, with u the radius_x axis and v the radius_y axis. bugs/0699: this
+        MUST be the SAME frame the ray sampler orients bundles with
+        (``_source_frame_vectors_from_direction``) -- a private helper-vector construction here put
+        radius_x along world Y for a z-facing source, so the om05a faceB 50x1 emitter drew as a
+        1x50 vertical golden stripe while its rays launched from the correct horizontal rectangle
+        (display follows physics)."""
+        from KrakenOS.UI.services.source_modeling import SourceModelingMixin
+
+        u, v, w = SourceModelingMixin._source_frame_vectors_from_direction(direction)
+        return w, u, v
 
     def _crease_overlay_mesh_at_fold(self, mesh, fold_transform):
         """bugs/0418+0419: CREASE an axis-spanning overlay (the acceptance cone) at the fold by
