@@ -8789,6 +8789,24 @@ class LayoutTableWorkbenchMixin:
             moved.append(
                 f"S{index} {str(getattr(row, 'name', '') or '').strip()} (leg fold) -> z={z + half_delta:g}"
             )
+        # bugs/0711 (flag 160711 "the prism now shows duplicated RA mirrors, and
+        # other nonsense"): the decorative vendor-assembly STEP overlay is ONE
+        # rigid CAD of the ORIGINAL device depth -- it visually contains the same
+        # mirrors the traced solid rows just slid away from, so after a re-seat
+        # it draws stale duplicates. A monolith cannot be resized: hide it and
+        # say so (display follows physics; the traced solids ARE the new
+        # geometry). The browser can unhide it any time.
+        if moved and getattr(self, "imported_optical_step_path", None) is not None:
+            inspector = getattr(self, "_three_d_inspector", None)
+            try:
+                if inspector is not None and inspector.winfo_exists():
+                    inspector.set_step_label_hidden("optical", True)
+                    moved.append(
+                        "vendor assembly CAD hidden (it models the original device "
+                        "depth) -- unhide it from the Scene Components browser if wanted"
+                    )
+            except Exception:
+                pass
         if moved and abs(float(delta)) > 5.0:
             moved.append(
                 "CAUTION: large re-seat -- verify clearances in 3D (the vendor "

@@ -74,12 +74,25 @@ def _tower_rows():
     ]
 
 
+class _FakeInspector:
+    def __init__(self):
+        self.hidden = []
+
+    def winfo_exists(self):
+        return True
+
+    def set_step_label_hidden(self, label, hidden):
+        self.hidden.append((str(label), bool(hidden)))
+
+
 class _Stub:
     def __init__(self, bands, specs, rows=None):
         self.layout_object_fov_bands = bands
         self.layout_scene_source_specs = specs
         self.inspection_part_spec = {"axis_offset_mm": 0.0}
         self.rows = list(rows or [])
+        self.imported_optical_step_path = "/x/assembly.step"
+        self._three_d_inspector = _FakeInspector()
         self.debug = []
 
     def _row_z_positions(self):
@@ -177,6 +190,15 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         f"A4: a second resize stays consistent via the stamps (far {far['center'][2]}, "
         f"mirror {spec['mirror_launch_plane_z']}, V {zs2['Centre RA mirror A']}/"
         f"{zs2['Centre RA mirror B']} astride -15, leg fold {zs2['RA mirror 2']})",
+    )
+
+    # A5 (bugs/0711 "duplicated RA mirrors"): the rigid vendor-assembly CAD
+    # decoration models the ORIGINAL depth -- a re-seat hides it and says so.
+    ok(
+        ("optical", True) in stub._three_d_inspector.hidden
+        and any("vendor assembly CAD hidden" in m for m in moved + moved2),
+        f"A5: the stale vendor decoration overlay is hidden on a re-seat "
+        f"({stub._three_d_inspector.hidden})",
     )
 
     # B: bands not on the part's faces -> hands off
