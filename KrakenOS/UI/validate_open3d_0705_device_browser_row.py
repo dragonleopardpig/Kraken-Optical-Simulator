@@ -70,6 +70,62 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         "posted via _popup_scene_component_menu (0403/0619)",
     )
 
+    # bugs/0707 ("I put mouse cursor to the device, it won't highlight"): the
+    # Device gets the hover affordance where it is the frontmost pick.
+    from KrakenOS.UI.open3d_inspector import Kraken3DInspector
+    from KrakenOS.UI.services import open3d_interaction
+
+    hover_src = inspect.getsource(open3d_interaction)
+    ok(
+        "_inspection_part_actor_keys" in hover_src
+        and "_set_inspection_part_hover(True)" in hover_src
+        and "Right-click: size / faces / FOV" in hover_src,
+        "E1: the plain hover branch highlights the Device and names the verbs",
+    )
+
+    class _Prop:
+        def __init__(self):
+            self.color = (0.5, 0.5, 0.5)
+
+        def GetColor(self):
+            return self.color
+
+        def SetColor(self, r, g, b):
+            self.color = (r, g, b)
+
+    class _Actor:
+        def __init__(self):
+            self._prop = _Prop()
+
+        def GetProperty(self):
+            return self._prop
+
+    class _HoverStub:
+        def __init__(self):
+            self._inspection_part_actor_keys = {"k1", "k2"}
+            self._actor_by_key = {"k1": _Actor(), "k2": _Actor()}
+            self.renders = 0
+
+        def render(self):
+            self.renders += 1
+
+    stub = _HoverStub()
+    Kraken3DInspector._set_inspection_part_hover(stub, True)
+    gold = all(
+        stub._actor_by_key[k].GetProperty().GetColor() == (1.0, 0.80, 0.20)
+        for k in ("k1", "k2")
+    )
+    Kraken3DInspector._set_inspection_part_hover(stub, False)
+    restored = all(
+        stub._actor_by_key[k].GetProperty().GetColor() == (0.5, 0.5, 0.5)
+        for k in ("k1", "k2")
+    )
+    ok(
+        gold and restored and stub.renders == 2,
+        f"E2: hover helper tints the Device gold and restores exactly "
+        f"(gold={gold}, restored={restored}, renders={stub.renders})",
+    )
+
     passed = not any(note.startswith("FAIL") for note in notes)
     if verbose:
         for note in notes:

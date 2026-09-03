@@ -2093,6 +2093,49 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 except Exception:
                     pass
 
+    def _set_inspection_part_hover(self, active: bool) -> None:
+        """bugs/0707 (user: "I put mouse cursor to the device, it won't highlight"):
+        the gold hover affordance for the Device (inspection part) actors. Stores
+        each actor's own colour on first activation and restores it on leave;
+        actors rebuild on every refresh, so staleness self-heals."""
+        keys = set(getattr(self, "_inspection_part_actor_keys", None) or [])
+        stash = self.__dict__.setdefault("_inspection_part_hover_stash", {})
+        if not active:
+            if not stash:
+                return
+            for key, color in list(stash.items()):
+                actor = (self.__dict__.get("_actor_by_key") or {}).get(key)
+                try:
+                    if actor is not None:
+                        actor.GetProperty().SetColor(*color)
+                except Exception:
+                    pass
+            stash.clear()
+            try:
+                self.render()
+            except Exception:
+                pass
+            return
+        if stash:
+            return  # already highlighted
+        changed = False
+        for key in keys:
+            actor = (self.__dict__.get("_actor_by_key") or {}).get(key)
+            if actor is None:
+                continue
+            try:
+                prop = actor.GetProperty()
+                stash[key] = tuple(prop.GetColor())
+                prop.SetColor(1.0, 0.80, 0.20)
+                changed = True
+            except Exception:
+                continue
+        if changed:
+            try:
+                self.render()
+            except Exception:
+                pass
+
     def refresh_step_overlay_display_only(self, reason: str = "step_display_edit") -> None:
         """bugs/0703 (flag: "after clicking flip, not functioning ... any STEP
         manipulation should stop ray tracing"): a DECORATION-only STEP overlay

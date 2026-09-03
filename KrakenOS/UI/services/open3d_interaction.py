@@ -1518,6 +1518,7 @@ class Open3DInteractionService:
             if fallback_step_pick is not None:
                 step_label = str(fallback_step_pick.get("label"))
         if step_label is not None and (axis_pick_any or step_label == target_label):
+            self._set_inspection_part_hover(False)  # bugs/0707: leaving the Device
             try:
                 cell_id = int(self._picker.GetCellId())
             except Exception:
@@ -1569,6 +1570,31 @@ class Open3DInteractionService:
             else:
                 self.status_var.set(f"Click the {step_label} feature to center it on the optical axis.")
             return
+        # bugs/0707 ("I put mouse cursor to the device, it won't highlight"): the
+        # inspection part (the DEVICE) gets the hover affordance wherever it is
+        # the frontmost pick -- gold tint + a floating label naming size and the
+        # right-click verbs. Where the prism meshes cover it, the frontmost
+        # actor still wins (physical z-order); the browser row stays the
+        # covered-case handle (bugs/0705).
+        part_keys = set(getattr(self, "_inspection_part_actor_keys", None) or [])
+        if actor_key is not None and actor_key in part_keys:
+            try:
+                from KrakenOS.UI.services.inspection_part import normalize_inspection_part_spec
+
+                part = normalize_inspection_part_spec(getattr(self.editor, "inspection_part_spec", None))
+                self._set_step_hover_outline(None, None)
+                self._set_inspection_part_hover(True)
+                self._set_axis_pick_cursor(True)
+                self._update_hover_status(
+                    f"Device {part['width_mm']:g} x {part['height_mm']:g} x {part['depth_mm']:g} mm "
+                    f"(inspect: {part['active_face']})\nRight-click: size / faces / FOV",
+                    display_xy=(x, y),
+                    render=True,
+                )
+                return
+            except Exception:
+                pass
+        self._set_inspection_part_hover(False)
         self._set_step_hover_outline(None, None)
         self._update_hover_status("", render=False)
         self._set_axis_pick_cursor(False)
