@@ -8662,9 +8662,23 @@ class LayoutTableWorkbenchMixin:
                 moved.append(f"part offset -> {self.inspection_part_spec['axis_offset_mm']:g}")
             except Exception:
                 pass
+            # bugs/0713 (flag 165937 "The rays not launching from the object
+            # plane. Recurring bug."): the OBJECT ROW *is* the device -- its
+            # desp_z carries the device's face-A position, so the imaging launch
+            # rides the face while every hardware row stays byte-identical (the
+            # 0712 directive). The paraxial reference folds this desp into the
+            # object distance (paraxial_tools), so magnification/conjugates see
+            # the true longer throw.
+            try:
+                object_row = self.rows[0]
+                if str(getattr(object_row, "surface", "")) == "Object":
+                    object_row.desp_z = float(near_z)
+                    moved.append(f"launch plane (object row) -> face A at z={near_z:g}")
+            except Exception:
+                pass
             moved.append(
-                "as-built optics still image their original object planes -- "
-                "refocus / solve FOV / select a lens to focus on the new faces"
+                "as-built optics focus at their original conjugates -- "
+                "refocus / solve FOV / select a lens for the new throw"
             )
         specs = list(getattr(self, "layout_scene_source_specs", None) or [])
         for source_spec in specs:
@@ -8724,6 +8738,16 @@ class LayoutTableWorkbenchMixin:
         except Exception:
             qe = QuickEstimationService(SimpleNamespace(editor=self))
         ok, msg = qe.fov_solve("object", "thickness", w * margin, h * margin)
+        # bugs/0713 (flag 165937 "seems like the FOV is not 5% as stated"): the
+        # green bands draw the REQUIRED field. On a successful solve the QE
+        # helper already wrote them; on a REFUSAL they must still take the
+        # requested width -- the bands show the requirement, the refusal message
+        # says the current lens cannot deliver it.
+        if not ok:
+            try:
+                qe._update_split_field_band_widths(w * margin)
+            except Exception:
+                pass
         note = f"FOV solved to the {spec['active_face']} face {w:g} x {h:g} mm (+5%): " if ok else f"FOV solve to the {spec['active_face']} face refused: "
         self.status_var.set(note + str(msg))
         try:

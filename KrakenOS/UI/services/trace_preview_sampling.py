@@ -1571,9 +1571,22 @@ class TracePreviewSamplingMixin:
                     ):
                         if (round(_cx, 6), round(_cy, 6)) not in _present:
                             field_launches.append((float(_cx), float(_cy), _probe))
+            # bugs/0713 (flag 165937 "The rays not launching from the object
+            # plane. Recurring bug."): the OBJECT row's desp_z is DEVICE
+            # PLACEMENT (the resized device sits centred in the fixed hardware
+            # gap) -- the launch plane rides the device's face, not the walk
+            # origin. Zero on every legacy scene. The aim targets are absolute
+            # pupil z, so the throw lengthens correctly, and the mirrored faceB
+            # twin reflects this plane onto the far face by construction.
+            try:
+                origin_z = float(getattr(self.rows[0], "desp_z", 0.0) or 0.0) if self.rows else 0.0
+                if not np.isfinite(origin_z):
+                    origin_z = 0.0
+            except Exception:
+                origin_z = 0.0
             for field_x, field_y, launch_points in field_launches:
                 origin = np.array(
-                    [anchor_x - float(field_x), anchor_y - float(field_y), 0.0], dtype=float
+                    [anchor_x - float(field_x), anchor_y - float(field_y), origin_z], dtype=float
                 )
                 x_vals: list[float] = []
                 y_vals: list[float] = []

@@ -361,6 +361,20 @@ class ParaxialToolsMixin:
                         pass
 
         _center_reference_row(reference_rows[0], source_rows[0])
+        # bugs/0713: an OBJECT-row desp_z is DEVICE PLACEMENT along the axis (the
+        # resized device sits centred in the fixed hardware gap while the launch
+        # rides its face) -- the first-order reference must carry it as REAL added
+        # object distance, not drop it: distance = thickness - desp_z (a device
+        # pushed to -z is FARTHER from the first surface). Then centre the row.
+        try:
+            _obj_desp_z = float(getattr(source_rows[0], "desp_z", 0.0) or 0.0)
+            if abs(_obj_desp_z) > 1e-12:
+                reference_rows[0].thickness = float(reference_rows[0].thickness) - _obj_desp_z
+                for _attr in ("desp_x", "desp_y", "desp_z"):
+                    if hasattr(reference_rows[0], _attr):
+                        setattr(reference_rows[0], _attr, 0.0)
+        except Exception:
+            pass
         for index, row in enumerate(source_rows[1:], start=1):
             if row.surface == "Image":
                 if index >= len(source_rows) - 1:
@@ -2092,9 +2106,29 @@ class ParaxialToolsMixin:
         image_delta = (float(first_order["h2_z"]) + f * (1.0 + m)) - float(first_order["image_z"])
         object_distance = float(object_total) + object_delta
         image_distance = float(image_total) + image_delta
-        if not (np.isfinite(object_distance) and np.isfinite(image_distance)
-                and object_distance > 1e-6):
+        if not (np.isfinite(object_distance) and np.isfinite(image_distance)):
             return None
+        if object_distance <= 1e-6:
+            # bugs/0714 (user: "to solve for correct FOV, the lens distance should
+            # be adjusted"): on a FROZEN fold the object-side delta is booked by
+            # the LENS-LEG SLIDE (bugs/0571), never by the object gap row -- so a
+            # non-positive station-frame object gap total is a "slide the lens"
+            # request, not an infeasibility. This is the OBJECT-side twin of the
+            # bugs/0588 image-side gate: bailing here bypassed the whole
+            # 0571-0583 machinery and fell to the plain "no real-image conjugate"
+            # refusal on every magnifying resize solve. The slide's own refusal
+            # channel still reports honestly when the leg truly lacks room.
+            slide_available = False
+            try:
+                slide_available = self._lens_leg_slide_plan() is not None
+            except Exception:
+                slide_available = False
+            if not slide_available:
+                return None
+            self.append_debug(
+                f"folded gate: station-frame object distance {object_distance:.4f} <= 0 with a "
+                f"lens-leg slide available -- the slide books the object delta (bugs/0714)"
+            )
         if image_distance <= 1e-6:
             # bugs/0588 (flag_20260808_211659 "changing FOV to 55x55 is forbidden. It should be
             # allowed" -- the FOURTH recurrence of this refusal): a non-positive STATION-FRAME

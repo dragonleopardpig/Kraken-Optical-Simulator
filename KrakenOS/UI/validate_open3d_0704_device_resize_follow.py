@@ -59,10 +59,21 @@ def _solid_row(name, z, tilt=(0.0, 0.0, 0.0), solid=True):
     )
 
 
+def _object_row():
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        name="Object", surface="Object", advanced={},
+        desp_x=0.0, desp_y=0.0, desp_z=0.0,
+        tilt_x=0.0, tilt_y=0.0, tilt_z=0.0, thickness=5.35,
+    )
+
+
 def _tower_rows():
-    # the om05a shape: symmetric tower pairs about -25, an unpaired far solid,
-    # and a tilted far fold mirror -- only the PAIRED, UNTILTED far rows slide.
+    # the om05a shape: an Object row (the DEVICE -- its desp_z is device
+    # placement), then symmetric tower pairs about -25 etc. (vendor hardware).
     return [
+        _object_row(),
         _solid_row("First RA mirror A", 9.0),
         _solid_row("BS cube A", 7.25),
         _solid_row("Centre RA mirror A", -19.03),
@@ -126,7 +137,7 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     stub = _Stub(_bands(50.0), _specs(50.0, 50.0), rows=_tower_rows())
     rows_before = {str(r.name): (float(r.desp_x), float(r.desp_y), float(r.desp_z),
                                  float(r.tilt_x), float(r.tilt_y), float(r.tilt_z))
-                   for r in stub.rows}
+                   for r in stub.rows[1:]}
     moved = LayoutTableWorkbenchMixin._retarget_split_field_to_part(
         stub, _old(), {"depth_mm": 15.0, "width_mm": 15.0, "height_mm": 1.0}
     )
@@ -155,11 +166,20 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     )
     rows_after = {str(r.name): (float(r.desp_x), float(r.desp_y), float(r.desp_z),
                                 float(r.tilt_x), float(r.tilt_y), float(r.tilt_z))
-                  for r in stub.rows}
+                  for r in stub.rows[1:]}
     ok(
         rows_after == rows_before and not stub._three_d_inspector.hidden,
-        "A4: NO row/solid moves and NO overlay is hidden -- the vendor hardware "
-        "is byte-identical (the user directive)",
+        "A4: NO hardware row moves and NO overlay is hidden -- the vendor "
+        "hardware is byte-identical (the user directive)",
+    )
+    # bugs/0713 ("The rays not launching from the object plane. Recurring
+    # bug."): the OBJECT row IS the device -- its desp_z takes face A, so the
+    # launch rides the face while the hardware stays put; the paraxial
+    # reference folds it into the object distance.
+    ok(
+        abs(float(stub.rows[0].desp_z) + 17.5) < 1e-9,
+        f"A6: the object row (the device) carries face A -- launch plane at "
+        f"z={stub.rows[0].desp_z}",
     )
     # A5: a SECOND resize (15 -> 30) stays centred about the fixed plane.
     moved2 = LayoutTableWorkbenchMixin._retarget_split_field_to_part(
@@ -210,6 +230,32 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     ok(
         halves == [10.0, 10.0],
         f"D: a solved FOV of 20 writes half_width 10 into BOTH bands ({halves})",
+    )
+
+    # bugs/0713/0714 wiring: the launch honours the object-row desp, the
+    # paraxial reference folds it into the object distance, and the folded
+    # solve books a negative station-frame object gap on the lens-leg slide.
+    import inspect as _inspect
+
+    from KrakenOS.UI.services import paraxial_tools as _pt
+    from KrakenOS.UI.services import trace_preview_sampling as _tps
+
+    _launch_src = _inspect.getsource(_tps)
+    ok(
+        "origin_z" in _launch_src
+        and "anchor_x - float(field_x), anchor_y - float(field_y), origin_z" in _launch_src,
+        "F1: the finite-object launch origin rides the object row's desp_z (the device face)",
+    )
+    _ref_src = _inspect.getsource(_pt.ParaxialToolsMixin._paraxial_reference_rows_for_layout)
+    ok(
+        "reference_rows[0].thickness = float(reference_rows[0].thickness) - _obj_desp_z" in _ref_src,
+        "F2: the paraxial reference folds the object desp into the object distance",
+    )
+    _gate_src = _inspect.getsource(_pt.ParaxialToolsMixin._folded_conjugate_gaps_for_magnification)
+    ok(
+        "_lens_leg_slide_plan() is not None" in _gate_src and "bugs/0714" in _gate_src,
+        "F3: a negative station-frame object gap proceeds to the lens-leg slide "
+        "instead of the plain refusal (the 0588-symmetric object gate)",
     )
 
     passed = not any(note.startswith("FAIL") for note in notes)
