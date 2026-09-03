@@ -37,6 +37,14 @@ class _Editor:
     def _invalidate_preview_scene_trace(self) -> None:
         self.invalidated = True
 
+    def _clear_step_overlay_independent_instance(self, _label: str) -> None:
+        # bugs/0210 machinery -- stub drift fixed while adding the 0715 pin
+        # (this validator failed at clean HEAD on the missing attr).
+        pass
+
+    def _decouple_camera_model(self) -> None:
+        pass
+
     def _clear_step_overlay_axis_anchor(self, _label: str) -> None:
         pass
 
@@ -87,7 +95,7 @@ def main() -> int:
             ),
             (
                 "clear restores selection/cache flags through the editor",
-                editor.lens_step_largest_component_only is True
+                editor.lens_step_largest_component_only is False  # bugs/0715
                 and editor._selected_step_label is None
                 and editor._live_step_overlay_trace_plan_cache == {}
                 and editor.invalidated is True,
@@ -108,6 +116,22 @@ def main() -> int:
             and editor.led_step_object_edge_local_z is None,
         )
     )
+    # bugs/0715 (flag 072725 "it looks different to freecad.png"): a vendor lens
+    # STEP is routinely a MULTI-SOLID assembly (LENS-800M58B1: 21 solids, 149 mm;
+    # largest-only kept a 55.8 mm chunk). The import default is the WHOLE
+    # assembly; the largest-only toggle remains for junk-body STEPs.
+    from KrakenOS.UI.services.scene_placement_commands import ScenePlacementMixin
+
+    _sig = inspect.signature(StepOverlayImportService.import_lens_step)
+    _wsig = inspect.signature(ScenePlacementMixin.import_lens_step)
+    checks.append(
+        (
+            "lens import defaults to the WHOLE assembly (0715)",
+            _sig.parameters["largest_component_only"].default is False
+            and _wsig.parameters["largest_component_only"].default is False,
+        )
+    )
+
     failed = [name for name, ok in checks if not ok]
     if failed:
         print("STEP overlay import service validation failed:")

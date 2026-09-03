@@ -2227,7 +2227,7 @@ class ScenePlacementMixin:
         *,
         title: str = "Import lens STEP",
         display_label: str = "Lens STEP",
-        largest_component_only: bool = True,
+        largest_component_only: bool = False,  # bugs/0715: whole assembly by default
         refresh_open_3d: bool = True,
     ) -> Path | None:
         return self._step_overlay_import_service().import_lens_step(

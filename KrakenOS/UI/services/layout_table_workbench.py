@@ -320,7 +320,7 @@ class LayoutTableWorkbenchMixin:
         self.imported_lens_step_path = None
         self.imported_optical_step_path = None
         self.imported_led_step_path = None
-        self.lens_step_largest_component_only = True
+        self.lens_step_largest_component_only = False  # bugs/0715: whole assembly by default
         self.camera_step_rotation_x_deg = 0.0
         self.lens_step_rotation_x_deg = 0.0
         self.optical_step_rotation_x_deg = 0.0
@@ -1735,7 +1735,7 @@ class LayoutTableWorkbenchMixin:
         settings = settings if isinstance(settings, dict) else {}
         path = settings.get("lens_step_path")
         self.imported_lens_step_path = Path(str(path)).expanduser() if path else None
-        self.lens_step_largest_component_only = bool(settings.get("lens_step_largest_component_only", True))
+        self.lens_step_largest_component_only = bool(settings.get("lens_step_largest_component_only", False))  # bugs/0715
         # rotation_{x,y,z}_deg / axis_offset_xy / placement_offset_xyz / reverse_direction:
         # PRESERVED (untouched) so the swapped lens keeps the pose the user aligned it to.
 

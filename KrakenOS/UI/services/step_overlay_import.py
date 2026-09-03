@@ -68,9 +68,15 @@ class StepOverlayImportService:
         *,
         title: str = "Import Imaging Lens STEP",
         display_label: str = "Imaging Lens STEP",
-        largest_component_only: bool = True,
+        largest_component_only: bool = False,
         refresh_open_3d: bool = True,
     ) -> Path | None:
+        # bugs/0715 (flag 072725 "it looks different to freecad.png"): a vendor
+        # lens STEP is routinely a MULTI-SOLID assembly (LENS-800M58B1: 21 solids,
+        # 149 mm) -- largest-component-only amputated it to one stubby ring. The
+        # default is now the WHOLE assembly (what FreeCAD shows = what the user
+        # expects); the largest-only toggle remains for STEPs with stray junk
+        # bodies. The folder importer already defaulted to False.
         le = _layout_module()
         path = self._ask_step_file(title, le.ATTACHMENT_DIR, parent=dialog_parent)
         if path is None:
@@ -439,7 +445,7 @@ class StepOverlayImportService:
             self.led_object_edge_distance_mm = 0.0
             self.led_step_object_edge_local_z = None
         if label == "lens":
-            self.lens_step_largest_component_only = True
+            self.lens_step_largest_component_only = False  # bugs/0715
         if label == "camera" and hasattr(self, "_decouple_camera_model"):
             # bugs/0296: deleting the camera STEP must also drop its sensor
             # coupling -- otherwise the coupled image-surface aperture / field

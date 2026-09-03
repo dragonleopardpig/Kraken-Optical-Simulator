@@ -1194,7 +1194,7 @@ class LayoutOpticalSolidWorkflowMixin:
         self.imported_lens_step_path = None
         self.imported_optical_step_path = None
         self.imported_led_step_path = None
-        self.lens_step_largest_component_only = True
+        self.lens_step_largest_component_only = False  # bugs/0715: whole assembly by default
         self.camera_step_rotation_x_deg = 0.0
         self.lens_step_rotation_x_deg = 0.0
         self.optical_step_rotation_x_deg = 0.0
