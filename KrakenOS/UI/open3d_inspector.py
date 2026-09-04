@@ -18384,6 +18384,78 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if render:
             self.render()
 
+    def _update_solve_refusal_banner(self, *, render: bool = False) -> None:
+        """bugs/0717 (user directive: "The UI shouldn't silently fail and display
+        as though it is working"): when a FOV solve REFUSED, the scene looks
+        near-correct while delivering something else entirely -- paint a
+        prominent red banner under the system HUD carrying every number
+        (requested FOV, target |m|, the lens move needed vs the room available,
+        what is delivered instead, and the force-bypass hint / the measured
+        penetration after a forced solve). Cleared automatically when the next
+        solve succeeds (the stash is emptied)."""
+        if self._renderer is None:
+            return
+        try:
+            from KrakenOS.UI.services.system_info_hud import format_solve_refusal_lines
+
+            info = self.editor.__dict__.get("_fov_solve_refusal_info")
+            text = "\n".join(format_solve_refusal_lines(info))
+        except Exception:
+            text = ""
+        actor = self.__dict__.get("_solve_refusal_banner_actor")
+        if not text:
+            if actor is not None:
+                self._remove_renderer_view_prop(actor)
+                self._solve_refusal_banner_actor = None
+                if render:
+                    self.render()
+            return
+        if actor is None and vtkTextActor is not None:
+            try:
+                actor = vtkTextActor()
+                prop = actor.GetTextProperty()
+                prop.SetFontSize(13)
+                prop.SetBold(1)
+                prop.SetColor(0.55, 0.04, 0.04)
+                try:
+                    prop.SetBackgroundColor(1.0, 0.92, 0.90)
+                    prop.SetBackgroundOpacity(0.92)
+                    prop.SetFrame(1)
+                    prop.SetFrameColor(0.80, 0.10, 0.10)
+                    prop.SetVerticalJustificationToTop()
+                    prop.SetLineSpacing(1.25)
+                except Exception:
+                    pass
+                try:
+                    coordinate = actor.GetPositionCoordinate()
+                    coordinate.SetCoordinateSystemToNormalizedViewport()
+                    coordinate.SetValue(0.012, 0.83)  # just below the system HUD
+                except Exception:
+                    pass
+                actor.SetPickable(False)
+                self._add_renderer_view_prop(actor)
+                self._solve_refusal_banner_actor = actor
+            except Exception as exc:
+                self.editor.append_debug(f"3D solve-refusal banner unavailable: {exc}")
+                self._solve_refusal_banner_actor = None
+                return
+        if actor is None:
+            return
+        try:
+            has_prop = getattr(self._renderer, "HasViewProp", None)
+            if not (callable(has_prop) and has_prop(actor)):
+                self._add_renderer_view_prop(actor)
+        except Exception:
+            pass
+        try:
+            actor.SetInput(text)
+            actor.SetVisibility(True)
+        except Exception as exc:
+            self.editor.append_debug(f"3D solve-refusal banner update failed: {exc}")
+            return
+        if render:
+            self.render()
+
     def _update_placement_grid_status(self, text: str, *, render: bool = True) -> None:
         if self._renderer is None:
             return

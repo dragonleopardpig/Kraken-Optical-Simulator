@@ -4574,7 +4574,7 @@ class ScenePlacementMixin:
             "gap_row": gap_row,
         }
 
-    def slide_lens_block_along_its_leg(self, slide: float) -> "dict | None":
+    def slide_lens_block_along_its_leg(self, slide: float, force: bool = False) -> "dict | None":
         """bugs/0571: move the lens block along its OWN fold leg by ``slide`` mm, keeping every
         other pose invariant -- the bugs/0524+0526 compensated composite, extracted so the FOV
         SOLVE can use the same one the drag does.
@@ -4652,7 +4652,16 @@ class ScenePlacementMixin:
         # back to the raw object write that dislocates the whole machine. That is the "recurrence"
         # they reported. Refuse with the numbers instead, and say what has to move.
         room = self._lens_leg_room_to_fold(direction, members)
-        if room is not None and amount > float(room) + 1.0e-6:
+        if force and room is not None and amount > float(room) + 1.0e-6:
+            # bugs/0717 (user directive): the FORCE path applies the move ANYWAY so
+            # the user SEES the lens crash into the next component -- the physical
+            # limit of the lens's working condition, made visible. Vendor hardware
+            # never moves; only the lens (the user's design variable) does.
+            self.append_debug(
+                f"lens leg slide FORCED past the room check: {amount:+.4f} mm asked, "
+                f"{float(room):.4f} mm of leg -- overlap intended (bugs/0717)"
+            )
+        elif room is not None and amount > float(room) + 1.0e-6:
             self._lens_leg_slide_shortfall = float(amount) - float(room)
             self._lens_leg_slide_refusal = (
                 f"that field needs the lens {amount:.4g} mm further from the object, but only "
@@ -4664,7 +4673,14 @@ class ScenePlacementMixin:
             return None
         up_new = float(self.rows[upstream].thickness) + amount
         down_new = float(self.rows[downstream].thickness) - amount
-        if not (np.isfinite(up_new) and np.isfinite(down_new)) or up_new <= 0.0 or down_new <= 0.0:
+        if force and np.isfinite(up_new) and np.isfinite(down_new) and (up_new <= 0.0 or down_new <= 0.0):
+            # bugs/0717: forced -- book the negative gap (frozen-fold gap rows are
+            # bookkeeping; the compensated composite keeps every other pose fixed)
+            # so the lens lands where the request puts it, overlap and all.
+            self.append_debug(
+                f"lens leg slide FORCED with section gaps {up_new:.3g}/{down_new:.3g} mm (bugs/0717)"
+            )
+        elif not (np.isfinite(up_new) and np.isfinite(down_new)) or up_new <= 0.0 or down_new <= 0.0:
             # bugs/0626 ("the auto solve should adjust the 4th section distance if 3rd
             # section can't meet"): when the DOWNSTREAM gap is what runs out, this is a
             # room problem the fold-arm slide can solve -- report the shortfall through

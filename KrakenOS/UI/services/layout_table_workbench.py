@@ -8713,7 +8713,7 @@ class LayoutTableWorkbenchMixin:
             "to it from the part menu or the FOV dialog."
         )
 
-    def solve_fov_to_inspection_face(self, fov=None) -> tuple[bool, str]:
+    def solve_fov_to_inspection_face(self, fov=None, force: bool = False) -> tuple[bool, str]:
         """Solve the object-plane FOV to the inspected face's size (+5% alignment
         margin), or to an EXPLICIT ``fov`` (mm, square) when the user typed one --
         bugs/0708: the device-size dialog carries a Required FOV field so both
@@ -8737,7 +8737,7 @@ class LayoutTableWorkbenchMixin:
             qe = inspector._quick_estimation_service() if inspector is not None else QuickEstimationService(SimpleNamespace(editor=self))
         except Exception:
             qe = QuickEstimationService(SimpleNamespace(editor=self))
-        ok, msg = qe.fov_solve("object", "thickness", w * margin, h * margin)
+        ok, msg = qe.fov_solve("object", "thickness", w * margin, h * margin, force=force)
         # bugs/0713 (flag 165937 "seems like the FOV is not 5% as stated"): the
         # green bands draw the REQUIRED field. On a successful solve the QE
         # helper already wrote them; on a REFUSAL they must still take the

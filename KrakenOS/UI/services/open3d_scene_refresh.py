@@ -1207,6 +1207,7 @@ class Open3DSceneRefreshService:
         # with the scene so it tracks solves, swaps and camera changes.
         try:
             self._update_system_info_hud()
+            self._update_solve_refusal_banner()  # bugs/0717: survives every refresh
         except Exception:
             pass
         detector_overlay_ms = (time.perf_counter() - detector_overlay_start) * 1000.0

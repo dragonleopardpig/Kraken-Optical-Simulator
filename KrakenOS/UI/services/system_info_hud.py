@@ -100,3 +100,55 @@ def system_info_hud_text(editor) -> str:
     except Exception:
         resolution = pixel_size = None
     return "\n".join(format_system_info_lines(fov, sensor, resolution, pixel_size))
+
+
+def format_solve_refusal_lines(info) -> list[str]:
+    """bugs/0717 (user directive: "The UI shouldn't silently fail and display as
+    though it is working"): the in-scene SOLVE-REFUSED banner. Pure formatter --
+    display-free and guardable. ``info`` is the dict the FOV solve stashes on
+    refusal; returns [] when there is nothing to show."""
+    if not isinstance(info, dict) or not info:
+        return []
+    lines: list[str] = ["SOLVE REFUSED -- the drawn scene does NOT deliver this request"]
+    req = info.get("requested_fov_wh")
+    target_m = info.get("target_m")
+    if req and len(req) >= 2:
+        head = f"requested FOV {float(req[0]):g} x {float(req[1]):g} mm"
+        if target_m:
+            head += f"  (needs |m| {float(target_m):.3f})"
+        lines.append(head)
+    need = info.get("lens_move_needed_mm")
+    room = info.get("leg_room_mm")
+    if need is not None:
+        move = f"lens must move {float(need):+.4g} mm along its leg"
+        if room is not None:
+            move += f"; room available {float(room):.4g} mm (short by {float(need) - float(room):.4g})"
+        lines.append(move)
+    delivered_m = info.get("delivered_m")
+    delivered_fov = info.get("delivered_fov_wh")
+    if delivered_m or delivered_fov:
+        now = "delivered now:"
+        if delivered_m:
+            now += f" |m| {float(delivered_m):.3f}"
+        if delivered_fov and len(delivered_fov) >= 2:
+            now += f"  FOV {float(delivered_fov[0]):.4g} x {float(delivered_fov[1]):.4g} mm"
+        lines.append(now)
+    reason = str(info.get("reason", "") or "").strip()
+    if reason:
+        lines.append(reason if len(reason) <= 110 else reason[:107] + "...")
+    penetration = info.get("forced_penetration_mm")
+    obstacle = str(info.get("forced_obstacle", "") or "")
+    if penetration is not None:
+        if float(penetration) < 0.0:
+            lines.append(
+                f"FORCED: lens PENETRATES {obstacle or 'the next component'} by "
+                f"{-float(penetration):.4g} mm -- the working-condition limit"
+            )
+        else:
+            lines.append(
+                f"FORCED: applied; {float(penetration):.4g} mm clearance to "
+                f"{obstacle or 'the next component'}"
+            )
+    else:
+        lines.append('right-click the Device -> "Force FOV (show collision)" to SEE the limit')
+    return lines

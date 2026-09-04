@@ -1395,7 +1395,7 @@ class QuickEstimationService:
         # primary gives up all it has (-> 0); the negative remainder lands on the sibling leg
         return [(int(primary_row), -float(rows[primary_row].thickness)), (int(spill_row), new_primary)]
 
-    def _apply_conjugate_pair(self, object_semi: Any, image_semi: Any) -> tuple[bool, str]:
+    def _apply_conjugate_pair(self, object_semi: Any, image_semi: Any, force: bool = False) -> tuple[bool, str]:
         # Folded-aware branch (feature): a promoted RA-mirror fold breaks the plain object/image
         # gap-row assumption -- object_thickness_row/image_thickness_row land on the mirror-adjacent
         # legs, and the whole-system principal planes are inflated by the flattened mirror plates
@@ -1440,7 +1440,7 @@ class QuickEstimationService:
                 object_slid = None
                 try:
                     object_slid = self.editor.slide_lens_block_along_its_leg(
-                        float(folded["object_delta"])
+                        float(folded["object_delta"]), force=force
                     )
                 except Exception as exc:
                     self.editor.append_debug(f"lens leg slide unavailable: {exc}")
@@ -1484,6 +1484,17 @@ class QuickEstimationService:
                 if object_slid is None and abs(float(folded["object_delta"])) > 1.0e-6:
                     refusal = str(self.editor.__dict__.get("_lens_leg_slide_refusal", "") or "")
                     if refusal:
+                        # bugs/0717: the CORE refusal stash -- the numbers the slide
+                        # measured. fov_solve enriches with the request + delivery.
+                        shortfall = float(
+                            self.editor.__dict__.get("_lens_leg_slide_shortfall", 0.0) or 0.0
+                        )
+                        need = float(folded["object_delta"])
+                        self.editor._fov_solve_refusal_info = {
+                            "lens_move_needed_mm": need,
+                            "leg_room_mm": (abs(need) - shortfall) if shortfall > 0 else None,
+                            "reason": refusal,
+                        }
                         return False, f"FOV out of range on this fold: {refusal}"
                 # bugs/0575 (flag_20260806_182735, "rays defocus at sensor"): the image write has
                 # to happen AFTER the object move, and it has to be re-measured once it has.
@@ -1592,10 +1603,37 @@ class QuickEstimationService:
                     )
                 )
                 if obj_changes is None or img_changes is None:
-                    return False, (
-                        "FOV out of range on the folded arms (the object or image leg would go "
-                        "negative -- slide the fold mirrors first)."
-                    )
+                    if force:
+                        # bugs/0717 (user directive): FORCE books the delta onto the
+                        # object/image gap rows DIRECTLY, negative gaps and all, so the
+                        # lens moves to where this FOV demands and the 3D shows it crash
+                        # into whatever is in the way -- the working-condition limit made
+                        # visible. Vendor hardware is untouched; only the gap rows (the
+                        # lens/sensor spacing, the user's design variable) change.
+                        obj_changes = [(int(obj_row), float(folded["object_delta"]))]
+                        img_changes = (
+                            []
+                            if (image_handled or image_deferred)
+                            else [(int(img_row_write), float(folded["image_delta"]))]
+                        )
+                        self.editor.append_debug(
+                            "folded solve FORCED: booking object "
+                            f"{float(folded['object_delta']):+.4g} / image "
+                            f"{float(folded['image_delta']):+.4g} mm directly (overlap intended, bugs/0717)"
+                        )
+                    else:
+                        # bugs/0717: stash for the in-scene banner.
+                        self.editor._fov_solve_refusal_info = {
+                            "lens_move_needed_mm": float(folded["object_delta"]),
+                            "reason": (
+                                "the object or image leg would go negative -- slide the "
+                                "fold mirrors first"
+                            ),
+                        }
+                        return False, (
+                            "FOV out of range on the folded arms (the object or image leg would go "
+                            "negative -- slide the fold mirrors first)."
+                        )
                 changes = obj_changes + img_changes
                 for row_index, applied in changes:
                     rows[row_index].thickness = float(rows[row_index].thickness) + applied
@@ -2698,6 +2736,93 @@ class QuickEstimationService:
             "folded first order disagrees with the traced machine; bugs/0591)."
         )
 
+    def _report_forced_lens_clearance(self) -> str:
+        """bugs/0717: after a FORCED solve, measure the lens body against every
+        solid row's mesh and report the closest one -- NEGATIVE means the lens
+        penetrates it, which is exactly what the force exists to show. Feeds the
+        in-scene banner (the stash) and returns a status fragment."""
+        try:
+            lens = self.editor._transformed_imported_step_mesh_for_label("lens")
+            lens_pts = np.asarray(lens.points, dtype=float)
+        except Exception:
+            return ""
+        if lens_pts.ndim != 2 or len(lens_pts) == 0:
+            return ""
+        try:
+            from scipy.spatial import cKDTree
+
+            tree = cKDTree(lens_pts)
+        except Exception:
+            return ""
+        best = None
+        stations = None
+        for index, row in enumerate(getattr(self.editor, "rows", []) or []):
+            advanced = row.advanced if isinstance(getattr(row, "advanced", None), dict) else {}
+            stl = advanced.get("Solid_3d_stl")
+            if not stl:
+                continue
+            try:
+                if stations is None:
+                    stations = self.editor._row_z_positions()
+                transform = self.editor._surface_transform_for_rows(self.editor.rows, index)
+                import pyvista as pv
+
+                mesh = pv.read(str(stl))
+                pts = np.asarray(mesh.points, dtype=float)
+                hom = np.column_stack([pts, np.ones(len(pts))])
+                world = (np.asarray(transform) @ hom.T).T[:, :3]
+                d, _ = tree.query(world[:: max(1, len(world) // 4000)], k=1)
+                dmin = float(d.min())
+                name = str(getattr(row, "name", "") or f"S{index}")
+                if best is None or dmin < best[0]:
+                    best = (dmin, name)
+            except Exception:
+                continue
+        if best is None:
+            return ""
+        dmin, name = best
+        # point-cloud distance cannot go negative; ~0 means surfaces touch or
+        # interpenetrate. Refine the sign with a containment test.
+        penetration = dmin
+        try:
+            import pyvista as pv
+
+            probe = pv.PolyData(lens_pts[:: max(1, len(lens_pts) // 2000)])
+            # any lens point INSIDE the obstacle => true penetration
+            for index, row in enumerate(self.editor.rows):
+                if str(getattr(row, "name", "") or f"S{index}") != name:
+                    continue
+                advanced = row.advanced if isinstance(row.advanced, dict) else {}
+                transform = self.editor._surface_transform_for_rows(self.editor.rows, index)
+                mesh = pv.read(str(advanced.get("Solid_3d_stl")))
+                pts = np.asarray(mesh.points, dtype=float)
+                hom = np.column_stack([pts, np.ones(len(pts))])
+                obstacle = pv.PolyData((np.asarray(transform) @ hom.T).T[:, :3], mesh.faces)
+                enclosed = probe.select_enclosed_points(obstacle.extract_surface(), check_surface=False)
+                inside = int(np.asarray(enclosed["SelectedPoints"]).sum())
+                if inside > 0:
+                    depths, _ = cKDTree(np.asarray(obstacle.points)).query(
+                        lens_pts[:: max(1, len(lens_pts) // 2000)][
+                            np.asarray(enclosed["SelectedPoints"]) == 1
+                        ],
+                        k=1,
+                    )
+                    penetration = -float(depths.max())
+                break
+        except Exception:
+            pass
+        info = dict(self.editor.__dict__.get("_fov_solve_refusal_info") or {})
+        info["forced_penetration_mm"] = float(penetration)
+        info["forced_obstacle"] = name
+        info.setdefault("reason", "FORCED solve applied -- inspect the 3D overlap")
+        self.editor._fov_solve_refusal_info = info
+        if penetration < 0.0:
+            return (
+                f" FORCED: the lens PENETRATES {name} by {-penetration:.4g} mm -- "
+                f"this is the working-condition limit made visible."
+            )
+        return f" FORCED: applied; {penetration:.4g} mm clearance to {name}."
+
     def _update_split_field_band_widths(self, width) -> None:
         """bugs/0704 (flag 110804 "Let user to input required FOV as usual"): the
         split-field bands ARE the FOV's face-anchored drawing, so a successful
@@ -2725,6 +2850,7 @@ class QuickEstimationService:
         height: Any = None,
         aspect: tuple[float, float] | None = None,
         branch: str | None = None,
+        force: bool = False,
     ) -> tuple[bool, str]:
         """Drive the click-on-plane FOV popup.
 
@@ -2744,6 +2870,9 @@ class QuickEstimationService:
         # first correction read below re-measures the deferred bugs/0625 state instead of
         # booking the raw first order (a solve straight after a fast load, no trace yet).
         self.editor._preview_trace_deferred_until_requested = False
+        # bugs/0717: a fresh solve owns the refusal banner -- clear any stale one so a
+        # success wipes the alert and a refusal repaints it with THIS request's numbers.
+        self.editor._fov_solve_refusal_info = None
         if plane == "object":
             wh = self._sensor_wh(width, height, aspect)
             if wh is None:
@@ -2791,12 +2920,39 @@ class QuickEstimationService:
                 # the same field is idempotent (phase 444 C4), then verify with real rays and
                 # update the correction.
                 correction = self._folded_m_correction()
-                ok, msg = self._apply_conjugate_pair(semi, float(sensor) / correction)
+                ok, msg = self._apply_conjugate_pair(semi, float(sensor) / correction, force=force)
                 if ok:
                     msg += self._refine_folded_field_fill(semi, float(sensor))
                     self.set_target_fov(semi)
                     self._update_split_field_band_widths(obj_w)
                     msg = f"Object {obj_w:.6g} x {obj_h:.6g} mm fills the sensor. " + msg
+                    if force:
+                        msg += self._report_forced_lens_clearance()
+                else:
+                    # bugs/0717: enrich the refusal stash with the REQUEST + what the
+                    # scene delivers instead, so the in-scene banner carries every
+                    # number the user needs to judge the limitation.
+                    info = dict(self.editor.__dict__.get("_fov_solve_refusal_info") or {})
+                    info.setdefault("requested_fov_wh", (float(obj_w), float(obj_h)))
+                    try:
+                        info.setdefault("target_m", float(sensor) / float(semi))
+                    except Exception:
+                        pass
+                    info.setdefault("reason", str(msg))
+                    try:
+                        delivered = self.editor._current_finite_paraxial_magnification()
+                        if delivered:
+                            info.setdefault("delivered_m", float(delivered))
+                            dims = self.editor._current_camera_sensor_active_mm()
+                            if dims:
+                                info.setdefault(
+                                    "delivered_fov_wh",
+                                    (float(dims[0]) / abs(float(delivered)),
+                                     float(dims[1]) / abs(float(delivered))),
+                                )
+                    except Exception:
+                        pass
+                    self.editor._fov_solve_refusal_info = info
                 return ok, msg
             if mode == "sensor":
                 mag = self._finite_mag()

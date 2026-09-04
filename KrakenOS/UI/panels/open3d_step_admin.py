@@ -940,6 +940,18 @@ class Open3DStepAdminPanel:
             label="Solve FOV to the inspected face",
             command=lambda: self.editor.solve_fov_to_inspection_face(),
         )
+        # bugs/0717 (user directive): when a solve REFUSED, the force entry
+        # applies the lens move anyway so the user SEES the collision -- the
+        # working-condition limit made visible. Uses the refused request's FOV.
+        refusal = self.editor.__dict__.get("_fov_solve_refusal_info") or {}
+        requested = refusal.get("requested_fov_wh")
+        if requested:
+            menu.add_command(
+                label=f"Force FOV {float(requested[0]):g} mm (show collision)",
+                command=lambda f=float(requested[0]): self.editor.solve_fov_to_inspection_face(
+                    fov=f, force=True
+                ),
+            )
         menu.add_command(
             label="Create/Open station for the inspected face...",
             command=lambda: self.editor.open_station_for_face(
