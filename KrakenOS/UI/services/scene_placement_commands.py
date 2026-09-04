@@ -4574,7 +4574,132 @@ class ScenePlacementMixin:
             "gap_row": gap_row,
         }
 
-    def slide_lens_block_along_its_leg(self, slide: float, force: bool = False) -> "dict | None":
+    def force_translate_lens_toward_object(self, signed_object_delta: float) -> "dict | None":
+        """bugs/0717 (flag 120132: "the force crash should be driving the lens WD and
+        crash to the big RA mirror ... prism assembly components shifted, but lens
+        stay where it was").
+
+        The FORCE bypass must move ONLY the lens -- rigidly, along its own fold
+        leg, by the conjugate's ``object_delta`` -- so its working distance
+        shortens and the barrel drives into whatever is up its leg (the big RA
+        mirror). Vendor hardware stays byte-identical
+        ([[feedback_vendor_hardware_immutable]]); this is a pure display move of
+        the lens block's ``desp``, no gap-row writes (which cascade every
+        downstream world row -- the 0570/0571 dislocation that shifted the
+        prisms). No optical bookkeeping: the point is to SHOW the collision.
+
+        ``signed_object_delta`` is the folded conjugate's object_delta (NEGATIVE
+        for a shorter throw / higher magnification). The leg direction comes from
+        the SAME plan the real slide uses (bugs/0571 convention: ``shift =
+        direction * amount`` grows object->lens for a positive amount), so passing
+        the signed delta straight through moves the lens toward the object for the
+        common magnifying case -- with the correct sign on any fold parity, unlike
+        a datum-geometry guess.
+        """
+        try:
+            amount = float(signed_object_delta)
+        except (TypeError, ValueError):
+            return None
+        if not np.isfinite(amount) or abs(amount) <= 1.0e-9:
+            return None
+        front, rear = self._imaging_lens_block_indices()
+        if front is None or rear is None:
+            return None
+        # bugs/0717 (flag 120132, 3rd correction): shortening the WD drives the lens
+        # up its OWN leg into the fold mirror immediately upstream of it (the "big RA
+        # mirror" the beam last reflected off before the lens) -- NOT toward the
+        # distant object point (which on a fold takes the lens diagonally AWAY from
+        # everything). Aim at that upstream fold: the nearest optical-solid row
+        # before the lens block, by world proximity to the front datum. Move by
+        # |object_delta|, so a magnifying overshoot penetrates it -- the crash.
+        try:
+            front_o = self._surface_origin_for_rows(self.rows, int(front))
+        except Exception:
+            return None
+        target_o = None
+        target_gap = None
+        for index in range(int(front)):
+            row = self.rows[index]
+            advanced = row.advanced if isinstance(getattr(row, "advanced", None), dict) else {}
+            if not advanced.get("Solid_3d_stl"):
+                continue
+            try:
+                o = self._surface_origin_for_rows(self.rows, index)
+            except Exception:
+                continue
+            gap = float(np.linalg.norm(np.asarray(o, dtype=float) - np.asarray(front_o, dtype=float)))
+            if target_gap is None or gap < target_gap:
+                target_gap, target_o = gap, np.asarray(o, dtype=float)
+        if target_o is None:
+            return None
+        to_target = target_o - np.asarray(front_o, dtype=float)
+        norm = float(np.linalg.norm(to_target))
+        if norm <= 1.0e-6:
+            return None
+        direction = to_target / norm
+        # bugs/0717 (flag 120132, final): the CRASH metric is frame-consistent
+        # prescription-frame arithmetic -- the lens must move |object_delta| toward
+        # the upstream fold, but only ``norm`` mm of room exist before it; anything
+        # beyond is penetration. This avoids the 0433/0693 frame split that made a
+        # mesh-vs-body distance meaningless (the datum moves in the straight frame,
+        # the drawn body in the folded frame -- different directions for one move).
+        target_name = None
+        try:
+            for index in range(int(front)):
+                row = self.rows[index]
+                advanced = row.advanced if isinstance(getattr(row, "advanced", None), dict) else {}
+                if not advanced.get("Solid_3d_stl"):
+                    continue
+                o = self._surface_origin_for_rows(self.rows, index)
+                if abs(float(np.linalg.norm(np.asarray(o, dtype=float) - np.asarray(front_o, dtype=float)) - norm)) < 1e-6:
+                    target_name = str(getattr(row, "name", "") or f"S{index}")
+                    break
+        except Exception:
+            target_name = None
+        penetration = float(norm) - abs(float(amount))  # negative => overshoots the fold
+        shift = direction * abs(amount)  # toward the upstream fold = shorter WD
+        amount = abs(amount)
+        moved: list[int] = []
+        for index in range(int(front), int(rear) + 1):
+            row = self.rows[index]
+            try:
+                row.desp_x = float(row.desp_x) + float(shift[0])
+                row.desp_y = float(row.desp_y) + float(shift[1])
+                row.desp_z = float(row.desp_z) + float(shift[2])
+                moved.append(index)
+            except Exception:
+                continue
+        # bugs/0717 (flag 120132, 4th correction): the lens body overlay is anchored
+        # to the FRONT DATUM's fold transform (_step_body_anchor_world_transform),
+        # so moving the datum rows already carries the drawn barrel -- an EXTRA
+        # _shift_step_offset (pre-fold frame, 0693) double-moved it and flung the
+        # body clear across the scene (datum x=157 vs body x=-45). Just invalidate
+        # the memoised overlay mesh so it re-derives from the moved datum.
+        try:
+            self._invalidate_preview_scene_trace()
+        except Exception:
+            pass
+        try:
+            cache = self.__dict__.get("_transformed_step_overlay_cache")
+            if isinstance(cache, dict):
+                cache.clear()
+        except Exception:
+            pass
+        self.append_debug(
+            f"FORCE: translated the lens block {abs(amount):.4g} mm toward "
+            f"{target_name or 'the upstream fold'} ({float(norm):.4g} mm of room) "
+            f"(rows {moved}); vendor hardware untouched (bugs/0717)"
+        )
+        return {
+            "rows": moved,
+            "distance": float(abs(amount)),
+            "direction": direction.tolist(),
+            "room_mm": float(norm),
+            "penetration_mm": float(penetration),
+            "obstacle": target_name,
+        }
+
+    def slide_lens_block_along_its_leg(self, slide: float) -> "dict | None":
         """bugs/0571: move the lens block along its OWN fold leg by ``slide`` mm, keeping every
         other pose invariant -- the bugs/0524+0526 compensated composite, extracted so the FOV
         SOLVE can use the same one the drag does.
@@ -4652,16 +4777,7 @@ class ScenePlacementMixin:
         # back to the raw object write that dislocates the whole machine. That is the "recurrence"
         # they reported. Refuse with the numbers instead, and say what has to move.
         room = self._lens_leg_room_to_fold(direction, members)
-        if force and room is not None and amount > float(room) + 1.0e-6:
-            # bugs/0717 (user directive): the FORCE path applies the move ANYWAY so
-            # the user SEES the lens crash into the next component -- the physical
-            # limit of the lens's working condition, made visible. Vendor hardware
-            # never moves; only the lens (the user's design variable) does.
-            self.append_debug(
-                f"lens leg slide FORCED past the room check: {amount:+.4f} mm asked, "
-                f"{float(room):.4f} mm of leg -- overlap intended (bugs/0717)"
-            )
-        elif room is not None and amount > float(room) + 1.0e-6:
+        if room is not None and amount > float(room) + 1.0e-6:
             self._lens_leg_slide_shortfall = float(amount) - float(room)
             self._lens_leg_slide_refusal = (
                 f"that field needs the lens {amount:.4g} mm further from the object, but only "
@@ -4673,14 +4789,7 @@ class ScenePlacementMixin:
             return None
         up_new = float(self.rows[upstream].thickness) + amount
         down_new = float(self.rows[downstream].thickness) - amount
-        if force and np.isfinite(up_new) and np.isfinite(down_new) and (up_new <= 0.0 or down_new <= 0.0):
-            # bugs/0717: forced -- book the negative gap (frozen-fold gap rows are
-            # bookkeeping; the compensated composite keeps every other pose fixed)
-            # so the lens lands where the request puts it, overlap and all.
-            self.append_debug(
-                f"lens leg slide FORCED with section gaps {up_new:.3g}/{down_new:.3g} mm (bugs/0717)"
-            )
-        elif not (np.isfinite(up_new) and np.isfinite(down_new)) or up_new <= 0.0 or down_new <= 0.0:
+        if not (np.isfinite(up_new) and np.isfinite(down_new)) or up_new <= 0.0 or down_new <= 0.0:
             # bugs/0626 ("the auto solve should adjust the 4th section distance if 3rd
             # section can't meet"): when the DOWNSTREAM gap is what runs out, this is a
             # room problem the fold-arm slide can solve -- report the shortfall through

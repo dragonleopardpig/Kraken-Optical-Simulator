@@ -30,25 +30,31 @@ masking a silent refusal.
 ## 2 — Force FOV (show collision)
 
 `fov_solve(..., force=True)` / `solve_fov_to_inspection_face(fov=, force=True)`
-book the conjugate move ANYWAY past the room / negative-gap guards, on both
-the lens-leg-slide path (bugs/0571) and the direct object/image gap
-distribution (the om05a path). Vendor hardware never moves; only the lens and
-the gap rows (the user's design variables) do. After the move,
-`_report_forced_lens_clearance` measures the lens body against every solid
-row's mesh: a NEGATIVE closest distance (containment-tested) is reported as
-"the lens PENETRATES <component> by X mm -- the working-condition limit made
-visible", both in the status line and the banner.
+short-circuit to `force_translate_lens_toward_object` -- a PURE lens move:
+ONLY the lens block's `desp` rows translate, toward the upstream fold mirror
+the lens leg runs into (shorter WD), by |object_delta|. Vendor hardware is
+byte-identical (flag 120132: the earlier gap-write force cascaded the prisms;
+the 0570/0571 dislocation). The crash metric is FRAME-CONSISTENT
+prescription-frame arithmetic (room to the upstream fold vs the demanded
+move) -- NOT a mesh-vs-body distance, which the 0433/0693 frame split makes
+meaningless (the datum moves in the straight frame, the drawn body in the
+folded frame -- 232 mm apart for one move). The banner names the obstacle
+(RA mirror 2), the room, and the overshoot; a magnifying request whose move
+exceeds the room penetrates it -- the working-condition limit made visible.
+On a scene with room to spare the readout honestly says so.
 
 The Device browser menu grows a "Force FOV <W> mm (show collision)" entry
 whenever a refusal is stashed, keyed on the refused request.
 
 ## Scope note
 
-On a scene that needs a different lens CLASS (om05a 15 mm device -> |m| 2.06),
-no lens position images it; force books the overshoot so the 3D shows the
-lens driven into the prism, which IS the answer -- "this lens cannot, here is
-how far short." Changing the lens/prisms/machine is the engineer's call; the
-tool shows the truth, never picks the remedy.
+On a scene that needs a different lens CLASS (om05a resized small device ->
+|m| ~2), the lens is driven toward the fold mirror until it penetrates it --
+"this lens cannot, here is exactly where it crashes." Changing the
+lens/prisms/machine is the engineer's call; the tool shows the truth, never
+picks the remedy. NB: the penetration MAGNITUDE on a tight fold is an
+approximation (the prescription-frame room measure); the in-app 3D overlap is
+the ground truth, which is what the user inspects.
 
 ## Guard
 

@@ -1413,6 +1413,55 @@ class QuickEstimationService:
                 og, ig = int(folded["object_gap_row"]), int(folded["image_gap_row"])
                 if not (0 <= og < len(rows) and 0 <= ig < len(rows)):
                     return False, "Folded conjugate gap rows are unavailable."
+                # bugs/0717 (flag 120132: "the force crash should be driving the lens
+                # WD ... prism assembly components shifted, but lens stay where it
+                # was"): the FORCE path moves ONLY the lens, rigidly, toward the
+                # object by the WD change -- so the barrel drives into the big RA
+                # mirror while every vendor row stays byte-identical. The gap-write /
+                # lens-leg-slide machinery below is for a REAL (feasible) solve; on a
+                # forced overshoot it either refuses or cascades the hardware (the
+                # 0570/0571 dislocation the flag shows). Short-circuit here.
+                if force:
+                    forced = None
+                    try:
+                        forced = self.editor.force_translate_lens_toward_object(
+                            float(folded["object_delta"])
+                        )
+                    except Exception as exc:
+                        self.editor.append_debug(f"forced lens translate failed: {exc}")
+                        forced = None
+                    if forced is None:
+                        return False, "Force FOV: no imaging-lens block to drive."
+                    try:
+                        self.editor.snap_detector_to_image_plane()
+                    except Exception:
+                        pass
+                    self.set_target_fov(float(os_f))
+                    # bugs/0717: frame-consistent crash readout from the mover
+                    # (prescription-frame room vs the demanded move), stashed for
+                    # the in-scene banner.
+                    pen = float(forced.get("penetration_mm", 0.0))
+                    obstacle = str(forced.get("obstacle") or "the upstream fold mirror")
+                    info = dict(self.editor.__dict__.get("_fov_solve_refusal_info") or {})
+                    info["forced_penetration_mm"] = pen
+                    info["forced_obstacle"] = obstacle
+                    info.setdefault("reason", "FORCED solve applied -- inspect the 3D overlap")
+                    self.editor._fov_solve_refusal_info = info
+                    if pen < 0.0:
+                        note = (
+                            f" FORCED: the lens PENETRATES {obstacle} by {-pen:.4g} mm "
+                            f"({forced['room_mm']:.4g} mm of room, needs "
+                            f"{forced['distance']:.4g}) -- the working-condition limit."
+                        )
+                    else:
+                        note = (
+                            f" FORCED: {pen:.4g} mm clearance to {obstacle} "
+                            f"(moved {forced['distance']:.4g} of {forced['room_mm']:.4g} mm room)."
+                        )
+                    return True, (
+                        f"FORCED: drove the lens {forced['distance']:.4g} mm toward the "
+                        f"object (WD shortened; vendor hardware fixed).{note}"
+                    )
                 # bugs/0314: the object/image distance correction is a change to the leg TOTAL,
                 # not to one row. A prior fold-leg constraint (a Solve pinning "object -> mirror")
                 # can have drained the primary gap row, so dumping the whole delta on it alone
@@ -1440,7 +1489,7 @@ class QuickEstimationService:
                 object_slid = None
                 try:
                     object_slid = self.editor.slide_lens_block_along_its_leg(
-                        float(folded["object_delta"]), force=force
+                        float(folded["object_delta"])
                     )
                 except Exception as exc:
                     self.editor.append_debug(f"lens leg slide unavailable: {exc}")
@@ -1603,37 +1652,19 @@ class QuickEstimationService:
                     )
                 )
                 if obj_changes is None or img_changes is None:
-                    if force:
-                        # bugs/0717 (user directive): FORCE books the delta onto the
-                        # object/image gap rows DIRECTLY, negative gaps and all, so the
-                        # lens moves to where this FOV demands and the 3D shows it crash
-                        # into whatever is in the way -- the working-condition limit made
-                        # visible. Vendor hardware is untouched; only the gap rows (the
-                        # lens/sensor spacing, the user's design variable) change.
-                        obj_changes = [(int(obj_row), float(folded["object_delta"]))]
-                        img_changes = (
-                            []
-                            if (image_handled or image_deferred)
-                            else [(int(img_row_write), float(folded["image_delta"]))]
-                        )
-                        self.editor.append_debug(
-                            "folded solve FORCED: booking object "
-                            f"{float(folded['object_delta']):+.4g} / image "
-                            f"{float(folded['image_delta']):+.4g} mm directly (overlap intended, bugs/0717)"
-                        )
-                    else:
-                        # bugs/0717: stash for the in-scene banner.
-                        self.editor._fov_solve_refusal_info = {
-                            "lens_move_needed_mm": float(folded["object_delta"]),
-                            "reason": (
-                                "the object or image leg would go negative -- slide the "
-                                "fold mirrors first"
-                            ),
-                        }
-                        return False, (
-                            "FOV out of range on the folded arms (the object or image leg would go "
-                            "negative -- slide the fold mirrors first)."
-                        )
+                    # bugs/0717: stash for the in-scene banner (force short-circuited
+                    # to the pure lens-only mover far above, so this is a real refusal).
+                    self.editor._fov_solve_refusal_info = {
+                        "lens_move_needed_mm": float(folded["object_delta"]),
+                        "reason": (
+                            "the object or image leg would go negative -- slide the "
+                            "fold mirrors first"
+                        ),
+                    }
+                    return False, (
+                        "FOV out of range on the folded arms (the object or image leg would go "
+                        "negative -- slide the fold mirrors first)."
+                    )
                 changes = obj_changes + img_changes
                 for row_index, applied in changes:
                     rows[row_index].thickness = float(rows[row_index].thickness) + applied
@@ -2798,7 +2829,11 @@ class QuickEstimationService:
                 pts = np.asarray(mesh.points, dtype=float)
                 hom = np.column_stack([pts, np.ones(len(pts))])
                 obstacle = pv.PolyData((np.asarray(transform) @ hom.T).T[:, :3], mesh.faces)
-                enclosed = probe.select_enclosed_points(obstacle.extract_surface(), check_surface=False)
+                surf = obstacle.extract_surface(algorithm="dataset_surface")
+                try:
+                    enclosed = probe.select_interior_points(surf, check_surface=False)
+                except Exception:
+                    enclosed = probe.select_enclosed_points(surf, check_surface=False)
                 inside = int(np.asarray(enclosed["SelectedPoints"]).sum())
                 if inside > 0:
                     depths, _ = cKDTree(np.asarray(obstacle.points)).query(

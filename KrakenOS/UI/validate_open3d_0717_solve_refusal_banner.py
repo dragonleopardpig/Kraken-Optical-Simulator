@@ -73,19 +73,29 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         and "force: bool = False" in solve_src,
         "B1: fov_solve clears the stash at entry, enriches on refusal, threads force",
     )
+    # bugs/0717 (flag 120132): force drives ONLY the lens toward the object via a
+    # dedicated pure mover -- NOT the gap-write/slide machinery, which cascaded the
+    # vendor prisms (the 0570/0571 dislocation the flag showed). The apply writer
+    # stashes the refusal numbers; the force short-circuits far above it.
     apply_src = inspect.getsource(QuickEstimationService._apply_conjugate_pair)
     ok(
         "lens_move_needed_mm" in apply_src
-        and "slide_lens_block_along_its_leg(\n                        float(folded[\"object_delta\"]), force=force" in apply_src,
-        "B2: the conjugate writer stashes the core refusal and threads force to the slide",
+        and "force_translate_lens_toward_object(" in apply_src
+        and "vendor hardware fixed" in apply_src,
+        "B2: force short-circuits to force_translate_lens_toward_object (vendor "
+        "hardware never moves); the writer still stashes real refusals",
     )
 
     from KrakenOS.UI.services.scene_placement_commands import ScenePlacementMixin
 
-    slide_src = inspect.getsource(ScenePlacementMixin.slide_lens_block_along_its_leg)
+    mover_src = inspect.getsource(ScenePlacementMixin.force_translate_lens_toward_object)
     ok(
-        slide_src.count("if force") >= 2 and "FORCED past the room check" in slide_src,
-        "B3: the lens-leg slide bypasses BOTH room checks under force (overlap intended)",
+        "_imaging_lens_block_indices()" in mover_src
+        and "to_target = " in mover_src
+        and "range(int(front), int(rear) + 1)" in mover_src
+        and "no gap-row writes" in mover_src,
+        "B3: the pure mover translates ONLY the lens block rows toward the object "
+        "POINT (rigid desp, no gap writes -> no hardware cascade)",
     )
 
     from KrakenOS.UI.open3d_inspector import Kraken3DInspector
