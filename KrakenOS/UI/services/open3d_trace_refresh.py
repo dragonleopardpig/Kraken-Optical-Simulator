@@ -314,6 +314,14 @@ class Open3DTraceRefreshService:
             # all until the long folded trace returned, and the user added a second one.
             if bodies_only:
                 trace_rays = False
+            # bugs/0718: the fast-load / force-deferred gate is AUTHORITATIVE. While it is
+            # set, NO refresh entry (not even a force_retrace from a dirty scene) may run
+            # the folded non-sequential trace -- it runs IN-PROCESS (NsTraceLoop) and, on
+            # crashed/off-conjugate geometry (a forced lens-into-mirror move), wedges in the
+            # mesh ray loop and hangs the UI with no way to interrupt it. Stay bodies-only
+            # until a REAL trace request (Trace Now) clears the gate first (bugs/0646).
+            if bool(getattr(self.editor, "_preview_trace_deferred_until_requested", False)):
+                trace_rays = False
             system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
                 sampling_mode=resolved_sampling_mode,
                 update_state=bool(update_state),
@@ -405,10 +413,21 @@ class Open3DTraceRefreshService:
                 sampling_mode = self._committed_scene_sampling_mode() or self._open3d_sampling_mode()
             else:
                 sampling_mode = self._open3d_sampling_mode()
+                # bugs/0718 ("the program seems freezing" after a forced FOV solve): the 2D
+                # refresh_plot(defer_trace=True) hands us rays=None to mean "do NOT trace"
+                # (a forced lens-into-mirror move, or a fast load) -- but rays=None ALSO means
+                # "rebuild fresh" here, and the fresh rebuild ran the in-process non-sequential
+                # trace on the crashed geometry, which wedges in the mesh ray loop and hangs
+                # the UI (the parallel-executor timeout cannot interrupt an in-process C trace).
+                # The fast-load gate is authoritative (bugs/0646: every REAL trace entry clears
+                # it FIRST), so while it is set, rebuild the BODIES ONLY -- the user presses
+                # Trace Now to trace the valid geometry deliberately.
+                deferred = bool(getattr(self.editor, "_preview_trace_deferred_until_requested", False))
                 system, rays, scene_bundle = self.editor._build_preview_system_rays_bundle(
                     sampling_mode=sampling_mode,
                     update_state=False,
                     include_live_step_overlays=include_live_step_overlays,
+                    trace_rays=not deferred,
                 )
         else:
             sampling_mode = self._committed_scene_sampling_mode() or self._open3d_sampling_mode()

@@ -1432,8 +1432,17 @@ class QuickEstimationService:
                         forced = None
                     if forced is None:
                         return False, "Force FOV: no imaging-lens block to drive."
+                    # bugs/0718 (flag 161212 "freezing after force"): do NOT snap the
+                    # detector -- that is a best-focus TRACE, and on the crashed
+                    # geometry (lens inside the fold mirror) the non-sequential trace
+                    # bounces inside overlapping glass and hangs the UI. A forced crash
+                    # shows the GEOMETRY overlap, not a focused image. Set the deferred
+                    # state so EVERY trace entry point (the 2D refresh AND the 3D
+                    # inspector's promoted-STEP retrace) draws bodies only until the
+                    # user explicitly asks (Trace Now).
                     try:
-                        self.editor.snap_detector_to_image_plane()
+                        self.editor._preview_trace_deferred_until_requested = True
+                        self.editor._invalidate_preview_scene_trace()
                     except Exception:
                         pass
                     self.set_target_fov(float(os_f))

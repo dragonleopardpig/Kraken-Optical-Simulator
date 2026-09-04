@@ -15873,6 +15873,10 @@ phase_516_solve_refusal_banner = _phase_from_standalone(
     516, "a refused FOV solve alerts in-scene with the numbers; force-bypass shows the collision (0717)",
     "KrakenOS.UI.validate_open3d_0717_solve_refusal_banner",
     "solve_refusal_banner")
+phase_517_force_solve_freeze = _phase_from_standalone(
+    517, "a forced FOV solve cannot hang the UI: trace deferred on force + bounded parallel result (0718)",
+    "KrakenOS.UI.validate_open3d_0718_force_solve_freeze",
+    "force_solve_freeze")
 phase_461_swap_prompts_for_fov = _phase_from_standalone(
     461, "an interactive swap ASKS for the FOV you want (prefilled with the delivered field) (0609)",
     "KrakenOS.UI.validate_open3d_0609_swap_prompts_for_fov",
@@ -16452,6 +16456,7 @@ def main() -> int:
             phase_514_device_browser_row,
             phase_515_step_shell_import,
             phase_516_solve_refusal_banner,
+            phase_517_force_solve_freeze,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

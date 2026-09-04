@@ -8750,8 +8750,14 @@ class LayoutTableWorkbenchMixin:
                 pass
         note = f"FOV solved to the {spec['active_face']} face {w:g} x {h:g} mm (+5%): " if ok else f"FOV solve to the {spec['active_face']} face refused: "
         self.status_var.set(note + str(msg))
+        # bugs/0718 (flag 161212, "program freezing after force crashed computation"):
+        # a FORCED solve deliberately drives the lens into the fold mirror -- the rays
+        # then bounce inside the OVERLAPPING glass and the non-sequential trace
+        # explodes (or hangs) the UI thread. The force exists to SHOW the geometric
+        # collision, not to produce a valid trace, so redraw the BODIES only (defer the
+        # ray trace). A normal solve traces as before.
         try:
-            self.refresh_plot()
+            self.refresh_plot(defer_trace=bool(force and ok))
         except Exception:
             pass
         return bool(ok), note + str(msg)

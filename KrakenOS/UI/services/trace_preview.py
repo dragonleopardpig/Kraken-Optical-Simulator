@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import concurrent.futures as _futures
 import os
 import time
 from typing import Any
@@ -13,6 +14,17 @@ from KrakenOS.MeshRayTrace import mesh_trace_stats_snapshot, reset_mesh_trace_st
 from KrakenOS.UI.scene_geometry import SceneSource3D
 from KrakenOS.UI.services.open3d_timing import open3d_timing_event
 from KrakenOS.UI.services.row_spec_contracts import _requires_scalar_trace
+
+# bugs/0718 (flag: "the program seems freezing" after a forced FOV solve): a preview
+# trace on degenerate / off-conjugate geometry (a lens driven into a mirror, a device
+# resized far off its conjugate) can leave a parallel worker spinning in the C ray loop
+# forever, and ``future.result()`` with no timeout blocks the UI thread indefinitely --
+# the freeze the user could not even flag. Bound the wait: past this budget the workers
+# are force-terminated (``_shutdown_analysis_executor`` already does that) and the trace
+# degrades to "no rays" so the 3D stays responsive and the collision is still visible.
+# Generous enough never to trip on a legitimate preview slice (those finish in seconds,
+# even with cold spawn workers importing KrakenOS); a timeout only ever means a hang.
+_PREVIEW_TRACE_RESULT_BUDGET_SECONDS = 90.0
 
 
 def _layout_module():
@@ -841,9 +853,43 @@ class TracePreviewService:
                         submit_ms=round(float((time.perf_counter() - chunk_start) * 1000.0), 3),
                     )
                     futures.append((future, chunk_metadata, int(chunk_index), int(chunk.size)))
+                # bugs/0718: a bounded wait per chunk (deadline shared across the whole
+                # collection) so a worker wedged on degenerate geometry cannot hang the UI
+                # thread. Once one chunk times out the rest are abandoned immediately -- they
+                # trace the SAME bad system, so waiting on them would only stack the freeze --
+                # and the finally kills the workers. The preview then simply shows no rays.
+                trace_deadline = time.perf_counter() + _PREVIEW_TRACE_RESULT_BUDGET_SECONDS
+                timed_out = False
                 for future, chunk_metadata, chunk_index, chunk_size in futures:
+                    if timed_out:
+                        future.cancel()
+                        continue
                     chunk_start = time.perf_counter()
-                    batch_results, batch_active = future.result()
+                    remaining = trace_deadline - time.perf_counter()
+                    try:
+                        batch_results, batch_active = future.result(timeout=max(0.1, remaining))
+                    except _futures.TimeoutError:
+                        timed_out = True
+                        status = "timeout"
+                        self._last_preview_trace_backend = "Parallel Batch preview (timed out)"
+                        self._last_preview_trace_note = (
+                            f"preview trace aborted after {_PREVIEW_TRACE_RESULT_BUDGET_SECONDS:.0f} s "
+                            f"(chunk {int(chunk_index)}) -- the geometry is likely degenerate or far "
+                            f"off-conjugate (a forced lens move into a collision, or a device far from "
+                            f"its working distance); the trace workers were terminated so the UI stays "
+                            f"responsive. Press Trace Now once the geometry is valid."
+                        )
+                        try:
+                            self.append_debug(self._last_preview_trace_note)
+                        except Exception:
+                            pass
+                        open3d_timing_event(
+                            "trace_preview_parallel_timeout",
+                            chunk_index=int(chunk_index),
+                            budget_s=float(_PREVIEW_TRACE_RESULT_BUDGET_SECONDS),
+                        )
+                        future.cancel()
+                        continue
                     rays.batch_push(batch_results, batch_active, wavelength, source_metadata=chunk_metadata)
                     open3d_timing_event(
                         "trace_preview_parallel_chunk_done",
