@@ -1438,29 +1438,34 @@ class QuickEstimationService:
                         pass
                     self.set_target_fov(float(os_f))
                     # bugs/0717: frame-consistent crash readout from the mover
-                    # (prescription-frame room vs the demanded move), stashed for
-                    # the in-scene banner.
-                    pen = float(forced.get("penetration_mm", 0.0))
+                    # (straight-frame station room vs the demanded move -- no rebuild),
+                    # stashed for the in-scene banner.
+                    pen = forced.get("penetration_mm")
+                    room = forced.get("room_mm")
+                    dist = float(forced.get("distance", 0.0))
                     obstacle = str(forced.get("obstacle") or "the upstream fold mirror")
                     info = dict(self.editor.__dict__.get("_fov_solve_refusal_info") or {})
-                    info["forced_penetration_mm"] = pen
+                    if pen is not None:
+                        info["forced_penetration_mm"] = float(pen)
                     info["forced_obstacle"] = obstacle
                     info.setdefault("reason", "FORCED solve applied -- inspect the 3D overlap")
                     self.editor._fov_solve_refusal_info = info
-                    if pen < 0.0:
+                    if pen is not None and float(pen) < 0.0:
                         note = (
-                            f" FORCED: the lens PENETRATES {obstacle} by {-pen:.4g} mm "
-                            f"({forced['room_mm']:.4g} mm of room, needs "
-                            f"{forced['distance']:.4g}) -- the working-condition limit."
+                            f" FORCED: the lens PENETRATES {obstacle} by {-float(pen):.4g} mm "
+                            f"({float(room):.4g} mm of room, needs {dist:.4g}) -- the "
+                            f"working-condition limit."
+                        )
+                    elif pen is not None:
+                        note = (
+                            f" FORCED: {float(pen):.4g} mm clearance to {obstacle} "
+                            f"(moved {dist:.4g} of {float(room):.4g} mm room)."
                         )
                     else:
-                        note = (
-                            f" FORCED: {pen:.4g} mm clearance to {obstacle} "
-                            f"(moved {forced['distance']:.4g} of {forced['room_mm']:.4g} mm room)."
-                        )
+                        note = f" FORCED: moved {dist:.4g} mm toward {obstacle}."
                     return True, (
-                        f"FORCED: drove the lens {forced['distance']:.4g} mm toward the "
-                        f"object (WD shortened; vendor hardware fixed).{note}"
+                        f"FORCED: drove the lens {dist:.4g} mm toward the object "
+                        f"(WD shortened; vendor hardware fixed).{note}"
                     )
                 # bugs/0314: the object/image distance correction is a change to the leg TOTAL,
                 # not to one row. A prior fold-leg constraint (a Solve pinning "object -> mirror")
@@ -2767,97 +2772,6 @@ class QuickEstimationService:
             "folded first order disagrees with the traced machine; bugs/0591)."
         )
 
-    def _report_forced_lens_clearance(self) -> str:
-        """bugs/0717: after a FORCED solve, measure the lens body against every
-        solid row's mesh and report the closest one -- NEGATIVE means the lens
-        penetrates it, which is exactly what the force exists to show. Feeds the
-        in-scene banner (the stash) and returns a status fragment."""
-        try:
-            lens = self.editor._transformed_imported_step_mesh_for_label("lens")
-            lens_pts = np.asarray(lens.points, dtype=float)
-        except Exception:
-            return ""
-        if lens_pts.ndim != 2 or len(lens_pts) == 0:
-            return ""
-        try:
-            from scipy.spatial import cKDTree
-
-            tree = cKDTree(lens_pts)
-        except Exception:
-            return ""
-        best = None
-        stations = None
-        for index, row in enumerate(getattr(self.editor, "rows", []) or []):
-            advanced = row.advanced if isinstance(getattr(row, "advanced", None), dict) else {}
-            stl = advanced.get("Solid_3d_stl")
-            if not stl:
-                continue
-            try:
-                if stations is None:
-                    stations = self.editor._row_z_positions()
-                transform = self.editor._surface_transform_for_rows(self.editor.rows, index)
-                import pyvista as pv
-
-                mesh = pv.read(str(stl))
-                pts = np.asarray(mesh.points, dtype=float)
-                hom = np.column_stack([pts, np.ones(len(pts))])
-                world = (np.asarray(transform) @ hom.T).T[:, :3]
-                d, _ = tree.query(world[:: max(1, len(world) // 4000)], k=1)
-                dmin = float(d.min())
-                name = str(getattr(row, "name", "") or f"S{index}")
-                if best is None or dmin < best[0]:
-                    best = (dmin, name)
-            except Exception:
-                continue
-        if best is None:
-            return ""
-        dmin, name = best
-        # point-cloud distance cannot go negative; ~0 means surfaces touch or
-        # interpenetrate. Refine the sign with a containment test.
-        penetration = dmin
-        try:
-            import pyvista as pv
-
-            probe = pv.PolyData(lens_pts[:: max(1, len(lens_pts) // 2000)])
-            # any lens point INSIDE the obstacle => true penetration
-            for index, row in enumerate(self.editor.rows):
-                if str(getattr(row, "name", "") or f"S{index}") != name:
-                    continue
-                advanced = row.advanced if isinstance(row.advanced, dict) else {}
-                transform = self.editor._surface_transform_for_rows(self.editor.rows, index)
-                mesh = pv.read(str(advanced.get("Solid_3d_stl")))
-                pts = np.asarray(mesh.points, dtype=float)
-                hom = np.column_stack([pts, np.ones(len(pts))])
-                obstacle = pv.PolyData((np.asarray(transform) @ hom.T).T[:, :3], mesh.faces)
-                surf = obstacle.extract_surface(algorithm="dataset_surface")
-                try:
-                    enclosed = probe.select_interior_points(surf, check_surface=False)
-                except Exception:
-                    enclosed = probe.select_enclosed_points(surf, check_surface=False)
-                inside = int(np.asarray(enclosed["SelectedPoints"]).sum())
-                if inside > 0:
-                    depths, _ = cKDTree(np.asarray(obstacle.points)).query(
-                        lens_pts[:: max(1, len(lens_pts) // 2000)][
-                            np.asarray(enclosed["SelectedPoints"]) == 1
-                        ],
-                        k=1,
-                    )
-                    penetration = -float(depths.max())
-                break
-        except Exception:
-            pass
-        info = dict(self.editor.__dict__.get("_fov_solve_refusal_info") or {})
-        info["forced_penetration_mm"] = float(penetration)
-        info["forced_obstacle"] = name
-        info.setdefault("reason", "FORCED solve applied -- inspect the 3D overlap")
-        self.editor._fov_solve_refusal_info = info
-        if penetration < 0.0:
-            return (
-                f" FORCED: the lens PENETRATES {name} by {-penetration:.4g} mm -- "
-                f"this is the working-condition limit made visible."
-            )
-        return f" FORCED: applied; {penetration:.4g} mm clearance to {name}."
-
     def _update_split_field_band_widths(self, width) -> None:
         """bugs/0704 (flag 110804 "Let user to input required FOV as usual"): the
         split-field bands ARE the FOV's face-anchored drawing, so a successful
@@ -2961,8 +2875,10 @@ class QuickEstimationService:
                     self.set_target_fov(semi)
                     self._update_split_field_band_widths(obj_w)
                     msg = f"Object {obj_w:.6g} x {obj_h:.6g} mm fills the sensor. " + msg
-                    if force:
-                        msg += self._report_forced_lens_clearance()
+                    # bugs/0717: the force note (moved / penetration / obstacle) is
+                    # already built by _apply_conjugate_pair's force short-circuit --
+                    # no extra mesh-clearance measure here (the old one meshed every
+                    # solid + ran containment tests = "super long computation").
                 else:
                     # bugs/0717: enrich the refusal stash with the REQUEST + what the
                     # scene delivers instead, so the in-scene banner carries every

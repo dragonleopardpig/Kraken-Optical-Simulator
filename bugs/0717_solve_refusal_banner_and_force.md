@@ -27,24 +27,33 @@ system HUD with all the numbers:
 refusal repaints it with this request's numbers. No more near-correct trace
 masking a silent refusal.
 
-## 2 — Force FOV (show collision)
+## 2 — Force FOV (show collision) — the CARRY-MODEL move
 
-`fov_solve(..., force=True)` / `solve_fov_to_inspection_face(fov=, force=True)`
-short-circuit to `force_translate_lens_toward_object` -- a PURE lens move:
-ONLY the lens block's `desp` rows translate, toward the upstream fold mirror
-the lens leg runs into (shorter WD), by |object_delta|. Vendor hardware is
-byte-identical (flag 120132: the earlier gap-write force cascaded the prisms;
-the 0570/0571 dislocation). The crash metric is FRAME-CONSISTENT
-prescription-frame arithmetic (room to the upstream fold vs the demanded
-move) -- NOT a mesh-vs-body distance, which the 0433/0693 frame split makes
-meaningless (the datum moves in the straight frame, the drawn body in the
-folded frame -- 232 mm apart for one move). The banner names the obstacle
-(RA mirror 2), the room, and the overshoot; a magnifying request whose move
-exceeds the room penetrates it -- the working-condition limit made visible.
-On a scene with room to spare the readout honestly says so.
+`fov_solve(..., force=True)` short-circuits to `force_translate_lens_toward_object`.
+Flag 143656 ("hay wired") exposed why every earlier cut exploded the scene: on
+this chained frozen layout a `desp` write on row *i* shifts rows *i..N* TOGETHER,
+so writing the move into all five block rows ACCUMULATES 1x/2x/.../5x (measured:
+discs at 20/40/60/80/100 mm, the tail carried into Filter+camera+sensor at 5x).
 
-The Device browser menu grows a "Force FOV <W> mm (show collision)" entry
-whenever a refusal is stashed, keyed on the refused request.
+The rigid move is the CARRY-MODEL two-write: put the whole move on the FRONT
+datum row (carries the block AND the tail), then CANCEL it on the row after the
+REAR datum (un-shifts the tail). Measured on om05a: rows 8-12 translate as one
+(rigidity spread 0.000), the STEP body follows (anchored to the front datum), and
+Filter / camera / sensor / every vendor solid stay byte-identical. `desp_z += amount`
+with the conjugate's NEGATIVE object_delta drives the barrel toward the upstream
+fold (RA mirror 1) = shorter WD. If a vendor solid sits immediately after the block
+(no non-hardware cancel row), the force refuses rather than move hardware.
+
+The crash metric is straight-frame STATION arithmetic (`_row_z_positions`): room =
+along-axis gap from the front datum to the nearest upstream solid; penetration =
+room − |move|. NO system rebuild (the prior cut's `_surface_origin_for_rows` loop
+was ~17 full builds at ~50 s each = the "super long computation"; now ~8 s total).
+The banner reports moved / clearance-or-penetration / obstacle.
+
+VERIFIED on om05a (force at FOV 30/12/6): lens moves 97/163/186 mm, clearance
+83.5 / 17.0 / −5.2 mm to RA mirror 1 (penetrates at FOV 6), hardware byte-identical
+at every FOV, ~8 s each.
+
 
 ## Scope note
 

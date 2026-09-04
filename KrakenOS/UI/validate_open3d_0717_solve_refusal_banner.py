@@ -91,11 +91,17 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     mover_src = inspect.getsource(ScenePlacementMixin.force_translate_lens_toward_object)
     ok(
         "_imaging_lens_block_indices()" in mover_src
-        and "to_target = " in mover_src
-        and "range(int(front), int(rear) + 1)" in mover_src
-        and "no gap-row writes" in mover_src,
-        "B3: the pure mover translates ONLY the lens block rows toward the object "
-        "POINT (rigid desp, no gap writes -> no hardware cascade)",
+        and "front_row.desp_z = float(front_row.desp_z) + amount" in mover_src
+        and "tail_row.desp_z = float(tail_row.desp_z) - amount" in mover_src
+        and "_row_z_positions()" in mover_src
+        and "self._surface_origin_for_rows(" not in mover_src,
+        "B3: the mover is the CARRY-MODEL two-write (front-move + tail-cancel = rigid "
+        "block translate), room from stations (no 50s system rebuilds)",
+    )
+    ok(
+        'if tail_adv.get("Solid_3d_stl")' in mover_src and "would move hardware" in mover_src,
+        "B4a: the mover refuses rather than write the cancel onto a vendor solid "
+        "(immutability)",
     )
 
     from KrakenOS.UI.open3d_inspector import Kraken3DInspector

@@ -4605,76 +4605,60 @@ class ScenePlacementMixin:
         front, rear = self._imaging_lens_block_indices()
         if front is None or rear is None:
             return None
-        # bugs/0717 (flag 120132, 3rd correction): shortening the WD drives the lens
-        # up its OWN leg into the fold mirror immediately upstream of it (the "big RA
-        # mirror" the beam last reflected off before the lens) -- NOT toward the
-        # distant object point (which on a fold takes the lens diagonally AWAY from
-        # everything). Aim at that upstream fold: the nearest optical-solid row
-        # before the lens block, by world proximity to the front datum. Move by
-        # |object_delta|, so a magnifying overshoot penetrates it -- the crash.
-        try:
-            front_o = self._surface_origin_for_rows(self.rows, int(front))
-        except Exception:
-            return None
-        target_o = None
-        target_gap = None
-        for index in range(int(front)):
+        # bugs/0717 (flag 143656 "hay wired"): the earlier cuts wrote the move into
+        # EVERY block row's desp -- but on this chained frozen scene a desp write on
+        # row i shifts rows i..N TOGETHER, so five identical writes ACCUMULATE
+        # 1x/2x/.../5x (measured: discs at 20/40/60/80/100 mm, the tail carried into
+        # the Filter+camera+sensor at 5x = the explosion). A rigid block translate is
+        # the CARRY-MODEL two-write: put the whole move on the FRONT row (carries the
+        # block AND everything downstream), then CANCEL it on the row after REAR
+        # (un-shifts the tail). Measured: rows 8-12 move as one (rigidity spread
+        # 0.000), body follows, Filter/camera/sensor and every vendor solid stay
+        # byte-identical. desp_z carries the drawn barrel toward the upstream fold
+        # (RA mirror 1) for a NEGATIVE amount = shorter WD; the conjugate's
+        # object_delta is already negative for a magnifying request.
+        stations = self._row_z_positions()
+
+        def _station(index):
+            return float(stations[index]) if 0 <= index < len(stations) else 0.0
+
+        # The upstream fold the lens drives into: the nearest optical-solid row
+        # before the block. Room = along-axis station gap (cheap; NO system rebuild
+        # -- the prior cut's _surface_origin_for_rows loop was ~17 full builds at
+        # ~50 s each = the "super long computation").
+        front_station = _station(int(front))
+        obstacle_name = None
+        room = None
+        for index in range(int(front) - 1, -1, -1):
             row = self.rows[index]
             advanced = row.advanced if isinstance(getattr(row, "advanced", None), dict) else {}
             if not advanced.get("Solid_3d_stl"):
                 continue
-            try:
-                o = self._surface_origin_for_rows(self.rows, index)
-            except Exception:
-                continue
-            gap = float(np.linalg.norm(np.asarray(o, dtype=float) - np.asarray(front_o, dtype=float)))
-            if target_gap is None or gap < target_gap:
-                target_gap, target_o = gap, np.asarray(o, dtype=float)
-        if target_o is None:
-            return None
-        to_target = target_o - np.asarray(front_o, dtype=float)
-        norm = float(np.linalg.norm(to_target))
-        if norm <= 1.0e-6:
-            return None
-        direction = to_target / norm
-        # bugs/0717 (flag 120132, final): the CRASH metric is frame-consistent
-        # prescription-frame arithmetic -- the lens must move |object_delta| toward
-        # the upstream fold, but only ``norm`` mm of room exist before it; anything
-        # beyond is penetration. This avoids the 0433/0693 frame split that made a
-        # mesh-vs-body distance meaningless (the datum moves in the straight frame,
-        # the drawn body in the folded frame -- different directions for one move).
-        target_name = None
-        try:
-            for index in range(int(front)):
-                row = self.rows[index]
-                advanced = row.advanced if isinstance(getattr(row, "advanced", None), dict) else {}
-                if not advanced.get("Solid_3d_stl"):
-                    continue
-                o = self._surface_origin_for_rows(self.rows, index)
-                if abs(float(np.linalg.norm(np.asarray(o, dtype=float) - np.asarray(front_o, dtype=float)) - norm)) < 1e-6:
-                    target_name = str(getattr(row, "name", "") or f"S{index}")
-                    break
-        except Exception:
-            target_name = None
-        penetration = float(norm) - abs(float(amount))  # negative => overshoots the fold
-        shift = direction * abs(amount)  # toward the upstream fold = shorter WD
-        amount = abs(amount)
-        moved: list[int] = []
-        for index in range(int(front), int(rear) + 1):
-            row = self.rows[index]
-            try:
-                row.desp_x = float(row.desp_x) + float(shift[0])
-                row.desp_y = float(row.desp_y) + float(shift[1])
-                row.desp_z = float(row.desp_z) + float(shift[2])
-                moved.append(index)
-            except Exception:
-                continue
-        # bugs/0717 (flag 120132, 4th correction): the lens body overlay is anchored
-        # to the FRONT DATUM's fold transform (_step_body_anchor_world_transform),
-        # so moving the datum rows already carries the drawn barrel -- an EXTRA
-        # _shift_step_offset (pre-fold frame, 0693) double-moved it and flung the
-        # body clear across the scene (datum x=157 vs body x=-45). Just invalidate
-        # the memoised overlay mesh so it re-derives from the moved datum.
+            obstacle_name = str(getattr(row, "name", "") or f"S{index}")
+            room = abs(front_station - _station(int(index)))
+            break
+
+        tail_index = int(rear) + 1
+        # The cancel row must NOT be a vendor STEP solid -- writing its desp (even to
+        # net-zero its motion) would break the immutability contract. On om05a it is
+        # the Filter (a prescription row); if a vendor solid sits immediately after
+        # the block, refuse rather than touch hardware.
+        tail_ok = 0 <= tail_index < len(self.rows)
+        if tail_ok:
+            tail_adv = self.rows[tail_index].advanced if isinstance(getattr(self.rows[tail_index], "advanced", None), dict) else {}
+            if tail_adv.get("Solid_3d_stl"):
+                self.append_debug(
+                    "FORCE: refused -- a vendor solid sits immediately after the lens "
+                    "block; cancelling the carry there would move hardware (bugs/0717)"
+                )
+                return None
+        front_row = self.rows[int(front)]
+        front_row.desp_z = float(front_row.desp_z) + amount        # amount<0 -> toward the object
+        if tail_ok:
+            tail_row = self.rows[tail_index]
+            tail_row.desp_z = float(tail_row.desp_z) - amount       # cancel the carry past the block
+        # the body overlay is anchored to the front datum's fold transform, so it
+        # follows the moved datum -- just drop the memoised mesh so it re-derives.
         try:
             self._invalidate_preview_scene_trace()
         except Exception:
@@ -4685,18 +4669,19 @@ class ScenePlacementMixin:
                 cache.clear()
         except Exception:
             pass
+        penetration = (float(room) - abs(amount)) if room is not None else None
         self.append_debug(
             f"FORCE: translated the lens block {abs(amount):.4g} mm toward "
-            f"{target_name or 'the upstream fold'} ({float(norm):.4g} mm of room) "
-            f"(rows {moved}); vendor hardware untouched (bugs/0717)"
+            f"{obstacle_name or 'the upstream fold'} "
+            f"({'%.4g mm room' % room if room is not None else 'room unknown'}); "
+            f"front row {front}, cancel row {tail_index}; vendor hardware untouched (bugs/0717)"
         )
         return {
-            "rows": moved,
+            "rows": [int(front), tail_index] if tail_ok else [int(front)],
             "distance": float(abs(amount)),
-            "direction": direction.tolist(),
-            "room_mm": float(norm),
-            "penetration_mm": float(penetration),
-            "obstacle": target_name,
+            "room_mm": float(room) if room is not None else None,
+            "penetration_mm": float(penetration) if penetration is not None else None,
+            "obstacle": obstacle_name,
         }
 
     def slide_lens_block_along_its_leg(self, slide: float) -> "dict | None":
