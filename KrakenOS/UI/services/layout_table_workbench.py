@@ -8583,6 +8583,59 @@ class LayoutTableWorkbenchMixin:
             )
         self._refresh_open_3d_views()
 
+    def _measure_split_field_image_strips(self, system, rays, scene_bundle) -> int:
+        """bugs/0721: after a REAL trace, measure where each split-field band's field lands on
+        the sensor and store it as the band's ``image_strip`` -- the 0692 strips were authored
+        constants that could not follow magnification and the face-B one was 2.5 mm off its
+        mirror image. The detector frame is the scene bundle's detector target (centre +
+        normal), i.e. exactly the frame the coverage overlay draws the strips in. Silent
+        no-op without bands, rays or a detector target."""
+        try:
+            bands = list(getattr(self, "layout_object_fov_bands", None) or [])
+            if not bands or rays is None or scene_bundle is None:
+                return 0
+            targets = [
+                t for t in (getattr(scene_bundle, "targets", []) or []) if bool(getattr(t, "is_detector", False))
+            ]
+            if not targets:
+                return 0
+            target = targets[0]
+            # SceneTarget3D fields: center_world / normal_world; trace_surface is the surface
+            # id the trace's hit records carry for this detector (fallback: the last row).
+            center = np.asarray(getattr(target, "center_world"), dtype=float).reshape(3)
+            normal = np.asarray(getattr(target, "normal_world"), dtype=float).reshape(3)
+            if not (np.all(np.isfinite(center)) and np.all(np.isfinite(normal))):
+                return 0
+            image_surface = getattr(target, "trace_surface", None)
+            if image_surface is None:
+                image_surface = len(self.rows) - 1
+            records = self._ray_analysis_records_for_trace(system, rays)
+            from KrakenOS.UI.services.detector_coverage_overlay import measure_split_field_image_strips
+
+            changed = measure_split_field_image_strips(
+                bands,
+                records,
+                image_surface=int(image_surface),
+                image_point=center,
+                image_axis=normal,
+            )
+            if changed:
+                self.layout_object_fov_bands = bands
+                strips = "; ".join(
+                    f"{b.get('name', '?')}: v {b['image_strip']['v_lo']:+.2f}..{b['image_strip']['v_hi']:+.2f} "
+                    f"({b['image_strip'].get('ray_count', 0)} rays)"
+                    for b in bands
+                    if isinstance(b, dict) and isinstance(b.get("image_strip"), dict) and b["image_strip"].get("measured")
+                )
+                self.append_debug(f"split-field sensor strips measured from the trace (bugs/0721): {strips}")
+            return int(changed)
+        except Exception as exc:
+            try:
+                self.append_debug(f"split-field strip measurement skipped: {exc}")
+            except Exception:
+                pass
+            return 0
+
     def _retarget_split_field_to_part(self, old_spec: dict, new_spec: dict) -> list[str]:
         """bugs/0712 (user directive, 2026-09-03): "the vendor provided STEP file
         should remain constant, no modification (including sliding of element) is

@@ -15877,6 +15877,10 @@ phase_517_force_solve_freeze = _phase_from_standalone(
     517, "a forced FOV solve cannot hang the UI: trace deferred on force + bounded parallel result (0718)",
     "KrakenOS.UI.validate_open3d_0718_force_solve_freeze",
     "force_solve_freeze")
+phase_520_split_field_strips_measured = _phase_from_standalone(
+    520, "om05a split field: face bands symmetric; sensor strips MEASURED from the trace (0721)",
+    "KrakenOS.UI.validate_open3d_0721_split_field_strips_measured",
+    "split_field_strips_measured")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16462,6 +16466,7 @@ def main() -> int:
             phase_516_solve_refusal_banner,
             phase_517_force_solve_freeze,
             phase_518_lens_move_thickness_pair,
+            phase_520_split_field_strips_measured,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

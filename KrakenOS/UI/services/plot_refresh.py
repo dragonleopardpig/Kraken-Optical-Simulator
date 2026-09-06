@@ -242,6 +242,10 @@ class PlotRefreshService:
             self.update_idletasks()
             orientation = self._current_display_orientation()
             bundle = self._build_scene_bundle(system, rays, max_radius)
+            # bugs/0721: a REAL trace re-measures where each split-field band lands on the
+            # sensor (the strips follow magnification; the centre dark edge is the gap).
+            if rays is not None:
+                self._measure_split_field_image_strips(system, rays, bundle)
             # bugs/0243: no display bend / reconcile any more -- the folded scene is
             # traced on the REAL system (mirrors reflect first-surface off their mesh
             # faces, the Image surface sits at its folded pose), so the 2D rays are

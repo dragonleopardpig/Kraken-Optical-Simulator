@@ -2961,6 +2961,14 @@ class QuickEstimationService:
                 return
             for band in bands:
                 band["half_width"] = half
+            # bugs/0721: the field is centred on each device face (the span is the arm's
+            # short-axis passband) -- keep the bands symmetric on every solve.
+            try:
+                from KrakenOS.UI.services.detector_coverage_overlay import symmetrize_face_bands
+
+                symmetrize_face_bands(bands)
+            except Exception:
+                pass
             self.editor.layout_object_fov_bands = bands
         except Exception:
             pass

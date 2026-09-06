@@ -146,6 +146,151 @@ def _circle_points(center, u, v, radius, n=72):
     return center + radius * (np.outer(np.cos(th), u) + np.outer(np.sin(th), v))
 
 
+def symmetrize_face_bands(bands) -> int:
+    """bugs/0721 (user, om05a split field: "symmetry rectangular strip on both sides of the
+    center dark edge corresponds to the two symmetrical object side FOV"): a split-field
+    band is anchored on a DEVICE FACE and its field is centred on that face, so its
+    ``v_lo``/``v_hi`` are centred on the band centre (the SPAN is kept -- it is the arm's
+    short-axis passband). The authored om05a bands carried v -5.25..+3.1 (centre -1.08 mm):
+    the green plane drew 1.1 mm high on the device and the sensor strips inherited the
+    shift. Pure + display-free. Returns how many bands changed."""
+    changed = 0
+    for band in bands or []:
+        if not isinstance(band, dict):
+            continue
+        try:
+            lo = float(band.get("v_lo"))
+            hi = float(band.get("v_hi"))
+        except (TypeError, ValueError):
+            continue
+        span = hi - lo
+        if not (np.isfinite(span) and span > 1e-9):
+            continue
+        new_lo, new_hi = -0.5 * span, 0.5 * span
+        if abs(new_lo - lo) > 1e-9 or abs(new_hi - hi) > 1e-9:
+            band["v_lo"] = float(new_lo)
+            band["v_hi"] = float(new_hi)
+            changed += 1
+    return changed
+
+
+def measure_split_field_image_strips(
+    bands,
+    records,
+    *,
+    image_surface: int,
+    image_point,
+    image_axis,
+    min_rays: int = 3,
+    trim: float = 0.02,
+) -> int:
+    """bugs/0721: the sensor strips are MEASURED from the trace, never authored.
+
+    The om05a split field images two device faces through two independent arms onto two
+    strips of one sensor, with the centre mirror's ridge imaged as a thin dark edge between
+    them. The 0692 strips were authored constants -- they cannot follow magnification (the
+    +-6 mm beam offset at the lens maps to -+6*(1 - v/f) on the sensor: +-2.2 mm at 0.37x,
+    +-6.9 mm at 1.15x) and the authored face-B strip was 2.5 mm off its mirror image.
+
+    ``records`` are the trace's ray-analysis records (``hits`` = [{surface, x, y, z, ...}],
+    ``reaches_image``). A ray belongs to the band whose face plane is nearest its FIRST hit
+    (a split-field arm starts at its own face); the rays that reach ``image_surface`` are
+    projected into the detector's in-plane frame -- ``image_point`` + the SAME ``_basis``
+    of ``image_axis`` the overlay draws the strips with -- and the band's ``image_strip``
+    becomes their v-range (``trim`` fraction clipped each end) and u half-width. Bands
+    with fewer than ``min_rays`` landing rays keep their previous strip. Pure +
+    display-free. Returns how many bands were (re)measured."""
+    if not bands or not records:
+        return 0
+    img_pt = np.asarray(image_point, dtype=float).reshape(3)
+    iu, iv = _basis(np.asarray(image_axis, dtype=float).reshape(3))
+    planes = []
+    for band in bands:
+        if not isinstance(band, dict):
+            planes.append(None)
+            continue
+        try:
+            center = np.asarray(band.get("center"), dtype=float).reshape(3)
+            axis = np.asarray(band.get("axis"), dtype=float).reshape(3)
+            norm = float(np.linalg.norm(axis))
+            axis = axis / norm if norm > 1e-9 else np.array([0.0, 0.0, 1.0])
+            planes.append((center, axis))
+        except Exception:
+            planes.append(None)
+    if not any(p is not None for p in planes):
+        return 0
+    landed: dict[int, list[tuple[float, float]]] = {i: [] for i in range(len(bands))}
+    for record in records:
+        if not isinstance(record, dict) or not record.get("reaches_image"):
+            continue
+        hits = record.get("hits") or []
+        if not hits:
+            continue
+        try:
+            first = np.asarray(
+                (float(hits[0].get("x")), float(hits[0].get("y")), float(hits[0].get("z"))), dtype=float
+            )
+        except Exception:
+            continue
+        if not np.all(np.isfinite(first)):
+            continue
+        image_hit = None
+        for hit in reversed(hits):
+            try:
+                if int(hit.get("surface")) == int(image_surface):
+                    image_hit = hit
+                    break
+            except (TypeError, ValueError):
+                continue
+        if image_hit is None:
+            continue
+        try:
+            p = np.asarray(
+                (float(image_hit.get("x")), float(image_hit.get("y")), float(image_hit.get("z"))), dtype=float
+            )
+        except Exception:
+            continue
+        if not np.all(np.isfinite(p)):
+            continue
+        best = None
+        for index, plane in enumerate(planes):
+            if plane is None:
+                continue
+            center, axis = plane
+            dist = abs(float(np.dot(first - center, axis)))
+            if best is None or dist < best[0]:
+                best = (dist, index)
+        if best is None:
+            continue
+        d = p - img_pt
+        landed[best[1]].append((float(np.dot(d, iu)), float(np.dot(d, iv))))
+    changed = 0
+    for index, band in enumerate(bands):
+        pts = landed.get(index) or []
+        if len(pts) < int(min_rays) or not isinstance(band, dict):
+            continue
+        us = np.asarray([q[0] for q in pts], dtype=float)
+        vs = np.sort(np.asarray([q[1] for q in pts], dtype=float))
+        k = int(np.floor(float(trim) * vs.size))
+        k = min(k, max(0, (vs.size - 1) // 2))
+        v_lo = float(vs[k])
+        v_hi = float(vs[vs.size - 1 - k])
+        if not (v_hi > v_lo):
+            continue
+        half_w = float(np.max(np.abs(us)))
+        band["image_strip"] = {
+            "center": [float(c) for c in img_pt],
+            "axis_v": [float(c) for c in iv],
+            "half_width": max(half_w, 1e-3),
+            "v_lo": v_lo,
+            "v_hi": v_hi,
+            "measured": True,
+            "ray_count": int(vs.size),
+        }
+        changed += 1
+    return changed
+
+
 def _rect_points(center, u, v, half_w, half_h):
     return np.array([
         center + half_w * u + half_h * v,

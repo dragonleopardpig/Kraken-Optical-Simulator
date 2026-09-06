@@ -439,7 +439,18 @@ class LayoutSettingsService:
         self.layout_scene_row_order = normalize_source_row_order(settings.get("scene_row_order", SOURCE_ROW_ORDER_DEFAULT))
         self.inspection_part_spec = _normalize_inspection_part(settings.get("inspection_part", None))  # bugs/0661
         self.display_fold_spec = settings.get("display_fold_spec", None)  # bugs/0671
-        self.layout_object_fov_bands = settings.get("object_fov_bands", None)  # bugs/0683
+        bands = settings.get("object_fov_bands", None)  # bugs/0683
+        # bugs/0721: a device-face band's field is centred on its face -- symmetrize the
+        # authored v-range (span kept) so the green planes and the sensor strips are not
+        # inherited 1.1 mm high (om05a authored v -5.25..+3.1).
+        try:
+            from KrakenOS.UI.services.detector_coverage_overlay import symmetrize_face_bands
+
+            if isinstance(bands, list):
+                symmetrize_face_bands(bands)
+        except Exception:
+            pass
+        self.layout_object_fov_bands = bands
         self.layout_launch_pupil_aim_offset = settings.get("launch_pupil_aim_offset", None)  # bugs/0690
 
         def _parse_bool(value) -> bool:
