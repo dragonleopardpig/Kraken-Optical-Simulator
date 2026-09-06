@@ -15877,6 +15877,10 @@ phase_517_force_solve_freeze = _phase_from_standalone(
     517, "a forced FOV solve cannot hang the UI: trace deferred on force + bounded parallel result (0718)",
     "KrakenOS.UI.validate_open3d_0718_force_solve_freeze",
     "force_solve_freeze")
+phase_518_lens_move_thickness_pair = _phase_from_standalone(
+    518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
+    "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
+    "lens_move_thickness_pair")
 phase_461_swap_prompts_for_fov = _phase_from_standalone(
     461, "an interactive swap ASKS for the FOV you want (prefilled with the delivered field) (0609)",
     "KrakenOS.UI.validate_open3d_0609_swap_prompts_for_fov",
@@ -16457,6 +16461,7 @@ def main() -> int:
             phase_515_step_shell_import,
             phase_516_solve_refusal_banner,
             phase_517_force_solve_freeze,
+            phase_518_lens_move_thickness_pair,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

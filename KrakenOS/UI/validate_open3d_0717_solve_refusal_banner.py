@@ -88,20 +88,40 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
 
     from KrakenOS.UI.services.scene_placement_commands import ScenePlacementMixin
 
+    import re as _re
+
     mover_src = inspect.getsource(ScenePlacementMixin.force_translate_lens_toward_object)
+    primitive_src = inspect.getsource(ScenePlacementMixin.translate_lens_block_along_leg)
+    room_src = inspect.getsource(ScenePlacementMixin._lens_block_physical_room_mm)
+    # bugs/0719 REVISED this pin. The 0717 mover was the CARRY-MODEL desp two-write
+    # (front += amount, the row after the rear datum -= amount); measured on om05a the
+    # cancel landed on the Filter (a GLASS row) and the core stretched its Side3D drum
+    # into a 172 mm "tube". The mover now delegates to the ONE lens-move primitive,
+    # translate_lens_block_along_leg(force=True): a THICKNESS PAIR on (front-1, rear),
+    # no desp write on any row, room from AABBs/stations (still no 50 s system rebuilds).
+    _desp_write = _re.compile(r"\.desp_[xyz]\s*=")
     ok(
-        "_imaging_lens_block_indices()" in mover_src
-        and "front_row.desp_z = float(front_row.desp_z) + amount" in mover_src
-        and "tail_row.desp_z = float(tail_row.desp_z) - amount" in mover_src
-        and "_row_z_positions()" in mover_src
-        and "self._surface_origin_for_rows(" not in mover_src,
-        "B3: the mover is the CARRY-MODEL two-write (front-move + tail-cancel = rigid "
-        "block translate), room from stations (no 50s system rebuilds)",
+        "translate_lens_block_along_leg(" in mover_src
+        and "force=True" in mover_src
+        and _desp_write.search(mover_src) is None
+        and "_imaging_lens_block_indices()" in primitive_src
+        and "thickness) + applied" in primitive_src
+        and "thickness) - applied" in primitive_src
+        and _desp_write.search(primitive_src) is None
+        and "self._surface_origin_for_rows(" not in primitive_src
+        and "self._surface_origin_for_rows(" not in room_src
+        and "_surface_transform_for_rows(" not in room_src,
+        "B3 (revised by 0719): the mover delegates to translate_lens_block_along_leg(force=True) "
+        "-- the rigid move is the THICKNESS PAIR on (front-1, rear), no desp writes remain, "
+        "room from AABBs/stations (no 50s system rebuilds)",
     )
     ok(
-        'if tail_adv.get("Solid_3d_stl")' in mover_src and "would move hardware" in mover_src,
-        "B4a: the mover refuses rather than write the cancel onto a vendor solid "
-        "(immutability)",
+        "capped" in primitive_src
+        and "room_station" in primitive_src
+        and "_lens_block_physical_room_mm(" in primitive_src,
+        "B4a (revised by 0719): the primitive never writes a vendor row's pose -- the fold "
+        "mirror's trailing gap is the LEG; a forced move is capped at that gap so no thickness "
+        "goes negative (bugs/0564 would raid the vendor prism gaps)",
     )
 
     from KrakenOS.UI.open3d_inspector import Kraken3DInspector

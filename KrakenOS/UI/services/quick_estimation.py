@@ -1395,6 +1395,39 @@ class QuickEstimationService:
         # primary gives up all it has (-> 0); the negative remainder lands on the sibling leg
         return [(int(primary_row), -float(rows[primary_row].thickness)), (int(spill_row), new_primary)]
 
+    def _image_write_locked_by_vendor_hardware(self, rows, write_row) -> str:
+        """bugs/0719: why the image-side gap write may NOT be booked after the lens moved --
+        a non-empty reason, or '' when the write touches no vendor hardware.
+
+        A thickness write on ``rows[write_row]`` shifts every station past it: a free-placed
+        vendor solid (``Solid_3d_stl``) downstream is pinned at ``station + desp`` and would
+        move, and the Image row -- the sensor -- moves by construction, which is the vendor
+        camera body when a camera STEP is glued to it ([[feedback_vendor_hardware_immutable]]).
+        Pure row/attribute reads; no scene rebuild."""
+        try:
+            write_row = int(write_row)
+        except (TypeError, ValueError):
+            return ""
+        editor = self.editor
+        camera_path = None
+        try:
+            camera_path = editor._step_path_for_label("camera")
+        except Exception:
+            camera_path = getattr(editor, "imported_camera_step_path", None)
+        if camera_path is not None:
+            return "the sensor carries the vendor camera body (glued camera STEP)"
+        rows = list(rows or [])
+        for index in range(write_row + 1, len(rows)):
+            row = rows[index]
+            advanced = row.advanced if isinstance(getattr(row, "advanced", None), dict) else {}
+            if advanced.get("Solid_3d_stl"):
+                name = str(getattr(row, "name", "") or f"S{index}")
+                return (
+                    f"vendor hardware (row {index} {name}) sits downstream of the image gap "
+                    f"row {write_row}"
+                )
+        return ""
+
     def _apply_conjugate_pair(self, object_semi: Any, image_semi: Any, force: bool = False) -> tuple[bool, str]:
         # Folded-aware branch (feature): a promoted RA-mirror fold breaks the plain object/image
         # gap-row assumption -- object_thickness_row/image_thickness_row land on the mirror-adjacent
@@ -1431,7 +1464,26 @@ class QuickEstimationService:
                         self.editor.append_debug(f"forced lens translate failed: {exc}")
                         forced = None
                     if forced is None:
-                        return False, "Force FOV: no imaging-lens block to drive."
+                        # bugs/0719 (judge must-fix): the primitive stashes WHY it refused --
+                        # a CAD solid parked inside the block, an exhausted leg gap, or the
+                        # frozen slide's contiguity / gap-positivity refusals (they survive
+                        # force) -- so surface THOSE numbers on the banner instead of a fixed
+                        # text with none ([[feedback_no_silent_solve_failure]]).
+                        reason = str(self.editor.__dict__.get("_lens_move_refusal", "") or "").strip()
+                        room = self.editor.__dict__.get("_lens_move_room_mm")
+                        info = dict(self.editor.__dict__.get("_fov_solve_refusal_info") or {})
+                        try:
+                            info["lens_move_needed_mm"] = float(folded["object_delta"])
+                        except (TypeError, ValueError, KeyError):
+                            pass
+                        if room is not None:
+                            try:
+                                info["leg_room_mm"] = float(room)
+                            except (TypeError, ValueError):
+                                pass
+                        info["reason"] = reason or "Force FOV: no imaging-lens block to drive."
+                        self.editor._fov_solve_refusal_info = info
+                        return False, f"Force FOV refused: {info['reason']}"
                     # bugs/0718 (flag 161212 "freezing after force"): do NOT snap the
                     # detector -- that is a best-focus TRACE, and on the crashed
                     # geometry (lens inside the fold mirror) the non-sequential trace
@@ -1446,32 +1498,59 @@ class QuickEstimationService:
                     except Exception:
                         pass
                     self.set_target_fov(float(os_f))
-                    # bugs/0717: frame-consistent crash readout from the mover
-                    # (straight-frame station room vs the demanded move -- no rebuild),
-                    # stashed for the in-scene banner.
+                    # bugs/0717: crash readout from the mover, stashed for the in-scene
+                    # banner. bugs/0719: the room is now PHYSICAL (along-leg AABB clearance
+                    # between the lens body and the fold mirror's body -- the station gap
+                    # overstated it by ~22 mm on om05a), and the move may have been CAPPED
+                    # at the leg gap so no thickness ever goes negative.
                     pen = forced.get("penetration_mm")
                     room = forced.get("room_mm")
                     dist = float(forced.get("distance", 0.0))
+                    requested = abs(float(forced.get("requested_mm", dist) or dist))
+                    capped = bool(forced.get("capped"))
                     obstacle = str(forced.get("obstacle") or "the upstream fold mirror")
                     info = dict(self.editor.__dict__.get("_fov_solve_refusal_info") or {})
                     if pen is not None:
                         info["forced_penetration_mm"] = float(pen)
+                    if room is not None:
+                        info["forced_room_mm"] = float(room)
                     info["forced_obstacle"] = obstacle
+                    info["forced_moved_mm"] = float(dist)
+                    # bugs/0719 (judge 3d): the leg gap, so a forced move that finds NO obstacle
+                    # body along the leg can still quote a number instead of the Force hint; the
+                    # room METHOD lets the banner distinguish "no body in the way" from "a body
+                    # is there but the lens mesh is missing" (method 'unmeasured').
+                    info["forced_room_method"] = str(forced.get("room_method") or "")
+                    station_room = forced.get("room_station_mm")
+                    if station_room is not None:
+                        try:
+                            info["forced_station_room_mm"] = float(station_room)
+                        except (TypeError, ValueError):
+                            pass
+                    if capped:
+                        info["forced_capped_mm"] = float(requested)
+                        info["forced_drawn_mm"] = float(dist)
                     info.setdefault("reason", "FORCED solve applied -- inspect the 3D overlap")
                     self.editor._fov_solve_refusal_info = info
                     if pen is not None and float(pen) < 0.0:
                         note = (
-                            f" FORCED: the lens PENETRATES {obstacle} by {-float(pen):.4g} mm "
-                            f"({float(room):.4g} mm of room, needs {dist:.4g}) -- the "
+                            f" FORCED: the lens body PENETRATES {obstacle} by {-float(pen):.4g} mm "
+                            f"({float(room):.4g} mm of physical room, needs {requested:.4g}) -- the "
                             f"working-condition limit."
                         )
                     elif pen is not None:
                         note = (
-                            f" FORCED: {float(pen):.4g} mm clearance to {obstacle} "
-                            f"(moved {dist:.4g} of {float(room):.4g} mm room)."
+                            f" FORCED: {float(pen):.4g} mm clearance to {obstacle} body "
+                            f"(moved {dist:.4g} of {float(room):.4g} mm physical room)."
                         )
                     else:
                         note = f" FORCED: moved {dist:.4g} mm toward {obstacle}."
+                    if capped:
+                        note += (
+                            f" FORCED: move capped at the fold mirror station (requested "
+                            f"{requested:.4g} mm, drawn {dist:.4g} mm -- the leg gap cannot go "
+                            f"negative)."
+                        )
                     return True, (
                         f"FORCED: drove the lens {dist:.4g} mm toward the object "
                         f"(WD shortened; vendor hardware fixed).{note}"
@@ -1500,21 +1579,28 @@ class QuickEstimationService:
                 # the sensor. Move the LENS along its own leg instead, with the bugs/0526
                 # compensated write-through, which is the same composite a lens DRAG uses (the
                 # user's principle: a drag and a solve are the same gesture from opposite ends).
+                # bugs/0719 (flag 194708, om05a): the object move goes through ONE primitive,
+                # translate_lens_block_along_leg -- the bugs/0571 slide on a frozen desp-leg
+                # scene, the THICKNESS PAIR (front-1 += d, rear -= d) on a live follower-walk
+                # scene whose lens block sits on the root axis. The slide alone returned None
+                # SILENTLY there ("not on a fold leg"), so the object delta fell to the raw
+                # object-gap write, which the Object row (5.35 mm) and its vendor spill row
+                # could not absorb -> a refusal although 158.7 mm of physical room existed.
                 object_slid = None
                 try:
-                    object_slid = self.editor.slide_lens_block_along_its_leg(
+                    object_slid = self.editor.translate_lens_block_along_leg(
                         float(folded["object_delta"])
                     )
                 except Exception as exc:
-                    self.editor.append_debug(f"lens leg slide unavailable: {exc}")
+                    self.editor.append_debug(f"lens leg move unavailable: {exc}")
                     object_slid = None
                     # bugs/0588 review: an exception AFTER the slide cleared its refusal channel
                     # used to leave it EMPTY, so the honest-refusal return below was skipped and
                     # the full object delta fell to the raw station write -- the 0571 dislocation
-                    # mechanism, through the back door. A crashed slide is a refusal.
-                    if not str(self.editor.__dict__.get("_lens_leg_slide_refusal", "") or ""):
-                        self.editor._lens_leg_slide_refusal = (
-                            f"the lens-leg slide failed ({type(exc).__name__}: {exc}) -- "
+                    # mechanism, through the back door. A crashed move is a refusal.
+                    if not str(self.editor.__dict__.get("_lens_move_refusal", "") or ""):
+                        self.editor._lens_move_refusal = (
+                            f"the lens-leg move failed ({type(exc).__name__}: {exc}) -- "
                             f"nothing was moved."
                         )
                 # bugs/0572 (the user's Apo75 -> PYRITE 85 experiment, 35x35 then 55x55): when the
@@ -1539,23 +1625,45 @@ class QuickEstimationService:
                             arm_slid = None
                         if arm_slid is not None:
                             try:
-                                object_slid = self.editor.slide_lens_block_along_its_leg(
+                                object_slid = self.editor.translate_lens_block_along_leg(
                                     float(folded["object_delta"])
                                 )
                             except Exception:
                                 object_slid = None
                 if object_slid is None and abs(float(folded["object_delta"])) > 1.0e-6:
-                    refusal = str(self.editor.__dict__.get("_lens_leg_slide_refusal", "") or "")
+                    refusal = str(
+                        self.editor.__dict__.get("_lens_move_refusal", "")
+                        or self.editor.__dict__.get("_lens_leg_slide_refusal", "")
+                        or ""
+                    )
+                    need = float(folded["object_delta"])
+                    lens_block_present = False
+                    try:
+                        _front, _rear = self.editor._imaging_lens_block_indices()
+                        lens_block_present = _front is not None and _rear is not None
+                    except Exception:
+                        lens_block_present = False
+                    if not refusal and lens_block_present:
+                        # bugs/0719 guarantee: with a lens block present the object delta is
+                        # NEVER booked into the object gap (that write slides the whole
+                        # machine / raids vendor gaps) -- an unexplained None is a refusal.
+                        refusal = (
+                            "the lens block could not be moved along its leg and no reason "
+                            "was recorded -- nothing was moved."
+                        )
                     if refusal:
-                        # bugs/0717: the CORE refusal stash -- the numbers the slide
-                        # measured. fov_solve enriches with the request + delivery.
+                        # bugs/0717: the CORE refusal stash -- the numbers the move
+                        # measured (bugs/0719: the PHYSICAL room to the fold mirror's body).
+                        # fov_solve enriches with the request + delivery.
                         shortfall = float(
                             self.editor.__dict__.get("_lens_leg_slide_shortfall", 0.0) or 0.0
                         )
-                        need = float(folded["object_delta"])
+                        room_mm = self.editor.__dict__.get("_lens_move_room_mm")
+                        if room_mm is None and shortfall > 0:
+                            room_mm = abs(need) - shortfall
                         self.editor._fov_solve_refusal_info = {
                             "lens_move_needed_mm": need,
-                            "leg_room_mm": (abs(need) - shortfall) if shortfall > 0 else None,
+                            "leg_room_mm": float(room_mm) if room_mm is not None else None,
                             "reason": refusal,
                         }
                         return False, f"FOV out of range on this fold: {refusal}"
@@ -1657,14 +1765,71 @@ class QuickEstimationService:
                         self._folded_conjugate_spill_row(obj_row, "object"),
                     )
                 )
+                # bugs/0719: after the lens moved as the THICKNESS PAIR (om05a-class scene) the
+                # image side may only be booked where it moves NO vendor hardware -- the sensor
+                # carries the vendor camera body and free-placed vendor rows are pinned at
+                # station + desp, so an image-gap write there IS a hardware move
+                # ([[feedback_vendor_hardware_immutable]]: focus consequences are the user's
+                # next step). And a refusal must never happen AFTER the lens has moved.
+                lens_moved_as_pair = bool(
+                    isinstance(object_slid, dict) and object_slid.get("mode") == "thickness_pair"
+                )
+                image_locked_reason = ""
+                if lens_moved_as_pair and not (image_handled or image_deferred):
+                    image_locked_reason = self._image_write_locked_by_vendor_hardware(
+                        rows, img_row_write
+                    )
                 img_changes = (
                     []
-                    if (image_handled or image_deferred)   # bugs/0575
+                    if (image_handled or image_deferred or image_locked_reason)   # bugs/0575 / 0719
                     else self._distribute_folded_gap_delta(
                         rows, img_row_write, float(folded["image_delta"]),
                         self._folded_conjugate_spill_row(img_row_write, "image"),
                     )
                 )
+                if lens_moved_as_pair and not (image_handled or image_deferred) and (
+                    image_locked_reason or img_changes is None
+                ):
+                    # The lens IS at the requested WD (the FOV request was achieved); the exact
+                    # conjugate would additionally need the sensor/camera (vendor) or the object
+                    # (the device face) to move by the re-measured image correction. Do not
+                    # move them: report the residual track mismatch in the status text and the
+                    # HUD (a NON-banner stash -- this is not a refusal), skip the traced-focus
+                    # finisher (it would move the vendor-glued sensor), keep ok=True, and let
+                    # Trace Now show the true focus.
+                    residual = float(folded["image_delta"])
+                    why = image_locked_reason or (
+                        "the image-side gap rows cannot absorb the correction"
+                    )
+                    verb = "shortened" if residual < 0.0 else "lengthened"
+                    moved_mm = float(object_slid.get("signed_mm", object_slid.get("distance", 0.0)))
+                    self.editor._fov_solve_focus_residual_info = {
+                        "image_delta_mm": residual,
+                        "image_gap_row": int(img_row_write),
+                        "lens_move_mm": moved_mm,
+                        "station_object_gap_mm": float(folded["object_distance"]),
+                        "target_m": float(folded.get("magnitude", 0.0) or 0.0),
+                        "reason": why,
+                    }
+                    self.editor.append_debug(
+                        "folded solve (bugs/0719): lens at WD ({moved:+.4f} mm along its leg); "
+                        "image write {row}:{delta:+.4f} NOT booked ({why}) -- focus residual "
+                        "reported, hardware untouched".format(
+                            moved=moved_mm, row=int(img_row_write), delta=residual, why=why,
+                        )
+                    )
+                    # NB: ``folded['object_distance']`` is the STATION-frame gap sum, which on a
+                    # scene whose object leg crosses fold prisms is not the physical WD (om05a:
+                    # -134 mm) -- quote the lens move, never that number.
+                    wd_verb = "shortened" if moved_mm < 0.0 else "lengthened"
+                    return True, (
+                        f"Solved (folded): lens at WD -- moved {moved_mm:+.4g} mm along its leg "
+                        f"(working distance {wd_verb} by {abs(moved_mm):.4g} mm for "
+                        f"|m|={folded['magnitude']:.4g}); focus residual: the exact conjugate "
+                        f"needs the object/sensor track {verb} by {abs(residual):.4g} mm -- "
+                        f"device stage / camera focus is your call ({why}; vendor hardware "
+                        f"untouched). Trace Now shows the true focus."
+                    )
                 if obj_changes is None or img_changes is None:
                     # bugs/0717: stash for the in-scene banner (force short-circuited
                     # to the pure lens-only mover far above, so this is a real refusal).
@@ -2831,6 +2996,9 @@ class QuickEstimationService:
         # bugs/0717: a fresh solve owns the refusal banner -- clear any stale one so a
         # success wipes the alert and a refusal repaints it with THIS request's numbers.
         self.editor._fov_solve_refusal_info = None
+        # bugs/0719: and the NON-banner focus-residual readout (lens at WD, sensor left
+        # where the vendor put it) belongs to this solve too.
+        self.editor._fov_solve_focus_residual_info = None
         if plane == "object":
             wh = self._sensor_wh(width, height, aspect)
             if wh is None:
@@ -2880,7 +3048,18 @@ class QuickEstimationService:
                 correction = self._folded_m_correction()
                 ok, msg = self._apply_conjugate_pair(semi, float(sensor) / correction, force=force)
                 if ok:
-                    msg += self._refine_folded_field_fill(semi, float(sensor))
+                    if self.editor.__dict__.get("_fov_solve_focus_residual_info"):
+                        # bugs/0719: the sensor was deliberately NOT moved to the conjugate
+                        # (vendor hardware), so a real-ray fill measured at the defocused
+                        # sensor plane would read the defocused footprint and the secant
+                        # would walk the lens OFF the requested WD chasing it. The WD is the
+                        # solve's deliverable here; verification follows the user's focus step.
+                        msg += (
+                            " Field verification by real rays deferred: the sensor is not at "
+                            "the exact conjugate (see the focus residual)."
+                        )
+                    else:
+                        msg += self._refine_folded_field_fill(semi, float(sensor))
                     self.set_target_fov(semi)
                     self._update_split_field_band_widths(obj_w)
                     msg = f"Object {obj_w:.6g} x {obj_h:.6g} mm fills the sensor. " + msg
