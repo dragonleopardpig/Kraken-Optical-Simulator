@@ -577,6 +577,11 @@ def _mesh_world_triangles(mesh) -> np.ndarray:
     return np.asarray(triangles, dtype=float)
 
 
+# bugs/0724: the source->runtime face match is a permutation search, so it is defined only for
+# a handful of faces; beyond this the transform is not derived (and must not be computed).
+_SOURCE_FACE_MATCH_LIMIT = 8
+
+
 def _cluster_planar_faces_from_triangles(triangles: np.ndarray, *, max_faces: int = 16) -> list[dict[str, object]]:
     triangle_array = np.asarray(triangles, dtype=float)
     if triangle_array.ndim != 3 or triangle_array.shape[1:] != (3, 3) or triangle_array.shape[0] == 0:
@@ -645,7 +650,14 @@ def _source_to_runtime_world_transform(row, mesh) -> np.ndarray | None:
         for face in list(metadata.get("faces", []) or [])
         if isinstance(face, dict)
     ]
-    if len(source_faces) < 3:
+    # bugs/0724: the permutation search below is only defined for <= 8 source faces (it walks
+    # itertools.permutations of the mesh pool), and the tail returns None for anything larger.
+    # That check used to sit AFTER the clustering, so a many-faced body -- a LIVE vendor STEP
+    # overlay row carries ~160 -- paid the full O(triangles x groups) Python clustering of its
+    # whole mesh on every system build and then threw the result away. Measured on om05a: the
+    # UI froze for minutes inside _cluster_planar_faces_from_triangles for a guaranteed None.
+    # Decide on the count FIRST; the outcome is identical, the cost is not.
+    if len(source_faces) < 3 or len(source_faces) > _SOURCE_FACE_MATCH_LIMIT:
         return None
     mesh_triangles = _mesh_world_triangles(mesh)
     mesh_faces = _cluster_planar_faces_from_triangles(mesh_triangles, max_faces=max(8, len(source_faces) + 2))
@@ -656,7 +668,7 @@ def _source_to_runtime_world_transform(row, mesh) -> np.ndarray | None:
     source_count = len(source_faces)
     extra_candidate_faces = 1 if source_count <= 7 else 0
     mesh_pool = mesh_faces[: min(len(mesh_faces), source_count + extra_candidate_faces)]
-    if len(mesh_pool) < source_count or source_count > 8:
+    if len(mesh_pool) < source_count:
         return None
     source_centroids = np.asarray([point3_tuple(face.get("centroid", (0.0, 0.0, 0.0))) for face in source_faces], dtype=float)
     source_normals = np.asarray([unit_vector_tuple(face.get("normal", (0.0, 0.0, 1.0))) for face in source_faces], dtype=float)
