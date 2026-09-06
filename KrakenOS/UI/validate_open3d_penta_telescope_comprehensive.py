@@ -15893,6 +15893,10 @@ phase_523_source_face_match_limit = _phase_from_standalone(
     523, "a many-faced solid (live vendor STEP overlay) bails BEFORE clustering its mesh -- the face match is defined only to 8 faces (0724)",
     "KrakenOS.UI.validate_open3d_0724_source_face_match_limit",
     "source_face_match_limit")
+phase_524_live_step_overlay_pose_guard = _phase_from_standalone(
+    524, "a transient STEP overlay is dropped from the trace when injecting it would move the seated optics (sensor displaced / rays haywired) (0725)",
+    "KrakenOS.UI.validate_open3d_0725_live_step_overlay_pose_guard",
+    "live_step_overlay_pose_guard")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16482,6 +16486,7 @@ def main() -> int:
             phase_521_first_ra_mirrors_square,
             phase_522_split_field_beam_axes,
             phase_523_source_face_match_limit,
+            phase_524_live_step_overlay_pose_guard,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

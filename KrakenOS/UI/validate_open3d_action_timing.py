@@ -190,7 +190,11 @@ def main() -> int:
             "hidden-ray STEP drop does not force physics retrace",
             "physics_requested = self.editor._open3d_trace_refresh_service().inspector_physics_requested(self)"
             in inspector_source
-            and "self.refresh_from_editor(force_retrace=physics_requested)" in inspector_source,
+            # bugs/0725: the call now reads force_retrace=physics_requested OR a refocus note
+            # (a committed lens drag refocuses at the sensor and must retrace). Pin the
+            # physics_requested gate, not the whole expression, so the intent still holds:
+            # a hidden-ray STEP drop alone never forces a physics retrace.
+            and "self.refresh_from_editor(force_retrace=physics_requested" in inspector_source,
         ),
         (
             "hidden-ray imported STEP rotation refreshes only the selected STEP overlay",

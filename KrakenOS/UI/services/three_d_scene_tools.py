@@ -1658,6 +1658,77 @@ class ThreeDSceneToolsMixin:
             except Exception:
                 pass
 
+    def _note_live_step_overlay_injection_refused(self, reason: str) -> None:
+        """bugs/0725: say WHY the transient STEP body is not being traced (never silent)."""
+        message = (
+            "Transient optical STEP not traced: it would move the seated optics -- "
+            f"{reason}. The imported STEP stays CAD display hardware; promote it to trace it."
+        )
+        if getattr(self, "_live_step_overlay_injection_refusal", None) != message:
+            self._live_step_overlay_injection_refusal = message
+            try:
+                self.append_debug(message)
+            except Exception:
+                pass
+        try:
+            self.status_var.set(message)
+        except Exception:
+            pass
+
+    def _live_step_overlay_injection_moves_optics(
+        self,
+        original_rows: "list[SurfaceRow]",
+        candidate_rows: "list[SurfaceRow]",
+        insert_at: int,
+        inserted: int,
+    ) -> str:
+        """bugs/0725: does injecting the transient STEP row(s) MOVE the existing optics?
+
+        A live STEP overlay is display hardware the user has not promoted. Injecting it into
+        the traced row list shifts every later row index AND makes it a station of the
+        follower walk, so on a folded scene the chain can be re-posed around it: measured on
+        om05a, the detector target jumped from (272.63, -1.76, -25.0) to (0, 0, 589.14) -- the
+        unfolded axis 600 mm away -- and 1672 of 3225 rays "missed the image" because the image
+        was no longer where the sensor is (user: "sensor displaced seriously", "rays haywired").
+
+        The invariant is simple and belongs to the scene, not to this overlay: adding a
+        DISPLAY body must never move an optical element. Compare the follower-walk pose of
+        every pre-existing row before and after the injection (mapping the shifted indices);
+        return a non-empty reason when any of them moves, and the caller then traces the
+        scene without the overlay. Returns "" when the injection is safe.
+        """
+        try:
+            before = optical_solid_output_port_pose_overrides(None, list(original_rows))
+            after = optical_solid_output_port_pose_overrides(None, list(candidate_rows))
+        except Exception as exc:  # a walk we cannot verify is a walk we do not risk
+            return f"pose walk could not be compared ({exc})"
+        inserted = max(0, int(inserted))
+        insert_at = max(0, int(insert_at))
+        for row_index in range(len(original_rows)):
+            shifted = row_index if row_index < insert_at else row_index + inserted
+            pose_before = before.get(row_index)
+            pose_after = after.get(shifted)
+            if pose_before is None and pose_after is None:
+                continue
+            name = str(getattr(original_rows[row_index], "name", "") or f"row {row_index}")
+            if (pose_before is None) != (pose_after is None):
+                return (
+                    f"row {row_index} '{name}' "
+                    f"{'lost' if pose_after is None else 'gained'} its traced pose"
+                )
+            try:
+                centre_before = np.asarray(pose_before.get("center"), dtype=float).reshape(3)
+                centre_after = np.asarray(pose_after.get("center"), dtype=float).reshape(3)
+            except Exception:
+                return f"row {row_index} '{name}' pose is not comparable"
+            shift = float(np.linalg.norm(centre_after - centre_before))
+            if not np.isfinite(shift) or shift > 1e-6:
+                return (
+                    f"row {row_index} '{name}' moves {shift:.3f} mm "
+                    f"({np.round(centre_before, 3).tolist()} -> {np.round(centre_after, 3).tolist()})"
+                )
+        return ""
+
     def _live_step_overlay_trace_rows(self) -> tuple[list[SurfaceRow], list[dict[str, object]]]:
         if self._step_path_for_label("optical") is None:
             return self.rows, []
@@ -1669,14 +1740,29 @@ class ThreeDSceneToolsMixin:
             if isinstance(rows, (list, tuple)) and rows:
                 row_index = int(cached_plan.get("row_index", len(base_rows)))
                 insert_at = max(1, min(row_index, len(base_rows)))
+                inserted = 0
                 for offset, row in enumerate(rows):
                     if isinstance(row, SurfaceRow):
                         base_rows.insert(insert_at + offset, SurfaceRow(**asdict(row)))
+                        inserted += 1
+                reason = self._live_step_overlay_injection_moves_optics(
+                    self.rows, base_rows, insert_at, inserted
+                )
+                if reason:
+                    self._note_live_step_overlay_injection_refused(reason)
+                    return self.rows, []
                 return base_rows, [cached_plan]
             row = cached_plan.get("row")
             if isinstance(row, SurfaceRow):
                 row_index = int(cached_plan.get("row_index", len(base_rows)))
-                base_rows.insert(max(1, min(row_index, len(base_rows))), SurfaceRow(**asdict(row)))
+                insert_at = max(1, min(row_index, len(base_rows)))
+                base_rows.insert(insert_at, SurfaceRow(**asdict(row)))
+                reason = self._live_step_overlay_injection_moves_optics(
+                    self.rows, base_rows, insert_at, 1
+                )
+                if reason:
+                    self._note_live_step_overlay_injection_refused(reason)
+                    return self.rows, []
                 return base_rows, [cached_plan]
         original_rows = self.rows
         try:
@@ -1700,6 +1786,12 @@ class ThreeDSceneToolsMixin:
                         base_rows.insert(insert_at + offset, SurfaceRow(**asdict(row)))
                         inserted += 1
                 if inserted:
+                    reason = self._live_step_overlay_injection_moves_optics(
+                        original_rows, base_rows, insert_at, inserted
+                    )
+                    if reason:
+                        self._note_live_step_overlay_injection_refused(reason)
+                        return original_rows, []
                     self._remember_live_step_overlay_trace_plan(cache_key, plan)
                     return base_rows, [plan]
                 return original_rows, []
@@ -1707,7 +1799,14 @@ class ThreeDSceneToolsMixin:
             if not isinstance(row, SurfaceRow):
                 return original_rows, []
             row_index = int(plan.get("row_index", len(base_rows)))
-            base_rows.insert(max(1, min(row_index, len(base_rows))), SurfaceRow(**asdict(row)))
+            insert_at = max(1, min(row_index, len(base_rows)))
+            base_rows.insert(insert_at, SurfaceRow(**asdict(row)))
+            reason = self._live_step_overlay_injection_moves_optics(
+                original_rows, base_rows, insert_at, 1
+            )
+            if reason:
+                self._note_live_step_overlay_injection_refused(reason)
+                return original_rows, []
             self._remember_live_step_overlay_trace_plan(cache_key, plan)
             return base_rows, [plan]
         finally:
