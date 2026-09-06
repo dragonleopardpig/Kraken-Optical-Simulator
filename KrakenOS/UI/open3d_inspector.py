@@ -12508,11 +12508,40 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             dtype=float,
         )
 
-        records = []
+        # bugs/0723: under split-field bands a SKEW junction is the design's beam offset
+        # (each face's arm rides its own line, parallel to the shared lens axis), not a
+        # seat error to bridge -- the arms are drawn by the traced beam centrelines
+        # (_split_field_beam_axis_records) and the "Optical Axis" is the seated chain.
+        split_field = bool(list(getattr(self.editor, "layout_object_fov_bands", None) or []))
+        return self._multifold_guide_segments(branches, junctions, corners, split_field=split_field)
+
+    @staticmethod
+    def _multifold_guide_segments(branches, junctions, corners, *, split_field: bool = False) -> list[dict]:
+        """Emit the middle + outgoing guide segments from the reconstructed branches.
+
+        ``branches[b] = [point, direction, anchors]``, ``junctions[b-1] = (foot on branch
+        b-1, foot on branch b)`` (bugs/0692 closest-approach feet), ``corners`` = the 8
+        scene-bounds corners for the outgoing reach.
+
+        A junction whose feet are > 0.5 mm apart is SKEW. Without bands (``split_field``
+        False) it is bridged by an explicit jog segment (bugs/0692 vendor seat) -- byte-
+        identical to the previous behaviour. With bands (bugs/0723) the skew IS the beam
+        offset: no jog, and the axis guide starts at the LAST skew junction's foot on the
+        seated leg (om05a: the big prism's centre on the split line); the arm legs before
+        it belong to the traced beam guides."""
+        records: list[dict] = []
         last = len(branches) - 1
-        for b in range(1, len(branches)):
+        first_b = 1
+        if split_field:
+            for b in range(1, len(branches)):
+                foot_prev, start = junctions[b - 1]
+                if float(np.linalg.norm(np.asarray(start, dtype=float) - np.asarray(foot_prev, dtype=float))) > 0.5:
+                    first_b = b
+        for b in range(first_b, len(branches)):
             foot_prev, start = junctions[b - 1]  # feet on the previous / THIS branch line
-            if float(np.linalg.norm(start - foot_prev)) > 0.5:
+            start = np.asarray(start, dtype=float)
+            foot_prev = np.asarray(foot_prev, dtype=float)
+            if not split_field and float(np.linalg.norm(start - foot_prev)) > 0.5:
                 # bugs/0692: the legs do not meet -- draw the lateral jog (the vendor
                 # seat's step from the arm's field line onto the shared lens axis).
                 records.append(
@@ -12530,7 +12559,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             if b < last:
                 end = np.asarray(junctions[b][0], dtype=float)  # bounded middle segment
             else:
-                reach = float(np.max((corners - start) @ direction))  # outgoing -> scene extent
+                reach = float(np.max((np.asarray(corners, dtype=float) - start) @ direction))  # outgoing -> scene extent
                 if not (reach > 1e-6):
                     continue
                 end = start + direction * reach
@@ -12549,6 +12578,102 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 }
             )
         return records
+
+    def _split_field_beam_axis_records(self, scene_bundle) -> list[dict]:
+        """bugs/0723: the traced beam centreline of every device-face band (split field).
+
+        One real ``NsTrace`` per band from the band's centre along its face normal on the
+        live system; the polyline is every vertex the physics returns. Display follows the
+        physics engine -- no row-anchor reconstruction, no jog."""
+        bands = list(getattr(self.editor, "layout_object_fov_bands", None) or [])
+        if not bands:
+            return []
+        from KrakenOS.UI.services.detector_coverage_overlay import split_field_beam_axis_records
+
+        system = self.__dict__.get("_current_system")
+        if system is None:
+            try:
+                system = self.editor.build_system(require_solids=True)
+            except Exception:
+                return []
+        if system is None:
+            return []
+        try:
+            wavelength = float(self.editor._current_wavelength())
+        except Exception:
+            wavelength = 0.55
+        if not (np.isfinite(wavelength) and wavelength > 0.0):
+            wavelength = 0.55
+
+        rows = list(getattr(self.editor, "rows", []) or [])
+        image_surface = next((i for i, r in enumerate(rows) if str(getattr(r, "surface", "")) == "Image"), len(rows) - 1)
+        # the chief ray is aimed through the FIRST aperture-stop row's centre (its live pose)
+        stop_surface = stop_center = stop_axis = None
+        stop_index = next((i for i, r in enumerate(rows) if str(getattr(r, "surface", "")).strip().lower() == "aperture"), None)
+        if stop_index is not None:
+            try:
+                transform = self._runtime_transform_for_row(system, int(stop_index))
+                if transform is not None:
+                    transform = np.asarray(transform, dtype=float).reshape(4, 4)
+                    if np.all(np.isfinite(transform)):
+                        stop_surface = int(stop_index)
+                        stop_center = transform[:3, 3].copy()
+                        stop_axis = transform[:3, 2].copy()
+            except Exception:
+                stop_surface = stop_center = stop_axis = None
+
+        def _branch_rank(points, surfaces, power):
+            # the physical beam is the branch that reaches the image; failing that the one
+            # that reaches the stop; failing that the longest path (all by highest power)
+            last = int(surfaces[-1]) if surfaces else -1
+            reaches_image = last == int(image_surface)
+            reaches_stop = stop_surface is not None and int(stop_surface) in surfaces
+            return (1 if reaches_image else 0, 1 if reaches_stop else 0, float(power), int(len(points)))
+
+        def _trace(origin, direction):
+            saved = getattr(system, "energy_probability", None)
+            try:
+                if saved is not None:
+                    system.energy_probability = 0
+                system.NsTrace(np.asarray(origin, dtype=float), np.asarray(direction, dtype=float), wavelength)
+                points = np.asarray(getattr(system, "RAY", []), dtype=float).reshape(-1, 3)
+                surfaces = [int(v) for v in list(getattr(system, "SURFACE", []) or [])]
+                # a beam-splitter scene traces every branch (bugs/0431): the system keeps only
+                # the primary (transmit) branch, which on om05a dies under the LED -- pick the
+                # branch that IS the imaging beam.
+                best = None
+                for result in list(getattr(system, "NS_BRANCH_RESULTS", []) or []):
+                    if not isinstance(result, dict):
+                        continue
+                    try:
+                        b_points = np.asarray(result.get("RAY"), dtype=float).reshape(-1, 3)
+                        b_surfaces = [int(v) for v in list(result.get("SURFACE") or [])]
+                        b_power = float(result.get("branch_power", 0.0) or 0.0)
+                    except Exception:
+                        continue
+                    if b_points.shape[0] < 2:
+                        continue
+                    rank = _branch_rank(b_points, b_surfaces, b_power)
+                    if best is None or rank > best[0]:
+                        best = (rank, b_points, b_surfaces)
+                if best is not None:
+                    points, surfaces = best[1], best[2]
+            finally:
+                if saved is not None:
+                    try:
+                        system.energy_probability = saved
+                    except Exception:
+                        pass
+            return points, surfaces
+
+        return split_field_beam_axis_records(
+            bands,
+            _trace,
+            image_surface=int(image_surface),
+            stop_surface=stop_surface,
+            stop_center=stop_center,
+            stop_axis=stop_axis,
+        )
 
     def _optical_axis_records_for_3d(self, scene_bundle: SceneBundle | None) -> list[dict[str, object]]:
         try:
@@ -12624,6 +12749,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             )
             if reflected_guide is not None:
                 records.append(reflected_guide)
+        # bugs/0723: split-field scenes draw each device face's BEAM centreline from a
+        # real trace (offset from the lens axis by design; no reconstruction, no jog).
+        try:
+            records.extend(self._split_field_beam_axis_records(scene_bundle))
+        except Exception as exc:
+            try:
+                self.editor.append_debug(f"split-field beam axes skipped: {exc}")
+            except Exception:
+                pass
         # bugs/0428 (Phase 1 + fold-aware follow-up): a BEAM SPLITTER transmits straight (axis:global,
         # above) AND reflects --> draw the reflect-branch guide(s) as the 2nd optical axis. The incoming to
         # each BS is the axis segment its coating SITS ON (object leg for a BS before any fold; the folded

@@ -15885,6 +15885,10 @@ phase_521_first_ra_mirrors_square = _phase_from_standalone(
     521, "om05a: the first RA mirrors fold exactly 90 deg -- square 45 deg prisms in builder, face record and physics mesh; chain re-seated (0722)",
     "KrakenOS.UI.validate_open3d_0722_first_ra_mirrors_square",
     "first_ra_mirrors_square")
+phase_522_split_field_beam_axes = _phase_from_standalone(
+    522, "split field: each device face's traced CHIEF-ray beam axis (aimed through the stop) + the lens-axis guide with no 0692 jog (0723)",
+    "KrakenOS.UI.validate_open3d_0723_split_field_beam_axes",
+    "split_field_beam_axes")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16472,6 +16476,7 @@ def main() -> int:
             phase_518_lens_move_thickness_pair,
             phase_520_split_field_strips_measured,
             phase_521_first_ra_mirrors_square,
+            phase_522_split_field_beam_axes,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

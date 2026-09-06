@@ -23,6 +23,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import re
+
 import numpy as np
 
 
@@ -1061,3 +1063,208 @@ class DetectorCoverageOverlayService:
             elif self._label_actor(ip + np.array([0.0, stand, 0.0]), "image plane (in focus)", _IMAGE_PLANE):
                 count += 1
         return count
+
+
+def _first_fold_distance(points, *, angle_tol_rad: float = 1e-6) -> float:
+    """Path length from the launch to the first vertex where the ray CHANGES DIRECTION
+    (its first fold / refraction); the whole path length when it never bends."""
+    pts = np.asarray(points, dtype=float).reshape(-1, 3)
+    if pts.shape[0] < 2:
+        return 0.0
+    total = 0.0
+    prev_dir = None
+    for k in range(1, pts.shape[0]):
+        seg = pts[k] - pts[k - 1]
+        length = float(np.linalg.norm(seg))
+        if not (length > 1e-9):
+            continue
+        direction = seg / length
+        if prev_dir is not None:
+            cos_angle = float(np.clip(prev_dir @ direction, -1.0, 1.0))
+            if np.arccos(cos_angle) > float(angle_tol_rad):
+                return total
+        total += length
+        prev_dir = direction
+    return total
+
+
+def _stop_plane_miss(points, surfaces, *, stop_surface, stop_center, stop_u, stop_v):
+    """In-plane miss (2-vector) of a traced ray's FIRST hit on ``stop_surface`` from the
+    stop centre, or None when the ray never reaches that surface."""
+    surfaces = list(surfaces or [])
+    for k, surface in enumerate(surfaces):
+        try:
+            if int(surface) != int(stop_surface):
+                continue
+        except Exception:
+            continue
+        if k + 1 >= len(points):
+            return None
+        d = np.asarray(points[k + 1], dtype=float) - stop_center
+        return np.array([float(d @ stop_u), float(d @ stop_v)])
+    return None
+
+
+def aim_launch_through_stop(trace_fn, origin, direction, *, stop_surface, stop_center, stop_axis,
+                            max_iterations=6, tolerance=1e-4, step_rad=2e-3):
+    """bugs/0723: steer a single-ray launch so it passes through the STOP CENTRE -- the
+    chief ray of that object point. The mapping launch-angle -> stop-plane position is
+    unknown through an arbitrary fold chain, so it is measured numerically (two
+    perturbed traces = a 2x2 Jacobian) and solved, Newton style. Returns
+    ``(direction, converged)``; a launch that never reaches the stop keeps the last
+    direction that did (or the input) with ``converged`` False."""
+    origin = np.asarray(origin, dtype=float).reshape(3)
+    d0 = np.asarray(direction, dtype=float).reshape(3)
+    d0 = d0 / max(float(np.linalg.norm(d0)), 1e-12)
+    stop_center = np.asarray(stop_center, dtype=float).reshape(3)
+    su, sv = _basis(np.asarray(stop_axis, dtype=float).reshape(3))
+
+    def miss_of(direction):
+        points, surfaces = trace_fn(origin.copy(), direction)
+        points = np.asarray(points, dtype=float).reshape(-1, 3)
+        return _stop_plane_miss(points, surfaces, stop_surface=stop_surface, stop_center=stop_center, stop_u=su, stop_v=sv)
+
+    converged = False
+    for _ in range(int(max_iterations)):
+        m0 = miss_of(d0)
+        if m0 is None:
+            break
+        if float(np.linalg.norm(m0)) < float(tolerance):
+            converged = True
+            break
+        e1, e2 = _basis(d0)
+        jac = np.zeros((2, 2))
+        ok = True
+        for column, e in enumerate((e1, e2)):
+            d = d0 + float(step_rad) * e
+            d = d / max(float(np.linalg.norm(d)), 1e-12)
+            m = miss_of(d)
+            if m is None:
+                ok = False
+                break
+            jac[:, column] = (m - m0) / float(step_rad)
+        if not ok:
+            break
+        try:
+            delta = np.linalg.solve(jac, -m0)
+        except np.linalg.LinAlgError:
+            break
+        if not np.all(np.isfinite(delta)):
+            break
+        # keep each Newton step inside the small-angle regime the Jacobian was measured in
+        step_norm = float(np.linalg.norm(delta))
+        if step_norm > 0.2:
+            delta = delta * (0.2 / step_norm)
+        d_new = d0 + float(delta[0]) * e1 + float(delta[1]) * e2
+        d_new = d_new / max(float(np.linalg.norm(d_new)), 1e-12)
+        if miss_of(d_new) is None:
+            break  # the corrected launch falls off the chain -- keep the last reaching one
+        d0 = d_new
+    else:
+        m_last = miss_of(d0)
+        converged = m_last is not None and float(np.linalg.norm(m_last)) < float(tolerance)
+    return d0, bool(converged)
+
+
+def split_field_beam_axis_records(bands, trace_fn, *, image_surface, stop_surface=None, stop_center=None,
+                                  stop_axis=None, min_points: int = 2) -> list[dict]:
+    """bugs/0723: one traced beam CENTRELINE per device-face band, as dotted axis-guide
+    records.
+
+    In a split-field design each face looks into its own arm and its beam stays OFFSET
+    from the shared lens axis by design (om05a: ~8.8 mm through the inverted big prism),
+    so the row-anchored "Optical Axis" guide cannot show where the light goes -- it either
+    slants or (bugs/0692) bridges the offset with a lateral jog the user reads as an
+    "unknown 90 degree bend". The physics engine knows: launch ONE ray from the band's
+    centre, steer it through the aperture-stop centre (the face centre's CHIEF ray, via
+    :func:`aim_launch_through_stop` -- the face-normal ray of om05a rides 8.8 mm off the
+    lens axis and dies on the 14.7 mm stop) and draw every vertex the trace returns (arm
+    folds, the inverted prism's internal reflection, the lens, RA mirror 2, the sensor).
+
+    ``trace_fn(origin, direction) -> (points, surfaces)``: the caller's real single-ray
+    trace; ``surfaces[k]`` is the surface index hit at ``points[k + 1]``. A ray whose last
+    surface is ``image_surface`` reached the sensor. A face normal has no sign in the band
+    record, so both signs are traced first: the sign that REACHES the image wins; when
+    both do (a ray through the device body finds the other arm too) the NEARER arm wins
+    (shorter path to the first FOLD -- a chain row's air plane crossed inside the device
+    body is a vertex too, so the first-vertex distance would pick the wrong arm). Without
+    a stop (``stop_surface`` None) the face-normal launch is
+    drawn as is. A band whose trace fails both ways gets no record -- nothing is
+    fabricated.
+    """
+    records: list[dict] = []
+    have_stop = stop_surface is not None and stop_center is not None and stop_axis is not None
+
+    def _run(origin, direction):
+        points, surfaces = trace_fn(np.asarray(origin, dtype=float).copy(), np.asarray(direction, dtype=float))
+        pts = np.asarray(points, dtype=float).reshape(-1, 3)
+        surfaces = list(surfaces or [])
+        reached = bool(surfaces) and int(surfaces[-1]) == int(image_surface)
+        return pts, surfaces, reached
+
+    for band in list(bands or []):
+        if not isinstance(band, dict):
+            continue
+        try:
+            centre = np.asarray(band.get("center"), dtype=float).reshape(3)
+            axis = np.asarray(band.get("axis"), dtype=float).reshape(3)
+        except Exception:
+            continue
+        norm = float(np.linalg.norm(axis))
+        if not (np.all(np.isfinite(centre)) and np.isfinite(norm) and norm > 1e-9):
+            continue
+        axis = axis / norm
+        best = None
+        for sign in (1.0, -1.0):
+            try:
+                pts, surfaces, reached = _run(centre, sign * axis)
+            except Exception:
+                continue
+            if pts.shape[0] < int(min_points) or not np.all(np.isfinite(pts)):
+                continue
+            first_leg = _first_fold_distance(pts)
+            if not (first_leg > 1e-9):
+                continue
+            key = (0 if reached else 1, first_leg)
+            if best is None or key < best[0]:
+                best = (key, pts, reached, float(sign))
+        if best is None:
+            continue
+        _key, pts, reached, sign = best
+        aimed = False
+        if have_stop:
+            try:
+                direction, aimed = aim_launch_through_stop(
+                    lambda o, d: trace_fn(o, d)[:2],
+                    centre,
+                    sign * axis,
+                    stop_surface=stop_surface,
+                    stop_center=stop_center,
+                    stop_axis=stop_axis,
+                )
+                pts_aimed, _surfaces_aimed, reached_aimed = _run(centre, direction)
+                if pts_aimed.shape[0] >= int(min_points) and np.all(np.isfinite(pts_aimed)):
+                    pts, reached = pts_aimed, reached_aimed
+                else:
+                    aimed = False
+            except Exception:
+                aimed = False
+        name = str(band.get("name") or f"band {len(records) + 1}")
+        base = re.sub(r"\s+field$", "", name.strip(), flags=re.IGNORECASE) or name
+        slug = re.sub(r"[^a-z0-9]+", "-", base.lower()).strip("-") or f"band-{len(records) + 1}"
+        records.append(
+            {
+                "axis_id": f"axis:beam:{slug}",
+                "axis_label": f"{base} beam axis",
+                "axis_kind": "dotted_global_guide",
+                "branch_path": "",
+                "source_id": "",
+                "ray_index": -1,
+                "points": np.asarray(pts, dtype=float).copy(),
+                "band_name": name,
+                "launch_sign": sign,
+                "aimed_through_stop": bool(aimed),
+                "reached_image": bool(reached),
+            }
+        )
+    return records

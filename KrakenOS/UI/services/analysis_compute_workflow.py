@@ -603,7 +603,10 @@ class AnalysisComputeWorkflowMixin:
         the panel plane (|along| <= 3 mm), face centre within the panel board (half-diagonal
         + 2 mm). Face geometry comes from the same world-frame records the 0264 face-anchor
         pick uses, so the collected face_id is exactly what the trace-side matcher compares."""
-        from KrakenOS.UI.scene_source_analysis import scene_source_spec_is_face_bound_marker
+        from KrakenOS.UI.scene_source_analysis import (
+            scene_source_spec_is_additive_to_imaging,
+            scene_source_spec_is_face_bound_marker,
+        )
 
         out: dict[int, set[str]] = {}
         try:
@@ -615,6 +618,16 @@ class AnalysisComputeWorkflowMixin:
             try:
                 settings = dict(getattr(source, "settings", {}) or {})
                 if scene_source_spec_is_face_bound_marker(settings):
+                    continue
+                # bugs/0723: an ADDITIVE source is the imaging chain's own object-side emitter
+                # (bugs/0680: the device's second face, lit for the second arm) -- light, not an
+                # LED plate seated on the optics. om05a's 'Device face B' (a 50 x 1 mm strip
+                # 0.5 mm from BS cube B's +z leg face) satisfied this coverage rule, so the
+                # imaging trace force-absorbed EVERY imaging-role ray leaving BS cube B toward
+                # the centre mirror: the whole B arm was dead for chain / mirrored-twin rays
+                # (only the source's own illumination-role flood is exempt at trace time), the
+                # face-B chief ray could not be traced, and the two arms' physics differed.
+                if scene_source_spec_is_additive_to_imaging(settings):
                     continue
                 origin = np.asarray(getattr(source, "origin", (0.0, 0.0, 0.0)), dtype=float).reshape(3)
                 direction = np.asarray(getattr(source, "direction", (0.0, 0.0, 1.0)), dtype=float).reshape(3)
