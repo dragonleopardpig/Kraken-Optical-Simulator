@@ -105,7 +105,11 @@ def main():
     # section thin plate on this plane; the user calls it a MIRROR) -- hyp
     # exposed to the beam, glass BEHIND it (right angle at the outer corner),
     # so neither the face leg nor the down-tower leg crosses glass.
-    ra = [scene_pt(29.1, 30.8), scene_pt(38.9, 20.9), scene_pt(38.9, 30.8)]
+    # 0722: the section read-off (x 29.1..38.9, y 20.9..30.8 = 9.8 x 9.9) made the
+    # hypotenuse 45.29 deg -> a 0.58 deg dip of the whole imaging chain (1.09 mm at
+    # the sensor). Every fold in this design is exactly 90 deg: SQUARE legs, 9.85 x
+    # 9.85 about the same centre (34.0, 25.85).
+    ra = [scene_pt(29.075, 30.775), scene_pt(38.925, 20.925), scene_pt(38.925, 30.775)]
     emit("ra_mirror", ra, "A")
     emit("ra_mirror", ra, "B")
 
