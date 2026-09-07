@@ -8744,6 +8744,30 @@ class LayoutTableWorkbenchMixin:
                         pass
                     info["focus_center_world"] = [float(v) for v in plane_centre]
                     info["focus_normal_world"] = [float(v) for v in placed[1]]
+        # bugs/0745: the FIRST ORDER sums row thicknesses; the trace walks the real folded
+        # geometry. When a row that the imaging light never traverses carries thickness, the two
+        # silently disagree -- om05a_folded_80mm.py had 19.6 mm on an LED panel row sitting before
+        # the Image row, so the banner's residual was 19.55 mm out while the drawn image plane
+        # (measured here, from the rays) was right. Two readouts, one scene, no way to tell.
+        # Never let that be silent again: if they disagree, say so and name the trustworthy one.
+        try:
+            prior = self.__dict__.get("_fov_solve_focus_residual_info")
+            paraxial = float(prior["image_delta_mm"]) if isinstance(prior, dict) else None
+        except (KeyError, TypeError, ValueError):
+            paraxial = None
+        self._focus_model_mismatch = ""
+        if paraxial is not None and isinstance(info, dict) and info.get("offset_mm") is not None:
+            try:
+                gap = float(info["offset_mm"]) - paraxial
+            except (TypeError, ValueError):
+                gap = None
+            if gap is not None and abs(gap) > 1.0:
+                self._focus_model_mismatch = (
+                    f"MODEL MISMATCH: the first order says {paraxial:+.4g} mm and the traced rays "
+                    f"say {float(info['offset_mm']):+.4g} mm ({gap:+.4g} mm apart) -- the drawn "
+                    f"image plane is the measured one; check for a row carrying thickness that "
+                    f"the imaging path never travels"
+                )
         self._focused_image_plane_info = info
         return info
 

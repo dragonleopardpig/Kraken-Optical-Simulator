@@ -18579,6 +18579,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     self.editor.__dict__.get("_solve_summary_info"),
                     notes=(
                         self.editor.__dict__.get("_focused_image_plane_unmeasured"),
+                        self.editor.__dict__.get("_focus_model_mismatch"),   # bugs/0745
                         self.editor.__dict__.get("_ray_display_suppressed_note"),
                     ),
                 )

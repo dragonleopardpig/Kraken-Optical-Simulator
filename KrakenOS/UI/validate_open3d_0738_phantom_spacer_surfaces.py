@@ -119,19 +119,27 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
 
     # ---- A: the real om05a rows ----------------------------------------------------------------
     rows = _scene_rows(SCENE)
-    ok(len(rows) == 24, f"A0: the om05a scene parsed ({len(rows)} rows)")
+    ok(len(rows) >= 24, f"A0: the om05a scene parsed ({len(rows)} rows)")
     names = [str(r.get("name") or "") for r in rows]
     stub = _rule([_surf_from_scene_row(r) for r in rows])
     phantom = set(stub._ns_phantom_spacer_surfaces())
+    # bugs/0745 split row 7, so pin this by NAME rather than by index -- the scene gains and loses
+    # scaffolding rows over time and a hardcoded index set only re-breaks.
+    expected = {
+        i for i, r in enumerate(rows)
+        if str(r.get("name") or "") in ("air", "to lens (unfolded RA mirror 1)", "prism exit gap (air)")
+    }
     ok(
-        phantom == {2, 4, 6},
-        f"A1: exactly the three bare spacers after solids are phantom -- "
+        phantom == expected and len(phantom) >= 3,
+        f"A1: exactly the bare undrawn spacers after solids are phantom -- "
         f"{sorted((k, names[k]) for k in phantom)}",
     )
+    # by NAME (bugs/0745 split row 7, so the Filter's index moves)
+    filt = next(i for i, r in enumerate(rows) if str(r.get("name") or "").startswith("Filter"))
     ok(
-        14 not in phantom and str(rows[13].get("glass")).upper() == "N-BK7",
-        "A2: row 14 stays REAL -- it is the exit face of the classical N-BK7 Filter on row 13, "
-        "and skipping it would trap the ray in glass",
+        (filt + 1) not in phantom and str(rows[filt].get("glass")).upper() == "N-BK7",
+        f"A2: the row after the classical N-BK7 Filter (row {filt}) stays REAL -- it is that "
+        f"element's exit face, and skipping it would trap the ray in glass",
     )
     # the image row must be safe on its OWN guard, not merely because it happens to be drawn
     undrawn_image = _rule([

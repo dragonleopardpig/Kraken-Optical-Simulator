@@ -15957,6 +15957,10 @@ phase_539_guards_name_their_encoding = _phase_from_standalone(
     539, "a guard that reads source names its encoding: VTK/Tk reset the C locale mid-suite, so a bare read_text() failed with UnicodeDecodeError('ascii') and made guards that pass standalone look like regressions (0743)",
     "KrakenOS.UI.validate_open3d_0743_guards_name_their_encoding",
     "guards_name_their_encoding")
+phase_540_first_order_matches_the_trace = _phase_from_standalone(
+    540, "when the first order (summed row thicknesses) and the trace (real folded path) disagree about the focus, the scene SAYS so and names the measured readout as the trustworthy one -- a row carrying thickness the imaging light never travels made the banner 19.55 mm wrong in silence (0745)",
+    "KrakenOS.UI.validate_open3d_0745_first_order_matches_the_trace",
+    "first_order_matches_the_trace")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16562,6 +16566,7 @@ def main() -> int:
             phase_537_draw_the_infeasible_request,
             phase_538_delivered_field_and_plane_centre,
             phase_539_guards_name_their_encoding,
+            phase_540_first_order_matches_the_trace,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
