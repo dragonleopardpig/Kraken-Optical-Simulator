@@ -101,16 +101,19 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
 
     folded = inspect.getsource(paraxial_tools.ParaxialToolsMixin._folded_conjugate_gaps_for_magnification)
     ok(
-        folded.count("_folded_conjugate_refusal") >= 3 and 'self._folded_conjugate_refusal = ""' in folded,
-        f"D1: the folded solver clears its reason on entry and stashes one at each bail "
+        folded.count("_folded_conjugate_refusal") >= 2 and 'self._folded_conjugate_refusal = ""' in folded,
+        f"D1: the folded solver clears its reason on entry and stashes one at each REFUSING bail "
         f"({folded.count('_folded_conjugate_refusal')} references)",
     )
+    # bugs/0731 (user: "Only apply to real collision will do") retired the image-side REFUSAL:
+    # that path now flags the result and the solve reports a focus residual instead. What must
+    # still name its reason is the OBJECT-side bail -- the one that really cannot proceed.
     ok(
-        "IMAGE side is not" in folded
-        and "the sensor would have to sit inside the optics" in folded
-        and "OBJECT side is reachable" in folded
-        and "no lens-leg slide to book it on" in folded,
-        "D2: the image-side bail names the side that failed and what it would take",
+        "no lens-leg slide to book it on" in folded
+        and "OBJECT side is reachable" not in folded
+        and "image_side_unreachable = True" in folded,
+        "D2: the OBJECT-side bail still names its reason; the image side no longer refuses "
+        "(superseded by bugs/0731, guarded by penta 530)",
     )
     ok(
         "No real-image conjugate for that size: {folded_reason}" in source

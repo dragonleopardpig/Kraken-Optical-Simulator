@@ -15917,6 +15917,10 @@ phase_529_launch_on_the_object_face = _phase_from_standalone(
     529, "the imaging launch is clamped to the inspected face and a thin field axis is sampled once -- no rays from off the device (0730)",
     "KrakenOS.UI.validate_open3d_0730_launch_on_the_object_face",
     "launch_on_the_object_face")
+phase_530_refuse_only_on_collision = _phase_from_standalone(
+    530, "an image-location shift SOLVES with a focus residual (the scene draws the detached image); only a real collision refuses (0731)",
+    "KrakenOS.UI.validate_open3d_0731_refuse_only_on_collision",
+    "refuse_only_on_collision")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16512,6 +16516,7 @@ def main() -> int:
             phase_527_focused_image_plane,
             phase_528_focus_plane_follows_the_fold,
             phase_529_launch_on_the_object_face,
+            phase_530_refuse_only_on_collision,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

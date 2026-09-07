@@ -2110,6 +2110,7 @@ class ParaxialToolsMixin:
         image_delta = (float(first_order["h2_z"]) + f * (1.0 + m)) - float(first_order["image_z"])
         object_distance = float(object_total) + object_delta
         image_distance = float(image_total) + image_delta
+        image_side_unreachable = False
         if not (np.isfinite(object_distance) and np.isfinite(image_distance)):
             return None
         if object_distance <= 1e-6:
@@ -2160,14 +2161,19 @@ class ParaxialToolsMixin:
             except Exception:
                 frozen_world = False
             if not frozen_world:
-                self._folded_conjugate_refusal = (
-                    f"the OBJECT side is reachable ({object_delta:+.4g} mm of lens move), but the "
-                    f"IMAGE side is not: for |m| {m:.4g} the focused image lands {abs(image_delta):.4g} mm "
-                    f"{'in front of' if image_delta < 0 else 'behind'} the sensor, so the image gap would "
-                    f"be {image_distance:.4g} mm -- the sensor would have to sit inside the optics. The "
-                    f"camera is fixed, so re-solve from the loaded geometry or move the device stage."
+                # bugs/0731 (user: "Refusal of solve is unnecessary for the case of image
+                # location shift since we already have image detached from sensor shows up.
+                # Only apply to real collision will do."): the object side still sets |m|, and
+                # bugs/0728/0729 DRAW the focused image where it actually forms -- so hand the
+                # caller the numbers with the image side flagged instead of refusing. The only
+                # refusals left on this path are real ones: no conjugate at all, or the
+                # object-side room gate (a collision).
+                image_side_unreachable = True
+                self.append_debug(
+                    f"folded gate: the image side is unreachable for |m| {m:.4g} "
+                    f"(image gap would be {image_distance:.4f} mm) -- booking the OBJECT side and "
+                    f"reporting the focus residual (bugs/0731)"
                 )
-                return None
             self.append_debug(
                 f"folded gate: station-frame image distance {image_distance:.4f} <= 0 on a "
                 f"frozen fold -- proceeding to the make-room machinery instead of bailing to "
@@ -2183,6 +2189,7 @@ class ParaxialToolsMixin:
             "image_gap_row": int(gap_start),
             "object_delta": float(object_delta),
             "image_delta": float(image_delta),
+            "image_side_unreachable": bool(image_side_unreachable),
         }
 
     def _apply_folded_object_split(self, fixed_leg: str, value: float) -> "tuple[bool, str]":

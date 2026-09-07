@@ -1790,6 +1790,15 @@ class QuickEstimationService:
                     image_locked_reason = self._image_write_locked_by_vendor_hardware(
                         rows, img_row_write
                     )
+                # bugs/0731: the image plane lands off the sensor and cannot be booked without
+                # putting the sensor inside the optics. The scene now SHOWS that (the detached
+                # focused-image plane, bugs/0728/0729), so report it as a focus residual instead
+                # of refusing -- only a real collision refuses.
+                if folded.get("image_side_unreachable") and not (image_handled or image_deferred):
+                    image_locked_reason = image_locked_reason or (
+                        "the image forms off the sensor for this field -- booking it would put "
+                        "the sensor inside the optics (see the focused-image plane)"
+                    )
                 img_changes = (
                     []
                     if (image_handled or image_deferred or image_locked_reason)   # bugs/0575 / 0719
@@ -1798,7 +1807,9 @@ class QuickEstimationService:
                         self._folded_conjugate_spill_row(img_row_write, "image"),
                     )
                 )
-                if lens_moved_as_pair and not (image_handled or image_deferred) and (
+                if (lens_moved_as_pair or bool(folded.get("image_side_unreachable"))) and not (
+                    image_handled or image_deferred
+                ) and (
                     image_locked_reason or img_changes is None
                 ):
                     # The lens IS at the requested WD (the FOV request was achieved); the exact
