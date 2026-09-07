@@ -1530,7 +1530,18 @@ class QuickEstimationService:
                     if capped:
                         info["forced_capped_mm"] = float(requested)
                         info["forced_drawn_mm"] = float(dist)
-                    info.setdefault("reason", "FORCED solve applied -- inspect the 3D overlap")
+                    # bugs/0726: only claim an overlap when the body actually penetrates.
+                    # A forced move that fits leaves the user hunting for a collision that
+                    # does not exist ("forced crash. But the lens is not crashing").
+                    penetrates = False
+                    try:
+                        penetrates = pen is not None and float(pen) < 0.0
+                    except (TypeError, ValueError):
+                        penetrates = False
+                    if penetrates:
+                        info.setdefault("reason", "FORCED solve applied -- inspect the 3D overlap")
+                    # when it FITS the heading already says so; leaving `reason` unset keeps any
+                    # REAL earlier refusal reason (why the plain solve said no) on the banner
                     self.editor._fov_solve_refusal_info = info
                     if pen is not None and float(pen) < 0.0:
                         note = (

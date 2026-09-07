@@ -137,6 +137,33 @@ def format_focus_residual_lines(info) -> list[str]:
     return lines
 
 
+def solve_banner_outcome(info) -> str:
+    """bugs/0726: what the banner is actually reporting.
+
+    ``"refused"``      nothing was applied -- the solve could not deliver the request.
+    ``"forced_crash"`` a forced move was applied and the lens body PENETRATES hardware.
+    ``"forced_fits"``  a forced move was applied and it FITS (clearance remains).
+    ``""``             nothing to report.
+
+    The user forced a solve to SEE a collision and got "SOLVE REFUSED -- inspect the 3D
+    overlap" over a move that left 20 mm of clearance, while the status line said the solve
+    succeeded (flag_20260907_083535_680: "forced crash. But the lens is not crashing").
+    A forced move that fits is neither a refusal nor an overlap.
+    """
+    if not isinstance(info, dict) or not info:
+        return ""
+    applied = info.get("forced_moved_mm") is not None or info.get("forced_penetration_mm") is not None
+    if not applied:
+        return "refused"
+    penetration = info.get("forced_penetration_mm")
+    try:
+        if penetration is not None and float(penetration) < 0.0:
+            return "forced_crash"
+    except (TypeError, ValueError):
+        pass
+    return "forced_fits"
+
+
 def format_solve_refusal_lines(info) -> list[str]:
     """bugs/0717 (user directive: "The UI shouldn't silently fail and display as
     though it is working"): the in-scene SOLVE-REFUSED banner. Pure formatter --
@@ -144,7 +171,16 @@ def format_solve_refusal_lines(info) -> list[str]:
     refusal; returns [] when there is nothing to show."""
     if not isinstance(info, dict) or not info:
         return []
-    lines: list[str] = ["SOLVE REFUSED -- the drawn scene does NOT deliver this request"]
+    outcome = solve_banner_outcome(info)
+    if outcome == "forced_crash":
+        # applied AND overlapping -- this is the collision the user asked to see
+        lines: list[str] = ["FORCED SOLVE APPLIED -- the lens PENETRATES hardware (inspect the 3D overlap)"]
+    elif outcome == "forced_fits":
+        # applied and it FITS: never call this a refusal, and never send the user
+        # looking for an overlap that is not there (bugs/0726)
+        lines = ["FORCED SOLVE APPLIED -- the lens FITS: nothing collides"]
+    else:
+        lines = ["SOLVE REFUSED -- the drawn scene does NOT deliver this request"]
     req = info.get("requested_fov_wh")
     target_m = info.get("target_m")
     if req and len(req) >= 2:

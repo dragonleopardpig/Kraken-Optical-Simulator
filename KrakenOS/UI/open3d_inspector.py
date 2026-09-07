@@ -18530,12 +18530,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if self._renderer is None:
             return
         try:
-            from KrakenOS.UI.services.system_info_hud import format_solve_refusal_lines
+            from KrakenOS.UI.services.system_info_hud import (
+                format_solve_refusal_lines,
+                solve_banner_outcome,
+            )
 
             info = self.editor.__dict__.get("_fov_solve_refusal_info")
             text = "\n".join(format_solve_refusal_lines(info))
+            outcome = solve_banner_outcome(info)
         except Exception:
             text = ""
+            outcome = ""
         actor = self.__dict__.get("_solve_refusal_banner_actor")
         if not text:
             if actor is not None:
@@ -18579,6 +18584,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             has_prop = getattr(self._renderer, "HasViewProp", None)
             if not (callable(has_prop) and has_prop(actor)):
                 self._add_renderer_view_prop(actor)
+        except Exception:
+            pass
+        try:
+            # bugs/0726: a forced move that FITS is not a refusal -- amber, not alarm red
+            if outcome == "forced_fits":
+                text_rgb, frame_rgb, back_rgb = (0.55, 0.34, 0.02), (0.85, 0.55, 0.10), (1.0, 0.97, 0.88)
+            else:
+                text_rgb, frame_rgb, back_rgb = (0.55, 0.04, 0.04), (0.80, 0.10, 0.10), (1.0, 0.92, 0.90)
+            prop = actor.GetTextProperty()
+            prop.SetColor(*text_rgb)
+            prop.SetFrameColor(*frame_rgb)
+            prop.SetBackgroundColor(*back_rgb)
         except Exception:
             pass
         try:
