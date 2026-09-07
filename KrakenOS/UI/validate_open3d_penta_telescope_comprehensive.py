@@ -15909,6 +15909,14 @@ phase_527_focused_image_plane = _phase_from_standalone(
     527, "the focused image plane is MEASURED from the traced bundle and drawn detached from the sensor, with an in-scene summary (0728)",
     "KrakenOS.UI.validate_open3d_0728_focused_image_plane",
     "focused_image_plane")
+phase_528_focus_plane_follows_the_fold = _phase_from_standalone(
+    528, "the focused-image plane is placed by walking the REAL traced path, so a waist further back than the last leg lands on the upstream leg, not past the fold mirror (0729)",
+    "KrakenOS.UI.validate_open3d_0729_focus_plane_follows_the_fold",
+    "focus_plane_follows_the_fold")
+phase_529_launch_on_the_object_face = _phase_from_standalone(
+    529, "the imaging launch is clamped to the inspected face and a thin field axis is sampled once -- no rays from off the device (0730)",
+    "KrakenOS.UI.validate_open3d_0730_launch_on_the_object_face",
+    "launch_on_the_object_face")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16502,6 +16510,8 @@ def main() -> int:
             phase_525_forced_solve_banner_truth,
             phase_526_fov_solve_idempotent,
             phase_527_focused_image_plane,
+            phase_528_focus_plane_follows_the_fold,
+            phase_529_launch_on_the_object_face,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

@@ -1375,10 +1375,11 @@ def focus_waist_from_grouped_rays(groups, *, image_point, image_axis, min_rays: 
     waists: list[float] = []
     planes: list[float] = []
     weights: list[float] = []
+    indices: list[int] = []
     rays = 0
     pooled_ends: list = []
     pooled_dirs: list = []
-    for ends, dirs in groups:
+    for group_index, (ends, dirs) in enumerate(groups):
         pooled_ends.extend(list(np.asarray(ends, dtype=float).reshape(-1, 3)))
         pooled_dirs.extend(list(np.asarray(dirs, dtype=float).reshape(-1, 3)))
         single = focus_waist_from_rays(ends, dirs, image_point=image_point, image_axis=image_axis, min_rays=min_rays)
@@ -1392,6 +1393,7 @@ def focus_waist_from_grouped_rays(groups, *, image_point, image_axis, min_rays: 
         waists.append(float(single["rms_waist_mm"]))
         planes.append(float(single["rms_plane_mm"]))
         weights.append(float(single["ray_count"]))
+        indices.append(int(group_index))
         rays += int(single["ray_count"])
     if not offsets:
         pooled = focus_waist_from_rays(
@@ -1422,7 +1424,63 @@ def focus_waist_from_grouped_rays(groups, *, image_point, image_axis, min_rays: 
         "field_count": int(len(offsets)),
         "offset_spread_mm": float(np.max(offsets) - np.min(offsets)) if len(offsets) > 1 else 0.0,
         "pooled": False,
+        "group_index": int(indices[order]),
     }
+
+
+def focus_point_along_paths(polylines, directions, offset_mm, image_axis):
+    """bugs/0729: WHERE the waist sits, walked back along the REAL traced path.
+
+    The waist offset is measured along the detector normal, but a folded scene's last leg is
+    short: on om05a the mirror->sensor leg is 60.3 mm while the waist is 78.5 mm back, so the
+    straight extrapolation punched through the 40 mm RA mirror and drew the image 18.2 mm
+    beyond it (user: "the focused image shown at the bottom of the 40mm RA mirror? ... I think
+    it skip the fold. It should be located somewhere near the Filter").
+
+    Each ray is walked back from its END by its OWN path length to that plane,
+    ``|offset| / |d.n|`` -- oblique rays travel further than the axial distance. The rays
+    converge at the waist, so the walked-back points coincide there; their mean is the focus
+    point and the mean local segment direction is the plane's normal. Returns
+    ``(center, normal)`` or None when the path is too short to hold the walk.
+    """
+    axis = np.asarray(image_axis, dtype=float).reshape(3)
+    axis_norm = float(np.linalg.norm(axis))
+    if not (axis_norm > 1e-9):
+        return None
+    axis = axis / axis_norm
+    points: list[np.ndarray] = []
+    locals_: list[np.ndarray] = []
+    for polyline, direction in zip(polylines, directions):
+        pts = np.asarray(polyline, dtype=float).reshape(-1, 3)
+        d = np.asarray(direction, dtype=float).reshape(3)
+        d_norm = float(np.linalg.norm(d))
+        if pts.shape[0] < 2 or d_norm <= 1e-9:
+            continue
+        along = float(abs(d @ axis) / d_norm)
+        if along <= 1e-6:
+            continue
+        remaining = abs(float(offset_mm)) / along
+        landed = None
+        for k in range(pts.shape[0] - 1, 0, -1):
+            seg = pts[k] - pts[k - 1]
+            length = float(np.linalg.norm(seg))
+            if length <= 1e-9:
+                continue
+            if remaining <= length:
+                landed = pts[k] - seg / length * remaining
+                locals_.append(seg / length)
+                break
+            remaining -= length
+        if landed is not None:
+            points.append(landed)
+    if not points:
+        return None
+    centre = np.mean(np.asarray(points, dtype=float), axis=0)
+    normal = np.mean(np.asarray(locals_, dtype=float), axis=0)
+    norm = float(np.linalg.norm(normal))
+    if not (norm > 1e-9):
+        return None
+    return centre, normal / norm
 
 
 def focused_image_plane_specs(image_point, image_axis, info, half_width, half_height,
@@ -1442,8 +1500,23 @@ def focused_image_plane_specs(image_point, image_axis, info, half_width, half_he
     if not (np.isfinite(offset) and norm > 1e-9) or abs(offset) < float(min_offset_mm):
         return []
     normal = normal / norm
-    iu, iv = _basis(normal)
+    # bugs/0729: prefer the FOLD-AWARE placement (walked back along the traced path) when the
+    # measurement supplied one; the straight extrapolation is only right on an unfolded tail.
+    plane_normal = normal
     focus_centre = centre + normal * offset
+    folded_centre = info.get("focus_center_world")
+    folded_normal = info.get("focus_normal_world")
+    if folded_centre is not None and folded_normal is not None:
+        try:
+            candidate = np.asarray(folded_centre, dtype=float).reshape(3)
+            candidate_n = np.asarray(folded_normal, dtype=float).reshape(3)
+            candidate_norm = float(np.linalg.norm(candidate_n))
+            if np.all(np.isfinite(candidate)) and candidate_norm > 1e-9:
+                focus_centre = candidate
+                plane_normal = candidate_n / candidate_norm
+        except (TypeError, ValueError):
+            pass
+    iu, iv = _basis(plane_normal)
     return [
         {
             "kind": "focused_image_plane",
@@ -1469,12 +1542,12 @@ def focused_image_plane_label_specs(image_point, image_axis, info, half_height,
     specs = focused_image_plane_specs(image_point, image_axis, info, 1.0, 1.0, min_offset_mm=min_offset_mm)
     if not specs:
         return []
-    centre = np.asarray(image_point, dtype=float).reshape(3)
+    centre = np.asarray(specs[0]["points"], dtype=float)[:4].mean(axis=0)  # the drawn plane
     normal = np.asarray(image_axis, dtype=float).reshape(3)
     normal = normal / float(np.linalg.norm(normal))
     iu, _iv = _basis(normal)
     offset = float(info.get("offset_mm"))
-    focus_centre = centre + normal * offset
+    focus_centre = centre
     text = f"Focused image {abs(offset):.4g} mm {info.get('side', 'from')} the sensor"
     try:
         waist = float(info.get("rms_waist_mm"))

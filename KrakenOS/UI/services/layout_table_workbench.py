@@ -8594,7 +8594,10 @@ class LayoutTableWorkbenchMixin:
         waist would minimise the IMAGE HEIGHT rather than the blur. Stashed on the editor as
         ``_focused_image_plane_info`` for the overlay and the banner; None clears it.
         """
-        from KrakenOS.UI.services.detector_coverage_overlay import focus_waist_from_grouped_rays
+        from KrakenOS.UI.services.detector_coverage_overlay import (
+            focus_point_along_paths,
+            focus_waist_from_grouped_rays,
+        )
 
         self._focused_image_plane_info = None
         if scene_bundle is None:
@@ -8614,6 +8617,7 @@ class LayoutTableWorkbenchMixin:
         except Exception:
             return None
         buckets: "dict[tuple, tuple[list, list]]" = {}
+        polylines: "dict[tuple, list]" = {}
         for path in list(getattr(scene_bundle, "ray_paths", []) or []):
             # the scene builder stamps "image" for a ray that lands on the detector
             # (scene_builder.py:1699/3363); "target_termination" is the older spelling some
@@ -8642,14 +8646,28 @@ class LayoutTableWorkbenchMixin:
             ends, dirs = buckets.setdefault(key, ([], []))
             ends.append(pts[-1, :3])
             dirs.append(step)
+            polylines.setdefault(key, []).append(pts[:, :3])
         if not buckets:
             return None
+        keys = list(buckets.keys())
         info = focus_waist_from_grouped_rays(
-            list(buckets.values()), image_point=centre, image_axis=normal
+            [buckets[key] for key in keys], image_point=centre, image_axis=normal
         )
         if isinstance(info, dict):
             info["detector_center_world"] = [float(v) for v in centre]
             info["detector_normal_world"] = [float(v) for v in normal]
+            # bugs/0729: place the plane by walking the WINNING field's rays back along their
+            # real traced path -- a folded tail is shorter than the waist distance, so the
+            # straight extrapolation lands past the fold mirror instead of on the beam.
+            group_index = info.get("group_index")
+            if group_index is not None and 0 <= int(group_index) < len(keys):
+                key = keys[int(group_index)]
+                placed = focus_point_along_paths(
+                    polylines.get(key, []), buckets[key][1], info.get("offset_mm"), normal
+                )
+                if placed is not None:
+                    info["focus_center_world"] = [float(v) for v in placed[0]]
+                    info["focus_normal_world"] = [float(v) for v in placed[1]]
         self._focused_image_plane_info = info
         return info
 

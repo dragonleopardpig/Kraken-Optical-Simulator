@@ -264,13 +264,45 @@ class TracePreviewSamplingMixin:
                 pass
             dims = self._current_camera_sensor_active_mm()
             if mag is not None and dims is not None and abs(float(mag)) > 1e-9:
-                return (
+                half = (
                     float(dims[0]) / abs(float(mag)) / 2.0,
                     float(dims[1]) / abs(float(mag)) / 2.0,
                 )
+                return self._clamp_launch_to_object_face(half)
         except Exception:
             pass
         return None
+
+    def _object_face_half_extents(self) -> "tuple[float, float] | None":
+        """bugs/0730: the PHYSICAL half-extents of the inspected face, when the scene declares
+        one. The device under test is real geometry -- light cannot leave it from outside."""
+        try:
+            from KrakenOS.UI.services.inspection_part import face_dims, normalize_inspection_part_spec
+
+            spec = normalize_inspection_part_spec(getattr(self, "inspection_part_spec", None))
+            if not spec.get("enabled"):
+                return None
+            width, height = face_dims(spec, spec.get("active_face", "front"))
+            width, height = float(width), float(height)
+        except Exception:
+            return None
+        if not (np.isfinite(width) and np.isfinite(height) and width > 1e-9 and height > 1e-9):
+            return None
+        return (width / 2.0, height / 2.0)
+
+    def _clamp_launch_to_object_face(self, half) -> "tuple[float, float] | None":
+        """bugs/0730 (flag 095208_913 "rays are not launched from 6 points. The blue rays seems
+        go hay wired"): the imaging launch rectangle is sensor/|m|, which on om05a is
+        29.4 x 29.4 mm -- but the inspected face is a 50 x 1 mm strip, so two thirds of the
+        field points launched from empty space 29 mm above and below a 1 mm-tall device and
+        their rays wandered through the tower. A field point outside the object is not a field
+        point; intersect the two."""
+        if half is None:
+            return None
+        face = self._object_face_half_extents()
+        if face is None:
+            return (float(half[0]), float(half[1]))
+        return (min(float(half[0]), float(face[0])), min(float(half[1]), float(face[1])))
 
     def _sample_imaging_field_grid_pairs(self) -> list[tuple[float, float]]:
         """Finite-object field pairs over the rectangular imaging field.
@@ -303,8 +335,28 @@ class TracePreviewSamplingMixin:
             shift_x, shift_y = 0.0, 0.0
         if count <= 1:
             return [(shift_x, shift_y)]
-        x_values = np.linspace(-float(half[0]), float(half[0]), count) + shift_x
-        y_values = np.linspace(-float(half[1]), float(half[1]), count) + shift_y
+        # bugs/0730: a THIN field axis (the om05a device face is 50 x 1 mm) carries no
+        # separable field information -- three samples across 1 mm sit inside the blur and
+        # merely triple the trace. Sample it once, at the centre: the 3 x 3 grid over a
+        # strip becomes the 3 points along it the user expects.
+        x_count, y_count = int(count), int(count)
+        span_x, span_y = 2.0 * float(half[0]), 2.0 * float(half[1])
+        # RELATIVE only: a 1.5 x 1.5 mm microscope field is small but square and still wants
+        # the full grid -- it is the ASPECT that makes an axis uninformative, not its size.
+        if span_y < 0.1 * span_x:
+            y_count = 1
+        if span_x < 0.1 * span_y:
+            x_count = 1
+        x_values = (
+            np.linspace(-float(half[0]), float(half[0]), x_count) + shift_x
+            if x_count > 1
+            else np.asarray([shift_x], dtype=float)
+        )
+        y_values = (
+            np.linspace(-float(half[1]), float(half[1]), y_count) + shift_y
+            if y_count > 1
+            else np.asarray([shift_y], dtype=float)
+        )
         return [(float(x), float(y)) for y in y_values for x in x_values]
 
     def _finite_imaging_field_values(self, axis: str) -> list[float]:
