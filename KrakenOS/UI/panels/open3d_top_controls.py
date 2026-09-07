@@ -112,6 +112,11 @@ class Open3DTopControlsPanel:
                 # stay in sync both ways (bugs/0061).
                 MenuCheckbutton("Clipped", self.inspector._editor_var("show_clipped_rays_var"), self.inspector._on_clipped_rays_changed),
                 MenuCheckbutton("Thickness", self.editor.show_physical_distances_var, self.inspector._on_scene_visibility_changed),
+                # bugs/0736 (user: "I can't find the off button for the banner in 3D UI"): the
+                # bugs/0732 toggle went into the image-plane ANALYSES submenu, which is not where
+                # anyone looks for a display switch. It belongs here, in the Overlays sweep, with
+                # the rest of the things drawn over the scene.
+                MenuCheckbutton("Solve banner", self.inspector.show_solve_banner_var, self.inspector._on_solve_banner_toggled),
                 # 3D field-curvature viz (idea #2): translucent curved best-focus
                 # surface lofted over the flat detector.
                 MenuCheckbutton("Focus surf", self.inspector.show_best_focus_surface_var, self.inspector._on_scene_visibility_changed),

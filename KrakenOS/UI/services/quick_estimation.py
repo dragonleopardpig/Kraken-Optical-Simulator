@@ -701,6 +701,31 @@ class QuickEstimationService:
                     pass
 
     # --------------------------------------------------------------- readout
+    def _rectangular_target_magnification(self, object_w, object_h):
+        """bugs/0735 (closing the reserved 0720): the |m| a RECTANGULAR field needs to fill a
+        RECTANGULAR sensor -- ``min(Sw/W, Sh/H)``, the axis that runs out first.
+
+        The solve sized the target by the DIAGONAL (sensor semi-diagonal / object semi-diagonal),
+        which is right for a round image circle and badly wrong for a long thin field: the user's
+        20 x 1 mm device asks for 21 x 1.05 mm, whose diagonal is 21.03 -- essentially its long
+        side -- so the diagonal rule demanded |m| 1.549 where 23.04/21 = 1.097 already fills the
+        sensor. That 41% of extra magnification needed 172 mm of lens travel against 158.9 mm of
+        room and drove the lens 13.03 mm into RA mirror 1 (flag 104239_564, "is this something
+        correct?").
+
+        Returns None when there is no real sensor rectangle -- a bare lens keeps the diagonal
+        rule, where the image circle really is the constraint.
+        """
+        try:
+            dims = self.editor._current_camera_sensor_active_mm()
+            width, height = float(dims[0]), float(dims[1])
+            object_w, object_h = abs(float(object_w)), abs(float(object_h))
+        except Exception:
+            return None
+        if not (width > 1e-9 and height > 1e-9 and object_w > 1e-9 and object_h > 1e-9):
+            return None
+        return min(width / object_w, height / object_h)
+
     def _sensor_semi(self) -> float | None:
         rows = getattr(self.editor, "rows", None) or []
         if not rows:
@@ -3135,6 +3160,14 @@ class QuickEstimationService:
                 # (measured 27%). Book with the LEARNED measured correction so a re-solve of
                 # the same field is idempotent (phase 444 C4), then verify with real rays and
                 # update the correction.
+                # bugs/0735: a rectangular field fills a rectangular sensor on ONE axis -- the
+                # one that runs out first. _apply_conjugate_pair takes semis and uses their ratio
+                # as |m|, so encode the rectangular target in the image semi; a bare lens (no
+                # sensor rectangle) keeps the diagonal rule, where the image circle IS the limit.
+                target_m = self._rectangular_target_magnification(obj_w, obj_h)
+                image_semi = (
+                    float(semi) * float(target_m) if target_m is not None else float(sensor)
+                )
                 # bugs/0727 (user: "make the solve idempotent"): re-solving a field the scene
                 # ALREADY delivers must be a no-op, not a fresh conjugate derivation. The solve
                 # reads the CURRENT geometry, so after a successful solve the lens is already at
@@ -3142,7 +3175,7 @@ class QuickEstimationService:
                 # ("the sensor would sit inside the optics") -- measured on om05a: a second
                 # FOV 20x20 refused with "No real-image conjugate" while object_delta was
                 # exactly 0.0000 and the delivered field was 20.002 x 20.002 mm.
-                already = self._fov_already_delivered(float(sensor), float(semi))
+                already = self._fov_already_delivered(image_semi, float(semi))
                 if already is not None:
                     self.editor._fov_solve_focus_residual_info = prior_focus_residual
                     if prior_forced_info is not None:
@@ -3175,7 +3208,7 @@ class QuickEstimationService:
                             pass
                     return True, note
                 correction = self._folded_m_correction()
-                ok, msg = self._apply_conjugate_pair(semi, float(sensor) / correction, force=force)
+                ok, msg = self._apply_conjugate_pair(semi, image_semi / correction, force=force)
                 # bugs/0732 (user: "There is no need to have additional click on Force, just do
                 # it"): a COLLISION refusal used to stop here and wait for the user to pick
                 # "Force FOV (show collision)" from a right-click menu. Apply it directly -- the
@@ -3237,7 +3270,7 @@ class QuickEstimationService:
                     info = dict(self.editor.__dict__.get("_fov_solve_refusal_info") or {})
                     info.setdefault("requested_fov_wh", (float(obj_w), float(obj_h)))
                     try:
-                        info.setdefault("target_m", float(sensor) / float(semi))
+                        info.setdefault("target_m", float(image_semi) / float(semi))
                     except Exception:
                         pass
                     info.setdefault("reason", str(msg))

@@ -41,7 +41,8 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     solve = inspect.getsource(QuickEstimationService.fov_solve)
 
     # ---- A: the escalation -------------------------------------------------------------------
-    plain_at = solve.find("ok, msg = self._apply_conjugate_pair(semi, float(sensor) / correction, force=force)")
+    # bugs/0735 changed the image semi from the diagonal sensor semi to the rectangular target
+    plain_at = solve.find("ok, msg = self._apply_conjugate_pair(semi, image_semi / correction, force=force)")
     escalate_at = solve.find("if not ok and not force:")
     ok(
         0 <= plain_at < escalate_at,
@@ -90,6 +91,15 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         and 'label="Solve / focus banner"' in inspector_source
         and "def _on_solve_banner_toggled" in inspector_source,
         "C3: the toggle exists, defaults ON, and has a menu entry that re-renders",
+    )
+    # bugs/0736 (user: "I can't find the off button for the banner in 3D UI"): it was only in the
+    # image-plane ANALYSES submenu. A display switch belongs in the Overlays sweep.
+    from KrakenOS.UI.panels import open3d_top_controls
+
+    ok(
+        'MenuCheckbutton("Solve banner", self.inspector.show_solve_banner_var' in inspect.getsource(open3d_top_controls),
+        "C4: the toggle is in the top toolbar's Overlays menu, where the other drawn-over-scene "
+        "switches live -- not buried in an analyses submenu",
     )
 
     # ---- D: no stale FORCED-fits beside a no-op ------------------------------------------------------

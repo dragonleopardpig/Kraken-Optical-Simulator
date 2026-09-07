@@ -15933,6 +15933,10 @@ phase_533_beam_axis_folds_ninety = _phase_from_standalone(
     533, "the drawn beam AXIS is constructed through the fold train, so a 45 deg mirror turns it exactly 90 deg (not the chief ray's 90 +- 2*tilt) (0734)",
     "KrakenOS.UI.validate_open3d_0734_beam_axis_folds_ninety",
     "beam_axis_folds_ninety")
+phase_534_rectangular_fov_target = _phase_from_standalone(
+    534, "a rectangular field fills a rectangular sensor on the axis that runs out first -- min(Sw/W, Sh/H), not the diagonal (0735)",
+    "KrakenOS.UI.validate_open3d_0735_rectangular_fov_target",
+    "rectangular_fov_target")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16532,6 +16536,7 @@ def main() -> int:
             phase_531_auto_force_and_banner_toggle,
             phase_532_focus_plane_square_to_the_axis,
             phase_533_beam_axis_folds_ninety,
+            phase_534_rectangular_fov_target,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
