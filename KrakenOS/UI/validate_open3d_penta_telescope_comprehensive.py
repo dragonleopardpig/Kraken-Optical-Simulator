@@ -5136,6 +5136,18 @@ def phase_60_fov_plane_solve(
         app._current_image_distance = lambda: 70.0
         app.rows[-1].diameter = 24.0  # sensor Ø24 -> semi 12, AFTER the sync couples it
 
+        # bugs/0746: this fixture is a bare 4-row system whose "sensor" is an IMAGE ROW -- there is
+        # no camera, and every expectation below is computed with the DIAGONAL rule (mag1 =
+        # sensor_semi / object_semi). But the editor is SHARED across the suite, and an earlier
+        # phase (39) leaves a real camera registered on it. bugs/0735 then sizes the rectangular
+        # FOV target from THAT camera, which here lands within the bugs/0727 idempotence tolerance
+        # of the stubbed |m| = 0.5, so the solve reported ok=True and moved nothing at all. The
+        # phase passed alone and failed in-suite for that reason only.
+        # Zeros, not an exception: bugs/0735 reads a zero sensor dimension as "no rectangle" and
+        # falls back to the diagonal rule, which is what these expectations assume. Raising here
+        # escapes the phase instead.
+        app._current_camera_sensor_active_mm = lambda: (0.0, 0.0)
+
     qe = inspector._quick_estimation_service()
 
     # 1) Object plane 'Solve for Thickness': 40 mm object width fills the Ø24 sensor.
@@ -5309,7 +5321,13 @@ def phase_60_fov_plane_solve(
         }
     )
     if not obj_thickness_ok:
-        result.notes.append("object plane 'Solve for Thickness' did not fill the sensor with the typed width")
+        # bugs/0746: say WHAT was wrong. This note cost a full bisect because it named no numbers.
+        result.notes.append(
+            f"object plane 'Solve for Thickness' did not fill the sensor with the typed width: "
+            f"ok={ok_ot} obj {float(app.rows[0].thickness):.4f} (want {exp_obj:.4f}) "
+            f"img {float(app.rows[2].thickness):.4f} (want {exp_img:.4f}) "
+            f"sensor {float(app.rows[-1].diameter):.4f} (want {sensor_before:.4f})"
+        )
     if not obj_sensor_ok:
         result.notes.append("object plane 'Solve for Image/Sensor Size' did not resize the sensor at |m|")
     if not obj_sensor_wh_ok:
