@@ -8706,8 +8706,18 @@ class LayoutTableWorkbenchMixin:
                                 best = (bucket_key, j, float(gaps[j]))
                         axial_key, axial_index, _gap = best
                         if axial_key is not None:
+                            # bugs/0747: anchor the walk on the SENSOR CENTRE. Translating the
+                            # axial ray's polyline so it lands dead centre removes that ray's own
+                            # landing error (3.3 mm here) before the walk, which is what left the
+                            # plane 7.5 mm off the beam axis inside the folded leg -- the user:
+                            # "the image plane still shifted in Y-direction, off center". The
+                            # SHAPE of the polyline is what carries the fold (bugs/0729), and a
+                            # rigid translation preserves it exactly.
+                            poly = np.asarray(polylines[axial_key][axial_index], dtype=float)
+                            landed = poly[-1]
+                            poly = poly + (np.asarray(centre, dtype=float).reshape(3) - landed)
                             axial = focus_point_along_paths(
-                                [polylines[axial_key][axial_index]],
+                                [poly],
                                 [buckets[axial_key][1][axial_index]],
                                 info.get("offset_mm"),
                                 normal,
