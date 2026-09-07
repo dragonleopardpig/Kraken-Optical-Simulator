@@ -15905,6 +15905,10 @@ phase_526_fov_solve_idempotent = _phase_from_standalone(
     526, "re-solving a field the scene already delivers is a NO-OP (keeps the residual + a forced banner); a folded bail says WHICH side failed (0727)",
     "KrakenOS.UI.validate_open3d_0727_fov_solve_idempotent",
     "fov_solve_idempotent")
+phase_527_focused_image_plane = _phase_from_standalone(
+    527, "the focused image plane is MEASURED from the traced bundle and drawn detached from the sensor, with an in-scene summary (0728)",
+    "KrakenOS.UI.validate_open3d_0728_focused_image_plane",
+    "focused_image_plane")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16497,6 +16501,7 @@ def main() -> int:
             phase_524_live_step_overlay_pose_guard,
             phase_525_forced_solve_banner_truth,
             phase_526_fov_solve_idempotent,
+            phase_527_focused_image_plane,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

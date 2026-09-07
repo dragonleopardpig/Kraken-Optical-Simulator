@@ -3135,6 +3135,13 @@ class QuickEstimationService:
                     self.set_target_fov(semi)
                     self._update_split_field_band_widths(obj_w)
                     delivered_m, delivered_wh = already
+                    # bugs/0728: the banner's SOLVE line -- what this solve did (here: nothing)
+                    self.editor._solve_summary_info = {
+                        "requested_fov_wh": (float(obj_w), float(obj_h)),
+                        "delivered_fov_wh": (float(delivered_wh[0]), float(delivered_wh[1])),
+                        "delivered_m": float(delivered_m),
+                        "lens_move_mm": None,
+                    }
                     note = (
                         f"Already delivering {delivered_wh[0]:.6g} x {delivered_wh[1]:.6g} mm "
                         f"(|m| {delivered_m:.4g}) -- nothing to move"
@@ -3169,6 +3176,22 @@ class QuickEstimationService:
                         msg += self._refine_folded_field_fill(semi, float(sensor))
                     self.set_target_fov(semi)
                     self._update_split_field_band_widths(obj_w)
+                    # bugs/0728: stash what this solve DID for the in-scene summary banner
+                    summary = {
+                        "requested_fov_wh": (float(obj_w), float(obj_h)),
+                        "delivered_fov_wh": (float(obj_w), float(obj_h)),
+                    }
+                    try:
+                        summary["delivered_m"] = float(self.editor._current_finite_paraxial_magnification())
+                    except Exception:
+                        pass
+                    residual = self.editor.__dict__.get("_fov_solve_focus_residual_info")
+                    if isinstance(residual, dict) and residual.get("lens_move_mm") is not None:
+                        try:
+                            summary["lens_move_mm"] = float(residual["lens_move_mm"])
+                        except (TypeError, ValueError):
+                            pass
+                    self.editor._solve_summary_info = summary
                     msg = f"Object {obj_w:.6g} x {obj_h:.6g} mm fills the sensor. " + msg
                     # bugs/0717: the force note (moved / penetration / obstacle) is
                     # already built by _apply_conjugate_pair's force short-circuit --

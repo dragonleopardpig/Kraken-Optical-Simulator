@@ -606,6 +606,7 @@ class ThreeDSceneToolsMixin:
             # bugs/0721: the 3D path traces too -- re-measure the split-field sensor strips
             if trace_rays and rays is not None:
                 self._measure_split_field_image_strips(system, rays, scene_bundle)
+                self._measure_focused_image_plane(scene_bundle)
             # bugs/0243: no display bend any more -- the folded scene is traced on the
             # REAL system, so the drawn rays already fold at the mesh mirror faces and
             # terminate on the real folded Image surface. The bugs/0197/0208 bend, the

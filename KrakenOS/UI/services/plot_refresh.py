@@ -246,6 +246,7 @@ class PlotRefreshService:
             # sensor (the strips follow magnification; the centre dark edge is the gap).
             if rays is not None:
                 self._measure_split_field_image_strips(system, rays, bundle)
+                self._measure_focused_image_plane(bundle)
             # bugs/0243: no display bend / reconcile any more -- the folded scene is
             # traced on the REAL system (mirrors reflect first-surface off their mesh
             # faces, the Image surface sits at its folded pose), so the 2D rays are

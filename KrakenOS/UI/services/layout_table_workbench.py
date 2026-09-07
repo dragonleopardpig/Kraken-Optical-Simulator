@@ -8583,6 +8583,76 @@ class LayoutTableWorkbenchMixin:
             )
         self._refresh_open_3d_views()
 
+    def _measure_focused_image_plane(self, scene_bundle) -> "dict | None":
+        """bugs/0728 (user: "instead of showing ray defocusing at the sensor, show the perfect
+        focus image detached from the sensor and give a message"): measure where the traced
+        rays ACTUALLY form the image, relative to the detector plane.
+
+        General to any scene -- it reads only the traced bundle and the detector target, so a
+        folded prism train, a plain lens or a future layout all get the same readout. Rays are
+        grouped by launch point (one group per field point) because a pooled least-squares
+        waist would minimise the IMAGE HEIGHT rather than the blur. Stashed on the editor as
+        ``_focused_image_plane_info`` for the overlay and the banner; None clears it.
+        """
+        from KrakenOS.UI.services.detector_coverage_overlay import focus_waist_from_grouped_rays
+
+        self._focused_image_plane_info = None
+        if scene_bundle is None:
+            return None
+        target = None
+        for candidate in list(getattr(scene_bundle, "targets", []) or []):
+            if not bool(getattr(candidate, "is_detector", False)):
+                continue
+            meta = getattr(candidate, "metadata", None) or {}
+            if str(meta.get("focus_source", "")) == "reached_image" or target is None:
+                target = candidate
+        if target is None:
+            return None
+        try:
+            centre = np.asarray(target.center_world, dtype=float).reshape(3)
+            normal = np.asarray(target.normal_world, dtype=float).reshape(3)
+        except Exception:
+            return None
+        buckets: "dict[tuple, tuple[list, list]]" = {}
+        for path in list(getattr(scene_bundle, "ray_paths", []) or []):
+            # the scene builder stamps "image" for a ray that lands on the detector
+            # (scene_builder.py:1699/3363); "target_termination" is the older spelling some
+            # bundles still carry -- accept both, reject everything else (a ray that missed
+            # or was stopped upstream never formed this image).
+            if str(getattr(path, "termination_reason", "")) not in ("image", "target_termination"):
+                continue
+            try:
+                pts = np.asarray(path.points_world, dtype=float)
+            except Exception:
+                continue
+            if pts.ndim != 2 or pts.shape[0] < 2:
+                continue
+            step = pts[-1, :3] - pts[-2, :3]
+            if float(np.linalg.norm(step)) <= 1e-9:
+                continue
+            # group by the bundle's OWN field identity when it has one -- rays sharing a
+            # field point converge to one image point, and pooling different fields would
+            # measure the image HEIGHT instead of the blur. Launch point is the fallback.
+            source = str(getattr(path, "source_id", "") or "")
+            field_index = getattr(path, "field_index", None)
+            if field_index is not None:
+                key = (source, int(field_index))
+            else:
+                key = (source, tuple(np.round(pts[0, :3], 4)))
+            ends, dirs = buckets.setdefault(key, ([], []))
+            ends.append(pts[-1, :3])
+            dirs.append(step)
+        if not buckets:
+            return None
+        info = focus_waist_from_grouped_rays(
+            list(buckets.values()), image_point=centre, image_axis=normal
+        )
+        if isinstance(info, dict):
+            info["detector_center_world"] = [float(v) for v in centre]
+            info["detector_normal_world"] = [float(v) for v in normal]
+        self._focused_image_plane_info = info
+        return info
+
     def _measure_split_field_image_strips(self, system, rays, scene_bundle) -> int:
         """bugs/0721: after a REAL trace, measure where each split-field band's field lands on
         the sensor and store it as the band's ``image_strip`` -- the 0692 strips were authored

@@ -984,6 +984,20 @@ class DetectorCoverageOverlayService:
                 if self._label_actor(label["anchor"], label["text"], label["color"]):
                     count += 1
 
+            # bugs/0728 (user: "show the perfect focus image detached from the sensor"): where
+            # the rays ACTUALLY waist. General to every scene -- measured from the traced
+            # bundle after each trace, drawn only when it is off the sensor plane.
+            focus_info = getattr(self.editor, "_focused_image_plane_info", None)
+            if isinstance(focus_info, dict) and focus_info:
+                half_w = max(float(metrics.sensor_half_width), 1e-6)
+                half_h = max(float(metrics.sensor_half_height), 1e-6)
+                for spec in focused_image_plane_specs(img_pt, image_axis, focus_info, half_w, half_h):
+                    if self._line_actor(spec["points"], spec["color"], spec["line_width"], bool(spec["dashed"])):
+                        count += 1
+                for label in focused_image_plane_label_specs(img_pt, image_axis, focus_info, half_h):
+                    if self._label_actor(label["anchor"], label["text"], label["color"]):
+                        count += 1
+
             # bugs/0692 (user request): dashed COVERED-AREA edges on the sensor. Each
             # band's authored image strip draws its two edge lines (v_lo / v_hi) in the
             # band green, so the covered strips read directly against the sensor square
@@ -1268,3 +1282,251 @@ def split_field_beam_axis_records(bands, trace_fn, *, image_surface, stop_surfac
             }
         )
     return records
+
+def _spot_text(value_mm) -> str:
+    """A spot size a person can read: microns under a millimetre, millimetres above."""
+    try:
+        value = abs(float(value_mm))
+    except (TypeError, ValueError):
+        return "?"
+    return f"{value * 1000.0:.3g} um" if value < 1.0 else f"{value:.3g} mm"
+
+
+def focus_waist_from_rays(end_points, directions, *, image_point, image_axis, min_rays: int = 4):
+    """bugs/0728: where do the rays ACTUALLY focus, relative to the sensor plane?
+
+    The user's design call: "let the image detach from the Sensor and sit in front of the
+    sensor with perfect ray focusing, then raise a banner" -- the scene should SHOW where the
+    image forms instead of only reporting a residual number.
+
+    Rays are straight in image space, so the waist is analytic (no scan): advancing a ray by
+    ``t`` along the detector normal moves it by ``d / (d.n) * t``; subtracting the axial part
+    leaves the transverse rate ``a = d/(d.n) - n``. Minimising the mean squared transverse
+    spread of ``r + a t`` gives ``t* = -sum(r'.a') / sum(|a'|^2)`` (primes = mean-removed).
+
+    Returns ``{"offset_mm", "distance_mm", "side", "rms_waist_mm", "rms_plane_mm",
+    "ray_count"}`` -- ``offset_mm`` is signed along the detector normal, ``side`` is
+    "in front of" (upstream, where the light comes from) or "behind" -- or None.
+    """
+    try:
+        ends = np.asarray(end_points, dtype=float).reshape(-1, 3)
+        dirs = np.asarray(directions, dtype=float).reshape(-1, 3)
+        centre = np.asarray(image_point, dtype=float).reshape(3)
+        normal = np.asarray(image_axis, dtype=float).reshape(3)
+    except Exception:
+        return None
+    if ends.shape[0] != dirs.shape[0] or ends.shape[0] < int(min_rays):
+        return None
+    norm = float(np.linalg.norm(normal))
+    if not (norm > 1e-9):
+        return None
+    normal = normal / norm
+    lengths = np.linalg.norm(dirs, axis=1)
+    keep = lengths > 1e-9
+    ends, dirs, lengths = ends[keep], dirs[keep], lengths[keep]
+    if ends.shape[0] < int(min_rays):
+        return None
+    dirs = dirs / lengths[:, None]
+    dn = dirs @ normal
+    keep = np.abs(dn) > 1e-6  # a ray parallel to the plane never crosses it
+    ends, dirs, dn = ends[keep], dirs[keep], dn[keep]
+    if ends.shape[0] < int(min_rays):
+        return None
+    rate = dirs / dn[:, None]
+    a = rate - normal  # transverse rate per mm along the normal
+    delta = ends - centre
+    r = delta - np.outer(delta @ normal, normal)  # transverse position at the sensor plane
+    a_c = a - a.mean(axis=0)
+    r_c = r - r.mean(axis=0)
+    denom = float((a_c * a_c).sum())
+    if not (denom > 1e-12):
+        return None
+    t = -float((r_c * a_c).sum()) / denom
+    if not np.isfinite(t):
+        return None
+
+    def _rms(shift: float) -> float:
+        pts = r + a * float(shift)
+        centred = pts - pts.mean(axis=0)
+        return float(np.sqrt((centred ** 2).sum(axis=1).mean()))
+
+    mean_dn = float(np.mean(dn))
+    return {
+        "offset_mm": float(t),
+        "distance_mm": abs(float(t)),
+        "side": "in front of" if (t * mean_dn) < 0.0 else "behind",
+        "rms_waist_mm": _rms(t),
+        "rms_plane_mm": _rms(0.0),
+        "ray_count": int(ends.shape[0]),
+    }
+
+
+def focus_waist_from_grouped_rays(groups, *, image_point, image_axis, min_rays: int = 4):
+    """bugs/0728: the image plane over a FIELD, not a single bundle -- general to any scene.
+
+    Rays from different field points stay separated by the image height at every plane, so a
+    least-squares waist over the whole bundle would minimise the IMAGE SIZE, not the blur.
+    Measure each field point's own waist and report the MEDIAN, with the spot size averaged
+    over the fields that contributed. ``groups`` is an iterable of ``(end_points, directions)``
+    -- one per field point. Falls back to the pooled bundle when no group is large enough
+    (a random-launch illumination source, where every ray has its own launch point).
+    """
+    offsets: list[float] = []
+    waists: list[float] = []
+    planes: list[float] = []
+    weights: list[float] = []
+    rays = 0
+    pooled_ends: list = []
+    pooled_dirs: list = []
+    for ends, dirs in groups:
+        pooled_ends.extend(list(np.asarray(ends, dtype=float).reshape(-1, 3)))
+        pooled_dirs.extend(list(np.asarray(dirs, dtype=float).reshape(-1, 3)))
+        single = focus_waist_from_rays(ends, dirs, image_point=image_point, image_axis=image_axis, min_rays=min_rays)
+        if single is None:
+            continue
+        # a handful of rays that barely tighten is noise, not a focus: require a real waist
+        # (half the spread at the sensor plane) before this field votes on the image plane.
+        if not (float(single["rms_waist_mm"]) < 0.5 * float(single["rms_plane_mm"])):
+            continue
+        offsets.append(float(single["offset_mm"]))
+        waists.append(float(single["rms_waist_mm"]))
+        planes.append(float(single["rms_plane_mm"]))
+        weights.append(float(single["ray_count"]))
+        rays += int(single["ray_count"])
+    if not offsets:
+        pooled = focus_waist_from_rays(
+            pooled_ends, pooled_dirs, image_point=image_point, image_axis=image_axis, min_rays=min_rays
+        )
+        if pooled is None:
+            return None
+        pooled["field_count"] = 0
+        pooled["pooled"] = True
+        return pooled
+    # the best-sampled field decides the plane; the others report the spread (field curvature
+    # or, on a mixed bundle, disagreement the user should see rather than an average of noise)
+    order = int(np.argmax(np.asarray(weights, dtype=float)))
+    offset = float(offsets[order])
+    normal = np.asarray(image_axis, dtype=float).reshape(3)
+    normal = normal / max(float(np.linalg.norm(normal)), 1e-9)
+    dirs_all = np.asarray(pooled_dirs, dtype=float).reshape(-1, 3)
+    lengths = np.linalg.norm(dirs_all, axis=1)
+    keep = lengths > 1e-9
+    mean_dn = float(np.mean((dirs_all[keep] / lengths[keep, None]) @ normal)) if int(keep.sum()) else 1.0
+    return {
+        "offset_mm": offset,
+        "distance_mm": abs(offset),
+        "side": "in front of" if (offset * mean_dn) < 0.0 else "behind",
+        "rms_waist_mm": float(waists[order]),
+        "rms_plane_mm": float(planes[order]),
+        "ray_count": int(rays),
+        "field_count": int(len(offsets)),
+        "offset_spread_mm": float(np.max(offsets) - np.min(offsets)) if len(offsets) > 1 else 0.0,
+        "pooled": False,
+    }
+
+
+def focused_image_plane_specs(image_point, image_axis, info, half_width, half_height,
+                              *, min_offset_mm: float = 0.05) -> list[dict[str, Any]]:
+    """bugs/0728: the detached focused-image plane -- a sensor-sized magenta rectangle where
+    the rays actually waist, plus a dashed connector to the sensor so the gap is legible.
+    Empty when the image already sits on the sensor (nothing to detach)."""
+    if not isinstance(info, dict):
+        return []
+    try:
+        offset = float(info.get("offset_mm"))
+        centre = np.asarray(image_point, dtype=float).reshape(3)
+        normal = np.asarray(image_axis, dtype=float).reshape(3)
+    except (TypeError, ValueError):
+        return []
+    norm = float(np.linalg.norm(normal))
+    if not (np.isfinite(offset) and norm > 1e-9) or abs(offset) < float(min_offset_mm):
+        return []
+    normal = normal / norm
+    iu, iv = _basis(normal)
+    focus_centre = centre + normal * offset
+    return [
+        {
+            "kind": "focused_image_plane",
+            "points": _rect_points(focus_centre, iv, iu, float(half_width), float(half_height)),
+            "color": _IMAGE_PLANE,
+            "dashed": False,
+            "line_width": 2.4,
+        },
+        {
+            "kind": "focus_defocus_gap",
+            "points": np.asarray([centre, focus_centre], dtype=float),
+            "color": _IMAGE_PLANE,
+            "dashed": True,
+            "line_width": 1.8,
+        },
+    ]
+
+
+def focused_image_plane_label_specs(image_point, image_axis, info, half_height,
+                                    *, min_offset_mm: float = 0.05) -> list[dict[str, Any]]:
+    """The label for the detached focus plane: how far it sits from the sensor, which side,
+    and the spot there versus on the sensor."""
+    specs = focused_image_plane_specs(image_point, image_axis, info, 1.0, 1.0, min_offset_mm=min_offset_mm)
+    if not specs:
+        return []
+    centre = np.asarray(image_point, dtype=float).reshape(3)
+    normal = np.asarray(image_axis, dtype=float).reshape(3)
+    normal = normal / float(np.linalg.norm(normal))
+    iu, _iv = _basis(normal)
+    offset = float(info.get("offset_mm"))
+    focus_centre = centre + normal * offset
+    text = f"Focused image {abs(offset):.4g} mm {info.get('side', 'from')} the sensor"
+    try:
+        waist = float(info.get("rms_waist_mm"))
+        plane = float(info.get("rms_plane_mm"))
+        text += f" (spot {_spot_text(waist)} here vs {_spot_text(plane)} on the sensor)"
+    except (TypeError, ValueError):
+        pass
+    anchor = focus_centre + iu * (float(half_height) * (1.0 + _LABEL_MARGIN) + _LABEL_GAP)
+    return [{"anchor": anchor, "text": text, "color": _IMAGE_PLANE}]
+
+
+def format_focus_summary_lines(focus_info, solve_info=None) -> list[str]:
+    """bugs/0728: the in-scene focus summary the user asked for -- what the solve did (or did
+    NOT do), and where the image actually forms. Pure formatter; [] when there is nothing to
+    say (the image sits on the sensor and the solve moved nothing)."""
+    lines: list[str] = []
+    if isinstance(solve_info, dict) and solve_info:
+        field = ""
+        wh = solve_info.get("delivered_fov_wh")
+        if wh and len(wh) >= 2:
+            field = f"delivering {float(wh[0]):.4g} x {float(wh[1]):.4g} mm"
+        m = solve_info.get("delivered_m")
+        if m:
+            field += f" (|m| {float(m):.4g})" if field else f"|m| {float(m):.4g}"
+        moved = solve_info.get("lens_move_mm")
+        if moved is None:
+            action = "the lens did not move -- the field was already delivered"
+        else:
+            try:
+                action = f"the lens moved {float(moved):+.4g} mm along its leg"
+            except (TypeError, ValueError):
+                action = ""
+        head = "; ".join(part for part in (field, action) if part)
+        if head:
+            lines.append("SOLVE: " + head)
+    if isinstance(focus_info, dict) and focus_info:
+        try:
+            offset = float(focus_info.get("offset_mm"))
+        except (TypeError, ValueError):
+            offset = 0.0
+        if abs(offset) >= 0.05:
+            side = str(focus_info.get("side", "from"))
+            line = f"FOCUS: the image forms {abs(offset):.4g} mm {side} the sensor"
+            try:
+                line += (
+                    f" -- spot {_spot_text(focus_info['rms_waist_mm'])} there vs "
+                    f"{_spot_text(focus_info['rms_plane_mm'])} on the sensor"
+                )
+            except (TypeError, ValueError, KeyError):
+                pass
+            lines.append(line)
+            lines.append(
+                "Move the device stage / camera focus to land it -- vendor hardware untouched"
+            )
+    return lines

@@ -18536,8 +18536,20 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             )
 
             info = self.editor.__dict__.get("_fov_solve_refusal_info")
-            text = "\n".join(format_solve_refusal_lines(info))
+            lines = list(format_solve_refusal_lines(info))
             outcome = solve_banner_outcome(info)
+            # bugs/0728: the focus summary rides the same banner -- where the image actually
+            # forms and what the last solve did. Shown for ANY scene whose rays waist off the
+            # sensor, with or without a refusal.
+            from KrakenOS.UI.services.detector_coverage_overlay import format_focus_summary_lines
+
+            lines.extend(
+                format_focus_summary_lines(
+                    self.editor.__dict__.get("_focused_image_plane_info"),
+                    self.editor.__dict__.get("_solve_summary_info"),
+                )
+            )
+            text = "\n".join(lines)
         except Exception:
             text = ""
             outcome = ""
@@ -18588,7 +18600,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             pass
         try:
             # bugs/0726: a forced move that FITS is not a refusal -- amber, not alarm red
-            if outcome == "forced_fits":
+            if outcome in ("forced_fits", ""):
                 text_rgb, frame_rgb, back_rgb = (0.55, 0.34, 0.02), (0.85, 0.55, 0.10), (1.0, 0.97, 0.88)
             else:
                 text_rgb, frame_rgb, back_rgb = (0.55, 0.04, 0.04), (0.80, 0.10, 0.10), (1.0, 0.92, 0.90)

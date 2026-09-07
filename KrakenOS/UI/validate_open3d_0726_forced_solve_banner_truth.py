@@ -144,8 +144,12 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
 
     banner_source = inspect.getsource(Kraken3DInspector._update_solve_refusal_banner)
     ok(
-        "solve_banner_outcome" in banner_source and 'outcome == "forced_fits"' in banner_source,
-        "E2: the 3D banner colours itself from the outcome (amber when it fits, red otherwise)",
+        "solve_banner_outcome" in banner_source
+        and '"forced_fits"' in banner_source
+        and "0.55, 0.04, 0.04" in banner_source,
+        # bugs/0728 widened the amber branch to cover a pure focus summary (no refusal at all),
+        # so pin the DEPENDENCY on the outcome and the alarm-red fallback, not the exact test.
+        "E2: the 3D banner colours itself from the outcome (amber when it fits, alarm red otherwise)",
     )
 
     passed = not any(note.startswith("FAIL") for note in notes)
