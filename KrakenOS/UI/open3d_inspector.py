@@ -12669,6 +12669,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                         pass
             return points, surfaces
 
+        detector_point = detector_normal = None
+        targets = [t for t in (getattr(scene_bundle, "targets", []) or []) if bool(getattr(t, "is_detector", False))]
+        if targets:
+            try:
+                detector_point = np.asarray(targets[0].center_world, dtype=float).reshape(3)
+                detector_normal = np.asarray(targets[0].normal_world, dtype=float).reshape(3)
+            except Exception:
+                detector_point = detector_normal = None
         return split_field_beam_axis_records(
             bands,
             _trace,
@@ -12676,6 +12684,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             stop_surface=stop_surface,
             stop_center=stop_center,
             stop_axis=stop_axis,
+            image_point=detector_point,     # bugs/0734: end the AXIS on the sensor plane
+            image_axis=detector_normal,
         )
 
     def _optical_axis_records_for_3d(self, scene_bundle: SceneBundle | None) -> list[dict[str, object]]:

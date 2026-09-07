@@ -124,17 +124,19 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     recs = dco.split_field_beam_axis_records(
         bands, trace, image_surface=23, stop_surface=10, stop_center=[100.0, 3.0, -25.0], stop_axis=[1.0, 0.0, 0.0]
     )
-    stop_hits = [np.asarray(r["points"][2], dtype=float) for r in recs] if len(recs) == 2 else []
+    # bugs/0734: the aimed chief ray is now the SOURCE of the geometry (it finds the fold train)
+    # and the DRAWN record is the constructed axis, which folds exactly 90 deg. So the pin here is
+    # that the aiming still happened and still reached the image -- the drawn points are checked
+    # by validate_open3d_0734_beam_axis_folds_ninety.
     ok(
-        len(recs) == 2 and all(r["aimed_through_stop"] and r["reached_image"] for r in recs)
-        and all(np.linalg.norm(h - np.array([100.0, 3.0, -25.0])) < 1e-3 for h in stop_hits),
-        f"B1: with a stop each beam is AIMED through the stop centre and reaches the image "
-        f"(stop hits {[np.round(h, 3).tolist() for h in stop_hits]})",
+        len(recs) == 2 and all(r["aimed_through_stop"] and r["reached_image"] for r in recs),
+        f"B1: with a stop each beam is still AIMED through the stop centre and reaches the image "
+        f"(aimed {[r['aimed_through_stop'] for r in recs]}, reached {[r['reached_image'] for r in recs]})",
     )
     ok(
         len(recs) == 2 and recs[0]["launch_sign"] == 1.0 and recs[1]["launch_sign"] == -1.0
-        and recs[0]["points"][-1][2] < -25.0 < recs[1]["points"][-1][2],
-        "B2: the aimed beams keep their arms and land on OPPOSITE sides of the sensor centre (mirror-image strips)",
+        and not np.allclose(recs[0]["points"][-1], recs[1]["points"][-1]),
+        "B2: the two beams keep their own arms and stay separated end to end",
     )
     ok(
         dco.split_field_beam_axis_records([], trace, image_surface=23) == []

@@ -1180,8 +1180,84 @@ def aim_launch_through_stop(trace_fn, origin, direction, *, stop_surface, stop_c
     return d0, bool(converged)
 
 
+def folds_from_traced_path(points, *, turn_tol_deg: float = 30.0) -> "list[tuple]":
+    """bugs/0734: the MIRRORS a traced path bounced off, as ``[(point, normal), ...]``.
+
+    A reflection satisfies ``d_after = d_before - 2 (d_before.m) m``, so ``d_before - d_after``
+    is parallel to the mirror normal ``m`` whatever the angle of incidence. Turns smaller than
+    ``turn_tol_deg`` are refractions and are ignored -- they do not fold the axis.
+    """
+    pts = np.asarray(points, dtype=float).reshape(-1, 3)
+    folds: list[tuple] = []
+    if pts.shape[0] < 3:
+        return folds
+    limit = float(np.cos(np.deg2rad(float(turn_tol_deg))))
+    previous = None
+    for k in range(1, pts.shape[0]):
+        seg = pts[k] - pts[k - 1]
+        length = float(np.linalg.norm(seg))
+        if length <= 1e-9:
+            continue
+        unit = seg / length
+        if previous is not None and float(previous @ unit) < limit:
+            normal = previous - unit
+            norm = float(np.linalg.norm(normal))
+            if norm > 1e-9:
+                folds.append((pts[k - 1].copy(), normal / norm))
+        previous = unit
+    return folds
+
+
+def fold_axis_polyline(start_point, start_direction, folds, *, end_point=None, end_normal=None,
+                       reach_mm: float = 400.0) -> "np.ndarray | None":
+    """bugs/0734: the BEAM AXIS through a fold train -- a straight line that reflects at each
+    mirror, instead of a traced chief ray.
+
+    User: "check all optical axis (not rays), some of them are not 90 degree after reflection?"
+    They were right: the drawn beam axes were chief RAYS aimed through the aperture stop, so they
+    met each 45 deg mirror off-normal and folded by 90 +- 2*(tilt) -- measured 94.5, 85.5 and
+    83.2 deg on om05a. An AXIS is parallel to the design axis between folds, so it turns exactly
+    90 deg on a 45 deg mirror.
+
+    Walks ``start_direction`` from ``start_point``, intersecting each mirror plane in turn and
+    reflecting about its normal. Ends on the detector plane when one is given, else after
+    ``reach_mm``. Returns the polyline, or None when a fold cannot be reached (never a guess).
+    """
+    point = np.asarray(start_point, dtype=float).reshape(3)
+    direction = np.asarray(start_direction, dtype=float).reshape(3)
+    norm = float(np.linalg.norm(direction))
+    if not (np.all(np.isfinite(point)) and norm > 1e-9):
+        return None
+    direction = direction / norm
+    out = [point.copy()]
+    for plane_point, plane_normal in list(folds or []):
+        plane_point = np.asarray(plane_point, dtype=float).reshape(3)
+        plane_normal = np.asarray(plane_normal, dtype=float).reshape(3)
+        denominator = float(direction @ plane_normal)
+        if abs(denominator) <= 1e-9:
+            return None                      # the axis runs along the mirror: no intersection
+        distance = float((plane_point - point) @ plane_normal) / denominator
+        if distance <= 1e-6:
+            return None                      # the fold is behind the axis: the train is not ours
+        point = point + direction * distance
+        out.append(point.copy())
+        direction = direction - 2.0 * float(direction @ plane_normal) * plane_normal
+    if end_point is not None and end_normal is not None:
+        end_point = np.asarray(end_point, dtype=float).reshape(3)
+        end_normal = np.asarray(end_normal, dtype=float).reshape(3)
+        denominator = float(direction @ end_normal)
+        if abs(denominator) > 1e-9:
+            distance = float((end_point - point) @ end_normal) / denominator
+            if distance > 1e-6:
+                out.append(point + direction * distance)
+                return np.asarray(out, dtype=float)
+    out.append(point + direction * float(reach_mm))
+    return np.asarray(out, dtype=float)
+
+
 def split_field_beam_axis_records(bands, trace_fn, *, image_surface, stop_surface=None, stop_center=None,
-                                  stop_axis=None, min_points: int = 2) -> list[dict]:
+                                  stop_axis=None, image_point=None, image_axis=None,
+                                  min_points: int = 2) -> list[dict]:
     """bugs/0723: one traced beam CENTRELINE per device-face band, as dotted axis-guide
     records.
 
@@ -1263,6 +1339,24 @@ def split_field_beam_axis_records(bands, trace_fn, *, image_surface, stop_surfac
                     aimed = False
             except Exception:
                 aimed = False
+        # bugs/0734: the traced ray found the fold train; now draw the AXIS through it -- a line
+        # parallel to the design axis between mirrors, which turns exactly 90 deg on a 45 deg
+        # mirror. The chief ray stays the SOURCE of the geometry, never the drawn guide.
+        axis_points = None
+        try:
+            folds = folds_from_traced_path(pts)
+            if folds:
+                axis_points = fold_axis_polyline(
+                    centre,
+                    sign * axis,
+                    folds,
+                    end_point=image_point if image_point is not None else None,
+                    end_normal=image_axis if image_axis is not None else None,
+                )
+        except Exception:
+            axis_points = None
+        if axis_points is not None and axis_points.shape[0] >= int(min_points):
+            pts = axis_points
         name = str(band.get("name") or f"band {len(records) + 1}")
         base = re.sub(r"\s+field$", "", name.strip(), flags=re.IGNORECASE) or name
         slug = re.sub(r"[^a-z0-9]+", "-", base.lower()).strip("-") or f"band-{len(records) + 1}"
