@@ -15937,6 +15937,10 @@ phase_534_rectangular_fov_target = _phase_from_standalone(
     534, "a rectangular field fills a rectangular sensor on the axis that runs out first -- min(Sw/W, Sh/H), not the diagonal (0735)",
     "KrakenOS.UI.validate_open3d_0735_rectangular_fov_target",
     "rectangular_fov_target")
+phase_535_no_stale_overlays = _phase_from_standalone(
+    535, "when no ray lands: the strips are marked stale and not drawn, the Clipped toggle is honoured, and the banner says why there is no focus plane (0737)",
+    "KrakenOS.UI.validate_open3d_0737_no_stale_overlays_when_nothing_lands",
+    "no_stale_overlays")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16537,6 +16541,7 @@ def main() -> int:
             phase_532_focus_plane_square_to_the_axis,
             phase_533_beam_axis_folds_ninety,
             phase_534_rectangular_fov_target,
+            phase_535_no_stale_overlays,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

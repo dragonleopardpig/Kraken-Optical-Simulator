@@ -8600,6 +8600,9 @@ class LayoutTableWorkbenchMixin:
         )
 
         self._focused_image_plane_info = None
+        # bugs/0737 (user: "So there is no best focus image plane?"): when the plane cannot be
+        # measured, say why instead of drawing nothing and leaving the user guessing.
+        self._focused_image_plane_unmeasured = ""
         if scene_bundle is None:
             return None
         target = None
@@ -8648,6 +8651,16 @@ class LayoutTableWorkbenchMixin:
             dirs.append(step)
             polylines.setdefault(key, []).append(pts[:, :3])
         if not buckets:
+            reasons: "dict[str, int]" = {}
+            for path in list(getattr(scene_bundle, "ray_paths", []) or []):
+                key = str(getattr(path, "termination_reason", "") or "unknown")
+                reasons[key] = reasons.get(key, 0) + 1
+            if reasons:
+                worst = ", ".join(f"{n} {k.replace('_', ' ')}" for k, n in sorted(reasons.items(), key=lambda kv: -kv[1])[:3])
+                self._focused_image_plane_unmeasured = (
+                    f"FOCUS: no ray reaches the sensor, so the image plane cannot be measured "
+                    f"({worst})"
+                )
             return None
         keys = list(buckets.keys())
         info = focus_waist_from_grouped_rays(

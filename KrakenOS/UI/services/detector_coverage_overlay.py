@@ -269,7 +269,17 @@ def measure_split_field_image_strips(
     changed = 0
     for index, band in enumerate(bands):
         pts = landed.get(index) or []
-        if len(pts) < int(min_rays) or not isinstance(band, dict):
+        if not isinstance(band, dict):
+            continue
+        if len(pts) < int(min_rays):
+            # bugs/0737 (user: "no rays hit the sensor, but the green strips overlayed on the
+            # sensor, not reasonable"): the previous strip is kept for reference, but THIS trace
+            # did not measure it -- mark it stale so the overlay stops drawing it as current.
+            previous = band.get("image_strip")
+            if isinstance(previous, dict):
+                previous["stale"] = True
+                previous["measured"] = False
+                previous["ray_count"] = int(len(pts))
             continue
         us = np.asarray([q[0] for q in pts], dtype=float)
         vs = np.sort(np.asarray([q[1] for q in pts], dtype=float))
@@ -287,6 +297,7 @@ def measure_split_field_image_strips(
             "v_lo": v_lo,
             "v_hi": v_hi,
             "measured": True,
+            "stale": False,
             "ray_count": int(vs.size),
         }
         changed += 1
@@ -1015,6 +1026,8 @@ class DetectorCoverageOverlayService:
                     strip = band.get("image_strip")
                     if not strip:
                         continue
+                    if bool(strip.get("stale")):
+                        continue   # bugs/0737: this trace did not measure it -- do not draw it
                     av = np.asarray(iv, dtype=float).reshape(3)
                     au = np.cross(normal, av)
                     s_center = np.asarray(img_pt, dtype=float).reshape(3)
@@ -1680,7 +1693,7 @@ def focused_image_plane_label_specs(image_point, image_axis, info, half_height,
     return [{"anchor": anchor, "text": text, "color": _IMAGE_PLANE}]
 
 
-def format_focus_summary_lines(focus_info, solve_info=None) -> list[str]:
+def format_focus_summary_lines(focus_info, solve_info=None, notes=None) -> list[str]:
     """bugs/0728: the in-scene focus summary the user asked for -- what the solve did (or did
     NOT do), and where the image actually forms. Pure formatter; [] when there is nothing to
     say (the image sits on the sensor and the solve moved nothing)."""
@@ -1723,4 +1736,9 @@ def format_focus_summary_lines(focus_info, solve_info=None) -> list[str]:
             lines.append(
                 "Move the device stage / camera focus to land it -- vendor hardware untouched"
             )
+    # bugs/0737: why there is no focus plane, and where the rays went when the scene looks empty
+    for note in list(notes or []):
+        text = str(note or "").strip()
+        if text and text not in lines:
+            lines.append(text)
     return lines

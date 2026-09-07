@@ -18564,6 +18564,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 format_focus_summary_lines(
                     self.editor.__dict__.get("_focused_image_plane_info"),
                     self.editor.__dict__.get("_solve_summary_info"),
+                    notes=(
+                        self.editor.__dict__.get("_focused_image_plane_unmeasured"),
+                        self.editor.__dict__.get("_ray_display_suppressed_note"),
+                    ),
                 )
             )
             text = "\n".join(lines)

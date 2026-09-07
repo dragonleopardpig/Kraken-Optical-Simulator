@@ -2968,6 +2968,7 @@ class ThreeDSceneToolsMixin:
     ) -> list[tuple[int, tuple[float, float, float], np.ndarray, str]]:
         bundle = scene_bundle if scene_bundle is not None else self._last_scene_bundle
         scene_paths = list(getattr(bundle, "ray_paths", []) or []) if bundle is not None else []
+        self._ray_display_suppressed_note = ""   # bugs/0737: re-stated per draw, never stale
         if scene_paths:
             live_step_preview = (
                 bundle is self.__dict__.get("_last_live_step_overlay_scene_bundle")
@@ -2980,15 +2981,20 @@ class ThreeDSceneToolsMixin:
             show_clipped_rays = bool(self.show_clipped_rays_var.get())
             if not show_clipped_rays and not live_step_preview:
                 visible_paths = [path for path in scene_paths if ray_path_visible_without_clipping_from_events(path)]
-                # bugs/0022: when the filter would hide EVERY ray, don't blank
-                # the trace. Moving an element off the beam (e.g. shifting the
-                # beam-splitter cube sideways) can make every path escape without
-                # reaching a surface AND without a reflective fold to keep it
-                # visible -- the on-axis beam now misses the (port-followed)
-                # detector. The user still expects to see where the beam goes, so
-                # only suppress clipped rays when at least one survives (the
-                # bug-0016 mixed case: hide strays among rays that DO land).
-                scene_paths = visible_paths if visible_paths else scene_paths
+                # bugs/0022 kept EVERY ray when the filter would hide them all, so the user
+                # would still see where the beam goes. bugs/0737 (user: "the clipped overlays
+                # is not ON, why showing the gray clipped rays?"): silently ignoring the switch
+                # reads as a broken toggle. Honour it -- and say where the rays went, so the
+                # empty scene explains itself instead of looking like a dead trace.
+                if visible_paths:
+                    scene_paths = visible_paths
+                else:
+                    hidden = len(scene_paths)
+                    scene_paths = []
+                    self._ray_display_suppressed_note = (
+                        f"No ray reaches the sensor: {hidden} clipped rays hidden "
+                        f"(Overlays -> Clipped to show them)"
+                    )
             total = len(scene_paths)
             draw_budget = (
                 _RAY_DRAW_BUDGET_CONE
