@@ -235,9 +235,22 @@ def run_checks(*, trials: int = 12, seed: int = 20260605) -> tuple[bool, list[st
         "missed_detector" in folded["statuses"] and "hit_detector" not in folded["statuses"],
         f"fold yields missed-sensor rays (statuses={folded['statuses']})",
     )
+    # bugs/0737 SUPERSEDES the pre-0016/0062 expectation here. This case is EVERY ray missing the
+    # sensor, and the old check only passed because bugs/0022 returned the whole bundle whenever
+    # the clipped filter hid them all -- which made the Clipped switch look broken and contradicted
+    # bugs/0554 ("a clipped ray is any ray not reaching the sensor"). With the switch OFF they now
+    # hide; the invariant that survives is NO SILENT DROP: turning Clipped ON still renders every
+    # traced path (asserted immediately below and in section 4), and the scene states where they
+    # went.
     _check(
-        folded["off"] == folded["paths"] > 0,
-        f"folded missed-sensor rays stay visible by default (off={folded['off']} paths={folded['paths']})",
+        folded["on"] == folded["paths"] > 0,
+        f"an all-missed fold: Clipped ON still renders every traced path -- no silent drop "
+        f"(on={folded['on']} paths={folded['paths']})",
+    )
+    _check(
+        folded["off"] == 0,
+        f"...and with Clipped OFF they hide, because not one of them reaches the sensor "
+        f"(off={folded['off']}, bugs/0737)",
     )
 
     # 3. Beam splitter: BOTH branches are real light paths. The transmit branch

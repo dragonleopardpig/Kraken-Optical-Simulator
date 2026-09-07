@@ -72,8 +72,20 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         src = ""
         notes.append(f"FAIL: cannot read _iter_3d_scene_ray_records source: {exc!r}")
         passed = False
-    if src and "visible_paths if visible_paths else scene_paths" not in src:
-        notes.append("FAIL: _iter_3d_scene_ray_records lost the all-hidden fallback (clipped filter can blank the trace)")
+    # bugs/0737 SUPERSEDES bugs/0022's blanket fallback. Returning every path whenever the filter
+    # hid them all made the Clipped switch look broken (user: "the clipped overlays is not ON, why
+    # showing the gray clipped rays?") and contradicted bugs/0554's own definition -- "a clipped
+    # ray is any ray not reaching the sensor". The switch is now honoured even when it hides
+    # everything; the no-silent-drop intent survives as a NOTE that says where the rays went, so
+    # an empty view is never a mystery.
+    if src and not ("if visible_paths:" in src and "_ray_display_suppressed_note" in src):
+        notes.append(
+            "FAIL: _iter_3d_scene_ray_records must honour the Clipped filter AND state where the "
+            "rays went (bugs/0737)"
+        )
+        passed = False
+    if src and "Overlays -> Clipped to show them" not in src:
+        notes.append("FAIL: the suppression note must tell the user how to see the hidden rays")
         passed = False
 
     if not PRESCRIPTION.exists():

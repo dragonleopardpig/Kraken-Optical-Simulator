@@ -356,7 +356,7 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
        "G4: the HUD reads the residual stash; the SOLVE-REFUSED banner formatter never does")
     penta = Path(__file__).with_name("validate_open3d_penta_telescope_comprehensive.py")
     try:
-        penta_src = penta.read_text()
+        penta_src = penta.read_text(encoding="utf-8")
     except Exception:
         penta_src = ""
     ok("phase_518_lens_move_thickness_pair" in penta_src

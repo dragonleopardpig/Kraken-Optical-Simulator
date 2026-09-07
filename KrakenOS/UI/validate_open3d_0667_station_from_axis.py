@@ -76,7 +76,7 @@ def _check_station_create_open(ok, notes) -> None:
             and Path(str(editor.current_layout_file)).resolve() == station.resolve(),
             f"A2: the created station is LOADED with the part on TOP ({editor.current_layout_file})",
         )
-        cell = json.loads(cell_json.read_text())
+        cell = json.loads(cell_json.read_text(encoding="utf-8"))
         ok(
             Path(cell["stations"]["top"]["layout"]).resolve() == station.resolve()
             and Path(cell["stations"]["front"]["layout"]).resolve() == seed.resolve(),

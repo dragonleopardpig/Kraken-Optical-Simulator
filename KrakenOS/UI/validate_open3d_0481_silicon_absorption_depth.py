@@ -245,7 +245,7 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     if not NOTEBOOK.exists():
         notes.append("SKIP: the JupyterLite notebook is absent")
     else:
-        source = NOTEBOOK.read_text()
+        source = NOTEBOOK.read_text(encoding="utf-8")
         check(
             "absorption_depth_for_power" in source
             and "absorption_depth_gain_per_decade" in source,

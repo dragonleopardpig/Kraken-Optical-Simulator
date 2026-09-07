@@ -35,7 +35,7 @@ FIRST_RA_ROWS = ("First RA mirror A", "First RA mirror B")
 
 
 def _scene_rows(path: Path) -> list[dict]:
-    src = path.read_text()
+    src = path.read_text(encoding="utf-8")
     rows, pos = [], 0
     while True:
         i = src.find("surfaces.append({", pos)
@@ -68,7 +68,7 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         notes.append(("PASS: " if condition else "FAIL: ") + message)
 
     # ---- A: the builder profile --------------------------------------------------------
-    src = BUILDER.read_text() if BUILDER.exists() else ""
+    src = BUILDER.read_text(encoding="utf-8") if BUILDER.exists() else ""
     m = re.search(r"^\s*ra = \[(.*)\]\s*$", src, re.M)
     legs = None
     if m:

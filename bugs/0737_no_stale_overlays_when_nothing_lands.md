@@ -50,3 +50,23 @@ Each face focuses sharply, but **6.8 mm apart along the beam** — so one can be
 sensor than the other. Equal geometric path with different conjugates points at unequal GLASS in
 the two arms (a ~20 mm glass difference would give ~6.8 mm of focus shift). Worth chasing with a
 proper ray count; the sample here is small (4 and 7 rays).
+
+## Addendum (2026-09-07) -- two guards were left pinning the OLD contract
+
+0737 was shipped without re-scoping the guards that asserted bugs/0022's blanket fallback, so the
+penta gate carried them as failures for the rest of the session and I twice reported them as
+"pre-existing, not mine". They were mine:
+
+* **Phase 25** (`validate_open3d_traced_rays_always_visible`) asserted that an all-missed FOLD keeps
+  every ray visible with Clipped OFF. That only ever passed *because* of the blanket fallback, and
+  it contradicts bugs/0554's own definition -- "a clipped ray is any ray not reaching the sensor".
+  Re-scoped to the surviving invariant: Clipped ON still renders every traced path (no silent
+  drop), and with it OFF they hide because not one reaches the sensor.
+* **Phase 31** (`validate_open3d_moved_element_rays_stay_visible`) matched the literal expression
+  `visible_paths if visible_paths else scene_paths`. Re-scoped to the 0737 contract: the filter is
+  honoured *and* the scene states where the rays went ("Overlays -> Clipped to show them"), so an
+  empty view is never a mystery.
+
+**Lesson:** a behaviour change is not shipped until the guards that pinned the old behaviour are
+re-scoped in the same commit. Both were caught only because a later gate run forced me to read
+every failure reason instead of trusting the earlier isolation.

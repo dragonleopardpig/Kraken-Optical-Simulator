@@ -62,7 +62,7 @@ def run_checks():
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "view.dxf"
         counts = write_dxf_r12(path, layers)
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
     a_problems = []
     for token in ("SECTION", "HEADER", "AC1009", "TABLES", "ENTITIES", "EOF"):
         if token not in text:

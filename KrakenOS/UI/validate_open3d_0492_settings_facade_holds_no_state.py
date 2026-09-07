@@ -52,12 +52,12 @@ def _delegating_facades() -> "list[tuple[str, str, str]]":
     found: list[tuple[str, str, str]] = []
     for path in sorted(SERVICES_DIR.glob("*.py")):
         try:
-            tree = ast.parse(path.read_text())
+            tree = ast.parse(path.read_text(encoding="utf-8"))
         except Exception:
             continue
         for cls in [n for n in tree.body if isinstance(n, ast.ClassDef)]:
             for fn in [n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == "__setattr__"]:
-                src = ast.get_source_segment(path.read_text(), fn) or ""
+                src = ast.get_source_segment(path.read_text(encoding="utf-8"), fn) or ""
                 if "setattr(self.editor" in src:
                     found.append((path.stem, cls.name, src))
     return found

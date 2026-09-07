@@ -182,7 +182,7 @@ def run_checks():
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "sheet.dxf"
         counts = write_dxf_r12(path, layers)
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
     if "\nTEXT" not in text or "\nFRONT" not in text:
         d_problems.append("TEXT entity / caption string missing")
     if "\n72\n1" not in text or "\n11\n12.0000" not in text:
