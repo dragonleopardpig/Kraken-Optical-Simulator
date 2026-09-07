@@ -2077,6 +2077,10 @@ class ParaxialToolsMixin:
         shot: moving the object gap shifts H', the image plane AND the focus by the same amount
         (the image delta is invariant), and sliding a fold prism along a leg moves ``h2_vertex_z``
         and ``ppp`` by equal and opposite amounts (the focus z is invariant)."""
+        # bugs/0727: say WHY this bails -- the caller's fallback text ("No real-image
+        # conjugate for that size (near the focal point?)") named neither the side that
+        # failed nor a number, and the user reasonably read it as a working-distance limit.
+        self._folded_conjugate_refusal = ""
         if self._folded_optical_solid_straight_equivalent_rows() is None:
             return None
         try:
@@ -2124,6 +2128,11 @@ class ParaxialToolsMixin:
             except Exception:
                 slide_available = False
             if not slide_available:
+                self._folded_conjugate_refusal = (
+                    f"for |m| {m:.4g} the lens must sit {object_delta:+.4g} mm along its leg "
+                    f"(object distance {object_distance:.4g} mm from the current geometry), but "
+                    f"there is no lens-leg slide to book it on."
+                )
                 return None
             self.append_debug(
                 f"folded gate: station-frame object distance {object_distance:.4f} <= 0 with a "
@@ -2151,6 +2160,13 @@ class ParaxialToolsMixin:
             except Exception:
                 frozen_world = False
             if not frozen_world:
+                self._folded_conjugate_refusal = (
+                    f"the OBJECT side is reachable ({object_delta:+.4g} mm of lens move), but the "
+                    f"IMAGE side is not: for |m| {m:.4g} the focused image lands {abs(image_delta):.4g} mm "
+                    f"{'in front of' if image_delta < 0 else 'behind'} the sensor, so the image gap would "
+                    f"be {image_distance:.4g} mm -- the sensor would have to sit inside the optics. The "
+                    f"camera is fixed, so re-solve from the loaded geometry or move the device stage."
+                )
                 return None
             self.append_debug(
                 f"folded gate: station-frame image distance {image_distance:.4f} <= 0 on a "

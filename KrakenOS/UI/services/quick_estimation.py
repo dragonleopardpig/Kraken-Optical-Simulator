@@ -1949,6 +1949,12 @@ class QuickEstimationService:
                     f"optics). The largest field it can image is about "
                     f"{fraction * 100.0:.0f}% of the size you entered."
                 )
+            # bugs/0727: prefer the folded solver's MEASURED reason (which side failed and by
+            # how much) over this generic text -- the user read "No real-image conjugate" as a
+            # working-distance limit when the object side was exactly right.
+            folded_reason = str(getattr(self.editor, "_folded_conjugate_refusal", "") or "").strip()
+            if folded_reason:
+                return False, f"No real-image conjugate for that size: {folded_reason}"
             return False, "No real-image conjugate for that size (near the focal point?)."
         object_distance, image_distance, mag = pair
         obj_row = self.object_thickness_row()
@@ -2984,6 +2990,41 @@ class QuickEstimationService:
         except Exception:
             pass
 
+    def _fov_already_delivered(self, sensor_semi: float, object_semi: float, *, tol: float = 0.005):
+        """bugs/0727: is the scene ALREADY delivering this field?
+
+        Returns ``(delivered_m, (width_mm, height_mm))`` when the current paraxial
+        magnification is within ``tol`` (relative) of the one the request needs, else None.
+        Idempotence belongs here rather than at the caller: every FOV solve path (normal,
+        forced, the device-dialog entry) goes through it, and the solve derives from the
+        CURRENT geometry -- so without this a repeat request re-derives the conjugate from a
+        scene that has already moved and refuses.
+        """
+        try:
+            target_m = abs(float(sensor_semi) / float(object_semi))
+        except (TypeError, ValueError, ZeroDivisionError):
+            return None
+        if not (target_m > 1e-9):
+            return None
+        try:
+            delivered = self.editor._current_finite_paraxial_magnification()
+        except Exception:
+            return None
+        try:
+            delivered_m = abs(float(delivered))
+        except (TypeError, ValueError):
+            return None
+        if not (delivered_m > 1e-9):
+            return None
+        if abs(delivered_m - target_m) > float(tol) * target_m:
+            return None
+        try:
+            dims = self.editor._current_camera_sensor_active_mm()
+            width, height = float(dims[0]) / delivered_m, float(dims[1]) / delivered_m
+        except Exception:
+            width = height = 2.0 * float(object_semi) / (2.0 ** 0.5)
+        return delivered_m, (width, height)
+
     def fov_solve(
         self,
         plane: str,
@@ -3017,6 +3058,21 @@ class QuickEstimationService:
         self.editor._fov_solve_refusal_info = None
         # bugs/0719: and the NON-banner focus-residual readout (lens at WD, sensor left
         # where the vendor put it) belongs to this solve too.
+        # bugs/0727: keep it first -- a solve that turns out to be a NO-OP (the field is
+        # already delivered) must not wipe the residual that still describes this geometry.
+        prior_focus_residual = self.editor.__dict__.get("_fov_solve_focus_residual_info")
+        # bugs/0727: a FORCED banner describes the geometry that is still on screen (the lens
+        # may still be penetrating). A no-op solve must not wipe it; a stale plain REFUSAL is
+        # cleared as before, because this solve owns the banner.
+        prior_forced_info = None
+        try:
+            from KrakenOS.UI.services.system_info_hud import solve_banner_outcome
+
+            _prior = self.editor.__dict__.get("_fov_solve_refusal_info")
+            if str(solve_banner_outcome(_prior)).startswith("forced"):
+                prior_forced_info = _prior
+        except Exception:
+            prior_forced_info = None
         self.editor._fov_solve_focus_residual_info = None
         if plane == "object":
             wh = self._sensor_wh(width, height, aspect)
@@ -3064,6 +3120,38 @@ class QuickEstimationService:
                 # (measured 27%). Book with the LEARNED measured correction so a re-solve of
                 # the same field is idempotent (phase 444 C4), then verify with real rays and
                 # update the correction.
+                # bugs/0727 (user: "make the solve idempotent"): re-solving a field the scene
+                # ALREADY delivers must be a no-op, not a fresh conjugate derivation. The solve
+                # reads the CURRENT geometry, so after a successful solve the lens is already at
+                # its |m| position and asking again makes the image-side term swing negative
+                # ("the sensor would sit inside the optics") -- measured on om05a: a second
+                # FOV 20x20 refused with "No real-image conjugate" while object_delta was
+                # exactly 0.0000 and the delivered field was 20.002 x 20.002 mm.
+                already = self._fov_already_delivered(float(sensor), float(semi))
+                if already is not None:
+                    self.editor._fov_solve_focus_residual_info = prior_focus_residual
+                    if prior_forced_info is not None:
+                        self.editor._fov_solve_refusal_info = prior_forced_info
+                    self.set_target_fov(semi)
+                    self._update_split_field_band_widths(obj_w)
+                    delivered_m, delivered_wh = already
+                    note = (
+                        f"Already delivering {delivered_wh[0]:.6g} x {delivered_wh[1]:.6g} mm "
+                        f"(|m| {delivered_m:.4g}) -- nothing to move"
+                        f"{' (nothing to force)' if force else ''}."
+                    )
+                    if isinstance(prior_focus_residual, dict) and prior_focus_residual.get("image_delta_mm") is not None:
+                        try:
+                            residual = float(prior_focus_residual["image_delta_mm"])
+                            verb = "shortened" if residual < 0.0 else "lengthened"
+                            note += (
+                                f" The focus residual from the solve that set it still applies: "
+                                f"the exact conjugate needs the object/sensor track {verb} by "
+                                f"{abs(residual):.4g} mm."
+                            )
+                        except (TypeError, ValueError):
+                            pass
+                    return True, note
                 correction = self._folded_m_correction()
                 ok, msg = self._apply_conjugate_pair(semi, float(sensor) / correction, force=force)
                 if ok:
