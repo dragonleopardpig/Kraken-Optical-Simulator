@@ -3080,7 +3080,11 @@ class QuickEstimationService:
             from KrakenOS.UI.services.system_info_hud import solve_banner_outcome
 
             _prior = self.editor.__dict__.get("_fov_solve_refusal_info")
-            if str(solve_banner_outcome(_prior)).startswith("forced"):
+            # bugs/0732: keep only a forced CRASH across a no-op -- that overlap is still on
+            # screen and must stay called out. A forced move that merely FITS is finished
+            # business, and repeating "FORCED SOLVE APPLIED" beside "the lens did not move"
+            # reads as a contradiction on a banner the user already finds intrusive.
+            if str(solve_banner_outcome(_prior)) == "forced_crash":
                 prior_forced_info = _prior
         except Exception:
             prior_forced_info = None
@@ -3172,6 +3176,24 @@ class QuickEstimationService:
                     return True, note
                 correction = self._folded_m_correction()
                 ok, msg = self._apply_conjugate_pair(semi, float(sensor) / correction, force=force)
+                # bugs/0732 (user: "There is no need to have additional click on Force, just do
+                # it"): a COLLISION refusal used to stop here and wait for the user to pick
+                # "Force FOV (show collision)" from a right-click menu. Apply it directly -- the
+                # banner already says the lens penetrates and by how much, and bugs/0718 defers
+                # the trace on a crashed geometry -- so the user sees the limit instead of a
+                # dead end. Only the room gate escalates; every other refusal stands.
+                if not ok and not force:
+                    room_refusal = str(self.editor.__dict__.get("_lens_move_refusal", "") or "")
+                    if "physical room is left before its body reaches" in room_refusal:
+                        forced_ok, forced_msg = self._apply_conjugate_pair(
+                            semi, float(sensor) / correction, force=True
+                        )
+                        if forced_ok:
+                            ok, msg = True, (
+                                "The field needs more room than the leg has, so the move was "
+                                "applied anyway (no Force click needed) -- inspect the overlap. "
+                                + forced_msg
+                            )
                 if ok:
                     if self.editor.__dict__.get("_fov_solve_focus_residual_info"):
                         # bugs/0719: the sensor was deliberately NOT moved to the conjugate

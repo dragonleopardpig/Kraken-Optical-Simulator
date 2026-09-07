@@ -8898,7 +8898,16 @@ class LayoutTableWorkbenchMixin:
         # collision, not to produce a valid trace, so redraw the BODIES only (defer the
         # ray trace). A normal solve traces as before.
         try:
-            self.refresh_plot(defer_trace=bool(force and ok))
+            # bugs/0732: the forced move can now happen WITHOUT force=True (an auto-applied
+            # collision), so defer the trace on what the solve actually did -- a crashed
+            # geometry hangs the non-sequential trace (bugs/0718).
+            from KrakenOS.UI.services.system_info_hud import solve_banner_outcome
+
+            crashed = solve_banner_outcome(self.__dict__.get("_fov_solve_refusal_info")) == "forced_crash"
+        except Exception:
+            crashed = False
+        try:
+            self.refresh_plot(defer_trace=bool(ok and (force or crashed)))
         except Exception:
             pass
         return bool(ok), note + str(msg)

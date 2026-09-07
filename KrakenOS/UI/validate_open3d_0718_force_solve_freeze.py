@@ -72,8 +72,13 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
 
     solve_src = inspect.getsource(LayoutTableWorkbenchMixin.solve_fov_to_inspection_face)
     ok(
-        "refresh_plot(defer_trace=bool(force and ok))" in solve_src,
-        "B2: a forced solve redraws BODIES only (defer_trace) -- no trace on the crash",
+        # bugs/0732 widened this: a collision now applies the forced move WITHOUT force=True,
+        # so the deferral follows the real outcome (solve_banner_outcome == "forced_crash").
+        # The invariant is unchanged -- a crashed geometry is never traced.
+        "refresh_plot(defer_trace=bool(ok and (force or crashed)))" in solve_src
+        and "solve_banner_outcome" in solve_src,
+        "B2: a forced solve -- whether the user asked for it or a collision auto-applied it -- "
+        "redraws BODIES only (defer_trace), so the crash is never traced",
     )
 
     # B3 is the fix that actually stopped the freeze: the 3D-inspector rebuild

@@ -873,6 +873,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # smoothly / to a precise step instead of the coarse auto placement-handle snap.
         self.carry_snap_mm_var = tk.StringVar(value="")
         self.show_rays_var = tk.BooleanVar(value=True)
+        # bugs/0732 (user: "the red banner is kind of static on the screen, blocking the view"):
+        # the solve/focus banner is a fixed viewport actor, so give it an off switch.
+        self.show_solve_banner_var = tk.BooleanVar(value=True)
         self.ray_pick_enabled_var = tk.BooleanVar(value=False)
         # bugs/0338: this checkbox is a selection-MODE switch. Default UNCHECKED so a
         # click picks a FACE or clear-aperture opening (the primary LED interaction);
@@ -18518,6 +18521,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if render:
             self.render()
 
+    def _on_solve_banner_toggled(self) -> None:
+        """bugs/0732: show/hide the in-scene solve+focus banner without touching the solve."""
+        self._update_solve_refusal_banner(render=True)
+
     def _update_solve_refusal_banner(self, *, render: bool = False) -> None:
         """bugs/0717 (user directive: "The UI shouldn't silently fail and display
         as though it is working"): when a FOV solve REFUSED, the scene looks
@@ -18550,6 +18557,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 )
             )
             text = "\n".join(lines)
+            try:
+                if not bool(self.show_solve_banner_var.get()):
+                    text = ""   # bugs/0732: dismissed by the user; the status line still carries it
+            except Exception:
+                pass
         except Exception:
             text = ""
             outcome = ""
@@ -18570,7 +18582,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 prop.SetColor(0.55, 0.04, 0.04)
                 try:
                     prop.SetBackgroundColor(1.0, 0.92, 0.90)
-                    prop.SetBackgroundOpacity(0.92)
+                    prop.SetBackgroundOpacity(0.78)   # bugs/0732: let the scene show through
                     prop.SetFrame(1)
                     prop.SetFrameColor(0.80, 0.10, 0.10)
                     prop.SetVerticalJustificationToTop()
@@ -22411,6 +22423,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         menu.add_command(
             label="Clear selection / hide handles (Esc)",
             command=self.cancel_active_3d_operation,
+        )
+        # bugs/0732: the solve/focus banner is a fixed viewport actor -- give it an off switch
+        # (the same text stays on the status line, so nothing is lost by hiding it).
+        menu.add_checkbutton(
+            label="Solve / focus banner",
+            variable=self.show_solve_banner_var,
+            command=self._on_solve_banner_toggled,
         )
         menu.add_separator()
         menu.add_command(label="3D image-plane analyses", state="disabled")
