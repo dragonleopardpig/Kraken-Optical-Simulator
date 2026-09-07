@@ -1450,6 +1450,7 @@ def focus_point_along_paths(polylines, directions, offset_mm, image_axis):
     axis = axis / axis_norm
     points: list[np.ndarray] = []
     locals_: list[np.ndarray] = []
+    axes: list[np.ndarray] = []
     for polyline, direction in zip(polylines, directions):
         pts = np.asarray(polyline, dtype=float).reshape(-1, 3)
         d = np.asarray(direction, dtype=float).reshape(3)
@@ -1461,14 +1462,34 @@ def focus_point_along_paths(polylines, directions, offset_mm, image_axis):
             continue
         remaining = abs(float(offset_mm)) / along
         landed = None
+        # bugs/0733 (user: "image location tilted"): the plane must be perpendicular to the
+        # AXIS of the leg it sits on, not to a ray. In a split-field design the beams enter the
+        # lens off-axis BY DESIGN, so no chief ray is parallel to the axis and orienting the
+        # plane by one tilted it against a sensor that is square to the axis. Transport the
+        # SENSOR normal back through the same folds the ray took: at a big turn the ray
+        # reflected about m = normalise(d_after - d_before), so reflect the running axis about
+        # the same m. A small turn is a refraction, which does not re-orient the leg.
+        transported = axis.copy()
+        previous_dir = None
         for k in range(pts.shape[0] - 1, 0, -1):
             seg = pts[k] - pts[k - 1]
             length = float(np.linalg.norm(seg))
             if length <= 1e-9:
                 continue
+            unit = seg / length
+            if previous_dir is not None:
+                turn = float(np.clip(unit @ previous_dir, -1.0, 1.0))
+                if turn < 0.866:  # > 30 degrees: a fold, not a refraction
+                    mirror = previous_dir - unit
+                    mirror_norm = float(np.linalg.norm(mirror))
+                    if mirror_norm > 1e-9:
+                        mirror = mirror / mirror_norm
+                        transported = transported - 2.0 * float(transported @ mirror) * mirror
+            previous_dir = unit
             if remaining <= length:
-                landed = pts[k] - seg / length * remaining
-                locals_.append(seg / length)
+                landed = pts[k] - unit * remaining
+                locals_.append(unit)
+                axes.append(transported.copy())
                 break
             remaining -= length
         if landed is not None:
@@ -1476,8 +1497,14 @@ def focus_point_along_paths(polylines, directions, offset_mm, image_axis):
     if not points:
         return None
     centre = np.mean(np.asarray(points, dtype=float), axis=0)
-    normal = np.mean(np.asarray(locals_, dtype=float), axis=0)
+    # the transported sensor normal is the leg's AXIS; the mean ray direction is the fallback
+    normal = np.mean(np.asarray(axes, dtype=float), axis=0) if axes else np.mean(
+        np.asarray(locals_, dtype=float), axis=0
+    )
     norm = float(np.linalg.norm(normal))
+    if not (norm > 1e-9):
+        normal = np.mean(np.asarray(locals_, dtype=float), axis=0)
+        norm = float(np.linalg.norm(normal))
     if not (norm > 1e-9):
         return None
     return centre, normal / norm

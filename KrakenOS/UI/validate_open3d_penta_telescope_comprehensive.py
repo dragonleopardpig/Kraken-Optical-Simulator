@@ -15925,6 +15925,10 @@ phase_531_auto_force_and_banner_toggle = _phase_from_standalone(
     531, "a collision applies the forced move without a second click (trace deferred on the real outcome), and the solve banner can be switched off (0732)",
     "KrakenOS.UI.validate_open3d_0732_auto_force_and_banner_toggle",
     "auto_force_and_banner_toggle")
+phase_532_focus_plane_square_to_the_axis = _phase_from_standalone(
+    532, "the focused-image plane is square to the AXIS (the sensor normal transported through the folds), not to an off-axis chief ray (0733)",
+    "KrakenOS.UI.validate_open3d_0733_focus_plane_square_to_the_axis",
+    "focus_plane_square_to_the_axis")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16522,6 +16526,7 @@ def main() -> int:
             phase_529_launch_on_the_object_face,
             phase_530_refuse_only_on_collision,
             phase_531_auto_force_and_banner_toggle,
+            phase_532_focus_plane_square_to_the_axis,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
