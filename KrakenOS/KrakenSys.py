@@ -405,6 +405,7 @@ class system():
         self._eee_stable_src = None
         self._ns_requires_branching_cache = None
         self._ns_intersection_policy_cache = None
+        self._ns_phantom_spacer_cache = None   # bugs/0738
         if not hasattr(self, "_scene_boundary_faces_by_surface"):
             self._scene_boundary_faces_by_surface = {}
         if not hasattr(self, "_scene_optical_volumes_by_surface"):
@@ -1499,6 +1500,120 @@ class system():
                 distance = np.min(np.asarray(h))
         return distance, int(len(A_SurfHit)), A_pTarget, A_SurfHit
 
+    def _ns_surface_has_solid_body(self, index):
+        """bugs/0738: does this row carry an imported CAD/STL body? Such a body meshes its own
+        entry, internal and exit faces, so IT performs every refraction and reflection of that
+        element -- no bare row placed after it can be one of its interfaces."""
+        try:
+            s = self.SDT[int(index)]
+        except Exception:
+            return False
+        stl = str(getattr(s, "Solid_3d_stl", "None") or "None").strip()
+        if stl not in ("None", ""):
+            return True
+        return bool(getattr(s, "OpticalSolidFaces", None))
+
+    @staticmethod
+    def _ns_surface_field_active(value):
+        """True when a surface field holds anything but its neutral default."""
+        try:
+            arr = np.asarray(value, dtype=float)
+        except Exception:
+            return bool(value)
+        return bool(arr.size) and bool(np.any(arr != 0.0))
+
+    def _ns_surface_is_bare_spacer(self, index):
+        """bugs/0738: a row with no body and no optical behaviour of its own -- flat, AIR,
+        uncoated, unmasked, no stop, no grating. In a SEQUENTIAL trace such a row contributes
+        nothing but its thickness."""
+        try:
+            s = self.SDT[int(index)]
+        except Exception:
+            return False
+        if self._ns_surface_has_solid_body(index):
+            return False
+        if int(float(getattr(s, "Surface_type", 0.0) or 0.0)) != 0:
+            return False
+        if str(getattr(s, "Glass", "") or "").strip().upper() not in ("AIR", ""):
+            return False
+        # a designated stop and a surrogate barrel wall (bugs/0179, bugs/0623) BLOCK, and a
+        # detector target COLLECTS -- none of them is a spacer however bare it looks
+        if bool(getattr(s, "IsApertureStop", False)) or bool(getattr(s, "HardApertureWall", False)):
+            return False
+        if bool(getattr(s, "IsDetector", False)):
+            return False
+        # bugs/0738 (penta 185/186): a DRAWN row is one the user sees and the display contract
+        # requires rays to meet ("every drawn row's X coincides with the ray's crossing"). Only
+        # invisible scaffolding is skipped. That is also where the harm is: an undrawn spacer can
+        # sit anywhere, including inside a glass body (om05a row 2 inside BS cube A), while a
+        # drawn one marks a real station -- a promoted solid's own rear face, met in AIR, where
+        # keeping it costs one vertex and changes nothing (measured on machine_vision_150mm_GN:
+        # identical path, identical glass, every ray still reaching the image).
+        if abs(float(getattr(s, "Drawing", 1.0) or 0.0)) > 1.0e-9:
+            return False
+        for attr in ("Rc", "k", "Axicon", "Thin_Lens", "Diff_Ord", "Grating_D", "InDiameter",
+                     "Mask_Type", "ShiftX", "ShiftY", "ZNK", "AspherData", "ExtraData",
+                     "Error_map", "Coating", "CoatingMet"):
+            if self._ns_surface_field_active(getattr(s, attr, 0.0)):
+                return False
+        if str(getattr(s, "UDA", "None") or "None").strip() not in ("None", ""):
+            return False
+        if dict(getattr(s, "DiffuseScatter", {}) or {}):
+            return False
+        if list(getattr(s, "SPECIAL_SURF_FUNC", []) or []):
+            return False
+        try:
+            if abs(float(getattr(s, "Cylinder_Rxy_Ratio", 1.0)) - 1.0) > 1.0e-12:
+                return False
+            if [float(v) for v in list(getattr(s, "SubAperture", [1, 0, 0]))[:3]] != [1.0, 0.0, 0.0]:
+                return False
+        except Exception:
+            return False
+        return True
+
+    def _ns_phantom_spacer_surfaces(self):
+        """bugs/0738: rows the NON-SEQUENTIAL chooser must never interact with.
+
+        Non-sequential mode meshes every row, so a bare spacer becomes a real disc a ray can
+        hit -- and the medium bookkeeping is row-ORDER based, not geometry based, so crossing
+        that disc reports the glass that FOLLOWS the spacer row. When the disc happens to lie
+        inside a glass body, the ray is declared to be in AIR for the rest of that body and the
+        body silently loses optical path.
+
+        Measured on om05a: arm A carries two ``air`` spacers between its solids where arm B
+        carries none. The row-2 disc falls INSIDE BS cube A, so arm A traced 17.770 mm of BK7
+        against arm B's 19.270 mm over an identical 114.907 mm of geometry -- two arms that are
+        symmetric to the micron, focusing apart.
+
+        A spacer only counts as phantom when the medium in front of it is owned by an optical
+        SOLID, because a solid meshes its own exit face. Where the medium comes from a classical
+        glass row instead, the bare AIR row IS that element's exit face (om05a's Filter row 13
+        hands off to row 14; every plano lens's flat back does the same) and must keep
+        refracting -- skipping it would trap the ray in glass forever.
+        """
+        cached = getattr(self, "_ns_phantom_spacer_cache", None)
+        if cached is not None:
+            return cached
+        count = len(self.SDT)
+        try:
+            last = int(self.n) - 1
+        except Exception:
+            last = count - 1
+        bare = [self._ns_surface_is_bare_spacer(k) for k in range(count)]
+        phantom = set()
+        for k in range(1, count):
+            if k >= last or not bare[k]:
+                continue                       # never the image/target row
+            owner = k - 1
+            while owner > 0 and bare[owner]:
+                owner -= 1                     # walk back over a run of spacers
+            if owner <= 0:
+                continue                       # the medium is the object's air; nothing to fix
+            if self._ns_surface_has_solid_body(owner):
+                phantom.add(int(k))
+        self._ns_phantom_spacer_cache = frozenset(phantom)
+        return self._ns_phantom_spacer_cache
+
     def __NonSequentialChooser(self, SIGN, A_RayOrig, ResVec, j, skip_surface=None):
         """__NonSequentialChooser.
 
@@ -1527,8 +1642,17 @@ class system():
                 skip_index = -1
         hit_counts = []
         hit_records = []
+        phantom = self._ns_phantom_spacer_surfaces()
         for k in range(1, len(self.EEE)):
-            if k == skip_index:
+            skip_this = (k == skip_index)
+            if not skip_this and phantom:
+                # bugs/0738: a bare spacer disc is not an optical interface -- hitting it would
+                # flip the medium mid-glass and drain optical path out of the body it sits in
+                try:
+                    skip_this = int(self.GlassOnSide[k]) in phantom
+                except Exception:
+                    skip_this = False
+            if skip_this:
                 chooser.append(99999999999999.9)
                 hit_counts.append(0)
                 hit_records.append((None, None))
@@ -1947,6 +2071,7 @@ class system():
         self._eee_stable_src = None
         self._ns_requires_branching_cache = None
         self._ns_intersection_policy_cache = None
+        self._ns_phantom_spacer_cache = None   # bugs/0738
         self.SuTo = SUT(self.SDT)
         self.Object_Num = np.arange(0, self.n, 1)
         self.__SurFuncSuscrip()
@@ -1965,6 +2090,7 @@ class system():
         self._eee_stable_src = None
         self._ns_requires_branching_cache = None
         self._ns_intersection_policy_cache = None
+        self._ns_phantom_spacer_cache = None   # bugs/0738
         self.__SurFuncSuscrip()
         self.Pr3D.Prerequisites3SMath()
         self.Pr3D.Prerequisites3D_UDA()
