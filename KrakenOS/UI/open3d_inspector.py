@@ -17996,6 +17996,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor.append_debug(f"Detector coverage overlays skipped: {exc}")
             return 0
 
+    def _add_infeasible_fov_ghost_overlay(self) -> int:
+        """bugs/0740: the ghost lens of a field request that could not be applied.
+
+        Drawn on EVERY refresh beside the solve banner, and NOT behind the detector-overlay
+        toggle: it is the visual half of a refusal, and a refusal the user has to switch on is
+        a refusal they will not see. It draws nothing unless a solve stashed a ghost.
+        """
+        try:
+            return self._detector_coverage_overlay_service().add_infeasible_fov_ghost()
+        except Exception as exc:  # pragma: no cover - defensive
+            self.editor.append_debug(f"Infeasible-FOV ghost skipped: {exc}")
+            return 0
+
     # -- scene-component browser hide/unhide -------------------------------
     def _set_actor_keys_visible(self, actor_keys, visible: bool) -> None:
         by_key = self.__dict__.get("_actor_by_key", {}) or {}

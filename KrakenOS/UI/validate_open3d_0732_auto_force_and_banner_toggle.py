@@ -48,18 +48,27 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         0 <= plain_at < escalate_at,
         "A1: the escalation runs AFTER the plain attempt (a solve that fits never forces)",
     )
+    # bugs/0740 SUPERSEDES the auto-force half of this bug. Applying an infeasible move destroys
+    # the working geometry: the crashed scene blocks the rays, bugs/0737 then correctly draws no
+    # focus plane, and the user gets "Crash + no image formed" from a scene that traced a moment
+    # earlier -- and a SAVED crash persists (om05a shipped with its lens 11.03 mm inside RA
+    # mirror 1, which made every later solve report a collision it had not caused). The branch
+    # still fires only on the room refusal; it now draws the request instead of applying it.
     ok(
-        "physical room is left before its body reaches" in solve,
-        "A2: it escalates only on the ROOM refusal -- the real collision, not any refusal",
+        'str(refusal_info.get("kind")) == "physical_room"' in solve,
+        "A2: it still acts only on the ROOM refusal -- the real collision, not any refusal -- "
+        "and detects it STRUCTURALLY, not by matching the refusal's prose (bugs/0740)",
+    )
+    window = solve[escalate_at: escalate_at + 2400]
+    ok(
+        "self.editor._fov_solve_ghost_info = self._infeasible_fov_ghost_info" in window
+        and "force=True" not in solve,
+        "A3: an infeasible field is DRAWN, not applied -- there is no forced move left anywhere "
+        "in the solve (bugs/0740)",
     )
     ok(
-        "force=True" in solve[escalate_at: escalate_at + 900]
-        and "no Force click needed" in solve,
-        "A3: it applies the forced move and says so",
-    )
-    ok(
-        solve[escalate_at: escalate_at + 900].count("if forced_ok:") == 1,
-        "A4: a forced attempt that itself fails leaves the original refusal standing",
+        "ok = False" in window,
+        "A4: and the solve still reports failure, so the refusal banner paints",
     )
 
     # ---- B: the trace deferral ------------------------------------------------------------------

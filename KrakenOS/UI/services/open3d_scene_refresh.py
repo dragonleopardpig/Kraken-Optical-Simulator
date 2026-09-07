@@ -1208,6 +1208,9 @@ class Open3DSceneRefreshService:
         try:
             self._update_system_info_hud()
             self._update_solve_refusal_banner()  # bugs/0717: survives every refresh
+            # bugs/0740: the banner's visual half -- the ghost lens of an infeasible request.
+            # Unconditional, like the banner: the picture is what the user actually reads.
+            self._add_infeasible_fov_ghost_overlay()
         except Exception:
             pass
         detector_overlay_ms = (time.perf_counter() - detector_overlay_start) * 1000.0

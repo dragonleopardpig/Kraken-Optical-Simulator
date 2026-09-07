@@ -8679,7 +8679,70 @@ class LayoutTableWorkbenchMixin:
                     polylines.get(key, []), buckets[key][1], info.get("offset_mm"), normal
                 )
                 if placed is not None:
-                    info["focus_center_world"] = [float(v) for v in placed[0]]
+                    plane_centre = np.asarray(placed[0], dtype=float).reshape(3)
+                    # bugs/0742 (user: "the image plane is shifted to the side from the Center of
+                    # the Sensor"): the walk above uses the WINNING FIELD's rays, and one field's
+                    # bundle lands wherever its own field point images -- off-axis. Walking it
+                    # back therefore puts the drawn plane off to the side of the beam (measured
+                    # on om05a: 11.62 mm, while all 644 landing rays centred on the sensor to
+                    # 0.000 mm). Keep the walk's ALONG-axis result and its transported normal --
+                    # both correct, and the fold handling is the whole point of bugs/0729 -- but
+                    # re-centre laterally on where the WHOLE beam lands. A beam that genuinely
+                    # lands off-centre still draws off-centre, because this follows the rays.
+                    try:
+                        every = np.concatenate(
+                            [np.asarray(b[0], dtype=float).reshape(-1, 3) for b in buckets.values()]
+                        ).mean(axis=0)
+                        # the ray that lands nearest the beam centre IS the axial one; walking
+                        # THAT back is the same real-path walk (so the fold handling of
+                        # bugs/0729 is untouched) but anchored on the beam instead of on one
+                        # field's off-axis bundle.
+                        best = (None, None, float("inf"))
+                        for bucket_key, (bucket_ends, _bucket_dirs) in buckets.items():
+                            arr = np.asarray(bucket_ends, dtype=float).reshape(-1, 3)
+                            gaps = np.linalg.norm(arr - every, axis=1)
+                            j = int(np.argmin(gaps))
+                            if float(gaps[j]) < best[2]:
+                                best = (bucket_key, j, float(gaps[j]))
+                        axial_key, axial_index, _gap = best
+                        if axial_key is not None:
+                            axial = focus_point_along_paths(
+                                [polylines[axial_key][axial_index]],
+                                [buckets[axial_key][1][axial_index]],
+                                info.get("offset_mm"),
+                                normal,
+                            )
+                            if axial is not None:
+                                moved = np.asarray(axial[0], dtype=float).reshape(3)
+                                if np.all(np.isfinite(moved)):
+                                    info["plane_recentre_mm"] = float(
+                                        np.linalg.norm(moved - plane_centre)
+                                    )
+                                    plane_centre = moved
+                    except Exception:
+                        pass
+                    # bugs/0742: if the walk crossed NO fold -- the transported normal came back
+                    # equal to the sensor's -- then the waist sits on the same straight leg as
+                    # the sensor, and the drawn rectangle belongs on the sensor's own axis. Any
+                    # lateral wander left at that point is the arrival ANGLE of whichever ray was
+                    # walked (om05a's split-field beams arrive ~10 deg off normal, which threw the
+                    # centre 3.85 mm in z), not a real sideways shift of the image.
+                    # When a fold WAS crossed the walked point is kept untouched: the waist really
+                    # is around the corner, which is the whole point of bugs/0729.
+                    try:
+                        unit = np.asarray(normal, dtype=float).reshape(3)
+                        unit = unit / float(np.linalg.norm(unit))
+                        transported = np.asarray(placed[1], dtype=float).reshape(3)
+                        transported = transported / float(np.linalg.norm(transported))
+                        if abs(abs(float(transported @ unit)) - 1.0) < 1.0e-9:
+                            delta = plane_centre - np.asarray(centre, dtype=float).reshape(3)
+                            plane_centre = (
+                                np.asarray(centre, dtype=float).reshape(3)
+                                + float(delta @ unit) * unit
+                            )
+                    except Exception:
+                        pass
+                    info["focus_center_world"] = [float(v) for v in plane_centre]
                     info["focus_normal_world"] = [float(v) for v in placed[1]]
         self._focused_image_plane_info = info
         return info

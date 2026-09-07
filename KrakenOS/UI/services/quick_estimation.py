@@ -701,6 +701,54 @@ class QuickEstimationService:
                     pass
 
     # --------------------------------------------------------------- readout
+    def _infeasible_fov_ghost_info(self, object_w, object_h):
+        """bugs/0740: what an INFEASIBLE field request would require, for the scene to DRAW.
+
+        The lens is not moved. This packages the refusal the move primitive already measured --
+        how far the field needs the lens, how much physical room exists, which vendor body is in
+        the way -- together with the field the lens delivers WHERE IT STANDS, so the viewer can
+        show three things at once: the bands you actually get, an outline of the field you asked
+        for, and a ghost lens at the demanded position, buried in the obstacle.
+
+        The user's objection to a text-only answer (which is why this exists): "if the lens stay
+        + Object FOV changed + Image detached, what is visually wrong? ... human being is
+        influence by picture stronger than words." A banner beside an unchanged-looking scene
+        reads as success. The ghost makes the impossibility visible.
+
+        Returns None when the refusal was not the physical-room one (every other refusal keeps
+        its own reporting).
+        """
+        info = self.editor.__dict__.get("_lens_move_refusal_info")
+        if not isinstance(info, dict) or str(info.get("kind")) != "physical_room":
+            return None
+        ghost = {
+            "requested_fov_wh": (float(object_w), float(object_h)),
+            "required_move_mm": info.get("required_mm"),
+            "room_mm": info.get("room_mm"),
+            "shortfall_mm": info.get("shortfall_mm"),
+            "obstacle": info.get("obstacle"),
+            "obstacle_row": info.get("obstacle_row"),
+            "leg_unit": info.get("leg_unit"),
+            "front": info.get("front"),
+            "rear": info.get("rear"),
+        }
+        # the field the lens delivers where it STANDS -- what the bands must be drawn at
+        try:
+            delivered_m = abs(float(self.editor._current_finite_paraxial_magnification()))
+        except Exception:
+            delivered_m = None
+        if delivered_m and delivered_m > 1.0e-9:
+            ghost["delivered_m"] = delivered_m
+            try:
+                sensor_w, sensor_h = self.editor._current_camera_sensor_active_mm()
+                ghost["delivered_fov_wh"] = (
+                    float(sensor_w) / delivered_m,
+                    float(sensor_h) / delivered_m,
+                )
+            except Exception:
+                pass
+        return ghost
+
     def _rectangular_target_magnification(self, object_w, object_h):
         """bugs/0735 (closing the reserved 0720): the |m| a RECTANGULAR field needs to fill a
         RECTANGULAR sensor -- ``min(Sw/W, Sh/H)``, the axis that runs out first.
@@ -3092,6 +3140,9 @@ class QuickEstimationService:
         # bugs/0717: a fresh solve owns the refusal banner -- clear any stale one so a
         # success wipes the alert and a refusal repaints it with THIS request's numbers.
         self.editor._fov_solve_refusal_info = None
+        # bugs/0740: the ghost belongs to THIS request too -- a solve that now fits must not
+        # leave a ghost lens standing in the scene from the previous one.
+        self.editor._fov_solve_ghost_info = None
         # bugs/0719: and the NON-banner focus-residual readout (lens at WD, sensor left
         # where the vendor put it) belongs to this solve too.
         # bugs/0727: keep it first -- a solve that turns out to be a NO-OP (the field is
@@ -3216,17 +3267,32 @@ class QuickEstimationService:
                 # the trace on a crashed geometry -- so the user sees the limit instead of a
                 # dead end. Only the room gate escalates; every other refusal stands.
                 if not ok and not force:
-                    room_refusal = str(self.editor.__dict__.get("_lens_move_refusal", "") or "")
-                    if "physical room is left before its body reaches" in room_refusal:
-                        forced_ok, forced_msg = self._apply_conjugate_pair(
-                            semi, float(sensor) / correction, force=True
+                    # bugs/0740: match the STRUCTURED refusal, not its prose. Keying on the
+                    # sentence broke the moment the sentence was reworded (the zero-room case
+                    # became "no physical room is left at all ...", which no longer contained
+                    # the substring, and the ghost silently stopped being drawn).
+                    refusal_info = self.editor.__dict__.get("_lens_move_refusal_info")
+                    is_room_refusal = (
+                        isinstance(refusal_info, dict)
+                        and str(refusal_info.get("kind")) == "physical_room"
+                    )
+                    if is_room_refusal:
+                        # bugs/0740 supersedes the bugs/0732 auto-force. Applying a move that
+                        # buries the lens in vendor hardware destroys the working geometry: the
+                        # crashed scene blocks the rays, so bugs/0737 then (correctly) draws no
+                        # focus plane, and the user is left with "Crash + no image formed" from
+                        # a scene that traced a moment earlier. Worse, a saved crash persists --
+                        # om05a shipped for a while with its lens 11.03 mm inside RA mirror 1,
+                        # which made every later solve report a collision it had not caused.
+                        #
+                        # So: keep the geometry. Draw the REQUEST instead of applying it --
+                        # a ghost lens where the field demands, visibly inside the obstacle
+                        # (user: "human being is influence by picture stronger than words").
+                        # Force stays available for when you WANT the collision in the scene.
+                        self.editor._fov_solve_ghost_info = self._infeasible_fov_ghost_info(
+                            obj_w, obj_h
                         )
-                        if forced_ok:
-                            ok, msg = True, (
-                                "The field needs more room than the leg has, so the move was "
-                                "applied anyway (no Force click needed) -- inspect the overlap. "
-                                + forced_msg
-                            )
+                        ok = False
                 if ok:
                     if self.editor.__dict__.get("_fov_solve_focus_residual_info"):
                         # bugs/0719: the sensor was deliberately NOT moved to the conjugate
@@ -3243,14 +3309,28 @@ class QuickEstimationService:
                     self.set_target_fov(semi)
                     self._update_split_field_band_widths(obj_w)
                     # bugs/0728: stash what this solve DID for the in-scene summary banner
-                    summary = {
-                        "requested_fov_wh": (float(obj_w), float(obj_h)),
-                        "delivered_fov_wh": (float(obj_w), float(obj_h)),
-                    }
+                    summary = {"requested_fov_wh": (float(obj_w), float(obj_h))}
+                    delivered_m = None
                     try:
-                        summary["delivered_m"] = float(self.editor._current_finite_paraxial_magnification())
+                        delivered_m = float(self.editor._current_finite_paraxial_magnification())
+                        summary["delivered_m"] = delivered_m
                     except Exception:
-                        pass
+                        delivered_m = None
+                    # bugs/0741: the DELIVERED field is what the optics IMAGE onto the sensor --
+                    # sensor / |m|, the same way the no-op path reports it -- not the field that
+                    # was asked for. Setting it equal to the request made a 50 x 1 mm device read
+                    # as "delivering 52.5 x 1.05 mm" while the lens was imaging 52.5 x 52.5 mm:
+                    # the banner understated the imaged height by 50x, and the two code paths
+                    # disagreed about the same scene.
+                    delivered_wh = None
+                    try:
+                        magnitude = abs(float(delivered_m))
+                        dims = self.editor._current_camera_sensor_active_mm()
+                        if magnitude > 1.0e-9:
+                            delivered_wh = (float(dims[0]) / magnitude, float(dims[1]) / magnitude)
+                    except (TypeError, ValueError, AttributeError):
+                        delivered_wh = None
+                    summary["delivered_fov_wh"] = delivered_wh or (float(obj_w), float(obj_h))
                     residual = self.editor.__dict__.get("_fov_solve_focus_residual_info")
                     if isinstance(residual, dict) and residual.get("lens_move_mm") is not None:
                         try:

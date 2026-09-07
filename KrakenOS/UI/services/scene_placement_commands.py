@@ -5004,6 +5004,7 @@ class ScenePlacementMixin:
         # clear the refusal channel BEFORE any early return (the bugs/0588 lesson)
         self._lens_move_refusal = ""
         self._lens_move_room_mm = None
+        self._lens_move_refusal_info = None   # bugs/0740: re-stated every attempt, never stale
         if not np.isfinite(amount) or abs(amount) <= 1.0e-9:
             return None
         try:
@@ -5125,10 +5126,32 @@ class ScenePlacementMixin:
         if not force:
             if room_phys is not None and abs(amount) > float(room_phys) + 1.0e-6:
                 self._lens_move_room_mm = float(room_phys)
+                # bugs/0740: the same numbers in structured form, so the solve can draw the
+                # request instead of applying it -- a GHOST lens at the position the field
+                # demands, visibly inside the obstacle. Text alone loses to the picture.
+                self._lens_move_refusal_info = {
+                    "kind": "physical_room",
+                    "required_mm": float(amount),
+                    "room_mm": float(room_phys),
+                    "shortfall_mm": float(abs(amount) - float(room_phys)),
+                    "obstacle": str(obstacle_name),
+                    "obstacle_row": room.get("obstacle_row"),
+                    "station_gap_mm": float(room_station),
+                    "leg_unit": tuple(float(v) for v in (room.get("leg_unit") or (0.0, 0.0, 1.0))),
+                    "front": int(front),
+                    "rear": int(rear),
+                }
+                # bugs/0740: an AABB clearance that lands on zero printed as "1.203e-11 mm",
+                # which reads like a measurement instead of "there is none".
+                _room_txt = (
+                    "no physical room is left at all"
+                    if abs(float(room_phys)) < 1.0e-3
+                    else f"only {float(room_phys):.4g} mm of physical room is left"
+                )
                 self._lens_move_refusal = (
-                    f"that field needs the lens {amount:+.4g} mm along its leg, but only "
-                    f"{float(room_phys):.4g} mm of physical room is left before its body reaches "
-                    f"{obstacle_name} (station gap {float(room_station):.4g} mm; short by "
+                    f"that field needs the lens {amount:+.4g} mm along its leg, but {_room_txt} "
+                    f"before its body reaches {obstacle_name} (station gap "
+                    f"{float(room_station):.4g} mm; short by "
                     f"{abs(amount) - float(room_phys):.4g} mm) -- a different lens / working "
                     f"distance, or Force FOV to SEE the collision."
                 )

@@ -94,9 +94,13 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     from KrakenOS.UI.services.scene_placement_commands import ScenePlacementMixin
 
     mover = inspect.getsource(ScenePlacementMixin.translate_lens_block_along_leg)
+    # bugs/0740 reworded the refusal (the zero-room case now reads "no physical room is left at
+    # all"), so pin the GATE, not its prose -- the sentence is not the contract.
     ok(
-        "of physical room is left before its body reaches" in mover and "return None" in mover,
-        "D1: the object-side physical-room gate (the real collision) still refuses",
+        '"kind": "physical_room"' in mover and "of physical room is left" in mover
+        and "return None" in mover,
+        "D1: the object-side physical-room gate (the real collision) still refuses, and stamps a "
+        "structured refusal the solve can act on",
     )
     ok(
         "Force FOV to SEE the collision" in mover,

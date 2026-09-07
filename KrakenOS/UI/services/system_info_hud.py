@@ -197,10 +197,14 @@ def format_solve_refusal_lines(info) -> list[str]:
             # so the shortfall is |need| - room -- the signed form printed "short by -333.5"
             # on the om05a refusal while the solve text said 13.8 mm.
             shortfall = abs(float(need)) - float(room)
+            # bugs/0740: an AABB clearance that lands on zero prints as "1.203e-11 mm", which
+            # reads like a measurement rather than "there is none". Below a micron it IS none.
+            room_mm = 0.0 if abs(float(room)) < 1.0e-3 else float(room)
+            room_text = "no room at all" if room_mm == 0.0 else f"room available {room_mm:.4g} mm"
             if shortfall > 0.0:
-                move += f"; room available {float(room):.4g} mm (short by {shortfall:.4g})"
+                move += f"; {room_text} (short by {shortfall:.4g} mm)"
             else:
-                move += f"; room available {float(room):.4g} mm"
+                move += f"; {room_text}"
         lines.append(move)
     delivered_m = info.get("delivered_m")
     delivered_fov = info.get("delivered_fov_wh")

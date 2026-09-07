@@ -35,6 +35,8 @@ _REQUIRED_RING = (1.0, 0.55, 0.1)           # amber dashed -- required image cir
 _OBJECT_FOV = (0.2, 0.9, 0.35)              # green -- object-plane FOV rectangle
 _SENSOR_FOOTPRINT = (0.98, 0.45, 0.05)      # amber -- vendor sensor square (bug 0031)
 _IMAGE_PLANE = (1.0, 0.0, 0.6)              # magenta -- best-focus image plane / defocus (item 2)
+_GHOST_COLLISION = (1.0, 0.22, 0.18)        # red -- bugs/0740: where an infeasible field
+                                            # would put the lens, and what it hits
 
 # Direct 3D label placement. Each label is anchored just outside its element on
 # the plane, at a distinct clock angle so the (billboarded) labels never overlap
@@ -1089,6 +1091,148 @@ class DetectorCoverageOverlayService:
                     count += 1
             elif self._label_actor(ip + np.array([0.0, stand, 0.0]), "image plane (in focus)", _IMAGE_PLANE):
                 count += 1
+        return count
+
+    def add_infeasible_fov_ghost(self) -> int:
+        """bugs/0740: draw the field request that could NOT be applied.
+
+        bugs/0732 used to apply an infeasible move anyway so the user would see the collision.
+        That destroyed the working geometry -- the crashed scene blocks the rays, bugs/0737 then
+        correctly draws no focus plane, and the result is "Crash + no image formed" from a scene
+        that traced a moment before. bugs/0740 keeps the geometry and draws the REQUEST instead:
+        a ghost lens barrel at the position the field demands, in collision red, sitting visibly
+        inside the vendor body that blocks it.
+
+        This is deliberately a PICTURE and not a banner line. The user, rejecting a text-only
+        answer: "if the lens stay + Object FOV changed + Image detached, what is visually wrong,
+        am I right? ... human being is influence by picture stronger than words." An unchanged
+        scene with a calm banner reads as success; a lens buried in a mirror does not.
+        """
+        ghost = getattr(self.editor, "_fov_solve_ghost_info", None)
+        if not isinstance(ghost, dict):
+            return 0
+        try:
+            shift = float(ghost.get("required_move_mm"))
+            unit = np.asarray(ghost.get("leg_unit"), dtype=float).reshape(3)
+        except (TypeError, ValueError, AttributeError):
+            return 0
+        if not np.isfinite(shift) or abs(shift) <= 1.0e-9 or not np.all(np.isfinite(unit)):
+            return 0
+        norm = float(np.linalg.norm(unit))
+        if norm <= 1.0e-12:
+            return 0
+        unit = unit / norm
+        try:
+            mesh = self.editor._transformed_imported_step_mesh_for_label("lens")
+            bounds = np.asarray(mesh.bounds, dtype=float).reshape(6)
+        except Exception:
+            return 0
+        if bounds.size != 6 or not np.all(np.isfinite(bounds)):
+            return 0
+        corners = np.array(
+            [[x, y, z] for x in bounds[0:2] for y in bounds[2:4] for z in bounds[4:6]],
+            dtype=float,
+        )
+        mu, mv = _basis(unit)
+        along = corners @ unit
+        radius = 0.5 * max(float(np.ptp(corners @ mu)), float(np.ptp(corners @ mv)))
+        if not (radius > 1.0e-6):
+            return 0
+        offset = unit * shift
+        centre = corners.mean(axis=0) + offset
+        front = centre + unit * (float(along.min()) - float(along.mean()))
+        rear = centre + unit * (float(along.max()) - float(along.mean()))
+        count = 0
+        for face in (front, rear):
+            if self._line_actor(_circle_points(face, mu, mv, radius), _GHOST_COLLISION, 2.0, True):
+                count += 1
+        for angle in (0.0, 0.5 * np.pi, np.pi, 1.5 * np.pi):
+            radial = mu * float(np.cos(angle)) + mv * float(np.sin(angle))
+            seg = np.asarray([front + radial * radius, rear + radial * radius], dtype=float)
+            if self._line_actor(seg, _GHOST_COLLISION, 2.0, True):
+                count += 1
+        requested = ghost.get("requested_fov_wh") or (None, None)
+        delivered = ghost.get("delivered_fov_wh") or (None, None)
+        lines = []
+        try:
+            lines.append(
+                f"lens would have to sit HERE for {float(requested[0]):.4g} x "
+                f"{float(requested[1]):.4g} mm"
+            )
+        except (TypeError, ValueError):
+            lines.append("lens would have to sit HERE for the requested field")
+        try:
+            lines.append(
+                f"{abs(float(ghost.get('shortfall_mm'))):.4g} mm INSIDE "
+                f"{ghost.get('obstacle')} -- not applied"
+            )
+        except (TypeError, ValueError):
+            lines.append(f"blocked by {ghost.get('obstacle')} -- not applied")
+        try:
+            lines.append(
+                f"this lens delivers {float(delivered[0]):.4g} x {float(delivered[1]):.4g} mm "
+                f"where it stands"
+            )
+        except (TypeError, ValueError):
+            pass
+        anchor = centre + mv * (radius + _LABEL_GAP)
+        if self._label_actor(anchor, "\n".join(lines), _GHOST_COLLISION):
+            count += 1
+        count += self._add_delivered_object_field(ghost)
+        return count
+
+    def _add_delivered_object_field(self, ghost) -> int:
+        """bugs/0740: draw what the optics DELIVER on the object plane, beside the field that
+        was asked for.
+
+        Setting the device face redraws the object FOV band whether or not the solve succeeded,
+        so after a refusal the scene shows the REQUESTED field as though it were being imaged.
+        That is the half of the picture that still read as "fine" -- the user, on the earlier
+        text-only proposal: "if the lens stay + Object FOV changed + Image detached, what is
+        visually wrong, am I right?"
+
+        So the delivered field goes on the same plane, concentric, in collision red: a bigger
+        (or smaller) rectangle around the green one, and the shortfall becomes a GAP you can see
+        rather than a sentence you have to read.
+        """
+        try:
+            delivered_w, delivered_h = ghost.get("delivered_fov_wh")
+            delivered_w = float(delivered_w)
+            delivered_h = float(delivered_h)
+        except (TypeError, ValueError):
+            return 0
+        if not (np.isfinite(delivered_w) and np.isfinite(delivered_h)
+                and delivered_w > 1.0e-6 and delivered_h > 1.0e-6):
+            return 0
+        bands = self._normalized_object_fov_bands()
+        if not bands:
+            # No authored bands (a plain scene): the barrel label already states the delivered
+            # field, and there is no band plane here to draw it on.
+            return 0
+        count = 0
+        labelled = False
+        for band in bands:
+            try:
+                centre = np.asarray(band["center"], dtype=float).reshape(3)
+                axis = np.asarray(band["axis"], dtype=float).reshape(3)
+            except (KeyError, TypeError, ValueError):
+                continue
+            norm = float(np.linalg.norm(axis))
+            if norm <= 1.0e-12:
+                continue
+            bu, bv = _basis(axis / norm)
+            points = _rect_points(centre, bu, bv, 0.5 * delivered_w, 0.5 * delivered_h)
+            if self._line_actor(points, _GHOST_COLLISION, 2.0, True):
+                count += 1
+            if labelled:
+                continue
+            # one label for the whole set: the delivered field is the same on every band, and
+            # two of them landed on top of each other (and on the bands' own labels)
+            label = centre - bu * (0.5 * delivered_w + _LABEL_GAP) + bv * (0.5 * delivered_h)
+            text = f"delivered {delivered_w:.4g} x {delivered_h:.4g} mm (not the requested field)"
+            if self._label_actor(label, text, _GHOST_COLLISION):
+                count += 1
+            labelled = True
         return count
 
 
