@@ -10,7 +10,21 @@ In-text exercises
 Exercise 6.1-1 — Measuring Stokes parameters
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-**Step 1 — Definitions and setup.**  Symbols are local to this item and follow the chapter convention.  Each physical quantity and supplied numerical value is introduced at its first use below; angles are in radians unless a degree symbol is shown, and units are retained through numerical substitution.
+**Step 1 — Definitions and setup.**  Send the light to a calibrated
+photodetector through
+
+* a rotatable ideal linear polarizer, and
+* a removable quarter-wave plate whose fast axis can also be rotated.
+
+The detector readings below are background-subtracted intensities.  Denote by
+:math:`I_H`, :math:`I_V`, :math:`I_D`, and :math:`I_A` the intensities passed
+by linear analysers at :math:`0^\circ`, :math:`90^\circ`, :math:`45^\circ`,
+and :math:`135^\circ`, respectively.  Denote by :math:`I_R` and :math:`I_L`
+the readings of right- and left-circular analysers.  The latter are made by
+placing the quarter-wave plate **before** the linear polarizer and setting its
+fast axis at :math:`+45^\circ` or :math:`-45^\circ` relative to the polarizer
+axis.  Which setting is called right-handed depends on the viewing and time
+convention; label it so that :math:`S_3=I_R-I_L`, as in this chapter.
 
 .. _fop-exercise-6-1-1-illustration:
 
@@ -24,25 +38,119 @@ Exercise 6.1-1 — Measuring Stokes parameters
    result, variable meanings, and an independent verification route. Every
    symbol in the variable strip is labeled on the model itself.
 
-**Step 2 — Mathematical formulas used.**  The working uses :ref:`algebraic rearrangement and dimensional checks <fop-formula-algebra>`.
+**Step 2 — Mathematical formulas used.**  For a linear analyser at angle
+:math:`\theta`, the transmitted intensity is
 
-**Step 3 — Worked derivation.**  The calculation is kept in symbolic form until the governing relation has been rearranged for the requested quantity.
+.. math::
+   :label: fop-exercise-6-1-1-linear-analyser
 
-Projecting :math:`(A_x,A_y)` on horizontal/vertical, :math:`\pm45^\circ`, and
-right/left circular analyser vectors gives
-:math:`S_0=I_x+I_y`, :math:`S_1=I_x-I_y`,
-:math:`S_2=I_{45}-I_{135}=2\Re(A_xA_y^*)`, and
-:math:`S_3=I_R-I_L=2\Im(A_xA_y^*)` with the book's handedness sign.
+   I_{\mathrm{lin}}(\theta)
+   =\frac{1}{2}\left(S_0+S_1\cos 2\theta+S_2\sin 2\theta\right).
 
-**Step 4 — State the numbered result.**  The principal result obtained in the working is
+The two circular-analyser readings are
+
+.. math::
+   :label: fop-exercise-6-1-1-circular-analyser
+
+   I_R=\frac{1}{2}(S_0+S_3),
+   \qquad
+   I_L=\frac{1}{2}(S_0-S_3).
+
+A rotating linear polarizer alone can therefore determine :math:`S_0`,
+:math:`S_1`, and :math:`S_2`, but not :math:`S_3`: the quarter-wave plate is
+what converts circular polarization (the quadrature component) into a linear
+intensity difference.
+
+**Step 3 — Worked derivation.**  Keep the incident beam power constant while
+recording the following six settings.  A six-state measurement is slightly
+redundant, but the redundancy exposes source drift and analyser errors.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 18 34 48
+
+   * - Reading
+     - Optics before the detector
+     - Information supplied
+   * - :math:`I_H`
+     - Linear polarizer at :math:`0^\circ`
+     - :math:`I_H=(S_0+S_1)/2`
+   * - :math:`I_V`
+     - Linear polarizer at :math:`90^\circ`
+     - :math:`I_V=(S_0-S_1)/2`
+   * - :math:`I_D`
+     - Linear polarizer at :math:`45^\circ`
+     - :math:`I_D=(S_0+S_2)/2`
+   * - :math:`I_A`
+     - Linear polarizer at :math:`135^\circ`
+     - :math:`I_A=(S_0-S_2)/2`
+   * - :math:`I_R`
+     - Quarter-wave plate and polarizer set as a right-circular analyser
+     - :math:`I_R=(S_0+S_3)/2`
+   * - :math:`I_L`
+     - Quarter-wave plate and polarizer set as a left-circular analyser
+     - :math:`I_L=(S_0-S_3)/2`
+
+Subtracting each orthogonal pair isolates one signed Stokes component, while
+adding either member pair gives the total intensity:
+
+.. math::
+   :label: fop-exercise-6-1-1-six-state-reconstruction
+
+   \begin{aligned}
+   S_0 &= I_H+I_V,\\
+   S_1 &= I_H-I_V,\\
+   S_2 &= I_D-I_A,\\
+   S_3 &= I_R-I_L.
+   \end{aligned}
+
+Ideally, :math:`I_H+I_V=I_D+I_A=I_R+I_L`.  In a real experiment, use the
+average of these three sums for a lower-noise estimate of :math:`S_0`, after
+correcting the channels for detector gain and optical throughput.
+
+**Step 4 — State the numbered result.**  The requested method returns the
+complete Stokes vector
 
 .. math::
    :label: fop-exercise-6-1-1-result
 
-   S_3=I_R-I_L=2\Im(A_xA_y^*)
+   \boxed{
+   \mathbf S=
+   \begin{bmatrix}S_0\\S_1\\S_2\\S_3\end{bmatrix}
+   =
+   \begin{bmatrix}
+   I_H+I_V\\
+   I_H-I_V\\
+   I_D-I_A\\
+   I_R-I_L
+   \end{bmatrix}}
 
+This works for fully, partially, or unpolarized stationary light; it does not
+require the light to possess a Jones vector.  If only the minimum number of
+readings is desired, measure :math:`I_H`, :math:`I_V`, :math:`I_D`, and
+:math:`I_R`.  Then use :math:`S_0=I_H+I_V`,
+:math:`S_1=I_H-I_V`, :math:`S_2=2I_D-S_0`, and
+:math:`S_3=2I_R-S_0`.  The six-reading method is normally preferable because
+each component is formed from a balanced difference.
 
-**Step 5 — Check.**  Equation :eq:`fop-exercise-6-1-1-result` can be checked by substituting it back into the preceding governing relation and reversing the algebraic steps.  Check that dimensions agree term by term, then test the simplest symmetry or limiting case for the expected sign and scale.  Repeat the substitution with unrounded intermediate values and retain the displayed units; the final unit must have the requested dimension.
+**Step 5 — Check.**  A physical Stokes vector must satisfy
+
+.. math::
+   :label: fop-exercise-6-1-1-physicality
+
+   S_0\geq 0,
+   \qquad
+   S_1^2+S_2^2+S_3^2\leq S_0^2.
+
+The degree of polarization is
+:math:`P=\sqrt{S_1^2+S_2^2+S_3^2}/S_0`, so :math:`0\leq P\leq1`.
+Useful calibration states are horizontal linear light,
+:math:`(S_0,S_0,0,0)`, :math:`45^\circ` linear light,
+:math:`(S_0,0,S_0,0)`, and right-circular light,
+:math:`(S_0,0,0,S_0)` in the adopted handedness convention.  If the source
+fluctuates appreciably during sequential readings, split the beam into six
+simultaneous analyser channels, or monitor its power with a reference
+detector and normalize every reading before taking the differences.
 
 Exercise 6.1-2 — Cascaded quarter-wave plates
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
