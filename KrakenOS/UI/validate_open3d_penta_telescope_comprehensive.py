@@ -15991,6 +15991,10 @@ phase_543_a_sharp_field_is_a_focused_field = _phase_from_standalone(
     543, "a field ALREADY at focus is a focus measurement, and nine rays are not evidence: the per-field vote was purely relative, so it rejected arm B's sharp 101-ray field (0.73um waist vs 0.83um at the sensor -- it cannot tighten by 2x) and accepted a 9-ray field blurred everywhere (2846um vs 8855um), putting the drawn plane 105.37 mm out while the mirror-image arm read -0.05 mm (0753)",
     "KrakenOS.UI.validate_open3d_0753_a_sharp_field_is_a_focused_field",
     "a_sharp_field_is_a_focused_field")
+phase_544_name_the_field_that_lands = _phase_from_standalone(
+    544, "a solve that leaves a focus residual NAMES the field that would land: a fixed track focuses exactly two magnifications, and asking a 30 mm device to fill the sensor (|m| 0.7314) detached the image by 65.75 mm while the track's own focused field (|m| 0.4262, 54.05 mm) went unmentioned -- the scene reported a failure with no way out (0754)",
+    "KrakenOS.UI.validate_open3d_0754_name_the_field_that_lands",
+    "name_the_field_that_lands")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16600,6 +16604,7 @@ def main() -> int:
             phase_541_pinned_placement_audit,
             phase_542_one_focus_plane_per_image,
             phase_543_a_sharp_field_is_a_focused_field,
+            phase_544_name_the_field_that_lands,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

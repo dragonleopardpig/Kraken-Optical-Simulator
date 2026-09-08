@@ -1905,6 +1905,8 @@ class QuickEstimationService:
                         "station_object_gap_mm": float(folded["object_distance"]),
                         "target_m": float(folded.get("magnitude", 0.0) or 0.0),
                         "reason": why,
+                        # bugs/0754: say what WOULD land, not only how far this misses
+                        "in_focus_fields": self._in_focus_fields_at_current_track(),
                     }
                     self.editor.append_debug(
                         "folded solve (bugs/0719): lens at WD ({moved:+.4f} mm along its leg); "
@@ -3046,6 +3048,88 @@ class QuickEstimationService:
             f"({100.0 * error:+.1f}% after {int(self._FIELD_FILL_MAX_PASSES)} passes -- the "
             "folded first order disagrees with the traced machine; bugs/0591)."
         )
+
+    def _in_focus_fields_at_current_track(self, *, samples: int = 240) -> "list[dict]":
+        """bugs/0754: which object field does the CURRENT track actually focus?
+
+        A fixed track focuses exactly TWO magnifications -- the reciprocal pair of
+        f(2 + m + 1/m) = K -- and the FOV solve delivers whatever field was asked for and then
+        reports how far the image misses (bugs/0719). That tells the user their request failed
+        but not what would succeed. Flag 20260908_133248_992: "Device size 30mm ... Why the
+        image is not landed on the sensor? I need a configuration to land the image on the
+        sensor." A 30 mm device at full sensor fill needs |m| 0.7314; this track focuses
+        |m| 0.4260. Nothing in the scene said so.
+
+        Solved on the SAME first-order model the solve itself uses
+        (:meth:`_folded_conjugate_gaps_for_magnification`), so the two readouts cannot
+        disagree: scan |m| for sign changes of ``image_delta`` and bisect each one. Returns
+        ``[{"m", "field_w_mm", "field_h_mm"}]`` ordered by field, [] when the model cannot be
+        evaluated. Pure + display-free: no trace, no geometry written.
+        """
+        import numpy as np
+
+        def image_delta(magnitude):
+            try:
+                folded = self.editor._folded_conjugate_gaps_for_magnification(float(magnitude))
+            except Exception:
+                return None
+            if not isinstance(folded, dict):
+                return None
+            try:
+                value = float(folded["image_delta"])
+            except (KeyError, TypeError, ValueError):
+                return None
+            return value if np.isfinite(value) else None
+
+        grid = np.geomspace(0.05, 20.0, max(16, int(samples)))
+        sampled = [(float(m), image_delta(m)) for m in grid]
+        sampled = [(m, d) for m, d in sampled if d is not None]
+        if len(sampled) < 2:
+            return []
+        roots: "list[float]" = []
+        for (m_lo, d_lo), (m_hi, d_hi) in zip(sampled, sampled[1:]):
+            if d_lo == 0.0:
+                roots.append(m_lo)
+                continue
+            if d_lo * d_hi >= 0.0:
+                continue
+            lo, hi, f_lo = m_lo, m_hi, d_lo
+            for _ in range(60):
+                mid = 0.5 * (lo + hi)
+                d_mid = image_delta(mid)
+                if d_mid is None:
+                    break
+                if f_lo * d_mid <= 0.0:
+                    hi = mid
+                else:
+                    lo, f_lo = mid, d_mid
+            roots.append(0.5 * (lo + hi))
+        if not roots:
+            return []
+        try:
+            dims = self.editor._current_camera_sensor_active_mm()
+            width, height = float(dims[0]), float(dims[1])
+        except Exception:
+            return []
+        if not (width > 1.0e-9 and height > 1.0e-9):
+            return []
+        fields = []
+        for m in roots:
+            if not (m > 1.0e-9):
+                continue
+            fields.append(
+                {
+                    "m": float(m),
+                    "field_w_mm": float(width / m),
+                    "field_h_mm": float(height / m),
+                }
+            )
+        # de-duplicate roots the scan found twice, then largest field first
+        unique: "list[dict]" = []
+        for entry in sorted(fields, key=lambda e: -e["field_w_mm"]):
+            if all(abs(entry["m"] - kept["m"]) > 1.0e-6 for kept in unique):
+                unique.append(entry)
+        return unique
 
     def _update_split_field_band_widths(self, width) -> None:
         """bugs/0704 (flag 110804 "Let user to input required FOV as usual"): the

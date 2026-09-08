@@ -127,6 +127,23 @@ def format_focus_residual_lines(info) -> list[str]:
             f"Focus residual: the exact conjugate needs the object/sensor track {verb} by "
             f"{abs(float(residual)):.4g} mm (device stage / camera focus is your call)"
         )
+    # bugs/0754 (flag 20260908_133248_992, user: "Why the image is not landed on the sensor?
+    # I need a configuration to land the image on the sensor"): the residual says how far this
+    # misses; a fixed track focuses exactly two magnifications, so NAME them. Without this the
+    # scene reports a failure and no way out.
+    for entry in list(info.get("in_focus_fields") or []):
+        if not isinstance(entry, dict):
+            continue
+        try:
+            field_w = float(entry["field_w_mm"])
+            field_h = float(entry["field_h_mm"])
+            magnitude = float(entry["m"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        lines.append(
+            f"This track DOES focus a {field_w:.4g} x {field_h:.4g} mm object field "
+            f"(|m| {magnitude:.4g}) -- ask for that and the image lands on the sensor"
+        )
     moved = info.get("lens_move_mm")
     tail = "Lens at WD"
     if moved is not None:
