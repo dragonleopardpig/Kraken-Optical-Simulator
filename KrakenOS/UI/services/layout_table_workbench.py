@@ -8674,6 +8674,11 @@ class LayoutTableWorkbenchMixin:
         # its OWN landing centre (axial ray 0.0003 mm INSIDE the light) and the two planes come
         # back symmetric. A scene with a single image partitions into one group and is
         # unchanged.
+        # bugs/0757: recover the per-field decomposition the launch may have collapsed, before
+        # anything measures a waist on it.
+        buckets, polylines, launches = self._split_pooled_field_buckets(
+            buckets, polylines, launches
+        )
         measured: "list[dict]" = []
         for image_name, group_keys in self._focus_image_partitions(buckets, launches):
             entry = self._measure_one_focus_image(
@@ -8716,6 +8721,58 @@ class LayoutTableWorkbenchMixin:
                 )
         self._focused_image_plane_info = info
         return info
+
+    def _split_pooled_field_buckets(self, buckets, polylines, launches, *, min_rays: int = 4,
+                                    max_groups: int = 64):
+        """bugs/0757: a bucket that pools SEVERAL field points is not a field group.
+
+        bugs/0728 groups rays by field precisely because "rays from different field points stay
+        separated by the image height at every plane, so a least-squares waist over the whole
+        bundle would minimise the IMAGE SIZE, not the blur". That relies on the launch stamping
+        one ``field_index`` per field. Measured on om05a after a stage solve, the mirrored
+        second arm (bugs/0696) arrived as ONE index carrying all 318 rays from three distinct
+        field points, so its "waist" was the image-height minimisation: arm B read -95.35 mm
+        with a 3865 um waist while arm A -- identical |m| to six digits -- read -0.02 mm with a
+        0.055 um waist.
+
+        Rather than depend on an upstream index that can collapse, recover the decomposition
+        from the rays themselves: a bucket whose launch points fall on a SMALL number of
+        distinct positions is split into one group per position. A source that launches from a
+        continuum (a random-area emitter) has as many positions as rays, exceeds
+        ``max_groups`` and is left exactly as it was, so bugs/0728's pooled fallback still
+        covers it. Pure + display-free.
+        """
+        import numpy as np
+
+        out_buckets, out_polylines, out_launches = {}, {}, {}
+        for key, value in buckets.items():
+            ends, dirs = value
+            points = list(launches.get(key) or [])
+            polys = list(polylines.get(key) or [])
+            if len(points) != len(ends) or len(polys) != len(ends):
+                out_buckets[key] = value
+                out_polylines[key] = polys
+                out_launches[key] = points
+                continue
+            groups: "dict[tuple, list[int]]" = {}
+            for index, point in enumerate(points):
+                try:
+                    stamp = tuple(np.round(np.asarray(point, dtype=float).reshape(3), 3))
+                except Exception:
+                    stamp = (index,)
+                groups.setdefault(stamp, []).append(index)
+            well_sampled = sum(1 for idxs in groups.values() if len(idxs) >= int(min_rays))
+            if len(groups) < 2 or len(groups) > int(max_groups) or well_sampled < 2:
+                out_buckets[key] = value
+                out_polylines[key] = polys
+                out_launches[key] = points
+                continue
+            for stamp, idxs in groups.items():
+                sub = tuple(key) + (stamp,)
+                out_buckets[sub] = ([ends[i] for i in idxs], [dirs[i] for i in idxs])
+                out_polylines[sub] = [polys[i] for i in idxs]
+                out_launches[sub] = [points[i] for i in idxs]
+        return out_buckets, out_polylines, out_launches
 
     def _focus_image_partitions(self, buckets, launches) -> "list[tuple[str, list]]":
         """bugs/0752: which landing bundles belong to the SAME image?

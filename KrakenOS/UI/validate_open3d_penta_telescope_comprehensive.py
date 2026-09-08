@@ -15999,6 +15999,10 @@ phase_545_camera_focus_stage = _phase_from_standalone(
     545, "verify the focus root you report, and let the camera's own leg be the third conjugate variable: the 0754 line printed a 96.89 mm field where image_delta was -15.53 (an unverified bracket in a region the model flags unreachable, measured after the solve had already moved the lens), and the solve refused the C2 write it had itself computed because a camera STEP is glued to the sensor -- the body is immutable, its position on a stage is not (0755/0756)",
     "KrakenOS.UI.validate_open3d_0756_camera_focus_stage",
     "camera_focus_stage")
+phase_546_split_pooled_field_buckets = _phase_from_standalone(
+    546, "a bucket that pools SEVERAL field points is not a field group: the mirrored second arm arrived as one index carrying all 318 rays from three field points, so its least-squares waist measured the IMAGE HEIGHT (3865 um) and drew the focus plane 95.35 mm out while the mirror-image arm -- identical |m| to six digits -- read -0.02 mm; the decomposition is now recovered from the launch points instead of a collapsible upstream index (0757)",
+    "KrakenOS.UI.validate_open3d_0757_split_pooled_field_buckets",
+    "split_pooled_field_buckets")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16610,6 +16614,7 @@ def main() -> int:
             phase_543_a_sharp_field_is_a_focused_field,
             phase_544_name_the_field_that_lands,
             phase_545_camera_focus_stage,
+            phase_546_split_pooled_field_buckets,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
