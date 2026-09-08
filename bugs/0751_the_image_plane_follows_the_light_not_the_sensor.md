@@ -18,10 +18,8 @@ Measured on the same traced bundle, 30 mm device, offset -54.898 mm:
 | **no translation** (walk the ray where it is) | **0.0000 mm** | 7.5251 mm |
 
 The translation did not remove a 7.5 mm error, it MOVED one: off the sensor axis, onto the light,
-and back again. And the version it produced is the wrong one, because that 7.5 mm is REAL --
-at this conjugate the bundle genuinely lands off-centre (landing centroid 3.335 mm from the sensor
-centre, the axial ray 7.502 mm). Drawing the rectangle centred hid a true lateral image shift
-behind a display-only nudge, which is exactly what
+and back again. Drawing the rectangle centred hid the shift behind a display-only nudge instead of
+fixing it, which is exactly what
 [[feedback_display_follows_physics]] forbids ("draw from the same transform the trace uses; never a
 display-only nudge") and what bugs/0728 established ("a missed ray must visibly MISS").
 
@@ -33,11 +31,19 @@ from the traced beam**.
 
 Verified: penta 527, 528, 532, 538, 540, 541 all pass.
 
-## What the user is actually seeing
+## CORRECTED by bugs/0752 -- the 7.5 mm was NOT real
 
-With the plane back on the light, the sideways offset it draws is information, not an artefact:
-at a 30 mm device on this bench the image forms about **7.5 mm off the sensor centre** as well as
-54.9 mm in front of it. The overlay is reporting a real property of the configuration.
+This section originally read: "the sideways offset it draws is information, not an artefact -- at a
+30 mm device the image forms about 7.5 mm off the sensor centre. The overlay is reporting a real
+property of the configuration."
+
+That was wrong, and the user caught it: *"everything is symmetry, A and B sides, I can't figure out
+how to make an Image Plane off-centered."* They were right. Measured, the two arms land at
+v = +5.3474 and v = -5.3474 mm, summing to -0.00000 mm -- the optics is exactly symmetric.
+
+The 7.5 mm came from anchoring on a centre POOLED over both arms, which on a split field falls in
+the dark ridge between the two strips where no ray lands (nearest ray 4.5059 mm away). See
+bugs/0752. The revert in this document stands; only its interpretation of the residual was wrong.
 
 The remaining ~54 mm of apparent displacement is the FOLD: the waist is 54.9 mm back along the beam
 and the last straight leg into the sensor is shorter than that, so it genuinely sits up the

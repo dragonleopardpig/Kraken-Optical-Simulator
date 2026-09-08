@@ -8593,12 +8593,10 @@ class LayoutTableWorkbenchMixin:
         grouped by launch point (one group per field point) because a pooled least-squares
         waist would minimise the IMAGE HEIGHT rather than the blur. Stashed on the editor as
         ``_focused_image_plane_info`` for the overlay and the banner; None clears it.
-        """
-        from KrakenOS.UI.services.detector_coverage_overlay import (
-            focus_point_along_paths,
-            focus_waist_from_grouped_rays,
-        )
 
+        bugs/0752: the per-image measurement itself lives in :meth:`_measure_one_focus_image`;
+        this method decides HOW MANY images a scene forms and stitches the results together.
+        """
         self._focused_image_plane_info = None
         # bugs/0737 (user: "So there is no best focus image plane?"): when the plane cannot be
         # measured, say why instead of drawing nothing and leaving the user guessing.
@@ -8621,6 +8619,7 @@ class LayoutTableWorkbenchMixin:
             return None
         buckets: "dict[tuple, tuple[list, list]]" = {}
         polylines: "dict[tuple, list]" = {}
+        launches: "dict[tuple, list]" = {}   # bugs/0752: which field band each bundle came from
         for path in list(getattr(scene_bundle, "ray_paths", []) or []):
             # the scene builder stamps "image" for a ray that lands on the detector
             # (scene_builder.py:1699/3363); "target_termination" is the older spelling some
@@ -8650,6 +8649,7 @@ class LayoutTableWorkbenchMixin:
             ends.append(pts[-1, :3])
             dirs.append(step)
             polylines.setdefault(key, []).append(pts[:, :3])
+            launches.setdefault(key, []).append(pts[0, :3])
         if not buckets:
             reasons: "dict[str, int]" = {}
             for path in list(getattr(scene_bundle, "ray_paths", []) or []):
@@ -8662,99 +8662,34 @@ class LayoutTableWorkbenchMixin:
                     f"({worst})"
                 )
             return None
-        keys = list(buckets.keys())
-        info = focus_waist_from_grouped_rays(
-            [buckets[key] for key in keys], image_point=centre, image_axis=normal
-        )
-        if isinstance(info, dict):
+        # bugs/0752 (user: "everything is symmetry, A and B sides, I can't figure out how to
+        # make an Image Plane off-centered"): a split-field scene forms MORE THAN ONE image on
+        # one sensor, and a single pooled "beam centre" describes neither. Measured on
+        # om05a_folded_80mm: the two device faces land at v = +5.3474 and -5.3474 mm, symmetric
+        # to 0.00008 mm -- the optics is exact, exactly as the user said. But the pooled centre
+        # of BOTH arms is v = 0.0000, the dark ridge BETWEEN the two strips, 4.5059 mm from the
+        # nearest ray; the "axial" ray picked there was an EDGE ray of whichever arm won an
+        # exact tie (4.5059 mm either way, broken by dict iteration order), and the plane was
+        # dragged 14.31 mm onto it. Measure one image per field band instead: each anchors on
+        # its OWN landing centre (axial ray 0.0003 mm INSIDE the light) and the two planes come
+        # back symmetric. A scene with a single image partitions into one group and is
+        # unchanged.
+        measured: "list[dict]" = []
+        for image_name, group_keys in self._focus_image_partitions(buckets, launches):
+            entry = self._measure_one_focus_image(
+                group_keys, buckets, polylines, centre, normal, name=image_name
+            )
+            if entry is not None:
+                measured.append(entry)
+        info = None
+        if measured:
+            # the best-sampled image drives the banner; every image is drawn
+            measured.sort(key=lambda e: -int(e.get("landing_ray_count") or e.get("ray_count") or 0))
+            info = dict(measured[0])
             info["detector_center_world"] = [float(v) for v in centre]
             info["detector_normal_world"] = [float(v) for v in normal]
-            # bugs/0729: place the plane by walking the WINNING field's rays back along their
-            # real traced path -- a folded tail is shorter than the waist distance, so the
-            # straight extrapolation lands past the fold mirror instead of on the beam.
-            group_index = info.get("group_index")
-            if group_index is not None and 0 <= int(group_index) < len(keys):
-                key = keys[int(group_index)]
-                placed = focus_point_along_paths(
-                    polylines.get(key, []), buckets[key][1], info.get("offset_mm"), normal
-                )
-                if placed is not None:
-                    plane_centre = np.asarray(placed[0], dtype=float).reshape(3)
-                    # bugs/0742 (user: "the image plane is shifted to the side from the Center of
-                    # the Sensor"): the walk above uses the WINNING FIELD's rays, and one field's
-                    # bundle lands wherever its own field point images -- off-axis. Walking it
-                    # back therefore puts the drawn plane off to the side of the beam (measured
-                    # on om05a: 11.62 mm, while all 644 landing rays centred on the sensor to
-                    # 0.000 mm). Keep the walk's ALONG-axis result and its transported normal --
-                    # both correct, and the fold handling is the whole point of bugs/0729 -- but
-                    # re-centre laterally on where the WHOLE beam lands. A beam that genuinely
-                    # lands off-centre still draws off-centre, because this follows the rays.
-                    try:
-                        every = np.concatenate(
-                            [np.asarray(b[0], dtype=float).reshape(-1, 3) for b in buckets.values()]
-                        ).mean(axis=0)
-                        # the ray that lands nearest the beam centre IS the axial one; walking
-                        # THAT back is the same real-path walk (so the fold handling of
-                        # bugs/0729 is untouched) but anchored on the beam instead of on one
-                        # field's off-axis bundle.
-                        best = (None, None, float("inf"))
-                        for bucket_key, (bucket_ends, _bucket_dirs) in buckets.items():
-                            arr = np.asarray(bucket_ends, dtype=float).reshape(-1, 3)
-                            gaps = np.linalg.norm(arr - every, axis=1)
-                            j = int(np.argmin(gaps))
-                            if float(gaps[j]) < best[2]:
-                                best = (bucket_key, j, float(gaps[j]))
-                        axial_key, axial_index, _gap = best
-                        if axial_key is not None:
-                            # bugs/0751: do NOT translate the ray onto the sensor centre. bugs/0747
-                            # did, to make the drawn rectangle look centred -- but that is a
-                            # display-only nudge, and it moved the plane OFF the light: measured
-                            # here, translating put the plane 7.4934 mm from the traced beam while
-                            # leaving it 0.7005 mm from the sensor centre, where walking the ray
-                            # where it actually is puts it 0.0000 mm from the beam and 7.5251 mm
-                            # from the sensor centre. That 7.5 mm is REAL -- at this conjugate the
-                            # bundle lands off-centre (landing centroid 3.335 mm out) -- and the
-                            # overlay's job is to show it, not to hide it
-                            # ([[feedback_display_follows_physics]]: never a display-only nudge;
-                            # bugs/0728: a missed ray must visibly MISS).
-                            axial = focus_point_along_paths(
-                                [polylines[axial_key][axial_index]],
-                                [buckets[axial_key][1][axial_index]],
-                                info.get("offset_mm"),
-                                normal,
-                            )
-                            if axial is not None:
-                                moved = np.asarray(axial[0], dtype=float).reshape(3)
-                                if np.all(np.isfinite(moved)):
-                                    info["plane_recentre_mm"] = float(
-                                        np.linalg.norm(moved - plane_centre)
-                                    )
-                                    plane_centre = moved
-                    except Exception:
-                        pass
-                    # bugs/0742: if the walk crossed NO fold -- the transported normal came back
-                    # equal to the sensor's -- then the waist sits on the same straight leg as
-                    # the sensor, and the drawn rectangle belongs on the sensor's own axis. Any
-                    # lateral wander left at that point is the arrival ANGLE of whichever ray was
-                    # walked (om05a's split-field beams arrive ~10 deg off normal, which threw the
-                    # centre 3.85 mm in z), not a real sideways shift of the image.
-                    # When a fold WAS crossed the walked point is kept untouched: the waist really
-                    # is around the corner, which is the whole point of bugs/0729.
-                    try:
-                        unit = np.asarray(normal, dtype=float).reshape(3)
-                        unit = unit / float(np.linalg.norm(unit))
-                        transported = np.asarray(placed[1], dtype=float).reshape(3)
-                        transported = transported / float(np.linalg.norm(transported))
-                        if abs(abs(float(transported @ unit)) - 1.0) < 1.0e-9:
-                            delta = plane_centre - np.asarray(centre, dtype=float).reshape(3)
-                            plane_centre = (
-                                np.asarray(centre, dtype=float).reshape(3)
-                                + float(delta @ unit) * unit
-                            )
-                    except Exception:
-                        pass
-                    info["focus_center_world"] = [float(v) for v in plane_centre]
-                    info["focus_normal_world"] = [float(v) for v in placed[1]]
+            if len(measured) > 1:
+                info["images"] = measured
         # bugs/0745: the FIRST ORDER sums row thicknesses; the trace walks the real folded
         # geometry. When a row that the imaging light never traverses carries thickness, the two
         # silently disagree -- om05a_folded_80mm.py had 19.6 mm on an LED panel row sitting before
@@ -8780,6 +8715,177 @@ class LayoutTableWorkbenchMixin:
                     f"the imaging path never travels"
                 )
         self._focused_image_plane_info = info
+        return info
+
+    def _focus_image_partitions(self, buckets, launches) -> "list[tuple[str, list]]":
+        """bugs/0752: which landing bundles belong to the SAME image?
+
+        A field band declares an object region that feeds its own arm, so bundles launched
+        from different bands form DIFFERENT images on a shared sensor and must never share a
+        pooled "beam centre" -- om05a's pooled centre falls in the dark ridge BETWEEN the two
+        sensor strips, where no ray lands at all. Each bucket goes to the band its launch point
+        is nearest: the same rule
+        :func:`~KrakenOS.UI.services.detector_coverage_overlay.measure_split_field_image_strips`
+        already classifies landings with, so the focus planes and the measured strips agree by
+        construction.
+
+        Returns ``[(name, [bucket keys])]``. Without at least two bands that actually receive
+        rays this is ONE unnamed partition over every bucket -- exactly the pooled behaviour
+        every non-split scene had before. Pure + display-free.
+        """
+        import numpy as np
+
+        keys = list(buckets.keys())
+        if not keys:
+            return []
+        planes: "list[tuple]" = []
+        for band in list(getattr(self, "layout_object_fov_bands", None) or []):
+            if not isinstance(band, dict):
+                continue
+            try:
+                band_centre = np.asarray(band.get("center"), dtype=float).reshape(3)
+                band_axis = np.asarray(band.get("axis"), dtype=float).reshape(3)
+            except Exception:
+                continue
+            norm = float(np.linalg.norm(band_axis))
+            if not (np.all(np.isfinite(band_centre)) and np.isfinite(norm) and norm > 1e-9):
+                continue
+            planes.append(
+                (band_centre, band_axis / norm, str(band.get("name") or f"field {len(planes) + 1}"))
+            )
+        if len(planes) < 2:
+            return [("", keys)]
+        groups: "dict[int, list]" = {}
+        for key in keys:
+            try:
+                launch = np.asarray(launches.get(key), dtype=float).reshape(-1, 3).mean(axis=0)
+            except Exception:
+                continue
+            if not np.all(np.isfinite(launch)):
+                continue
+            best = None
+            for index, (band_centre, band_axis, _name) in enumerate(planes):
+                gap = abs(float(np.dot(launch - band_centre, band_axis)))
+                if best is None or gap < best[0]:
+                    best = (gap, index)
+            if best is not None:
+                groups.setdefault(int(best[1]), []).append(key)
+        if len(groups) < 2:
+            return [("", keys)]
+        return [(planes[index][2], groups[index]) for index in sorted(groups)]
+
+    def _measure_one_focus_image(
+        self, keys, buckets, polylines, centre, normal, *, name: str = ""
+    ) -> "dict | None":
+        """bugs/0752: the focused-image plane of ONE image -- the waist of its own bundles,
+        placed on its own light.
+
+        Split out of :meth:`_measure_focused_image_plane` so a split field measures each arm
+        separately; a single-image scene calls this once with every bucket and gets the same
+        result it always did. Carries bugs/0729's fold-aware walk, bugs/0742's re-centring, and
+        bugs/0751's rule that the plane is only ever WALKED along a real traced ray, never
+        translated onto the sensor ([[feedback_display_follows_physics]]).
+        """
+        import numpy as np
+
+        from KrakenOS.UI.services.detector_coverage_overlay import (
+            _basis,
+            focus_point_along_paths,
+            focus_waist_from_grouped_rays,
+        )
+
+        keys = [key for key in list(keys or []) if key in buckets]
+        if not keys:
+            return None
+        info = focus_waist_from_grouped_rays(
+            [buckets[key] for key in keys], image_point=centre, image_axis=normal
+        )
+        if not isinstance(info, dict):
+            return None
+        info = dict(info)
+        if name:
+            info["name"] = str(name)
+        # where THIS image's light actually lands, and how big it is there: the anchor for every
+        # lateral decision below, and the drawn size when the scene has more than one image.
+        landing = None
+        anchor = np.asarray(centre, dtype=float).reshape(3)
+        try:
+            landing = np.concatenate(
+                [np.asarray(buckets[key][0], dtype=float).reshape(-1, 3) for key in keys]
+            )
+            anchor = landing.mean(axis=0)
+            info["landing_center_world"] = [float(v) for v in anchor]
+            info["landing_ray_count"] = int(landing.shape[0])
+            iu, iv = _basis(np.asarray(normal, dtype=float).reshape(3))
+            spread = landing - anchor
+            info["half_along_u_mm"] = float(np.max(np.abs(spread @ iu)))
+            info["half_along_v_mm"] = float(np.max(np.abs(spread @ iv)))
+        except Exception:
+            landing = None
+        group_index = info.get("group_index")
+        if group_index is None or not (0 <= int(group_index) < len(keys)):
+            return info
+        key = keys[int(group_index)]
+        # bugs/0729: place the plane by walking the WINNING field's rays back along their real
+        # traced path -- a folded tail is shorter than the waist distance, so a straight
+        # extrapolation lands past the fold mirror instead of on the beam.
+        placed = focus_point_along_paths(
+            polylines.get(key, []), buckets[key][1], info.get("offset_mm"), normal
+        )
+        if placed is None:
+            return info
+        plane_centre = np.asarray(placed[0], dtype=float).reshape(3)
+        # bugs/0742: that walk uses ONE field's rays, and a field images off-axis, so walking it
+        # back puts the plane off to the side of the beam. Keep the walk's along-axis result and
+        # its transported normal -- the fold handling is the whole point of bugs/0729 -- but
+        # anchor laterally on the ray nearest the centre of THIS image's light. bugs/0752: "this
+        # image's", not "every image pooled", which on a split field is the gap between strips.
+        try:
+            if landing is not None:
+                best = (None, None, float("inf"))
+                for candidate in keys:
+                    arr = np.asarray(buckets[candidate][0], dtype=float).reshape(-1, 3)
+                    gaps = np.linalg.norm(arr - anchor, axis=1)
+                    j = int(np.argmin(gaps))
+                    if float(gaps[j]) < best[2]:
+                        best = (candidate, j, float(gaps[j]))
+                axial_key, axial_index, axial_gap = best
+                if axial_key is not None:
+                    info["axial_ray_gap_mm"] = float(axial_gap)
+                    axial = focus_point_along_paths(
+                        [polylines[axial_key][axial_index]],
+                        [buckets[axial_key][1][axial_index]],
+                        info.get("offset_mm"),
+                        normal,
+                    )
+                    if axial is not None:
+                        moved = np.asarray(axial[0], dtype=float).reshape(3)
+                        if np.all(np.isfinite(moved)):
+                            info["plane_recentre_mm"] = float(np.linalg.norm(moved - plane_centre))
+                            plane_centre = moved
+        except Exception:
+            pass
+        # bugs/0742: when the walk crossed NO fold -- the transported normal came back equal to
+        # the sensor's -- the waist sits on the same straight leg as the sensor, and any lateral
+        # wander left is the ARRIVAL ANGLE of whichever ray was walked (om05a's split-field beams
+        # arrive ~10 deg off normal, which threw the centre 3.85 mm in z), not a real sideways
+        # shift. Project it out. bugs/0752: project onto the axis through THIS image's landing
+        # centre rather than the sensor centre -- a split-field image genuinely sits on its own
+        # strip, and collapsing it to the sensor centre would hide the split the user is looking
+        # at. When a fold WAS crossed the walked point stands: the waist really is around the
+        # corner.
+        try:
+            unit = np.asarray(normal, dtype=float).reshape(3)
+            unit = unit / float(np.linalg.norm(unit))
+            transported = np.asarray(placed[1], dtype=float).reshape(3)
+            transported = transported / float(np.linalg.norm(transported))
+            if abs(abs(float(transported @ unit)) - 1.0) < 1.0e-9:
+                base = np.asarray(anchor, dtype=float).reshape(3)
+                plane_centre = base + float((plane_centre - base) @ unit) * unit
+        except Exception:
+            pass
+        info["focus_center_world"] = [float(v) for v in plane_centre]
+        info["focus_normal_world"] = [float(v) for v in placed[1]]
         return info
 
     def _measure_split_field_image_strips(self, system, rays, scene_bundle) -> int:

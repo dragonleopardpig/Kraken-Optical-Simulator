@@ -64,11 +64,19 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     # ---- B: the plane is anchored on the beam ------------------------------------------------------
     from KrakenOS.UI.services.layout_table_workbench import LayoutTableWorkbenchMixin
 
-    measure = inspect.getsource(LayoutTableWorkbenchMixin._measure_focused_image_plane)
+    # bugs/0752 moved the per-image measurement into its own method; check the whole pipeline
+    # and that the entry point still calls it.
+    entry = inspect.getsource(LayoutTableWorkbenchMixin._measure_focused_image_plane)
+    measure = entry + inspect.getsource(LayoutTableWorkbenchMixin._measure_one_focus_image)
     ok(
-        "np.argmin(gaps)" in measure and "every" in measure,
-        "B1: the walk is anchored on the ray landing nearest the BEAM centre, not on the winning "
-        "field's off-axis bundle (bugs/0742)",
+        "self._measure_one_focus_image(" in entry,
+        "B0: the entry point routes through the per-image measurement (bugs/0752)",
+    )
+    ok(
+        "np.argmin(gaps)" in measure and "anchor" in measure and '"landing_center_world"' in measure,
+        "B1: the walk is anchored on the ray landing nearest the centre of THAT IMAGE's light, "
+        "not on the winning field's off-axis bundle (bugs/0742) and not on a centre pooled over "
+        "two arms (bugs/0752)",
     )
     ok(
         "focus_point_along_paths(" in measure and measure.count("focus_point_along_paths(") == 2,

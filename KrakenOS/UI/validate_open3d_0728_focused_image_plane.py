@@ -201,7 +201,14 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         and "_measure_focused_image_plane(scene_bundle)" in inspect.getsource(three_d_scene_tools),
         "E1: the plane is re-measured after EVERY real trace (2D refresh and 3D rebuild)",
     )
-    measure = inspect.getsource(LayoutTableWorkbenchMixin._measure_focused_image_plane)
+    # bugs/0752 moved the per-image waist into _measure_one_focus_image; the entry point still
+    # owns the bucketing. Assert on the pipeline, and that the entry point still calls it.
+    entry_src = inspect.getsource(LayoutTableWorkbenchMixin._measure_focused_image_plane)
+    measure = entry_src + inspect.getsource(LayoutTableWorkbenchMixin._measure_one_focus_image)
+    ok(
+        "self._measure_one_focus_image(" in entry_src,
+        "E2a: the entry point routes through the per-image measurement (bugs/0752)",
+    )
     ok(
         "focus_waist_from_grouped_rays" in measure
         and '"image", "target_termination"' in measure

@@ -1612,6 +1612,14 @@ def focus_waist_from_rays(end_points, directions, *, image_point, image_axis, mi
     }
 
 
+# bugs/0753: how much sampling a field group needs before its waist counts as evidence (a share
+# of the best-sampled group), and how much worse than the sharpest available waist a group may be
+# and still be called "in focus". Both guard the SAME failure: a tiny or hopelessly blurred group
+# out-voting the well-sampled ones and dragging the drawn image plane off the light.
+_MIN_SAMPLE_SHARE = 0.2
+_SHARP_WAIST_FACTOR = 10.0
+
+
 def focus_waist_from_grouped_rays(groups, *, image_point, image_axis, min_rays: int = 4):
     """bugs/0728: the image plane over a FIELD, not a single bundle -- general to any scene.
 
@@ -1630,16 +1638,41 @@ def focus_waist_from_grouped_rays(groups, *, image_point, image_axis, min_rays: 
     rays = 0
     pooled_ends: list = []
     pooled_dirs: list = []
+    candidates: "list[tuple[int, dict]]" = []
     for group_index, (ends, dirs) in enumerate(groups):
         pooled_ends.extend(list(np.asarray(ends, dtype=float).reshape(-1, 3)))
         pooled_dirs.extend(list(np.asarray(dirs, dtype=float).reshape(-1, 3)))
         single = focus_waist_from_rays(ends, dirs, image_point=image_point, image_axis=image_axis, min_rays=min_rays)
-        if single is None:
-            continue
-        # a handful of rays that barely tighten is noise, not a focus: require a real waist
-        # (half the spread at the sensor plane) before this field votes on the image plane.
-        if not (float(single["rms_waist_mm"]) < 0.5 * float(single["rms_plane_mm"])):
-            continue
+        if single is not None:
+            candidates.append((int(group_index), single))
+    # bugs/0753: a handful of rays is not evidence. Measured on om05a at the 54.09 mm station,
+    # arm B's three well-sampled fields (101/106/106 rays) all lost the vote and a NINE-ray field
+    # won it, putting the drawn plane 105.37 mm from the sensor while arm A -- identical |m| to
+    # seven digits -- read -0.05 mm. Drop groups sampled far below the best before anything votes.
+    if candidates:
+        best_sample = max(float(single["ray_count"]) for _index, single in candidates)
+        candidates = [
+            (index, single)
+            for index, single in candidates
+            if float(single["ray_count"]) >= _MIN_SAMPLE_SHARE * best_sample
+        ]
+    # bugs/0753: and the vote itself was backwards. "rms_waist < 0.5 * rms_plane" is purely
+    # RELATIVE, so a field ALREADY in focus (arm B field 3: 0.73 um waist against 0.83 um at the
+    # sensor) cannot tighten by 2x and was rejected for being sharp, while a field blurred
+    # everywhere (2846 um against 8855 um) passed. A field votes if it tightens OR if it is
+    # already as sharp as anything in this bundle -- being in focus is a focus measurement.
+    if candidates:
+        sharpest = min(float(single["rms_waist_mm"]) for _index, single in candidates)
+        kept: "list[tuple[int, dict]]" = []
+        for index, single in candidates:
+            waist = float(single["rms_waist_mm"])
+            plane = float(single["rms_plane_mm"])
+            tightens = waist < 0.5 * plane
+            already_sharp = waist <= plane and waist <= _SHARP_WAIST_FACTOR * max(sharpest, 1.0e-12)
+            if tightens or already_sharp:
+                kept.append((index, single))
+        candidates = kept
+    for group_index, single in candidates:
         offsets.append(float(single["offset_mm"]))
         waists.append(float(single["rms_waist_mm"]))
         planes.append(float(single["rms_plane_mm"]))
@@ -1768,6 +1801,29 @@ def focused_image_plane_specs(image_point, image_axis, info, half_width, half_he
     Empty when the image already sits on the sensor (nothing to detach)."""
     if not isinstance(info, dict):
         return []
+    # bugs/0752 (user: "everything is symmetry, A and B sides, I can't figure out how to make an
+    # Image Plane off-centered"): a split field forms ONE IMAGE PER ARM on the shared sensor.
+    # Draw each on its own strip, sized to the light it actually lands, instead of one pooled
+    # rectangle whose centre falls in the dark gap between them where no ray goes.
+    entries = info.get("images")
+    if isinstance(entries, (list, tuple)) and len(entries) > 1:
+        many: list[dict[str, Any]] = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            along_v = entry.get("half_along_v_mm")
+            along_u = entry.get("half_along_u_mm")
+            many.extend(
+                focused_image_plane_specs(
+                    image_point,
+                    image_axis,
+                    entry,
+                    float(along_v) if along_v else half_width,
+                    float(along_u) if along_u else half_height,
+                    min_offset_mm=min_offset_mm,
+                )
+            )
+        return many
     try:
         offset = float(info.get("offset_mm"))
         centre = np.asarray(image_point, dtype=float).reshape(3)
@@ -1778,10 +1834,21 @@ def focused_image_plane_specs(image_point, image_axis, info, half_width, half_he
     if not (np.isfinite(offset) and norm > 1e-9) or abs(offset) < float(min_offset_mm):
         return []
     normal = normal / norm
+    # bugs/0752: the gap connector runs from where THIS image lands on the sensor, not from the
+    # sensor centre -- on a split field the sensor centre is the ridge between the two strips.
+    gap_start = centre
+    landing = info.get("landing_center_world")
+    if landing is not None:
+        try:
+            candidate_start = np.asarray(landing, dtype=float).reshape(3)
+            if np.all(np.isfinite(candidate_start)):
+                gap_start = candidate_start
+        except (TypeError, ValueError):
+            pass
     # bugs/0729: prefer the FOLD-AWARE placement (walked back along the traced path) when the
     # measurement supplied one; the straight extrapolation is only right on an unfolded tail.
     plane_normal = normal
-    focus_centre = centre + normal * offset
+    focus_centre = gap_start + normal * offset
     folded_centre = info.get("focus_center_world")
     folded_normal = info.get("focus_normal_world")
     if folded_centre is not None and folded_normal is not None:
@@ -1805,7 +1872,7 @@ def focused_image_plane_specs(image_point, image_axis, info, half_width, half_he
         },
         {
             "kind": "focus_defocus_gap",
-            "points": np.asarray([centre, focus_centre], dtype=float),
+            "points": np.asarray([gap_start, focus_centre], dtype=float),
             "color": _IMAGE_PLANE,
             "dashed": True,
             "line_width": 1.8,
@@ -1816,7 +1883,26 @@ def focused_image_plane_specs(image_point, image_axis, info, half_width, half_he
 def focused_image_plane_label_specs(image_point, image_axis, info, half_height,
                                     *, min_offset_mm: float = 0.05) -> list[dict[str, Any]]:
     """The label for the detached focus plane: how far it sits from the sensor, which side,
-    and the spot there versus on the sensor."""
+    and the spot there versus on the sensor. bugs/0752: one label per image on a split field,
+    each naming its own field band."""
+    if isinstance(info, dict):
+        entries = info.get("images")
+        if isinstance(entries, (list, tuple)) and len(entries) > 1:
+            many: list[dict[str, Any]] = []
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                along_u = entry.get("half_along_u_mm")
+                many.extend(
+                    focused_image_plane_label_specs(
+                        image_point,
+                        image_axis,
+                        entry,
+                        float(along_u) if along_u else half_height,
+                        min_offset_mm=min_offset_mm,
+                    )
+                )
+            return many
     specs = focused_image_plane_specs(image_point, image_axis, info, 1.0, 1.0, min_offset_mm=min_offset_mm)
     if not specs:
         return []
@@ -1827,6 +1913,9 @@ def focused_image_plane_label_specs(image_point, image_axis, info, half_height,
     offset = float(info.get("offset_mm"))
     focus_centre = centre
     text = f"Focused image {abs(offset):.4g} mm {info.get('side', 'from')} the sensor"
+    image_name = str(info.get("name") or "").strip()
+    if image_name:
+        text = f"{image_name}: {text}"   # bugs/0752: say WHICH image this plane belongs to
     try:
         waist = float(info.get("rms_waist_mm"))
         plane = float(info.get("rms_plane_mm"))
@@ -1877,6 +1966,23 @@ def format_focus_summary_lines(focus_info, solve_info=None, notes=None) -> list[
             except (TypeError, ValueError, KeyError):
                 pass
             lines.append(line)
+            # bugs/0752: a split field forms one image per arm. Naming each one's offset is what
+            # tells the user the two arms agree (om05a: -17.2812 vs -17.2799 mm, 0.0013 mm
+            # apart) -- reporting only the pooled winner hid that entirely.
+            entries = focus_info.get("images")
+            if isinstance(entries, (list, tuple)) and len(entries) > 1:
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    try:
+                        entry_offset = float(entry.get("offset_mm"))
+                    except (TypeError, ValueError):
+                        continue
+                    entry_name = str(entry.get("name") or "").strip() or "image"
+                    lines.append(
+                        f"  {entry_name}: {abs(entry_offset):.4g} mm "
+                        f"{entry.get('side', 'from')} the sensor"
+                    )
             lines.append(
                 "Move the device stage / camera focus to land it -- vendor hardware untouched"
             )

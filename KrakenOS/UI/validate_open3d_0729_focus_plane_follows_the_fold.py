@@ -139,7 +139,16 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         '"group_index"' in grouped and "indices.append" in grouped,
         "E1: the grouped measurement reports WHICH field set the plane",
     )
-    measure = inspect.getsource(LayoutTableWorkbenchMixin._measure_focused_image_plane)
+    # bugs/0752 split the per-image measurement into its own method, so the walk lives in
+    # _measure_one_focus_image now. Assert on the WHOLE pipeline, and that the entry point still
+    # calls it -- the property must hold on the code that actually runs, wherever it sits.
+    entry = inspect.getsource(LayoutTableWorkbenchMixin._measure_focused_image_plane)
+    one = inspect.getsource(LayoutTableWorkbenchMixin._measure_one_focus_image)
+    measure = entry + one
+    ok(
+        "self._measure_one_focus_image(" in entry,
+        "E2a: the entry point still routes through the per-image measurement (bugs/0752)",
+    )
     ok(
         "focus_point_along_paths(" in measure
         and "polylines" in measure
