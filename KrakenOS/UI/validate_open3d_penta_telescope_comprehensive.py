@@ -15995,6 +15995,10 @@ phase_544_name_the_field_that_lands = _phase_from_standalone(
     544, "a solve that leaves a focus residual NAMES the field that would land: a fixed track focuses exactly two magnifications, and asking a 30 mm device to fill the sensor (|m| 0.7314) detached the image by 65.75 mm while the track's own focused field (|m| 0.4262, 54.05 mm) went unmentioned -- the scene reported a failure with no way out (0754)",
     "KrakenOS.UI.validate_open3d_0754_name_the_field_that_lands",
     "name_the_field_that_lands")
+phase_545_camera_focus_stage = _phase_from_standalone(
+    545, "verify the focus root you report, and let the camera's own leg be the third conjugate variable: the 0754 line printed a 96.89 mm field where image_delta was -15.53 (an unverified bracket in a region the model flags unreachable, measured after the solve had already moved the lens), and the solve refused the C2 write it had itself computed because a camera STEP is glued to the sensor -- the body is immutable, its position on a stage is not (0755/0756)",
+    "KrakenOS.UI.validate_open3d_0756_camera_focus_stage",
+    "camera_focus_stage")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16605,6 +16609,7 @@ def main() -> int:
             phase_542_one_focus_plane_per_image,
             phase_543_a_sharp_field_is_a_focused_field,
             phase_544_name_the_field_that_lands,
+            phase_545_camera_focus_stage,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

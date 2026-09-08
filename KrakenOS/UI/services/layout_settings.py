@@ -234,6 +234,10 @@ class LayoutSettingsService:
             "inspection_part": _normalize_inspection_part(getattr(self, "inspection_part_spec", None)),
             # bugs/0671: per-arm fold planes for the folded assembly view (data, not physics).
             "display_fold_spec": getattr(self, "display_fold_spec", None),
+            # bugs/0756: the camera's own adjustable leg. The vendor camera BODY is immutable,
+            # but a scene may state that the assembly rides a stage along its leg, which is the
+            # third conjugate variable (A5 / C1 / C2) the FOV solve is otherwise blind to.
+            "camera_focus_stage": getattr(self, "camera_focus_stage", None),
             # bugs/0683: authored partial-FOV bands (a split-field scene's MEASURED
             # delivered field per face); replaces the full object-FOV rectangle.
             "object_fov_bands": getattr(self, "layout_object_fov_bands", None),
@@ -439,6 +443,8 @@ class LayoutSettingsService:
         self.layout_scene_row_order = normalize_source_row_order(settings.get("scene_row_order", SOURCE_ROW_ORDER_DEFAULT))
         self.inspection_part_spec = _normalize_inspection_part(settings.get("inspection_part", None))  # bugs/0661
         self.display_fold_spec = settings.get("display_fold_spec", None)  # bugs/0671
+        stage = settings.get("camera_focus_stage", None)   # bugs/0756
+        self.camera_focus_stage = dict(stage) if isinstance(stage, dict) else None
         bands = settings.get("object_fov_bands", None)  # bugs/0683
         # bugs/0721: a device-face band's field is centred on its face -- symmetrize the
         # authored v-range (span kept) so the green planes and the sensor strips are not

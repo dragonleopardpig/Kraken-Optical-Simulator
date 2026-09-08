@@ -113,11 +113,14 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     # ---- C: the stash and the HUD ----------------------------------------------------------
     # the residual is stashed by _apply_conjugate_pair, which every fov_solve path routes through
     solve_src = inspect.getsource(QuickEstimationService._apply_conjugate_pair)
+    # bugs/0755 moved the measurement to the TOP of the method (before the solve writes
+    # anything) and stashes that snapshot -- assert the property, not the old expression.
     ok(
-        '"in_focus_fields": self._in_focus_fields_at_current_track(),' in solve_src
+        "in_focus_before = self._in_focus_fields_at_current_track()" in solve_src
+        and '"in_focus_fields": in_focus_before,' in solve_src
         and '"image_delta_mm": residual,' in solve_src,
-        "C1: the field list is stashed in the SAME dict as the residual, by the conjugate "
-        "solve every fov_solve path routes through",
+        "C1: the field list is stashed in the SAME dict as the residual, measured before the "
+        "solve moves anything (bugs/0755), by the conjugate solve every fov_solve path uses",
     )
     ok(
         "_apply_conjugate_pair(" in inspect.getsource(QuickEstimationService.fov_solve),

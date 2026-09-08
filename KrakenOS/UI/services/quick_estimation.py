@@ -1468,6 +1468,47 @@ class QuickEstimationService:
         # primary gives up all it has (-> 0); the negative remainder lands on the sibling leg
         return [(int(primary_row), -float(rows[primary_row].thickness)), (int(spill_row), new_primary)]
 
+    def _camera_focus_stage(self) -> "dict | None":
+        """bugs/0756 (user: "make A5, C1 and C2 adjustable to achieve closest match FOV range"):
+        the camera's own leg, when it is on a stage.
+
+        bugs/0719 refuses every image-side write while a camera STEP is glued to the sensor,
+        on the grounds that the sensor cannot move without moving vendor hardware. That is
+        right about the BODY and wrong about the POSITION: translating the whole camera along
+        its leg leaves the vendor assembly byte-identical and is the adjustment the bench
+        actually has ([[feedback_vendor_hardware_immutable]] forbids reshaping vendor parts,
+        not mounting them on a stage). Measured on om05a, that one leg turns a single focused
+        field of 54.09 mm into a 52.5-58.9 mm range.
+
+        The scene opts in with ``editor.camera_focus_stage``::
+
+            {"enabled": True, "row": <gap row index>, "min_mm": 36.31, "max_mm": 60.35}
+
+        ``min_mm`` is the hard floor where the camera body reaches the upstream optic (om05a:
+        the front edge stands 21.53 mm ahead of the sensor and RA mirror 2's nearest point is
+        31.19 mm out, so the leg may not go below 36.31 mm). Returns the validated spec or
+        None. Pure attribute reads.
+        """
+        spec = getattr(self.editor, "camera_focus_stage", None)
+        if not isinstance(spec, dict) or not spec.get("enabled"):
+            return None
+        rows = list(getattr(self.editor, "rows", None) or [])
+        try:
+            row = int(spec["row"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        if not (0 <= row < len(rows)):
+            return None
+        out = {"row": row}
+        for key, default in (("min_mm", 0.0), ("max_mm", float("inf"))):
+            try:
+                out[key] = float(spec.get(key, default))
+            except (TypeError, ValueError):
+                out[key] = default
+        if not (out["max_mm"] > out["min_mm"]):
+            return None
+        return out
+
     def _image_write_locked_by_vendor_hardware(self, rows, write_row) -> str:
         """bugs/0719: why the image-side gap write may NOT be booked after the lens moved --
         a non-empty reason, or '' when the write touches no vendor hardware.
@@ -1488,7 +1529,11 @@ class QuickEstimationService:
         except Exception:
             camera_path = getattr(editor, "imported_camera_step_path", None)
         if camera_path is not None:
-            return "the sensor carries the vendor camera body (glued camera STEP)"
+            # bugs/0756: unless the camera is on a stage and THIS is the row it travels on --
+            # the body is untouched, only its position along the leg changes.
+            stage = self._camera_focus_stage()
+            if not (stage is not None and int(stage["row"]) == write_row):
+                return "the sensor carries the vendor camera body (glued camera STEP)"
         rows = list(rows or [])
         for index in range(write_row + 1, len(rows)):
             row = rows[index]
@@ -1512,6 +1557,12 @@ class QuickEstimationService:
             os_f, is_f = float(object_semi), float(image_semi)
         except (TypeError, ValueError):
             os_f = is_f = 0.0
+        # bugs/0755 (flag 20260908_154430_151): measure the track's own focused field on the
+        # geometry the USER has, BEFORE this solve moves the lens. Computed after the move it
+        # describes a transient state nobody is looking at -- on the flagged 55 mm solve that
+        # read 85.93 mm (|m| 0.2681) against a traced 54.09 mm. The reported way out has to be
+        # a way out of the scene the user is in.
+        in_focus_before = self._in_focus_fields_at_current_track()
         if os_f > 0 and is_f > 0:
             folded = self.editor._folded_conjugate_gaps_for_magnification(is_f / os_f)
             if folded is not None:
@@ -1863,6 +1914,27 @@ class QuickEstimationService:
                     image_locked_reason = self._image_write_locked_by_vendor_hardware(
                         rows, img_row_write
                     )
+                    # bugs/0756: a stage has ends. Running past one is a refusal WITH the
+                    # number, never a silent clamp -- the 0754 line then names the field this
+                    # track can actually focus. ``min_mm``/``max_mm`` are the row's own value,
+                    # so a scene states its travel in the units it is written in.
+                    if not image_locked_reason:
+                        stage = self._camera_focus_stage()
+                        if stage is not None and int(stage["row"]) == int(img_row_write):
+                            try:
+                                landed = float(rows[img_row_write].thickness) + float(
+                                    folded["image_delta"]
+                                )
+                            except (AttributeError, KeyError, TypeError, ValueError):
+                                landed = None
+                            if landed is not None and not (
+                                stage["min_mm"] - 1.0e-9 <= landed <= stage["max_mm"] + 1.0e-9
+                            ):
+                                image_locked_reason = (
+                                    f"the camera stage would have to sit at {landed:.4g} mm, "
+                                    f"outside its {stage['min_mm']:.4g} to {stage['max_mm']:.4g} mm "
+                                    f"travel"
+                                )
                 # bugs/0731: the image plane lands off the sensor and cannot be booked without
                 # putting the sensor inside the optics. The scene now SHOWS that (the detached
                 # focused-image plane, bugs/0728/0729), so report it as a focus residual instead
@@ -1905,8 +1977,9 @@ class QuickEstimationService:
                         "station_object_gap_mm": float(folded["object_distance"]),
                         "target_m": float(folded.get("magnitude", 0.0) or 0.0),
                         "reason": why,
-                        # bugs/0754: say what WOULD land, not only how far this misses
-                        "in_focus_fields": self._in_focus_fields_at_current_track(),
+                        # bugs/0754: say what WOULD land, not only how far this misses.
+                        # bugs/0755: the snapshot from BEFORE this solve moved anything.
+                        "in_focus_fields": in_focus_before,
                     }
                     self.editor.append_debug(
                         "folded solve (bugs/0719): lens at WD ({moved:+.4f} mm along its leg); "
@@ -3049,6 +3122,11 @@ class QuickEstimationService:
             "folded first order disagrees with the traced machine; bugs/0591)."
         )
 
+    # bugs/0755: how near zero the model's own image_delta must be before a bracketed root is
+    # accepted as a real focus state. One pixel of depth of focus on om05a is 0.153 mm, so a
+    # tenth of a millimetre is far inside anything that could matter optically.
+    _ROOT_RESIDUAL_TOL_MM = 0.1
+
     def _in_focus_fields_at_current_track(self, *, samples: int = 240) -> "list[dict]":
         """bugs/0754: which object field does the CURRENT track actually focus?
 
@@ -3068,22 +3146,35 @@ class QuickEstimationService:
         """
         import numpy as np
 
-        def image_delta(magnitude):
+        def evaluate(magnitude):
+            """(image_delta, reachable) for a candidate |m|, or (None, False)."""
             try:
                 folded = self.editor._folded_conjugate_gaps_for_magnification(float(magnitude))
             except Exception:
-                return None
+                return None, False
             if not isinstance(folded, dict):
-                return None
+                return None, False
             try:
                 value = float(folded["image_delta"])
             except (KeyError, TypeError, ValueError):
-                return None
-            return value if np.isfinite(value) else None
+                return None, False
+            if not np.isfinite(value):
+                return None, False
+            # bugs/0755: the model marks the magnifications whose image side cannot be
+            # reached at all. Those are not candidate focus states, and scanning across them
+            # invents sign changes that are not roots.
+            return value, not bool(folded.get("image_side_unreachable"))
+
+        def image_delta(magnitude):
+            value, _reachable = evaluate(magnitude)
+            return value
 
         grid = np.geomspace(0.05, 20.0, max(16, int(samples)))
-        sampled = [(float(m), image_delta(m)) for m in grid]
-        sampled = [(m, d) for m, d in sampled if d is not None]
+        sampled = []
+        for m in grid:
+            value, reachable = evaluate(m)
+            if value is not None and reachable:
+                sampled.append((float(m), value))
         if len(sampled) < 2:
             return []
         roots: "list[float]" = []
@@ -3103,7 +3194,15 @@ class QuickEstimationService:
                     hi = mid
                 else:
                     lo, f_lo = mid, d_mid
-            roots.append(0.5 * (lo + hi))
+            root = 0.5 * (lo + hi)
+            # bugs/0755 (flag 20260908_154430_151): VERIFY the root. The first cut trusted the
+            # bracket and reported |m| 0.2378 -- a 96.89 mm field -- on a scene whose traced
+            # in-focus field is 54.09 mm; image_delta at that "root" was -15.53 mm, not 0. A
+            # focus claim that is not checked against the model it came from is a guess.
+            residual, reachable = evaluate(root)
+            if residual is None or not reachable or abs(residual) > self._ROOT_RESIDUAL_TOL_MM:
+                continue
+            roots.append(root)
         if not roots:
             return []
         try:
