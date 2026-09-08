@@ -15979,6 +15979,10 @@ phase_540_first_order_matches_the_trace = _phase_from_standalone(
     540, "when the first order (summed row thicknesses) and the trace (real folded path) disagree about the focus, the scene SAYS so and names the measured readout as the trustworthy one -- a row carrying thickness the imaging light never travels made the banner 19.55 mm wrong in silence (0745)",
     "KrakenOS.UI.validate_open3d_0745_first_order_matches_the_trace",
     "first_order_matches_the_trace")
+phase_541_pinned_placement_audit = _phase_from_standalone(
+    541, "an edit that moves rows off their AUTHORED placement is caught: changing the lens gap SUM slid the whole arm-B block 8.54 mm while arm A stayed put, and a thickness PAIR that keeps the sum invariant moves nothing (0748/0749/0750)",
+    "KrakenOS.UI.validate_open3d_0750_pinned_placement_audit",
+    "pinned_placement_audit")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16585,6 +16589,7 @@ def main() -> int:
             phase_538_delivered_field_and_plane_centre,
             phase_539_guards_name_their_encoding,
             phase_540_first_order_matches_the_trace,
+            phase_541_pinned_placement_audit,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
