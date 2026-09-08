@@ -8706,18 +8706,19 @@ class LayoutTableWorkbenchMixin:
                                 best = (bucket_key, j, float(gaps[j]))
                         axial_key, axial_index, _gap = best
                         if axial_key is not None:
-                            # bugs/0747: anchor the walk on the SENSOR CENTRE. Translating the
-                            # axial ray's polyline so it lands dead centre removes that ray's own
-                            # landing error (3.3 mm here) before the walk, which is what left the
-                            # plane 7.5 mm off the beam axis inside the folded leg -- the user:
-                            # "the image plane still shifted in Y-direction, off center". The
-                            # SHAPE of the polyline is what carries the fold (bugs/0729), and a
-                            # rigid translation preserves it exactly.
-                            poly = np.asarray(polylines[axial_key][axial_index], dtype=float)
-                            landed = poly[-1]
-                            poly = poly + (np.asarray(centre, dtype=float).reshape(3) - landed)
+                            # bugs/0751: do NOT translate the ray onto the sensor centre. bugs/0747
+                            # did, to make the drawn rectangle look centred -- but that is a
+                            # display-only nudge, and it moved the plane OFF the light: measured
+                            # here, translating put the plane 7.4934 mm from the traced beam while
+                            # leaving it 0.7005 mm from the sensor centre, where walking the ray
+                            # where it actually is puts it 0.0000 mm from the beam and 7.5251 mm
+                            # from the sensor centre. That 7.5 mm is REAL -- at this conjugate the
+                            # bundle lands off-centre (landing centroid 3.335 mm out) -- and the
+                            # overlay's job is to show it, not to hide it
+                            # ([[feedback_display_follows_physics]]: never a display-only nudge;
+                            # bugs/0728: a missed ray must visibly MISS).
                             axial = focus_point_along_paths(
-                                [poly],
+                                [polylines[axial_key][axial_index]],
                                 [buckets[axial_key][1][axial_index]],
                                 info.get("offset_mm"),
                                 normal,
