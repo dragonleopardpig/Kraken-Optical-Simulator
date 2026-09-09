@@ -65,3 +65,53 @@ move the HOUSING 3.563 mm the other way and leave the prism and camera put -- sa
 optical moves at all.
 
 Backups: `om05a_folded_80mm.py.pre-gap.bak`, `om05a_folded.py.pre-gap.bak`.
+
+---
+
+## Follow-up: the whole downstream group must travel, and the frames are mirrored
+
+User: *"the gap introduced, then all the following lens+filter+RA mirror+camera should shift down
+together."* Correct -- and the first cut did not do it. Measured deltas after the prism move:
+
+```
+RA mirror 1 (50 mm)            [0.0, 3.563, 0.0]
+RA mirror 2 (40 mm)            [0.0, 0.0, 0.0]      <- LEFT BEHIND
+Filter 48-926                  [-3.563, 3.563, 0.0]
+Front/Rear Optical Vertex      [-3.563, 3.563, 0.0]
+SENSOR                         [-3.563, 3.563, 0.0]
+```
+
+RA mirror 2 is absolutely seated, so it does not ride the chain and has to be moved explicitly.
+The 5.039 mm diagonal is 3.563 x sqrt(2) -- the correct displacement of a beam folded by a 45 deg
+mirror moved 3.563 mm.
+
+**And the two scenes are mirrored in x.** `om05a_folded.py` carries RA mirror 2 at
+`desp_x -272.70` against `+272.68` in the 80 mm file. Applying the 80 mm delta to it verbatim put
+the mirror the wrong way and left the sensor 3x displaced:
+
+```
+RA mirror 2   [-3.563, 3.563, 0.0]   <- wrong sign for this frame
+Filter, lens  [+3.563, 3.563, 0.0]
+SENSOR        [-3.563, 10.689, 0.0]  <- broken
+```
+
+Corrected to `+3.563` there (net `desp_x +7.126`). Both scenes are now coherent:
+
+| scene | prism | group | gap | arms | \|m\| | field | residual |
+|---|---|---|---|---|---|---|---|
+| `om05a_folded_80mm.py` | [0, +3.563, 0] | [-3.563, +3.563, 0] | 7.596 | 322 / 322 | 0.425953 | 54.090 | -0.0535 / -0.0537 |
+| `om05a_folded.py` | [0, +3.563, 0] | [+3.563, +3.563, 0] | 7.596 | 644 / 644 | 0.412444 | 55.862 | -0.4565 / -0.4564 |
+
+The production file traced **arm B = 0 rays** before this work and now traces 644 on both arms
+with matching |m|.
+
+## Process note
+
+Two self-inflicted errors here, both caught only by measuring components individually:
+
+* the first fix moved the chain but not the absolutely-seated mirror, and the trace still passed
+  -- the conjugate happened to be preserved, so a residual check alone could not see it;
+* the verification script hardcoded the 80 mm scene path and ignored its argument, so "both
+  scenes verified" was one scene verified twice. The production sign error survived that check.
+
+A per-component delta table is the check that catches both. A residual is not enough.
