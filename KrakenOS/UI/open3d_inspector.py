@@ -10371,6 +10371,27 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.status_var.set(f"Recording discarded ({dropped} events dropped, no file written).")
         return True
 
+    def _flag_inspection_part_spec(self) -> dict:
+        """bugs/0764: the device under test, for a flag bundle.
+
+        A flag recorded the scene file and every row, but not the part sitting at the object
+        plane -- so "set FOV to 30x30" left W, D and H to be guessed, and a wrong guess sends
+        the reproduction down a different code path entirely (a DEPTH change moves the object
+        row; a WIDTH change does not). Normalised so the numbers land as floats a repro script
+        can feed straight back into ``set_inspection_part_spec``. Best-effort; never raises."""
+        try:
+            from KrakenOS.UI.services.inspection_part import normalize_inspection_part_spec
+
+            spec = normalize_inspection_part_spec(
+                getattr(self.editor, "inspection_part_spec", None)
+            )
+        except Exception:
+            return {}
+        try:
+            return {key: spec[key] for key in sorted(spec)}
+        except Exception:
+            return {}
+
     def _flag_layout_identity(self) -> dict:
         """The loaded working layout's identity for a flag bundle (bugs/0382).
 
@@ -10595,6 +10616,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 "recording": recording_info,
                 "layout": self._flag_layout_identity(),
                 "scene_state": scene_state,
+                # bugs/0764 (user: "it is wierd that the bug reporting Flag not recording the
+                # W,D,H information?"). The device under test is the one thing the user changes
+                # between flags and the one thing the bundle did not record, so reproducing a
+                # flag meant guessing its size. Guessing cost real time on this very flag: the
+                # 30x1x30 part was reproduced as 30x30x50 and the depth path -- the actual
+                # defect -- went unexamined for hours. Record the spec.
+                "inspection_part": self._flag_inspection_part_spec(),
             }
             if screenshot_is_dialog and scene_3d_path.exists():
                 payload["scene_3d"] = "scene_3d.png"

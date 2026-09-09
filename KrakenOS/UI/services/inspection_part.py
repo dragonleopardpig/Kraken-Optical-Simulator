@@ -314,8 +314,10 @@ def open_inspection_part_dialog(editor):
     # dialog so that user can input both values"): the required FOV rides along;
     # blank keeps the default face-size + 5% solve target.
     fov_var = tk.StringVar(value="")
+    # bugs/0764 (user: "can you rearrange the dialog to W, D then H?"): W and D are the two
+    # the inspected face is sized by and the two that change most often; H rides along.
     for r, (label, var) in enumerate(
-        (("Width W (mm)", w_var), ("Height H (mm)", h_var), ("Depth D (mm)", d_var),
+        (("Width W (mm)", w_var), ("Depth D (mm)", d_var), ("Height H (mm)", h_var),
          ("Axis reach (mm, 0 = auto)", reach_var),
          ("Face offset along axis (mm)", offset_var),
          ("Required FOV (mm, blank = face +5%)", fov_var)),

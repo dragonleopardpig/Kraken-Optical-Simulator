@@ -2929,7 +2929,17 @@ class ParaxialToolsMixin:
         # every ray sharing it.
         candidates = []
         for path in list(getattr(bundle, "ray_paths", None) or []):
-            if str(getattr(path, "termination_reason", "")) != "target_termination":
+            # bugs/0764: the scene builder stamps "image" for a ray that lands on the detector
+            # (scene_builder.py:1699/3363); "target_termination" is the OLDER spelling only some
+            # bundles still carry. This filter accepted the old spelling alone, so on every scene
+            # that stamps the current one it matched ZERO rays and returned None -- measured on
+            # om05a_folded_80mm: 644 rays land as "image", 0 as "target_termination". None here
+            # is not inert: snap_detector_to_image_plane treats it as "no bundle measurable" and
+            # falls through to the straight equivalent, which is a different PRESCRIPTION on a
+            # frozen fold (bugs/0576, bugs/0593) -- it fabricated a +5.8819 mm move that undid a
+            # solve already landed to -0.05 mm. Accept both spellings, exactly as
+            # _measure_focused_image_plane does.
+            if str(getattr(path, "termination_reason", "")) not in ("image", "target_termination"):
                 continue
             try:
                 pts = np.asarray(path.points_world, dtype=float)

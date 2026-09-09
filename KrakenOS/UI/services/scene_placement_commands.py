@@ -54,6 +54,13 @@ from KrakenOS.UI.source_trace_helpers import SOURCE_MODEL_DEFAULT
 from KrakenOS.UI.surface_table_model import SurfaceRow
 
 
+#: bugs/0764: how much worse the traced defocus may get before a focus snap is judged a
+#: regression and undone. One pixel of depth of focus on the om05a sensor is 0.153 mm, so a
+#: third of that is comfortably below anything the user could see, while staying well clear
+#: of the sampling noise in a re-traced bundle.
+_SNAP_REGRESSION_TOL_MM = 0.05
+
+
 def _current_cad_cache_dir() -> Path:
     return Path(cad_cache_paths.CAD_CACHE_DIR)
 
@@ -3590,6 +3597,53 @@ class ScenePlacementMixin:
         self.status_var.set(message)
         return True
 
+    def _traced_snap_defocus_magnitude(self):
+        """bugs/0764: how far the sensor is from focus, in mm, measured off the rays that
+        ACTUALLY traced. ``None`` when no measure is available, which disables the caller's
+        regression guard rather than inventing a verdict.
+
+        Deliberately real-ray only. The whole point of the guard is to check a correction that
+        was computed from the prescription/station frame, so verifying it with another
+        station-frame walk would just agree with the mistake
+        ([[reference_straight_equivalent_not_an_unfold]]).
+        """
+        try:
+            shift = self._traced_bundle_best_focus_shift()
+        except Exception:
+            shift = None
+        if shift is not None:
+            try:
+                value = abs(float(shift))
+            except (TypeError, ValueError):
+                value = None
+            if value is not None and np.isfinite(value):
+                return value
+        # Fallback: the bugs/0752 per-image measure. It reads the same traced bundle but
+        # partitions it per formed image, so it still answers on a split-field scene whose
+        # fields share no single waist. Take the worst image -- a snap that fixes one arm and
+        # wrecks the other has not improved the scene.
+        try:
+            _system, _rays, bundle = self._build_preview_system_rays_bundle(
+                sampling_mode=None, update_state=False, trace_rays=True
+            )
+            info = self._measure_focused_image_plane(bundle)
+        except Exception:
+            return None
+        if not isinstance(info, dict):
+            return None
+        images = info.get("images") or [info]
+        offsets = []
+        for image in images:
+            if not isinstance(image, dict):
+                continue
+            try:
+                offset = float(image.get("offset_mm"))
+            except (TypeError, ValueError):
+                continue
+            if np.isfinite(offset):
+                offsets.append(abs(offset))
+        return max(offsets) if offsets else None
+
     def snap_detector_to_image_plane(self) -> bool:
         """Move the detector (the final ``Image`` row) onto the optics' paraxial best-focus image
         plane, removing the defocus gap. Returns True when it actually moved. The detector is the
@@ -3842,6 +3896,26 @@ class ScenePlacementMixin:
                     pass
 
         if not _frozen_world:
+            # bugs/0764 (flag "set FOV to 30x30, click Apply+Solve FOV for this face -- image is
+            # not landed on sensor"): this branch was a bare single shot. It writes a delta the
+            # "image plane" source computes as ``_paraxial_image_plane_z() - sum(row.thickness)``
+            # -- two STATION-frame sums, which only equal the world defocus when every row sits
+            # at its cumulative thickness. On om05a rows 16-23 are absolutely seated by desp and
+            # the image gap row runs BACKWARDS ([[reference_frozen_gap_row_inverted]]), so the
+            # number is measured in a frame that is not this scene, AND the sign a gap row
+            # consumes is scene-dependent. Measured with the device 30 mm deep: the solve had
+            # already landed focus at -0.0506 mm, this write moved the sensor +5.8819 mm and left
+            # it at -5.9325 mm (-0.0506 - 5.8819, to four decimals) -- the flagged symptom.
+            # Nothing checked, because the scene is not classified frozen so the else-branch's
+            # keep-the-best-state machinery never ran.
+            #
+            # bugs/0577 already states the rule for the frozen branch: "a refocus that cannot
+            # improve the scene must leave it exactly as it found it." It is not a frozen-only
+            # rule. Measure the REAL defocus off the traced rays, apply, re-measure, and put the
+            # scene back when the move made focus worse. The first guess is unchanged, so every
+            # scene it already gets right is untouched.
+            _before_snapshot = _row_snapshot()
+            _defocus_before = self._traced_snap_defocus_magnitude()
             applied_ok, refusal = _apply_gap_with_floor(float(self.rows[-2].thickness) + float(delta))
             if not applied_ok:
                 self.restore_glued_illumination_unit_world_poses(_illumination_poses)  # bugs/0571
@@ -3850,6 +3924,23 @@ class ScenePlacementMixin:
                 self._snap_detector_refusal = str(refusal)
                 self.status_var.set(f"Snap detector: {refusal}")
                 return False
+            if _defocus_before is not None:
+                _defocus_after = self._traced_snap_defocus_magnitude()
+                if (
+                    _defocus_after is not None
+                    and _defocus_after > _defocus_before + _SNAP_REGRESSION_TOL_MM
+                ):
+                    _restore_row_snapshot(_before_snapshot)
+                    self.restore_glued_illumination_unit_world_poses(_illumination_poses)
+                    if gui:
+                        self._commit_history_capture()
+                    self._snap_detector_refusal = (
+                        f"the {source} correction ({float(delta):+.4g} mm) measured WORSE on the "
+                        f"traced rays ({_defocus_before:.4g} -> {_defocus_after:.4g} mm of "
+                        f"defocus), so the sensor was left exactly where it was (bugs/0764)."
+                    )
+                    self.status_var.set(f"Snap detector: {self._snap_detector_refusal}")
+                    return False
         else:
             # bugs/0515 B2: TWO frozen-frame facts make a single shot impossible here.
             # (1) The measured shift lives in the station-aligned frame, which the 0478

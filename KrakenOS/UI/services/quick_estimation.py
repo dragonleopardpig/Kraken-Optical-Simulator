@@ -2073,7 +2073,18 @@ class QuickEstimationService:
                         "the image-side gap rows cannot absorb the correction"
                     )
                     verb = "shortened" if residual < 0.0 else "lengthened"
-                    moved_mm = float(object_slid.get("signed_mm", object_slid.get("distance", 0.0)))
+                    # bugs/0763: the lens does not always move via a SLIDE -- on a scene whose
+                    # object row carries the device face (bugs/0713), changing the part DEPTH
+                    # moves the object and the conjugate is booked on the gap rows instead, so
+                    # ``object_slid`` is None and this raised
+                    # "AttributeError: 'NoneType' object has no attribute 'get'" -- killing the
+                    # solve mid-write and leaving the geometry half-applied (measured: 5.932 mm
+                    # of residual, the flagged symptom). Report 0 mm of slide when there was none.
+                    moved_mm = 0.0
+                    if isinstance(object_slid, dict):
+                        moved_mm = float(
+                            object_slid.get("signed_mm", object_slid.get("distance", 0.0))
+                        )
                     self.editor._fov_solve_focus_residual_info = {
                         "image_delta_mm": residual,
                         "image_gap_row": int(img_row_write),
@@ -2400,6 +2411,15 @@ class QuickEstimationService:
                 return f" Focus snap: {refusal}{reach_note}"
             return " Snapped the detector to the traced focus." + reach_note
         if abs(after) <= 0.5:
+            # bugs/0764: the snap can now DECLINE -- it reverts a write that measured worse on
+            # the traced rays. Saying "snapped to the traced focus" then credits the snap for a
+            # focus the solve had already landed, which is how a fabricated correction went
+            # unnoticed in the first place. Say which of the two actually happened.
+            if str(getattr(self.editor, "_snap_detector_refusal", "") or ""):
+                return (
+                    f" Focus: residual {after:+.4g} mm -- already at the traced focus, so the "
+                    f"snap left the sensor where the solve put it.{reach_note}"
+                )
             return (
                 f" Focus: residual {before:+.4g} -> {after:+.4g} mm "
                 f"(snapped to the traced focus).{reach_note}"

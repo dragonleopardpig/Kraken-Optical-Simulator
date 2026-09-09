@@ -16019,6 +16019,10 @@ phase_550_delivered_needs_both_and_banner_beside_hud = _phase_from_standalone(
     550, "'already delivered' needs BOTH the first order and the MEASURED focus to say the image lands -- gating on the first order alone (0761) let a scene whose traced image sat 5.932 mm in front of the sensor be declared finished and locked there; plus the solve banner now sits beside the system HUD, offset by the HUD's own rendered width (vtkTextActor.GetSize takes an OUTPUT array -- the one-argument form raised and silently left it stacked) (0762)",
     "KrakenOS.UI.validate_open3d_0762_delivered_needs_both_and_banner_beside_hud",
     "delivered_needs_both_and_banner_beside_hud")
+phase_551_focus_snap_may_not_make_focus_worse = _phase_from_standalone(
+    551, "the focus snap may not leave the scene worse than it found it: _traced_bundle_best_focus_shift matched only the LEGACY termination spelling, so on a scene whose builder stamps 'image' (om05a: 644 rays land as 'image', 0 as 'target_termination') it returned None on every call -- which the snap reads as 'no bundle measurable' and answers with an unverified station-frame single shot, moving the sensor +5.8819 mm off a focus the solve had just landed at -0.0506 mm; the measure now accepts both spellings and the unfrozen branch measures the traced defocus before and after and restores the rows when the move made it worse (bugs/0577's rule was frozen-branch-only) (0764)",
+    "KrakenOS.UI.validate_open3d_0764_focus_snap_may_not_make_focus_worse",
+    "focus_snap_may_not_make_focus_worse")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
