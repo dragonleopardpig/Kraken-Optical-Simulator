@@ -1518,6 +1518,12 @@ class QuickEstimationService:
         if not (0 <= arm_row < len(rows)):
             return out
         arm = {"row": arm_row}
+        try:                                   # bugs/0761: the gap that carries the filter
+            carry = int(spec["arm_carry_row"])
+            if 0 <= carry < len(rows):
+                arm["carry_row"] = carry
+        except (KeyError, TypeError, ValueError):
+            pass
         for key, default in (("min_mm", float("-inf")), ("max_mm", float("inf"))):
             try:
                 arm[key] = float(spec.get("arm_" + key, default))
@@ -1550,6 +1556,29 @@ class QuickEstimationService:
             rows[pad].thickness = float(rows[pad].thickness) + float(delta)
         except (AttributeError, TypeError, ValueError):
             return False
+        # bugs/0761: the group is "lens + FILTER + fold mirror + camera". The mirror is seated and
+        # the sensor rides it, but anything between the lens and the mirror rides the CHAIN, so it
+        # stays behind unless its gap takes the same delta. Measured on the flagged 30 mm solve:
+        # the lens moved -80.842 mm, the mirror and sensor -55.698, and the filter 0.000 -- it
+        # ended 55.7 mm from the mirror it travels with, which is the stray disc the user saw.
+        # It must move as a PAIR, exactly like the lens does (bugs/0719): the gap BEFORE the
+        # filter takes +delta and the gap between the filter and the mirror takes -delta, so the
+        # filter travels while the mirror's station -- and everything measured from it -- does
+        # not. Writing only the first gap shifts the whole chain: measured, the mirror picked up
+        # a 55.7 mm z component and the sensor went 259 mm out of place.
+        carry = arm.get("carry_row")
+        pair = arm.get("carry_pair_row", seat - 1)
+        if carry is not None:
+            try:
+                a_i, b_i = int(carry), int(pair)
+            except (TypeError, ValueError):
+                a_i = b_i = -1
+            if 0 <= a_i < len(rows) and 0 <= b_i < len(rows) and a_i != b_i:
+                try:
+                    rows[a_i].thickness = float(rows[a_i].thickness) + float(delta)
+                    rows[b_i].thickness = float(rows[b_i].thickness) - float(delta)
+                except (AttributeError, TypeError, ValueError):
+                    pass
         return True
 
     def _image_write_locked_by_vendor_hardware(self, rows, write_row) -> str:
@@ -3332,6 +3361,11 @@ class QuickEstimationService:
         except Exception:
             pass
 
+    # bugs/0761: how close the image must already be to the sensor before a repeat request counts
+    # as delivered. One pixel of depth of focus on om05a is 0.153 mm, so a tenth of a millimetre
+    # is comfortably inside "already landed".
+    _DELIVERED_FOCUS_TOL_MM = 0.1
+
     def _fov_already_delivered(self, sensor_semi: float, object_semi: float, *, tol: float = 0.005):
         """bugs/0727: is the scene ALREADY delivering this field?
 
@@ -3359,6 +3393,19 @@ class QuickEstimationService:
         if not (delivered_m > 1e-9):
             return None
         if abs(delivered_m - target_m) > float(tol) * target_m:
+            return None
+        # bugs/0761 (flag 20260909_122103_567: "the image plane is in front of the sensor" while
+        # the banner said "the lens did not move -- the field was already delivered"): matching
+        # the MAGNIFICATION is not delivering the field. A scene can sit at the right |m| with
+        # the image well off the sensor -- the user's read 6.276 mm out -- and this returned
+        # "nothing to move", locking it there. The request is delivered only when the image also
+        # LANDS, so ask the same first order the solve uses.
+        try:
+            folded = self.editor._folded_conjugate_gaps_for_magnification(target_m)
+            residual = float(folded["image_delta"]) if isinstance(folded, dict) else None
+        except Exception:
+            residual = None
+        if residual is not None and abs(residual) > self._DELIVERED_FOCUS_TOL_MM:
             return None
         try:
             dims = self.editor._current_camera_sensor_active_mm()
