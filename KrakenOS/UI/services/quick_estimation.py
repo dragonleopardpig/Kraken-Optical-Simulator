@@ -1562,7 +1562,13 @@ class QuickEstimationService:
         # describes a transient state nobody is looking at -- on the flagged 55 mm solve that
         # read 85.93 mm (|m| 0.2681) against a traced 54.09 mm. The reported way out has to be
         # a way out of the scene the user is in.
-        in_focus_before = self._in_focus_fields_at_current_track()
+        # bugs/0758: this is an INFORMATIONAL readout -- it must never be able to take the
+        # conjugate solve down with it. Penta 412 (a QE consumer that composes only part of the
+        # service) died on AttributeError here and the whole solve went with it.
+        try:
+            in_focus_before = self._in_focus_fields_at_current_track()
+        except Exception:
+            in_focus_before = []
         if os_f > 0 and is_f > 0:
             folded = self.editor._folded_conjugate_gaps_for_magnification(is_f / os_f)
             if folded is not None:

@@ -16003,6 +16003,10 @@ phase_546_split_pooled_field_buckets = _phase_from_standalone(
     546, "a bucket that pools SEVERAL field points is not a field group: the mirrored second arm arrived as one index carrying all 318 rays from three field points, so its least-squares waist measured the IMAGE HEIGHT (3865 um) and drew the focus plane 95.35 mm out while the mirror-image arm -- identical |m| to six digits -- read -0.02 mm; the decomposition is now recovered from the launch points instead of a collapsible upstream index (0757)",
     "KrakenOS.UI.validate_open3d_0757_split_pooled_field_buckets",
     "split_pooled_field_buckets")
+phase_547_diagnostics_never_break_the_solve = _phase_from_standalone(
+    547, "an informational readout must never take the solve down with it: bugs/0755's 'what field WOULD land' snapshot was called unconditionally at the top of _apply_conjugate_pair, so a consumer composing only part of the service raised AttributeError and the entire conjugate solve died (penta 412) -- the snapshot is now guarded, and the guard composes services with the helper absent and raising to prove the solve survives (0758)",
+    "KrakenOS.UI.validate_open3d_0758_diagnostics_never_break_the_solve",
+    "diagnostics_never_break_the_solve")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16615,6 +16619,7 @@ def main() -> int:
             phase_544_name_the_field_that_lands,
             phase_545_camera_focus_stage,
             phase_546_split_pooled_field_buckets,
+            phase_547_diagnostics_never_break_the_solve,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
