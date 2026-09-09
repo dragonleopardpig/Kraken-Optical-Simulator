@@ -1507,7 +1507,50 @@ class QuickEstimationService:
                 out[key] = default
         if not (out["max_mm"] > out["min_mm"]):
             return None
+        # bugs/0759: MOTOR 1 -- the whole imaging group (lens, filter, fold mirror, camera) on
+        # one stage, which is how the bench is actually built. ``arm_row`` is the fold mirror
+        # whose seat carries the group; the same delta goes on the standoff so the assembly
+        # translates RIGIDLY and the camera-to-mirror distance never changes.
+        try:
+            arm_row = int(spec["arm_row"])
+        except (KeyError, TypeError, ValueError):
+            return out
+        if not (0 <= arm_row < len(rows)):
+            return out
+        arm = {"row": arm_row}
+        for key, default in (("min_mm", float("-inf")), ("max_mm", float("inf"))):
+            try:
+                arm[key] = float(spec.get("arm_" + key, default))
+            except (TypeError, ValueError):
+                arm[key] = default
+        if arm["max_mm"] > arm["min_mm"]:
+            out["arm"] = arm
         return out
+
+    def _apply_camera_arm_move(self, delta: float) -> bool:
+        """bugs/0759: move MOTOR 1 -- the lens/filter/mirror/camera group -- by ``delta`` mm
+        along the beam.
+
+        The fold mirror's seat carries the group, and the sensor standoff takes the SAME delta:
+        measured, a seat move alone shortens the lens->mirror leg and lengthens mirror->sensor by
+        exactly as much, so the conjugate is invariant (the two legs trade off). Writing both
+        makes the assembly translate rigidly -- the sensor moves in x only -- so the track really
+        does change and the camera-to-mirror clearance is untouched by construction.
+        """
+        stage = self._camera_focus_stage()
+        arm = (stage or {}).get("arm")
+        if not isinstance(arm, dict):
+            return False
+        rows = list(getattr(self.editor, "rows", None) or [])
+        seat, pad = int(arm["row"]), int(stage["row"])
+        if not (0 <= seat < len(rows) and 0 <= pad < len(rows)):
+            return False
+        try:
+            rows[seat].desp_x = float(rows[seat].desp_x) + float(delta)
+            rows[pad].thickness = float(rows[pad].thickness) + float(delta)
+        except (AttributeError, TypeError, ValueError):
+            return False
+        return True
 
     def _image_write_locked_by_vendor_hardware(self, rows, write_row) -> str:
         """bugs/0719: why the image-side gap write may NOT be booked after the lens moved --
@@ -1920,11 +1963,37 @@ class QuickEstimationService:
                     image_locked_reason = self._image_write_locked_by_vendor_hardware(
                         rows, img_row_write
                     )
+                    # bugs/0759: MOTOR 1 first. When the scene declares the whole imaging group
+                    # on one stage, the image-side correction is booked as a RIGID move of that
+                    # group (lens, filter, fold mirror, camera together) rather than by sliding
+                    # the sensor along its leg. That is how the bench is built, and it changes
+                    # the track WITHOUT spending camera-to-mirror clearance -- which is what
+                    # capped the sensor-only stage at a 48.4-56.1 mm device.
+                    if not image_locked_reason:
+                        stage = self._camera_focus_stage()
+                        arm = (stage or {}).get("arm")
+                        if isinstance(arm, dict):
+                            try:
+                                travelled = float(rows[int(arm["row"])].desp_x) + float(
+                                    folded["image_delta"]
+                                )
+                            except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+                                travelled = None
+                            if travelled is not None and not (
+                                arm["min_mm"] - 1.0e-9 <= travelled <= arm["max_mm"] + 1.0e-9
+                            ):
+                                image_locked_reason = (
+                                    f"the imaging group would have to travel to "
+                                    f"{travelled:.4g} mm, outside its {arm['min_mm']:.4g} to "
+                                    f"{arm['max_mm']:.4g} mm stage"
+                                )
+                            elif self._apply_camera_arm_move(float(folded["image_delta"])):
+                                image_handled = True
                     # bugs/0756: a stage has ends. Running past one is a refusal WITH the
                     # number, never a silent clamp -- the 0754 line then names the field this
                     # track can actually focus. ``min_mm``/``max_mm`` are the row's own value,
                     # so a scene states its travel in the units it is written in.
-                    if not image_locked_reason:
+                    if not image_locked_reason and not image_handled:
                         stage = self._camera_focus_stage()
                         if stage is not None and int(stage["row"]) == int(img_row_write):
                             try:
