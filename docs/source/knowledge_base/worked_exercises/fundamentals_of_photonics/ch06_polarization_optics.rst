@@ -639,7 +639,7 @@ phase.
 .. math::
    :label: fop-problem-6-1-9-result
 
-   \boxed{R\ \xleftrightarrow{\text{mirror reflection}}\ L.}
+   \boxed{R\ \overset{\text{mirror reflection}}{\longleftrightarrow}\ L.}
 
 **Check.**  Two successive mirror reflections restore the original
 propagation direction and handedness.  For a real mirror at oblique incidence,
