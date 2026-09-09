@@ -16015,6 +16015,10 @@ phase_549_filter_travels_and_focus_gates_idempotence = _phase_from_standalone(
     549, "the filter travels with the imaging group, and 'already delivered' means the image LANDS: Motor 1 wrote only the mirror seat and the sensor standoff, so the filter rode the lens chain and ended 55.7 mm from the mirror it travels with (it needs a PAIR, like the lens -- writing one gap alone threw the sensor 259 mm out), and the idempotence test compared magnification alone, declaring a scene finished with the image 6.276 mm off the sensor (0761)",
     "KrakenOS.UI.validate_open3d_0761_filter_travels_and_focus_gates_idempotence",
     "filter_travels_and_focus_gates_idempotence")
+phase_550_delivered_needs_both_and_banner_beside_hud = _phase_from_standalone(
+    550, "'already delivered' needs BOTH the first order and the MEASURED focus to say the image lands -- gating on the first order alone (0761) let a scene whose traced image sat 5.932 mm in front of the sensor be declared finished and locked there; plus the solve banner now sits beside the system HUD, offset by the HUD's own rendered width (vtkTextActor.GetSize takes an OUTPUT array -- the one-argument form raised and silently left it stacked) (0762)",
+    "KrakenOS.UI.validate_open3d_0762_delivered_needs_both_and_banner_beside_hud",
+    "delivered_needs_both_and_banner_beside_hud")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16630,6 +16634,7 @@ def main() -> int:
             phase_547_diagnostics_never_break_the_solve,
             phase_548_two_motor_imaging_group,
             phase_549_filter_travels_and_focus_gates_idempotence,
+            phase_550_delivered_needs_both_and_banner_beside_hud,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

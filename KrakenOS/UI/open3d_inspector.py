@@ -18656,8 +18656,48 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception as exc:
             self.editor.append_debug(f"3D solve-refusal banner update failed: {exc}")
             return
+        self._place_solve_banner_beside_system_hud(actor)
         if render:
             self.render()
+
+    def _place_solve_banner_beside_system_hud(self, actor) -> None:
+        """bugs/0762 (user: "Can also position the solve banner beside the Magnification,
+        Resolution banner, side by side?"): sit the solve banner to the RIGHT of the system-info
+        HUD instead of stacked under it.
+
+        The offset is the HUD's own RENDERED width, asked of VTK each update, not a guessed
+        constant -- the HUD grows and shrinks with its content (the bugs/0719 focus residual and
+        the bugs/0754 way-out line are long), so a fixed x would overlap exactly when the text
+        matters most. Falls back to the stacked anchor if the width cannot be measured.
+        """
+        hud = self.__dict__.get("_system_info_hud_actor")
+        renderer = self._renderer
+        if hud is None or renderer is None:
+            return
+        try:
+            # vtkTextActor.GetSize takes an OUTPUT array -- calling it with one argument
+            # raises, which silently left the banner stacked on the first cut.
+            size = [0, 0]
+            hud.GetSize(renderer, size)               # (w, h) in display pixels
+            width_px = int(size[0])
+            if width_px <= 0:
+                return
+            viewport = renderer.GetSize()             # (w, h) of the render window
+            view_w = float(viewport[0]) if viewport and viewport[0] else 0.0
+            if not (view_w > 1.0):
+                return
+            gap_px = 18.0
+            x_norm = 0.012 + (float(width_px) + gap_px) / view_w
+            # never push it off the right edge -- fall back to stacked if it will not fit
+            if x_norm > 0.72:
+                x_norm, y_norm = 0.012, 0.83
+            else:
+                y_norm = 0.985
+            coordinate = actor.GetPositionCoordinate()
+            coordinate.SetCoordinateSystemToNormalizedViewport()
+            coordinate.SetValue(x_norm, y_norm)
+        except Exception:
+            pass
 
     def _update_placement_grid_status(self, text: str, *, render: bool = True) -> None:
         if self._renderer is None:

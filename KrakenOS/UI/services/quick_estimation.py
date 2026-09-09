@@ -3407,6 +3407,18 @@ class QuickEstimationService:
             residual = None
         if residual is not None and abs(residual) > self._DELIVERED_FOCUS_TOL_MM:
             return None
+        # bugs/0762: and the MEASURED focus too. The first cut asked only the first order, which
+        # is exactly the reading that can disagree with the real folded trace (bugs/0745): the
+        # user's scene had the first order at ~0 while the traced image sat 5.932 mm in front of
+        # the sensor, so "already delivered" waved it through a second time. Delivered requires
+        # BOTH to say it lands -- whichever is worse decides.
+        try:
+            measured = self.editor.__dict__.get("_focused_image_plane_info")
+            traced = float(measured["offset_mm"]) if isinstance(measured, dict) else None
+        except (KeyError, TypeError, ValueError):
+            traced = None
+        if traced is not None and abs(traced) > self._DELIVERED_FOCUS_TOL_MM:
+            return None
         try:
             dims = self.editor._current_camera_sensor_active_mm()
             width, height = float(dims[0]) / delivered_m, float(dims[1]) / delivered_m
