@@ -16639,6 +16639,7 @@ def main() -> int:
             phase_548_two_motor_imaging_group,
             phase_549_filter_travels_and_focus_gates_idempotence,
             phase_550_delivered_needs_both_and_banner_beside_hud,
+            phase_551_focus_snap_may_not_make_focus_worse,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
