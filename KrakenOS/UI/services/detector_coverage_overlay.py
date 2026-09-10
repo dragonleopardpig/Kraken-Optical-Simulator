@@ -2048,6 +2048,22 @@ def format_focus_summary_lines(
                     )
                 except (KeyError, TypeError, ValueError):
                     pass
+            # bugs/0776: the strip POSITION check, against the offset the SCENE declares.
+            try:
+                pos = over.get("strip_position")
+                if isinstance(pos, dict) and float(pos["worst_relative"]) > 0.02:
+                    arms = ", ".join(
+                        f"{a['name']} at {float(a['centre_mm']):.4g}"
+                        for a in pos.get("arms", []) if isinstance(a, dict)
+                    )
+                    lines.append(
+                        f"STRIP POSITION IS WRONG: the arms should image "
+                        f"{float(pos['expected_mm']):.4g} mm from the sensor centre "
+                        f"(arm offset {float(pos['arm_offset_mm']):.4g} mm x |m|) but sit at "
+                        f"{arms}"
+                    )
+            except (KeyError, TypeError, ValueError):
+                pass
             try:
                 disagree = float(over["m_disagreement"])
                 if disagree > 0.02:

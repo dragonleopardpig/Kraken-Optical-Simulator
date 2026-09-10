@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 
@@ -238,6 +239,12 @@ class LayoutSettingsService:
             # but a scene may state that the assembly rides a stage along its leg, which is the
             # third conjugate variable (A5 / C1 / C2) the FOV solve is otherwise blind to.
             "camera_focus_stage": getattr(self, "camera_focus_stage", None),
+            # bugs/0776: the split-field arm offset, in mm. A property of the BENCH
+            # (how far apart the two arms' axes sit in object space), so the scene
+            # states it exactly as it states its motor travel.
+            "split_field_arm_offset_mm": getattr(
+                self, "split_field_arm_offset_mm", None
+            ),
             # bugs/0683: authored partial-FOV bands (a split-field scene's MEASURED
             # delivered field per face); replaces the full object-FOV rectangle.
             "object_fov_bands": getattr(self, "layout_object_fov_bands", None),
@@ -445,6 +452,20 @@ class LayoutSettingsService:
         self.display_fold_spec = settings.get("display_fold_spec", None)  # bugs/0671
         stage = settings.get("camera_focus_stage", None)   # bugs/0756
         self.camera_focus_stage = dict(stage) if isinstance(stage, dict) else None
+        # bugs/0776: a non-finite value must be DROPPED, not stored. `float("1e400")` is inf,
+        # which passes a `> 0.0` test, and pformat writes it into the .py as the bare token
+        # `inf` -- not a Python literal, so the module fails to import and BOTH loaders fall
+        # back to surfaces-only, silently discarding every persisted setting. The module already
+        # applies this rule in _portable_clear_aperture_rect; the same care is owed here.
+        offset = settings.get("split_field_arm_offset_mm", None)
+        self.split_field_arm_offset_mm = None
+        if offset is not None:
+            try:
+                value = float(offset)
+            except (TypeError, ValueError):
+                value = None
+            if value is not None and math.isfinite(value) and value > 0.0:
+                self.split_field_arm_offset_mm = value
         bands = settings.get("object_fov_bands", None)  # bugs/0683
         # bugs/0721: a device-face band's field is centred on its face -- symmetrize the
         # authored v-range (span kept) so the green planes and the sensor strips are not

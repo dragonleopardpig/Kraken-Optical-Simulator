@@ -8768,11 +8768,28 @@ class LayoutTableWorkbenchMixin:
         inside = 0
         worst = 0.0
         span_v = 0.0
+        # bugs/0776: group by FIELD BAND, the same rule _focus_image_partitions uses to decide
+        # which landings form one image. Grouping by launch POINT instead gives one group per
+        # field point (measured: 14 on a 23 mm device -- 7 per face) and comparing each of those
+        # against k*|m| is meaningless, because a field point imaging away from the axis is the
+        # field doing its job. Only the whole strip's centre obeys the law.
+        bands = []
+        for band in list(getattr(self, "layout_object_fov_bands", None) or []):
+            if not isinstance(band, dict):
+                continue
+            try:
+                bands.append((str(band.get("name") or f"arm{len(bands) + 1}"),
+                              np.asarray(band.get("center"), dtype=float).reshape(3)))
+            except Exception:
+                continue
+        groups = {}          # band name -> [summed in-plane offset, count]
         for path in list(getattr(scene_bundle, "ray_paths", []) or []):
             if str(getattr(path, "termination_reason", "")) not in ("image", "target_termination"):
                 continue
             try:
-                end = np.asarray(path.points_world, dtype=float)[-1, :3]
+                pts = np.asarray(path.points_world, dtype=float)
+                end = pts[-1, :3]
+                launch = pts[0, :3]
             except Exception:
                 continue
             d = end - c
@@ -8784,6 +8801,26 @@ class LayoutTableWorkbenchMixin:
             else:
                 inside += 1
             span_v = max(span_v, dv)
+            if not bands:
+                continue
+            key = min(bands, key=lambda b: float(np.linalg.norm(launch - b[1])))[0]
+            slot = groups.setdefault(key, [np.zeros(2), 0])
+            slot[0] = slot[0] + np.array([float(d @ u), float(d @ v)])
+            slot[1] += 1
+        # one centre per arm: the mean landing point's in-plane distance from the sensor centre.
+        # Basis-independent -- it does not matter which way the constructed u/v axes fell.
+        # The law describes a SPLIT field: two arms imaging two faces onto one sensor. With
+        # fewer than two bands receiving rays there is no strip pair to check, and asserting
+        # anything would be inventing a rule for a scene shape that was never measured.
+        centres = {}
+        ray_counts = {}
+        if len(groups) >= 2:
+            for key, (total_off, count) in sorted(groups.items()):
+                if count <= 0:
+                    continue
+                mean = total_off / float(count)
+                centres[str(key)] = float(np.hypot(mean[0], mean[1]))
+                ray_counts[str(key)] = int(count)
         total = outside + inside
         if not total:
             return
@@ -8819,6 +8856,39 @@ class LayoutTableWorkbenchMixin:
             # scene-independent, unlike the strip POSITION whose coefficient is a property of
             # one bench's arm offset, so it can be asserted anywhere. Only meaningful while the
             # strip still fits: a clipped strip under-reports its own length.
+            # bugs/0776 (user: "let the scene declare it, like camera_focus_stage"): the strip
+            # POSITION law. bugs/0774 measured |centre| = k * |m| with k = 8.778 mm on the
+            # 80 mm bench -- exact to 0.002 mm at devices 21.5, 22 and 24, and violated by
+            # 0.696 mm (7.6%) at device 21, which is the sharpest statement of that bug. k is
+            # the object-space half-separation of the two arms' axes: a property of the BENCH,
+            # not of optics, so it is the scene's to declare and must never be hardcoded here.
+            try:
+                k = getattr(self, "split_field_arm_offset_mm", None)
+                k = float(k) if k is not None else None
+            except (TypeError, ValueError):
+                k = None
+            # bugs/0776 review: the sibling traced_m check skips when the strip is CLIPPED, and
+            # this one must too. A clipped strip loses its outer rays, so the surviving mean
+            # drifts inward off the true centre and the law is charged for it -- and the banner
+            # would then contradict the FIELD OVERFLOWS line printed just above it.
+            # Also require enough rays per arm to call a mean a centre: a mostly-vignetted arm
+            # can leave a handful of rays at one END of the strip.
+            enough = all(n >= 8 for _, n in ray_counts.items()) if ray_counts else False
+            if outside == 0 and enough and k and k > 0.0 and m > 0.0 and centres:
+                expected = k * m
+                worst_rel = 0.0
+                per_arm = []
+                for name, pos in sorted(centres.items()):
+                    rel = abs(pos - expected) / expected
+                    per_arm.append({"name": name, "centre_mm": float(pos),
+                                    "expected_mm": float(expected), "relative": float(rel)})
+                    worst_rel = max(worst_rel, rel)
+                record["strip_position"] = {
+                    "expected_mm": float(expected),
+                    "arm_offset_mm": float(k),
+                    "arms": per_arm,
+                    "worst_relative": float(worst_rel),
+                }
             if outside == 0 and span_v > 0.0:
                 traced_m = 2.0 * span_v / device
                 record["traced_m"] = float(traced_m)

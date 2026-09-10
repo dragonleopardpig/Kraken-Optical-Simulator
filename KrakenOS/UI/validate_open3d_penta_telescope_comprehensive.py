@@ -16055,6 +16055,10 @@ phase_559_traced_magnification_checks_the_claim = _phase_from_standalone(
     559, "measure the delivered magnification from the RAYS and check the claim: the banner's '|m| 1.045' could not be contradicted by anything, because every readout that might have came from the same first order that produced it -- bugs/0774's LAW 2 reads backwards into |m| = 2*|v|half/device, which is scene-independent (unlike the strip POSITION, whose 9.278 coefficient is one bench's arm offset and would be a hardcoded scene constant); quiet on the measured cases to 0.03% against a 2% threshold, skipped when the strip is clipped because a clipped strip under-reports its own length (0775)",
     "KrakenOS.UI.validate_open3d_0775_traced_magnification_checks_the_claim",
     "traced_magnification_checks_the_claim")
+phase_560_scene_declares_the_arm_offset = _phase_from_standalone(
+    560, "the split-field arm offset is the SCENE's to declare, like camera_focus_stage: the strip-POSITION law |centre| = k*|m| needs k, the object-space half-separation of the two arms' axes (8.778 mm on om05a_folded_80mm), which is a property of the BENCH and would bake one machine's geometry into the simulator if hardcoded; it round-trips through save/load with every malformed value DROPPED including non-finite (1e400 -> inf passes a bare '>0' test and pformat writes it back as the bare token `inf`, so the .py fails to import and both loaders fall back to surfaces-only, silently discarding every persisted setting), and the check is inert on any scene that declares nothing (0776)",
+    "KrakenOS.UI.validate_open3d_0776_scene_declares_the_arm_offset",
+    "scene_declares_the_arm_offset")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16680,6 +16684,7 @@ def main() -> int:
             phase_557_delivered_asks_every_image,
             phase_558_field_overflowing_the_sensor_is_said,
             phase_559_traced_magnification_checks_the_claim,
+            phase_560_scene_declares_the_arm_offset,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
