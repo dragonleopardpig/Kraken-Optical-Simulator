@@ -16027,6 +16027,10 @@ phase_552_landed_is_within_a_pixel = _phase_from_standalone(
     552, "'land it' is a question about the PIXEL, not about millimetres: the focus banner told the user to move the device stage with the image 0.05058 mm off and a 1.51 um blur on a 4.5 um pixel -- a third of a pixel, nothing left to move -- because the gate was a hardcoded 0.05 mm that the residual cleared by 0.6 um; the instruction now compares the traced blur to the pixel pitch (smaller side of a rectangular pixel), which is the same criterion the bench's own DOF spec uses (86/195/410 um at f/5.6 all back-solve to c ~ 4.7 um) (0767)",
     "KrakenOS.UI.validate_open3d_0767_landed_is_within_a_pixel",
     "landed_is_within_a_pixel")
+phase_553_stage_row_must_be_the_write_row = _phase_from_standalone(
+    553, "a camera stage declared on the WRONG row must say so: _image_write_locked_by_vendor_hardware exempts the stage only when its row IS the row the solve writes, so om05a_folded's stage on the mirror row fell through to the same bare 'the sensor carries the vendor camera body' line a scene with NO stage gets -- Motor 1 skipped, 7.31 mm reported, nothing pointing at the cause; the reason now names both rows, and the lock still refuses to re-point itself at the write row because that row may be a vendor body (pointing it at a desp-placed LED panel satisfied the first order to -5e-13 while the trace stayed 7.31 mm out) (0769)",
+    "KrakenOS.UI.validate_open3d_0769_stage_row_must_be_the_write_row",
+    "stage_row_must_be_the_write_row")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16645,6 +16649,7 @@ def main() -> int:
             phase_550_delivered_needs_both_and_banner_beside_hud,
             phase_551_focus_snap_may_not_make_focus_worse,
             phase_552_landed_is_within_a_pixel,
+            phase_553_stage_row_must_be_the_write_row,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

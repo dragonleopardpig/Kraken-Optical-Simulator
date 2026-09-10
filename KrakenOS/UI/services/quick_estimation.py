@@ -1713,6 +1713,19 @@ class QuickEstimationService:
             # the body is untouched, only its position along the leg changes.
             stage = self._camera_focus_stage()
             if not (stage is not None and int(stage["row"]) == write_row):
+                # bugs/0769: a scene that HAS a stage but declares it on the wrong row used to
+                # be indistinguishable from a scene with no stage at all -- both got the bare
+                # "vendor camera body" line, Motor 1 was skipped, and the user saw a large
+                # residual with nothing pointing at the cause. Measured on om05a_folded: a stage
+                # on the mirror row (15) while the solve writes row 22 reported the camera lock
+                # and left 7.31 mm on the table. Name the mismatch; it is a scene error, and
+                # guessing the row instead would move whatever happens to sit there.
+                if stage is not None:
+                    return (
+                        "the sensor carries the vendor camera body (glued camera STEP) -- this "
+                        f"scene's camera stage is declared on row {int(stage['row'])}, but the "
+                        f"image side is written on row {write_row}, so the stage cannot book it"
+                    )
                 return "the sensor carries the vendor camera body (glued camera STEP)"
         rows = list(rows or [])
         for index in range(write_row + 1, len(rows)):
