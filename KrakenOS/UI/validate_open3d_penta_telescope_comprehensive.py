@@ -16035,6 +16035,10 @@ phase_554_arm_move_must_move_the_sensor = _phase_from_standalone(
     554, "MOTOR 1 must be SHOWN to have moved the sensor or not move at all: the seat is written in desp_x while the pad is written as a THICKNESS, which advances along whatever direction the chain points after the fold -- those coincide on om05a_folded_80mm (a -10 mm request moves the sensor exactly (-10,0,0)) and do not on om05a_folded, whose mirror 2 carries tilt_y 90 / tilt_z 180 and throws the sensor (-10,+20,0), |d| 22.36 for 10 mm of intent; the first order books stations so it reported a clean 1.0000 gain while the traced focus moved 0.4142 of the request, and the solve wrote geometry that looked solved and was not -- the move now measures the sensor before and after and reverts every field it wrote, carry pair included (0770)",
     "KrakenOS.UI.validate_open3d_0770_arm_move_must_move_the_sensor",
     "arm_move_must_move_the_sensor")
+phase_555_row_limit_is_not_a_hardware_limit = _phase_from_standalone(
+    555, "a ROW that cannot absorb a move is not a MACHINE with no room: FOV 20 on a 20x20x1 device needs the lens 136.97 mm along its leg against a 130.889 mm gap, so the thickness pair would drive the row negative and the mover refused with 'the gap would go negative' -- which reads as 'no room' while the mover's own physical probe reported 155.79 mm and the STEP bodies still had 19.85 mm of clearance at the cap; the refusal now records the shortfall (so bugs/0573's make-room path has a number instead of silently never running) and names the physical room and that the limit is the row partition, with the physical-room refusal above it untouched (0771)",
+    "KrakenOS.UI.validate_open3d_0771_row_limit_is_not_a_hardware_limit",
+    "row_limit_is_not_a_hardware_limit")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16655,6 +16659,7 @@ def main() -> int:
             phase_552_landed_is_within_a_pixel,
             phase_553_stage_row_must_be_the_write_row,
             phase_554_arm_move_must_move_the_sensor,
+            phase_555_row_limit_is_not_a_hardware_limit,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

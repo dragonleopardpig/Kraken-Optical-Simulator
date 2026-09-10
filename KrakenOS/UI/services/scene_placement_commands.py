@@ -5254,10 +5254,30 @@ class ScenePlacementMixin:
                 return None
             if abs(amount) > cap + 1.0e-9:
                 self._lens_move_room_mm = float(cap)
+                # bugs/0771 (flag 154535, "FOV 20mm rejected ... I think there is still
+                # adjustable distance available" -- the user was right): the PHYSICAL gate
+                # above has already passed, so the bodies have room; what is exhausted is the
+                # ROW, not the machine. Measured on om05a_folded_80mm with a 20x20x1 device at
+                # FOV 20: the move needs 136.97 mm against a 130.889 mm gap -- short by 6.08 --
+                # while the lens body still has 19.85 mm of clearance to the prism assembly at
+                # the cap, and the mover's own physical probe reports 155.79 mm.
+                #
+                # Record the shortfall so the caller's bugs/0573 make-room machinery can slide
+                # the fold arm and retake the move. Without it that path never runs: it reads
+                # _lens_leg_slide_shortfall, which this branch used to leave unset, so a solve
+                # that the hardware can do was reported as out of range.
+                shortfall = abs(float(amount)) - float(cap)
+                self._lens_leg_slide_shortfall = float(shortfall)
+                _phys_txt = (
+                    ""
+                    if room_phys is None
+                    else f"; {float(room_phys):.4g} mm of PHYSICAL room remains, so this is the "
+                         f"row partition and not the hardware"
+                )
                 self._lens_move_refusal = (
                     f"that field needs the lens {amount:+.4g} mm along its leg, but the leg gap "
                     f"(row {gap_row}, {float(room_station):.4g} mm) cannot absorb it -- the gap "
-                    f"would go negative."
+                    f"would go negative (short by {shortfall:.4g} mm{_phys_txt})."
                 )
                 self.append_debug(f"lens block move {amount:+.4f} mm refused: {self._lens_move_refusal}")
                 return None
