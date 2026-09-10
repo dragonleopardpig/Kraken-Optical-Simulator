@@ -2048,7 +2048,18 @@ def format_focus_summary_lines(
                     )
                 except (KeyError, TypeError, ValueError):
                     pass
-            elif outside > 0:
+            try:
+                disagree = float(over["m_disagreement"])
+                if disagree > 0.02:
+                    lines.append(
+                        f"DELIVERED FIELD DISAGREES WITH THE CLAIM: the rays measure "
+                        f"|m| {float(over['traced_m']):.4g} where the solve reports "
+                        f"{float(over['claimed_m']):.4g} ({100.0 * disagree:.1f}% apart) -- "
+                        f"trust the rays"
+                    )
+            except (KeyError, TypeError, ValueError):
+                pass
+            if predicted is None and outside > 0:
                 lines.append(
                     f"FIELD REACHES THE SENSOR EDGE: {outside} ray(s) land up to "
                     f"{worst:.4g} mm outside the active area ({100.0 * frac:.1f}% of the "

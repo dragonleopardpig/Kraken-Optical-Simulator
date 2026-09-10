@@ -16051,6 +16051,10 @@ phase_558_field_overflowing_the_sensor_is_said = _phase_from_standalone(
     558, "a field that overflows the sensor must be SAID, not silently clipped: the user noticed the two image strips migrating outward and asked whether it was accounted for -- it was not, a ray reaching the detector PLANE but landing beyond its active area counted as landing while the banner reported focus and spot as usual; two laws now govern it, |u|outer = 9.278*|m| (position) and |v|half = device*|m|/2 (length), verified to +-0.005 mm over two device sizes and five magnifications, and the check PREDICTS the extent because counting landings under-reports badly (a 30 mm device at FOV 24 registers 44 rays 0.005 mm out while 2.88 mm per side is lost and only 80% of the part is imaged) (0774)",
     "KrakenOS.UI.validate_open3d_0774_field_overflowing_the_sensor_is_said",
     "field_overflowing_the_sensor_is_said")
+phase_559_traced_magnification_checks_the_claim = _phase_from_standalone(
+    559, "measure the delivered magnification from the RAYS and check the claim: the banner's '|m| 1.045' could not be contradicted by anything, because every readout that might have came from the same first order that produced it -- bugs/0774's LAW 2 reads backwards into |m| = 2*|v|half/device, which is scene-independent (unlike the strip POSITION, whose 9.278 coefficient is one bench's arm offset and would be a hardcoded scene constant); quiet on the measured cases to 0.03% against a 2% threshold, skipped when the strip is clipped because a clipped strip under-reports its own length (0775)",
+    "KrakenOS.UI.validate_open3d_0775_traced_magnification_checks_the_claim",
+    "traced_magnification_checks_the_claim")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16675,6 +16679,7 @@ def main() -> int:
             phase_556_a_rail_that_moves_is_not_a_rail,
             phase_557_delivered_asks_every_image,
             phase_558_field_overflowing_the_sensor_is_said,
+            phase_559_traced_magnification_checks_the_claim,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

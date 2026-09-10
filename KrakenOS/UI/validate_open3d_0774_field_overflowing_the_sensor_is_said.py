@@ -96,11 +96,39 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         )
 
     # ---- D: prefer the prediction; never raise ------------------------------------------------
-    src = inspect.getsource(format_focus_summary_lines)
+    # bugs/0775 review: assert the BEHAVIOUR, not the source text. The first cut matched
+    # "elif outside > 0", which a later edit renamed to "if predicted is None and outside > 0" --
+    # same behaviour, broken guard. A guard that breaks on a rename was testing the wrong thing.
+    both = {
+        "offset_mm": -0.05, "rms_waist_mm": 0.0002, "rms_plane_mm": 0.0015,
+        "sensor_overflow": {
+            "outside": 44, "landed": 600, "overflow_mm": 0.004825, "fraction": 0.0683,
+            "field_half_mm": 14.4, "sensor_half_mm": 11.52,
+            "captured_fraction": 0.8, "predicted_overflow_mm": 2.88,
+        },
+    }
+    def _field_lines(info):
+        # only the FIELD lines -- "FOCUS:" and "Landed:" both contain the word "sensor"
+        return [l for l in format_focus_summary_lines(info, None, pixel_size_um=(4.5, 4.5))
+                if l.upper().startswith("FIELD ")]
+
+    both_lines = _field_lines(both)
     ok(
-        src.find("predicted_overflow_mm") < src.find("elif outside > 0"),
-        "D1: the banner prefers the PREDICTED overflow over the ray count -- counting landings "
-        "sees only the sliver at the boundary (44 rays at 0.005 mm for a 2.88 mm/side loss)",
+        len(both_lines) == 1 and "2.88" in both_lines[0],
+        f"D1: when BOTH a prediction and a ray count exist, the banner reports the PREDICTION "
+        f"only -- counting landings sees just the sliver at the boundary (44 rays at 0.005 mm "
+        f"for a 2.88 mm/side loss). Got {both_lines!r}",
+    )
+    only_count = {
+        "offset_mm": -0.05, "rms_waist_mm": 0.0002, "rms_plane_mm": 0.0015,
+        "sensor_overflow": {"outside": 7, "landed": 600, "overflow_mm": 0.02,
+                            "fraction": 0.0115},
+    }
+    count_lines = _field_lines(only_count)
+    ok(
+        len(count_lines) == 1 and "7 ray" in count_lines[0],
+        f"D1b: and with no prediction available the ray count still speaks, rather than the "
+        f"scene going silent about light it is losing. Got {count_lines!r}",
     )
     from KrakenOS.UI.services.layout_table_workbench import LayoutTableWorkbenchMixin as _M
 

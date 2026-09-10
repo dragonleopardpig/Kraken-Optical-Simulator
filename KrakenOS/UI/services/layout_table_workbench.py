@@ -8767,6 +8767,7 @@ class LayoutTableWorkbenchMixin:
         outside = 0
         inside = 0
         worst = 0.0
+        span_v = 0.0
         for path in list(getattr(scene_bundle, "ray_paths", []) or []):
             if str(getattr(path, "termination_reason", "")) not in ("image", "target_termination"):
                 continue
@@ -8782,6 +8783,7 @@ class LayoutTableWorkbenchMixin:
                 worst = max(worst, over)
             else:
                 inside += 1
+            span_v = max(span_v, dv)
         total = outside + inside
         if not total:
             return
@@ -8812,6 +8814,17 @@ class LayoutTableWorkbenchMixin:
             record["captured_fraction"] = float(min(1.0, limit / field_half))
             if field_half > limit:
                 record["predicted_overflow_mm"] = float(field_half - limit)
+            # bugs/0775: the delivered magnification, measured from the RAYS -- the strip's
+            # imaged length over the device that produced it (LAW 2 read backwards). It is
+            # scene-independent, unlike the strip POSITION whose coefficient is a property of
+            # one bench's arm offset, so it can be asserted anywhere. Only meaningful while the
+            # strip still fits: a clipped strip under-reports its own length.
+            if outside == 0 and span_v > 0.0:
+                traced_m = 2.0 * span_v / device
+                record["traced_m"] = float(traced_m)
+                record["claimed_m"] = float(m)
+                if m > 0.0:
+                    record["m_disagreement"] = float(abs(traced_m - m) / m)
         info["sensor_overflow"] = record
 
     def _split_pooled_field_buckets(self, buckets, polylines, launches, *, min_rays: int = 4,
