@@ -16039,6 +16039,10 @@ phase_555_row_limit_is_not_a_hardware_limit = _phase_from_standalone(
     555, "a ROW that cannot absorb a move is not a MACHINE with no room: FOV 20 on a 20x20x1 device needs the lens 136.97 mm along its leg against a 130.889 mm gap, so the thickness pair would drive the row negative and the mover refused with 'the gap would go negative' -- which reads as 'no room' while the mover's own physical probe reported 155.79 mm and the STEP bodies still had 19.85 mm of clearance at the cap; the refusal now records the shortfall (so bugs/0573's make-room path has a number instead of silently never running) and names the physical room and that the limit is the row partition, with the physical-room refusal above it untouched (0771)",
     "KrakenOS.UI.validate_open3d_0771_row_limit_is_not_a_hardware_limit",
     "row_limit_is_not_a_hardware_limit")
+phase_556_a_rail_that_moves_is_not_a_rail = _phase_from_standalone(
+    556, "a hardware rail must not move when the lens moves: a 23x23x1 device left the image 77.2 mm off with a 1970 um spot because MOTOR 1 needed to travel to 192.0 mm against a hand-guessed floor of 192.683 -- a 0.66 mm miss -- while the authored A5+C1 geometry gives a rail of [138.231, 286.630]; with it the same case lands at 191.979 with 644 rays, -0.081 mm and a 2.10 um spot. bugs/0766's derivation was worse than the guess it replaced because it read the LIVE gaps (a5 and c1 track the LENS, not the arm: mid-solve it produced [258.9, 407.3]), so it now reports only the invariant rail LENGTH and the row indices, and leaves the limits to the scene (0772)",
+    "KrakenOS.UI.validate_open3d_0772_a_rail_that_moves_is_not_a_rail",
+    "a_rail_that_moves_is_not_a_rail")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16660,6 +16664,7 @@ def main() -> int:
             phase_553_stage_row_must_be_the_write_row,
             phase_554_arm_move_must_move_the_sensor,
             phase_555_row_limit_is_not_a_hardware_limit,
+            phase_556_a_rail_that_moves_is_not_a_rail,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

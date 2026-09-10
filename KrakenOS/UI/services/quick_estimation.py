@@ -1536,18 +1536,20 @@ class QuickEstimationService:
             pad_mm = float(rows[pad].thickness)
         except (AttributeError, TypeError, ValueError):
             return None
-        # delta in [-a5, +c1], expressed in each writer's own units: the seat moves in desp_x,
-        # the pad in its own thickness. bugs/0760: the production scene mirrors x, so the seat's
-        # travel follows the SIGN of its authored seat rather than assuming +x is "away".
-        sign = -1.0 if seat_x < 0.0 else 1.0
-        arm_lo, arm_hi = sorted((seat_x - sign * a5, seat_x + sign * c1))
+        # bugs/0772: this used to ALSO derive the travel limits, as
+        # ``delta in [-a5, +c1]`` anchored on the seat. That is right at the scene's AUTHORED
+        # state and wrong everywhere else, because ``a5`` and ``c1`` track the LENS, not the arm:
+        # measured on om05a_folded_80mm mid-solve, with the lens moved to a5 = 10.265 it produced
+        # an arm rail of [258.9, 407.3] where the authored geometry gives [138.2, 286.6] -- and
+        # the arm needed 192.0. A hardware rail that moves when the lens moves is not a rail.
+        #
+        # The rail's LENGTH is invariant (a5 + c1 = 148.400 on that scene, preserved by the
+        # thickness pair), but its ANCHOR is the authored lens position, which is not recoverable
+        # once a solve has moved things. So the limits are the scene's to state; this helper
+        # reports the rail it can measure and the rows it can identify, and nothing it cannot.
         return {
             "row": pad,
-            "min_mm": pad_mm - a5,
-            "max_mm": pad_mm + c1,
             "arm_row": seat,
-            "arm_min_mm": arm_lo,
-            "arm_max_mm": arm_hi,
             "arm_carry_row": c1_row,
             "rail_mm": a5 + c1,
             "a5_row": a5_row,
