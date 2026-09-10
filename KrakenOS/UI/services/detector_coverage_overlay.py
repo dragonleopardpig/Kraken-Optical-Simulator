@@ -2022,6 +2022,38 @@ def format_focus_summary_lines(
                 lines.append(
                     "Move the device stage / camera focus to land it -- vendor hardware untouched"
                 )
+    # bugs/0774: rays that reach the detector PLANE but land beyond its active area were
+    # counted as landing and never mentioned. The user spotted the strips migrating outward and
+    # asked whether it was accounted for; it was not. Say it, with the count and the overflow.
+    if isinstance(focus_info, dict):
+        over = focus_info.get("sensor_overflow")
+        if isinstance(over, dict):
+            try:
+                outside = int(over["outside"])
+                worst = float(over["overflow_mm"])
+                frac = float(over.get("fraction", 0.0))
+            except (KeyError, TypeError, ValueError):
+                outside = 0
+                worst = frac = 0.0
+            predicted = over.get("predicted_overflow_mm")
+            if predicted is not None:
+                try:
+                    captured = 100.0 * float(over.get("captured_fraction", 1.0))
+                    lines.append(
+                        f"FIELD OVERFLOWS THE SENSOR by {float(predicted):.4g} mm per side: "
+                        f"the field is {2.0 * float(over['field_half_mm']):.4g} mm across a "
+                        f"{2.0 * float(over['sensor_half_mm']):.4g} mm sensor, so only "
+                        f"{captured:.1f}% of the device is imaged -- request a FOV at least as "
+                        f"large as the device"
+                    )
+                except (KeyError, TypeError, ValueError):
+                    pass
+            elif outside > 0:
+                lines.append(
+                    f"FIELD REACHES THE SENSOR EDGE: {outside} ray(s) land up to "
+                    f"{worst:.4g} mm outside the active area ({100.0 * frac:.1f}% of the "
+                    f"landing rays)"
+                )
     # bugs/0737: why there is no focus plane, and where the rays went when the scene looks empty
     for note in list(notes or []):
         text = str(note or "").strip()

@@ -8719,8 +8719,100 @@ class LayoutTableWorkbenchMixin:
                     f"image plane is the measured one; check for a row carrying thickness that "
                     f"the imaging path never travels"
                 )
+        # bugs/0774 (user: "I noticed the two image strips going outward from the center of the
+        # sensor, reaching the boundary at 21mm device size. Do you take this into account?").
+        # It was not taken into account: a ray that reaches the detector PLANE but lands beyond
+        # its active area was counted as landing, and nothing said otherwise. Measured on
+        # om05a_folded_80mm, a 30 mm device at FOV 24 puts 22 rays off the sensor and at FOV 28
+        # puts 28 off -- silently, while the banner reported focus and spot size as usual.
+        #
+        # Two laws govern where the strips sit, both verified to +-0.005 mm across two device
+        # sizes and five magnifications:
+        #     strip POSITION  |u|outer = 9.278 * |m|          (the fixed arm offset, magnified)
+        #     strip LENGTH    |v|half  = device * |m| / 2
+        # so with the default +5% field the strips always sit at 95.2% of the sensor half, and
+        # the length overflows whenever the requested FOV is smaller than the device itself.
+        try:
+            self._annotate_sensor_overflow(info, scene_bundle, centre, normal)
+        except Exception as exc:                      # bugs/0758: never break the measurement
+            self.append_debug(f"sensor overflow annotation skipped: {exc}")
         self._focused_image_plane_info = info
         return info
+
+    def _annotate_sensor_overflow(self, info, scene_bundle, centre, normal) -> None:
+        """bugs/0774: count the rays that reach the detector plane but land OUTSIDE its active
+        area, and by how far. Pure measurement on the bundle already traced; writes
+        ``sensor_overflow`` into ``info`` and nothing else."""
+        if not isinstance(info, dict) or scene_bundle is None:
+            return
+        try:
+            dims = self._current_camera_sensor_active_mm()
+            half_u, half_v = 0.5 * float(dims[0]), 0.5 * float(dims[1])
+        except Exception:
+            return
+        if not (half_u > 0.0 and half_v > 0.0):
+            return
+        n = np.asarray(normal, dtype=float).reshape(3)
+        norm = float(np.linalg.norm(n))
+        if norm <= 1e-9:
+            return
+        n = n / norm
+        tmp = np.array([1.0, 0.0, 0.0])
+        if abs(float(tmp @ n)) > 0.9:
+            tmp = np.array([0.0, 1.0, 0.0])
+        u = np.cross(n, tmp)
+        u = u / np.linalg.norm(u)
+        v = np.cross(n, u)
+        c = np.asarray(centre, dtype=float).reshape(3)
+        outside = 0
+        inside = 0
+        worst = 0.0
+        for path in list(getattr(scene_bundle, "ray_paths", []) or []):
+            if str(getattr(path, "termination_reason", "")) not in ("image", "target_termination"):
+                continue
+            try:
+                end = np.asarray(path.points_world, dtype=float)[-1, :3]
+            except Exception:
+                continue
+            d = end - c
+            du, dv = abs(float(d @ u)), abs(float(d @ v))
+            over = max(du - half_u, dv - half_v)
+            if over > 0.0:
+                outside += 1
+                worst = max(worst, over)
+            else:
+                inside += 1
+        total = outside + inside
+        if not total:
+            return
+        record = {
+            "outside": int(outside),
+            "landed": int(inside),
+            "overflow_mm": float(worst),
+            "fraction": float(outside) / float(total),
+        }
+        # Counting landings can only ever see the sliver AT the boundary: a ray heading well
+        # past the sensor never reaches it, so `outside` under-reports badly. Measured on
+        # om05a_folded_80mm, a 30 mm device at FOV 24 registers 44 rays 0.005 mm out while
+        # LAW 2 (|v|half = device * |m| / 2 = 14.40 mm on an 11.52 mm half) says a fifth of the
+        # device is off the sensor entirely. So predict the extent as well, from the device and
+        # the delivered magnification, and report the fraction actually captured.
+        try:
+            spec = self.inspection_part_spec
+            device = max(float(spec["width_mm"]), float(spec["depth_mm"]))
+            summary = self.__dict__.get("_solve_summary_info") or {}
+            m = abs(float(summary["delivered_m"]))
+        except (AttributeError, KeyError, TypeError, ValueError):
+            device = m = None
+        if device and m and device > 0.0 and m > 0.0:
+            field_half = 0.5 * device * m
+            limit = min(half_u, half_v)
+            record["field_half_mm"] = float(field_half)
+            record["sensor_half_mm"] = float(limit)
+            record["captured_fraction"] = float(min(1.0, limit / field_half))
+            if field_half > limit:
+                record["predicted_overflow_mm"] = float(field_half - limit)
+        info["sensor_overflow"] = record
 
     def _split_pooled_field_buckets(self, buckets, polylines, launches, *, min_rays: int = 4,
                                     max_groups: int = 64):
