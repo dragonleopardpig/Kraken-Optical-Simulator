@@ -1641,6 +1641,12 @@ class QuickEstimationService:
             out["arm"] = arm
         return out
 
+    #: bugs/0770: how far the sensor's measured travel may differ from what MOTOR 1 asked for
+    #: before the move is judged not to have happened and is reverted. Well under one pixel of
+    #: depth of focus (0.153 mm), and far under the 12.36 mm error the om05a_folded frame showed
+    #: for a 10 mm request.
+    _ARM_MOVE_TOL_MM = 0.05
+
     def _apply_camera_arm_move(self, delta: float) -> bool:
         """bugs/0759: move MOTOR 1 -- the lens/filter/mirror/camera group -- by ``delta`` mm
         along the beam.
@@ -1650,6 +1656,21 @@ class QuickEstimationService:
         exactly as much, so the conjugate is invariant (the two legs trade off). Writing both
         makes the assembly translate rigidly -- the sensor moves in x only -- so the track really
         does change and the camera-to-mirror clearance is untouched by construction.
+
+        bugs/0770: "the sensor moves in x only" is true of the frame bugs/0759 was measured on and
+        NOT of every scene, so the move now CHECKS it. The seat is written in ``desp_x`` while the
+        pad is written as a THICKNESS, which advances along whatever direction the chain points
+        after the fold. Those coincide on ``om05a_folded_80mm`` (a -10 mm move puts the sensor at
+        exactly (-10, 0, 0)) and do not on ``om05a_folded``, whose mirror 2 carries
+        ``tilt_y 90, tilt_z 180``: the same move throws the sensor (-10, +20, 0), |d| 22.36 for
+        10 mm of intent. Permuted x/y components are the tell ([[reference_step_offset_frame]]).
+        The first order cannot see it -- it books stations, so it reported a clean 1.0000 gain
+        while the traced focus moved by 0.4142 (the wrong 3D motion projected onto the axis) and
+        the solve wrote geometry that looked solved and was not.
+
+        So: measure the sensor before and after, and REVERT when the move did not translate it by
+        ``delta``. A motor that cannot be shown to have moved the sensor along the beam must not
+        leave its write standing (the bugs/0764 rule, one layer down).
         """
         stage = self._camera_focus_stage()
         arm = (stage or {}).get("arm")
@@ -1659,6 +1680,13 @@ class QuickEstimationService:
         seat, pad = int(arm["row"]), int(stage["row"])
         if not (0 <= seat < len(rows) and 0 <= pad < len(rows)):
             return False
+        # bugs/0770: snapshot everything this method writes, so a move that cannot be shown to
+        # have translated the sensor can be put back exactly as it was found.
+        before_rows = [
+            (float(r.thickness), float(r.desp_x), float(r.desp_y), float(r.desp_z))
+            for r in rows
+        ]
+        sensor_before = self._sensor_world_point()
         try:
             rows[seat].desp_x = float(rows[seat].desp_x) + float(delta)
             rows[pad].thickness = float(rows[pad].thickness) + float(delta)
@@ -1687,7 +1715,43 @@ class QuickEstimationService:
                     rows[b_i].thickness = float(rows[b_i].thickness) - float(delta)
                 except (AttributeError, TypeError, ValueError):
                     pass
+        # bugs/0770: did the sensor actually travel `delta` along the beam? On a frame where the
+        # pad's thickness advances in a different direction than the seat's desp_x, it does not,
+        # and the first order cannot tell (it books stations). Verify, and revert if not.
+        sensor_after = self._sensor_world_point()
+        if sensor_before is not None and sensor_after is not None:
+            moved = float(np.linalg.norm(np.asarray(sensor_after) - np.asarray(sensor_before)))
+            want = abs(float(delta))
+            if abs(moved - want) > max(self._ARM_MOVE_TOL_MM, 0.02 * want):
+                for row, (t, dx, dy, dz) in zip(rows, before_rows):
+                    row.thickness, row.desp_x, row.desp_y, row.desp_z = t, dx, dy, dz
+                self.editor._camera_arm_move_refusal = (
+                    f"the imaging-group stage asked for {want:.4g} mm along the beam but the "
+                    f"sensor would travel {moved:.4g} mm ({np.round(np.asarray(sensor_after) - np.asarray(sensor_before), 3).tolist()}) "
+                    f"-- the pad row does not advance along the seat's axis on this scene, so "
+                    f"the move was not applied (bugs/0770)"
+                )
+                try:
+                    self.editor.append_debug(
+                        "MOTOR 1 refused: " + self.editor._camera_arm_move_refusal
+                    )
+                except Exception:
+                    pass
+                return False
         return True
+
+    def _sensor_world_point(self):
+        """bugs/0770: the detector's world point, or None. Row math only -- no ray trace -- and
+        never raises, because it is read inside a geometry write."""
+        try:
+            rows = list(getattr(self.editor, "rows", None) or [])
+            if len(rows) < 2:
+                return None
+            point = self.editor._surface_reference_world_point(len(rows) - 1)
+            point = np.asarray(point, dtype=float).reshape(3)
+        except Exception:
+            return None
+        return point if np.all(np.isfinite(point)) else None
 
     def _image_write_locked_by_vendor_hardware(self, rows, write_row) -> str:
         """bugs/0719: why the image-side gap write may NOT be booked after the lens moved --
