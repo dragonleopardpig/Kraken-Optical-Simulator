@@ -3619,9 +3619,32 @@ class QuickEstimationService:
         # user's scene had the first order at ~0 while the traced image sat 5.932 mm in front of
         # the sensor, so "already delivered" waved it through a second time. Delivered requires
         # BOTH to say it lands -- whichever is worse decides.
+        # bugs/0773 (flag 172158, a 21x21x1 device: "why the symmetry not hold?"): on a SPLIT
+        # field this must ask every image, not one of them. The scene's own banner read
+        #   Face A field: 3.025   mm in front of the sensor
+        #   Face B field: 0.09958 mm in front of the sensor
+        # and the top-level ``offset_mm`` carried the 0.09958 -- a hair under the 0.1 mm
+        # tolerance -- so the field was declared delivered, the lens never moved, and face A was
+        # left 3 mm out with a 419 um spot. bugs/0752 split the measurement per image precisely
+        # so one arm could not speak for the other; this gate never asked. Whichever image is
+        # worst decides, the same rule bugs/0764's snap guard uses.
+        traced = None
         try:
             measured = self.editor.__dict__.get("_focused_image_plane_info")
-            traced = float(measured["offset_mm"]) if isinstance(measured, dict) else None
+            if isinstance(measured, dict):
+                entries = measured.get("images")
+                offsets = []
+                if isinstance(entries, (list, tuple)):
+                    for entry in entries:
+                        if not isinstance(entry, dict):
+                            continue
+                        try:
+                            offsets.append(abs(float(entry["offset_mm"])))
+                        except (KeyError, TypeError, ValueError):
+                            continue
+                if not offsets:
+                    offsets = [abs(float(measured["offset_mm"]))]
+                traced = max(offsets)
         except (KeyError, TypeError, ValueError):
             traced = None
         if traced is not None and abs(traced) > self._DELIVERED_FOCUS_TOL_MM:

@@ -16043,6 +16043,10 @@ phase_556_a_rail_that_moves_is_not_a_rail = _phase_from_standalone(
     556, "a hardware rail must not move when the lens moves: a 23x23x1 device left the image 77.2 mm off with a 1970 um spot because MOTOR 1 needed to travel to 192.0 mm against a hand-guessed floor of 192.683 -- a 0.66 mm miss -- while the authored A5+C1 geometry gives a rail of [138.231, 286.630]; with it the same case lands at 191.979 with 644 rays, -0.081 mm and a 2.10 um spot. bugs/0766's derivation was worse than the guess it replaced because it read the LIVE gaps (a5 and c1 track the LENS, not the arm: mid-solve it produced [258.9, 407.3]), so it now reports only the invariant rail LENGTH and the row indices, and leaves the limits to the scene (0772)",
     "KrakenOS.UI.validate_open3d_0772_a_rail_that_moves_is_not_a_rail",
     "a_rail_that_moves_is_not_a_rail")
+phase_557_delivered_asks_every_image = _phase_from_standalone(
+    557, "'already delivered' must ask EVERY formed image, not one of them: a 21x21x1 device reported 'the lens did not move -- the field was already delivered' with Face A 3.025 mm off (419 um spot) and Face B 0.09958 mm off, because the gate read the TOP-LEVEL offset_mm which carried face B's number, a hair inside the 0.1 mm tolerance -- bugs/0752 split the measurement per image precisely so one arm could not speak for the other, and this gate never asked; whichever image is worst now decides, the same rule bugs/0764's snap guard states (0773)",
+    "KrakenOS.UI.validate_open3d_0773_delivered_asks_every_image",
+    "delivered_asks_every_image")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16665,6 +16669,7 @@ def main() -> int:
             phase_554_arm_move_must_move_the_sensor,
             phase_555_row_limit_is_not_a_hardware_limit,
             phase_556_a_rail_that_moves_is_not_a_rail,
+            phase_557_delivered_asks_every_image,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
