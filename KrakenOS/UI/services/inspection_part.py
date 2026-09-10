@@ -12,6 +12,20 @@ face" re-targets the current chain onto another face. Multi-station composition
 (six chains in one view) is phase 2 -- see docs/inspection_cell_multi_station.md.
 
 Pure geometry lives here (guarded display-free); the Tk dialog at the bottom.
+
+NAMING (bugs/0766). The stored keys are the box's own axes; what the USER reads is the
+bench's. Do not rename the keys -- every saved scene carries them -- but do use the
+right-hand column in anything user-facing:
+
+    stored key    local axis   the user's name   defined by the machine
+    width_mm      x            Length    L       along the top prism's LONGEST dimension
+    depth_mm      z            Width     W       across the top prism GAP (face to face)
+    height_mm     y            Thickness T       the top prism's SHORT dimension
+
+The om05a inspects the FRONT and BACK faces, so ``depth_mm`` (W) is the separation
+between the two inspected faces, and each face presents ``width_mm x height_mm``
+(L x T). The old W/H/D labels described the box and not the bench, which is how one
+device got entered three different ways in a single conversation.
 """
 
 from __future__ import annotations
@@ -314,10 +328,19 @@ def open_inspection_part_dialog(editor):
     # dialog so that user can input both values"): the required FOV rides along;
     # blank keeps the default face-size + 5% solve target.
     fov_var = tk.StringVar(value="")
-    # bugs/0764 (user: "can you rearrange the dialog to W, D then H?"): W and D are the two
-    # the inspected face is sized by and the two that change most often; H rides along.
+    # bugs/0764 (user: "can you rearrange the dialog to W, D then H?"), then bugs/0766
+    # (user: "Can we change the wording to Length x Width x Thickness?"). The stored keys are
+    # unchanged so no scene migrates -- only what the user reads:
+    #
+    #     Length    L  = width_mm   (local x)  -- along the top prism's LONGEST dimension
+    #     Width     W  = depth_mm   (local z)  -- along the top prism GAP (face to face)
+    #     Thickness T  = height_mm  (local y)  -- the top prism's SHORT dimension
+    #
+    # The old W/H/D names were the box's own axes and said nothing about the bench, so
+    # "30x30 with 1 mm thickness" was entered three different ways in one conversation. These
+    # names are the machine's, which is the only frame the user is holding.
     for r, (label, var) in enumerate(
-        (("Width W (mm)", w_var), ("Depth D (mm)", d_var), ("Height H (mm)", h_var),
+        (("Length L (mm)", w_var), ("Width W (mm)", d_var), ("Thickness T (mm)", h_var),
          ("Axis reach (mm, 0 = auto)", reach_var),
          ("Face offset along axis (mm)", offset_var),
          ("Required FOV (mm, blank = face +5%)", fov_var)),
@@ -345,7 +368,11 @@ def open_inspection_part_dialog(editor):
             sized = apply_step_bounds({"width_mm": w_var.get(), "height_mm": h_var.get(), "depth_mm": d_var.get()}, mesh)
             w_var.set(f"{sized['width_mm']:g}"); h_var.set(f"{sized['height_mm']:g}"); d_var.set(f"{sized['depth_mm']:g}")
             enabled_var.set(True)
-            status_var.set(f"Dims from the STEP bounds: {sized['width_mm']:g} x {sized['height_mm']:g} x {sized['depth_mm']:g} mm (x=W, y=H, z=D; +z = Front)")
+            status_var.set(
+                f"Dims from the STEP bounds: L {sized['width_mm']:g} x W {sized['depth_mm']:g} "
+                f"x T {sized['height_mm']:g} mm (STEP x=Length, z=Width, y=Thickness; "
+                f"+z = Front face)"
+            )
         except Exception as exc:
             status_var.set(f"Part STEP set, but its bounds could not be read: {exc}")
 
@@ -356,7 +383,9 @@ def open_inspection_part_dialog(editor):
     )
     ttk.Label(
         body,
-        text="Front/Back show W x H, Left/Right show D x H, Top/Bottom show W x D.\n"
+        text="L runs along the top prism's longest dimension, W across the prism gap\n"
+             "(one inspected face to the other), T is the prism's short dimension.\n"
+             "Front/Back show L x T, Left/Right show W x T, Top/Bottom show L x W.\n"
              "Each face gets a dashed blow-out axis for its own camera station.",
         justify="left",
     ).grid(row=11, column=0, columnspan=2, sticky="w", pady=(6, 8))

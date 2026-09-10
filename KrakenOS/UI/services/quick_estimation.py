@@ -1468,6 +1468,93 @@ class QuickEstimationService:
         # primary gives up all it has (-> 0); the negative remainder lands on the sibling leg
         return [(int(primary_row), -float(rows[primary_row].thickness)), (int(spill_row), new_primary)]
 
+    def _motor_rail_from_lens_block(self) -> "dict | None":
+        """bugs/0765: the motor rail, read off the scene's own rows.
+
+        The user, stating how the bench is built: *"The A5+C1 is where the motors can travel.
+        The C1 here is up to the Edmund Filter of course."* Both motors ride one rail that runs
+        from the prism exit face to the Filter -- A5 is the air gap in front of the lens block
+        and C1 the gap behind it, and C1 ends at the Filter because the Filter is the next row.
+        The lens currently sits ``A5`` along a rail of length ``A5 + C1``, so either motor may
+        move by ``delta`` in ``[-A5, +C1]`` and no further: at ``-A5`` the carriage is against
+        the prism end, at ``+C1`` against the Filter.
+
+        This replaces hand-typed limits. Those were guesses -- the numbers previously carried by
+        om05a_folded_80mm (a 90 mm pad range and a 100 mm arm range) match no feature of the
+        machine, while A5 + C1 = 148.400 mm is the rail the motors actually have.
+
+        Returns the derivable subset of a ``camera_focus_stage`` spec, or None when this scene
+        is not shaped like that bench. Pure row reads; nothing is written.
+        """
+        editor = self.editor
+        rows = list(getattr(editor, "rows", None) or [])
+        if len(rows) < 4:
+            return None
+        try:
+            front, rear = editor._imaging_lens_block_indices()
+        except Exception:
+            return None
+        if front is None or rear is None:
+            return None
+        a5_row, c1_row = int(front) - 1, int(rear)
+        if not (0 <= a5_row < len(rows) and 0 <= c1_row < len(rows)):
+            return None
+        try:
+            a5 = float(rows[a5_row].thickness)
+            c1 = float(rows[c1_row].thickness)
+        except (AttributeError, TypeError, ValueError):
+            return None
+        if not (a5 > 0.0 and c1 > 0.0):
+            return None
+        # The seat that carries the group: the first row after the Filter placed by a desp_x
+        # seat (om05a: RA mirror 2). Rows 16-23 there are absolutely seated, so "has a desp_x"
+        # is what distinguishes the carrying mirror from the gaps riding the running station.
+        seat = None
+        for index in range(c1_row + 1, len(rows)):
+            try:
+                if abs(float(getattr(rows[index], "desp_x", 0.0) or 0.0)) > 1.0e-9:
+                    seat = index
+                    break
+            except (TypeError, ValueError):
+                continue
+        if seat is None:
+            return None
+        # The pad the sensor stands off on: the LAST row before the Image row, and it must be a
+        # real gap of its own. A scene that folds the standoff into the mirror's thickness has
+        # no row to write, and deriving one would silently move vendor hardware instead
+        # ([[feedback_vendor_hardware_immutable]]) -- say so by returning None.
+        pad = len(rows) - 2
+        if pad <= seat:
+            return None
+        try:
+            if float(rows[pad].thickness) <= 0.0:
+                return None
+        except (AttributeError, TypeError, ValueError):
+            return None
+        try:
+            seat_x = float(rows[seat].desp_x)
+            pad_mm = float(rows[pad].thickness)
+        except (AttributeError, TypeError, ValueError):
+            return None
+        # delta in [-a5, +c1], expressed in each writer's own units: the seat moves in desp_x,
+        # the pad in its own thickness. bugs/0760: the production scene mirrors x, so the seat's
+        # travel follows the SIGN of its authored seat rather than assuming +x is "away".
+        sign = -1.0 if seat_x < 0.0 else 1.0
+        arm_lo, arm_hi = sorted((seat_x - sign * a5, seat_x + sign * c1))
+        return {
+            "row": pad,
+            "min_mm": pad_mm - a5,
+            "max_mm": pad_mm + c1,
+            "arm_row": seat,
+            "arm_min_mm": arm_lo,
+            "arm_max_mm": arm_hi,
+            "arm_carry_row": c1_row,
+            "rail_mm": a5 + c1,
+            "a5_row": a5_row,
+            "a5_mm": a5,
+            "c1_mm": c1,
+        }
+
     def _camera_focus_stage(self) -> "dict | None":
         """bugs/0756 (user: "make A5, C1 and C2 adjustable to achieve closest match FOV range"):
         the camera's own leg, when it is on a stage.
@@ -1493,12 +1580,33 @@ class QuickEstimationService:
         if not isinstance(spec, dict) or not spec.get("enabled"):
             return None
         rows = list(getattr(self.editor, "rows", None) or [])
+        # bugs/0765 (user: "The A5+C1 is where the motors can travel. The C1 here is up to the
+        # Edmund Filter of course."): the rail is a property of the SCENE, so read it off the
+        # scene. A spec's own numbers still win where it states them; anything it omits comes
+        # from the geometry, which is why a scene no longer has to hand-type limits at all.
+        # Guarded for the bugs/0758 reason: this is a convenience that fills in what a scene
+        # did not state, and it is read on every solve. A helper that can raise here would take
+        # the whole conjugate solve down with it.
+        try:
+            derived = self._motor_rail_from_lens_block() or {}
+        except Exception:
+            derived = {}
         try:
             row = int(spec["row"])
         except (KeyError, TypeError, ValueError):
+            row = derived.get("row", None)
+        if row is None:
+            return None
+        try:
+            row = int(row)
+        except (TypeError, ValueError):
             return None
         if not (0 <= row < len(rows)):
             return None
+        spec = dict(spec)
+        for key in ("min_mm", "max_mm", "arm_row", "arm_min_mm", "arm_max_mm", "arm_carry_row"):
+            if spec.get(key) is None and key in derived:
+                spec[key] = derived[key]
         out = {"row": row}
         for key, default in (("min_mm", 0.0), ("max_mm", float("inf"))):
             try:

@@ -280,14 +280,22 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     )
 
     dialog_src = inspect.getsource(inspection_part.open_inspection_part_dialog)
-    order = [
-        label
-        for label in ("Width W (mm)", "Depth D (mm)", "Height H (mm)")
-    ]
+    # bugs/0766: same order, the bench's names -- Length (width_mm), Width (depth_mm),
+    # Thickness (height_mm).
+    order = ["Length L (mm)", "Width W (mm)", "Thickness T (mm)"]
     positions = [dialog_src.find(label) for label in order]
     ok(
         all(pos > 0 for pos in positions) and positions == sorted(positions),
-        f"E5: the part dialog reads W, D, then H (user request) -- got offsets {positions}",
+        f"E5: the part dialog reads Length, Width, then Thickness (user request) -- got "
+        f"offsets {positions}",
+    )
+    ok(
+        "Length L (mm)\", w_var" in dialog_src
+        and "Width W (mm)\", d_var" in dialog_src
+        and "Thickness T (mm)\", h_var" in dialog_src,
+        "E6: and each label is bound to the RIGHT stored key -- Length->width_mm, "
+        "Width->depth_mm (the face separation), Thickness->height_mm. Getting this pairing "
+        "wrong silently swaps the device's axes (bugs/0766)",
     )
 
     passed = not any(note.startswith("FAIL") for note in notes)
