@@ -1926,10 +1926,20 @@ def focused_image_plane_label_specs(image_point, image_axis, info, half_height,
     return [{"anchor": anchor, "text": text, "color": _IMAGE_PLANE}]
 
 
-def format_focus_summary_lines(focus_info, solve_info=None, notes=None) -> list[str]:
+def format_focus_summary_lines(
+    focus_info, solve_info=None, notes=None, pixel_size_um=None
+) -> list[str]:
     """bugs/0728: the in-scene focus summary the user asked for -- what the solve did (or did
     NOT do), and where the image actually forms. Pure formatter; [] when there is nothing to
-    say (the image sits on the sensor and the solve moved nothing)."""
+    say (the image sits on the sensor and the solve moved nothing).
+
+    bugs/0767: ``pixel_size_um`` decides whether the user is told to MOVE anything. A residual
+    in millimetres is not a defect on its own -- what matters is whether it costs sharpness the
+    detector can actually see. On the flagged om05a solve the image sat 0.05058 mm off and the
+    banner said "Move the device stage / camera focus to land it", but the traced blur there was
+    1.51 um against a 4.5 um pixel: a third of a pixel, nothing left to move. The old gate was a
+    hardcoded 0.05 mm, which that residual cleared by 0.6 um.
+    """
     lines: list[str] = []
     if isinstance(solve_info, dict) and solve_info:
         field = ""
@@ -1983,9 +1993,35 @@ def format_focus_summary_lines(focus_info, solve_info=None, notes=None) -> list[
                         f"  {entry_name}: {abs(entry_offset):.4g} mm "
                         f"{entry.get('side', 'from')} the sensor"
                     )
-            lines.append(
-                "Move the device stage / camera focus to land it -- vendor hardware untouched"
-            )
+            # bugs/0767: only ask for a move when the blur actually exceeds a pixel. The
+            # sensor cannot resolve anything finer, so a residual whose spot is inside one
+            # pixel IS landed -- saying otherwise sends the user to adjust hardware that is
+            # already right.
+            pixel_mm = None
+            try:
+                if pixel_size_um is not None and len(pixel_size_um) >= 2:
+                    pixel_mm = min(
+                        float(pixel_size_um[0]), float(pixel_size_um[1])
+                    ) / 1000.0
+            except (TypeError, ValueError):
+                pixel_mm = None
+            spot_mm = None
+            try:
+                spot_mm = float(focus_info["rms_plane_mm"])
+            except (TypeError, ValueError, KeyError):
+                spot_mm = None
+            if (
+                pixel_mm is not None and pixel_mm > 0.0
+                and spot_mm is not None and spot_mm <= pixel_mm
+            ):
+                lines.append(
+                    f"Landed: the blur on the sensor ({_spot_text(spot_mm)}) is inside one "
+                    f"pixel ({_spot_text(pixel_mm)}) -- nothing to move"
+                )
+            else:
+                lines.append(
+                    "Move the device stage / camera focus to land it -- vendor hardware untouched"
+                )
     # bugs/0737: why there is no focus plane, and where the rays went when the scene looks empty
     for note in list(notes or []):
         text = str(note or "").strip()

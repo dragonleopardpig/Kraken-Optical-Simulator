@@ -313,9 +313,6 @@ def open_inspection_part_dialog(editor):
     w_var = tk.StringVar(value=f"{spec['width_mm']:g}")
     h_var = tk.StringVar(value=f"{spec['height_mm']:g}")
     d_var = tk.StringVar(value=f"{spec['depth_mm']:g}")
-    reach_var = tk.StringVar(value=f"{spec['axis_reach_mm']:g}")
-    offset_var = tk.StringVar(value=f"{spec['axis_offset_mm']:g}")
-    face_var = tk.StringVar(value=spec["active_face"])
     step_var = tk.StringVar(value=str(spec.get("step_path", "") or ""))
     status_var = tk.StringVar(value="")
 
@@ -339,19 +336,29 @@ def open_inspection_part_dialog(editor):
     # The old W/H/D names were the box's own axes and said nothing about the bench, so
     # "30x30 with 1 mm thickness" was entered three different ways in one conversation. These
     # names are the machine's, which is the only frame the user is holding.
+    # bugs/0768 (user: "can we remove the offset text input box? Uneccessary for user to
+    # input." / of Axis reach: "user need to input?"). Neither is the user's to type:
+    #
+    #   axis_offset_mm  is DERIVED -- it is what keeps the part centred in the prism gap as
+    #       its Width changes (the gap centre is hardware, fixed for the life of the scene),
+    #       so the app owns it. It was also a live bug source: the field showed the value from
+    #       the PREVIOUS Apply, and re-submitting that stale number fought the auto-centring.
+    #   axis_reach_mm   only sets how far the six dashed blow-out guides are DRAWN
+    #       (0 = auto = max(80, 2.5 x the largest dimension)). Nothing optical.
+    #
+    # Both keys stay in the spec -- scenes carry them and _read() passes the live values
+    # straight through, which is exactly what lets the auto-centring keep telescoping.
     for r, (label, var) in enumerate(
         (("Length L (mm)", w_var), ("Width W (mm)", d_var), ("Thickness T (mm)", h_var),
-         ("Axis reach (mm, 0 = auto)", reach_var),
-         ("Face offset along axis (mm)", offset_var),
          ("Required FOV (mm, blank = face +5%)", fov_var)),
         start=1,
     ):
         ttk.Label(body, text=label).grid(row=r, column=0, sticky="w", pady=2)
         ttk.Entry(body, textvariable=var, width=12).grid(row=r, column=1, sticky="w", pady=2)
     # bugs/0666: the real part's STEP -- bounds size the box, the mesh replaces it.
-    ttk.Label(body, text="Part STEP (optional)").grid(row=9, column=0, sticky="w", pady=(6, 2))
+    ttk.Label(body, text="Part STEP (optional)").grid(row=5, column=0, sticky="w", pady=(6, 2))
     step_row = ttk.Frame(body)
-    step_row.grid(row=9, column=1, sticky="w", pady=(6, 2))
+    step_row.grid(row=5, column=1, sticky="w", pady=(6, 2))
     ttk.Entry(step_row, textvariable=step_var, width=34).grid(row=0, column=0)
 
     def _browse_step():
@@ -377,28 +384,31 @@ def open_inspection_part_dialog(editor):
             status_var.set(f"Part STEP set, but its bounds could not be read: {exc}")
 
     ttk.Button(step_row, text="Browse...", command=_browse_step).grid(row=0, column=1, padx=(4, 0))
-    ttk.Label(body, text="Inspected face (on the object plane)").grid(row=10, column=0, sticky="w", pady=(8, 2))
-    ttk.Combobox(body, textvariable=face_var, values=list(FACE_ORDER), state="readonly", width=10).grid(
-        row=10, column=1, sticky="w", pady=(8, 2)
-    )
+    # bugs/0768 (user: "even the Inspected Face (on the object plane) dropdown, I don't think
+    # we need this as well. We need to specify the geometry and the required FOV."): the split
+    # field images the FRONT face and its mirror image on the BACK, so the choice was never the
+    # user's to make here. ``active_face`` stays in the spec (scenes carry it, and the six
+    # blow-out axes still need it) -- it is just not a control any more.
     ttk.Label(
         body,
         text="L runs along the top prism's longest dimension, W across the prism gap\n"
              "(one inspected face to the other), T is the prism's short dimension.\n"
-             "Front/Back show L x T, Left/Right show W x T, Top/Bottom show L x W.\n"
-             "Each face gets a dashed blow-out axis for its own camera station.",
+             "The two inspected faces are L x T, W apart; blank FOV = that face +5%.",
         justify="left",
-    ).grid(row=11, column=0, columnspan=2, sticky="w", pady=(6, 8))
+    ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(6, 8))
 
     def _read() -> dict[str, Any]:
+        # bugs/0768: the two derived keys come from the LIVE spec, never from a widget --
+        # re-submitting a stale offset is what fought the auto-centring.
+        live = normalize_inspection_part_spec(getattr(editor, "inspection_part_spec", None))
         raw = {
             "enabled": bool(enabled_var.get()),
             "width_mm": w_var.get(),
             "height_mm": h_var.get(),
             "depth_mm": d_var.get(),
-            "axis_reach_mm": reach_var.get(),
-            "axis_offset_mm": offset_var.get(),
-            "active_face": face_var.get(),
+            "axis_reach_mm": live["axis_reach_mm"],
+            "axis_offset_mm": live["axis_offset_mm"],
+            "active_face": live["active_face"],
             "step_path": step_var.get(),
         }
         return normalize_inspection_part_spec(raw)
@@ -406,7 +416,10 @@ def open_inspection_part_dialog(editor):
     def _apply():
         editor.set_inspection_part_spec(_read())
         w, h = face_dims(editor.inspection_part_spec, editor.inspection_part_spec["active_face"])
-        status_var.set(f"Applied. Inspected face {face_var.get()}: {w:g} x {h:g} mm.")
+        status_var.set(
+            f"Applied. Inspected face {editor.inspection_part_spec['active_face']}: "
+            f"{w:g} x {h:g} mm."
+        )
 
     def _solve():
         editor.set_inspection_part_spec(_read())

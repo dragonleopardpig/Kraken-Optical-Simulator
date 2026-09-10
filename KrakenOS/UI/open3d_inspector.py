@@ -10371,6 +10371,25 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.status_var.set(f"Recording discarded ({dropped} events dropped, no file written).")
         return True
 
+    def _flag_camera_pixel_size_um(self):
+        """bugs/0767: the sensor's pixel pitch (w, h) in um, or None.
+
+        The same source the system HUD prints ("Pixel size: 4.5 um"), so the focus banner and
+        the HUD can never disagree about how big a pixel is. Best-effort; never raises."""
+        try:
+            record = self.editor._current_camera_record()
+        except Exception:
+            return None
+        if not isinstance(record, dict):
+            return None
+        value = record.get("pixel_size_um")
+        try:
+            if value is not None and len(value) >= 2:
+                return (float(value[0]), float(value[1]))
+        except (TypeError, ValueError):
+            return None
+        return None
+
     def _flag_inspection_part_spec(self) -> dict:
         """bugs/0764: the device under test, for a flag bundle.
 
@@ -18610,6 +18629,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                         self.editor.__dict__.get("_focus_model_mismatch"),   # bugs/0745
                         self.editor.__dict__.get("_ray_display_suppressed_note"),
                     ),
+                    # bugs/0767: the pixel is what decides whether a residual is worth acting
+                    # on -- the same camera record the system HUD reads.
+                    pixel_size_um=self._flag_camera_pixel_size_um(),
                 )
             )
             text = "\n".join(lines)

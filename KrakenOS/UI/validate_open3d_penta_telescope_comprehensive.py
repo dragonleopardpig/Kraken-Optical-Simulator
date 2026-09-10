@@ -16023,6 +16023,10 @@ phase_551_focus_snap_may_not_make_focus_worse = _phase_from_standalone(
     551, "the focus snap may not leave the scene worse than it found it: _traced_bundle_best_focus_shift matched only the LEGACY termination spelling, so on a scene whose builder stamps 'image' (om05a: 644 rays land as 'image', 0 as 'target_termination') it returned None on every call -- which the snap reads as 'no bundle measurable' and answers with an unverified station-frame single shot, moving the sensor +5.8819 mm off a focus the solve had just landed at -0.0506 mm; the measure now accepts both spellings and the unfrozen branch measures the traced defocus before and after and restores the rows when the move made it worse (bugs/0577's rule was frozen-branch-only) (0764)",
     "KrakenOS.UI.validate_open3d_0764_focus_snap_may_not_make_focus_worse",
     "focus_snap_may_not_make_focus_worse")
+phase_552_landed_is_within_a_pixel = _phase_from_standalone(
+    552, "'land it' is a question about the PIXEL, not about millimetres: the focus banner told the user to move the device stage with the image 0.05058 mm off and a 1.51 um blur on a 4.5 um pixel -- a third of a pixel, nothing left to move -- because the gate was a hardcoded 0.05 mm that the residual cleared by 0.6 um; the instruction now compares the traced blur to the pixel pitch (smaller side of a rectangular pixel), which is the same criterion the bench's own DOF spec uses (86/195/410 um at f/5.6 all back-solve to c ~ 4.7 um) (0767)",
+    "KrakenOS.UI.validate_open3d_0767_landed_is_within_a_pixel",
+    "landed_is_within_a_pixel")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16640,6 +16644,7 @@ def main() -> int:
             phase_549_filter_travels_and_focus_gates_idempotence,
             phase_550_delivered_needs_both_and_banner_beside_hud,
             phase_551_focus_snap_may_not_make_focus_worse,
+            phase_552_landed_is_within_a_pixel,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
