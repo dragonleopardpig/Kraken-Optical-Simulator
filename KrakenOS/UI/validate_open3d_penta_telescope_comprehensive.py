@@ -16059,6 +16059,10 @@ phase_560_scene_declares_the_arm_offset = _phase_from_standalone(
     560, "the split-field arm offset is the SCENE's to declare, like camera_focus_stage: the strip-POSITION law |centre| = k*|m| needs k, the object-space half-separation of the two arms' axes (8.778 mm on om05a_folded_80mm), which is a property of the BENCH and would bake one machine's geometry into the simulator if hardcoded; it round-trips through save/load with every malformed value DROPPED including non-finite (1e400 -> inf passes a bare '>0' test and pformat writes it back as the bare token `inf`, so the .py fails to import and both loaders fall back to surfaces-only, silently discarding every persisted setting), and the check is inert on any scene that declares nothing (0776)",
     "KrakenOS.UI.validate_open3d_0776_scene_declares_the_arm_offset",
     "scene_declares_the_arm_offset")
+phase_561_focus_groups_follow_the_launch = _phase_from_standalone(
+    561, "focus groups follow the LAUNCH POINT so the two arms of a split field agree: one arm read a ~400 um waist and the other sub-micron on a bench whose bodies are symmetric to 35 nm and whose traced bundles mirror about z=-25 to max|mirror(A)-B| = 0.0 -- identical rays giving two answers, which can only be the readout; field_index is a uniform ray-index division over a RAGGED launch (corner probes make some fields 5 rays and others 361) and arm B's boundaries landed 20 rays out of step, inventing a 0.98 um 'sharp field' that then disqualified that arm's real 400 um fields via the bugs/0753 waist<=10*sharpest test. Grouping on the physical launch point makes the arms agree to 0.01 um, and reveals that at device 21 BOTH arms are 419 um blurred -- arm B's sub-micron waists were fiction (0778)",
+    "KrakenOS.UI.validate_open3d_0778_focus_groups_follow_the_launch",
+    "focus_groups_follow_the_launch")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16685,6 +16689,7 @@ def main() -> int:
             phase_558_field_overflowing_the_sensor_is_said,
             phase_559_traced_magnification_checks_the_claim,
             phase_560_scene_declares_the_arm_offset,
+            phase_561_focus_groups_follow_the_launch,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

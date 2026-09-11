@@ -1926,6 +1926,14 @@ def focused_image_plane_label_specs(image_point, image_axis, info, half_height,
     return [{"anchor": anchor, "text": text, "color": _IMAGE_PLANE}]
 
 
+#: bugs/0777: when the waist spot is at least this fraction of the spot ON the
+#: sensor, the sensor already sits at the beam's tightest point and refocusing
+#: cannot improve it. 0.9 leaves room for the measurement's own noise while still
+#: separating aberration (waist == plane) from real defocus (waist << plane: the
+#: bugs/0764 case read 0.224 um at the waist against 175 um on the sensor).
+_NO_GAIN_FROM_REFOCUS = 0.9
+
+
 def format_focus_summary_lines(
     focus_info, solve_info=None, notes=None, pixel_size_um=None
 ) -> list[str]:
@@ -2019,9 +2027,36 @@ def format_focus_summary_lines(
                     f"pixel ({_spot_text(pixel_mm)}) -- nothing to move"
                 )
             else:
-                lines.append(
-                    "Move the device stage / camera focus to land it -- vendor hardware untouched"
-                )
+                # bugs/0777 (flag 084908, a 15x15x1 device at FOV 22.5: "Image landed on sensor
+                # ... Please confirm everthing is correct?"): it was not, and the banner said the
+                # wrong thing about it. The measured spot was 230.27 um at the WAIST against
+                # 230.28 um on the sensor -- the sensor already sits at the tightest point of the
+                # beam, so "move the stage to land it" is advice that cannot work. A blur that
+                # does not shrink anywhere along the axis is ABERRATION, not defocus, and the
+                # remedy is a different configuration, not a translation.
+                waist_mm = None
+                try:
+                    waist_mm = float(focus_info["rms_waist_mm"])
+                except (KeyError, TypeError, ValueError):
+                    waist_mm = None
+                refocusable = True
+                if (
+                    waist_mm is not None and spot_mm is not None
+                    and spot_mm > 0.0 and waist_mm >= _NO_GAIN_FROM_REFOCUS * spot_mm
+                ):
+                    refocusable = False
+                if refocusable:
+                    lines.append(
+                        "Move the device stage / camera focus to land it -- vendor hardware "
+                        "untouched"
+                    )
+                else:
+                    lines.append(
+                        f"THE BLUR IS NOT DEFOCUS: the tightest spot anywhere along the beam is "
+                        f"{_spot_text(waist_mm)}, against {_spot_text(spot_mm)} on the sensor -- "
+                        f"the sensor is already at the waist, so moving the stage or the camera "
+                        f"cannot land it. This configuration does not resolve the field."
+                    )
     # bugs/0774: rays that reach the detector PLANE but land beyond its active area were
     # counted as landing and never mentioned. The user spotted the strips migrating outward and
     # asked whether it was accounted for; it was not. Say it, with the count and the overflow.

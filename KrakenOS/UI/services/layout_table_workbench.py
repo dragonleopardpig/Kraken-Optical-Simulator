@@ -8617,6 +8617,23 @@ class LayoutTableWorkbenchMixin:
             normal = np.asarray(target.normal_world, dtype=float).reshape(3)
         except Exception:
             return None
+        # bugs/0778: are this bundle's launches DISCRETE field points, or a continuous emitter?
+        # Averaging >= 4 rays per distinct launch means they are discrete and the launch point
+        # is a usable field identity; below that, grouping on it would fragment the bundle.
+        _launch_seen: "dict[tuple, int]" = {}
+        _landing_rays = 0
+        for _path in list(getattr(scene_bundle, "ray_paths", []) or []):
+            if str(getattr(_path, "termination_reason", "")) not in ("image", "target_termination"):
+                continue
+            try:
+                _p0 = np.asarray(_path.points_world, dtype=float)[0, :3]
+            except Exception:
+                continue
+            _landing_rays += 1
+            _launch_seen[tuple(np.round(_p0, 3))] = 1
+        discrete_launches = bool(
+            _launch_seen and _landing_rays >= 4 * len(_launch_seen)
+        )
         buckets: "dict[tuple, tuple[list, list]]" = {}
         polylines: "dict[tuple, list]" = {}
         launches: "dict[tuple, list]" = {}   # bugs/0752: which field band each bundle came from
@@ -8636,15 +8653,49 @@ class LayoutTableWorkbenchMixin:
             step = pts[-1, :3] - pts[-2, :3]
             if float(np.linalg.norm(step)) <= 1e-9:
                 continue
-            # group by the bundle's OWN field identity when it has one -- rays sharing a
-            # field point converge to one image point, and pooling different fields would
-            # measure the image HEIGHT instead of the blur. Launch point is the fallback.
+            # bugs/0778 (user: "why not symmetry?"): group by the LAUNCH POINT when the
+            # launches are discrete, not by ``field_index``.
+            #
+            # A field point is a place on the object. The launch point IS that place, and it is
+            # physical: mirror the bundle and it mirrors with it. ``field_index`` is bookkeeping
+            # stamped downstream, and when it is wrong it splits one field across buckets and
+            # merges others -- silently, because every bucket still looks like a field.
+            #
+            # Measured on om05a_folded_80mm, device 15 at FOV 24, where the two arms' traced
+            # bundles are mirror images to 3.5e-5 mm and their landings likewise:
+            #
+            #   by field_index   arm A 401.4 / 413.9 / 401.4 um     arm B 1.0 / 1574 / 1792 um
+            #   by launch point  arm A 401.4 / 413.9 / 401.4 um     arm B 401.4 / 413.9 / 401.4
+            #
+            # Identical rays cannot honestly give two different answers. The field_index
+            # grouping invented a 0.98 um "sharp field" for arm B, which then disqualified that
+            # arm's real 400 um fields through the bugs/0753 ``waist <= 10 * sharpest`` test --
+            # so the scene reported one arm blurred and the other perfect, and the perfect one
+            # was fiction. Grouping on the launch point makes the two arms agree to 0.01 um.
+            #
+            # What the scene REPORTS, before -> after (arm A | arm B, um):
+            #   device 15 FOV 24    413.89 |   0.33   ->   413.89 | 413.89
+            #   device 15 FOV 26    197.88 |   0.27   ->   197.88 | 197.88
+            #   device 15 FOV 28      0.27 |   0.23   ->     0.27 |   0.27
+            #   device 21 default   419.03 |   0.42   ->   419.03 | 419.03
+            #   device 23 default     0.42 |   0.42   ->     0.42 |   0.42
+            #
+            # Note what that correction costs: at device 21 BOTH arms are 419 um blurred. There
+            # was never an arm-A defect to explain -- only an arm-B measurement that lied, and
+            # size/FOV tables were published on those numbers.
+            #
+            # field_index remains the fallback for a source whose launches are CONTINUOUS (a
+            # true random emitter gives every ray its own launch point, which would fragment
+            # into one-ray groups and measure nothing).
             source = str(getattr(path, "source_id", "") or "")
-            field_index = getattr(path, "field_index", None)
-            if field_index is not None:
-                key = (source, int(field_index))
+            if discrete_launches:
+                key = (source, tuple(np.round(pts[0, :3], 3)))
             else:
-                key = (source, tuple(np.round(pts[0, :3], 4)))
+                field_index = getattr(path, "field_index", None)
+                if field_index is not None:
+                    key = (source, int(field_index))
+                else:
+                    key = (source, tuple(np.round(pts[0, :3], 4)))
             ends, dirs = buckets.setdefault(key, ([], []))
             ends.append(pts[-1, :3])
             dirs.append(step)
