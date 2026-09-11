@@ -8617,26 +8617,32 @@ class LayoutTableWorkbenchMixin:
             normal = np.asarray(target.normal_world, dtype=float).reshape(3)
         except Exception:
             return None
-        # bugs/0778: are this bundle's launches DISCRETE field points, or a continuous emitter?
-        # Averaging >= 4 rays per distinct launch means they are discrete and the launch point
-        # is a usable field identity; below that, grouping on it would fragment the bundle.
-        _launch_seen: "dict[tuple, int]" = {}
-        _landing_rays = 0
-        for _path in list(getattr(scene_bundle, "ray_paths", []) or []):
-            if str(getattr(_path, "termination_reason", "")) not in ("image", "target_termination"):
-                continue
-            try:
-                _p0 = np.asarray(_path.points_world, dtype=float)[0, :3]
-            except Exception:
-                continue
-            _landing_rays += 1
-            _launch_seen[tuple(np.round(_p0, 3))] = 1
-        discrete_launches = bool(
-            _launch_seen and _landing_rays >= 4 * len(_launch_seen)
+        from KrakenOS.UI.services.detector_coverage_overlay import (
+            discrete_launch_sources,
+            landing_route,
+            split_stray_routes,
+            summarise_stray_landings,
         )
-        buckets: "dict[tuple, tuple[list, list]]" = {}
-        polylines: "dict[tuple, list]" = {}
-        launches: "dict[tuple, list]" = {}   # bugs/0752: which field band each bundle came from
+
+        # bugs/0779 (user: "have you looked into the sudden appear of stray rays issue?"): separate
+        # the landing rays that FORM the image from stray light that merely reached the sensor by
+        # another optical route -- before anything is grouped, measured or drawn.
+        #
+        # Measured on om05a_folded_80mm: from device 23 to device 21 the SAME 9 launch rays per arm,
+        # all stopped at the aperture stop at 23, clear the centre RA mirror's edge at 21, cross the
+        # prism gap into the other arm's cube, bounce off its first RA mirror and come back down
+        # their own arm. 4 per arm land 1.4 mm outside the strip. They share their field's launch
+        # point, so they joined its group, and ONE of them dragged a 105-ray field's least-squares
+        # waist from 2.06 um to 656 um and its plane from +0.019 to -5.99 mm:
+        #
+        #   device 21, edge field      with strays 656 um, 5.99 mm off    without 2.06 um, 0.019 mm
+        #   device 21, centre field    with strays 419 um, 3.04 mm off    without 0.51 um, 0.095 mm
+        #   device 15 FOV 24, centre   with strays 413 um, 2.63 mm off    without 0.40 um, 0.083 mm
+        #
+        # That was the whole "419 um blur" at device 21 and the FOV "limit" of a 15 mm device. The
+        # route is the physical identity of an image: a second route carrying a real share of the
+        # light is a second image (split_stray_routes keeps it), a sliver is stray.
+        landing: "list[tuple]" = []
         for path in list(getattr(scene_bundle, "ray_paths", []) or []):
             # the scene builder stamps "image" for a ray that lands on the detector
             # (scene_builder.py:1699/3363); "target_termination" is the older spelling some
@@ -8650,6 +8656,22 @@ class LayoutTableWorkbenchMixin:
                 continue
             if pts.ndim != 2 or pts.shape[0] < 2:
                 continue
+            landing.append((path, pts, str(getattr(path, "source_id", "") or "")))
+        kept, stray = split_stray_routes(
+            landing, group_of=lambda item: item[2], route_of=lambda item: landing_route(item[0])
+        )
+        # bugs/0778: are a source's launches DISCRETE field points, or a continuous emitter?
+        # Averaging >= 4 rays per distinct launch means they are discrete and the launch point is a
+        # usable field identity; below that, grouping on it would fragment the bundle. bugs/0779
+        # review: decided PER SOURCE -- a pooled test let an additive random emitter (one launch
+        # per ray) flip the imaging arms back to the field_index grouping 0778 removed.
+        discrete = discrete_launch_sources(
+            kept, source_of=lambda item: item[2], launch_of=lambda item: item[1][0, :3]
+        )
+        buckets: "dict[tuple, tuple[list, list]]" = {}
+        polylines: "dict[tuple, list]" = {}
+        launches: "dict[tuple, list]" = {}   # bugs/0752: which field band each bundle came from
+        for path, pts, source in kept:
             step = pts[-1, :3] - pts[-2, :3]
             if float(np.linalg.norm(step)) <= 1e-9:
                 continue
@@ -8669,26 +8691,27 @@ class LayoutTableWorkbenchMixin:
             #
             # Identical rays cannot honestly give two different answers. The field_index
             # grouping invented a 0.98 um "sharp field" for arm B, which then disqualified that
-            # arm's real 400 um fields through the bugs/0753 ``waist <= 10 * sharpest`` test --
-            # so the scene reported one arm blurred and the other perfect, and the perfect one
-            # was fiction. Grouping on the launch point makes the two arms agree to 0.01 um.
+            # arm's other fields through the bugs/0753 ``waist <= 10 * sharpest`` test -- so the
+            # scene reported one arm blurred and the other perfect. Grouping on the launch point
+            # makes the two arms measure alike, and they agree to 0.01 um.
             #
-            # What the scene REPORTS, before -> after (arm A | arm B, um):
+            # What the scene REPORTED, before -> after (arm A | arm B, um):
             #   device 15 FOV 24    413.89 |   0.33   ->   413.89 | 413.89
             #   device 15 FOV 26    197.88 |   0.27   ->   197.88 | 197.88
             #   device 15 FOV 28      0.27 |   0.23   ->     0.27 |   0.27
             #   device 21 default   419.03 |   0.42   ->   419.03 | 419.03
             #   device 23 default     0.42 |   0.42   ->     0.42 |   0.42
             #
-            # Note what that correction costs: at device 21 BOTH arms are 419 um blurred. There
-            # was never an arm-A defect to explain -- only an arm-B measurement that lied, and
-            # size/FOV tables were published on those numbers.
+            # bugs/0779 CORRECTION: the ~400 um rows were never blur. A few stray-route rays sat
+            # inside those field groups (split out above); without them device 21 measures
+            # 0.51 um on its centre field and device 15 FOV 24 measures 0.40 um, on both arms.
+            # 0778 made the arms measure alike -- still right -- and they then agreed on the same
+            # polluted value.
             #
             # field_index remains the fallback for a source whose launches are CONTINUOUS (a
             # true random emitter gives every ray its own launch point, which would fragment
             # into one-ray groups and measure nothing).
-            source = str(getattr(path, "source_id", "") or "")
-            if discrete_launches:
+            if discrete.get(source, False):
                 key = (source, tuple(np.round(pts[0, :3], 3)))
             else:
                 field_index = getattr(path, "field_index", None)
@@ -8696,6 +8719,10 @@ class LayoutTableWorkbenchMixin:
                     key = (source, int(field_index))
                 else:
                     key = (source, tuple(np.round(pts[0, :3], 4)))
+            # bugs/0779: and by ROUTE. A second route from the same field point that still carries
+            # a real share of the light (split_stray_routes kept it) forms a second image; pooling
+            # it with the first would measure the distance between two images, not blur.
+            key = key + (landing_route(path),)
             ends, dirs = buckets.setdefault(key, ([], []))
             ends.append(pts[-1, :3])
             dirs.append(step)
@@ -8783,17 +8810,38 @@ class LayoutTableWorkbenchMixin:
         #     strip LENGTH    |v|half  = device * |m| / 2
         # so with the default +5% field the strips always sit at 95.2% of the sensor half, and
         # the length overflows whenever the requested FOV is smaller than the device itself.
+        # bugs/0779: say how much stray light reached the sensor and how far outside the image(s)
+        # it lands. The user SAW these rays in the scene; leaving them out of the measurement
+        # without a word would hide exactly what they asked about.
+        if isinstance(info, dict) and stray:
+            try:
+                summary = summarise_stray_landings(
+                    [(item[2], item[1][-1, :3]) for item in stray],
+                    measured,
+                    image_axis=normal,
+                    landing_total=len(landing),
+                )
+                if summary:
+                    info["stray_light"] = summary
+            except Exception as exc:                  # bugs/0758: never break the measurement
+                self.append_debug(f"stray light summary skipped: {exc}")
         try:
-            self._annotate_sensor_overflow(info, scene_bundle, centre, normal)
+            self._annotate_sensor_overflow(
+                info, scene_bundle, centre, normal, landing_paths=[item[0] for item in kept]
+            )
         except Exception as exc:                      # bugs/0758: never break the measurement
             self.append_debug(f"sensor overflow annotation skipped: {exc}")
         self._focused_image_plane_info = info
         return info
 
-    def _annotate_sensor_overflow(self, info, scene_bundle, centre, normal) -> None:
+    def _annotate_sensor_overflow(self, info, scene_bundle, centre, normal, landing_paths=None) -> None:
         """bugs/0774: count the rays that reach the detector plane but land OUTSIDE its active
         area, and by how far. Pure measurement on the bundle already traced; writes
-        ``sensor_overflow`` into ``info`` and nothing else."""
+        ``sensor_overflow`` into ``info`` and nothing else.
+
+        bugs/0779: ``landing_paths`` are the image-forming landings, stray routes removed. A stray
+        ray landing near the sensor edge is not the FIELD overflowing, and it would shift the strip
+        centres and the traced |m| measured here. None measures every landing ray, as before."""
         if not isinstance(info, dict) or scene_bundle is None:
             return
         try:
@@ -8834,7 +8882,9 @@ class LayoutTableWorkbenchMixin:
             except Exception:
                 continue
         groups = {}          # band name -> [summed in-plane offset, count]
-        for path in list(getattr(scene_bundle, "ray_paths", []) or []):
+        if landing_paths is None:
+            landing_paths = list(getattr(scene_bundle, "ray_paths", []) or [])
+        for path in list(landing_paths):
             if str(getattr(path, "termination_reason", "")) not in ("image", "target_termination"):
                 continue
             try:

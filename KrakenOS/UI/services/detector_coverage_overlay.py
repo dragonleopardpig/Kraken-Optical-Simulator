@@ -145,6 +145,139 @@ def _basis(axis: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return u, v
 
 
+#: bugs/0779: within one source (or one split-field band), a landing ROUTE -- the ordered surfaces a
+#: ray interacted with -- that carries less than this share of the landing rays is STRAY light that
+#: reached the detector by another optical path, not part of the image. Measured on
+#: om05a_folded_80mm at device 21: 4 of 326 landing rays per arm (1.2%) crossed the prism gap into
+#: the other arm and back, landed 1.4 mm outside the strip, and dragged a 105-ray field's waist
+#: from 2.06 um to 656 um. 0.2 is bugs/0753's _MIN_SAMPLE_SHARE: a route that forms a real second
+#: image carries a real share of the light.
+_MIN_ROUTE_SHARE = 0.2
+
+
+def landing_route(path) -> tuple:
+    """bugs/0779: the optical route a traced ray took -- the ordered surface ids it interacted
+    with (``surface_ids``, else the ids of its ``hits``). Two rays from one field point that took
+    different routes are not the same image. ``()`` when the path carries no route."""
+    ids = getattr(path, "surface_ids", None)
+    if ids is None and isinstance(path, dict):
+        ids = path.get("surface_ids")
+    try:
+        if ids is not None and len(ids):
+            return tuple(int(s) for s in np.asarray(ids, dtype=float).ravel())
+    except (TypeError, ValueError):
+        pass
+    hits = getattr(path, "hits", None)
+    if hits is None and isinstance(path, dict):
+        hits = path.get("hits")
+    route = []
+    for hit in list(hits or []):
+        sid = hit.get("surface_id", hit.get("surface")) if isinstance(hit, dict) else getattr(hit, "surface_id", None)
+        try:
+            route.append(int(sid))
+        except (TypeError, ValueError):
+            continue
+    return tuple(route)
+
+
+def split_stray_routes(items, *, group_of, route_of, min_share: float = _MIN_ROUTE_SHARE):
+    """bugs/0779: separate the rays that FORM an image from stray light that merely reached the
+    detector. Within each group (a source, or a split-field band) a route is image-forming when it
+    carries at least ``min_share`` of the group's rays; rays on any other route are stray. A group
+    in which no route reaches the share keeps everything -- without a dominant image nothing can
+    be called stray. Returns ``(kept, stray)``, each in input order. Pure + display-free."""
+    items = list(items)
+    labels = []
+    counts: "dict[object, dict[tuple, int]]" = {}
+    for item in items:
+        group, route = group_of(item), route_of(item)
+        labels.append((group, route))
+        routes = counts.setdefault(group, {})
+        routes[route] = routes.get(route, 0) + 1
+    forming: "dict[object, set]" = {}
+    for group, routes in counts.items():
+        total = float(sum(routes.values()))
+        good = {route for route, n in routes.items() if n >= float(min_share) * total}
+        forming[group] = good or set(routes)
+    kept, stray = [], []
+    for item, (group, route) in zip(items, labels):
+        (kept if route in forming[group] else stray).append(item)
+    return kept, stray
+
+
+def discrete_launch_sources(items, *, source_of, launch_of, rays_per_launch: int = 4) -> dict:
+    """bugs/0778: per SOURCE, do the landing rays come from DISCRETE field points?
+
+    A source averaging at least ``rays_per_launch`` landing rays per distinct launch point (1 um
+    stamp) is discrete, and its launch point is a usable field identity; below that it is a
+    continuous emitter, where grouping on the launch point would fragment into groups too small
+    to measure. bugs/0779 review: decided PER SOURCE, never pooled -- an additive random emitter
+    traced alongside the imaging arms (one launch per ray) must not flip THEM back to the
+    field_index grouping bugs/0778 removed. Pure + display-free."""
+    stamps: "dict[object, set]" = {}
+    counts: "dict[object, int]" = {}
+    for item in items:
+        source = source_of(item)
+        try:
+            stamp = tuple(np.round(np.asarray(launch_of(item), dtype=float).reshape(3), 3))
+        except Exception:
+            continue
+        stamps.setdefault(source, set()).add(stamp)
+        counts[source] = counts.get(source, 0) + 1
+    return {
+        source: bool(seen) and counts[source] >= int(rays_per_launch) * len(seen)
+        for source, seen in stamps.items()
+    }
+
+
+def summarise_stray_landings(stray_points, images, *, image_axis, landing_total,
+                             tolerance_mm: float = 1.0e-3) -> "dict | None":
+    """bugs/0779: how much stray light reached the detector, and how far outside the image(s).
+
+    ``stray_points`` are ``(source, end_point)`` for the rays :func:`split_stray_routes` called
+    stray; ``images`` are measured image entries carrying ``landing_center_world`` and
+    ``half_along_u_mm`` / ``half_along_v_mm`` in the SAME ``_basis(image_axis)`` frame
+    ``_measure_one_focus_image`` records them in. A stray ray landing inside an image's footprint
+    is counted but not called outside -- a route that differs only in bookkeeping lands on the
+    image. None when there is no stray light. Pure + display-free."""
+    stray_points = list(stray_points or [])
+    if not stray_points:
+        return None
+    iu, iv = _basis(np.asarray(image_axis, dtype=float).reshape(3))
+    boxes = []
+    for entry in list(images or []):
+        try:
+            boxes.append((
+                np.asarray(entry["landing_center_world"], dtype=float).reshape(3),
+                float(entry["half_along_u_mm"]),
+                float(entry["half_along_v_mm"]),
+            ))
+        except (KeyError, TypeError, ValueError):
+            continue
+    by_source: "dict[str, int]" = {}
+    outside = 0
+    worst = 0.0
+    for source, point in stray_points:
+        by_source[str(source)] = by_source.get(str(source), 0) + 1
+        if not boxes:
+            continue
+        p = np.asarray(point, dtype=float).reshape(3)
+        gap = min(
+            float(np.hypot(max(abs(float((p - c) @ iu)) - hu, 0.0), max(abs(float((p - c) @ iv)) - hv, 0.0)))
+            for c, hu, hv in boxes
+        )
+        if gap > float(tolerance_mm):
+            outside += 1
+            worst = max(worst, gap)
+    return {
+        "rays": int(len(stray_points)),
+        "by_source": by_source,
+        "share": float(len(stray_points)) / float(max(int(landing_total), 1)),
+        "outside": int(outside),
+        "worst_outside_mm": float(worst),
+    }
+
+
 def _circle_points(center, u, v, radius, n=72):
     th = np.linspace(0.0, 2.0 * np.pi, n, endpoint=True)
     return center + radius * (np.outer(np.cos(th), u) + np.outer(np.sin(th), v))
@@ -266,11 +399,22 @@ def measure_split_field_image_strips(
                 best = (dist, index)
         if best is None:
             continue
+        route = []
+        for hit in hits:
+            try:
+                route.append(int(hit.get("surface")))
+            except (AttributeError, TypeError, ValueError):
+                continue
         d = p - img_pt
-        landed[best[1]].append((float(np.dot(d, iu)), float(np.dot(d, iv))))
+        landed[best[1]].append((float(np.dot(d, iu)), float(np.dot(d, iv)), tuple(route)))
     changed = 0
     for index, band in enumerate(bands):
-        pts = landed.get(index) or []
+        # bugs/0779: a strip is the IMAGE, not every ray that reached the sensor. The half-width
+        # below is the largest |u| from the sensor centre, so one stray-route ray landing past
+        # the strip's outer edge would carry the drawn strip out with it.
+        pts, _stray = split_stray_routes(
+            landed.get(index) or [], group_of=lambda q: 0, route_of=lambda q: q[2]
+        )
         if not isinstance(band, dict):
             continue
         if len(pts) < int(min_rays):
@@ -2057,6 +2201,27 @@ def format_focus_summary_lines(
                         f"the sensor is already at the waist, so moving the stage or the camera "
                         f"cannot land it. This configuration does not resolve the field."
                     )
+    # bugs/0779 (user: "have you looked into the sudden appear of stray rays issue?"): stray light
+    # that reached the sensor by another optical route is left out of the focus measurement, and
+    # that must be SAID -- the user sees those rays in the scene. Only rays landing OUTSIDE the
+    # image are reported; a route that differs in bookkeeping alone lands on the image itself.
+    if isinstance(focus_info, dict):
+        stray = focus_info.get("stray_light")
+        if isinstance(stray, dict):
+            try:
+                outside = int(stray.get("outside", 0))
+                if outside > 0:
+                    # the share of the rays being REPORTED -- the ones outside the image -- not of
+                    # every off-route ray (om05a device 15 at FOV 24: 16 off-route, 8 outside)
+                    share = float(stray["share"]) * outside / max(int(stray["rays"]), 1)
+                    lines.append(
+                        f"STRAY LIGHT: {outside} ray(s) reach the sensor by another optical route "
+                        f"and land up to {float(stray['worst_outside_mm']):.3g} mm outside the image "
+                        f"({100.0 * share:.1f}% of the landing rays) -- not part of "
+                        f"the image, left out of the focus measurement"
+                    )
+            except (KeyError, TypeError, ValueError):
+                pass
     # bugs/0774: rays that reach the detector PLANE but land beyond its active area were
     # counted as landing and never mentioned. The user spotted the strips migrating outward and
     # asked whether it was accounted for; it was not. Say it, with the count and the overflow.

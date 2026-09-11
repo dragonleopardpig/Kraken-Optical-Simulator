@@ -20,41 +20,35 @@ So identical rays were producing two different answers, which can only be the re
 
 ``field_index`` is a uniform ray-index division (scene_builder._launch_field_group's fallback)
 sliding over a RAGGED launch -- the launch appends corner probes, so some fields carry 5 rays and
-others 361. Arm B's boundaries land 20 rays out of step. That invented a 0.98 um "sharp field"
-for arm B, which then disqualified that arm's genuine ~400 um fields through the bugs/0753
-``waist <= 10 * sharpest`` test, and the scene reported one arm ruined and the other perfect.
+others 361. Arm B's boundaries land 20 rays out of step, which invented a 0.98 um "sharp field"
+for arm B and disqualified that arm's other fields through the bugs/0753 vote.
 
 A field point is a PLACE ON THE OBJECT. The launch point IS that place, and it mirrors when the
-bundle mirrors. Grouping on it makes the arms agree:
+bundle mirrors. Grouping on it makes the arms measure alike.
 
-    device 15 FOV 24   before  A 413.89 um / B   0.33 um      after  A 413.89 / B 413.89
-    device 15 FOV 26   before  A 197.88 um / B   0.27 um      after  A 197.88 / B 197.88
-    device 15 FOV 28   before  A   0.27 um / B   0.23 um      after  A   0.27 / B   0.27
-    device 21 default  before  A 419.03 um / B   0.42 um      after  A 419.03 / B 419.03
-    device 23 default  before  A   0.42 um / B   0.42 um      after  A   0.42 / B   0.42
+bugs/0779 CORRECTION: the ~400 um both arms then agreed on was NOT blur. A few stray-route rays sat
+inside the field groups; without them device 21 measures 0.51 um on both arms. The symmetry fix
+stands; the "both arms blurred" conclusion drawn from it did not.
 
-The correction this forces: arm B's sub-micron waists were FICTION. At device 21 BOTH arms are
-419 um blurred -- there was never an arm-A defect to explain.
+bugs/0779 review: the first version of this guard asserted on SOURCE TEXT, and swapping the two
+grouping branches -- which restores the old wrong answer exactly -- still passed every check. These
+checks run the REAL _measure_focused_image_plane (display-free, via a stub) on synthetic rays:
 
-Checks (display-free, pure):
-  A  discreteness is decided before grouping, and on the whole landing set;
-  B  a discrete launch groups by launch point, a continuous one falls back to field_index
-     (a true random emitter gives every ray its own launch and would fragment into one-ray
-     groups, measuring nothing);
-  C  the threshold is >= 4 rays per distinct launch, matching the min_rays a waist fit needs;
-  D  the measured before/after numbers are recorded where the next reader will find them.
+  A  a mirror-image two-arm split field with the RAGGED launch and scene_builder's uniform
+     field_index, blurred on both arms by the same aberration: the two arms read the same, and
+     both read blurred (field_index grouping read one blurred and the other ~0);
+  B  a continuous emitter (one launch per ray) is not fragmented into one-ray groups;
+  C  the discreteness threshold (>= 4 rays per distinct launch) on the real function;
+  D  the older 'target_termination' spelling measures the same.
 
 Run:  .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_0778_focus_groups_follow_the_launch
 """
 
 from __future__ import annotations
 
-import inspect
+import types
 
-
-def _discrete(landing_rays, distinct_launches):
-    """The rule, mirrored so its cases can be enumerated."""
-    return bool(distinct_launches and landing_rays >= 4 * distinct_launches)
+import numpy as np
 
 
 def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, list[str]]":
@@ -63,64 +57,81 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     def ok(condition: bool, message: str) -> None:
         notes.append(("PASS: " if condition else "FAIL: ") + message)
 
-    from KrakenOS.UI.services.layout_table_workbench import LayoutTableWorkbenchMixin as _M
-
-    src = inspect.getsource(_M._measure_focused_image_plane)
-
-    ok(
-        "discrete_launches" in src,
-        "A1: the measurement decides whether the launches are discrete before it groups",
-    )
-    ok(
-        src.index("discrete_launches = bool(") < src.index("if discrete_launches:"),
-        "A2: and decides it ONCE, over the whole landing set, not per ray",
-    )
-    ok(
-        "_landing_rays >= 4 * len(_launch_seen)" in src,
-        "C1: the rule is >= 4 rays per distinct launch -- the same minimum a waist fit needs, "
-        "so a group that survives grouping can actually be measured",
-    )
-    ok(
-        'key = (source, tuple(np.round(pts[0, :3], 3)))' in src,
-        "B1: a discrete launch groups by the LAUNCH POINT -- the physical field point, which "
-        "mirrors when the bundle mirrors",
-    )
-    tail = src.split("if discrete_launches:", 1)[-1]
-    ok(
-        "field_index" in tail,
-        "B2: and a continuous emitter still falls back to field_index -- grouping a random "
-        "source by launch point would give one ray per group and measure nothing",
+    from KrakenOS.UI.services.detector_coverage_overlay import discrete_launch_sources
+    from KrakenOS.UI.validate_open3d_0779_stray_routes_are_not_the_image import (
+        DELTA,
+        FIELD_COUNT,
+        RAYS_PER_FIELD,
+        _polyline,
+        measure,
+        per_arm,
+        split_field_paths,
     )
 
-    # ---- the discreteness rule's own cases ---------------------------------------------------
-    for landing, launches, want, why in (
+    # ---- A: the two arms of a ragged, mirrored split field measure alike --------------------------
+    blurred = split_field_paths(tail=20)
+    counts: "dict[str, dict[int, int]]" = {}
+    for index, path in enumerate(blurred):
+        arm = "A" if index < len(blurred) // 2 else "B"
+        counts.setdefault(arm, {}).setdefault(int(path.field_index), 0)
+        counts[arm][int(path.field_index)] += 1
+    ok(counts.get("A") == {0: 361, 1: 361, 2: 361, 3: 20} and counts.get("B") == {3: 341, 4: 361, 5: 361, 6: 40},
+       f"A0: the synthetic field_index reproduces the om05a mis-cut ({counts})")
+    _, info = measure(blurred)
+    arms = per_arm(info)
+    a, b = arms.get("Face A field"), arms.get("Face B field")
+    if a and b:
+        wa, wb = float(a["rms_waist_mm"]), float(b["rms_waist_mm"])
+        ok(abs(wa - wb) < 1.0e-9,
+           f"A1: the two arms report the same waist ({1000 * wa:.4f} um | {1000 * wb:.4f} um)")
+        ok(wa > 0.1 and wb > 0.1,
+           "A2: and both report the blur -- field_index grouping read arm B as ~0 um and arm A as ~400 um")
+        ok(abs(float(a["offset_mm"]) - float(b["offset_mm"])) < 1.0e-9,
+           "A3: and the same image-plane offset")
+    else:
+        ok(False, f"A1: both arms must be measured (got {list(arms)})")
+
+    # ---- B: a continuous emitter is not fragmented ---------------------------------------------------
+    rng = np.random.default_rng(778)
+    continuous = []
+    for _ in range(400):
+        launch = np.array([0.0, rng.uniform(-3.0, 3.0), rng.uniform(-3.0, 3.0)])
+        pupil = np.array([50.0, rng.uniform(-4.5, 4.5), rng.uniform(-4.5, 4.5)])
+        continuous.append(types.SimpleNamespace(
+            points_world=_polyline(launch, pupil, np.array([100.0 + DELTA, 0.0, 0.0])),
+            termination_reason="image", source_id="source:random", field_index=0,
+            surface_ids=np.asarray((1.0, 25.0)),
+        ))
+    _, cont = measure(continuous, bands=None)
+    ok(isinstance(cont, dict) and cont.get("pooled") is False and int(cont.get("field_count") or 0) == 1,
+       f"B1: 400 one-launch-per-ray rays stay ONE measurable group, not 400 unmeasurable ones "
+       f"(pooled={None if not isinstance(cont, dict) else cont.get('pooled')}, "
+       f"fields={None if not isinstance(cont, dict) else cont.get('field_count')})")
+
+    # ---- C: the threshold, on the real function -------------------------------------------------------
+    def items(n_rays, n_points):
+        points = [np.array([float(k), 0.0, 0.0]) for k in range(max(n_points, 1))]
+        return [("s", points[i % max(n_points, 1)]) for i in range(n_rays)] if n_points else []
+
+    for n_rays, n_points, want, why in (
         (1103, 7, True, "om05a: 1103 landings over 7 launch points"),
         (322, 7, True, "the same bundle after the aperture stop"),
         (400, 400, False, "a true random emitter: one launch per ray"),
         (400, 120, False, "mostly-distinct launches, 3.3 per point"),
         (400, 100, True, "exactly 4 per point"),
-        (0, 0, False, "nothing landed"),
-        (10, 0, False, "no launches recorded"),
+        (399, 100, False, "just under 4 per point"),
     ):
-        got = _discrete(landing, launches)
-        ok(got == want, f"C2[{why}]: {landing} rays / {launches} launches -> discrete={got}")
+        got = discrete_launch_sources(items(n_rays, n_points), source_of=lambda it: it[0],
+                                      launch_of=lambda it: it[1]).get("s", False)
+        ok(got == want, f"C1[{why}]: {n_rays} rays / {n_points} launches -> discrete={got}")
 
-    # ---- the measured evidence is recorded ----------------------------------------------------
-    ok(
-        "3.5e-5" in src or "mirror" in src.lower(),
-        "D1: the source records that the two arms' bundles were measured as mirror images -- "
-        "the fact that makes a readout difference impossible to blame on optics",
-    )
-    ok(
-        "413.89" in src and "0.33" in src,
-        "D2: and the before/after numbers that prove the fix, so the next reader need not "
-        "re-derive them",
-    )
-    ok(
-        "fiction" in src.lower() or "FICTION" in src,
-        "D3: and that arm B's sub-micron waists were fiction -- the correction matters more "
-        "than the fix, because tables were published on those numbers",
-    )
+    # ---- D: the older termination spelling -------------------------------------------------------------
+    _, legacy = measure(split_field_paths(tail=20, term="target_termination"))
+    la = per_arm(legacy)
+    ok(bool(a and b) and len(la) == 2
+       and abs(float(la["Face A field"]["rms_waist_mm"]) - float(a["rms_waist_mm"])) < 1.0e-9
+       and abs(float(la["Face B field"]["rms_waist_mm"]) - float(b["rms_waist_mm"])) < 1.0e-9,
+       "D1: 'target_termination' landings measure exactly like 'image' ones")
 
     passed = not any(note.startswith("FAIL") for note in notes)
     if verbose:

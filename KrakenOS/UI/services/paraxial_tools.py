@@ -2951,7 +2951,21 @@ class ParaxialToolsMixin:
             length = float(np.linalg.norm(step))
             if length <= 1.0e-9:
                 continue
-            candidates.append((pts[0, :3].copy(), pts[-1, :3].copy(), step / length))
+            candidates.append((pts[0, :3].copy(), pts[-1, :3].copy(), step / length, path))
+        # bugs/0779: stray light is not the image. A ray that reached the detector by another
+        # optical route shares its field's launch point, so the axial-field pick below keeps it --
+        # on om05a_folded_80mm at device 21 the axial field carried 2 rays that crossed the prism
+        # gap into the other arm and back and landed 1.4 mm outside the strip, enough to put a
+        # least-squares waist 3 mm from a sensor the image-forming rays focus 0.095 mm from. This
+        # is the measure the focus snap reads first, so drop them before anything is chosen.
+        from KrakenOS.UI.services.detector_coverage_overlay import landing_route, split_stray_routes
+
+        candidates, _stray = split_stray_routes(
+            candidates,
+            group_of=lambda item: str(getattr(item[3], "source_id", "") or ""),
+            route_of=lambda item: landing_route(item[3]),
+        )
+        candidates = [item[:3] for item in candidates]
         if not candidates:
             return None
         try:

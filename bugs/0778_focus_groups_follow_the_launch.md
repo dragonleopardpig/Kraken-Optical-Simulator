@@ -73,10 +73,28 @@ exist. Size/FOV verdicts that leaned on arm B's number must be re-read: where bo
 reported good (device 23+, FOV 28+) the verdict stands, because both were genuinely good; where
 the report was "A bad, B fine", the truth is BOTH bad.
 
+## Correction (bugs/0779)
+
+The conclusion of the section above is wrong. The ~400 um waist both arms agreed on was not blur:
+a few stray-route rays -- light that crossed the prism gap into the other arm and came back -- sat
+inside the field groups, and one of them dragged a 105-ray field's waist from 2.06 um to 656 um.
+With those routes excluded, device 21 measures 0.51 um on both arms and lands inside a pixel, and
+device 15 at FOV 24 measures 0.40 um. The symmetry fix stands -- the two arms must be measured
+alike -- but "at device 21 BOTH arms are 419 um blurred" does not, and neither does calling arm
+B's sub-micron readings fiction: they came from a wrong grouping, yet the true value is sub-micron
+too. The size/FOV verdicts that treated ~400 um as blur are wrong in the same way.
+
+The pooled discreteness test was also a defect (an additive random emitter could flip the arms
+back to `field_index`); it is now decided per source.
+
 ## Guard
 
-`KrakenOS/UI/validate_open3d_0778_focus_groups_follow_the_launch.py`, penta phase **561**:
-discreteness is decided once over the whole landing set (A); a discrete launch groups by launch
-point and a continuous one still falls back (B); the threshold is >= 4 rays per launch, enumerated
-over seven cases including a true random emitter (C); and the measured before/after and the
-fiction correction are recorded in the source itself (D).
+`KrakenOS/UI/validate_open3d_0778_focus_groups_follow_the_launch.py`, penta phase **561**.
+
+As first committed, its checks read the method's SOURCE TEXT, and the review of 244c2994 showed
+that swapping the two grouping branches -- which restores the old wrong answer exactly -- passed all
+of them. It now runs the real `_measure_focused_image_plane` (display-free stub) on a synthetic
+mirror-image split field with the ragged launch and scene_builder's uniform `field_index`: the two
+arms report the same waist and both report the blur (A); a continuous emitter stays one measurable
+group (B); the >= 4 rays-per-launch threshold on the real `discrete_launch_sources` (C); the
+legacy termination spelling (D).
