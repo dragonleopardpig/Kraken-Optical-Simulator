@@ -2110,6 +2110,16 @@ class QuickEstimationService:
                                 )
                             except Exception:
                                 object_slid = None
+                # bugs/0783: record the lens move HERE, where every successful booking passes --
+                # the summary used to read it only from the vendor-lock residual below, so a solve
+                # whose image side MOTOR 1 booked cleanly told the user "the lens did not move".
+                if isinstance(object_slid, dict):
+                    try:
+                        self.editor._fov_solve_lens_move_mm = float(
+                            object_slid.get("signed_mm", object_slid.get("distance", 0.0))
+                        )
+                    except (TypeError, ValueError):
+                        pass
                 if object_slid is None and abs(float(folded["object_delta"])) > 1.0e-6:
                     refusal = str(
                         self.editor.__dict__.get("_lens_move_refusal", "")
@@ -3777,6 +3787,126 @@ class QuickEstimationService:
             width = height = 2.0 * float(object_semi) / (2.0 ** 0.5)
         return delivered_m, (width, height)
 
+    #: bugs/0783: a working-distance error at or below this is not a move (a hundredth of the
+    #: bench's tightest one-pixel depth of focus, 86 um at FOV 20 -- bugs/0767).
+    _WD_RESTORE_MIN_MM = 1.0e-3
+
+    def _restore_working_distance(
+        self, obj_w, obj_h, semi, image_semi, *, prior_focus_residual=None, prior_forced_info=None
+    ) -> "tuple[bool, str] | None":
+        """bugs/0783 (user: "the production has only 3 FOVs, meaning only 3 WD + 3 image
+        distance. So when the device change size, one motor move to 'Restore' the WD" and
+        "Everything is invariant for a fixed FOV, the motor just restore the WD").
+
+        A fixed FOV fixes |m|, and |m| fixes both conjugates. A device-size change moves only
+        the device FACE (by half the size change on the split field), so the whole correction is
+        one rigid move of the imaging group -- lens, filter, fold mirror and camera together --
+        by the object-side delta. The image distance, the magnification and the focus do not
+        change, so there is nothing to re-solve, re-trace or snap. Measured on om05a_folded_80mm
+        at FOV 54, the first order's own WD and image distance are identical for a 15 mm and a
+        50 mm device (275.437 / 95.635 mm); only the lens position changes, by exactly dL/2.
+
+        Before this, a size change ran the full conjugate solve plus the traced finisher and snap
+        (~150 s), or -- for a small change -- bugs/0727's gate declared the field "already
+        delivered" while its own first order said the lens was 0.88 mm out (it compares |m| to
+        0.5 % and never the object side), and the banner said "the lens did not move".
+
+        Applies only when the scene has a MOTOR 1 group stage, the image distance already sits at
+        this FOV's operating point (|image_delta| within the delivered focus tolerance), and a
+        traced focus, if one was measured, agrees. The lens pair (bugs/0719, with its rail and
+        physical-room gates) moves by ``object_delta``; MOTOR 1 (bugs/0759/0782, with its sensor
+        check) moves by ``object_delta + image_delta``. The stage bound is checked before anything
+        moves, and a MOTOR 1 refusal after the lens moved puts every row back. Returns
+        ``(True, note)`` when restored, else None -- and the full solve runs, which also produces
+        every refusal with its numbers ([[feedback_no_silent_solve_failure]]).
+        """
+        editor = self.editor
+        stage = self._camera_focus_stage()
+        arm = (stage or {}).get("arm")
+        if not isinstance(arm, dict):
+            return None
+        try:
+            correction = float(self._folded_m_correction())
+            m_book = (float(image_semi) / correction) / float(semi)
+            folded = editor._folded_conjugate_gaps_for_magnification(m_book)
+            od = float(folded["object_delta"])
+            idl = float(folded["image_delta"])
+        except Exception:
+            return None
+        if not (np.isfinite(od) and np.isfinite(idl)):
+            return None
+        if abs(idl) > self._DELIVERED_FOCUS_TOL_MM:
+            return None                      # a different FOV's image distance: solve it
+        if abs(od) <= self._WD_RESTORE_MIN_MM:
+            return None                      # already at WD: the idempotence gate answers
+        try:
+            measured = editor.__dict__.get("_focused_image_plane_info")
+            if isinstance(measured, dict):
+                entries = [e for e in (measured.get("images") or []) if isinstance(e, dict)]
+                offsets = [abs(float(e["offset_mm"])) for e in entries if e.get("offset_mm") is not None]
+                if not offsets and measured.get("offset_mm") is not None:
+                    offsets = [abs(float(measured["offset_mm"]))]
+                if offsets and max(offsets) > self._DELIVERED_FOCUS_TOL_MM:
+                    return None              # the traced image does not land: not an operating point
+        except (TypeError, ValueError):
+            return None
+        rows = list(getattr(editor, "rows", None) or [])
+        group = od + idl
+        try:
+            seat_after = float(rows[int(arm["row"])].desp_x) + self._camera_arm_seat_axis(stage)[0] * group
+        except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+            return None
+        if not (arm["min_mm"] - 1.0e-9 <= seat_after <= arm["max_mm"] + 1.0e-9):
+            return None                      # the full solve refuses with the stage numbers
+        snapshot = [(r.thickness, r.desp_x, r.desp_y, r.desp_z) for r in rows]
+
+        def _put_back():
+            for row, (t, dx, dy, dz) in zip(rows, snapshot):
+                row.thickness, row.desp_x, row.desp_y, row.desp_z = t, dx, dy, dz
+            try:
+                editor._invalidate_preview_scene_trace()
+            except Exception:
+                pass
+
+        try:
+            lens = editor.translate_lens_block_along_leg(od)
+        except Exception:
+            lens = None
+        if not isinstance(lens, dict) or abs(float(lens.get("signed_mm", 0.0)) - od) > 1.0e-9:
+            _put_back()
+            return None
+        if not self._apply_camera_arm_move(group):
+            _put_back()
+            return None
+        editor._fov_solve_focus_residual_info = prior_focus_residual
+        if prior_forced_info is not None:
+            editor._fov_solve_refusal_info = prior_forced_info
+        editor._fov_solve_lens_move_mm = od
+        self.set_target_fov(semi)
+        self._update_split_field_band_widths(obj_w)
+        summary = {"requested_fov_wh": (float(obj_w), float(obj_h)), "lens_move_mm": od,
+                   "group_move_mm": group, "wd_restored": True}
+        try:
+            delivered_m = abs(float(editor._current_finite_paraxial_magnification()))
+            summary["delivered_m"] = delivered_m
+            dims = editor._current_camera_sensor_active_mm()
+            summary["delivered_fov_wh"] = (float(dims[0]) / delivered_m, float(dims[1]) / delivered_m)
+        except Exception:
+            summary["delivered_fov_wh"] = (float(obj_w), float(obj_h))
+        editor._solve_summary_info = summary
+        # Nothing optical changed, so do not make the user wait for a re-trace: draw the bodies
+        # and let Trace Now draw the rays (the bugs/0718 deferred state).
+        try:
+            editor._preview_trace_deferred_until_requested = True
+            editor._invalidate_preview_scene_trace()
+        except Exception:
+            pass
+        return True, (
+            f"Working distance restored for the new device: the lens and the imaging group moved "
+            f"{od:+.4g} mm together (MOTOR 1 {group:+.4g} mm). The FOV, image distance and focus are "
+            f"unchanged, so nothing was re-solved or re-traced -- Trace Now draws the rays."
+        )
+
     def fov_solve(
         self,
         plane: str,
@@ -3833,6 +3963,9 @@ class QuickEstimationService:
         except Exception:
             prior_forced_info = None
         self.editor._fov_solve_focus_residual_info = None
+        # bugs/0783: the lens move THIS solve made, whichever branch booked it -- the banner's
+        # "the lens did not move" read a key only the vendor-lock branch ever wrote.
+        self.editor._fov_solve_lens_move_mm = None
         if plane == "object":
             wh = self._sensor_wh(width, height, aspect)
             if wh is None:
@@ -3894,6 +4027,19 @@ class QuickEstimationService:
                 # ("the sensor would sit inside the optics") -- measured on om05a: a second
                 # FOV 20x20 refused with "No real-image conjugate" while object_delta was
                 # exactly 0.0000 and the delivered field was 20.002 x 20.002 mm.
+                # bugs/0783 (user: "Everything is invariant for a fixed FOV, the motor just restore
+                # the WD, everything else not changing"): a DEVICE change at a FOV the scene already
+                # images is one rigid move of the imaging group -- no conjugate re-solve, no traced
+                # finisher, no focus chase. A forced request keeps the full path (force exists to
+                # SHOW a collision).
+                if not force:
+                    restored = self._restore_working_distance(
+                        obj_w, obj_h, float(semi), float(image_semi),
+                        prior_focus_residual=prior_focus_residual,
+                        prior_forced_info=prior_forced_info,
+                    )
+                    if restored is not None:
+                        return restored
                 already = self._fov_already_delivered(image_semi, float(semi))
                 if already is not None:
                     self.editor._fov_solve_focus_residual_info = prior_focus_residual
@@ -4005,6 +4151,10 @@ class QuickEstimationService:
                             summary["lens_move_mm"] = float(residual["lens_move_mm"])
                         except (TypeError, ValueError):
                             pass
+                    elif self.editor.__dict__.get("_fov_solve_lens_move_mm") is not None:
+                        # bugs/0783: a clean MOTOR 1 booking leaves no residual, and without this
+                        # the banner said "the lens did not move" after moving it 86.9 mm
+                        summary["lens_move_mm"] = float(self.editor.__dict__.get("_fov_solve_lens_move_mm"))
                     self.editor._solve_summary_info = summary
                     msg = f"Object {obj_w:.6g} x {obj_h:.6g} mm fills the sensor. " + msg
                     # bugs/0717: the force note (moved / penetration / obstacle) is

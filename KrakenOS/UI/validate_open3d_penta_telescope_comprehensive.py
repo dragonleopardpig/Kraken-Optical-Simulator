@@ -16079,6 +16079,10 @@ phase_565_motor1_follows_the_beam = _phase_from_standalone(
     565, "MOTOR 1 must move the imaging group along the BEAM on any frame: the user said the production om05a has exactly the 80 mm build's two motors, but bugs/0770 had made its Motor 1 refuse because the move threw the sensor (-10, +20, 0) for a -10 mm request. Measured per +1 mm write, the standoff and the filter carry pair are chain thicknesses that move along the beam identically on both frames, while the seat's desp_x is a WORLD axis whose sign flips on the mirrored production frame (lens leg -x): +delta moved RA mirror 2 toward the object while the thicknesses moved the standoff and filter away. The seat is now written with a sign MEASURED by a restored +1 mm nudge projected on the lens leg, the solve's stage bound uses the same sign, and the bugs/0770 check also refuses a sensor that travels the right distance the wrong way. The real production move now carries sensor, mirror and filter exactly -10.000 mm along the beam; the 80 mm writes are bit-identical (0782)",
     "KrakenOS.UI.validate_open3d_0782_motor1_follows_the_beam",
     "motor1_follows_the_beam")
+phase_566_device_change_restores_wd = _phase_from_standalone(
+    566, "a device-size change at a fixed FOV restores the working distance, and the banner says what moved: the user saw 'the lens did not move' while changing device size ('the WD cannot be right without lens moving') and stated the bench's model -- three FOVs, each one WD and one image distance, one motor restores the WD. Two defects produced the banner: the solve summary read the lens move only from the vendor-lock residual, so every clean MOTOR 1 booking reported no move, and bugs/0727's already-delivered gate never asked the object side (om05a 80 mm at FOV 54: a 50 -> 49 mm device left the first order asking for a -0.883 mm lens move while the gate said nothing to move). Now, at an operating point (the image distance already this FOV's), a size change is ONE rigid move -- lens pair by object_delta, MOTOR 1 by object_delta + image_delta, stage bound checked first, every row put back on a MOTOR 1 refusal -- with no conjugate re-solve and no trace; on the real 80 mm scene 50 -> 40 lands on exactly the traced full solve's geometry (A5 125.5068, standoff 4.3213). The full solve records its lens move from whichever branch booked it (0783)",
+    "KrakenOS.UI.validate_open3d_0783_device_change_restores_wd",
+    "device_change_restores_wd")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16710,6 +16714,7 @@ def main() -> int:
             phase_563_stray_rays_draw_faint,
             phase_564_solve_does_not_retrace_an_unchanged_scene,
             phase_565_motor1_follows_the_beam,
+            phase_566_device_change_restores_wd,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
