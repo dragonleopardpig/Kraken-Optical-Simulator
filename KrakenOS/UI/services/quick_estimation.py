@@ -2560,10 +2560,22 @@ class QuickEstimationService:
         snap = getattr(self.editor, "snap_detector_to_image_plane", None)
         if not callable(snap):
             return ""
+        fingerprint = self._traced_focus_fingerprint()
         try:
             before = float(self.editor._traced_bundle_best_focus_shift())
         except Exception:
             before = float("nan")
+        # bugs/0781 (user: "after clicking apply + solve FOV, it takes ages to trace"): the snap's
+        # bugs/0764 guard used to re-trace this same scene for its own "before" (36.6 s on om05a).
+        # Hand it this value instead -- only when the build itself changed no trace input, i.e. the
+        # fingerprint is the same after it as before it. The snap re-checks it before using it.
+        after_build = self._traced_focus_fingerprint()
+        self.editor._snap_last_traced_focus = None
+        self.editor._snap_premeasured_focus = (
+            {"fingerprint": after_build, "signed": before}
+            if fingerprint and after_build == fingerprint and np.isfinite(before)
+            else None
+        )
         self.editor._solve_focus_finish_active = True
         try:
             snap()
@@ -2571,6 +2583,7 @@ class QuickEstimationService:
             return f" Focus snap skipped ({type(exc).__name__}: {exc})."
         finally:
             self.editor._solve_focus_finish_active = False
+            self.editor._snap_premeasured_focus = None   # one-shot: never outlives this finisher
         # bugs/0645 (ELS85 20x20 magnifying solve): this tail used to claim "snapped to the
         # traced focus" UNCONDITIONALLY -- measured, the snap's every pass had been reverted
         # (net sensor movement 0.0000 mm, residual +78 intact, and the snap's own refusal was
@@ -2588,10 +2601,24 @@ class QuickEstimationService:
                 f" WARNING: the traced focus sits {unreachable:.4g} mm beyond the fold's reach "
                 f"(behind the fold mirror); the sensor is at its closest reachable point."
             )
-        try:
-            after = float(self.editor._traced_bundle_best_focus_shift())
-        except Exception:
-            after = float("nan")
+        # bugs/0781: the snap records the signed residual of the scene it LEFT whenever it measured
+        # that exact scene -- a revert restores the scene measured before the write, and a kept
+        # write was measured by its own after-trace (40.4 s re-trace on om05a). Reuse it while the
+        # fingerprint still matches; trace otherwise, exactly as before.
+        after = None
+        recorded = getattr(self.editor, "_snap_last_traced_focus", None)
+        self.editor._snap_last_traced_focus = None
+        if isinstance(recorded, dict) and recorded.get("fingerprint"):
+            if recorded.get("fingerprint") == self._traced_focus_fingerprint():
+                try:
+                    after = float(recorded.get("signed"))
+                except (TypeError, ValueError):
+                    after = None
+        if after is None:
+            try:
+                after = float(self.editor._traced_bundle_best_focus_shift())
+            except Exception:
+                after = float("nan")
         if not np.isfinite(after) or not np.isfinite(before):
             refusal = str(getattr(self.editor, "_snap_detector_refusal", "") or "")
             if refusal:
@@ -2621,6 +2648,17 @@ class QuickEstimationService:
             f" WARNING: the focus snap could not improve the defocus (residual {before:+.4g} -> "
             f"{after:+.4g} mm)." + (f" {refusal}" if refusal else "") + reach_note
         )
+
+    def _traced_focus_fingerprint(self):
+        """bugs/0781: the editor's trace-input fingerprint, or None when it has none -- None never
+        allows a reuse, so an editor without the method simply keeps measuring."""
+        fingerprint = getattr(self.editor, "_traced_focus_state_fingerprint", None)
+        if not callable(fingerprint):
+            return None
+        try:
+            return fingerprint()
+        except Exception:
+            return None
 
     def _rebalance_object_leg_sections(self, pre: "dict | None", led_offset=None) -> str:
         """bugs/0484: put the whole object-side change into section 2, holding section 1.

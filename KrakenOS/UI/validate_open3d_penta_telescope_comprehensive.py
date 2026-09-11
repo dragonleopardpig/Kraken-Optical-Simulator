@@ -16071,6 +16071,10 @@ phase_563_stray_rays_draw_faint = _phase_from_standalone(
     563, "stray light that reached the sensor by another optical route draws FAINT: after bugs/0779 the banner correctly read 'Landed' and 'STRAY LIGHT: 6 ray(s) ... outside the image', yet the scene drew those cross-arm rays exactly like image light and the user flagged 'I still see many stray rays flying around'. They are real traced light, so per the bugs/0530 doctrine they are weighted, not hidden: each draw classifies its landing rays with the same split_stray_routes rule the focus measurement uses -- over the whole bundle, before the draw budget thins it -- and both scene draw loops multiply a stray ray's opacity by bugs/0604's ghost floor (0.15), leave its terminal status and drawn geometry untouched, and drop it from the Normal-to-Sensor view (bugs/0606), which shows the image (0780)",
     "KrakenOS.UI.validate_open3d_0780_stray_rays_draw_faint",
     "stray_rays_draw_faint")
+phase_564_solve_does_not_retrace_an_unchanged_scene = _phase_from_standalone(
+    564, "one Solve FOV may not trace the same scene twice: profiled on om05a (21x21x1, 3D window open) Solve FOV took 237.8 s, 163.6 s of it in four full traces that were all focus measurements -- the finisher's before (bugs/0490), the snap's before and after (bugs/0764), the finisher's after -- and an independent review showed the snap's before re-traced the scene the finisher had just traced and, on a reverted snap, the finisher's after traced it a third time. A content fingerprint of every trace input the solve can write (rows, saved settings minus the image strips a trace writes, STEP offsets, scene sources, learned fold corrections, sampling mode) now lets a measured value be handed forward only while nothing changed: 2 traces instead of 4 on both the revert and the keep path, the focus readout restored after a revert, a stand-alone snap still measuring before and after, and no reuse at all with energy probability on, a fold relearn pending or a forced preview sampling (0781)",
+    "KrakenOS.UI.validate_open3d_0781_solve_does_not_retrace_an_unchanged_scene",
+    "solve_does_not_retrace_an_unchanged_scene")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16700,6 +16704,7 @@ def main() -> int:
             phase_561_focus_groups_follow_the_launch,
             phase_562_stray_routes_are_not_the_image,
             phase_563_stray_rays_draw_faint,
+            phase_564_solve_does_not_retrace_an_unchanged_scene,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

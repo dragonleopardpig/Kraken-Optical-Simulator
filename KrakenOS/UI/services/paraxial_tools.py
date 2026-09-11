@@ -2883,6 +2883,94 @@ class ParaxialToolsMixin:
             self._preview_field_bundle_count = field_bundle_count_before
             self._preview_field_ray_count = ray_count_before
 
+    def _traced_focus_state_fingerprint(self) -> "str | None":
+        """bugs/0781: a content fingerprint of the trace inputs a solve can write between two focus
+        measurements, so a value already measured can be handed forward instead of re-tracing a
+        scene nothing has changed (om05a's Solve FOV traced one scene three times, ~40 s each).
+
+        Over-inclusive on purpose: every row field, the saved layout settings (minus the bands'
+        image strips, which a trace WRITES), the STEP placement offsets, the scene source specs,
+        the learned fold corrections and the sampling mode. An extra input only costs a reuse; a
+        missing one would hand forward a stale reading -- the failure this product exists to avoid.
+
+        ``None`` means never reuse: with energy probability on (the tracer draws unseeded random
+        numbers), with a fold relearn pending (a launch can re-trace and rewrite the correction),
+        with a forced/overridden preview sampling the next build consumes, or on any error."""
+        import copy
+        import dataclasses
+        import hashlib
+        import json
+
+        import numpy as _np
+
+        try:
+            if bool(getattr(self, "_folded_m_relearn_pending", False)):
+                return None
+            if bool(getattr(self, "_force_folded_cone_preview_trace", False)):
+                return None
+            if self.__dict__.get("_folded_preview_ray_count_override") is not None:
+                return None
+            settings = copy.deepcopy(dict(self._collect_layout_settings() or {}))
+            if bool(settings.get("nonseq_energy_probability", False)):
+                return None
+            for band in list(settings.get("object_fov_bands") or []):
+                if isinstance(band, dict):
+                    band.pop("image_strip", None)
+            rows = []
+            for row in list(getattr(self, "rows", []) or []):
+                rows.append(dataclasses.asdict(row) if dataclasses.is_dataclass(row) else dict(vars(row)))
+            try:
+                from KrakenOS.UI.services.scene_placement_commands import _step_overlay_label_set
+
+                labels = sorted(_step_overlay_label_set())
+            except Exception:
+                labels = []
+            offsets = {label: getattr(self, f"{label}_step_placement_offset_xyz", None) for label in labels}
+            runtime: "dict[str, object]" = {
+                "scene_sources": getattr(self, "layout_scene_source_specs", None),
+                "folded_m_correction": getattr(self, "_folded_m_correction_state", None),
+                "folded_field_center": getattr(self, "_folded_field_center_state", None),
+                "ray_cap": os.environ.get("KRAKEN_FOLDED_PREVIEW_RAY_CAP"),
+            }
+            for name in (
+                "_preview_scene_sampling_mode", "_preview_3d_sampling_mode",
+                "_open3d_inspector_is_live", "_current_wavelength",
+            ):
+                method = getattr(self, name, None)
+                if callable(method):
+                    try:
+                        runtime[name] = method()
+                    except Exception:
+                        runtime[name] = "<error>"
+            illumination = getattr(self, "show_source_illumination_rays_var", None)
+            if illumination is not None:
+                try:
+                    runtime["illumination_rays"] = bool(illumination.get())
+                except Exception:
+                    runtime["illumination_rays"] = "<error>"
+
+            def _plain(value):
+                if isinstance(value, _np.ndarray):
+                    return {
+                        "ndarray": list(value.shape),
+                        "dtype": str(value.dtype),
+                        "sha1": hashlib.sha1(_np.ascontiguousarray(value).tobytes()).hexdigest(),
+                    }
+                if isinstance(value, (_np.floating, _np.integer, _np.bool_)):
+                    return value.item()
+                if isinstance(value, (set, frozenset)):
+                    return sorted(repr(item) for item in value)
+                return repr(value)
+
+            payload = json.dumps(
+                {"rows": rows, "settings": settings, "offsets": offsets, "runtime": runtime},
+                sort_keys=True,
+                default=_plain,
+            )
+            return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+        except Exception:
+            return None
+
     def _traced_bundle_best_focus_shift(self):
         """bugs/0470: best-focus shift measured from the ACTUAL traced bundle.
 

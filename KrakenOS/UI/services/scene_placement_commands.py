@@ -3607,6 +3607,9 @@ class ScenePlacementMixin:
         station-frame walk would just agree with the mistake
         ([[reference_straight_equivalent_not_an_unfold]]).
         """
+        # bugs/0781: remember the SIGNED shift when it came from the traced bundle, so a snap that
+        # keeps its write can hand the solve's finisher the residual it has just measured.
+        self._snap_last_measured_signed_shift = None
         try:
             shift = self._traced_bundle_best_focus_shift()
         except Exception:
@@ -3617,6 +3620,7 @@ class ScenePlacementMixin:
             except (TypeError, ValueError):
                 value = None
             if value is not None and np.isfinite(value):
+                self._snap_last_measured_signed_shift = float(shift)
                 return value
         # Fallback: the bugs/0752 per-image measure. It reads the same traced bundle but
         # partitions it per formed image, so it still answers on a split-field scene whose
@@ -3644,6 +3648,60 @@ class ScenePlacementMixin:
                 offsets.append(abs(offset))
         return max(offsets) if offsets else None
 
+    #: bugs/0781: what a traced focus build writes onto the editor. A snap that reverts its write
+    #: must put these back as well: its after-trace left them describing the rejected trial scene,
+    #: and the solve's finisher no longer re-traces the restored one.
+    _TRACED_FOCUS_STASH_ATTRS = (
+        "_focused_image_plane_info",
+        "_focused_image_plane_unmeasured",
+        "_focus_model_mismatch",
+        "_last_scene_bundle",
+        "_branch_detector_world_frames",
+    )
+    _TRACED_FOCUS_STASH_MISSING = object()
+
+    def _snapshot_traced_focus_stashes(self) -> dict:
+        """bugs/0781: copy the traced-focus stashes (and each split-field band's image strip, which a
+        build rewrites in place) so a reverted snap can restore them exactly."""
+        import copy
+
+        missing = self._TRACED_FOCUS_STASH_MISSING
+        stash: "dict[str, object]" = {
+            name: self.__dict__.get(name, missing) for name in self._TRACED_FOCUS_STASH_ATTRS
+        }
+        strips = []
+        for band in list(getattr(self, "layout_object_fov_bands", None) or []):
+            if not isinstance(band, dict):
+                strips.append(missing)
+                continue
+            strip = band.get("image_strip", missing)
+            strips.append(missing if strip is missing else copy.deepcopy(strip))
+        stash["image_strips"] = strips
+        return stash
+
+    def _restore_traced_focus_stashes(self, stash) -> None:
+        """bugs/0781: put back what ``_snapshot_traced_focus_stashes`` copied."""
+        if not isinstance(stash, dict):
+            return
+        missing = self._TRACED_FOCUS_STASH_MISSING
+        for name in self._TRACED_FOCUS_STASH_ATTRS:
+            value = stash.get(name, missing)
+            if value is missing:
+                self.__dict__.pop(name, None)
+            else:
+                setattr(self, name, value)
+        bands = list(getattr(self, "layout_object_fov_bands", None) or [])
+        strips = list(stash.get("image_strips") or [])
+        if len(bands) != len(strips):
+            return
+        for band, strip in zip(bands, strips):
+            if not isinstance(band, dict):
+                continue
+            if strip is missing:
+                band.pop("image_strip", None)
+            else:
+                band["image_strip"] = strip
+
     def snap_detector_to_image_plane(self) -> bool:
         """Move the detector (the final ``Image`` row) onto the optics' paraxial best-focus image
         plane, removing the defocus gap. Returns True when it actually moved. The detector is the
@@ -3663,6 +3721,8 @@ class ScenePlacementMixin:
         # then overwrites status_var with its own success line, so a refused refocus used to
         # leave the lens silently defocused with no explanation on screen.
         self._snap_detector_refusal = ""
+        # bugs/0781: a kept write's measured residual is handed forward per call, never across calls.
+        self._snap_kept_traced_focus = None
         # bugs/0645: when the traced focus sits BEHIND the fold mirror (a negative exit leg,
         # first seen on the ELS85 20x20 magnifying solve) the loop below recruits the near leg;
         # whatever remains out of reach is recorded here so the CALLER (the solve's focus
@@ -3915,7 +3975,34 @@ class ScenePlacementMixin:
             # scene back when the move made focus worse. The first guess is unchanged, so every
             # scene it already gets right is untouched.
             _before_snapshot = _row_snapshot()
-            _defocus_before = self._traced_snap_defocus_magnitude()
+            # bugs/0781 (user: "after clicking apply + solve FOV, it takes ages to trace"): the solve's
+            # finisher traced THIS scene moments ago for its own residual, and re-tracing it here
+            # cost 36.6 s on om05a. Take that value while the trace inputs are provably unchanged --
+            # the fingerprint the finisher recorded still matches -- and measure otherwise, as before.
+            _premeasured = self.__dict__.get("_snap_premeasured_focus")
+            self._snap_premeasured_focus = None
+            _before_signed = None
+            _before_fingerprint = None
+            _defocus_before = None
+            if isinstance(_premeasured, dict) and _premeasured.get("fingerprint"):
+                try:
+                    if _premeasured["fingerprint"] == self._traced_focus_state_fingerprint():
+                        _candidate = float(_premeasured["signed"])
+                        if np.isfinite(_candidate):
+                            _before_signed = _candidate
+                            _before_fingerprint = _premeasured["fingerprint"]
+                            _defocus_before = abs(_candidate)
+                except Exception:
+                    _before_signed = None
+                    _before_fingerprint = None
+                    _defocus_before = None
+            if _defocus_before is None:
+                _defocus_before = self._traced_snap_defocus_magnitude()
+                _measured_signed = self.__dict__.get("_snap_last_measured_signed_shift")
+                if _defocus_before is not None and _measured_signed is not None:
+                    _before_signed = float(_measured_signed)
+                    _before_fingerprint = self._traced_focus_state_fingerprint()
+            _focus_stashes = self._snapshot_traced_focus_stashes()
             applied_ok, refusal = _apply_gap_with_floor(float(self.rows[-2].thickness) + float(delta))
             if not applied_ok:
                 self.restore_glued_illumination_unit_world_poses(_illumination_poses)  # bugs/0571
@@ -3926,6 +4013,8 @@ class ScenePlacementMixin:
                 return False
             if _defocus_before is not None:
                 _defocus_after = self._traced_snap_defocus_magnitude()
+                _after_signed = self.__dict__.get("_snap_last_measured_signed_shift")
+                _after_fingerprint = self._traced_focus_state_fingerprint()
                 if (
                     _defocus_after is not None
                     and _defocus_after > _defocus_before + _SNAP_REGRESSION_TOL_MM
@@ -3934,6 +4023,18 @@ class ScenePlacementMixin:
                     self.restore_glued_illumination_unit_world_poses(_illumination_poses)
                     if gui:
                         self._commit_history_capture()
+                    # bugs/0781: the after-trace left the focus readout describing the rejected
+                    # write, and the finisher no longer re-traces the restored scene to replace it.
+                    self._restore_traced_focus_stashes(_focus_stashes)
+                    if _before_signed is not None and _before_fingerprint:
+                        try:
+                            if self._traced_focus_state_fingerprint() == _before_fingerprint:
+                                self._snap_last_traced_focus = {
+                                    "fingerprint": _before_fingerprint,
+                                    "signed": float(_before_signed),
+                                }
+                        except Exception:
+                            pass
                     self._snap_detector_refusal = (
                         f"the {source} correction ({float(delta):+.4g} mm) measured WORSE on the "
                         f"traced rays ({_defocus_before:.4g} -> {_defocus_after:.4g} mm of "
@@ -3941,6 +4042,13 @@ class ScenePlacementMixin:
                     )
                     self.status_var.set(f"Snap detector: {self._snap_detector_refusal}")
                     return False
+                # bugs/0781: the write stands, and its after-trace measured the scene the snap will
+                # leave -- unless the tail below changes a trace input, which the tail checks first.
+                if _after_signed is not None and _after_fingerprint:
+                    self._snap_kept_traced_focus = {
+                        "fingerprint": _after_fingerprint,
+                        "signed": float(_after_signed),
+                    }
         else:
             # bugs/0515 B2: TWO frozen-frame facts make a single shot impossible here.
             # (1) The measured shift lives in the station-aligned frame, which the 0478
@@ -4165,6 +4273,16 @@ class ScenePlacementMixin:
             self._commit_history_capture()
         self._invalidate_preview_scene_trace()
         self._fold_carry_pending_rebuild = True
+        # bugs/0781: hand the finisher the residual the after-trace measured -- only if nothing the
+        # trace reads changed since (the glued-unit restore and the table sync above can both write).
+        _kept = self.__dict__.get("_snap_kept_traced_focus")
+        self._snap_kept_traced_focus = None
+        if isinstance(_kept, dict) and _kept.get("fingerprint"):
+            try:
+                if _kept["fingerprint"] == self._traced_focus_state_fingerprint():
+                    self._snap_last_traced_focus = dict(_kept)
+            except Exception:
+                pass
         self.status_var.set(
             f"Snapped detector to {source} (moved {delta:+.4g} mm to best focus).{collision_note}"
         )
