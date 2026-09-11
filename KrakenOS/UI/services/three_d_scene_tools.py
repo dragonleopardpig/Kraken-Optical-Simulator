@@ -2969,6 +2969,31 @@ class ThreeDSceneToolsMixin:
         bundle = scene_bundle if scene_bundle is not None else self._last_scene_bundle
         scene_paths = list(getattr(bundle, "ray_paths", []) or []) if bundle is not None else []
         self._ray_display_suppressed_note = ""   # bugs/0737: re-stated per draw, never stale
+        # bugs/0780 (flag 20260911_160208: "I still see many stray rays flying around"): classify
+        # the landing rays ONCE per draw -- over the whole bundle, before the draw budget thins it --
+        # with the same rule the focus measurement uses (bugs/0779 split_stray_routes). The draw
+        # loops fade the stray ones through _ray_stray_route_display_weight. The path objects are
+        # kept alongside their ids so an id can never be recycled onto a later bundle's path.
+        self._stray_route_paths = []
+        self._stray_route_path_ids = set()
+        if scene_paths:
+            try:
+                from KrakenOS.UI.services.detector_coverage_overlay import landing_route, split_stray_routes
+
+                landing = [
+                    path for path in scene_paths
+                    if str(getattr(path, "termination_reason", "")) in ("image", "target_termination")
+                ]
+                _image, stray = split_stray_routes(
+                    landing,
+                    group_of=lambda path: str(getattr(path, "source_id", "") or ""),
+                    route_of=landing_route,
+                )
+                self._stray_route_paths = list(stray)
+                self._stray_route_path_ids = {id(path) for path in stray}
+            except Exception:
+                self._stray_route_paths = []
+                self._stray_route_path_ids = set()
         if scene_paths:
             live_step_preview = (
                 bundle is self.__dict__.get("_last_live_step_overlay_scene_bundle")
@@ -3474,6 +3499,24 @@ class ThreeDSceneToolsMixin:
             if weight >= bucket:
                 return bucket
         return 0.15
+
+    #: bugs/0780: display weight of a landing ray on a STRAY route -- light that reached the sensor
+    #: by another optical path, classified by bugs/0779's split_stray_routes, the same rule the focus
+    #: measurement uses. bugs/0604's floor: faint but still traceable, because the bugs/0530
+    #: doctrine is that true light is never hidden, only weighted.
+    _STRAY_ROUTE_DISPLAY_WEIGHT = 0.15
+
+    def _ray_stray_route_display_weight(self, path) -> float:
+        """bugs/0780: the opacity weight for ``path`` -- 0.15 when the current draw classified it
+        as stray light, 1.0 otherwise (including when nothing has been classified).
+
+        The classification is made once per draw in ``_iter_3d_scene_ray_records`` over EVERY
+        landing ray of the bundle, before the draw budget subsamples it: a subsample would change
+        which routes look dominant."""
+        if path is None:
+            return 1.0
+        ids = self.__dict__.get("_stray_route_path_ids") or ()
+        return float(self._STRAY_ROUTE_DISPLAY_WEIGHT) if id(path) in ids else 1.0
 
     @staticmethod
     def _ray_terminal_3d_style(

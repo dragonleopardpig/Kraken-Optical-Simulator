@@ -2218,7 +2218,8 @@ def format_focus_summary_lines(
                         f"STRAY LIGHT: {outside} ray(s) reach the sensor by another optical route "
                         f"and land up to {float(stray['worst_outside_mm']):.3g} mm outside the image "
                         f"({100.0 * share:.1f}% of the landing rays) -- not part of "
-                        f"the image, left out of the focus measurement"
+                        f"the image, left out of the focus measurement and drawn faint in the "
+                        f"3D scene"
                     )
             except (KeyError, TypeError, ValueError):
                 pass

@@ -16067,6 +16067,10 @@ phase_562_stray_routes_are_not_the_image = _phase_from_standalone(
     562, "stray light that reached the sensor by another optical route is not the image: on om05a_folded_80mm the same 9 launch rays per arm that stop at the aperture stop at device 23 clear the centre RA mirror's edge at device 21, cross the prism gap into the other arm's cube and back, and land 1.4 mm outside the strip; sharing their field's launch point they joined its focus group, and ONE dragged a 105-ray field's waist from 2.06 um to 656 um -- the whole '419 um blur' at device 21 and the FOV limit it implied for a 15 mm device. Landing rays now split per source into image-forming routes (>= 20% of the source's landings) and stray; focus groups key on launch point AND route, discreteness is decided per source, the overflow check and the drawn strips use the image only, and the banner names stray light that lands outside the image. The guard drives the real measurement on a synthetic mirrored split field and shows the same rays DO drag the waist without route data (0779)",
     "KrakenOS.UI.validate_open3d_0779_stray_routes_are_not_the_image",
     "stray_routes_are_not_the_image")
+phase_563_stray_rays_draw_faint = _phase_from_standalone(
+    563, "stray light that reached the sensor by another optical route draws FAINT: after bugs/0779 the banner correctly read 'Landed' and 'STRAY LIGHT: 6 ray(s) ... outside the image', yet the scene drew those cross-arm rays exactly like image light and the user flagged 'I still see many stray rays flying around'. They are real traced light, so per the bugs/0530 doctrine they are weighted, not hidden: each draw classifies its landing rays with the same split_stray_routes rule the focus measurement uses -- over the whole bundle, before the draw budget thins it -- and both scene draw loops multiply a stray ray's opacity by bugs/0604's ghost floor (0.15), leave its terminal status and drawn geometry untouched, and drop it from the Normal-to-Sensor view (bugs/0606), which shows the image (0780)",
+    "KrakenOS.UI.validate_open3d_0780_stray_rays_draw_faint",
+    "stray_rays_draw_faint")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16695,6 +16699,7 @@ def main() -> int:
             phase_560_scene_declares_the_arm_offset,
             phase_561_focus_groups_follow_the_launch,
             phase_562_stray_routes_are_not_the_image,
+            phase_563_stray_rays_draw_faint,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

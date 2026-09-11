@@ -132,10 +132,15 @@ class Open3DSceneRefreshService:
         sensor_view_filter = bool(self._sensor_view_hides_non_landing_rays())
         filtered_non_landing = 0
         for ray_index, color, ray_pts, terminal_status in self.editor._iter_3d_scene_ray_records(rays, scene_bundle):
-            if sensor_view_filter and str(terminal_status or "").strip().lower() != "hit_detector":
+            ray_path = paths_by_ray_index.get(int(ray_index))
+            # bugs/0780: stray light that reached the sensor by another optical route draws faint,
+            # and not at all in the Normal-to-Sensor view, which shows the image.
+            stray_weight = self.editor._ray_stray_route_display_weight(ray_path)
+            if sensor_view_filter and (
+                str(terminal_status or "").strip().lower() != "hit_detector" or stray_weight < 1.0
+            ):
                 filtered_non_landing += 1
                 continue
-            ray_path = paths_by_ray_index.get(int(ray_index))
             terminal_target = KrakenLayoutEditor._missed_detector_target_for_path(scene_bundle, ray_path)
             terminal_direction = KrakenLayoutEditor._terminal_display_direction_for_path(ray_path)
             display_ray_pts, _was_bounded = KrakenLayoutEditor._bounded_3d_ray_points_for_display(
@@ -162,7 +167,7 @@ class Open3DSceneRefreshService:
                 radius=ray_radius,
                 color=style["line_color"],
                 ray_index=ray_index,
-                opacity=float(style["line_opacity"]) * power_weight,
+                opacity=float(style["line_opacity"]) * power_weight * stray_weight,
                 line_width=float(style["line_width"]),
             )
             if KrakenLayoutEditor._should_draw_3d_terminal_endpoint(
@@ -942,10 +947,13 @@ class Open3DSceneRefreshService:
             for ray_index, color, ray_pts, terminal_status in self.editor._iter_3d_scene_ray_records(rays, scene_bundle):
                 terminal_key = str(terminal_status or "unknown").strip().lower() or "unknown"
                 terminal_counts[terminal_key] = int(terminal_counts.get(terminal_key, 0)) + 1
-                if sensor_view_filter and terminal_key != "hit_detector":
+                ray_path = paths_by_ray_index.get(int(ray_index))
+                # bugs/0780: stray light that reached the sensor by another route draws faint, and
+                # not at all in the Normal-to-Sensor view (shared contract with _refresh_rays_only).
+                stray_weight = self.editor._ray_stray_route_display_weight(ray_path)
+                if sensor_view_filter and (terminal_key != "hit_detector" or stray_weight < 1.0):
                     filtered_non_landing += 1
                     continue
-                ray_path = paths_by_ray_index.get(int(ray_index))
                 if ray_path is not None:
                     sequence_summary = self._ray_path_surface_sequence_summary(ray_path)
                     if sequence_summary:
@@ -987,7 +995,7 @@ class Open3DSceneRefreshService:
                     radius=ray_radius,
                     color=style["line_color"],
                     ray_index=ray_index,
-                    opacity=float(style["line_opacity"]) * power_weight,
+                    opacity=float(style["line_opacity"]) * power_weight * stray_weight,
                     line_width=float(style["line_width"]),
                 )
                 if KrakenLayoutEditor._should_draw_3d_terminal_endpoint(
