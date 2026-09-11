@@ -46,6 +46,10 @@ class _Row:
         self.name = name
         self.thickness = float(thickness)
         self.desp_x = float(desp_x)
+        # bugs/0770 snapshots every row's full pose before a MOTOR 1 write; a stub without
+        # desp_y/desp_z crashed this guard from that commit on (found in bugs/0782)
+        self.desp_y = 0.0
+        self.desp_z = 0.0
 
 
 def _rows():

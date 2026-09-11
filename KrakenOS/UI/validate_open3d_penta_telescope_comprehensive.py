@@ -16075,6 +16075,10 @@ phase_564_solve_does_not_retrace_an_unchanged_scene = _phase_from_standalone(
     564, "one Solve FOV may not trace the same scene twice: profiled on om05a (21x21x1, 3D window open) Solve FOV took 237.8 s, 163.6 s of it in four full traces that were all focus measurements -- the finisher's before (bugs/0490), the snap's before and after (bugs/0764), the finisher's after -- and an independent review showed the snap's before re-traced the scene the finisher had just traced and, on a reverted snap, the finisher's after traced it a third time. A content fingerprint of every trace input the solve can write (rows, saved settings minus the image strips a trace writes, STEP offsets, scene sources, learned fold corrections, sampling mode) now lets a measured value be handed forward only while nothing changed: 2 traces instead of 4 on both the revert and the keep path, the focus readout restored after a revert, a stand-alone snap still measuring before and after, and no reuse at all with energy probability on, a fold relearn pending or a forced preview sampling (0781)",
     "KrakenOS.UI.validate_open3d_0781_solve_does_not_retrace_an_unchanged_scene",
     "solve_does_not_retrace_an_unchanged_scene")
+phase_565_motor1_follows_the_beam = _phase_from_standalone(
+    565, "MOTOR 1 must move the imaging group along the BEAM on any frame: the user said the production om05a has exactly the 80 mm build's two motors, but bugs/0770 had made its Motor 1 refuse because the move threw the sensor (-10, +20, 0) for a -10 mm request. Measured per +1 mm write, the standoff and the filter carry pair are chain thicknesses that move along the beam identically on both frames, while the seat's desp_x is a WORLD axis whose sign flips on the mirrored production frame (lens leg -x): +delta moved RA mirror 2 toward the object while the thicknesses moved the standoff and filter away. The seat is now written with a sign MEASURED by a restored +1 mm nudge projected on the lens leg, the solve's stage bound uses the same sign, and the bugs/0770 check also refuses a sensor that travels the right distance the wrong way. The real production move now carries sensor, mirror and filter exactly -10.000 mm along the beam; the 80 mm writes are bit-identical (0782)",
+    "KrakenOS.UI.validate_open3d_0782_motor1_follows_the_beam",
+    "motor1_follows_the_beam")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16705,6 +16709,7 @@ def main() -> int:
             phase_562_stray_routes_are_not_the_image,
             phase_563_stray_rays_draw_faint,
             phase_564_solve_does_not_retrace_an_unchanged_scene,
+            phase_565_motor1_follows_the_beam,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

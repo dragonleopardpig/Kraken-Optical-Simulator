@@ -1688,9 +1688,12 @@ class QuickEstimationService:
             (float(r.thickness), float(r.desp_x), float(r.desp_y), float(r.desp_z))
             for r in rows
         ]
+        # bugs/0782: the seat is written on a WORLD axis and the pad/carry as chain thicknesses, so
+        # which sign of desp_x moves the group along the beam is the scene's, not a constant.
+        seat_sign, leg_unit = self._camera_arm_seat_axis(stage)
         sensor_before = self._sensor_world_point()
         try:
-            rows[seat].desp_x = float(rows[seat].desp_x) + float(delta)
+            rows[seat].desp_x = float(rows[seat].desp_x) + seat_sign * float(delta)
             rows[pad].thickness = float(rows[pad].thickness) + float(delta)
         except (AttributeError, TypeError, ValueError):
             return False
@@ -1724,7 +1727,17 @@ class QuickEstimationService:
         if sensor_before is not None and sensor_after is not None:
             moved = float(np.linalg.norm(np.asarray(sensor_after) - np.asarray(sensor_before)))
             want = abs(float(delta))
-            if abs(moved - want) > max(self._ARM_MOVE_TOL_MM, 0.02 * want):
+            # bugs/0782: a DISTANCE check passes a sensor that travelled the right amount the wrong
+            # way -- exactly what a seat sign error produces once the fold walk cancels. Where the
+            # leg is known, the travel must also point along +delta (0.98 = within 11.5 deg, which
+            # the reference points' small off-axis offsets never approach).
+            along = want
+            if leg_unit is not None:
+                step = np.asarray(sensor_after, dtype=float) - np.asarray(sensor_before, dtype=float)
+                along = float(np.dot(step, leg_unit)) * (1.0 if float(delta) >= 0.0 else -1.0)
+            if abs(moved - want) > max(self._ARM_MOVE_TOL_MM, 0.02 * want) or (
+                along < 0.98 * want - self._ARM_MOVE_TOL_MM
+            ):
                 for row, (t, dx, dy, dz) in zip(rows, before_rows):
                     row.thickness, row.desp_x, row.desp_y, row.desp_z = t, dx, dy, dz
                 self.editor._camera_arm_move_refusal = (
@@ -1754,6 +1767,73 @@ class QuickEstimationService:
         except Exception:
             return None
         return point if np.all(np.isfinite(point)) else None
+
+    def _camera_arm_seat_axis(self, stage=None) -> "tuple[float, np.ndarray | None]":
+        """bugs/0782 (user: "the production one have exactly 2 motors same as the 80mm version"):
+        which way +1 mm on the arm seat's ``desp_x`` moves it ALONG THE BEAM, and the beam's
+        direction on the lens leg (pointing away from the object).
+
+        MOTOR 1 writes three things: the seat's ``desp_x``, the standoff thickness and the
+        filter's carry pair. The two thicknesses advance along the chain, so their sign relative
+        to the beam is the same on every frame. ``desp_x`` is a WORLD axis, so its sign is a
+        property of the scene. Measured, +1 on each (row math, no trace):
+
+            om05a_folded_80mm  lens leg +x   seat: mirror (+1, 0, 0)  sensor (+1, +1, 0)
+            om05a_folded       lens leg -x   seat: mirror (+1, 0, 0)  sensor (+1, -1, 0)
+            both               standoff: sensor (0, -1, 0);  carry pair: filter +1 along the leg
+
+        On the production frame +delta on ``desp_x`` therefore moved the mirror TOWARD the object
+        while the thickness writes moved the standoff and the filter away from it: the sensor went
+        (-10, +20, 0) for a -10 mm request (bugs/0770) and the filter travelled opposite to the
+        group. Writing the seat by ``sign * delta`` makes the three agree; on the 80 mm frame the
+        sign is +1 and the writes are byte-identical to before.
+
+        Measured, not assumed: the seat is nudged +1 mm and its world point is projected on the
+        lens leg (front datum -> the row before the seat). Returns ``(sign, leg_unit)``, or
+        ``(1.0, None)`` -- the pre-0782 behaviour, with the bugs/0770 distance check as the only
+        guard -- when anything cannot be measured. The nudge is restored from the saved value,
+        never by subtracting, so the row is bit-for-bit what it was.
+        """
+        arm = stage.get("arm") if isinstance(stage, dict) else None
+        if not isinstance(arm, dict):
+            return 1.0, None
+        editor = self.editor
+        rows = list(getattr(editor, "rows", None) or [])
+        try:
+            seat = int(arm["row"])
+            front = int(editor._imaging_lens_block_indices()[0])
+            point = editor._surface_reference_world_point
+        except Exception:
+            return 1.0, None
+        if not (0 <= front < seat < len(rows)):
+            return 1.0, None
+        row = rows[seat]
+        try:
+            saved = float(row.desp_x)
+        except (AttributeError, TypeError, ValueError):
+            return 1.0, None
+        try:
+            start = np.asarray(point(front), dtype=float).reshape(3)
+            end = np.asarray(point(seat - 1 if seat - 1 > front else seat), dtype=float).reshape(3)
+            at = np.asarray(point(seat), dtype=float).reshape(3)
+            row.desp_x = saved + 1.0
+            nudged = np.asarray(point(seat), dtype=float).reshape(3)
+        except Exception:
+            return 1.0, None
+        finally:
+            row.desp_x = saved
+        leg = end - start
+        length = float(np.linalg.norm(leg))
+        step = nudged - at
+        if not (np.isfinite(length) and length > 1.0e-6 and np.all(np.isfinite(step))):
+            return 1.0, None
+        unit = leg / length
+        along = float(np.dot(step, unit))
+        if abs(along) < 0.5:
+            # desp_x does not carry the seat along this leg at all -- not a frame this motor model
+            # can drive; keep the old write and let the bugs/0770 check refuse it
+            return 1.0, None
+        return (1.0 if along > 0.0 else -1.0), unit
 
     def _image_write_locked_by_vendor_hardware(self, rows, write_row) -> str:
         """bugs/0719: why the image-side gap write may NOT be booked after the lens moved --
@@ -2190,9 +2270,12 @@ class QuickEstimationService:
                         arm = (stage or {}).get("arm")
                         if isinstance(arm, dict):
                             try:
-                                travelled = float(rows[int(arm["row"])].desp_x) + float(
-                                    folded["image_delta"]
-                                )
+                                # bugs/0782: where the seat ENDS UP is desp_x + sign * delta --
+                                # the same measured sign the move writes with, so the stage bound
+                                # and the write can never disagree about direction.
+                                travelled = float(rows[int(arm["row"])].desp_x) + self._camera_arm_seat_axis(
+                                    stage
+                                )[0] * float(folded["image_delta"])
                             except (AttributeError, IndexError, KeyError, TypeError, ValueError):
                                 travelled = None
                             if travelled is not None and not (
