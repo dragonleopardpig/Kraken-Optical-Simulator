@@ -19,3 +19,4 @@ real sensor.
    laser_design_interview/index
    step_overlay_promotion
    coaxial_led_dark_edges
+   om05a_bench_geometry
