@@ -7,7 +7,14 @@ hand after a scene change; the SVGs are committed:
     cd <repo> && taskset -c 0-9 nice -n 15 xvfb-run -a \
         .devenv/state/venv/bin/python -u docs/generate_om05a_bench_geometry.py
 
-Writes docs/source/_static/knowledge_base/om05a_bench_geometry/*.svg.
+A second, slower pass measures the stray-light corner -- it solves the worst case and traces it,
+so it runs in ITS OWN process (one app per process):
+
+    cd <repo> && taskset -c 0-9 nice -n 15 xvfb-run -a \
+        .devenv/state/venv/bin/python -u docs/generate_om05a_bench_geometry.py --ghost
+
+Writes docs/source/_static/knowledge_base/om05a_bench_geometry/*.svg, measured.json and
+measured_ghost.json.
 """
 
 from __future__ import annotations
@@ -380,13 +387,395 @@ def figure_travel(data: dict, path: Path) -> None:
     plt.close(fig)
 
 
+# --- the stray-light corner -------------------------------------------------------------------
+# The worst case the bench can be asked for: the smallest device (its face sits furthest from the
+# lens, so MOTOR 1 carries the imaging group closest to the prism) at the smallest FOV that still
+# solves after bugs/0784. Measured, not assumed -- see measure_ghost().
+GHOST_DEVICE_MM = 0.5
+GHOST_FOV_MM = 23.0
+
+
+def _mirror_face(body: dict, samples: np.ndarray):
+    """Which diagonal of a 45° mirror's AABB is its optical face? Decide from traced hits.
+
+    Returns ``(low_y_end, high_y_end)`` as ``(y, z)`` pairs, or None when no traced ray touched it.
+    """
+    lo, hi = np.asarray(body["min"], dtype=float), np.asarray(body["max"], dtype=float)
+    inside = [p for p in samples
+              if (lo[1] - 0.05) <= p[1] <= (hi[1] + 0.05)
+              and (lo[2] - 0.05) <= p[2] <= (hi[2] + 0.05)
+              and (lo[0] - 0.05) <= p[0] <= (hi[0] + 0.05)]
+    if not inside:
+        return None
+    best = None
+    for ends in (((lo[1], hi[2]), (hi[1], lo[2])), ((lo[1], lo[2]), (hi[1], hi[2]))):
+        a, b = np.asarray(ends[0]), np.asarray(ends[1])
+        u = (b - a) / float(np.linalg.norm(b - a))
+        # distance from each traced hit to this diagonal, in the y-z plane (2-D determinant; numpy
+        # 2.0 deprecated np.cross on 2-vectors)
+        d = float(np.mean([abs(u[0] * (p[2] - a[1]) - u[1] * (p[1] - a[0])) for p in inside]))
+        if best is None or d < best[0]:
+            best = (d, (tuple(a), tuple(b)))
+    ends = best[1]
+    return ends if ends[0][0] <= ends[1][0] else (ends[1], ends[0])
+
+
+def _cube_exit_planes(bodies: dict, faces: dict) -> list:
+    """The z of each BS cube's exit face -- the one that looks at its own centre fold mirror."""
+    centres = [0.5 * (float(f[0][1]) + float(f[1][1])) for f in faces.values()]
+    planes = []
+    for body in bodies.values():
+        name = str(body["name"]).lower()
+        if "cube" not in name or "far half" in name:
+            continue
+        lo, hi = np.asarray(body["min"], dtype=float), np.asarray(body["max"], dtype=float)
+        near = min(((min(abs(z - c) for c in centres) if centres else 0.0), z)
+                   for z in (lo[2], hi[2]))
+        planes.append(float(near[1]))
+    return planes
+
+
+def _edge_crossing(points: np.ndarray, faces: dict, exit_planes: list):
+    """Where does this ray cross a centre mirror's face on the way out of its own BS cube?
+
+    Returns ``(key, s, y, z)`` with ``s`` measured along the mirror face from its LOW-y corner:
+    inside ``[0, face length]`` the ray strikes the mirror, negative means it passed the low corner
+    and flew on to the other arm.
+
+    Anchored on the cube's exit FACE rather than on a sign change, because an imaging ray lands
+    exactly on the mirror plane and its signed distance there is ±1e-16 -- a sign test finds it for
+    half the rays and silently skips the rest.
+    """
+    for i in range(1, len(points) - 1):
+        if not any(abs(float(points[i][2]) - z) < 1.0e-3 for z in exit_planes):
+            continue
+        p0 = np.array([points[i][1], points[i][2]], dtype=float)
+        step = np.array([points[i + 1][1], points[i + 1][2]], dtype=float) - p0
+        best = None
+        for key, ends in faces.items():
+            a, b = np.asarray(ends[0], dtype=float), np.asarray(ends[1], dtype=float)
+            u = (b - a) / float(np.linalg.norm(b - a))
+            n = np.array([-u[1], u[0]])
+            den = float(np.dot(step, n))
+            if abs(den) < 1.0e-12:
+                continue
+            t = float(np.dot(a - p0, n)) / den
+            if not (1.0e-9 < t <= 5.0):          # the mirror has to be AHEAD along this leg
+                continue
+            if best is None or t < best[0]:       # and the first one the leg reaches is its own
+                q = p0 + t * step
+                best = (t, key, float(np.dot(q - a, u)), float(q[0]), float(q[1]))
+        if best is not None:
+            return best[1], best[2], best[3], best[4]
+    return None
+
+
+def measure_ghost() -> dict:
+    """Solve the worst stray-light corner, trace it, and measure where the ghost route is born.
+
+    Run in its OWN process (one app per process). Writes measured_ghost.json.
+    """
+    import collections
+
+    from KrakenOS.UI.layout_editor import KrakenLayoutEditor
+    from KrakenOS.UI.services.detector_coverage_overlay import landing_route, split_stray_routes
+    from KrakenOS.UI.services.inspection_part import normalize_inspection_part_spec
+
+    def _is_subseq(short, long):
+        it = iter(long)
+        return all(any(x == y for y in it) for x in short)
+
+    def power(path):
+        try:
+            v = float(getattr(path, "branch_power", 1.0))
+        except (TypeError, ValueError):
+            return 1.0
+        return v if np.isfinite(v) and v > 0.0 else 1.0
+
+    editor = KrakenLayoutEditor()
+    editor._prompt_for_missing_cad_assets = lambda: None
+    editor.layout_files["bench"] = SCENE
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+        editor.load_layout_by_name("bench")
+        editor._preview_trace_deferred_until_requested = False
+        editor.set_inspection_part_spec(normalize_inspection_part_spec({
+            "enabled": True, "width_mm": str(GHOST_DEVICE_MM), "height_mm": "1",
+            "depth_mm": str(GHOST_DEVICE_MM), "axis_reach_mm": "0",
+            "axis_offset_mm": str(GHOST_DEVICE_MM / 2.0 - 25.0),
+            "active_face": "front", "step_path": ""}))
+        solved, _message = editor.solve_fov_to_inspection_face(fov=GHOST_FOV_MM)
+        _system, _rays, bundle = editor._build_preview_system_rays_bundle(trace_rays=True)
+        info = editor._measure_focused_image_plane(bundle)
+        bodies = {}
+        for i, row in enumerate(editor.rows):
+            advanced = row.advanced if isinstance(getattr(row, "advanced", None), dict) else {}
+            if not advanced.get("Solid_3d_stl"):
+                continue
+            try:
+                aabb = editor._solid_row_world_aabb(i)
+            except Exception:
+                continue
+            if aabb is None:
+                continue
+            xmin, xmax, ymin, ymax, zmin, zmax = (float(v) for v in aabb)
+            bodies[str(i)] = {"name": str(row.name),
+                              "min": [xmin, ymin, zmin], "max": [xmax, ymax, zmax]}
+    paths = list(getattr(bundle, "ray_paths", None) or [])
+    landed = [p for p in paths
+              if str(getattr(p, "termination_reason", "")) in ("image", "target_termination")]
+    kept, stray = split_stray_routes(
+        landed, group_of=lambda p: str(getattr(p, "source_id", "") or ""), route_of=landing_route)
+    modal_counts = collections.defaultdict(collections.Counter)
+    for p in kept:
+        modal_counts[str(getattr(p, "source_id", "") or "")][landing_route(p)] += 1
+    modal = {sid: c.most_common(1)[0][0] for sid, c in modal_counts.items()}
+    ghosts, book = [], []
+    for p in stray:
+        route = landing_route(p)
+        reference = modal.get(str(getattr(p, "source_id", "") or ""), ())
+        (book if (len(route) < len(reference) and _is_subseq(route, reference))
+         else ghosts).append(p)
+
+    def world(path):
+        return np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float)
+
+    # the centre fold mirrors, and which diagonal of each AABB the traced rays actually strike
+    # stride the whole list: the first N rays are all one arm, and arm B's mirror needs its own hits
+    sample = kept[:: max(1, len(kept) // 400)] if kept else []
+    hits = (np.concatenate([world(p) for p in sample if len(world(p))])
+            if sample else np.empty((0, 3)))
+    faces = {}
+    for key, body in bodies.items():
+        if "centre ra mirror" not in str(body["name"]).lower():
+            continue
+        ends = _mirror_face(body, hits)
+        if ends is not None:
+            faces[key] = ends
+    exit_planes = _cube_exit_planes(bodies, faces)
+    margins = {"image": [], "ghost": []}
+    for label, group in (("image", kept), ("ghost", ghosts)):
+        for p in group:
+            pts = world(p)
+            if len(pts) < 5:
+                continue
+            crossing = _edge_crossing(pts, faces, exit_planes)
+            if crossing is not None:
+                margins[label].append({"body": crossing[0], "s_mm": crossing[1],
+                                       "y": crossing[2], "z": crossing[3],
+                                       "source": str(getattr(p, "source_id", "") or "")})
+    # for the figure: one image ray and one ghost from the SAME arm, the ghost the clearest to draw
+    arm = None
+    for m in margins["ghost"]:
+        arm = m["source"]
+        break
+    pick_ghost = max((p for p in ghosts if str(getattr(p, "source_id", "")) == arm),
+                     key=lambda p: len(world(p)), default=None)
+    pick_image = next((p for p in kept if str(getattr(p, "source_id", "")) == arm), None)
+    image_flux = sum(power(p) for p in kept)
+    ghost_flux = sum(power(p) for p in ghosts)
+    data = {
+        "device_mm": GHOST_DEVICE_MM,
+        "fov_mm": GHOST_FOV_MM,
+        "solved": bool(solved),
+        "counts": {"paths": len(paths), "landed": len(landed), "image": len(kept),
+                   "ghost": len(ghosts), "bookkeeping": len(book)},
+        "flux": {"image": image_flux, "ghost": ghost_flux,
+                 "ghost_pct": 100.0 * ghost_flux / max(image_flux, 1e-12)},
+        "branch_power": {"image": sorted({round(power(p), 4) for p in kept}),
+                         "ghost": sorted({round(power(p), 4) for p in ghosts})},
+        "stray_light": (info or {}).get("stray_light") if isinstance(info, dict) else None,
+        "images": [{k: im.get(k) for k in ("name", "rms_plane_mm", "ray_count")}
+                   for im in ((info or {}).get("images") or []) if isinstance(im, dict)],
+        "faces": {k: [list(v[0]), list(v[1])] for k, v in faces.items()},
+        "margins": margins,
+        "bodies": bodies,
+        "image_ray": world(pick_image).tolist() if pick_image is not None else [],
+        "ghost_ray": world(pick_ghost).tolist() if pick_ghost is not None else [],
+        "arm": arm,
+    }
+    editor.destroy()
+    return data
+
+
+def figure_ghost(ghost: dict, path: Path) -> None:
+    """Where the cross-arm ghost is born: a spill past the low corner of the centre fold mirror."""
+    bodies = ghost.get("bodies") or {}
+    image_ray = np.asarray(ghost.get("image_ray") or [], dtype=float)
+    ghost_ray = np.asarray(ghost.get("ghost_ray") or [], dtype=float)
+    faces = {k: (np.asarray(v[0], dtype=float), np.asarray(v[1], dtype=float))
+             for k, v in (ghost.get("faces") or {}).items()}
+    fig, axes = plt.subplots(1, 2, figsize=(13.5, 5.6),
+                             gridspec_kw={"width_ratios": [1.55, 1.0]})
+
+    # --- panel A: both arms, both routes, in the y-z fold plane --------------------------------
+    ax = axes[0]
+    low_labels, y_low, y_high = [], 1.0e9, -1.0e9
+    for body in bodies.values():
+        lo, hi = np.asarray(body["min"]), np.asarray(body["max"])
+        if abs(0.5 * (lo[0] + hi[0])) > 60.0 or "far half" in str(body["name"]):
+            continue
+        colour = GLASS if "cube" in str(body["name"]).lower() else METAL
+        ax.add_patch(plt.Rectangle((lo[2], lo[1]), hi[2] - lo[2], hi[1] - lo[1],
+                                   facecolor=colour, edgecolor="#7b8794", lw=0.9, alpha=0.8,
+                                   zorder=2))
+        y_low, y_high = min(y_low, float(lo[1])), max(y_high, float(hi[1]))
+        if float(hi[1]) < 30.0:       # the arm train: label it BELOW, on staggered leader rows
+            low_labels.append((0.5 * (float(lo[2]) + float(hi[2])), float(lo[1]), body["name"]))
+        else:                         # the 50 mm prism is tall enough to carry its label INSIDE
+            ax.text(0.5 * (lo[2] + hi[2]), hi[1] - 2.5, str(body["name"]), ha="center",
+                    va="top", fontsize=7.0, color="#1f2933", zorder=6)
+    rows_y = [y_low - 7.0, y_low - 13.5, y_low - 20.0]
+    for k, (cz, bottom, name) in enumerate(sorted(low_labels, key=lambda t: t[0])):
+        y = rows_y[k % len(rows_y)]
+        ax.plot([cz, cz], [bottom - 0.6, y + 1.0], color="#9aa5b1", lw=0.6, ls=":", zorder=5)
+        ax.text(cz, y, name, ha="center", va="top", fontsize=6.8, color="#1f2933", zorder=6)
+    for pts, colour, label, width in ((image_ray, BLUE, "imaging route", 1.7),
+                                      (ghost_ray, RED, "ghost route", 1.3)):
+        if not len(pts):
+            continue
+        near = pts[np.abs(pts[:, 0]) < 60.0]
+        ax.plot(near[:, 2], near[:, 1], color=colour, lw=width, zorder=4, label=label)
+    if len(ghost_ray):
+        # arrow heads along the ghost, so the order of the detour reads off the drawing
+        near = ghost_ray[np.abs(ghost_ray[:, 0]) < 60.0]
+        for i in range(len(near) - 1):
+            a, b = near[i], near[i + 1]
+            if float(np.hypot(b[2] - a[2], b[1] - a[1])) < 12.0:
+                continue
+            mid = 0.5 * (a + b)
+            step = (b - a) / float(np.linalg.norm(b[1:] - a[1:]))
+            ax.annotate("", xy=(mid[2] + 2.0 * step[2], mid[1] + 2.0 * step[1]),
+                        xytext=(mid[2], mid[1]),
+                        arrowprops=dict(arrowstyle="-|>", color=RED, lw=0.0,
+                                        mutation_scale=11), zorder=5)
+    if len(image_ray):
+        ax.plot([image_ray[0, 2]], [image_ray[0, 1]], marker="o", ms=5.0, color="#1f2933",
+                zorder=7, label="device face")
+    cube_a, cube_b = bodies.get("3"), bodies.get("18")
+    if cube_a is not None and cube_b is not None:
+        z_a = float(np.asarray(cube_a["min"])[2])
+        z_b = float(np.asarray(cube_b["max"])[2])
+        y_gap = float(np.asarray(cube_a["max"])[1]) + 3.2      # the lane above the cubes
+        ax.annotate("", xy=(z_a, y_gap), xytext=(z_b, y_gap),
+                    arrowprops=dict(arrowstyle="<->", color=RED, lw=1.1))
+        ax.text(0.5 * (z_a + z_b), y_gap + 1.0,
+                f"{z_a - z_b:.1f} mm of open air — the two arms can see each other",
+                ha="center", va="bottom", fontsize=7.4, color=RED)
+    ax.set_ylim(rows_y[-1] - 5.0, y_high + 12.0)
+    ax.set_xlabel("z (mm)")
+    ax.set_ylabel("y (mm)")
+    ax.set_title("the ghost leaves arm A, crosses to arm B, and comes back", fontsize=10)
+    ax.set_aspect("equal")
+    ax.grid(alpha=0.15)
+    ax.legend(fontsize=7.5, loc="upper right")
+
+    # --- panel B: the zoom on the mirror corner that lets it out -------------------------------
+    ax = axes[1]
+    margins = ghost.get("margins") or {}
+    arm = ghost.get("arm")
+    born = next((m for m in (margins.get("ghost") or [])
+                 if m["body"] in faces and m.get("source") == arm), None)
+    born = born or next((m for m in (margins.get("ghost") or []) if m["body"] in faces), None)
+    key = born["body"] if born else (next(iter(faces), None))
+    if key is not None:
+        a, b = faces[key]
+        u = (b - a) / float(np.linalg.norm(b - a))
+        past = a - 6.0 * u                                     # where the mirror ISN'T
+        ax.plot([a[1], past[1]], [a[0], past[0]], color="#9aa5b1", lw=1.2, ls=(0, (4, 3)),
+                zorder=3, label="its plane, past the edge — no metal here")
+        ax.plot([a[1], b[1]], [a[0], b[0]], color="#1f2933", lw=3.4, solid_capstyle="butt",
+                zorder=4, label=f"{bodies[key]['name']} face ({np.linalg.norm(b - a):.2f} mm)")
+        ax.plot([a[1]], [a[0]], marker="o", ms=6.5, mfc="white", mec="#1f2933", mew=1.5, zorder=6)
+        ax.annotate("low corner", xy=(a[1], a[0]), xytext=(16.0, 12.0),
+                    textcoords="offset points", fontsize=7.6, color="#1f2933",
+                    arrowprops=dict(arrowstyle="->", color="#1f2933", lw=0.8))
+        shown = []
+        for label, colour in (("image", BLUE), ("ghost", RED)):
+            same = [m for m in (margins.get(label) or [])
+                    if m["body"] == key and (arm is None or m.get("source") == arm)]
+            if not same:
+                continue
+            s_values = sorted(m["s_mm"] for m in same)
+            pick = same[min(range(len(same)), key=lambda i: abs(same[i]["s_mm"] - s_values[len(s_values) // 2]))]
+            ax.plot([m["z"] for m in same], [m["y"] for m in same], linestyle="none", marker=".",
+                    ms=2.6, color=colour, alpha=0.45, zorder=5)
+            ax.plot([pick["z"]], [pick["y"]], marker="x", ms=9.0, mew=2.0, color=colour, zorder=7)
+            shown.append((label, colour, s_values))
+            ax.annotate(f"median {label} ray: {pick['s_mm']:+.2f} mm",
+                        xy=(pick["z"], pick["y"]),
+                        xytext=(18.0, 24.0 if label == "image" else -30.0),
+                        textcoords="offset points", fontsize=7.8, color=colour,
+                        arrowprops=dict(arrowstyle="->", color=colour, lw=0.9))
+        note = "\n".join(
+            f"{label}: {len(s)} rays, {min(s):+.2f} … {max(s):+.2f} mm" for label, _c, s in shown)
+        note = (note + "\n(one arm; the other is its mirror image)") if note else note
+        if note:
+            ax.text(0.03, 0.03, note, transform=ax.transAxes, fontsize=7.2, color=GREY,
+                    va="bottom", ha="left")
+        # keep both markers and the corner in frame, whatever the run measures
+        marks = [(m["y"], m["z"]) for label in ("image", "ghost")
+                 for m in (margins.get(label) or [])
+                 if m["body"] == key and (arm is None or m.get("source") == arm)]
+        reach = max([2.5] + [abs(z - float(a[1])) for _y, z in marks]
+                    + [abs(y - float(a[0])) for y, _z in marks])
+        span = 1.35 * reach
+        ax.set_xlim(float(a[1]) - span, float(a[1]) + span)
+        ax.set_ylim(float(a[0]) - span, float(a[0]) + span)
+        ax.legend(fontsize=7.2, loc="upper right")
+    ax.set_xlabel("z (mm)")
+    ax.set_ylabel("y (mm)")
+    ax.set_title("zoom: the corner the ghost slips past", fontsize=10)
+    ax.set_aspect("equal")
+    ax.grid(alpha=0.18)
+
+    counts = ghost.get("counts") or {}
+    flux = ghost.get("flux") or {}
+    fig.suptitle(
+        f"om05a 80 mm build — traced at a {ghost.get('device_mm')} mm device, FOV "
+        f"{ghost.get('fov_mm')} mm: {counts.get('ghost', 0)} ghost rays against "
+        f"{counts.get('image', 0)} image rays ({flux.get('ghost_pct', 0.0):.2f} % of the flux)",
+        fontsize=10.5)
+    fig.tight_layout()
+    fig.savefig(path, format="svg", bbox_inches="tight")
+    plt.close(fig)
+
+
 def main() -> int:
+    import sys
+
     OUTPUT.mkdir(parents=True, exist_ok=True)
+    if "--ghost" in sys.argv[1:]:
+        ghost = measure_ghost()
+        (OUTPUT / "measured_ghost.json").write_text(json.dumps(ghost, indent=1), encoding="utf-8")
+        figure_ghost(ghost, OUTPUT / "04_cross_arm_ghost.svg")
+        print("wrote 04_cross_arm_ghost.svg and measured_ghost.json")
+        print("counts:", ghost["counts"], " flux:", ghost["flux"])
+        print("stray_light:", ghost["stray_light"])
+        for key, ends in (ghost["faces"] or {}).items():
+            a, b = np.asarray(ends[0], dtype=float), np.asarray(ends[1], dtype=float)
+            print(f"face {key} {ghost['bodies'][key]['name']}: "
+                  f"{float(np.linalg.norm(b - a)):.3f} mm, low corner "
+                  f"y={a[0]:.3f} z={a[1]:.3f}")
+        for label in ("image", "ghost"):
+            for key in sorted({m["body"] for m in ghost["margins"][label]}):
+                for src in sorted({m["source"] for m in ghost["margins"][label]}):
+                    vals = sorted(m["s_mm"] for m in ghost["margins"][label]
+                                  if m["body"] == key and m["source"] == src)
+                    if vals:
+                        print(f"{label:5s} {src:14s} on face {key}: {len(vals):5d} rays, "
+                              f"s {vals[0]:+8.3f} .. {vals[-1]:+8.3f} "
+                              f"(median {vals[len(vals) // 2]:+8.3f})")
+        return 0
     data = measure()
     (OUTPUT / "measured.json").write_text(json.dumps(data, indent=1), encoding="utf-8")
     figure_unfolded(data, OUTPUT / "01_unfolded_chain.svg")
     figure_folded(data, OUTPUT / "02_folded_world.svg")
     figure_travel(data, OUTPUT / "03_lens_travel_vs_fov.svg")
+    cached = OUTPUT / "measured_ghost.json"
+    if cached.exists():
+        figure_ghost(json.loads(cached.read_text(encoding="utf-8")),
+                     OUTPUT / "04_cross_arm_ghost.svg")
     chain = data["chain"]
     front = data["front"]
     print("wrote:", *(p.name for p in sorted(OUTPUT.glob("*.svg"))))

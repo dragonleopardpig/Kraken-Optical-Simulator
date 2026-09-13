@@ -14,16 +14,24 @@ travel; the C1 here is up to the Edmund Filter"*.
 This page shows the measured geometry of the 80 mm build
 (``attachment/om05a_folded_80mm.py``), defines the working distance, and explains
 the thing that surprises everybody: **A5 = 0 does not mean the lens touches the
-prism.**
+prism.** The last section measures the other surprise — the bench's stray light is
+a single geometric leak between the two arms, and it is **about a millimetre of
+mirror edge.**
 
 .. note::
 
-   **What is measured and what is modelled.** The three figures, the segment
+   **What is measured and what is modelled.** The first three figures, the segment
    tables and the clearance numbers are measured from the scene file — rows, world
    body positions and one real traced ray — by::
 
       taskset -c 0-9 nice -n 15 xvfb-run -a \
           .devenv/state/venv/bin/python -u docs/generate_om05a_bench_geometry.py
+
+   The stray-light figure and every number in that section come from a second,
+   slower pass, which solves the worst case and traces it in its own process::
+
+      taskset -c 0-9 nice -n 15 xvfb-run -a \
+          .devenv/state/venv/bin/python -u docs/generate_om05a_bench_geometry.py --ghost
 
    The FOV / working-distance table and the travel chart come from the solver's
    **first order** (its own conjugate solve), not from traced rays. Where a traced
@@ -426,13 +434,228 @@ traces 2.28 µm with 19.8 mm of clearance. Three caveats a reader should carry:
   found the field already delivered and moved nothing; it traced 106 rays against
   314–962 for the other FOV-54 cases, whose spots are 0.65–0.68 µm.
 * "Lands" is not "clean". At FOV 26 a 0.5 mm device still carries 36 cross-arm
-  ghost rays reaching the sensor up to 2.96 mm outside the image
-  (``bugs/0779``, ``bugs/0780``).
+  ghost rays reaching the sensor up to 2.96 mm outside the image — measured in
+  `Stray light — the two arms can see each other`_ below. Since ``bugs/0784`` lifted
+  the mechanical floor to about FOV 17.5, **that section is what now argues for
+  stopping at 26**: going to 23 costs no clearance but nearly doubles the stray
+  light. The floor is a stray-light choice, not a rail limit.
+
+Stray light — the two arms can see each other
+----------------------------------------------
+
+Every traced case above lands inside a pixel, but "lands" is not "clean". A small
+share of the light that leaves a device face reaches the sensor by a **different
+route**. On this bench that route is not scatter and not a coating artefact: it is
+a geometric leak past the edge of one mirror.
+
+.. figure:: ../_static/knowledge_base/om05a_bench_geometry/04_cross_arm_ghost.svg
+   :alt: The cross-arm ghost route and the centre-mirror corner it slips past
+   :align: center
+   :width: 100%
+
+   Traced at the worst corner the bench can be asked for — the smallest device at
+   the lowest FOV that still solves. Left: the imaging route and the ghost route in
+   the object arm's fold plane. Right: where each one crosses centre RA mirror A's
+   face. The image ray lands on the mirror; the ghost crosses just past its low
+   corner and keeps going.
+
+Where it comes from
+~~~~~~~~~~~~~~~~~~~~
+
+Light off face A reflects at first RA mirror A, turns down inside BS cube A and
+runs back along :math:`-z` toward **centre RA mirror A**, which folds it into the
+50 mm prism. That mirror's optical face is **16.75 mm** across (a 45° flat, so the
+diagonal of an 11.84 mm AABB). A ray that crosses the face plane *below its low
+corner* misses the mirror altogether and carries straight on — and the next thing
+on that line, **51.0 mm** further along :math:`-z`, is **arm B's** BS cube.
+
+Traced at a 0.5 mm device and FOV 23, counting each crossing along the face from
+its low-\ :math:`y` corner (per arm; the other arm is the mirror image, ray for ray):
+
+.. list-table:: Where each route crosses centre RA mirror A's 16.747 mm face
+   :header-rows: 1
+   :widths: 26 12 28 34
+
+   * - route
+     - rays
+     - crosses at
+     - what happens
+   * - imaging route
+     - 966
+     - **+4.56 … +10.58 mm** (median +6.88)
+     - onto the face — it reflects into the prism
+   * - ghost route
+     - 33
+     - **−0.02 … −1.12 mm** (median −0.20)
+     - past the low corner — it flies on to arm B
+
+Two things in that table are worth reading twice. The imaging bundle keeps **4.56 mm
+of margin** to the corner — it is not grazing anything, and rays that cross between
+0 and 4.56 mm do strike the mirror but are then stopped at the aperture stop, so they
+never land. And the ghosts are a **narrow band, 1.1 mm wide**, immediately past the
+corner: miss by more than that and the ray never finds its way back to the sensor at
+all. The leak is about **one millimetre of mirror edge**, not a coating and not a
+scattering model.
+
+The route, hit by hit
+~~~~~~~~~~~~~~~~~~~~~~
+
+After it misses, the ghost enters **BS cube B** through the near face at its very
+bottom edge, totally internally reflects off the cube's *bottom* face, reflects off
+cube B's cement diagonal, leaves through the bottom face and reflects off **first RA
+mirror B**. From there it runs the length of the bench back into **arm A**, hits
+first RA mirror A and re-enters the ordinary imaging path — cube A a second time,
+the centre mirror, the prism, the lens, the filter, RA mirror 2, the sensor. Its
+``surface_ids`` route is 26 hits long against the imaging route's 17:
+
+.. code-block:: text
+
+   imaging   1  3 3 3   5            7 7 7   9 10 11 12 13 14 15 16   25
+   ghost     1  3 3 3   18 18 18 18  17  1  3 3 3  5  7 7 7  9 … 16   25
+
+Arm B produces the mirror image of it, ray for ray and millimetre for millimetre:
+its ghosts leave through centre RA mirror B's corner, visit cube A, and land the
+same 8.21 mm from their own field.
+
+One hit in that chain looks suspicious and is worth checking, because a bounce
+inside a cube is exactly what a wrong model produces:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 66
+
+   * - measured
+     - meaning
+   * - ``interaction=reflect_tir``
+     - the engine's own label for total internal reflection
+   * - turn 4.49°
+     - a reflection turns the ray by :math:`180^\circ - 2\theta_i`, so
+       :math:`\theta_i = 87.8^\circ`
+   * - :math:`n = 1.5185` (BK7)
+     - critical angle :math:`\arcsin(1/n) = 41.2^\circ`
+
+At 87.8° the ray is 46° past the critical angle: this is **real total internal
+reflection** at grazing incidence, not a modelling artefact. Nothing in the ghost
+route needs a coating to exist.
+
+The cement diagonals are modelled as 100 % mirrors
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The one place the model *is* optimistic: each BS cube's cement diagonal is
+authored ``function: "Mirror"`` and reflects 100 %, even though the row stores
+``split_ratio: 0.5``. The engine reads ``split_ratio`` only when the face's
+function is ``"Beam Splitter"``.
+
+The ghost route takes **three** cement reflections where the imaging route takes
+**one**, so a real 50/50 coating would divide the ghost-to-image ratio by
+:math:`0.5^2 = 4`. Every measured share below is therefore an **upper bound**, and
+the column beside it is the same number with that correction applied.
+
+Simply re-marking those faces ``"Beam Splitter"`` is not the fix — tried on a
+probe copy of the scene, it collapses the trace (460 paths, none landing: 410
+vignette at the stop, 50 with no next intersection), while a control copy with the
+same rows re-serialised and no value changed traces identically to the shipped
+scene. Branching those faces disturbs the launch and pupil aim; that is its own
+piece of work, not a scene edit.
+
+What it costs the picture
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table:: Traced stray light (ghost flux as a share of image flux)
+   :header-rows: 1
+   :widths: 12 10 12 12 18 18 18
+
+   * - device
+     - FOV
+     - image rays
+     - ghosts
+     - ghost flux
+     - with 50/50 cement
+     - landing on the picture
+   * - 17 mm
+     - 21
+     - 644
+     - 6
+     - 0.78 %
+     - ≈ 0.20 %
+     - none (≤ 1.70 mm outside)
+   * - 0.5 mm
+     - 26
+     - 1932
+     - 36
+     - 1.57 %
+     - ≈ 0.39 %
+     - none (≤ 2.96 mm outside)
+   * - 0.5 mm
+     - 23
+     - 1932
+     - 66
+     - 2.85 %
+     - ≈ 0.71 %
+     - none (≤ 6.07 mm outside)
+
+Flux here is the sum of each landing ray's ``branch_power`` — 0.771 for an image
+ray, 0.59–0.71 for a ghost — not a ray count.
+
+**So the answer to "how much does the stray light reduce image quality?" is, on
+these settings, nothing measurable.** Every ghost ray lands *outside* the two field
+strips, 2.3–24.7 mm from where its own field point images. The measured image RMS
+stays at 2.28 µm at 0.5 mm / FOV 23, against a 4.5 µm pixel — the ghosts are not in
+it because they are not on it. What *is* affected is a reading of the **whole sensor
+frame**: there the ghosts appear as a faint patch a few millimetres off the picture,
+carrying up to ~0.7 % of the image flux once the cement coatings are right.
+
+The caveat is the sampling. These are traced pupil samples, not a radiometric
+stray-light budget: they prove the route exists, where it lands and roughly how
+strong it is, but a real veiling-glare figure needs the coating data and a much
+denser launch.
+
+Smaller FOV, more stray light
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The trend in that table is real and it is the one the bench owner expects: a
+smaller FOV is a larger magnification, a shorter working distance and a lens
+carried further forward, and it makes more stray light. At a fixed 0.5 mm device,
+FOV 26 → 23 nearly doubles the ghost count (36 → 66) and the flux share
+(1.57 % → 2.85 %).
+
+But it is not the cone growing. The working distance only shortens from 175.3 mm
+to 164.6 mm over that step, so the accepted cone widens by **6.5 %** — which cannot
+double anything, and in any case the imaging bundle keeps 4.56 mm of margin to the
+corner at both settings. What changes is the other end of the route: a ghost has to
+come back through the *same aperture stop* as the image, and moving the lens forward
+changes which of the missed rays do. The measurement is solid; the sensitivity is
+worth its own run before anyone leans on it.
+
+The device size moves it the same way, and harder: at FOV 26 a 17 mm device produces
+**no** ghosts at all, while a 0.5 mm device — whose face sits further from the lens,
+so MOTOR 1 carries the imaging group closer to the prism — produces 36. FOV 34 at
+17 mm is also clean.
+
+The lesson for the bench is that this is cheap to fix in hardware. The ghosts all
+cross within 1.12 mm past the mirror's low corner, and the imaging bundle stays
+4.56 mm clear of it, so an **opaque lip about 1.2 mm long, in the mirror's own plane,
+past its low corner** intercepts the whole measured band without touching the image.
+Nothing in the optics has to change. That is a bench change for its owner to make:
+the app never moves, slides or hides vendor hardware on its own — only the device
+under test changes size, and the motors follow it.
+
+What the app reports
+~~~~~~~~~~~~~~~~~~~~~
+
+``bugs/0779`` and ``bugs/0780`` keep these rays out of the focus measurement (1 %
+of rays on another route once turned a 2 µm spot into 656 µm) and draw them faint.
+The banner's share, however, counts **rays on any other route** — ghosts plus the
+bookkeeping strays that merely skipped the stop — and does not weight them by
+power. At 17 mm / FOV 21 it reads 10 of 654 rays, 1.53 %, where the six ghosts
+carry 0.78 % of the image flux. Display already weights by ``branch_power``
+(``bugs/0604``); the stray-light and focus measurements do not. Read the banner as
+"how many rays", and this page's table as "how much light".
 
 Notes for maintainers
 ----------------------
 
-* The figures are regenerated by ``docs/generate_om05a_bench_geometry.py``; it
+* Figures 1–3 are regenerated by ``docs/generate_om05a_bench_geometry.py``; it
   re-measures the scene and re-traces, so a scene change is reflected by re-running
   it, never by editing the SVGs.
 * ``A5`` is ``rows[front - 1].thickness`` and ``C1`` is ``rows[rear].thickness``,
@@ -445,6 +668,19 @@ Notes for maintainers
 * ``bugs/0784`` recovers lens-gap headroom from the nearest upstream air gap when the row
   is short and the bodies are not, which is why the row floor above is a waypoint rather
   than a limit.
+* The stray-light section is measured by the same script's ``--ghost`` pass, which
+  solves the 0.5 mm / FOV 23 corner and traces it; it writes ``measured_ghost.json``
+  beside the SVGs, so every share, count and crossing on this page can be checked
+  against the run that produced it. Run it in its own process — it starts a second
+  app. Two things in that pass are deliberate and easy to break: which diagonal of a
+  45° mirror's AABB is its optical face is decided from the *traced hits*, not
+  assumed; and the crossing test is anchored on the BS cube's exit face rather than
+  on a sign change, because an imaging ray lands exactly on the mirror plane and its
+  signed distance there is ±1e-16 — a sign test finds it for half the rays and
+  silently skips the rest.
+* The stray-route classification is ``bugs/0779`` (keep another route out of the
+  focus measurement) and ``bugs/0780`` (draw it faint). Neither weights by
+  ``branch_power``; the shares in the table above do.
 * Guards: ``python -m KrakenOS.UI.validate_open3d_0782_motor1_follows_the_beam``,
   ``python -m KrakenOS.UI.validate_open3d_0783_device_change_restores_wd`` and
   ``python -m KrakenOS.UI.validate_open3d_0784_lens_leg_headroom_is_the_metal``.
