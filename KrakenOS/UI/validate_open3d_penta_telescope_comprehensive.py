@@ -16083,6 +16083,10 @@ phase_566_device_change_restores_wd = _phase_from_standalone(
     566, "a device-size change at a fixed FOV restores the working distance, and the banner says what moved: the user saw 'the lens did not move' while changing device size ('the WD cannot be right without lens moving') and stated the bench's model -- three FOVs, each one WD and one image distance, one motor restores the WD. Two defects produced the banner: the solve summary read the lens move only from the vendor-lock residual, so every clean MOTOR 1 booking reported no move, and bugs/0727's already-delivered gate never asked the object side (om05a 80 mm at FOV 54: a 50 -> 49 mm device left the first order asking for a -0.883 mm lens move while the gate said nothing to move). Now, at an operating point (the image distance already this FOV's), a size change is ONE rigid move -- lens pair by object_delta, MOTOR 1 by object_delta + image_delta, stage bound checked first, every row put back on a MOTOR 1 refusal -- with no conjugate re-solve and no trace; on the real 80 mm scene 50 -> 40 lands on exactly the traced full solve's geometry (A5 125.5068, standoff 4.3213). The full solve records its lens move from whichever branch booked it (0783)",
     "KrakenOS.UI.validate_open3d_0783_device_change_restores_wd",
     "device_change_restores_wd")
+phase_567_lens_leg_headroom_is_the_metal = _phase_from_standalone(
+    567, "the lens gap's floor is the METAL, not the row: the user measured the bench's own A5 dimension (the A5 gap reads 32.96 mm at a 22 mm device, 28.1 mm at 20 mm) and was right -- the lens block's position is booked as rows[front-1].thickness, which may not go negative, and on om05a_folded_80mm that zero sits 26.90 mm short of metal contact because the 50 mm prism's folded glass path is booked entirely on the outgoing leg while only ~25.29 mm of it runs along that leg in world. A 0.5 mm device at FOV 23 was refused short by 5.099 mm with 155.8 mm of PHYSICAL room left (bugs/0771 deferred exactly this). _recover_lens_leg_headroom now shifts the shortfall out of the nearest upstream AIR gap into the lens gap and compensates every body in between on its OWN measured desp frame, reverting unless every world pose is provably unchanged: 0.5 mm at FOV 23 solves and lands at 2.28 um with 19.8 mm of clearance, 20 mm at FOV 21 lands at 2.47 um, 22 mm at auto FOV is unchanged to every digit (2.22 um, room 30.9/64.4), and 0.5 mm at FOV 17 still refuses on the physical gate (0784)",
+    "KrakenOS.UI.validate_open3d_0784_lens_leg_headroom_is_the_metal",
+    "lens_leg_headroom_is_the_metal")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16715,6 +16719,7 @@ def main() -> int:
             phase_564_solve_does_not_retrace_an_unchanged_scene,
             phase_565_motor1_follows_the_beam,
             phase_566_device_change_restores_wd,
+            phase_567_lens_leg_headroom_is_the_metal,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

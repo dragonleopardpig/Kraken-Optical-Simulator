@@ -5158,6 +5158,151 @@ class ScenePlacementMixin:
             info["room_phys"] = float(station_room) - 0.5 * diameter - clearance
         return info
 
+    def _recover_lens_leg_headroom(self, front: int, needed: float, signed_delta: float) -> bool:
+        """bugs/0784 (flags 20260913_083551 / _085839: "I noticed the A5 gap is 32.96mm, so if the
+        device size shrink to 0.5mm ... it should match 0.5mm with FOV 23 just fine" / "For device
+        size 20mm, A5 gap is 28.1mm. So plenty of A5 room for 0.5mm device"): give the lens gap the
+        room the METAL already has.
+
+        The lens block's position on its leg is booked as ``rows[front-1].thickness``, which may not
+        go negative -- a negative gap runs the station chain backwards and slides every downstream
+        row off the leg (bugs/0563/0564 heal them at load). That floor is NOT the hardware's.
+        Measured on om05a_folded_80mm: the row's zero sits **26.90 mm short of metal contact**,
+        because the 50 mm prism's folded glass path is booked entirely on the OUTGOING leg while
+        only ~25.29 mm of it runs along that leg in world. The user measured the same thing from the
+        other side, on the bench's own dimension: A5 reads 32.96 mm of metal where the row reads
+        6.01 mm, and a 0.5 mm device at FOV 23 was refused "short by 5.099 mm" while the mover's own
+        probe reported 155.8 mm of physical room (bugs/0771 deferred exactly this).
+
+        So when the ROW is short and the bodies have room, shift the shortfall out of the nearest
+        upstream AIR gap into the lens gap and compensate every body in between so that NOTHING
+        moves: identical world geometry, identical conjugate, more room before the row hits zero.
+        Measured end to end -- shifting 26.902 mm from row 6 into row 8 with the prism's desp
+        following moved 0 bodies and left object_delta/image_delta bit-identical (-135.9878 /
+        +47.4148), after which 0.5 mm at FOV 23 solves and lands at 2.28 um with 19.8 mm of
+        clearance, 20 mm at FOV 21 lands at 2.47 um (it refused short 2.501 mm before), 22 mm at
+        auto FOV is unchanged to every digit (2.22 um, room 30.9/64.4), and 0.5 mm at FOV 17 still
+        refuses -- on the PHYSICAL gate, which is where the limit belongs.
+
+        Object side only: the camera-side cap is the Filter, which is real hardware. Returns True
+        when the headroom was recovered (the caller re-reads the gap and proceeds). Reverts
+        everything and returns False unless every body's world pose is provably unchanged
+        (the bugs/0770 / bugs/0782 rule: prove the write, or do not leave it standing).
+        """
+        rows = getattr(self, "rows", None) or []
+        try:
+            front = int(front)
+            needed = float(needed)
+            signed = float(signed_delta)
+        except (TypeError, ValueError):
+            return False
+        if not (np.isfinite(needed) and needed > 0.0) or signed >= 0.0:
+            return False
+        if not (1 <= front < len(rows)):
+            return False
+        try:
+            from KrakenOS.UI.services.paraxial_tools import row_is_station_neutral
+        except Exception:
+            row_is_station_neutral = lambda _row: False   # noqa: E731
+        gap_row = front - 1
+        margin = 1.0e-3
+        donor = None
+        for index in range(gap_row - 1, -1, -1):
+            row = rows[index]
+            advanced = row.advanced if isinstance(getattr(row, "advanced", None), dict) else {}
+            if advanced.get("Solid_3d_stl"):
+                continue                      # a body's own row is not a spare gap
+            if str(getattr(row, "glass", "AIR") or "AIR").strip().upper() not in ("AIR", ""):
+                continue                      # never take length out of GLASS
+            if row_is_station_neutral(row):   # bugs/0581: a pinned row's write evaporates
+                continue
+            try:
+                if float(row.thickness) >= needed + margin:
+                    donor = index
+                    break
+            except (TypeError, ValueError):
+                continue
+        if donor is None:
+            return False
+        watched = [
+            i for i in range(donor + 1, front)
+            if isinstance(getattr(rows[i], "advanced", None), dict)
+            and rows[i].advanced.get("Solid_3d_stl")
+        ]
+        before = {}
+        try:
+            for i in watched + [front]:
+                before[i] = np.asarray(
+                    self._surface_reference_world_point(i), dtype=float
+                ).reshape(3)
+        except Exception:
+            return False
+        snapshot = [
+            (float(r.thickness), float(r.desp_x), float(r.desp_y), float(r.desp_z)) for r in rows
+        ]
+
+        def _restore():
+            for row, (thickness, dx, dy, dz) in zip(rows, snapshot):
+                row.thickness, row.desp_x, row.desp_y, row.desp_z = thickness, dx, dy, dz
+
+        rows[donor].thickness = float(rows[donor].thickness) - needed
+        rows[gap_row].thickness = float(rows[gap_row].thickness) + needed
+        # Put every body between the donor and the gap back where it was. Its desp frame is
+        # MEASURED, never assumed (bugs/0782): probe the row's own response to a unit desp on each
+        # axis and solve for the correction that cancels the station shift.
+        for i in watched:
+            row = rows[i]
+            try:
+                shifted = np.asarray(
+                    self._surface_reference_world_point(i), dtype=float
+                ).reshape(3)
+            except Exception:
+                _restore()
+                return False
+            moved = shifted - before[i]
+            if float(np.linalg.norm(moved)) <= 1.0e-9:
+                continue
+            columns = []
+            for comp in ("desp_x", "desp_y", "desp_z"):
+                saved = float(getattr(row, comp))
+                setattr(row, comp, saved + 1.0)
+                try:
+                    probe = np.asarray(
+                        self._surface_reference_world_point(i), dtype=float
+                    ).reshape(3)
+                except Exception:
+                    setattr(row, comp, saved)
+                    _restore()
+                    return False
+                setattr(row, comp, saved)
+                columns.append(probe - shifted)
+            try:
+                correction = np.linalg.lstsq(np.column_stack(columns), -moved, rcond=None)[0]
+            except Exception:
+                _restore()
+                return False
+            for comp, value in zip(("desp_x", "desp_y", "desp_z"), correction):
+                setattr(row, comp, float(getattr(row, comp)) + float(value))
+        try:
+            for i in watched + [front]:
+                now = np.asarray(self._surface_reference_world_point(i), dtype=float).reshape(3)
+                if float(np.linalg.norm(now - before[i])) > 1.0e-6:
+                    _restore()
+                    return False
+        except Exception:
+            _restore()
+            return False
+        try:
+            self._invalidate_preview_scene_trace()
+        except Exception:
+            pass
+        self.append_debug(
+            f"lens leg headroom recovered: {needed:.4f} mm moved from row {donor} "
+            f"({getattr(rows[donor], 'name', '')!r}) into row {gap_row}; "
+            f"{len(watched)} body row(s) compensated, world poses unchanged (bugs/0784)"
+        )
+        return True
+
     def translate_lens_block_along_leg(self, signed_delta: float, *, force: bool = False) -> "dict | None":
         """bugs/0719: move the imaging-lens block ``signed_delta`` mm along its own leg --
         the ONE lens-move primitive the FOV solve (normal and forced) goes through.
@@ -5370,6 +5515,17 @@ class ScenePlacementMixin:
                     f"obstacle span {room.get('obstacle_span')})"
                 )
                 return None
+            # bugs/0784: the ROW is short but the METAL is not (the physical gate above has already
+            # passed). Buy the gap the room the bodies have, then re-read it -- a refusal here was
+            # costing om05a 26.90 mm of real lens travel.
+            if abs(amount) > cap + 1.0e-9 and self._recover_lens_leg_headroom(
+                front, abs(amount) - cap, amount
+            ):
+                try:
+                    room_station = float(rows[gap_row].thickness)
+                except (AttributeError, TypeError, ValueError):
+                    room_station = float(room_station)
+                cap = max(float(room_station) - 1.0e-3, 0.0)
             if abs(amount) > cap + 1.0e-9:
                 self._lens_move_room_mm = float(cap)
                 # bugs/0771 (flag 154535, "FOV 20mm rejected ... I think there is still
