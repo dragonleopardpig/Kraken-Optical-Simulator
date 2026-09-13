@@ -209,11 +209,13 @@ value.
 
 .. warning::
 
-   **FOV 20 is not an 80 mm operating point.** On this build it needs a device of
-   about 32 mm or larger before the lens can reach it at all, and the one traced
-   FOV-20 case on this scene captures only 0.40 of the field. The production
-   columns are first order only: ``bugs/0783`` records that production's traced
-   image does not yet form where its first order says.
+   **FOV 20 on the 80 mm build.** Until ``bugs/0784`` the lens could not reach it
+   below a ~32 mm device — a row limit, not a hardware one. The bodies allow it
+   (a 0.5 mm device needs 146.7 mm against 155.8 mm of clearance), so it is now
+   reachable; what remains true is the field: the one traced FOV-20 case on this
+   scene, a 50 mm device, captures only 0.40 of it. The production columns are
+   first order only: ``bugs/0783`` records that production's traced image does not
+   yet form where its first order says.
 
    The 80 mm WD of 275.44 mm at FOV 54 is the first-order figure; the segment
    table's 275.82 mm is the **row sum** at the authored state. The difference is
@@ -304,8 +306,9 @@ and it was measured at :math:`A5 = 0.889`, not at the rail end. Its own model,
 ``body_gap = A5 + 18.96``, puts the assembly figure near 18.96 mm at
 :math:`A5 = 0`. Both are positive and both exceed any shortfall discussed below.
 
-The consequence: at the small-FOV end the lens is stopped by the **row/station
-partition — the motor rail as drawn — not by a collision.**
+The consequence: at the small-FOV end the lens used to be stopped by the
+**row/station partition — the motor rail as drawn — not by a collision**. Since
+bugs/0784 the mover recovers that headroom, so the stop is the metal.
 
 Why a smaller FOV cannot be reached
 ------------------------------------
@@ -319,19 +322,23 @@ closer to the device:
 
 so with the fitted :math:`f \approx 82.4` mm and :math:`h_\text{sensor} = 23.04`
 mm, the object distance is linear in the FOV: **every 1 mm of FOV costs 3.576 mm
-of lens travel toward the object.** The lens has only A5 = 130.89 mm of it.
+of lens travel toward the object.** The row gap A5 holds 130.89 mm of that. The **row is not the limit**: bugs/0784 recovers a
+shortfall from the nearest upstream air gap, so the lens runs until its *body* reaches
+RA mirror 1 at **155.79 mm**.
 
 .. figure:: ../_static/knowledge_base/om05a_bench_geometry/03_lens_travel_vs_fov.svg
    :alt: Lens travel demanded by each FOV against the A5 travel available, for several device sizes
    :align: center
    :width: 90%
 
-   First order, not traced. Above the dashed line the lens would have to travel
-   past the end of its rail. A smaller device pushes its face further from the
-   lens and so demands *more* travel — which is why the small-FOV limit is set by
-   the smallest device.
+   First order, not traced. Above the dashed line the lens *body* would reach
+   RA mirror 1 — a real collision. The dotted line is the A5 row gap, which is
+   bookkeeping: bugs/0784 recovers a shortfall against it from the nearest
+   upstream air gap. A smaller device pushes its face further from the lens and so
+   demands *more* travel — which is why the small-FOV limit is set by the smallest
+   device.
 
-.. list-table:: Travel demanded, and the A5 left over (mm; L = device size)
+.. list-table:: Travel demanded, and the A5 row left over (mm; L = device size)
    :header-rows: 1
    :widths: 14 22 22 22 20
 
@@ -361,14 +368,21 @@ of lens travel toward the object.** The lens has only A5 = 130.89 mm of it.
      - 113.51
      - +17.38
 
-FOV 22 is not impossible in general — it works for devices of roughly 18 mm and
-up. It fails for *small* devices. Since an operating point must cover its whole
-device range down to 0.5 mm, the smallest usable FOV on this build is 24.4 mm at
-zero margin, 25 at 2.05 mm, and **26 at 5.63 mm**. As a line:
+A negative entry in that table is where the **row** runs out, not the machine.
+bugs/0784 recovers exactly that shortfall — it shifts the missing millimetres out of
+the nearest upstream air gap into the lens gap and compensates every body in between,
+so nothing moves and the conjugate is unchanged. What remains is the metal:
 
 .. math::
 
-   \text{FOV}_\text{min}(L) = 21.70 - 0.14\,(L - 20)
+   \text{FOV}_\text{min}^{\,\text{row}}(L) = 21.70 - 0.14\,(L - 20)
+   \qquad
+   \text{FOV}_\text{min}^{\,\text{metal}}(L) = 14.74 - 0.14\,(L - 20)
+
+For a 0.5 mm device that moves the floor from FOV 24.4 to about **17.5**. Traced on
+the shipped scene: 0.5 mm at FOV 23 lands at 2.28 µm with 19.8 mm of clearance left,
+20 mm at FOV 21 lands at 2.48 µm, and 0.5 mm at FOV 17 is still refused — it needs
+157.4 mm where 155.8 mm of body clearance exists.
 
 The 80 mm operating points
 ---------------------------
@@ -399,8 +413,10 @@ The 80 mm operating points
      - 0.65–1.95 µm (traced to L = 50)
 
 Every traced case lands well inside one 4.5 µm pixel, at full capture, with
-positive clearances and both motor stages inside their rails. Three caveats a
-reader should carry:
+positive clearances and both motor stages inside their rails. The FOV 26 floor was
+set by the **row** gap running out; since ``bugs/0784`` recovers that headroom the
+floor is the metal, and lower settings are reachable — a 0.5 mm device at FOV 23
+traces 2.28 µm with 19.8 mm of clearance. Three caveats a reader should carry:
 
 * The device ranges come from a 5 % field margin and run past the traced cases
   (24, 30 and 50 mm). The extra 0.8 / 2.4 / 1.4 mm is first-order extrapolation.
@@ -426,5 +442,9 @@ Notes for maintainers
   group along the beam on any frame — its seat sign is *measured*, because the
   production build's lens leg runs the other way) and ``bugs/0783`` (a device
   change restores the WD in one move).
-* Guards: ``python -m KrakenOS.UI.validate_open3d_0782_motor1_follows_the_beam``
-  and ``python -m KrakenOS.UI.validate_open3d_0783_device_change_restores_wd``.
+* ``bugs/0784`` recovers lens-gap headroom from the nearest upstream air gap when the row
+  is short and the bodies are not, which is why the row floor above is a waypoint rather
+  than a limit.
+* Guards: ``python -m KrakenOS.UI.validate_open3d_0782_motor1_follows_the_beam``,
+  ``python -m KrakenOS.UI.validate_open3d_0783_device_change_restores_wd`` and
+  ``python -m KrakenOS.UI.validate_open3d_0784_lens_leg_headroom_is_the_metal``.

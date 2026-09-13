@@ -352,10 +352,17 @@ def figure_travel(data: dict, path: Path) -> None:
     for device, color in ((0.5, RED), (15.0, PURPLE), (30.0, BLUE), (50.0, GREEN)):
         need = -(float(od20) + slope * (fovs - 20.0) + 0.5 * (device - device_ref))
         ax.plot(fovs, need, color=color, lw=1.6, label=f"device {device:g} mm")
-    ax.axhline(a5, color="#1f2933", lw=1.4, ls="--")
-    ax.text(57.6, a5 + 2.5, f"A5 available = {a5:.2f} mm", ha="right", fontsize=8.5, color="#1f2933")
-    ax.fill_between(fovs, a5, 195, color=RED, alpha=0.07)
-    ax.text(19.0, 176.0, "above the line the lens would have to travel\npast the end of its rail",
+    # bugs/0784: the limit is the METAL, not the row. The row gap is drawn as a reference only --
+    # a shortfall against it is recovered from the nearest upstream air gap.
+    metal = float((data.get("room") or {}).get("room_phys") or a5)
+    ax.axhline(a5, color="#9aa5b1", lw=1.1, ls=":")
+    ax.text(57.6, a5 - 6.0, f"A5 row = {a5:.2f} mm (recovered past this, bugs/0784)",
+            ha="right", fontsize=7.6, color=GREY)
+    ax.axhline(metal, color="#1f2933", lw=1.4, ls="--")
+    ax.text(57.6, metal + 2.5, f"metal limit = {metal:.2f} mm", ha="right", fontsize=8.5,
+            color="#1f2933")
+    ax.fill_between(fovs, metal, 195, color=RED, alpha=0.07)
+    ax.text(19.0, 176.0, "above the line the lens body would reach\nRA mirror 1 -- a real collision",
             fontsize=8, color=RED, va="top")
     for fov, label in ((26.0, "FOV 26"), (34.0, "FOV 34"), (54.0, "FOV 54")):
         ax.axvline(fov, color=GREEN, lw=0.9, ls=":", alpha=0.85)
