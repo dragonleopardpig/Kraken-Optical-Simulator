@@ -47,7 +47,7 @@ let
     fi
   '';
   installCoreDeps = ''
-    KRAKEN_REQ_HASH="krakenos-core-v22-pdfplumber"
+    KRAKEN_REQ_HASH="krakenos-core-v23-rapidocr-libredwg"
     REQ_HASH_FILE="$PWD/.devenv/state/kraken-requirements.hash"
 
     "$VENV_DIR/bin/python" -m pip install --upgrade pip "setuptools<82" wheel
@@ -56,7 +56,8 @@ let
       numpy scipy matplotlib pandas pyvista \
       PyVTK csv342 ipython ipykernel pyzmq \
       packaging setuptools basedpyright ruff PyQt5 sip \
-      cloudpickle pybind11 pygmo pdfplumber
+      cloudpickle pybind11 pygmo pdfplumber \
+      rapidocr-onnxruntime
     # Keep VTK supplied by nixpkgs: the pip VTK wheel omits
     # libvtkRenderingTk.so, which is required by embedded VTK/Tk widgets.
     "$VENV_DIR/bin/python" -m pip uninstall -y vtk >/dev/null 2>&1 || true
@@ -94,6 +95,14 @@ in
     boost
     tbb
     gmsh
+    # bugs/0787 datasheet OCR, for sheets that print their spec table as a picture. bugs/0788
+    # prefers the in-process rapidocr engine added above; these stay as the fallback for a
+    # checkout that has not installed it.
+    poppler-utils      # pdftoppm -- renders at 300 dpi, which is what keeps "110+-2" readable
+    tesseract
+    # A vendor DWG carries its spec table as TEXT entities with coordinates, so a label pairs
+    # with its value by GEOMETRY. dwgread -O JSON reads them; see bugs/0788's closing note.
+    libredwg
   ] ++ runtimeLibs;
 
   enterShell = ''

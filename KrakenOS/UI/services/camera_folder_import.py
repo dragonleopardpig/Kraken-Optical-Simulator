@@ -34,8 +34,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from KrakenOS.UI.services.datasheet_prescription_import import (
-    _extract_pdf_text_ocr,
     extract_pdf_text,
+    ocr_text_candidates,
 )
 
 
@@ -226,10 +226,12 @@ def parse_camera_datasheet(path: str | Path) -> CameraSpec | None:
     spec = _camera_spec_from_text(extract_pdf_text(path))
     if spec is not None and spec.has_sensor_size:
         return spec
-    recognised = _extract_pdf_text_ocr(path)
-    if not recognised:
-        return spec
-    return _camera_spec_from_text(recognised) or spec
+    for recognised in ocr_text_candidates(path):
+        candidate = _camera_spec_from_text(recognised)
+        if candidate is not None and candidate.has_sensor_size:
+            return candidate
+        spec = spec or candidate
+    return spec
 
 
 def _camera_spec_from_text(text: str) -> CameraSpec | None:

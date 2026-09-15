@@ -371,7 +371,180 @@ _OCR_TIMEOUT_S = 180
 
 
 def _ocr_engine_available() -> bool:
+    if _rapidocr_available():
+        return True
     return bool(shutil.which("pdftoppm") and shutil.which("tesseract"))
+
+
+def _rapidocr_available() -> bool:
+    """bugs/0788: the in-process engine -- ``rapidocr-onnxruntime`` recognising a page that
+    ``pdfplumber`` rasterised. Preferred over the external pair for two measured reasons, not
+    for tidiness:
+
+    * it keeps the glyph that decides the value. On the COOLENS sheet it returns ``110±2`` and
+      ``280±2`` with the real MINUS-OR-PLUS character, where tesseract gives ``110+2`` at best
+      and ``1102`` through ocrmypdf's rasteriser -- a 1102 mm working distance.
+    * it returns a BOX per line, so a label pairs with the value in its own row by geometry.
+      The external path depends on ``--psm 4`` happening to keep two side-by-side spec tables
+      apart; that is luck, and luck is what bugs/0786 had to corroborate its way around.
+
+    Both are optional. Without either, :func:`_extract_pdf_text_ocr` returns "" and the
+    importer refuses exactly as it did before bugs/0787."""
+    try:
+        import pdfplumber  # noqa: F401
+        import rapidocr_onnxruntime  # noqa: F401
+    except Exception:
+        return False
+    return True
+
+
+def _ocr_rows_to_text(boxes: "list[tuple]") -> str:
+    """Rebuild reading order from recognised boxes: group by row, then left to right.
+
+    This is the whole point of a box-returning engine -- ``Working Distance (mm)`` and its
+    ``110±2`` end up adjacent in the text the existing scrapers read, without relying on a
+    page-segmentation mode to have kept the columns apart."""
+    import numpy as np
+
+    items = []
+    for box, text, _confidence in boxes or []:
+        if not str(text).strip():
+            continue
+        ys = [float(pt[1]) for pt in box]
+        xs = [float(pt[0]) for pt in box]
+        items.append((float(np.mean(ys)), float(np.mean(xs)),
+                      float(max(ys) - min(ys)), str(text).strip()))
+    if not items:
+        return ""
+    items.sort(key=lambda r: r[0])
+    # a row is "within half a line height of the row we are building" -- measured from the
+    # boxes themselves, so it follows the sheet's own type size instead of a magic number
+    rows: "list[list[tuple]]" = []
+    current: "list[tuple]" = []
+    anchor = None
+    for y, x, height, text in items:
+        tol = max(height, 8.0) * 0.6
+        if anchor is None or abs(y - anchor) <= tol:
+            current.append((x, text))
+            anchor = y if anchor is None else (anchor + y) / 2.0
+        else:
+            rows.append(current)
+            current, anchor = [(x, text)], y
+    if current:
+        rows.append(current)
+    return "\n".join(" ".join(t for _x, t in sorted(row)) for row in rows)
+
+
+def _extract_pdf_text_rapidocr(path: str | Path) -> str:
+    """bugs/0788: rasterise with pdfplumber and recognise in process. "" on any failure."""
+    if not _rapidocr_available():
+        return ""
+    try:
+        import numpy as np
+        import pdfplumber
+        from rapidocr_onnxruntime import RapidOCR
+
+        engine = RapidOCR()
+        parts: list[str] = []
+        with pdfplumber.open(str(path)) as pdf:
+            for page in pdf.pages[:_OCR_MAX_PAGES]:
+                image = page.to_image(resolution=_OCR_RENDER_DPI).original.convert("RGB")
+                result, _elapsed = engine(np.asarray(image))
+                parts.append(_ocr_rows_to_text(result))
+        return "\n".join(p for p in parts if p)
+    except Exception:
+        return ""
+
+
+def _extract_pdf_text_tesseract(path: str | Path) -> str:
+    """The external pair: ``pdftoppm`` renders, ``tesseract`` recognises. ``""`` when absent.
+
+    ``--psm 4`` (a single column of variable-size text) is what keeps two side-by-side spec
+    tables apart; ``--psm 6`` merges them and a label loses its value to the neighbouring
+    table. 300 dpi is what keeps the tolerance glyph: "110+-2" survives as "110+2" so the
+    value regex stops at 110, where ocrmypdf's own rasteriser yields "1102".
+    """
+    if not (shutil.which("pdftoppm") and shutil.which("tesseract")):
+        return ""
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "page"
+            subprocess.run(
+                ["pdftoppm", "-r", str(_OCR_RENDER_DPI), "-png",
+                 "-f", "1", "-l", str(_OCR_MAX_PAGES), str(Path(path)), str(base)],
+                check=True, capture_output=True, timeout=_OCR_TIMEOUT_S,
+            )
+            parts: list[str] = []
+            for image in sorted(Path(tmp).glob("page*.png")):
+                done = subprocess.run(
+                    ["tesseract", str(image), "stdout", "--psm", "4"],
+                    check=True, capture_output=True, timeout=_OCR_TIMEOUT_S,
+                )
+                parts.append(done.stdout.decode("utf-8", errors="replace"))
+        return "\n".join(parts)
+    except Exception:
+        return ""
+
+
+# bugs/0788: the two engines have COMPLEMENTARY weaknesses, measured on the COOLENS
+# WWK10-110CP-111V3 spec table, so neither is declared the winner:
+#
+#   rapidocr   keeps the glyph that decides the value -- "110±2" and "280±2" with the real
+#              character -- and returns a box per line so a label pairs with the value in its
+#              own row by geometry. BUT its detector misses isolated single-character cells:
+#              the row "Best Aperture (F/#) | 7 ... Mount | C" comes back with the labels and
+#              neither value, and a missing mount means no flange and no derivation.
+#   tesseract  finds those one-character cells, but mangles "110±2" to "110+2" (usable) and,
+#              through ocrmypdf's rasteriser, to "1102" (a 1102 mm working distance).
+#
+# So the caller tries each reading in turn and keeps the first that yields a usable, CORROBORATED
+# result. Merging the two texts was rejected: a regex would then take whichever number appeared
+# first, silently mixing two engines' readings of the same cell.
+_OCR_ENGINES = (
+    ("rapidocr", lambda p: _extract_pdf_text_rapidocr(p)),
+    ("tesseract", lambda p: _extract_pdf_text_tesseract(p)),
+)
+
+
+def _ocr_cached(path: str | Path, engine: str, produce) -> str:
+    """One engine's reading of one file, cached beside the other generated caches (gitignored)
+    because OCR is slow and a datasheet does not change."""
+    try:
+        digest = hashlib.md5(Path(path).read_bytes()).hexdigest()
+    except Exception:
+        return ""
+    cached = _OCR_CACHE_DIR / f"{digest}.{engine}.txt"
+    try:
+        if cached.is_file():
+            return cached.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    text = produce(path)
+    if not text.strip():
+        return ""
+    try:
+        _OCR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cached.write_text(text, encoding="utf-8")
+    except Exception:
+        pass
+    return text
+
+
+def ocr_text_candidates(path: str | Path) -> "list[str]":
+    """Every available engine's reading of ``path``, best-first. Empty when none is installed.
+
+    :func:`_ocr_engine_available` is the MASTER switch and is consulted before the cache, so a
+    caller (or a guard) that turns OCR off gets the pre-bugs/0787 behaviour exactly -- an honest
+    refusal -- rather than a stale reading from a previous run.
+    """
+    if not _ocr_engine_available():
+        return []
+    out: list[str] = []
+    for engine, produce in _OCR_ENGINES:
+        text = _ocr_cached(path, engine, produce)
+        if text.strip():
+            out.append(text)
+    return out
 
 
 def _extract_pdf_text_ocr(path: str | Path) -> str:
@@ -382,57 +555,15 @@ def _extract_pdf_text_ocr(path: str | Path) -> str:
     length -- in a table that carries 26 of the page's 212 character objects, all of them the
     title; there is simply no text to decode, so bugs/0785's work cannot reach it.
 
-    Two deliberate choices:
+    Returns the FIRST engine's reading; callers that can judge the result (they can tell whether
+    a scrape succeeded) should use :func:`ocr_text_candidates` and try each in turn.
 
-    * ``--psm 4`` (a single column of variable-size text) is what pairs a label with the value
-      in its own row when two spec tables sit side by side; ``--psm 6`` merges the columns and
-      "Magnification (x)" loses its 1.0 to the neighbouring Field-of-View row.
-    * rendering at 300 dpi with ``pdftoppm`` keeps the tolerance glyph: "110+-2" survives as
-      "110+2" so the value regex stops at 110. ``ocrmypdf --force-ocr`` rasterises differently
-      and reads the same cell as "1102" -- a 1102 mm working distance. Both were measured.
-
-    The result is cached beside the other generated caches (gitignored) because OCR is slow and
-    a datasheet does not change. Nothing here is trusted on its own: the caller still has to
-    corroborate the numbers (bugs/0786 checks them against the sheet's own printed total), which
-    is what makes reading a picture safe at all.
+    Nothing here is trusted on its own: the caller still has to corroborate the numbers
+    (bugs/0786 checks them against the sheet's own printed total), which is what makes reading a
+    picture safe at all.
     """
-    if not _ocr_engine_available():
-        return ""
-    source = Path(path)
-    try:
-        digest = hashlib.md5(source.read_bytes()).hexdigest()
-    except Exception:
-        return ""
-    cached = _OCR_CACHE_DIR / f"{digest}.txt"
-    try:
-        if cached.is_file():
-            return cached.read_text(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
-    try:
-        with tempfile.TemporaryDirectory() as tmp:
-            base = Path(tmp) / "page"
-            subprocess.run(
-                ["pdftoppm", "-r", str(_OCR_RENDER_DPI), "-png",
-                 "-f", "1", "-l", str(_OCR_MAX_PAGES), str(source), str(base)],
-                check=True, capture_output=True, timeout=_OCR_TIMEOUT_S,
-            )
-            parts: list[str] = []
-            for image in sorted(Path(tmp).glob("page*.png")):
-                done = subprocess.run(
-                    ["tesseract", str(image), "stdout", "--psm", "4"],
-                    check=True, capture_output=True, timeout=_OCR_TIMEOUT_S,
-                )
-                parts.append(done.stdout.decode("utf-8", errors="replace"))
-        text = "\n".join(parts)
-    except Exception:
-        return ""
-    try:
-        _OCR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        cached.write_text(text, encoding="utf-8")
-    except Exception:
-        pass
-    return text
+    candidates = ocr_text_candidates(path)
+    return candidates[0] if candidates else ""
 
 
 def extract_pdf_text(path: str | Path) -> str:
@@ -729,8 +860,12 @@ def parse_datasheet_cardinals(path: str | Path) -> DatasheetCardinals | None:
     cardinals = _cardinals_from_text(extract_pdf_text(path))
     if cardinals is not None and cardinals.effl:
         return cardinals
-    recognised = _extract_pdf_text_ocr(path)
-    return _cardinals_from_text(recognised) if recognised else cardinals
+    for recognised in ocr_text_candidates(path):
+        candidate = _cardinals_from_text(recognised)
+        if candidate is not None and candidate.effl:
+            return candidate
+        cardinals = cardinals or candidate
+    return cardinals
 
 
 def _cardinals_from_text(text: str) -> DatasheetCardinals | None:
