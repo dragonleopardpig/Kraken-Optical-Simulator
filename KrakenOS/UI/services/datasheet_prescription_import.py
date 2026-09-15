@@ -553,27 +553,57 @@ def telecentric_conjugate_cardinals(text: str) -> DatasheetCardinals | None:
         mag = _first_float(text, r"(?i)Telecentric\s+Lens\s+Magnification\s*:?\s*(\d+\.?\d*)")
     if mag is None:
         mag = _first_float(text, r"(?i)\bMagnification\s*:?\s*(\d+\.?\d*)\s*X")
+    if mag is None:
+        # bugs/0786: a spec TABLE puts the unit in the label and the bare number in the cell --
+        # "Magnification (x) | 1.0" (COOLENS WWK10-110CP) -- so there is no "X" after the value
+        # to anchor on. Same row, same meaning, different typography.
+        mag = _first_float(text, r"(?i)\bMagnification\s*\(\s*x\s*\)\s*:?\s*(\d+\.?\d*)")
     if mag is None or not (0.05 <= mag <= 20.0):
         return None
     wd = _first_float(text, r"(?i)Working\s+Distance\s*\(\s*mm\s*\)\s*:?\s*(\d+\.?\d*)")
     if wd is None or not (1.0 <= wd <= 5000.0):
-        return None
-    # Corroboration (the bugs/0565 lesson -- a wrong prescription is far worse than a
-    # clear refusal): the title of this format repeats both numbers as "0.75X, 110mm WD".
-    if re.search(rf"{re.escape(f'{wd:g}')}\s*mm\s+WD", text) is None:
-        return None
-    if re.search(rf"(?<![\d.]){re.escape(f'{mag:g}')}X", text) is None:
         return None
     length = _first_float(text, r"(?i)(?<![a-z] )Length\s*\(\s*mm\s*\)\s*:?\s*(\d+\.?\d*)")
     if length is None or not (5.0 <= length <= 2000.0):
         return None
     mount = re.search(r"(?i)Mount\s*:?\s*(C|CS|TFL|F)\s*-?\s*Mount", text)
     if mount is None:
+        # bugs/0786: a Mechanical Specifications table states the mount as a bare cell,
+        # "Mount | C", with the word "Mount" only in the label column.
+        mount = re.search(r"(?i)\bMount\s*:?\s*(C|CS|TFL|F)\s*(?:\n|\r|$|\s{2,})", text)
+    if mount is None:
         return None
     flange = _MOUNT_FLANGE_MM.get(mount.group(1).upper())
     if flange is None:
         return None
     total = wd + length + flange
+    # Corroboration -- the bugs/0565 lesson, a wrong prescription is far worse than a clear
+    # refusal. Two independent ways to earn it; either suffices.
+    #
+    #  (i) the Edmund title repeats both numbers: "0.75X, 110mm WD".
+    #  (ii) bugs/0786: the sheet states its OWN total and says how it is built. COOLENS prints
+    #       "Length of I/O (mm) 280+-2" with the note "Length of I/O = WD + Length + Back Focal
+    #       Length" -- which IS wd + length + flange. Checking the arithmetic against the
+    #       vendor's own printed total is stronger than matching their title typography, and it
+    #       is what catches an OCR'd sheet: recognising "110+-2" as "1102" gives a total of
+    #       1272 mm against a printed 280, so the sheet refutes the misread itself.
+    corroborated = (
+        re.search(rf"{re.escape(f'{wd:g}')}\s*mm\s+WD", text) is not None
+        and re.search(rf"(?<![\d.]){re.escape(f'{mag:g}')}X", text) is not None
+    )
+    if not corroborated:
+        stated = _first_float(
+            text,
+            r"(?i)(?:Length\s*of\s*I\s*/\s*O|Total\s+Track|Overall\s+Length|OAL)"
+            r"\s*\(\s*mm\s*\)\s*:?\s*(\d+\.?\d*)",
+        )
+        if stated is None:
+            return None
+        # the tolerance the sheet itself prints on that row (+-2 here); allow a little more for
+        # a back-focal rounded to one decimal, never enough to admit a misread order of magnitude
+        if abs(stated - total) > max(3.0, 0.02 * stated):
+            return None
+        corroborated = True
     effl = total / (2.0 + mag + 1.0 / mag)
     if not (1.0 <= effl <= 2000.0):
         return None
