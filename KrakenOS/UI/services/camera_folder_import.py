@@ -33,7 +33,10 @@ import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from KrakenOS.UI.services.datasheet_prescription_import import extract_pdf_text
+from KrakenOS.UI.services.datasheet_prescription_import import (
+    _extract_pdf_text_ocr,
+    extract_pdf_text,
+)
 
 
 # ----------------------------------------------------------------------------
@@ -215,8 +218,23 @@ def parse_camera_datasheet(path: str | Path) -> CameraSpec | None:
 
     Returns ``None`` when the PDF cannot be text-extracted or yields no sensor
     size (so the folder importer can fall through to the sidecar / a clear error).
+
+    bugs/0787: when the text layer yields no sensor size, retry on OCR -- a camera sheet can
+    print its spec table as a picture exactly as a lens sheet can. OCR runs ONLY on that
+    failure, so a readable datasheet never pays for it.
     """
-    text = extract_pdf_text(path)
+    spec = _camera_spec_from_text(extract_pdf_text(path))
+    if spec is not None and spec.has_sensor_size:
+        return spec
+    recognised = _extract_pdf_text_ocr(path)
+    if not recognised:
+        return spec
+    return _camera_spec_from_text(recognised) or spec
+
+
+def _camera_spec_from_text(text: str) -> CameraSpec | None:
+    """The scrape itself, on already-extracted text (bugs/0787 split it out so the same body
+    serves both the text layer and the OCR retry)."""
     if not text:
         return None
     # Collapse to a single space-free-ish blob but keep intra-value spaces; the

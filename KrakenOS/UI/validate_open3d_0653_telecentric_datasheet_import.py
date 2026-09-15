@@ -184,9 +184,19 @@ def run_checks():
     from KrakenOS.UI.services import datasheet_prescription_import as dpi
     from KrakenOS.UI.services import machine_vision_folder_import as mvi
 
+    # bugs/0787 split the scrape body out of the entry point so the same body serves both the
+    # text layer and the OCR retry; the wiring this check guards is that the ENTRY POINT still
+    # reaches the telecentric path, so inspect the pair it now delegates through.
     parse_src = _inspect.getsource(dpi.parse_datasheet_cardinals)
+    scrape = getattr(dpi, "_cardinals_from_text", None)
+    if scrape is not None:
+        parse_src += _inspect.getsource(scrape)
     if "telecentric_conjugate_cardinals(" not in parse_src:
         d_problems.append("parse_datasheet_cardinals never tries the telecentric path")
+    if scrape is not None and "_cardinals_from_text(" not in _inspect.getsource(
+        dpi.parse_datasheet_cardinals
+    ):
+        d_problems.append("the entry point no longer delegates to the scrape body")
     mvi_src = _inspect.getsource(mvi)
     if "datasheet vertex span" not in mvi_src:
         d_problems.append("the folder importer no longer honors the datasheet vertex span")

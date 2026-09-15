@@ -32,8 +32,12 @@ GitHub user with the stock environment).
 
 from __future__ import annotations
 
+import hashlib
 import math
 import re
+import shutil
+import subprocess
+import tempfile
 import zlib
 from dataclasses import dataclass
 from pathlib import Path
@@ -359,6 +363,78 @@ def _extract_pdf_text_stdlib(path: str | Path) -> str:
         return ""
 
 
+_OCR_CACHE_DIR = Path(__file__).resolve().parents[3] / "attachment" / "cad_cache" / "datasheet_ocr"
+_OCR_MAX_PAGES = 8          # a datasheet states its spec table in the first pages or not at all
+_OCR_RENDER_DPI = 300       # measured: 300 keeps the tolerance glyph in "110+-2"; ocrmypdf's own
+                            # rasterisation loses it and reads "1102"
+_OCR_TIMEOUT_S = 180
+
+
+def _ocr_engine_available() -> bool:
+    return bool(shutil.which("pdftoppm") and shutil.which("tesseract"))
+
+
+def _extract_pdf_text_ocr(path: str | Path) -> str:
+    """LAST resort: rasterise the pages and recognise them. ``""`` when unavailable.
+
+    bugs/0787: some vendors ship the spec table as a PICTURE. The COOLENS WWK10-110CP-111V3
+    datasheet states its whole first order -- magnification, working distance, mount, housing
+    length -- in a table that carries 26 of the page's 212 character objects, all of them the
+    title; there is simply no text to decode, so bugs/0785's work cannot reach it.
+
+    Two deliberate choices:
+
+    * ``--psm 4`` (a single column of variable-size text) is what pairs a label with the value
+      in its own row when two spec tables sit side by side; ``--psm 6`` merges the columns and
+      "Magnification (x)" loses its 1.0 to the neighbouring Field-of-View row.
+    * rendering at 300 dpi with ``pdftoppm`` keeps the tolerance glyph: "110+-2" survives as
+      "110+2" so the value regex stops at 110. ``ocrmypdf --force-ocr`` rasterises differently
+      and reads the same cell as "1102" -- a 1102 mm working distance. Both were measured.
+
+    The result is cached beside the other generated caches (gitignored) because OCR is slow and
+    a datasheet does not change. Nothing here is trusted on its own: the caller still has to
+    corroborate the numbers (bugs/0786 checks them against the sheet's own printed total), which
+    is what makes reading a picture safe at all.
+    """
+    if not _ocr_engine_available():
+        return ""
+    source = Path(path)
+    try:
+        digest = hashlib.md5(source.read_bytes()).hexdigest()
+    except Exception:
+        return ""
+    cached = _OCR_CACHE_DIR / f"{digest}.txt"
+    try:
+        if cached.is_file():
+            return cached.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / "page"
+            subprocess.run(
+                ["pdftoppm", "-r", str(_OCR_RENDER_DPI), "-png",
+                 "-f", "1", "-l", str(_OCR_MAX_PAGES), str(source), str(base)],
+                check=True, capture_output=True, timeout=_OCR_TIMEOUT_S,
+            )
+            parts: list[str] = []
+            for image in sorted(Path(tmp).glob("page*.png")):
+                done = subprocess.run(
+                    ["tesseract", str(image), "stdout", "--psm", "4"],
+                    check=True, capture_output=True, timeout=_OCR_TIMEOUT_S,
+                )
+                parts.append(done.stdout.decode("utf-8", errors="replace"))
+        text = "\n".join(parts)
+    except Exception:
+        return ""
+    try:
+        _OCR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cached.write_text(text, encoding="utf-8")
+    except Exception:
+        pass
+    return text
+
+
 def extract_pdf_text(path: str | Path) -> str:
     """Best-effort plain text from a vendor datasheet PDF.
 
@@ -594,7 +670,11 @@ def telecentric_conjugate_cardinals(text: str) -> DatasheetCardinals | None:
     if not corroborated:
         stated = _first_float(
             text,
-            r"(?i)(?:Length\s*of\s*I\s*/\s*O|Total\s+Track|Overall\s+Length|OAL)"
+            # bugs/0786: the LABEL may be OCR'd -- "Length of I/0O (mm)" for "Length of I/O
+            # (mm)" (tesseract reads the O as a zero). Being lenient about a label is safe;
+            # the VALUE it introduces is still checked against wd+length+flange below, which
+            # is what actually guards the number.
+            r"(?i)(?:Length\s*of\s*[I1l]\s*/\s*[O0]+|Total\s+Track|Overall\s+Length|OAL)"
             r"\s*\(\s*mm\s*\)\s*:?\s*(\d+\.?\d*)",
         )
         if stated is None:
@@ -641,8 +721,21 @@ def parse_datasheet_cardinals(path: str | Path) -> DatasheetCardinals | None:
 
     Returns ``None`` when the PDF cannot be read or yields no effective focal
     length (so the folder importer can fall through to a clear "no source" error).
+
+    bugs/0787: when the text layer yields nothing, fall back to OCR -- some sheets print their
+    spec table as a picture. OCR runs ONLY on this failure, so a readable datasheet never pays
+    for it, and its numbers still have to earn bugs/0786's corroboration before they are used.
     """
-    text = extract_pdf_text(path)
+    cardinals = _cardinals_from_text(extract_pdf_text(path))
+    if cardinals is not None and cardinals.effl:
+        return cardinals
+    recognised = _extract_pdf_text_ocr(path)
+    return _cardinals_from_text(recognised) if recognised else cardinals
+
+
+def _cardinals_from_text(text: str) -> DatasheetCardinals | None:
+    """The scrape itself, on already-extracted text (bugs/0787 split it out so the same body
+    serves both the text layer and the OCR retry)."""
     if not text:
         return None
 
