@@ -149,9 +149,47 @@ def _decode_hex_show(hex_bytes: bytes, cmap: dict[int, str]) -> str:
     )
 
 
+def _printable_ratio(text: str) -> float:
+    """Share of characters that are printable Latin-1. bugs/0785: the test must count
+    160..255 too -- the separators that decide a spec row are exactly there (``\xd7``
+    MULTIPLICATION SIGN between "4096" and "3000", ``\xb5`` MICRO SIGN, ``\xb0``), and an
+    ASCII-only test throws the row's separator away and with it the regex that needs it."""
+    if not text:
+        return 0.0
+    ok = sum(
+        1 for ch in text
+        if 32 <= ord(ch) < 127 or 160 <= ord(ch) < 256 or ch in "\n\r\t"
+    )
+    return ok / len(text)
+
+
+def _show_text(body: bytes, cmap: dict[int, str]) -> str:
+    """One literal show-string, decoded through the active CMap when that yields
+    anything and as a raw Latin-1 literal when it does not.
+
+    bugs/0785 (error.png, "Could not extract a sensor size from this folder" on the
+    Hikrobot MV-CH120-60UMUC): a datasheet routinely mixes fonts INSIDE one spec row --
+    the labels in a simple font with no ToUnicode, the values in a subset CID font that
+    has one (that sheet's F7 maps exactly ``. 3 4 5 m o s t x u -``). Decoding the whole
+    page one way or the other therefore loses half of every row: the CMap pass returned 5
+    ASCII letters, and the raw-literal pass had "Pixel size" with no pitch after it. Since
+    every scraper regex is ``Label\\s*:?\\s*value``, a label separated from its value by the
+    other font's dropped run can never match, and the import fails with a sensor size the
+    sheet plainly states. Falling back PER SHOW-STRING keeps document order, so label and
+    value stay adjacent whichever font each is set in."""
+    decoded = _decode_show(body, cmap) if cmap else ""
+    if decoded:
+        return decoded
+    literal = _unescape_pdf_literal(body)
+    return literal if _printable_ratio(literal) > 0.8 else decoded
+
+
 def _decode_content(stream: bytes, name_to_cmap: dict[str, dict[int, str]]) -> str:
     """Walk a content stream, switching CMaps on ``/Fn Tf`` and decoding every
-    ``Tj`` / ``TJ`` show; a large negative ``TJ`` advance renders as a space."""
+    ``Tj`` / ``TJ`` show; a large negative ``TJ`` advance renders as a space.
+
+    bugs/0785: a show-string whose font carries no usable ToUnicode falls back to its raw
+    Latin-1 literal rather than being dropped -- see :func:`_show_text`."""
     out: list[str] = []
     current: dict[int, str] = {}
     for token in _CONTENT_TOKEN_RE.finditer(stream):
@@ -168,12 +206,12 @@ def _decode_content(stream: bytes, name_to_cmap: dict[str, dict[int, str]]) -> s
             else:
                 show = re.search(rb"\((.*)\)\s*Tj", text, re.S)
                 if show is not None:
-                    out.append(_decode_show(show.group(1), current))
+                    out.append(_show_text(show.group(1), current))
         elif stripped.endswith(b"TJ"):
             array = re.search(rb"\[(.*)\]\s*TJ", text, re.S).group(1)
             for element in _TJ_ELEMENT_RE.finditer(array):
                 if element.group(1) is not None:
-                    out.append(_decode_show(element.group(1), current))
+                    out.append(_show_text(element.group(1), current))
                 elif element.group(2) is not None:
                     out.append(_decode_hex_show(element.group(2), current))
                 elif element.group(3) is not None and int(element.group(3)) < -90:
@@ -184,6 +222,8 @@ def _decode_content(stream: bytes, name_to_cmap: dict[str, dict[int, str]]) -> s
 # bugs/0307: raw literal-harvest fallback for CID-font datasheets with no ToUnicode
 # (BC-OM25M12X2). Shared by the camera + lens (Path C) importers.
 _LITERAL_SHOW_RE = re.compile(rb"\((?:[^()\\]|\\.)*\)", re.S)
+# bugs/0785: a PDF text object -- the only place a page may SHOW text.
+_TEXT_OBJECT_RE = re.compile(rb"BT\b(.*?)\bET\b", re.S)
 _PDF_ESCAPE_SIMPLE = {0x6E: 10, 0x72: 13, 0x74: 9, 0x62: 8, 0x66: 12}  # n r t b f
 # A CMap decode yielding fewer ASCII letters than this means the datasheet's CID
 # fonts carry no usable ToUnicode -- fall back to raw literal harvesting. A real
@@ -237,20 +277,65 @@ def _harvest_literal_text(objs: dict[int, bytes]) -> str:
         stream = _inflate(raw)
         if b"Tj" not in stream and b"TJ" not in stream:
             continue
-        for lit in _LITERAL_SHOW_RE.finditer(stream):
-            parts.append(_unescape_pdf_literal(lit.group(0)[1:-1]))
+        # bugs/0785: harvest only INSIDE text objects. PDF can only show text between
+        # ``BT`` and ``ET``, while an accessibility-tagged sheet (any Word/InDesign export)
+        # writes one ``/P <</MCID n/Lang (en-US)>> BDC`` per run OUTSIDE them -- 380 of them
+        # on the Hikrobot MV-CH120-60UMUC, 2738 on the Bopixel BC-Gx25M12X4. Harvesting the
+        # whole stream glued "en-US" between every label and its value, which defeats every
+        # ``Label\\s*:?\\s*value`` regex in both the camera and lens scrapers and made each
+        # newly-added vendor look like an unreadable datasheet.
+        for body in _TEXT_OBJECT_RE.finditer(stream):
+            for lit in _LITERAL_SHOW_RE.finditer(body.group(1)):
+                parts.append(_unescape_pdf_literal(lit.group(0)[1:-1]))
     return "".join(parts)
 
 
-def extract_pdf_text(path: str | Path) -> str:
-    """Best-effort plain text from a (subset-CID-font) vendor datasheet PDF.
+# bugs/0785: pdfminer writes "(cid:1239)" for a glyph it cannot map through the font.
+# Those placeholders are NOT text -- and "cid" is three ASCII letters, so a naive letter
+# count reads a page of them as a rich text layer. The ELS-85 sheet is exactly that: 1101
+# "letters" of pure (cid:N), where the stdlib decoder below recovers the real 447.
+_CID_PLACEHOLDER_RE = re.compile(r"\(cid:\d+\)")
 
-    Pure stdlib; returns ``""`` on any failure so callers degrade gracefully.
-    When the per-font ToUnicode decode comes back essentially empty -- some
-    datasheets embed CID fonts with no ToUnicode map at all, plus rasterised
-    tables -- fall back to harvesting the raw ``(..)`` literals, which recovers
-    any English spec text that is set in simple (directly Latin-1) fonts.
+
+def _useful_letter_count(text: str) -> int:
+    """ASCII letters that are real text -- pdfminer's ``(cid:N)`` placeholders removed."""
+    return _ascii_letter_count(_CID_PLACEHOLDER_RE.sub("", text or ""))
+
+
+def _extract_pdf_text_pdfplumber(path: str | Path) -> str:
+    """Page text via ``pdfplumber`` (pure-Python ``pdfminer.six``), or ``""``.
+
+    bugs/0785: the hand-rolled decoder below understands the slice of PDF the
+    datasheets seen so far happened to use; a real parser understands the format --
+    cross-reference streams, object streams, every font encoding. The Bopixel
+    BC-Gx25M12X4 sheet states its sensor plainly on page 4 ("Active Pixel 5120 (H) x
+    5120 (V)", "Pixel Size 2.5 (H) x 2.5 (V) um") and the stdlib decoder returns only
+    dot-leaders for it, so each new vendor kept landing on "Could not extract a sensor
+    size" for a sheet that is perfectly readable.
+
+    ``pdfplumber`` is a DECLARED dependency (pyproject.toml, devenv.nix), so this is
+    not a new requirement -- but the import stays optional and every failure returns
+    ``""``, because the stdlib path below still wins on the datasheets whose CID fonts
+    carry no ToUnicode at all (pdfminer has nothing to map there, while the raw
+    ``(..)`` literal harvest still recovers the English spec table).
     """
+    try:
+        import pdfplumber
+    except Exception:
+        return ""
+    try:
+        parts: list[str] = []
+        with pdfplumber.open(str(path)) as pdf:
+            for page in pdf.pages:
+                parts.append(page.extract_text() or "")
+        return "\n".join(parts)
+    except Exception:
+        return ""
+
+
+def _extract_pdf_text_stdlib(path: str | Path) -> str:
+    """The hand-rolled per-font ToUnicode decode, with the raw-literal harvest as its own
+    fallback. Pure stdlib; ``""`` on any failure."""
     try:
         data = Path(path).read_bytes()
     except Exception:
@@ -272,6 +357,28 @@ def extract_pdf_text(path: str | Path) -> str:
         return fallback if _ascii_letter_count(fallback) > _ascii_letter_count(text) else text
     except Exception:
         return ""
+
+
+def extract_pdf_text(path: str | Path) -> str:
+    """Best-effort plain text from a vendor datasheet PDF.
+
+    Two extractors run and the better result wins: a real PDF parser
+    (:func:`_extract_pdf_text_pdfplumber`) and the pure-stdlib per-font ToUnicode decoder
+    (:func:`_extract_pdf_text_stdlib`).  Returns ``""`` when neither recovers anything, so
+    callers degrade gracefully.
+
+    bugs/0785: neither one wins everywhere, which is why they compete rather than one being
+    tried first.  The parser reads sheets the stdlib decoder cannot (the Bopixel
+    BC-Gx25M12X4 states its sensor plainly on page 4 and the decoder returns only
+    dot-leaders); the decoder reads sheets the parser cannot (the AZURE ELS-85's fonts carry
+    no ToUnicode, so pdfminer emits 218 ``(cid:N)`` placeholders where the raw ``(..)``
+    literal harvest recovers the real title block).  **The stdlib result wins ties**, so a
+    sheet that both read equally well keeps the exact text every existing scraper was
+    written and regression-tested against.
+    """
+    parsed = _CID_PLACEHOLDER_RE.sub("", _extract_pdf_text_pdfplumber(path))
+    native = _extract_pdf_text_stdlib(path)
+    return parsed if _ascii_letter_count(parsed) > _ascii_letter_count(native) else native
 
 
 # ----------------------------------------------------------------------------

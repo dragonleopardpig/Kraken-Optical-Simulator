@@ -246,6 +246,17 @@ def parse_camera_datasheet(path: str | Path) -> CameraSpec | None:
         mount = re.search(r"Mount\s*:\s*((?:C|CS|TFL|F|EF|T2)\s*-?\s*Mount)", blob)
         if mount is not None:
             spec.lens_mount = mount.group(1)
+    if spec.lens_mount:
+        # bugs/0785: _field captures up to the NEXT label, so a sheet that does not carry
+        # the expected following row swallows the rest of the table -- the Hikrobot
+        # MV-CH120-60UMUC has no "Weight" after its mount and stored
+        # "C-mount Dimension 29 mm x 29 mm x 30 mm (...)". The mount is a single token;
+        # keep only that, whatever trailed it, so the flange lookup gets a clean key.
+        token = re.search(
+            r"((?:C|CS|TFL|EF-S|EF|F|T2|M\d{2})\s*-?\s*mount)", spec.lens_mount, re.I
+        )
+        if token is not None:
+            spec.lens_mount = _clean(token.group(1))
     if spec.model is None:
         # bugs/0655: the Edmund row "Model Number:acA2440-20gm".
         model = re.search(r"Model Number\s*:\s*([A-Za-z0-9][A-Za-z0-9 ._/-]*?)(?=[A-Z][a-z]+\s*:|$)", blob)
