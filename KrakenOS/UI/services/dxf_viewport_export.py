@@ -145,20 +145,43 @@ def _strips_not_already_drawn(
         from scipy.spatial import cKDTree
     except Exception:
         return list(candidates)
+    def _as_points(strip):
+        arr = np.asarray(strip, dtype=float)
+        return arr.reshape(-1, arr.shape[-1]) if arr.ndim >= 2 else arr.reshape(-1, 1)
+
     try:
-        ref_points = np.vstack([np.asarray(s, dtype=float).reshape(-1, 3)[:, :3]
-                                for s in reference if len(s) >= 2])
+        ref_runs = [_as_points(s) for s in reference if len(np.asarray(s)) >= 2]
+        ref_points = np.vstack(ref_runs)
     except Exception:
         return list(candidates)
     if len(ref_points) == 0:
         return list(candidates)
     span = float(np.max(np.ptp(ref_points, axis=0))) if len(ref_points) > 1 else 0.0
     tol = max(span * float(relative_tol), 1e-9)
+
+    # bugs/0799: the reference may be a SPARSE ring (a union outline is a handful of long
+    # edges), so a candidate lying exactly on it can still be half a segment from the
+    # nearest reference VERTEX. Sample the reference at the tolerance before testing.
+    sampled = [ref_points]
+    for run in ref_runs:
+        if len(run) < 2:
+            continue
+        deltas = np.diff(run, axis=0)
+        lengths = np.linalg.norm(deltas, axis=1)
+        for start, delta, length in zip(run[:-1], deltas, lengths):
+            steps = int(length / tol) if tol > 0.0 else 0
+            if steps > 1:
+                steps = min(steps, 4096)
+                fractions = np.linspace(0.0, 1.0, steps, endpoint=False)[1:, None]
+                sampled.append(start + fractions * delta)
+    ref_points = np.vstack(sampled)
+
     tree = cKDTree(ref_points)
     kept: list[np.ndarray] = []
     for strip in candidates:
-        pts = np.asarray(strip, dtype=float).reshape(-1, 3)
-        if len(pts) < 2:
+        pts = _as_points(strip)
+        if len(pts) < 2 or pts.shape[1] != ref_points.shape[1]:
+            kept.append(strip)
             continue
         distances, _ = tree.query(pts)
         if float(np.max(distances)) > tol:
@@ -269,6 +292,110 @@ def mesh_outline_strips(
         fe.Update()
         strips.extend(polydata_line_strips(fe.GetOutput()))
         return strips
+    except Exception:
+        return []
+
+
+def mesh_outline_polygons(
+    polydata,
+    view_direction,
+    actor_matrix=None,
+    *,
+    simplify_tol: float = 0.02,
+    max_polys: int = 400_000,
+) -> list[np.ndarray]:
+    """bugs/0799: the body's projected outline as CLOSED rings, computed not assembled.
+
+    bugs/0798 left the drawing with no closed shapes at all: the line art is a soup of
+    silhouette and feature edges, and a greedy endpoint walk over it cannot decide which
+    of several incident edges continues a profile -- measured, the stitched chains ended a
+    median 1.38 mm apart, and merging them first only fragmented the graph further
+    (416 segments -> 120 chains) while stitching first walked every duplicate into two
+    giant scribbles covering 129386 mm of line for 46156 mm of unique geometry.
+
+    A silhouette does not have to be assembled from edges. Project every triangle into the
+    view plane and take the BOOLEAN UNION: its boundary IS the outline, closed by
+    construction, with one exterior ring per connected body and one interior ring per
+    through-hole. Measured on this scene's own meshes: 11272 triangles -> 1 closed ring of
+    117 vertices in 0.20 s, and 231606 -> 1 closed ring of 64 vertices in 4.47 s.
+
+    Returns world-space rings (the 2D result lifted back along the view direction at the
+    mesh's own depth), so the caller projects them exactly like every other strip. The
+    first vertex is repeated as the last, which is how the writer recognises a closed
+    polyline.
+    """
+    try:
+        n_polys = int(polydata.GetNumberOfPolys())
+        if n_polys == 0 or n_polys > int(max_polys):
+            return []
+        import shapely
+
+        import pyvista as pv
+
+        mesh = pv.wrap(polydata)
+        points = np.asarray(mesh.points, dtype=float)
+        if actor_matrix is not None:
+            m = np.asarray(actor_matrix, dtype=float)
+            points = (np.hstack([points, np.ones((len(points), 1))]) @ m.T)[:, :3]
+        faces = np.asarray(mesh.faces, dtype=np.int64)
+        if points.size == 0 or faces.size == 0:
+            return []
+
+        view = np.asarray(view_direction, dtype=float).reshape(3)
+        view = view / (float(np.linalg.norm(view)) or 1.0)
+        up = np.array([0.0, 0.0, 1.0])
+        if abs(float(np.dot(up, view))) > 0.9:
+            up = np.array([0.0, 1.0, 0.0])
+        e0 = np.cross(up, view)
+        e0 = e0 / (float(np.linalg.norm(e0)) or 1.0)
+        e1 = np.cross(view, e0)
+        uv = np.column_stack([points @ e0, points @ e1])
+        depth = float(np.mean(points @ view))
+
+        tris = []
+        i = 0
+        while i < len(faces):
+            count = int(faces[i])
+            if count == 3:
+                tris.append(faces[i + 1:i + 4])
+            i += count + 1
+        if not tris:
+            return []
+        corners = uv[np.asarray(tris, dtype=np.int64)]
+        # Drop edge-on triangles: they carry no area in this view and only slow the union.
+        area = 0.5 * np.abs(
+            (corners[:, 1, 0] - corners[:, 0, 0]) * (corners[:, 2, 1] - corners[:, 0, 1])
+            - (corners[:, 2, 0] - corners[:, 0, 0]) * (corners[:, 1, 1] - corners[:, 0, 1])
+        )
+        corners = corners[area > 1e-12]
+        if len(corners) == 0:
+            return []
+        merged = shapely.union_all(
+            shapely.polygons(np.concatenate([corners, corners[:, :1, :]], axis=1))
+        )
+        rings: list[np.ndarray] = []
+        for geom in getattr(merged, "geoms", [merged]):
+            exterior = getattr(geom, "exterior", None)
+            if exterior is None:
+                continue
+            rings.append(np.asarray(exterior.coords, dtype=float))
+            rings.extend(np.asarray(r.coords, dtype=float) for r in geom.interiors)
+        out: list[np.ndarray] = []
+        for ring in rings:
+            if len(ring) < 4:
+                continue
+            if simplify_tol > 0.0:
+                try:
+                    ring = np.asarray(
+                        shapely.simplify(shapely.linearrings(ring), simplify_tol).coords,
+                        dtype=float,
+                    )
+                except Exception:
+                    pass
+            if len(ring) < 4:
+                continue
+            out.append(ring[:, 0:1] * e0 + ring[:, 1:2] * e1 + depth * view)
+        return out
     except Exception:
         return []
 
@@ -501,7 +628,14 @@ def _postprocess_layer_polylines(
     """
     by_color: dict[object, list[np.ndarray]] = {}
     frag_seen: set = set()
+    closed_rings: list[dict] = []
     for poly in polylines:
+        # bugs/0799: a CLOSED ring is already a finished shape -- decomposing it into
+        # segments and re-stitching would hand it back to the very walk that could not
+        # close it. Pass it through untouched.
+        if poly.get("closed"):
+            closed_rings.append(poly)
+            continue
         for run in _finite_runs(np.asarray(poly["points"])):
             # Dedupe raw fragments BEFORE stitching (direction-invariant): the same
             # edge extracted by both the silhouette and the feature pass would
@@ -515,7 +649,7 @@ def _postprocess_layer_polylines(
                 continue
             frag_seen.add(fkey)
             by_color.setdefault(poly.get("color"), []).append(run)
-    out: list[dict] = []
+    out: list[dict] = list(closed_rings)
     seen: set = set()
     for color, strips in by_color.items():
         # Round 7: overlapping collinear pieces of ONE edge (silhouette + companion
@@ -662,6 +796,7 @@ def collect_viewport_dxf_layers(inspector) -> dict[str, dict[str, object]]:
         if prop is None:
             break
         pending.append(prop)
+    body_outline_rings: list[np.ndarray] = []
     counts = {"actors": 0, "skipped_heavy": 0}
     while pending:
         actor = pending.pop(0)
@@ -724,14 +859,28 @@ def collect_viewport_dxf_layers(inspector) -> dict[str, dict[str, object]]:
             # is baked into the silhouette input, so project without it.
             view_dir = camera.GetDirectionOfProjection()
             strips = mesh_outline_strips(polydata, view_dir, actor_matrix)
-            if not strips:
+            # bugs/0799: the projected-triangle union gives the body's outline as CLOSED
+            # rings. Any silhouette/feature fragment lying ON that boundary is the same
+            # line drawn twice, so it is dropped -- the rings carry it, closed.
+            rings = mesh_outline_polygons(polydata, view_dir, actor_matrix)
+            flat_rings = [project_points(ring, view, None) for ring in rings]
+            body_outline_rings.extend(flat_rings)
+            flat_strips = [project_points(strip, view, None) for strip in strips]
+            if flat_rings:
+                # In the VIEW PLANE: the ring is lifted to the mesh's mean depth, so a 3D
+                # comparison would measure depth, not the drawing.
+                flat_strips = _strips_not_already_drawn(flat_strips, flat_rings)
+            if not flat_strips and not flat_rings:
                 counts["skipped_heavy"] += 1
                 continue
             if layer is None or layer == "KRAKEN_RAYS":
                 layer = "KRAKEN_BODIES"
             counts["actors"] += 1
-            for strip in strips:
-                flat = project_points(strip, view, None)
+            for flat in flat_rings:
+                layers[layer]["polylines"].append(
+                    {"points": flat, "color": None, "closed": True}
+                )
+            for flat in flat_strips:
                 layers[layer]["polylines"].append({"points": flat, "color": None})
             continue
 
@@ -766,6 +915,28 @@ def collect_viewport_dxf_layers(inspector) -> dict[str, dict[str, object]]:
         layers["KRAKEN_AXES"]["polylines"].append(
             {"points": project_points(points, view, None), "color": None}
         )
+
+    # bugs/0799: the STEP bodies also arrive as companion EDGE actors (lines-only
+    # polydata), which never pass through the mesh outline path -- so the outline dedupe
+    # has to run once over the finished BODIES layer, not per mesh actor. Anything lying
+    # on a closed outline ring is that ring drawn again, open.
+    if body_outline_rings:
+        body_spec = layers.get("KRAKEN_BODIES")
+        if body_spec is not None:
+            open_art = [q for q in body_spec["polylines"] if not q.get("closed")]
+            closed_art = [q for q in body_spec["polylines"] if q.get("closed")]
+            surviving = _strips_not_already_drawn(
+                [np.asarray(q["points"], dtype=float) for q in open_art],
+                body_outline_rings,
+            )
+            survivor_ids = {id(a) for a in surviving}
+            kept_open = [
+                q for q, a in zip(open_art,
+                                  [np.asarray(q["points"], dtype=float) for q in open_art])
+                if id(a) in survivor_ids
+            ]
+            counts["outline_absorbed"] = len(open_art) - len(kept_open)
+            body_spec["polylines"] = closed_art + kept_open
 
     # bugs/0650 ("a line should be one vector line"): stitch shared-endpoint fragments
     # into maximal polylines, collapse collinear runs (RDP), drop duplicates.
@@ -817,7 +988,18 @@ def write_dxf_r12(path, layers: dict[str, dict[str, object]]) -> dict[str, int]:
             pts = np.asarray(poly["points"], dtype=float).reshape(-1, 2)
             if pts.shape[0] < 2 or not np.all(np.isfinite(pts)):
                 continue
-            tag(0, "POLYLINE"); tag(8, name); tag(66, 1); tag(70, 0)
+            # bugs/0799: a polyline whose first vertex repeats as its last IS a closed
+            # shape, whether it came from the outline union or from a stitched interior
+            # loop (a flange circle closes on itself). DXF says so with bit 1 of group 70
+            # and does not repeat the vertex -- CAD then offsets, hatches and area-measures
+            # it as a region instead of treating it as a line that happens to meet itself.
+            is_closed = len(pts) >= 4 and (
+                bool(poly.get("closed")) or bool(np.allclose(pts[0], pts[-1]))
+            )
+            if is_closed and np.allclose(pts[0], pts[-1]):
+                pts = pts[:-1]
+            is_closed = is_closed and len(pts) >= 3
+            tag(0, "POLYLINE"); tag(8, name); tag(66, 1); tag(70, 1 if is_closed else 0)
             color = poly.get("color")
             if color:
                 tag(62, int(color))
