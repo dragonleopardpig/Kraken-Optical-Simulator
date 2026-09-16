@@ -1936,6 +1936,30 @@ class LayoutOpticalSolidWorkflowMixin:
             except Exception:
                 pass
 
+        def _drawn_size(mesh, row):
+            """bugs/0797: an EXPORT is a drawing -- size it by the row's DRAWN diameter.
+
+            bugs/0623/0624 extend surrogate block rows to 2x their drawn diameter so corner
+            pencils refract rather than hit a wall ("the trace mesh extends; the DISPLAY keeps
+            the row's drawn size"), and bugs/0674 rescaled the runtime disc meshes so the 3D
+            view honours that. This collector reads system.AAA directly and never did, so the
+            faceted fallback wrote 56.009 mm datums for a scene that draws 28.004.
+            """
+            if mesh is None:
+                return mesh
+            try:
+                target = float(getattr(row, "diameter", 0.0) or 0.0)
+                bounds = mesh.bounds
+                current = max(bounds[1] - bounds[0], bounds[3] - bounds[2], bounds[5] - bounds[4])
+                if target > 1e-9 and current > 1e-9 and abs(current - target) / target > 0.05:
+                    centre = np.asarray(mesh.center, dtype=float)
+                    mesh.points = (
+                        np.asarray(mesh.points, dtype=float) - centre
+                    ) * (target / current) + centre
+            except Exception:
+                pass
+            return mesh
+
         transforms = getattr(system, "TRANS_2A", None)
         surfaces = getattr(system, "AAA", None)
         if transforms is not None and surfaces is not None:
@@ -1946,7 +1970,12 @@ class LayoutOpticalSolidWorkflowMixin:
                     continue
                 add_mesh(
                     f"surface_{index}_{row.name or row.surface}",
-                    Kraken3DInspector._mesh_with_transform(surfaces[index], transforms[index]),
+                    _drawn_size(
+                        Kraken3DInspector._mesh_with_transform(
+                            surfaces[index], transforms[index]
+                        ),
+                        row,
+                    ),
                 )
 
         side_index = 0

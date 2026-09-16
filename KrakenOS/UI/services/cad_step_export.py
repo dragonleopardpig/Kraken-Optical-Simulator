@@ -152,7 +152,8 @@ def _make_occ_flat_disc(outer_radius: float, inner_radius: float = 0.0):
     return fm.Face() if fm.IsDone() else None
 
 
-def _make_occ_revolution_face(sdt_surf, n_profile_points: int = 64):
+def _make_occ_revolution_face(sdt_surf, n_profile_points: int = 64,
+                              display_diameter: float | None = None):
     """Create an OCC face by revolving the sag profile z(r).
 
     Flat surfaces produce a proper planar disc instead.  Curved surfaces
@@ -166,8 +167,19 @@ def _make_occ_revolution_face(sdt_surf, n_profile_points: int = 64):
     from OCC.Core.TColgp import TColgp_Array1OfPnt
     from OCC.Core.gp import gp_Ax1, gp_Dir, gp_Pnt
 
+    # bugs/0797: a DRAWING is sized by the row's DRAWN diameter, not by the trace mesh.
+    # bugs/0623/0624 deliberately extend surrogate block rows to 2x their drawn diameter so
+    # corner pencils still refract ("the trace mesh extends; the DISPLAY keeps the row's drawn
+    # size"), and the Object row is built at a computed clear aperture rather than its own
+    # diameter. bugs/0674 honoured that contract for the 3D display; the STEP export did not,
+    # so one scene drew 28.004 mm datums and wrote 56.009 -- 56 mm of "glass" inside a 44 mm
+    # barrel -- with the object plane out at 112.018 against its own 58.539.
     semi_d = float(getattr(sdt_surf, 'Diameter', 0.0)) / 2.0
+    if display_diameter is not None and float(display_diameter) > 0.0:
+        semi_d = float(display_diameter) / 2.0
     semi_in = float(getattr(sdt_surf, 'InDiameter', 0.0)) / 2.0
+    if semi_in >= semi_d:
+        semi_in = 0.0
     if semi_d <= 0:
         return None
 
@@ -539,6 +551,23 @@ def _row_is_non_physical_reference(row) -> bool:
     )
 
 
+def _drawn_surface_diameter(row) -> float | None:
+    """bugs/0797: the diameter the DISPLAY draws for this row, or None to keep the built one.
+
+    The built ``SDT.Diameter`` is trace geometry: bugs/0623/0624 doubles surrogate block rows
+    so corner pencils refract instead of hitting a wall, and the Object row is built at a
+    computed clear aperture. Both are deliberately larger than what the user sees and what a
+    CAD drawing of the scene should contain.
+    """
+    if row is None:
+        return None
+    try:
+        diameter = float(getattr(row, "diameter", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return None
+    return diameter if diameter > 0.0 else None
+
+
 def _write_step_with_analytic_surfaces(
     system,
     rows: list,
@@ -605,7 +634,10 @@ def _write_step_with_analytic_surfaces(
         if not _is_surface_revolution_compatible(surf):
             continue
 
-        occ_shape = _make_occ_revolution_face(surf, profile_points)
+        occ_shape = _make_occ_revolution_face(
+            surf, profile_points,
+            display_diameter=_drawn_surface_diameter(rows[j] if j < len(rows) else None),
+        )
         if occ_shape is None:
             continue
 
@@ -792,7 +824,10 @@ def _write_step_with_cad_shapes_and_rays(
             continue
         if not _is_surface_revolution_compatible(surf):
             continue
-        occ_shape = _make_occ_revolution_face(surf, profile_points)
+        occ_shape = _make_occ_revolution_face(
+            surf, profile_points,
+            display_diameter=_drawn_surface_diameter(rows[j] if j < len(rows) else None),
+        )
         if occ_shape is None:
             continue
         if j < len(trans_2a):
