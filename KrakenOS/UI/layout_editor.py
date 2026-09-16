@@ -193,7 +193,7 @@ from KrakenOS.UI.nonseq_output_ports import (
     optical_solid_output_port_runtime_transform_override,
     select_optical_solid_output_face,
 )
-from KrakenOS.UI.modern_ttk_theme import apply_modern_ttk_theme
+from KrakenOS.UI.modern_ttk_theme import apply_modern_ttk_theme, apply_ui_scale, scaled_px
 from KrakenOS.UI import optical_solid_metadata
 from KrakenOS.UI.services import layout_analysis_display as _layout_analysis_display_module
 from KrakenOS.UI.services import layout_plot_interaction as _layout_plot_interaction_module
@@ -2735,11 +2735,14 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
 
     def __init__(self, *, headless: bool = False) -> None:
         super().__init__()
+        # KRAKEN_UI_SCALE must land before any point-sized ttk font is set;
+        # it also scales the named fonts of this interpreter.
+        self._kraken_ui_scale = apply_ui_scale(self)
         self._kraken_ttk_style = apply_modern_ttk_theme(self)
         self.headless = headless
         self.title("KrakenOS Layout Editor")
-        self.geometry("1400x850")
-        self.minsize(1100, 720)
+        self.geometry(f"{scaled_px(1400, self._kraken_ui_scale)}x{scaled_px(850, self._kraken_ui_scale)}")
+        self.minsize(scaled_px(1100, self._kraken_ui_scale), scaled_px(720, self._kraken_ui_scale))
         self.protocol("WM_DELETE_WINDOW", self.request_quit)
         if not self.headless:
             self.after(50, self._maximize_window)

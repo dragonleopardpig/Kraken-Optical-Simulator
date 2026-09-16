@@ -7,6 +7,7 @@ milestone hook.
 
 from __future__ import annotations
 
+import math
 import os
 import tkinter as tk
 from tkinter import ttk
@@ -59,6 +60,104 @@ def _apply_sv_ttk_if_available(style: ttk.Style, selected_mode: str) -> bool:
         return False
     setattr(style, "kraken_theme_backend", f"sv-ttk:{requested_theme}")
     return True
+
+
+# HiDPI step 1: ``KRAKEN_UI_SCALE`` multiplies Tk's own DPI-derived
+# ``tk scaling`` (so point-sized fonts and the two window geometries grow) AND
+# Tk's pixel-sized named fonts (TkDefaultFont & co., which ignore ``tk
+# scaling``) at native resolution, instead of relying on compositor upscaling,
+# which blurs XWayland/Tk apps. Widget pixel dims are step 2.
+UI_SCALE_ENV = "KRAKEN_UI_SCALE"
+UI_SCALE_MIN = 0.5
+UI_SCALE_MAX = 4.0
+
+# ``tk scaling`` is stored on the X display, which every ``tk.Tk()`` root in
+# the process shares and which survives ``destroy()``: remember the un-scaled
+# value per display so a second root sets base*factor instead of compounding.
+_display_base_scaling: dict[str, float] = {}
+
+# Named fonts are per interpreter; their un-scaled pixel sizes are kept in this
+# Tcl array inside the interpreter so a repeat call re-derives from the base.
+_FONT_BASE_VAR = "::kraken_ui_scale_font_base"
+
+
+def ui_scale_factor() -> float:
+    """Return the ``KRAKEN_UI_SCALE`` factor, or 1.0 when unset or unusable.
+
+    Out-of-range values fall back to 1.0 rather than clamping: a typo such as
+    ``99`` would otherwise silently produce an unusable 4x window.
+    """
+
+    raw = os.getenv(UI_SCALE_ENV, "")
+    try:
+        factor = float(raw.strip())
+    except (TypeError, ValueError):
+        return 1.0
+    if not math.isfinite(factor) or not (UI_SCALE_MIN <= factor <= UI_SCALE_MAX):
+        return 1.0
+    return factor
+
+
+def _scale_named_fonts(root: tk.Misc, factor: float) -> None:
+    """Set every pixel-sized named font to ``round(base_px * factor)``.
+
+    On X11 Tk's ttk/fonts.tcl gives all nine named fonts a NEGATIVE (pixel)
+    size, and pixel sizes are immune to ``tk scaling``; in the default
+    ``native`` theme mode every ttk widget, Menu, Text and Listbox renders in
+    one of them, so without this the window grows but the text does not.
+    Point-sized named fonts follow ``tk scaling`` on their own and are left
+    alone. Named fonts propagate live, so widgets already built also grow.
+    """
+
+    call = root.tk.call
+    for name in call("font", "names"):
+        name = str(name)
+        var = f"{_FONT_BASE_VAR}({name})"
+        if int(call("info", "exists", var)):
+            base_px = int(call("set", var))
+        else:
+            size = int(call("font", "configure", name, "-size"))
+            if size >= 0:
+                continue
+            base_px = -size
+            call("set", var, base_px)
+        call("font", "configure", name, "-size", -max(1, int(round(base_px * factor))))
+
+
+def apply_ui_scale(root: tk.Misc) -> float:
+    """Scale ``tk scaling`` and the named fonts of ``root`` by the env factor.
+
+    Call on each root BEFORE any point-sized font is configured: point sizes
+    are resolved against ``tk scaling`` when the font is created. Idempotent
+    per process: the display's un-scaled ``tk scaling`` is remembered on first
+    use and every call sets ``base * factor`` (never ``current * factor``, which
+    compounded across roots, and never a constant, which would break other
+    DPIs). With the factor at 1.0 and no earlier scaled root, no Tk call is
+    made at all, so the default path is untouched; after an earlier scaled
+    root it restores the base.
+    """
+
+    factor = ui_scale_factor()
+    if factor == 1.0 and not _display_base_scaling:
+        return factor
+    display = str(root.winfo_screen())
+    base = _display_base_scaling.get(display)
+    if base is None:
+        base = float(root.tk.call("tk", "scaling"))
+        _display_base_scaling[display] = base
+        if factor == 1.0:
+            return factor
+    root.tk.call("tk", "scaling", base * factor)
+    _scale_named_fonts(root, factor)
+    return factor
+
+
+def scaled_px(n: float, factor: float | None = None) -> int:
+    """Return ``n`` pixels scaled by ``factor`` (default: the env factor)."""
+
+    if factor is None:
+        factor = ui_scale_factor()
+    return int(round(n * factor))
 
 
 def apply_modern_ttk_theme(root: tk.Misc, *, mode: str | None = None) -> ttk.Style:

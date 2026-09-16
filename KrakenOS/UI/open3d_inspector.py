@@ -19,6 +19,7 @@ import numpy as np
 
 from KrakenOS.UI.camera_database import CAMERA_NONE_LABEL, camera_names
 from KrakenOS.UI.layout_plot_controller import ray_event_display_label
+from KrakenOS.UI.modern_ttk_theme import scaled_px
 from KrakenOS.UI.panels.open3d_live_controls import Open3DLiveControlsPanel
 from KrakenOS.UI.panels.open3d_step_admin import Open3DStepAdminPanel
 from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
@@ -542,8 +543,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.available = False
         self.unavailable_reason = ""
         self.title("KrakenOS 3D Inspector")
-        self.geometry("1100x780")
-        self.minsize(720, 520)
+        # Same interpreter as the editor: tk scaling and the named fonts are
+        # already scaled by its apply_ui_scale(); only pixel geometry remains,
+        # and it follows the factor the editor actually applied.
+        ui_scale = getattr(editor, "_kraken_ui_scale", 1.0)
+        self._kraken_ui_scale = ui_scale
+        self.geometry(f"{scaled_px(1100, ui_scale)}x{scaled_px(780, ui_scale)}")
+        self.minsize(scaled_px(720, ui_scale), scaled_px(520, ui_scale))
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self._renderer = None
@@ -985,7 +991,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             main_pane.add(step_admin_panel, weight=0)
 
             _prepare_vtk_tk_widget(host)
-            self._vtk_widget = vtkTkRenderWindowInteractor(host, width=1100, height=720)
+            ui_scale = self._kraken_ui_scale
+            self._vtk_widget = vtkTkRenderWindowInteractor(
+                host, width=scaled_px(1100, ui_scale), height=scaled_px(720, ui_scale)
+            )
             self._vtk_widget.grid(row=0, column=0, sticky="nsew")
             render_window = self._vtk_widget.GetRenderWindow()
             self._renderer = vtkRenderer()
