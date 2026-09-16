@@ -1731,7 +1731,8 @@ class LayoutTableWorkbenchMixin:
         default (vertical) orientation: the "multiple misplacement after swap" flag. A
         swap changes the lens, not where the user put it; a different lens LENGTH is a
         small along-axis nudge the user makes, not a re-orientation. The camera / LED /
-        optical overlays and source/field/pupil settings are likewise left untouched."""
+        optical overlays and the source / field settings are likewise left untouched.
+        The APERTURE is not among them -- see ``_apply_swapped_lens_aperture``."""
         settings = settings if isinstance(settings, dict) else {}
         path = settings.get("lens_step_path")
         self.imported_lens_step_path = Path(str(path)).expanduser() if path else None
@@ -1739,6 +1740,60 @@ class LayoutTableWorkbenchMixin:
         # rotation_{x,y,z}_deg / axis_offset_xy / placement_offset_xyz / reverse_direction:
         # PRESERVED (untouched) so the swapped lens keeps the pose the user aligned it to.
 
+
+    def _apply_swapped_lens_aperture(self, settings) -> str:
+        """bugs/0796: a swap ADOPTS the incoming lens's aperture declaration.
+
+        Everything else a swap preserves -- pose, object, camera, field, source -- describes
+        the SCENE, and the user chose it. An aperture describes the LENS. ``FNO`` resolves
+        against the system EFL and ``EPD`` is a pupil diameter in millimetres; both are
+        statements about the glass that just left, and neither survives its departure with
+        any meaning.
+
+        Measured on flag_20260916_125457 ("I swapped the lens, seems the rays look the
+        same"): the incoming SPO TCL4.0X declared ``STOP 15.0761`` and the scene kept the
+        outgoing lens's ``FNO 12.5``, which against the 4x build's EQUIVALENT EFL (bugs/0792)
+        resolves to a 0.824 mm entrance pupil. The rows swapped, the object moved to 65 mm,
+        the magnification read 4.16x -- and the launch stayed the 0.330 mm pencil bugs/0795
+        had just fixed, because the pencil was now coming from the declaration rather than
+        from the clamp.
+
+        Returns a note when it changed something, so the swap SAYS so rather than silently
+        restating the user's aperture in another lens's terms.
+        """
+        settings = settings if isinstance(settings, dict) else {}
+        aperture_type = str(settings.get("aperture_type", "") or "").strip().upper()
+        if aperture_type not in {"STOP", "EPD", "FNO"}:
+            return ""
+        try:
+            value = float(settings.get("aperture_value"))
+        except (TypeError, ValueError):
+            return ""
+        if not (value > 0.0):
+            return ""
+        previous_type = str(self.aperture_type_var.get() or "").strip().upper()
+        try:
+            previous_value = float(self.aperture_value_var.get())
+        except (TypeError, ValueError):
+            previous_value = None
+        unchanged = (
+            previous_type == aperture_type
+            and previous_value is not None
+            and abs(previous_value - value) <= 1e-9
+        )
+        if unchanged:
+            return ""
+        self.aperture_type_var.set(aperture_type)
+        self.aperture_value_var.set(f"{value:g}")
+        was = (
+            f"{previous_type} {previous_value:g}"
+            if previous_type and previous_value is not None
+            else "the outgoing lens's"
+        )
+        return (
+            f" Aperture set to this lens's own ({aperture_type} {value:g}, was {was}): an "
+            f"f-number or a pupil diameter only means anything against the lens it came from."
+        )
 
     def _switch_off_analysis_overlays_for_swap(self) -> str:
         """bugs/0599: a swap with the heavy analysis overlays on re-runs every field scan /
@@ -2010,6 +2065,8 @@ class LayoutTableWorkbenchMixin:
             + list(self.rows[rear + 1:])
         )
         self._apply_swapped_lens_step_settings(new_info.get("settings", {}))
+        # bugs/0796: the aperture belongs to the LENS, not to the scene.
+        aperture_note = self._apply_swapped_lens_aperture(new_info.get("settings", {}))
         self._auto_assign_missing_elements(self.rows)
         self._normalize_special_rows()
         # bugs/0383: restore the downstream anchor AFTER normalisation (which recomputes the
@@ -2178,7 +2235,7 @@ class LayoutTableWorkbenchMixin:
         message = (
             f"Swapped imaging lens -> {model.title} (EFL {model.effl:.4g} mm) in place; "
             "Object / beam splitter / LED / camera / FOV preserved." + clearance_note
-            + housing_note
+            + housing_note + aperture_note
         )
         if preserved:
             message += (
