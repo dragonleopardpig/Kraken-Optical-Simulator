@@ -54,6 +54,9 @@ from KrakenOS.UI.surface_table_model import (
 # ----------------------------------------------------------------------------
 _STEP_SUFFIXES = frozenset({".step", ".stp"})
 _PDF_SUFFIXES = frozenset({".pdf"})
+# bugs/0790: the drawing the datasheet PDF was exported from -- a strictly better
+# source, because its spec table is TEXT with coordinates rather than pixels.
+_DWG_SUFFIXES = frozenset({".dwg"})
 # Sequential prescriptions KrakenOS can parse first-order data from.
 _PRESCRIPTION_SUFFIXES = frozenset({".zmx"})
 # CODE V sequence files -- not parsed here, recorded as an alternative source.
@@ -88,6 +91,7 @@ class LensFolderAssets:
     folder: Path
     step_files: list[Path] = field(default_factory=list)
     pdf_files: list[Path] = field(default_factory=list)
+    dwg_files: list[Path] = field(default_factory=list)
     prescription_files: list[Path] = field(default_factory=list)
     prescription_data_files: list[Path] = field(default_factory=list)
     blackbox_files: list[Path] = field(default_factory=list)
@@ -187,6 +191,8 @@ def scan_lens_folder(folder: str | Path) -> LensFolderAssets:
             assets.step_files.append(path)
         elif suffix in _PDF_SUFFIXES:
             assets.pdf_files.append(path)
+        elif suffix in _DWG_SUFFIXES:
+            assets.dwg_files.append(path)
         elif suffix in _PRESCRIPTION_SUFFIXES:
             assets.prescription_files.append(path)
         elif suffix in _ZAR_SUFFIXES:
@@ -1070,12 +1076,55 @@ def _core_from_datasheet(assets: LensFolderAssets) -> _SurrogateCore:
     pdf = assets.primary_pdf
     cardinals = parse_datasheet_cardinals(pdf) if pdf is not None else None
     if cardinals is None or cardinals.effl is None:
-        raise ValueError(
-            "No Zemax .zmx prescription, no System/Prescription Data dump, and the "
-            "datasheet PDF did not yield an effective focal length; cannot derive "
-            "the lens optics."
-        )
+        # bugs/0790: a vendor DWG states the spec table as TEXT with coordinates, so it is worth
+        # far more than the PDF it was exported from -- try it before giving up.
+        for drawing in list(assets.dwg_files or []):
+            try:
+                from KrakenOS.UI.services.dwg_spec_import import dwg_telecentric_cardinals
+
+                from_dwg = dwg_telecentric_cardinals(drawing)
+            except Exception:
+                from_dwg = None
+            if from_dwg is not None and from_dwg.effl:
+                cardinals = from_dwg
+                break
+    if cardinals is None or cardinals.effl is None:
+        raise ValueError(_no_optics_message(assets))
     return _core_from_datasheet_cardinals(cardinals, assets)
+
+
+def _no_optics_message(assets: LensFolderAssets) -> str:
+    """Say WHAT was read and why it is not enough, rather than blaming the PDF.
+
+    bugs/0790 + the "no silent solve failure" rule: for the SPO TCL4.0X-65DI-5M every number is
+    legible -- its DWG states 4.0X at 65 mm with a 142.5 mm housing behind a C-mount -- and the
+    refusal is a MODELLING one: those pin the track, not the focal length. Reporting "the
+    datasheet PDF did not yield an effective focal length" sent the user back to the PDF, which
+    was never the problem.
+    """
+    base = ("No Zemax .zmx prescription, no System/Prescription Data dump, and the "
+            "datasheet PDF did not yield an effective focal length; cannot derive "
+            "the lens optics.")
+    for drawing in list(getattr(assets, "dwg_files", None) or []):
+        try:
+            from KrakenOS.UI.services.dwg_spec_import import dwg_conjugate_chain
+
+            chain = dwg_conjugate_chain(drawing)
+        except Exception:
+            chain = None
+        if not chain:
+            continue
+        total = float(chain["total"])
+        return (
+            f"{drawing.name} states the conjugate chain -- working distance "
+            f"{chain['wd']:g} mm, housing {chain['housing']:g} mm, {chain['mount']}-mount flange "
+            f"{chain['flange']:g} mm, so an object-to-image track of {total:.3f} mm -- but no "
+            f"focal length and no HH'. Those pin the TRACK, not the focal length: with "
+            f"coincident principal planes they give f = {total / 6.25:.2f} mm, which would put "
+            f"the front principal plane outside the housing. Supply the EFL or HH' (or a .zmx) "
+            f"and this folder imports."
+        )
+    return base
 
 
 def _core_from_datasheet_cardinals(
