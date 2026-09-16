@@ -117,6 +117,28 @@ in
       export MPLBACKEND=qtagg
     fi
 
+    # HiDPI: the editor scales itself (KRAKEN_UI_SCALE) because Tk runs on
+    # XWayland, which the compositor would otherwise upscale and blur.  Follow
+    # the focused monitor's scale when the compositor can tell us; an explicit
+    # value in the environment always wins.  (`direnv reload` after changing
+    # the monitor scale.)
+    if [ -z "''${KRAKEN_UI_SCALE:-}" ] && command -v hyprctl >/dev/null 2>&1; then
+      kraken_ui_scale="$(hyprctl monitors -j 2>/dev/null | "$VENV_DIR/bin/python" -c '
+import json, sys
+try:
+    monitors = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+focused = [m for m in monitors if m.get("focused")] or monitors
+if focused:
+    print(focused[0].get("scale", 1))
+' 2>/dev/null)"
+      if [ -n "$kraken_ui_scale" ] && [ "$kraken_ui_scale" != "1" ] && [ "$kraken_ui_scale" != "1.0" ]; then
+        export KRAKEN_UI_SCALE="$kraken_ui_scale"
+      fi
+      unset kraken_ui_scale
+    fi
+
     # Do not inject project-local pagmo2 into LD_LIBRARY_PATH here: VTK's
     # OpenTURNS module must load the ABI-matched pagmo from its Nix closure.
 
