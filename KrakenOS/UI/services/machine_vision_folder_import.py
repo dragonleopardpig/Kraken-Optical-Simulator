@@ -490,6 +490,110 @@ def solve_symmetric_two_groups(
     return solution, ppa, ppp
 
 
+def solve_conjugate_two_groups(
+    magnitude: float,
+    working_distance: float,
+    housing: float,
+    flange: float,
+    *,
+    edge_margin: float = 5.0,
+) -> "tuple[TwoGroupSolution, float, float, float]":
+    """Two ideal groups INSIDE the housing that deliver ``magnitude`` at ``working_distance``
+    with the image at the flange. Returns ``(solution, effl, ppa, ppp)``.
+
+    bugs/0792. A fixed-conjugate telecentric catalogue states the conjugates, never the focal
+    length: ``f (2 + m + 1/m) + HH' = track`` is one equation in two unknowns. bugs/0653 closed it
+    by assuming coincident principal planes, which is fine near 1x and false above it -- for a 4x
+    lens at 65 mm working distance it demands a 325 mm track where real ones are 192-225 mm, so
+    the derived front principal plane lands in front of the barrel and bugs/0647's registration
+    law (rightly) refuses.
+
+    The way out is to stop solving for a focal length and solve for the LENS. Fix the two groups
+    where the hardware puts them -- just inside each end of the housing -- and the remaining
+    unknowns are their powers, which the conjugates then determine exactly::
+
+        a = WD + margin              object -> group 1
+        b = flange + margin          group 2 -> image
+        d = housing - 2 margin       group separation
+        v1 = m a d / (m a - b)       intermediate image, from group 1
+        f1 = a v1 / (a + v1)
+        f2 = b (v1 - d) / (v1 - d - b)
+
+    For a 4x lens f2 comes out NEGATIVE -- a telephoto pair -- which is precisely why its
+    equivalent principal planes sit outside the barrel. That is a property of the real lens, not
+    an error: measured on the Edmund 62-793 and the SPO TCL4.0X, no single thick lens can have
+    BOTH principal planes inside the housing (H needs f >= 52 mm, H' needs f <= 25.5 mm). The
+    groups themselves stay inside, which is what the drawing and the trace care about.
+    """
+    m = abs(float(magnitude))
+    wd = float(working_distance)
+    span = float(housing)
+    back = float(flange)
+    if not (m > 1e-9 and math.isfinite(m)):
+        raise ValueError("conjugate solve needs a finite, non-zero magnification")
+    if not (span > 0.0 and math.isfinite(span)):
+        raise ValueError("conjugate solve needs a positive housing length")
+    margin = min(max(float(edge_margin), 0.0), span * 0.4)
+    a = wd + margin
+    b = back + margin
+    d = span - 2.0 * margin
+    if not (a > 0.0 and b > 0.0 and d > 0.0):
+        raise ValueError("conjugate solve needs a housing the groups can sit inside")
+    denominator = m * a - b
+    if abs(denominator) < 1e-9:
+        raise ValueError("conjugate solve is degenerate for this magnification and track")
+    v1 = m * a * d / denominator
+    if not math.isfinite(v1) or abs(a + v1) < 1e-9 or abs((v1 - d) - b) < 1e-9:
+        raise ValueError("conjugate solve is degenerate for this geometry")
+    f1 = a * v1 / (a + v1)
+    f2 = b * (v1 - d) / ((v1 - d) - b)
+    if not (math.isfinite(f1) and math.isfinite(f2) and abs(f1) > 1e-6 and abs(f2) > 1e-6):
+        raise ValueError("conjugate solve produced a degenerate group")
+    # the equivalent first order of the pair, for the record and for the conjugate placement
+    power = 1.0 / f1 + 1.0 / f2 - d / (f1 * f2)
+    if abs(power) < 1e-12:
+        raise ValueError("conjugate solve produced an afocal pair")
+    effl = 1.0 / power
+    front_focal = effl * (1.0 - d / f2)
+    back_focal = effl * (1.0 - d / f1)
+    ppa = margin + (effl - front_focal)
+    ppp = -(margin + (effl - back_focal))
+    solution = TwoGroupSolution(round(f1, 6), round(f2, 6), round(d, 6),
+                                round(margin, 6), round(margin, 6), "conjugate-constrained")
+    return {
+        "solution": solution, "effl": float(effl), "ppa": float(ppa), "ppp": float(ppp),
+        "object_gap": float(wd), "image_gap": float(back),
+        "a": float(a), "b": float(b), "d": float(d), "v1": float(v1), "margin": float(margin),
+    }
+
+
+def conjugate_stop_diameter(solve: dict, magnitude: float, working_fno: float) -> float:
+    """Stop diameter that delivers ``working_fno`` at ``magnitude``, for a conjugate solve.
+
+    bugs/0792: ``effl / f#`` is the entrance pupil of an INFINITE-conjugate system and is wrong
+    here by the better part of a factor of twenty -- the Edmund 62-793's equivalent EFL is 8.49 mm,
+    so ``8.49 / 26.2`` would give a 0.32 mm stop where the lens actually needs 6.5 mm. Work from
+    the cone instead: a catalogue's f-number for a fixed-conjugate lens is the WORKING one, so
+
+        NA_object = m / (2 N_working)        (Lagrange: NA_obj y_obj = NA_img y_img)
+
+    and the marginal ray from the axial object point, height ``a NA_object`` at group 1, arrives at
+    the stop (group 1's back focal plane, where object-space telecentricity puts it) at
+    ``h (1 - f1/v1)``.
+    """
+    m = abs(float(magnitude))
+    fno = float(working_fno)
+    if not (m > 1e-9 and fno > 1e-9):
+        raise ValueError("stop needs a finite magnification and f-number")
+    na_object = m / (2.0 * fno)
+    height = float(solve["a"]) * na_object
+    v1 = float(solve["v1"])
+    f1 = float(solve["solution"].f1)
+    if abs(v1) < 1e-9:
+        raise ValueError("degenerate intermediate image")
+    return abs(2.0 * height * (1.0 - f1 / v1))
+
+
 def _step_bounds_extents(step_path: Path | str) -> list[float] | None:
     """The STEP body's axis-aligned bounding-box extents ``[dx, dy, dz]``.
     Lazy OCC import; ``None`` on any failure so callers can fall back."""
@@ -1143,7 +1247,46 @@ def _core_from_datasheet_cardinals(
     else:
         span, span_source = _surrogate_span_from_assets(effl, assets.primary_step)
 
-    if cardinals.has_principal_planes:
+    conjugate_solve = None
+    if (
+        getattr(cardinals, "conjugate_constrained", False)
+        and cardinals.magnification
+        and cardinals.optimum_wd
+        and cardinals.mount_flange_mm
+        and span > 0.0
+    ):
+        # bugs/0792: solve for the LENS, not for a focal length the catalogue never states.
+        try:
+            conjugate_solve = solve_conjugate_two_groups(
+                abs(float(cardinals.magnification)),
+                float(cardinals.optimum_wd),
+                span,
+                float(cardinals.mount_flange_mm),
+            )
+        except Exception:
+            conjugate_solve = None
+
+    fno = cardinals.fno if (cardinals.fno and cardinals.fno > 0.0) else 8.0
+    aperture_type, aperture_value = "FNO", _fmt(fno)
+
+    if conjugate_solve is not None:
+        solution = conjugate_solve["solution"]
+        ppa, ppp = conjugate_solve["ppa"], conjugate_solve["ppp"]
+        effl = abs(float(conjugate_solve["effl"]))
+        object_gap = conjugate_solve["object_gap"]
+        image_gap = conjugate_solve["image_gap"]
+        try:
+            stop_diameter = round(
+                conjugate_stop_diameter(conjugate_solve, cardinals.magnification, fno), 4)
+        except Exception:
+            stop_diameter = round(effl / fno, 4)
+        solve_note = (
+            "The datasheet pins the CONJUGATES, not a focal length (above about 1x the "
+            "coincident-principal-plane value is unreachable for this class); the two ideal "
+            "groups sit inside the housing and deliver the stated magnification at the stated "
+            "working distance with the image at the mount flange."
+        )
+    elif cardinals.has_principal_planes:
         ppa = float(cardinals.ppa)
         ppp = float(cardinals.ppp)
         solution = solve_two_thin_groups(effl, ppa, ppp, span)
@@ -1151,20 +1294,20 @@ def _core_from_datasheet_cardinals(
             "Both principal planes recovered from the datasheet (SF + S'F'); the "
             "two ideal groups reproduce all four cardinals exactly."
         )
+        object_gap, image_gap = _finite_conjugate_gaps(
+            effl, cardinals.magnification, ppa, ppp, object_mode, None
+        )
+        stop_diameter = round(effl / fno, 4)
     else:
         solution, ppa, ppp = solve_symmetric_two_groups(effl, span)
         solve_note = (
             "Datasheet lists no focal distances; the two ideal groups are a "
             "symmetric EFL-equivalent (the principal-plane split is nominal)."
         )
-
-    object_gap, image_gap = _finite_conjugate_gaps(
-        effl, cardinals.magnification, ppa, ppp, object_mode, None
-    )
-
-    fno = cardinals.fno if (cardinals.fno and cardinals.fno > 0.0) else 8.0
-    stop_diameter = round(effl / fno, 4)
-    aperture_type, aperture_value = "FNO", _fmt(fno)
+        object_gap, image_gap = _finite_conjugate_gaps(
+            effl, cardinals.magnification, ppa, ppp, object_mode, None
+        )
+        stop_diameter = round(effl / fno, 4)
 
     lens_aperture = round(stop_diameter * 1.4, 4)
     # bugs/0662 (flag_20260830_180206 "rays are passing beyond the diameter of the
@@ -1455,7 +1598,17 @@ def _surrogate_surfaces(
     image_diameter: float,
     wavefront_rel: str | None,
 ) -> list[dict]:
+    # bugs/0792: an OBJECT-SPACE TELECENTRIC lens puts its stop at the front group's back focal
+    # plane -- that is what makes the entrance pupil infinite and the chief rays parallel off the
+    # object. Splitting the separation in half instead (the default when nothing is known) leaves
+    # the surrogate merely finite-conjugate. Only place it there when it actually falls between
+    # the groups; otherwise keep the neutral half-way split rather than putting a stop outside
+    # the block.
     group_split = solution.d / 2.0
+    if str(getattr(solution, "method", "")) == "conjugate-constrained":
+        telecentric_stop = float(solution.f1)
+        if 0.0 < telecentric_stop < float(solution.d):
+            group_split = telecentric_stop
 
     group1_advanced: dict = {}
     if wavefront_rel:

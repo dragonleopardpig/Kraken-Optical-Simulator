@@ -723,6 +723,10 @@ class DatasheetCardinals:
     # field (its chief rays are parallel); an ordinary lens funnels the field
     # through its pupil. The disc-sizing rule branches on this.
     telecentric: bool = False
+    # bugs/0792: the catalogue pins the CONJUGATES but not the focal length. Set when the
+    # coincident-principal-plane derivation is provably wrong for this magnification, so the
+    # surrogate builder solves for the lens (two groups inside the housing) instead of for an f.
+    conjugate_constrained: bool = False
 
     @property
     def ppa(self) -> float | None:
@@ -941,12 +945,16 @@ def telecentric_conjugate_cardinals(text: str) -> DatasheetCardinals | None:
     effl = total / (2.0 + mag + 1.0 / mag)
     if not (1.0 <= effl <= 2000.0):
         return None
-    # The bugs/0647 registration law must be satisfiable: 0 < f(1+1/m) - WD < f.
+    # bugs/0647's registration law: 0 < f(1+1/m) - WD < f, i.e. the front principal plane lands
+    # inside the housing. bugs/0792: when it does NOT, that is not a bad datasheet -- above about
+    # 1x it is unsatisfiable for every real lens of this class (a 4x at 65 mm WD would need a
+    # 325 mm track; Edmund's own 62-793 has 192.5 and the SPO 225). Hand the conjugates to the
+    # builder and let it solve for the LENS rather than refusing.
     offset = effl * (1.0 + 1.0 / mag) - wd
-    if not (0.0 < offset < effl):
-        return None
+    conjugate_constrained = not (0.0 < offset < effl)
     cardinals = DatasheetCardinals(effl=round(effl, 4))
     cardinals.telecentric = True
+    cardinals.conjugate_constrained = bool(conjugate_constrained)
     cardinals.magnification = -abs(mag)  # a finite-conjugate lens inverts
     cardinals.optimum_wd = wd
     cardinals.optimum_wd_mag = abs(mag)

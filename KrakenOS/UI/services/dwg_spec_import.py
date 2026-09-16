@@ -254,11 +254,14 @@ def dwg_telecentric_cardinals(path: str | Path):
     effl = chain["total"] / (2.0 + mag + 1.0 / mag)
     if not (1.0 <= effl <= 2000.0):
         return None
+    # bugs/0792: the registration law says whether the coincident-principal-plane focal length is
+    # reachable. Above about 1x it is not, for any lens of this class -- so record that rather
+    # than refuse, and let the builder solve for the LENS from the conjugates.
     offset = effl * (1.0 + 1.0 / mag) - chain["wd"]
-    if not (0.0 < offset < effl):                    # the bugs/0647 registration law
-        return None
+    conjugate_constrained = not (0.0 < offset < effl)
     cardinals = DatasheetCardinals(effl=round(effl, 4))
     cardinals.telecentric = True
+    cardinals.conjugate_constrained = bool(conjugate_constrained)
     cardinals.magnification = -abs(mag)
     cardinals.optimum_wd = chain["wd"]
     cardinals.optimum_wd_mag = abs(mag)

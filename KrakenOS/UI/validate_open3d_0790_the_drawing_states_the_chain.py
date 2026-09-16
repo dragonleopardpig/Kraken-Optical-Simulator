@@ -69,20 +69,18 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
     for want in ("Optical Mgnification 4.0X", "W.D(mm) 65", "F/# 12.5", "C-MOUNT"):
         ok(want in text, f"D: the rebuilt rows contain {want!r}")
 
-    # ---- E: and the focal length is NOT invented from it ----------------------------------------
+    # ---- E: the coincident-principal-plane focal length is NOT accepted -------------------------
+    # bugs/0792 changed what happens next: rather than refusing, the case is handed to the builder
+    # as CONJUGATE-CONSTRAINED, which solves for the lens instead of for an f. What stays pinned
+    # here is that the unreachable HH'=0 value is not quietly used as though it were real.
     card = dwg.dwg_telecentric_cardinals(DRAWING)
-    ok(card is None,
-       "E: no EFL is derived -- (m, WD, track) pin the TRACK, and with HH' unstated the "
-       "coincident-principal-plane value would put the front principal outside the housing")
-    try:
-        mvi.import_lens_folder(FOLDER)
-        ok(False, "E: the folder imported, so an unverified focal length reached a surrogate")
-    except ValueError as exc:
-        message = str(exc)
-        ok("225.026" in message and "HH'" in message,
-           "E: the refusal reports the chain it read and what is missing, not 'the PDF failed'")
-        ok("datasheet PDF did not yield" not in message,
-           "E: it no longer sends the user back to the PDF, which was never the problem")
+    ok(card is not None, "E: the drawing yields cardinals")
+    if card is not None:
+        ok(bool(getattr(card, "conjugate_constrained", False)),
+           "E: marked conjugate-constrained -- the HH'=0 focal length is unreachable at this "
+           "magnification and is not taken at face value")
+        ok(abs(float(card.optimum_wd) - 65.0) < 1e-9 and abs(float(card.span) - 142.5) < 1e-9,
+           f"E: the conjugates it carries are the drawing's ({card.optimum_wd}, {card.span})")
     return (not problems), notes
 
 
