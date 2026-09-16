@@ -733,6 +733,34 @@ _MOUNT_FLANGE_MM = {
 }
 
 
+def _scrape_image_circle(text: str) -> "float | None":
+    """The image-circle diameter, under every spelling a vendor has used for it.
+
+    bugs/0789: this lives in ONE place because it was in two, and the telecentric path knew
+    only the Edmund spelling. The COOLENS WWK10-110CP-111V3 states it as
+    ``Max Sensor Size (Φmm) | 18.0(1.1")`` -- the same datum, in the row that decides how wide
+    the lens's glass has to be -- so its surrogate was drawn and apertured at 1.4x the STOP
+    (Ø14.0) inside a Ø44 barrel, where bugs/0662's own rule (field + pupil) gives Ø28.0.
+
+    The unit is written ``(mm)``, ``[mm]`` or ``(Φmm)``, and an OCR'd sheet renders that Φ as
+    ``@`` or ``®P`` -- so a couple of characters before ``mm`` are tolerated. Being lenient
+    about a LABEL is safe here for the same reason as in bugs/0786: it only decides where to
+    look, and the value is bounded below against a plausible physical range. An image circle
+    sizes apertures; unlike the EFL it cannot move the first order.
+    """
+    for pattern in (
+        r"Max\.\s*sensor size\s*\[mm\]\s*(\d[\d.]*)",
+        r"(?i)image\s+circle\s+max\.?\s*[\[(]\s*mm\s*[\])]\s*(\d+\.?\d*)",
+        r"(?i)Maximum\s+Image\s+Circle\s*[\[(]\s*mm\s*[\])]\s*:?\s*(\d+\.?\d*)",
+        # bugs/0789: "Max Sensor Size (Φmm) 18.0(1.1\")" -- and its OCR spellings of the Φ
+        r"(?i)Max\.?\s*Sensor\s*Size\s*[\[(]\s*[^)\]]{0,4}mm\s*[\])]\s*:?\s*(\d+\.?\d*)",
+    ):
+        value = _first_float(text, pattern)
+        if value is not None and 1.0 <= value <= 400.0:
+            return value
+    return None
+
+
 def telecentric_conjugate_cardinals(text: str) -> DatasheetCardinals | None:
     """bugs/0653 (error.png, Edmund #67-304 CompactTL): derive the EFL of a
     fixed-conjugate TELECENTRIC sheet that states NO focal length anywhere.
@@ -835,9 +863,7 @@ def telecentric_conjugate_cardinals(text: str) -> DatasheetCardinals | None:
     # the bugs/0647 refit then has no room and falls back to the advisory.
     cardinals.span = round(length, 4)
     cardinals.fno = _first_float(text, r"(?i)Aperture\s*\(\s*f\s*/#\s*\)\s*:?\s*f?\s*/?\s*(\d+\.?\d*)")
-    cardinals.image_circle = _first_float(
-        text, r"(?i)Maximum\s+Image\s+Circle\s*\(\s*mm\s*\)\s*:?\s*(\d+\.?\d*)"
-    )
+    cardinals.image_circle = _scrape_image_circle(text)
     stock = re.search(r"#(\d{2}-\d{3})", text)
     if stock is not None:
         cardinals.lens_id = stock.group(1)
@@ -941,17 +967,9 @@ def _cardinals_from_text(text: str) -> DatasheetCardinals | None:
         # bugs/0565: the designation carries the aperture too ("ELS-85/4.5"), and it is the
         # only F-number a drawing title block exposes to the flattened text.
         cardinals.fno = designation_fno
-    cardinals.image_circle = _first_float(text, r"Max\.\s*sensor size\s*\[mm\]\s*(\d[\d.]*)")
-    if cardinals.image_circle is None:
-        # bugs/0371: "image circle max. (mm) 82" spelling.
-        cardinals.image_circle = _first_float(
-            text, r"(?i)image\s+circle\s+max\.?\s*[\[(]\s*mm\s*[\])]\s*(\d+\.?\d*)"
-        )
-    if cardinals.image_circle is None:
-        # bugs/0658: the Edmund row "Maximum Image Circle (mm):11.00".
-        cardinals.image_circle = _first_float(
-            text, r"(?i)Maximum\s+Image\s+Circle\s*\(\s*mm\s*\)\s*:?\s*(\d+\.?\d*)"
-        )
+    # bugs/0789: one helper, every spelling -- see :func:`_scrape_image_circle`. It used to be
+    # two lists, and the telecentric path's knew only the Edmund one.
+    cardinals.image_circle = _scrape_image_circle(text)
 
     lens_id = re.search(r"ID \[standard\]\s*(\d+)", text)
     if lens_id is not None:
