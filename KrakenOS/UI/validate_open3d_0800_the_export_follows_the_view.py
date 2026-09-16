@@ -147,27 +147,34 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
             ok(len(traced_rays) > 0,
                f"D: once traced, the export carries them again ({len(traced_rays)})")
 
-            # ---- E: and the view SAYS rays are pending ------------------------------------
+            # ---- E: and the view SAYS so -- bugs/0801 made it untick the box too ----------
             class _Var:
                 def __init__(self, value):
-                    self._value = value
+                    self._value = bool(value)
 
                 def get(self):
                     return self._value
+
+                def set(self, value):
+                    self._value = bool(value)
 
             class _Insp:
                 def __init__(self, rays_on):
                     self.show_rays_var = _Var(rays_on)
 
             app._preview_trace_deferred_until_requested = True
-            note_on = app._pending_rays_note(_Insp(True))
-            ok("Trace Now" in note_on,
-               f"E: a deferred open with Show Rays on says so ({note_on.strip()[:60]}...)")
+            deferred_insp = _Insp(True)
+            note_on = app._pending_rays_note(deferred_insp)
+            ok("Trace Now" in note_on and "Show Rays is off" in note_on,
+               f"E: a deferred open explains the state ({note_on.strip()[:60]}...)")
+            ok(not deferred_insp.show_rays_var.get(),
+               "E (bugs/0801): and the toggle is UNTICKED so it matches the bodies-only scene")
             ok(app._pending_rays_note(_Insp(False)) == "",
-               "E: with Show Rays off there is nothing to explain")
+               "E: with Show Rays already off there is nothing to explain")
             app._preview_trace_deferred_until_requested = False
-            ok(app._pending_rays_note(_Insp(True)) == "",
-               "E: and a traced scene says nothing")
+            untouched = _Insp(True)
+            ok(app._pending_rays_note(untouched) == "" and untouched.show_rays_var.get(),
+               "E: and a traced scene says nothing and leaves the toggle alone")
         finally:
             with contextlib.suppress(Exception):
                 app.destroy()

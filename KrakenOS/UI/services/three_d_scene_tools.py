@@ -299,26 +299,31 @@ class ThreeDSceneToolsMixin:
             return False
 
     def _pending_rays_note(self, inspector) -> str:
-        """bugs/0801: say when the view is opening BODIES-ONLY while Show Rays reads on.
+        """bugs/0801: make the Show Rays toggle MATCH the scene it is describing.
 
         A fast load leaves the trace deferred (bugs/0646), and bugs/0718 made that gate
-        AUTHORITATIVE -- the in-process non-sequential trace can wedge the UI on crashed
-        geometry, so only a deliberate Trace Now may clear it. The toggle therefore
-        describes an intent the view has not carried out, which the user reads as rays
-        failing to appear ("Show Rays is on, but fresh launch KrakenOS 3D won't show it").
-        The gate stays; the silence does not.
+        authoritative -- the in-process non-sequential trace can wedge the UI on crashed
+        geometry, so only a DELIBERATE request may clear it. The view therefore opens
+        bodies-only while the box still reads on, which the user rightly called a broken
+        control: "if ray is not on, why not just untick the rays on? Main thing here is
+        matching UI toggle with actual scene."
+
+        So untick it. The box now states what is on screen, and ticking it is the
+        deliberate request that clears the gate and traces
+        (``_on_show_rays_changed``) -- the toggle works on a fresh load without Trace Now.
         """
         try:
             if not bool(getattr(self, "_preview_trace_deferred_until_requested", False)):
                 return ""
             rays_var = getattr(inspector, "show_rays_var", None)
-            if rays_var is not None and not bool(rays_var.get()):
+            if rays_var is None or not bool(rays_var.get()):
                 return ""
+            rays_var.set(False)
         except Exception:
             return ""
         return (
-            " -- rays are PENDING after a fast load: press Trace Now to trace them "
-            "(the STEP/DXF export follows the view)."
+            " -- Show Rays is off because the fast load deferred the trace: tick it (or "
+            "press Trace Now) to trace. The STEP/DXF export follows the view."
         )
 
     def _start_open3d_step_cache_warmup(self, inspector) -> bool:

@@ -8,6 +8,7 @@ and panel wiring.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -2004,6 +2005,21 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
     def _on_show_rays_changed(self) -> None:
         self._debug_trace("show_rays_toggled", show_rays=bool(self.show_rays_var.get()), counts=self._debug_actor_counts())
+        # bugs/0801 (user: "if user toggle rays on or off, it should immediately show the ray,
+        # right now on fresh load, without clicking Trace Now, the rays on/off toggle is not
+        # functioning"): after a fast load the gate makes every refresh bodies-only, so ticking
+        # the box called refresh_from_editor and drew nothing -- a control that does nothing.
+        # TICKING IT IS the deliberate trace request bugs/0646 asks for, exactly like Trace Now,
+        # so it clears the gate. bugs/0718 is satisfied: an INCIDENTAL refresh still cannot
+        # clear it, only a user asking for rays in so many words.
+        if bool(self.show_rays_var.get()) and bool(
+            getattr(self.editor, "_preview_trace_deferred_until_requested", False)
+        ):
+            self.editor._preview_trace_deferred_until_requested = False
+            with contextlib.suppress(Exception):
+                self.status_var.set("Tracing rays...")
+            self.refresh_from_editor()
+            return
         if self.editor._open3d_trace_refresh_service().can_reuse_current_scene_for_show_rays(self):
             self._debug_trace(
                 "show_rays_fast_toggle_refresh",
