@@ -456,6 +456,86 @@ def _extract_pdf_text_rapidocr(path: str | Path) -> str:
         return ""
 
 
+def _extract_pdf_text_layout(path: str | Path) -> str:
+    """Page text assembled from CHARACTER POSITIONS, honouring a rotated title block.
+
+    bugs/0791. This is the answer to the failure bugs/0565 worked around: a CAD drawing's title
+    block is typeset ROTATED, and a reading-order extractor then walks it the wrong way, emitting
+    every label in one run and every value in another --
+
+        Optical MgnificationResolution(um)W.D(mm)N.AF/#...4.0X 652.090.1612.5...
+
+    -- so no ``Label\\s*:?\\s*value`` regex can pair them, and the sheet looks like it states
+    nothing. On the SPO TCL4.0X-65DI-5M every one of its 284 characters has ``upright=False``.
+
+    Rotating the frame (the row coordinate becomes ``x0``, the advance becomes ``top``) and
+    grouping by row recovers the table exactly as the vendor drew it:
+
+        Optical Mgnification 4.0X  W.D(mm) 65
+        F/# 12.5  D.O.F (COC:20um) 31.3um
+        Resolution(um) 2.09  N.A 0.16
+
+    No OCR, no DWG, no external binary -- the text was always there, in the right places.
+    """
+    try:
+        import pdfplumber
+    except Exception:
+        return ""
+    try:
+        import statistics
+
+        pages: list[str] = []
+        with pdfplumber.open(str(path)) as pdf:
+            for page in pdf.pages:
+                chars = [c for c in page.chars if str(c.get("text", "")).strip()]
+                if not chars:
+                    continue
+                rotated = sum(1 for c in chars if not c.get("upright")) > len(chars) / 2
+                row_of = (lambda c: float(c["x0"])) if rotated else (lambda c: float(c["top"]))
+                run_of = (lambda c: float(c["top"])) if rotated else (lambda c: float(c["x0"]))
+                # one tolerance for the page, from the median glyph size: a per-character
+                # tolerance splits a single label whose glyphs differ in size
+                size = statistics.median([float(c.get("size") or 3.0) for c in chars]) or 3.0
+                tol = max(size * 0.6, 0.5)
+                lines: "list[list[dict]]" = []
+                current: "list[dict]" = []
+                anchor = None
+                for char in sorted(chars, key=lambda c: (row_of(c), run_of(c))):
+                    if anchor is None or abs(row_of(char) - anchor) <= tol:
+                        current.append(char)
+                        anchor = row_of(char) if anchor is None else anchor
+                    else:
+                        lines.append(current)
+                        current, anchor = [char], row_of(char)
+                if current:
+                    lines.append(current)
+                out: list[str] = []
+                for line in lines:
+                    run = sorted(line, key=run_of)
+                    # the gap is measured against each glyph's OWN set width. pdfplumber reports
+                    # a rotated glyph with its axes swapped, so the advance extent is
+                    # bottom - top there and x1 - x0 otherwise; using the nominal size instead
+                    # glued labels together, and using the line's median advance split wide
+                    # glyphs ("OpticalM gnification").
+                    def _extent(c):
+                        return (float(c["bottom"]) - float(c["top"]) if rotated
+                                else float(c["x1"]) - float(c["x0"]))
+
+                    text, previous = "", None
+                    for char in run:
+                        if previous is not None and run_of(char) - previous > size * 0.28:
+                            text += " "
+                        text += str(char["text"])
+                        previous = run_of(char) + _extent(char)
+                    text = " ".join(text.split())
+                    if text:
+                        out.append(text)
+                pages.append("\n".join(out))
+        return "\n".join(p for p in pages if p)
+    except Exception:
+        return ""
+
+
 def _extract_pdf_text_tesseract(path: str | Path) -> str:
     """The external pair: ``pdftoppm`` renders, ``tesseract`` recognises. ``""`` when absent.
 
@@ -528,6 +608,21 @@ def _ocr_cached(path: str | Path, engine: str, produce) -> str:
     except Exception:
         pass
     return text
+
+
+def text_candidates(path: str | Path) -> "list[str]":
+    """Readings to try when the ordinary text layer yields nothing usable, cheapest first.
+
+    bugs/0791 puts the position-aware layout reading ahead of the OCR engines: it costs a
+    fraction of a second, needs no binary, and fixes the commonest reason a legible datasheet
+    reads as empty -- a rotated CAD title block walked in the wrong order.
+    """
+    out: list[str] = []
+    layout = _extract_pdf_text_layout(path)
+    if layout.strip():
+        out.append(layout)
+    out.extend(ocr_text_candidates(path))
+    return out
 
 
 def ocr_text_candidates(path: str | Path) -> "list[str]":
@@ -886,7 +981,7 @@ def parse_datasheet_cardinals(path: str | Path) -> DatasheetCardinals | None:
     cardinals = _cardinals_from_text(extract_pdf_text(path))
     if cardinals is not None and cardinals.effl:
         return cardinals
-    for recognised in ocr_text_candidates(path):
+    for recognised in text_candidates(path):
         candidate = _cardinals_from_text(recognised)
         if candidate is not None and candidate.effl:
             return candidate
