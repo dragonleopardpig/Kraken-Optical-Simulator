@@ -1291,6 +1291,14 @@ def _core_from_datasheet_cardinals(
                 conjugate_stop_diameter(conjugate_solve, cardinals.magnification, fno), 4)
         except Exception:
             stop_diameter = round(effl / fno, 4)
+        # bugs/0795 (flag_20260916_113737 "why the rays look so wierd ... single pencils rays"):
+        # declare the aperture as the STOP, not as an f-number. 'FNO' resolves against the
+        # system EFL, and bugs/0792 established that a conjugate-constrained build's EFL is an
+        # EQUIVALENT number with no infinite-conjugate meaning -- f/12.5 against 10.297 declared
+        # a 0.824 mm entrance pupil on a lens that passes 15.076 mm, 18x under, and the trace
+        # drew a thread of rays instead of a cone. The stop is the aperture this lens HAS;
+        # trace_preview_sampling measures the object-space cone that fills it.
+        aperture_type, aperture_value = "STOP", _fmt(stop_diameter)
         solve_note = (
             "The datasheet pins the CONJUGATES, not a focal length (above about 1x the "
             "coincident-principal-plane value is unreachable for this class); the two ideal "

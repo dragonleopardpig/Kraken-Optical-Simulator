@@ -846,6 +846,93 @@ class TracePreviewSamplingMixin:
             return min(fallback_radius, object_radius)
         return fallback_radius
 
+    def _stop_filling_launch_radius(
+        self,
+        system,
+        *,
+        wavelength: float | None = None,
+        pupil_inputs: tuple | None = None,
+    ) -> float | None:
+        """bugs/0795: the aim radius at the first surface whose cone exactly FILLS the stop.
+
+        ``_entrance_radius`` clamps the launch to ``min(first clear radius, OBJECT semi-diameter)``.
+        The object semi-diameter is a FIELD extent, not an aperture -- it says how WIDE the
+        object is, never what ANGLE the lens accepts -- so as soon as the object is smaller
+        than the cone the lens passes, the clamp collapses the launch into a pencil. Below 1x
+        the object is the larger of the two and the clamp never bit; a 4x telecentric images a
+        2.75 mm object through a 26 mm front aperture, and the launch came out 9.5x too narrow
+        (flag_20260916_113737 "single pencils rays reaching the sensor, not the focusing rays
+        type").
+
+        The honest number is measured, not assumed: aim one probe ray from the axial object
+        point, read its height at the stop row, and scale linearly -- the pupil is a paraxial
+        construction, so one probe fixes the whole cone (0.25 / 1.0 / 4.0 mm probes agree to
+        five decimals). Apertures are ignored for the probe exactly as ``PupilCalc`` does, so
+        a stop the pencil currently under-fills still reports its true radius.
+
+        Finite conjugates only: an infinite object has no aim plane to scale against -- its
+        launch grid is already the pupil. Returns None whenever the cone cannot be measured,
+        leaving the historical clamp untouched.
+        """
+        if system is None:
+            return None
+        try:
+            if str(self._current_object_mode()) == "Infinity":
+                return None
+            object_distance = float(self._current_object_distance())
+            if not np.isfinite(object_distance) or object_distance <= 1e-6:
+                return None
+            # bugs/0166: building the first-order reference is the expensive part of a
+            # preview. Reuse the one the caller already built rather than making a second.
+            pupil_system, pupil_rows, stop_index = (
+                pupil_inputs
+                if pupil_inputs is not None
+                else self._pupil_model_inputs(system, build_reference=True)
+            )
+            stop_index = int(stop_index)
+            if not (0 < stop_index < len(pupil_rows)):
+                return None
+            stop_radius = float(pupil_rows[stop_index].diameter) / 2.0
+            if not np.isfinite(stop_radius) or stop_radius <= 1e-9:
+                return None
+            probe = max(stop_radius, 1.0) * 0.1
+            direction = np.asarray([0.0, probe, object_distance], dtype=float)
+            norm = float(np.linalg.norm(direction))
+            if norm <= 1e-12:
+                return None
+            keeper = Kos.raykeeper(pupil_system)
+            pupil_system.IgnoreVignetting(0)
+            try:
+                pupil_system.Trace(
+                    [0.0, 0.0, 0.0],
+                    list(direction / norm),
+                    self._current_wavelength() if wavelength is None else float(wavelength),
+                )
+                keeper.push()
+                _x, y, _z, _l, _m, _n = keeper.pick(stop_index)
+            finally:
+                pupil_system.Vignetting(0)
+                keeper.clean()
+            if len(y) == 0:
+                return None
+            height = float(y[0])
+            if not np.isfinite(height) or abs(height) <= 1e-12:
+                return None
+            launch_radius = abs(probe * stop_radius / height)
+            if not np.isfinite(launch_radius) or launch_radius <= 1e-9:
+                return None
+            return launch_radius
+        except Exception:
+            return None
+
+    def _first_optical_clear_radius(self) -> float | None:
+        """The physical semi-diameter of the first optical row -- rays may never launch past it."""
+        for row in self.rows[1:]:
+            if row.surface not in {"Object", "Image"}:
+                radius = max(float(row.diameter) / 2.0, 0.5)
+                return radius if np.isfinite(radius) and radius > 1e-9 else None
+        return None
+
     def _resolved_preview_pupil_radius(
         self,
         fallback_radius: float,
@@ -858,12 +945,33 @@ class TracePreviewSamplingMixin:
         aperture_value = abs(float(self._current_aperture_value()))
         if aperture_value > 1e-9:
             aperture_radius = aperture_value * 0.5
+        # bugs/0795: raise -- never lower -- the historical clamp to the cone that actually
+        # fills the stop, and never past the physical front clear radius. A scene whose object
+        # is already the wider of the two keeps its launch to the byte.
+        pupil_inputs = None
         if system is not None:
             try:
-                pupil_system, _pupil_rows, pupil_surface_index = self._pupil_model_inputs(
-                    system,
-                    build_reference=True,
-                )
+                pupil_inputs = self._pupil_model_inputs(system, build_reference=True)
+            except Exception:
+                pupil_inputs = None
+        stop_fill = self._stop_filling_launch_radius(
+            system, wavelength=wavelength, pupil_inputs=pupil_inputs
+        )
+        if stop_fill is not None:
+            clear_radius = self._first_optical_clear_radius()
+            if clear_radius is not None:
+                stop_fill = min(stop_fill, clear_radius)
+            radius = max(radius, float(stop_fill))
+            if str(self._current_aperture_type()).upper() == "STOP":
+                # 'STOP' names a diameter AT THE STOP PLANE. Half of it is a radius there, not
+                # at the first surface -- the two only coincide when nothing refracts in
+                # between. The measured cone IS that declaration translated to the aim plane,
+                # so it replaces the raw half-diameter seed (7.538 mm of stop read as a
+                # 7.538 mm aim still cost the 4x telecentric a third of its cone).
+                aperture_radius = float(stop_fill)
+        if pupil_inputs is not None:
+            try:
+                pupil_system, _pupil_rows, pupil_surface_index = pupil_inputs
                 pupil = Kos.PupilCalc(
                     pupil_system,
                     pupil_surface_index,
