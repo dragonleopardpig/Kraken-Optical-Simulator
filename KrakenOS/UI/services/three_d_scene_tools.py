@@ -207,8 +207,18 @@ class ThreeDSceneToolsMixin:
                         if self._start_open3d_step_cache_warmup(self._three_d_inspector):
                             return
                         self._three_d_inspector.refresh_from_editor()
-                        self.status_var.set("Opened Kraken 3D inspector")
-                        self.append_debug("Opened Kraken 3D inspector")
+                        # bugs/0801: a fast load leaves the trace DEFERRED, so the scene opens
+                        # bodies-only while "Show Rays" still reads ON -- the toggle describes
+                        # an intent the view has not carried out yet, and the user reads that
+                        # as rays failing to appear. The gate itself is authoritative and must
+                        # NOT be cleared here (bugs/0718: the in-process non-sequential trace
+                        # can wedge the UI on crashed geometry, which is why only a deliberate
+                        # Trace Now clears it), so SAY so instead of silently showing nothing.
+                        message = "Opened Kraken 3D inspector" + self._pending_rays_note(
+                            self._three_d_inspector
+                        )
+                        self.status_var.set(message)
+                        self.append_debug(message)
                         return
                     reason = self._three_d_inspector.unavailable_reason or "VTK/Tk unavailable"
                     try:
@@ -287,6 +297,29 @@ class ThreeDSceneToolsMixin:
             return True
         except Exception:
             return False
+
+    def _pending_rays_note(self, inspector) -> str:
+        """bugs/0801: say when the view is opening BODIES-ONLY while Show Rays reads on.
+
+        A fast load leaves the trace deferred (bugs/0646), and bugs/0718 made that gate
+        AUTHORITATIVE -- the in-process non-sequential trace can wedge the UI on crashed
+        geometry, so only a deliberate Trace Now may clear it. The toggle therefore
+        describes an intent the view has not carried out, which the user reads as rays
+        failing to appear ("Show Rays is on, but fresh launch KrakenOS 3D won't show it").
+        The gate stays; the silence does not.
+        """
+        try:
+            if not bool(getattr(self, "_preview_trace_deferred_until_requested", False)):
+                return ""
+            rays_var = getattr(inspector, "show_rays_var", None)
+            if rays_var is not None and not bool(rays_var.get()):
+                return ""
+        except Exception:
+            return ""
+        return (
+            " -- rays are PENDING after a fast load: press Trace Now to trace them "
+            "(the STEP/DXF export follows the view)."
+        )
 
     def _start_open3d_step_cache_warmup(self, inspector) -> bool:
         specs = self._open3d_step_cache_warmup_specs()
@@ -398,6 +431,7 @@ class ThreeDSceneToolsMixin:
             errors = list(summary.get("errors", []) or [])
             if errors:
                 self.append_debug("Open 3D STEP cache warm-up warnings: " + "; ".join(str(error) for error in errors))
+        status += self._pending_rays_note(inspector)  # bugs/0801
         try:
             inspector.status_var.set(status)
             self.status_var.set(status)

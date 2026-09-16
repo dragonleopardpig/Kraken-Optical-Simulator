@@ -576,6 +576,7 @@ def _write_step_with_analytic_surfaces(
     *,
     max_edge_facets: int = 300,
     profile_points: int = 64,
+    hidden_rows: "frozenset[int] | None" = None,
 ) -> tuple[int, int, int]:
     """Write STEP using analytic revolution surfaces for optical elements.
 
@@ -625,6 +626,12 @@ def _write_step_with_analytic_surfaces(
         # (the in-path gap-carrier disc, a promoted body's trailing face) -- else they
         # export as phantom planes.
         if j < len(rows) and _row_is_non_physical_reference(rows[j]):
+            continue
+        # bugs/0800: a row HIDDEN in the 3D scene browser must not be exported. The mesh,
+        # edge and native-CAD collectors all consult _step_export_hidden_state; these
+        # analytic loops read sdt[j] directly and only ever checked the row's 2D Drawing
+        # flag, so hiding a surrogate removed it from the view and left it in the file.
+        if hidden_rows and j in hidden_rows:
             continue
         surf = sdt[j]
         if not getattr(surf, 'Drawing', 1):
@@ -748,6 +755,7 @@ def _write_step_with_cad_shapes_and_rays(
     ray_tube_radius_mm: float | None = None,
     dimension_polylines: list[np.ndarray] | None = None,
     progress_callback=None,
+    hidden_rows: "frozenset[int] | None" = None,
 ) -> tuple[int, int, int, int]:
     """Write analytic optics, imported CAD shapes, visible ray tubes, and the
     physical-distance (thickness) dimension leaders.
@@ -816,6 +824,12 @@ def _write_step_with_cad_shapes_and_rays(
         # (the in-path gap-carrier disc, a promoted body's trailing face) -- else they
         # export as phantom planes.
         if j < len(rows) and _row_is_non_physical_reference(rows[j]):
+            continue
+        # bugs/0800: a row HIDDEN in the 3D scene browser must not be exported. The mesh,
+        # edge and native-CAD collectors all consult _step_export_hidden_state; these
+        # analytic loops read sdt[j] directly and only ever checked the row's 2D Drawing
+        # flag, so hiding a surrogate removed it from the view and left it in the file.
+        if hidden_rows and j in hidden_rows:
             continue
         surf = sdt[j]
         if not getattr(surf, 'Drawing', 1):

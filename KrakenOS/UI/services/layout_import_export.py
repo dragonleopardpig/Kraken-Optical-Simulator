@@ -926,6 +926,7 @@ class LayoutImportExportMixin:
                 ray_polylines = self._step_export_ray_polylines(system)
                 dimension_polylines = self._step_export_dimension_polylines(system)
                 rows_snapshot = [SurfaceRow(**asdict(row)) for row in self.rows]
+                hidden_rows = self._step_export_hidden_state()[0]  # bugs/0800
                 self._start_native_step_export_worker(
                     system,
                     rows_snapshot,
@@ -933,6 +934,7 @@ class LayoutImportExportMixin:
                     ray_polylines,
                     dimension_polylines,
                     output_path,
+                    hidden_rows=hidden_rows,
                 )
                 return
             else:
@@ -941,8 +943,11 @@ class LayoutImportExportMixin:
                     self._update_analysis_progress("Collecting edge geometry", 2, 5)
                     edge_extras = self._collect_step_edge_and_extra_meshes(system)
                     self._update_analysis_progress("Writing analytic STEP", 4, 5)
+                    # bugs/0800: the analytic surfaces must honour the browser's hidden rows
+                    # like every other collector does.
                     analytic, faceted, tris = _write_step_with_analytic_surfaces(
                         system, self.rows, edge_extras, output_path,
+                        hidden_rows=self._step_export_hidden_state()[0],
                     )
                     message = (
                         f"3D STEP exported: {output_path.name} | "
@@ -990,6 +995,7 @@ class LayoutImportExportMixin:
         ray_polylines: list[np.ndarray],
         dimension_polylines: list[np.ndarray],
         output_path: Path,
+        hidden_rows: "frozenset[int] | None" = None,
     ) -> None:
         progress_queue: Queue = Queue()
 
@@ -1002,6 +1008,7 @@ class LayoutImportExportMixin:
                     ray_polylines,
                     output_path,
                     dimension_polylines=dimension_polylines,
+                    hidden_rows=hidden_rows,  # bugs/0800
                     progress_callback=lambda label, done, total: progress_queue.put(
                         ("progress", str(label), int(done), int(total))
                     ),

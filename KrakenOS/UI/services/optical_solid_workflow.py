@@ -1830,6 +1830,18 @@ class LayoutOpticalSolidWorkflowMixin:
     def _step_export_ray_polylines(self, system) -> list[np.ndarray]:
         if self._step_export_hidden_state()[2]:  # rays hidden in the browser
             return []
+        # bugs/0801 (user: "Show Rays is on, but fresh launch KrakenOS 3D won't show it, but
+        # export STEP will show"): while the fast-load gate is set the 3D view is BODIES ONLY
+        # (bugs/0646, made authoritative by bugs/0718 because the in-process non-sequential
+        # trace can wedge the UI on crashed geometry). This export traces on its own below,
+        # so it was writing ray tubes the user had never been shown -- and running exactly
+        # the trace 0718 defers. The drawing follows the view: no rays until Trace Now.
+        if bool(getattr(self, "_preview_trace_deferred_until_requested", False)):
+            self.append_debug(
+                "3D STEP ray export skipped: the trace is deferred (fast load) -- press "
+                "Trace Now first if the drawing should carry rays."
+            )
+            return []
         previous_ray_count = getattr(self, "_preview_field_ray_count", None)
         previous_bundle_count = getattr(self, "_preview_field_bundle_count", None)
         rays_per_group = previous_ray_count
