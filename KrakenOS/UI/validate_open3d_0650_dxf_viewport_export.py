@@ -168,10 +168,25 @@ def run_checks():
             "follow-map keys classified into BODIES again (they include ILLUMINATION "
             "RAYS -- the round-5 dead end)"
         )
-    if "for tilt in (0.0, 0.01, -0.01)" not in outline_src:
+    # bugs/0798 moved the tilt list to a module constant and made the perturbed passes
+    # ADDITIVE (each tilt puts the silhouette on DIFFERENT mesh edges, so unioning them raw
+    # triplicated every contour ~0.1 mm apart and the corners came apart). Round 6's contract
+    # is unchanged and still pinned here -- three directions, the base plus a +/- pair -- but
+    # it is pinned by VALUE now rather than by the literal loop text.
+    from KrakenOS.UI.services.dxf_viewport_export import _SILHOUETTE_TILTS
+
+    tilts = sorted(float(v) for v in _SILHOUETTE_TILTS)
+    if not (len(tilts) == 3 and abs(tilts[1]) < 1e-12 and tilts[0] < 0.0 < tilts[2]):
         e_problems.append(
             "the silhouette perturbation union is gone -- tangency knife-edges on "
-            "asymmetric tessellation drop one side's contour steps (freecad.png)"
+            f"asymmetric tessellation drop one side's contour steps (freecad.png); tilts={tilts}"
+        )
+    if "_SILHOUETTE_TILTS" not in outline_src:
+        e_problems.append("mesh_outline_strips no longer sweeps the perturbed directions")
+    if "_strips_not_already_drawn" not in outline_src:
+        e_problems.append(
+            "bugs/0798: the perturbed passes must be ADDITIVE -- unioning them raw triplicates "
+            "every contour and the merge then picks different copies at each corner"
         )
     if e_problems:
         ok = False

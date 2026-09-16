@@ -120,6 +120,52 @@ def polydata_line_strips(polydata) -> list[np.ndarray]:
     return strips
 
 
+_SILHOUETTE_TILTS = (0.0, 0.01, -0.01)
+
+
+def _strips_not_already_drawn(
+    candidates: list[np.ndarray],
+    reference: list[np.ndarray],
+    *,
+    relative_tol: float = 5e-4,
+) -> list[np.ndarray]:
+    """bugs/0798: keep only candidate strips the reference pass did NOT already draw.
+
+    Used to union the perturbed silhouettes onto the base one without triplicating every
+    contour. A candidate is dropped when every one of its points lies within the tolerance
+    of some reference point -- i.e. it retraces a line already present, a few hundredths of
+    a millimetre away. The tolerance is RELATIVE to the reference drawing's own extent
+    (default 0.05%), so it scales with the view instead of assuming millimetres.
+    """
+    if not candidates:
+        return []
+    if not reference:
+        return list(candidates)
+    try:
+        from scipy.spatial import cKDTree
+    except Exception:
+        return list(candidates)
+    try:
+        ref_points = np.vstack([np.asarray(s, dtype=float).reshape(-1, 3)[:, :3]
+                                for s in reference if len(s) >= 2])
+    except Exception:
+        return list(candidates)
+    if len(ref_points) == 0:
+        return list(candidates)
+    span = float(np.max(np.ptp(ref_points, axis=0))) if len(ref_points) > 1 else 0.0
+    tol = max(span * float(relative_tol), 1e-9)
+    tree = cKDTree(ref_points)
+    kept: list[np.ndarray] = []
+    for strip in candidates:
+        pts = np.asarray(strip, dtype=float).reshape(-1, 3)
+        if len(pts) < 2:
+            continue
+        distances, _ = tree.query(pts)
+        if float(np.max(distances)) > tol:
+            kept.append(strip)
+    return kept
+
+
 def mesh_outline_strips(
     polydata,
     view_direction=None,
@@ -178,7 +224,26 @@ def mesh_outline_strips(
             if float(np.linalg.norm(ortho)) < 1e-6:
                 ortho = np.cross(base, [0.0, 1.0, 0.0])
             ortho = ortho / (float(np.linalg.norm(ortho)) or 1.0)
-            for tilt in (0.0, 0.01, -0.01):
+            # bugs/0798 (user: "many unclosed edges, they are supposed to be closed
+            # shape"): the three passes must not TRIPLICATE the contour. Each tilt puts
+            # the silhouette on DIFFERENT mesh edges, so the copies land ~0.1 mm apart --
+            # measured on the user's own scene, raw strips totalled 129386 mm of line for
+            # 46156 mm of unique geometry, and every corner then existed three times in
+            # three slightly different places. merge_collinear_segments_2d collapsed the
+            # duplicate LENGTH correctly but had to choose between copies at each corner,
+            # and chose inconsistently, so the two arms of a corner ended on different
+            # copies and no longer met: 2854 joinable endpoints in the raw segments
+            # survived as 13, the box outlines came apart, and the stitched chains were
+            # left a median 1.38 mm from closing.
+            #
+            # The perturbations exist to catch contour edges LOST at one direction's
+            # tangency threshold (round 6), and a lost edge is one the base pass does not
+            # draw AT ALL. So the base silhouette is canonical -- its connectivity is
+            # preserved untouched -- and a perturbed fragment is kept only where the base
+            # drew nothing near it.
+            base_strips: list[np.ndarray] = []
+            extra_strips: list[np.ndarray] = []
+            for tilt in _SILHOUETTE_TILTS:
                 direction = base + tilt * ortho
                 direction = direction / (float(np.linalg.norm(direction)) or 1.0)
                 sil = vtk.vtkPolyDataSilhouette()
@@ -188,7 +253,10 @@ def mesh_outline_strips(
                 sil.SetEnableFeatureAngle(0)
                 sil.BorderEdgesOn()
                 sil.Update()
-                strips.extend(polydata_line_strips(sil.GetOutput()))
+                got = polydata_line_strips(sil.GetOutput())
+                (base_strips if not base_strips else extra_strips).extend(got)
+            strips.extend(base_strips)
+            strips.extend(_strips_not_already_drawn(extra_strips, base_strips))
 
         fe = vtk.vtkFeatureEdges()
         fe.SetInputData(source)
@@ -347,6 +415,18 @@ def merge_collinear_segments_2d(
     UNDIRECTED angle (mod pi, with an explicit wrap merge of the first/last cluster),
     re-project every cluster member on ONE reference direction, then cluster by offset
     and union the parameter intervals.
+
+    bugs/0798 (user: "many unclosed edges, they are supposed to be closed shape"): the
+    union emits REAL endpoints, never re-projected ones. Rounds 7-8 rebuilt every output
+    as ``d * t + normal * mean_offset``, i.e. on the cluster's reference direction at the
+    group's MEAN offset -- so a segment was moved by up to perp_tol/2 even when it had
+    nothing to merge with, and the two arms of a corner, being in different angle
+    clusters, were each moved independently. Measured on two arms meeting EXACTLY at
+    (50, 0): they came out ending at (50, 0.0125) and (50.0125, 0), a 0.0177 mm gap that
+    ``stitch_strips_2d`` (tol 1e-3) can never close -- which is why the user's export
+    carried 3206 loose 2-point fragments, 90% of body polylines with a dangling end and
+    a median nearest-endpoint gap of 0.0156 mm. Unioning the intervals is the point of
+    this function; moving the endpoints was never part of it.
     """
     if not segments:
         return []
@@ -382,7 +462,10 @@ def merge_collinear_segments_2d(
         for _, a, b in cluster:
             t0, t1 = float(np.dot(d, a)), float(np.dot(d, b))
             offset = 0.5 * (float(np.dot(normal, a)) + float(np.dot(normal, b)))
-            members.append((offset, min(t0, t1), max(t0, t1)))
+            # bugs/0798: carry each member's REAL endpoints, ordered along the reference
+            # direction, so a merged run can be emitted from points that actually exist.
+            lo, hi = (a, b) if t0 <= t1 else (b, a)
+            members.append((offset, min(t0, t1), max(t0, t1), lo, hi))
         members.sort(key=lambda m: (m[0], m[1]))
         i = 0
         while i < len(members):
@@ -390,17 +473,16 @@ def merge_collinear_segments_2d(
             while j < len(members) and members[j][0] - members[j - 1][0] <= perp_tol:
                 j += 1
             group = sorted(members[i:j], key=lambda m: m[1])
-            offset = float(np.mean([m[0] for m in group]))
-            cur_t0, cur_t1 = group[0][1], group[0][2]
-            for _, t0, t1 in group[1:]:
+            cur_t1 = group[0][2]
+            cur_p0, cur_p1 = group[0][3], group[0][4]
+            for _offset, t0, t1, p_lo, p_hi in group[1:]:
                 if t0 <= cur_t1 + gap_tol:
-                    cur_t1 = max(cur_t1, t1)
+                    if t1 > cur_t1:
+                        cur_t1, cur_p1 = t1, p_hi
                 else:
-                    out.append(
-                        np.array([d * cur_t0 + normal * offset, d * cur_t1 + normal * offset])
-                    )
-                    cur_t0, cur_t1 = t0, t1
-            out.append(np.array([d * cur_t0 + normal * offset, d * cur_t1 + normal * offset]))
+                    out.append(np.array([cur_p0, cur_p1]))
+                    cur_t1, cur_p0, cur_p1 = t1, p_lo, p_hi
+            out.append(np.array([cur_p0, cur_p1]))
             i = j
     return out
 
