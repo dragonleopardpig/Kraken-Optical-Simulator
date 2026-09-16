@@ -2126,6 +2126,36 @@ class LayoutTableWorkbenchMixin:
                         )
         except Exception as exc:
             self.append_debug(f"fixed-conjugate WD placement skipped: {exc}")
+        # bugs/0793 (flag_20260916_105357 "rays seems like not focusing to sensor"): the 0656
+        # placement above is gated on _lens_datasheet_wd_registration(), which needs a lens STEP
+        # mesh to measure object->rim AND applies the coincident-principal-plane law that
+        # bugs/0792 showed is unreachable above about 1x. A telecentric with neither -- the SPO
+        # TCL4.0X-65DI-5M ships no STEP and is 4x -- therefore kept the PREVIOUS lens's object
+        # leg. Measured on the flag: a 110 mm object leg (the outgoing 1x lens's working
+        # distance) put the 4x lens 45 mm outside its conjugate, where it forms a VIRTUAL image
+        # 16.4 mm before the rear group -- so there is no best focus for the refocus below to
+        # snap to, and the banner reported the image forming 40.96 mm in front of the sensor.
+        #
+        # A fixed-conjugate lens states its own object distance, and the surrogate was BUILT
+        # with it. When the measured route cannot run, take it from the model: no mesh, no
+        # principal-plane arithmetic, no assumption about the magnification.
+        try:
+            if str(getattr(self.rows[0], "surface", "") or "") == "Object":
+                wanted = float(getattr(model, "object_thickness", 0.0) or 0.0)
+                fixed = bool(getattr(model, "fixed_conjugate", False))
+                already = "vendor working distance" in housing_note
+                frozen = bool((self._folded_image_conjugate_split() or {}).get("frozen_world"))
+                if fixed and wanted > 0.0 and not already and not frozen:
+                    if abs(float(self.rows[0].thickness) - wanted) > 1e-6:
+                        self.rows[0].thickness = round(wanted, 6)
+                        self._sync_table()
+                        housing_note += (
+                            f" Object set to this lens's working distance ({wanted:g} mm): it is "
+                            f"a fixed-conjugate lens and forms no real image at any other object "
+                            f"distance."
+                        )
+        except Exception as exc:
+            self.append_debug(f"fixed-conjugate object placement skipped: {exc}")
         self._commit_history_capture()
         # bugs/0388: the swapped lens focuses at a different plane; 0383 kept the camera/mounts
         # at their absolute positions, so the image is defocused on the sensor. Auto re-solve

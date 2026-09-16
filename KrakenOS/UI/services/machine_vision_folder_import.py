@@ -900,6 +900,10 @@ class SurrogateModel:
     spot_radius_rel_path: str | None
     pdf_name: str | None
     notes: list[str] = field(default_factory=list)
+    # bugs/0793: this lens operates at ONE conjugate -- object at the vendor working distance,
+    # image at the mount flange -- and forms no real image anywhere else. A swap must MOVE the
+    # object to it rather than keep the outgoing lens's leg and refocus the sensor.
+    fixed_conjugate: bool = False
 
     @property
     def filename(self) -> str:
@@ -950,6 +954,7 @@ class _SurrogateCore:
     source_label: str
     title_seed: str
     extra_notes: list[str] = field(default_factory=list)
+    fixed_conjugate: bool = False
 
 
 def build_surrogate_from_assets(
@@ -1247,6 +1252,7 @@ def _core_from_datasheet_cardinals(
     else:
         span, span_source = _surrogate_span_from_assets(effl, assets.primary_step)
 
+    fixed_conjugate = False
     conjugate_solve = None
     if (
         getattr(cardinals, "conjugate_constrained", False)
@@ -1275,6 +1281,11 @@ def _core_from_datasheet_cardinals(
         effl = abs(float(conjugate_solve["effl"]))
         object_gap = conjugate_solve["object_gap"]
         image_gap = conjugate_solve["image_gap"]
+        # bugs/0793: ONLY here is object_gap the vendor's own working distance (the front datum
+        # IS the housing rim by construction). On the EFL route it is a DERIVED gap that
+        # bugs/0647's registration refit corrects against the STEP body, so claiming it as a
+        # contract there would move the object to a number the datasheet never stated.
+        fixed_conjugate = True
         try:
             stop_diameter = round(
                 conjugate_stop_diameter(conjugate_solve, cardinals.magnification, fno), 4)
@@ -1284,7 +1295,9 @@ def _core_from_datasheet_cardinals(
             "The datasheet pins the CONJUGATES, not a focal length (above about 1x the "
             "coincident-principal-plane value is unreachable for this class); the two ideal "
             "groups sit inside the housing and deliver the stated magnification at the stated "
-            "working distance with the image at the mount flange."
+            "working distance with the image at the mount flange. bugs/0793: that working "
+            "distance is a CONTRACT -- this lens forms no real image anywhere else -- so a swap "
+            "must move the object to it, not merely refocus the sensor."
         )
     elif cardinals.has_principal_planes:
         ppa = float(cardinals.ppa)
@@ -1414,6 +1427,7 @@ def _core_from_datasheet_cardinals(
         aperture_value=aperture_value,
         settings_base=settings_base,
         source_label=assets.primary_pdf.name if assets.primary_pdf else "datasheet",
+        fixed_conjugate=fixed_conjugate,
         title_seed=title_seed,
         extra_notes=notes,
     )
@@ -1482,6 +1496,7 @@ def _assemble_surrogate(
         wavefront_rel_path=wavefront_rel,
         spot_radius_rel_path=spot_rel,
         pdf_name=pdf_name,
+        fixed_conjugate=bool(getattr(core, "fixed_conjugate", False)),
         notes=notes,
     )
 
