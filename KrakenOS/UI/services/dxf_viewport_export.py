@@ -310,7 +310,7 @@ class _SceneDepthBuffer:
     Cost on that scene: 0.32 s for 11272 triangles, 5.5 s for 231606.
     """
 
-    def __init__(self, view_direction, resolution: int = 1400):
+    def __init__(self, view_direction, resolution: int = 1400, tile_min_triangles: int = 1000):
         view = np.asarray(view_direction, dtype=float).reshape(3)
         self.view = view / (float(np.linalg.norm(view)) or 1.0)
         up = np.array([0.0, 0.0, 1.0])
@@ -320,6 +320,8 @@ class _SceneDepthBuffer:
         self.e0 = self.e0 / (float(np.linalg.norm(self.e0)) or 1.0)
         self.e1 = np.cross(self.view, self.e0)
         self.resolution = int(resolution)
+        self.tile_min_triangles = int(tile_min_triangles)
+        self._grids: list[tuple] = []   # per-part tiles: (lo, hi, span, buffer, front, scale)
         self._tris: list[tuple[np.ndarray, np.ndarray]] = []
         self.buffer = None
         self._front = None
@@ -360,24 +362,22 @@ class _SceneDepthBuffer:
         except Exception:
             return
 
-    def _build(self) -> None:
-        if not self._tris:
-            return
-        uv = np.vstack([self.to_plane(p) for p, _t in self._tris])
-        lo, hi = uv.min(axis=0), uv.max(axis=0)
-        span = float((hi - lo).max()) * 1.002
-        if span <= 0.0:
-            return
+    def _rasterise(self, lo, span, meshes):
+        """Fill one res x res depth window starting at ``lo`` and ``span`` wide."""
         res = self.resolution
         scale = (res - 1) / span
         buffer = np.full((res, res), -np.inf, dtype=np.float64)
-        depths = []
-        for points, tris in self._tris:
+        for points, tris in meshes:
             plane = (self.to_plane(points) - lo) * scale
             depth = self.depth_of(points)
-            depths.append(depth)
             corners = plane[tris]
             zs = depth[tris]
+            cx0, cx1 = corners[:, :, 0].min(axis=1), corners[:, :, 0].max(axis=1)
+            cy0, cy1 = corners[:, :, 1].min(axis=1), corners[:, :, 1].max(axis=1)
+            keep = (cx1 >= 0) & (cx0 <= res - 1) & (cy1 >= 0) & (cy0 <= res - 1)
+            corners, zs = corners[keep], zs[keep]
+            if len(corners) == 0:
+                continue
             xmin = np.clip(np.floor(corners[:, :, 0].min(axis=1)).astype(int), 0, res - 1)
             xmax = np.clip(np.ceil(corners[:, :, 0].max(axis=1)).astype(int), 0, res - 1)
             ymin = np.clip(np.floor(corners[:, :, 1].min(axis=1)).astype(int), 0, res - 1)
@@ -400,7 +400,6 @@ class _SceneDepthBuffer:
                 z = l1 * zs[k][0] + l2 * zs[k][1] + l3 * zs[k][2]
                 view = buffer[y0:y1 + 1, x0:x1 + 1]
                 np.maximum(view, np.where(inside, z, -np.inf), out=view)
-        self.buffer = buffer
         # CONSERVATIVE test surface: the FARTHEST front depth in each 3x3 neighbourhood. A line
         # lying ON a rim or silhouette samples pixels the adjacent, slightly nearer triangle
         # covers, and against the raw buffer it flickered hidden/visible at pixel pitch --
@@ -410,13 +409,64 @@ class _SceneDepthBuffer:
         try:
             from scipy.ndimage import minimum_filter
 
-            self._front = minimum_filter(buffer, size=3, mode="nearest")
+            front = minimum_filter(buffer, size=3, mode="nearest")
         except Exception:
-            self._front = buffer
+            front = buffer
+        return buffer, front, scale
+
+    def _build(self) -> None:
+        if not self._tris:
+            return
+        planes = [self.to_plane(p) for p, _t in self._tris]
+        uv = np.vstack(planes)
+        lo, hi = uv.min(axis=0), uv.max(axis=0)
+        span = float((hi - lo).max()) * 1.002
+        if span <= 0.0:
+            return
+        depths = np.concatenate([self.depth_of(p) for p, _t in self._tris])
+        self._depth_span = max(float(depths.max() - depths.min()), 1e-9)
+        self.buffer, self._front, self._scale = self._rasterise(lo, span, self._tris)
         self._origin = lo
-        self._scale = scale
-        stacked = np.concatenate(depths)
-        self._depth_span = max(float(stacked.max() - stacked.min()), 1e-9)
+        # bugs/0803: one grid for the whole view is too coarse for the parts that matter.
+        # Measured on the user's viewport export -- 263 mm of scene at 1400 px is 188 um per
+        # pixel, so the camera's 53 mm spanned 284 px where the six-view sheet gives it 1396.
+        # A detailed body that is meaningfully smaller than the scene gets its OWN full-
+        # resolution tile, rasterising every solid that overlaps it (so the lens still hides the
+        # camera). Strips spanning several bodies keep using the global grid.
+        self._grids = []
+        for (points, tris), plane in zip(self._tris, planes):
+            if len(tris) < self.tile_min_triangles:
+                continue
+            m_lo, m_hi = plane.min(axis=0), plane.max(axis=0)
+            m_span = float((m_hi - m_lo).max())
+            if m_span <= 0.0 or m_span >= 0.8 * span:
+                continue
+            pad = 0.02 * m_span
+            t_lo = m_lo - pad
+            t_span = m_span + 2.0 * pad
+            t_hi = t_lo + t_span
+            overlapping = [
+                mesh for mesh, other in zip(self._tris, planes)
+                if bool((other.max(axis=0) >= t_lo).all() and (other.min(axis=0) <= t_hi).all())
+            ]
+            buffer, front, scale = self._rasterise(t_lo, t_span, overlapping)
+            self._grids.append((t_lo, t_hi, t_span, buffer, front, scale))
+
+    def _grid_for(self, plane_points):
+        """The finest tile that fully contains these projected points, else the global grid."""
+        s_lo, s_hi = plane_points.min(axis=0), plane_points.max(axis=0)
+        best = None
+        for grid in self._grids:
+            t_lo, t_hi, t_span = grid[0], grid[1], grid[2]
+            if bool((s_lo >= t_lo).all() and (s_hi <= t_hi).all()):
+                if best is None or t_span < best[2]:
+                    best = grid
+        if best is None:
+            # The global grid is full resolution only when the view needed no tiles (a
+            # single-part sheet); otherwise it is the coarse fallback for strips that span
+            # several bodies.
+            return self._origin, self.buffer, self._front, self._scale, not self._grids
+        return best[0], best[3], best[4], best[5], True
 
     def visible_runs(self, strip, tolerance_fraction: float = 2e-3) -> list[np.ndarray]:
         """Split a world-space strip into the runs that are NOT hidden behind a solid."""
@@ -430,23 +480,32 @@ class _SceneDepthBuffer:
         # Test ALONG each segment, not just at its vertices: a merged straight edge is often
         # one long 2-point segment, and with both ends visible its middle can still pass
         # behind a body. Sample at the buffer's own pixel pitch -- finer cannot be resolved.
-        pitch = 1.0 / max(float(self._scale), 1e-12)
+        origin, grid_buffer, grid_front, grid_scale, full_resolution = self._grid_for(
+            self.to_plane(points)
+        )
+        pitch = 1.0 / max(float(grid_scale), 1e-12)
+        original = points
         samples = [points[:1]]
-        for start, end in zip(points[:-1], points[1:]):
+        vertex_at = [0]              # sample index -> original vertex index, or -1
+        for k, (start, end) in enumerate(zip(points[:-1], points[1:])):
             length = float(np.linalg.norm(end - start))
             steps = min(max(int(np.ceil(length / pitch)), 1), 4096)
             fractions = np.linspace(0.0, 1.0, steps + 1)[1:, None]
-            samples.append(start + fractions * (end - start))
+            chunk = start + fractions * (end - start)
+            chunk[-1] = end          # the segment's end IS the next vertex, exactly
+            samples.append(chunk)
+            vertex_at.extend([-1] * (steps - 1) + [k + 1])
         points = np.vstack(samples)
+        vertex_at = np.asarray(vertex_at)
         plane = self.to_plane(points)
         depth = self.depth_of(points)
         res = self.resolution
-        px = np.rint((plane - self._origin) * self._scale).astype(int)
+        px = np.rint((plane - origin) * grid_scale).astype(int)
         # Outside the rasterised extent NOTHING is in front. Clipping such a sample to the
         # border pixel made it inherit that pixel's depth -- a line leaving one side of a body
         # read as hidden all the way out, and the guard's crossing strip came back as one run.
         in_grid = (px[:, 0] >= 0) & (px[:, 0] < res) & (px[:, 1] >= 0) & (px[:, 1] < res)
-        surface = self._front if self._front is not None else self.buffer
+        surface = grid_front if grid_front is not None else grid_buffer
         front = np.full(len(points), -np.inf)
         front[in_grid] = surface[px[in_grid, 1], px[in_grid, 0]]
         tol = self._depth_span * float(tolerance_fraction)
@@ -468,17 +527,52 @@ class _SceneDepthBuffer:
                 if index > 0 and end < n and (end - index) <= max_gap:
                     visible[index:end] = True
                 index = end
-        runs: list[np.ndarray] = []
+        # Emit ORIGINAL vertices, not the samples. The samples exist only to decide visibility;
+        # returned as geometry they broke everything downstream -- the silhouette copy and the
+        # feature copy of one edge used to share identical vertices, so the exact dedupe
+        # removed one and the stitcher chained the rest, but resampled at different offsets
+        # they stopped matching and every hole rim came out as two interleaved dotted copies
+        # (camera six-view 1880 -> 3900 polylines, while the depth test itself cut almost
+        # nothing: at most 6 runs per small strip across all six views).
+        if visible.all():
+            return [original]
+        spans: list[tuple[int, int]] = []
         start = None
         for index, flag in enumerate(visible):
             if flag and start is None:
                 start = index
             elif not flag and start is not None:
                 if index - start >= 2:
-                    runs.append(points[start:index])
+                    spans.append((start, index - 1))
                 start = None
         if start is not None and len(points) - start >= 2:
-            runs.append(points[start:])
+            spans.append((start, len(points) - 1))
+        runs: list[np.ndarray] = []
+        # A piece the depth test CUT that is shorter than three pixels of the grid that cut it
+        # is below that test's resolution -- rasterisation noise, not a visibility decision.
+        # Measured on the camera six-view: sampling along segments is what recovered 21 real
+        # lines over 5 mm, and also what left ~1100 sub-0.5 mm end pieces around hole rims.
+        # This was tried once and reverted while the viewport ran on a single 188 um grid (3 px
+        # was 0.56 mm there and cost real lines); on per-part tiles it is 40-110 um.
+        # Only in a SINGLE-PART view (no tiles were needed). There, a cut is the part hiding
+        # itself at a hole rim and the short end pieces are noise -- the camera six-view lost
+        # 722 sub-0.5 mm specks while lines over 5 mm went UP, 227 -> 232. In a multi-body
+        # view a cut can be a line emerging from behind ANOTHER body, where a short visible
+        # piece is real: applied to the viewport, even restricted to its fine tiles, the rule
+        # cost 130 -> 127 lines over 5 mm by opening gaps in them. Measured on one scene; the
+        # distinction is stated as observed, not as a law.
+        min_length = 3.0 * pitch if (full_resolution and not self._grids) else 0.0
+        for first, last in spans:
+            interior = [
+                original[int(vertex_at[i])]
+                for i in range(first + 1, last)
+                if vertex_at[i] >= 0
+            ]
+            run = np.vstack([points[first:first + 1], *[v[None, :] for v in interior],
+                             points[last:last + 1]]) if interior else points[[first, last]]
+            if float(np.sum(np.linalg.norm(np.diff(run, axis=0), axis=1))) < min_length:
+                continue
+            runs.append(run)
         return runs
 
 

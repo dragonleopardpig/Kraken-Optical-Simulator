@@ -90,9 +90,11 @@ drawing of the lens, port and camera with no see-through edges.
 
 ## Honest residuals
 
-* Small mount-hole rims on the six-view side views still break into dotted fragments -- the
-  hole-bore edges sit at a depth discontinuity the 1400-px buffer resolves poorly on a small
-  feature.
+* Small mount-hole rims on the six-view side views still break into dotted fragments.
+  **Correction (bugs/0803):** the cause first written here -- a depth discontinuity the 1400-px
+  buffer resolves poorly -- was measured false; the six-view's pixels are 21-35 um and the test
+  almost never cut a small strip. The dots were short end pieces left by sampling along segments;
+  see 0803.
 * Hidden-line removal cuts partially hidden loops, so the viewport now carries **15** closed-flag
   shapes where bugs/0799 had 105. That is the correct CAD behaviour -- a partly hidden circle is
   not a closed shape in a hidden-line drawing -- but it is a visible change.
