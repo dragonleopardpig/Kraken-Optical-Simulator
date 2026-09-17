@@ -1199,6 +1199,25 @@ class LayoutTableWorkbenchMixin:
     # element and the sensor, so the sensor/camera can't be solved INTO it (bugs/0388).
     _SWAP_REFOCUS_MIN_CLEARANCE_MM = 2.0
 
+    def _camera_seats_on_lens_flange(self) -> bool:
+        """True when the sensor gap row IS the imaging lens's Rear Optical Vertex Datum.
+
+        bugs/0806 (flag_20260917_114837, TCL4.0X-65DI on an MV-CS050): that datum is the lens's
+        MOUNT FACE -- the shoulder a C-mount camera screws up against, with the sensor
+        ``camera_front_to_sensor_mm`` (the flange focal distance) behind it. It is a seat, not an
+        obstacle. The clearance below exists to keep a camera body off an upstream fold mirror
+        (bugs/0388-0392); charged against the lens's own shoulder it parked the camera 2 mm off
+        the lens, the sensor 19.526 mm behind a 17.526 mm flange, and every downstream number
+        (focus, magnification 4.0 -> 4.19, the FOV) followed that 2 mm spacer nobody fitted."""
+        rows = getattr(self, "rows", None) or []
+        if len(rows) < 3:
+            return False
+        try:
+            _front, rear = self._imaging_lens_block_indices()
+        except Exception:
+            return False
+        return rear is not None and int(rear) == len(rows) - 2
+
     def _swap_refocus_min_gap(self) -> float:
         """Minimum gap (mm) the auto-refocus leaves ahead of the sensor so the CAMERA can't be
         solved into the upstream element (e.g. the RA mirror).
@@ -1217,6 +1236,10 @@ class LayoutTableWorkbenchMixin:
         except Exception:
             standoff = 0.0
         if 0.0 < standoff < 1.0e6:  # bounds also reject NaN/inf without numpy
+            # bugs/0806: a camera mounted ON the lens seats flush against its flange -- the body
+            # reaches exactly the flange focal distance, and there is nothing to clear.
+            if self._camera_seats_on_lens_flange():
+                return standoff
             # Reserve the whole camera body: sensor floor + the flange-to-sensor depth.
             return clearance + standoff
         rows = getattr(self, "rows", None) or []
@@ -1467,6 +1490,11 @@ class LayoutTableWorkbenchMixin:
             return 0.0
         dbg["upstream_name"] = str(getattr(rows[-2], "name", "") or "")
         dbg["upstream_surface"] = str(getattr(rows[-2], "surface", "") or "")
+        # bugs/0806: the lens's rear vertex datum is the mount face the camera seats on -- its
+        # drawn disc is a reference plane, not a body, and "clearing" it by 2 mm unseats the lens.
+        if self._camera_seats_on_lens_flange():
+            dbg["result"] = "seat: the camera mounts on the lens flange (no upstream body)"
+            return 0.0
         try:
             dbg["camera_glued"] = self._current_camera_record() is not None
         except Exception:
@@ -1662,9 +1690,17 @@ class LayoutTableWorkbenchMixin:
                 "move the camera or the fold mirror down the leg before trusting this scene"
             )
         elif limited:
-            notes.append(
-                f"focus limited to {gap:.1f} mm so the camera body clears the upstream element"
-            )
+            if self._camera_seats_on_lens_flange():
+                # bugs/0806: nothing was cleared -- the lens wants the sensor closer than the
+                # camera's own flange depth, and a seated camera cannot come any closer.
+                notes.append(
+                    f"focus limited to {gap:.4g} mm: the camera is seated on the lens flange and "
+                    "its sensor cannot come closer than the camera's flange distance"
+                )
+            else:
+                notes.append(
+                    f"focus limited to {gap:.1f} mm so the camera body clears the upstream element"
+                )
         elif isinstance(dbg, dict) and dbg.get("camera_glued") and str(dbg.get("result", "")).startswith("0 mm: missing"):
             # A camera IS glued but the body-clearance geometry could not be resolved -- warn
             # rather than silently leave the sensor where it may collide (bugs/0393).
@@ -9024,8 +9060,15 @@ class LayoutTableWorkbenchMixin:
         # LAW 2 (|v|half = device * |m| / 2 = 14.40 mm on an 11.52 mm half) says a fifth of the
         # device is off the sensor entirely. So predict the extent as well, from the device and
         # the delivered magnification, and report the fraction actually captured.
+        # bugs/0806: only a part that is SWITCHED ON is a device. A scene with the inspection part
+        # disabled still carries its 60 x 40 x 20 default, and reading that produced "FIELD
+        # OVERFLOWS THE SENSOR ... the field is 249.3 mm" on a 4x lens imaging a 2 mm field.
         try:
-            spec = self.inspection_part_spec
+            from KrakenOS.UI.services.inspection_part import normalize_inspection_part_spec
+
+            spec = normalize_inspection_part_spec(getattr(self, "inspection_part_spec", None))
+            if not spec["enabled"]:
+                raise ValueError("inspection part disabled")
             device = max(float(spec["width_mm"]), float(spec["depth_mm"]))
             summary = self.__dict__.get("_solve_summary_info") or {}
             m = abs(float(summary["delivered_m"]))
