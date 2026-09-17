@@ -674,6 +674,19 @@ def mesh_outline_polygons(
                     pass
             if len(ring) < 4:
                 continue
+            # bugs/0804: a ring that encloses no area is not a shape. Seen from the side, the
+            # tapered flank's triangles are nearly edge-on, and simplifying their union at
+            # simplify_tol collapses thin slivers into collinear points -- 18 of the 21 rings on
+            # the user's -yz export enclosed EXACTLY zero area. Being closed, they bypassed both
+            # hidden-line removal and post-processing and drew as the stray lines in the taper.
+            # Cut at the precision the ring was simplified to: mean width 2A/P below that
+            # tolerance is below what this outline can resolve.
+            closed_ring = ring if np.allclose(ring[0], ring[-1]) else np.vstack([ring, ring[:1]])
+            area = abs(float(np.sum(closed_ring[:-1, 0] * closed_ring[1:, 1]
+                                    - closed_ring[1:, 0] * closed_ring[:-1, 1]))) / 2.0
+            perimeter = float(np.sum(np.linalg.norm(np.diff(closed_ring, axis=0), axis=1)))
+            if perimeter <= 0.0 or 2.0 * area / perimeter < max(float(simplify_tol), 1e-9):
+                continue
             out.append(ring[:, 0:1] * e0 + ring[:, 1:2] * e1 + depth * view)
         return out
     except Exception:
