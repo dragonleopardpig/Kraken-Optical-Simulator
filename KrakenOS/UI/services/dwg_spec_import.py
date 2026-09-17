@@ -51,17 +51,43 @@ def _clean_dwg_text(raw: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def dwg_text_entities(path: str | Path) -> "list[tuple[float, float, float, str]]":
-    """``(x, y, height, text)`` for every TEXT/MTEXT in the drawing; ``[]`` on any failure."""
+_PAYLOAD_CACHE: "dict[tuple, dict]" = {}
+
+
+def _dwg_payload(path: str | Path) -> "dict | None":
+    """The drawing as libredwg's JSON, memoised on (path, mtime, size); None on any failure.
+
+    bugs/0807: the cardinals, the chain, the iris and the barrel are all read from ONE drawing
+    during one import; each used to spawn its own ``dwgread``.
+    """
     if not dwg_available():
-        return []
+        return None
+    try:
+        resolved = Path(path).resolve()
+        stat = resolved.stat()
+        key = (str(resolved), stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        return None
+    if key in _PAYLOAD_CACHE:
+        return _PAYLOAD_CACHE[key]
     try:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "dwg.json"
-            subprocess.run(["dwgread", "-O", "JSON", "-o", str(out), str(Path(path))],
+            subprocess.run(["dwgread", "-O", "JSON", "-o", str(out), str(resolved)],
                            check=True, capture_output=True, timeout=_DWG_TIMEOUT_S)
             payload = json.loads(out.read_text(encoding="utf-8", errors="replace"))
     except Exception:
+        return None
+    if len(_PAYLOAD_CACHE) > 8:
+        _PAYLOAD_CACHE.clear()
+    _PAYLOAD_CACHE[key] = payload
+    return payload
+
+
+def dwg_text_entities(path: str | Path) -> "list[tuple[float, float, float, str]]":
+    """``(x, y, height, text)`` for every TEXT/MTEXT in the drawing; ``[]`` on any failure."""
+    payload = _dwg_payload(path)
+    if payload is None:
         return []
     items: list[tuple[float, float, float, str]] = []
     for obj in payload.get("OBJECTS", []) or []:
@@ -185,6 +211,167 @@ def dwg_conjugate_chain(path: str | Path) -> "dict | None":
     return best
 
 
+def _point2(value) -> "tuple[float, float] | None":
+    if isinstance(value, (list, tuple)) and len(value) >= 2:
+        try:
+            x, y = float(value[0]), float(value[1])
+        except (TypeError, ValueError):
+            return None
+        if math.isfinite(x) and math.isfinite(y):
+            return x, y
+    return None
+
+
+def _linear_dimensions(payload: dict) -> "list[dict]":
+    """Every linear dimension: its two extension-line origins, measured value and override text."""
+    dims: "list[dict]" = []
+    for obj in payload.get("OBJECTS", []) or []:
+        if not isinstance(obj, dict) or not str(obj.get("entity", "")).startswith("DIMENSION_"):
+            continue
+        p1, p2 = _point2(obj.get("xline1_pt")), _point2(obj.get("xline2_pt"))
+        try:
+            value = float(obj.get("act_measurement"))
+        except (TypeError, ValueError):
+            continue
+        if p1 is None or p2 is None or not math.isfinite(value) or value <= 0.0:
+            continue
+        dims.append({"p1": p1, "p2": p2, "value": value,
+                     "text": _clean_dwg_text(obj.get("user_text") or "")})
+    return dims
+
+
+def _housing_frame(payload: dict, chain: dict) -> "tuple[int, float, float, float] | None":
+    """``(axis, front, sign, scale)``: how the drawing lays the lens out.
+
+    ``axis`` is the sheet coordinate (0 = x, 1 = y) the housing is dimensioned along, ``front``
+    the sheet coordinate of the housing's FRONT face, ``sign`` the direction into the lens and
+    ``scale`` sheet units per millimetre. The housing dimension is the one whose measurement is
+    the chain's housing; its front end is the one that shares an extension line with the
+    working-distance dimension -- the drawing's own statement of which end faces the object.
+    """
+    housing = float(chain["housing"])
+    dims = _linear_dimensions(payload)
+    wd_dims = [d for d in dims if re.match(r"(?i)\s*W\.?\s*D", d["text"])]
+    for dim in dims:
+        if abs(dim["value"] - housing) > max(0.1, 1e-3 * housing):
+            continue
+        axis = 0 if abs(dim["p2"][0] - dim["p1"][0]) >= abs(dim["p2"][1] - dim["p1"][1]) else 1
+        span = abs(dim["p2"][axis] - dim["p1"][axis])
+        if span <= 0.0:
+            continue
+        tol = max(1e-6, 1e-3 * span)
+        for front, rear in ((dim["p1"][axis], dim["p2"][axis]), (dim["p2"][axis], dim["p1"][axis])):
+            if any(abs(w[key][axis] - front) <= tol for w in wd_dims for key in ("p1", "p2")):
+                return axis, front, (1.0 if rear > front else -1.0), span / dim["value"]
+    return None
+
+
+def _segment_distance(point, a, b) -> float:
+    ax, ay = a
+    bx, by = b
+    px, py = point
+    dx, dy = bx - ax, by - ay
+    length2 = dx * dx + dy * dy
+    t = 0.0 if length2 <= 0.0 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / length2))
+    return math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+
+
+_STOP_LABEL = re.compile(r"(?i)^\s*(?:iris|aperture(?:\s*stop)?|stop)\b")
+
+
+def dwg_iris_stop(path: str | Path, chain: "dict | None" = None) -> "dict | None":
+    """Where the drawing puts the IRIS, in mm behind the housing's front face; None if it does not.
+
+    bugs/0807. For an object-space telecentric lens the iris IS the aperture stop, and a vendor
+    drawing that labels it states the one internal position a first-order surrogate needs. Read
+    from geometry, not guessed: the label is the text sitting on a LEADER's landing, the position
+    is the leader's arrow TIP projected onto the housing axis (``_housing_frame``), and when that
+    tip falls inside a dimensioned ring of the housing run -- the SPO TCL4.0X's 11.6 mm iris ring
+    -- the stop is the ring's middle, which does not depend on where the draftsman clicked.
+    ``{"stop_mm", "tip_mm", "ring_mm", "label"}``.
+    """
+    payload = _dwg_payload(path)
+    if payload is None:
+        return None
+    chain = chain if chain is not None else dwg_conjugate_chain(path)
+    if not chain:
+        return None
+    frame = _housing_frame(payload, chain)
+    if frame is None:
+        return None
+    axis, front, sign, scale = frame
+    housing = float(chain["housing"])
+    labels = [(x, y, h, t) for x, y, h, t in dwg_text_entities(path) if _STOP_LABEL.search(t)]
+    if not labels:
+        return None
+    candidates = []
+    for obj in payload.get("OBJECTS", []) or []:
+        if not isinstance(obj, dict) or obj.get("entity") != "LEADER":
+            continue
+        points = [p for p in (_point2(q) for q in (obj.get("points") or [])) if p is not None]
+        if len(points) < 2:
+            continue
+        for x, y, height, text in labels:
+            distance = _segment_distance((x, y), points[-2], points[-1])
+            if distance <= 3.0 * height:
+                candidates.append((distance, points[0], text))
+    if not candidates:
+        return None
+    _distance, tip, label = min(candidates, key=lambda c: c[0])
+
+    def along(coordinate: float) -> float:
+        return sign * (coordinate - front) / scale
+
+    tip_mm = along(tip[axis])
+    if not (0.0 < tip_mm < housing):
+        return None
+    ring = None
+    for dim in _linear_dimensions(payload):
+        # measured ALONG the axis (a diameter or a port offset is not a ring of the housing)
+        if abs(abs(dim["p2"][axis] - dim["p1"][axis]) / scale - dim["value"]) > max(0.05, 2e-3 * dim["value"]):
+            continue
+        lo, hi = sorted((along(dim["p1"][axis]), along(dim["p2"][axis])))
+        if lo < -1e-6 or hi > housing + 1e-6 or hi - lo >= housing - 1e-6:
+            continue
+        if lo <= tip_mm <= hi and (ring is None or hi - lo < ring[1] - ring[0]):
+            ring = (lo, hi)
+    stop_mm = 0.5 * (ring[0] + ring[1]) if ring is not None else tip_mm
+    return {"stop_mm": float(stop_mm), "tip_mm": float(tip_mm),
+            "ring_mm": (float(ring[0]), float(ring[1])) if ring is not None else None, "label": label}
+
+
+def dwg_barrel_radius(path: str | Path, *, before_mm: float, chain: "dict | None" = None) -> "float | None":
+    """Half the largest COAXIAL diameter the drawing dimensions in front of ``before_mm``.
+
+    bugs/0807: the front group of a telecentric lens has to pass every field's object-side cone,
+    and it cannot be wider than the barrel that holds it. A coaxial diameter is measured ACROSS the
+    housing axis; a port's diameter (the SPO's Ø16 coaxial-illumination tube) is measured along it
+    and is not counted.
+    """
+    payload = _dwg_payload(path)
+    if payload is None:
+        return None
+    chain = chain if chain is not None else dwg_conjugate_chain(path)
+    if not chain:
+        return None
+    frame = _housing_frame(payload, chain)
+    if frame is None:
+        return None
+    axis, front, sign, scale = frame
+    best = None
+    for dim in _linear_dimensions(payload):
+        if "Ø" not in dim["text"]:
+            continue
+        across = abs(dim["p2"][1 - axis] - dim["p1"][1 - axis]) / scale
+        along = abs(dim["p2"][axis] - dim["p1"][axis]) / scale
+        if abs(across - dim["value"]) > max(0.05, 2e-3 * dim["value"]) or along > 0.05:
+            continue
+        position = sign * (0.5 * (dim["p1"][axis] + dim["p2"][axis]) - front) / scale
+        if 0.0 <= position <= float(before_mm):
+            best = max(best or 0.0, 0.5 * dim["value"])
+    return best
+
+
 # Named sensor formats, for the one corroboration a telecentric drawing always carries: it states
 # the object field AND the format that field fills, and m = format_width / object_width.
 _SENSOR_FORMATS_MM = {
@@ -272,4 +459,21 @@ def dwg_telecentric_cardinals(path: str | Path):
     title = re.search(r"(?i)\b([A-Z]{2,5}\d+(?:\.\d+)?X-[A-Z0-9-]+)\b", text)
     if title is not None:
         cardinals.title = title.group(1)
+    # bugs/0807: the drawing may also say where the stop is, and how wide the front barrel is
+    try:
+        iris = dwg_iris_stop(path, chain=chain)
+    except Exception:
+        iris = None
+    if iris is not None:
+        cardinals.stop_from_front_mm = round(iris["stop_mm"], 4)
+        ring = iris.get("ring_mm")
+        cardinals.stop_ring_mm = (round(ring[0], 4), round(ring[1], 4)) if ring else None
+        where = (f"the middle of its {ring[1] - ring[0]:g} mm ring ({ring[0]:g}..{ring[1]:g} mm)"
+                 if ring else f"its leader tip ({iris['tip_mm']:.4g} mm)")
+        cardinals.stop_source = f"{Path(path).name}: the '{iris['label']}' leader, {where}"
+        try:
+            cardinals.front_barrel_radius_mm = dwg_barrel_radius(
+                path, before_mm=iris["stop_mm"], chain=chain)
+        except Exception:
+            cardinals.front_barrel_radius_mm = None
     return cardinals

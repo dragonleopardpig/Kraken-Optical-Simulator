@@ -259,12 +259,18 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
             model = mvi.import_lens_folder(spo)
         ok(str(model.aperture_type).upper() == "STOP",
            f"H: a conjugate-constrained build declares STOP, not FNO (got {model.aperture_type})")
-        ok(abs(float(model.aperture_value) - 15.0761) < 1e-3,
-           f"H: with the solved stop diameter ({model.aperture_value})")
+        # bugs/0807: the SPO drawing pins the stop at its iris, which changes the solved groups and
+        # with them the stop (15.0761 at the rim placement, 11.974 at the iris) -- so check the
+        # declaration against the importer's OWN solve: NA 0.16 through group 1's focal length.
+        solved_stop = 2.0 * float(model.solution.f1) * 4.0 / (2.0 * 12.5)
+        ok(abs(float(model.aperture_value) - solved_stop) < 1e-3,
+           f"H: with the solved stop diameter ({model.aperture_value}, the solve gives {solved_stop:.4f})")
         # bugs/0792: this build's EFL is an EQUIVALENT number with no infinite-conjugate
         # meaning, so an f-number taken against it means nothing either.
         fno_pupil = float(model.effl) / 12.5
-        ok(fno_pupil < 1.0 and float(model.aperture_value) / fno_pupil > 15.0,
+        # (18x under at the rim placement; bugs/0807's iris placement raises the equivalent EFL to
+        # 23.8 mm and it is still 6x under -- the point is that the f-number route misdeclares it)
+        ok(float(model.aperture_value) / fno_pupil > 3.0,
            f"H: FNO 12.5 against its equivalent EFL {model.effl:.4f} would declare a "
            f"{fno_pupil:.3f} mm pupil -- {float(model.aperture_value) / fno_pupil:.0f}x smaller "
            "than the aperture the lens has")

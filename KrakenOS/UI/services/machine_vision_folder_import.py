@@ -497,6 +497,8 @@ def solve_conjugate_two_groups(
     flange: float,
     *,
     edge_margin: float = 5.0,
+    front_margin: "float | None" = None,
+    rear_margin: "float | None" = None,
 ) -> "tuple[TwoGroupSolution, float, float, float]":
     """Two ideal groups INSIDE the housing that deliver ``magnitude`` at ``working_distance``
     with the image at the flange. Returns ``(solution, effl, ppa, ppp)``.
@@ -534,9 +536,12 @@ def solve_conjugate_two_groups(
     if not (span > 0.0 and math.isfinite(span)):
         raise ValueError("conjugate solve needs a positive housing length")
     margin = min(max(float(edge_margin), 0.0), span * 0.4)
-    a = wd + margin
-    b = back + margin
-    d = span - 2.0 * margin
+    # bugs/0807: the two margins may differ -- a stop the drawing pins moves group 1 off the rim
+    front = margin if front_margin is None else max(float(front_margin), 0.0)
+    rear = margin if rear_margin is None else max(float(rear_margin), 0.0)
+    a = wd + front
+    b = back + rear
+    d = span - front - rear
     if not (a > 0.0 and b > 0.0 and d > 0.0):
         raise ValueError("conjugate solve needs a housing the groups can sit inside")
     denominator = m * a - b
@@ -556,15 +561,176 @@ def solve_conjugate_two_groups(
     effl = 1.0 / power
     front_focal = effl * (1.0 - d / f2)
     back_focal = effl * (1.0 - d / f1)
-    ppa = margin + (effl - front_focal)
-    ppp = -(margin + (effl - back_focal))
+    ppa = front + (effl - front_focal)
+    ppp = -(rear + (effl - back_focal))
     solution = TwoGroupSolution(round(f1, 6), round(f2, 6), round(d, 6),
-                                round(margin, 6), round(margin, 6), "conjugate-constrained")
+                                round(front, 6), round(rear, 6), "conjugate-constrained")
     return {
         "solution": solution, "effl": float(effl), "ppa": float(ppa), "ppp": float(ppp),
         "object_gap": float(wd), "image_gap": float(back),
         "a": float(a), "b": float(b), "d": float(d), "v1": float(v1), "margin": float(margin),
     }
+
+
+def conjugate_beam_profile(solve: dict, magnitude: float, working_fno: float,
+                           object_field_half: float) -> dict:
+    """Paraxial imaging beam of a conjugate solve: its radius at each group, and the chief ray's
+    bend at group 2 and angle at the sensor (bugs/0807).
+
+    The object-side cone is the catalogue's working f-number, ``NA = m / (2 N)`` (bugs/0792). An
+    object-space telecentric's edge-field chief ray leaves the object parallel to the axis and
+    crosses it at the stop; every field carries the same cone about its chief ray, so a group's
+    beam radius is the edge chief height plus the axial marginal height there.
+    """
+    sol = solve["solution"]
+    f1, f2, d, a = float(sol.f1), float(sol.f2), float(solve["d"]), float(solve["a"])
+    slope = abs(float(magnitude)) / (2.0 * float(working_fno))
+    chief_1 = float(object_field_half)
+    chief_slope_1 = -chief_1 / f1
+    chief_2 = chief_1 + chief_slope_1 * d
+    chief_slope_2 = chief_slope_1 - chief_2 / f2
+    marginal_1 = a * slope
+    marginal_slope_1 = slope - marginal_1 / f1
+    marginal_2 = marginal_1 + marginal_slope_1 * d
+    marginal_slope_2 = marginal_slope_1 - marginal_2 / f2
+    wd = float(solve.get("object_gap", a - float(sol.g1)))
+    g2 = float(sol.g2)
+    return {
+        "front_beam_radius": abs(chief_1) + abs(marginal_1),
+        "rear_beam_radius": abs(chief_2) + abs(marginal_2),
+        # at the housing ends: the front face (the object cone) and the rear datum
+        "front_face_beam_radius": abs(chief_1) + abs(wd * slope),
+        "rear_face_beam_radius": abs(chief_2 + chief_slope_2 * g2) + abs(marginal_2 + marginal_slope_2 * g2),
+        "chief_bend_deg": math.degrees(abs(math.atan(chief_slope_2) - math.atan(chief_slope_1))),
+        "chief_angle_at_image_deg": math.degrees(math.atan(abs(chief_slope_2))),
+    }
+
+
+def solve_conjugate_two_groups_at_stop(
+    magnitude: float,
+    working_distance: float,
+    housing: float,
+    flange: float,
+    stop_from_front: float,
+    *,
+    working_fno: float,
+    object_field_half: float,
+    front_barrel_radius: float,
+    rear_group_after: "float | None" = None,
+    edge_margin: float = 5.0,
+    samples: int = 240,
+) -> dict:
+    """The conjugate solve with the aperture stop where the vendor DRAWS it (bugs/0807).
+
+    bugs/0792 fixed both groups ``edge_margin`` inside the housing ends. For a 4x lens that put the
+    stop 56 mm behind the SPO TCL4.0X's front face -- in front of the 54.9..66.5 mm iris ring its
+    drawing labels -- and put ALL of the (necessarily negative, telephoto) rear power in one kink
+    5 mm before the camera: the flag's "rays sudden bend outward", arriving at the sensor at 7.6 deg.
+
+    Pinning the stop (object-space telecentric: group 1's back focal plane = ``stop_from_front``)
+    leaves a one-parameter family -- slide group 2 toward the iris and group 1 has to move back to
+    keep the stop in place. The rear group gets WEAKER as it approaches the iris (gentler bend,
+    lower chief-ray angle), while group 1's beam, which is the object-side cone of every field,
+    grows with its distance from the object. So the choice is physical, not a taste: take the
+    family member whose group 1 is as large as the barrel in front of the stop can hold
+    (``front_barrel_radius``), i.e. the weakest rear group this housing allows; group 2 stays
+    behind the iris ring (``rear_group_after``, mm from the front) and ``edge_margin`` inside the
+    rear. When even the smallest group 1 overflows the barrel, the smallest is used and
+    ``placement`` says so.
+
+    Raises ValueError when no member puts the stop there (the caller keeps the 0792 placement).
+    """
+    m = abs(float(magnitude))
+    span = float(housing)
+    stop = float(stop_from_front)
+    margin = max(float(edge_margin), 0.0)
+    barrel = float(front_barrel_radius)
+    if not (margin < stop < span - margin):
+        raise ValueError(f"the stop at {stop:g} mm is not inside the {span:g} mm housing")
+    if not (barrel > 0.0 and math.isfinite(barrel)):
+        raise ValueError("pinning the stop needs the barrel radius in front of it")
+    after = max(stop + 1e-3, float(rear_group_after) if rear_group_after is not None else stop + margin)
+    rear_max = span - after
+
+    def build(front: float, rear: float) -> "dict | None":
+        try:
+            return solve_conjugate_two_groups(m, working_distance, span, flange,
+                                              edge_margin=margin, front_margin=front, rear_margin=rear)
+        except ValueError:
+            return None
+
+    def stop_error(front: float, rear: float) -> "float | None":
+        solve = build(front, rear)
+        if solve is None or not solve["solution"].f1 > 0.0:
+            return None
+        return front + float(solve["solution"].f1) - stop
+
+    def member(rear: float) -> "dict | None":
+        grid = [margin + (stop - margin) * i / 200.0 for i in range(201)]
+        previous = None
+        for front in grid[:-1]:
+            error = stop_error(front, rear)
+            if error is None:
+                previous = None
+                continue
+            if previous is not None and previous[1] * error <= 0.0:
+                lo, hi, e_lo = previous[0], front, previous[1]
+                for _ in range(60):
+                    mid = 0.5 * (lo + hi)
+                    e_mid = stop_error(mid, rear)
+                    if e_mid is None:
+                        break
+                    if e_lo * e_mid <= 0.0:
+                        hi = mid
+                    else:
+                        lo, e_lo = mid, e_mid
+                solve = build(0.5 * (lo + hi), rear)
+                if solve is None:
+                    return None
+                profile = conjugate_beam_profile(solve, m, working_fno, object_field_half)
+                return {"solve": solve, **profile}
+            previous = (front, error)
+        return None
+
+    if rear_max <= margin:
+        raise ValueError("the iris leaves no room for a rear group inside the housing")
+    rears = [margin + (rear_max - margin) * i / float(samples) for i in range(samples + 1)]
+    members = [(rear, member(rear)) for rear in rears]
+    members = [(rear, found) for rear, found in members if found is not None]
+    if not members:
+        raise ValueError(f"no two groups inside the housing put a telecentric stop at {stop:g} mm")
+    fitting = [(rear, found) for rear, found in members if found["front_beam_radius"] <= barrel]
+    if fitting:
+        rear, chosen = max(fitting, key=lambda item: item[0])
+        placement = "barrel-limited" if rear < rears[-1] - 1e-9 else "rear-group-at-the-iris"
+        # refine to the barrel edge between this member and the next (larger) rear margin
+        larger = [item for item in members if item[0] > rear]
+        if larger and placement == "barrel-limited":
+            lo, hi = rear, min(larger, key=lambda item: item[0])[0]
+            for _ in range(40):
+                mid = 0.5 * (lo + hi)
+                found = member(mid)
+                if found is None:
+                    break
+                if found["front_beam_radius"] <= barrel:
+                    lo, chosen = mid, found
+                else:
+                    hi = mid
+    else:
+        rear, chosen = min(members, key=lambda item: item[1]["front_beam_radius"])
+        placement = "front-beam-exceeds-barrel"
+    result = dict(chosen["solve"])
+    result.update({
+        "stop_from_front": stop,
+        "front_beam_radius": chosen["front_beam_radius"],
+        "rear_beam_radius": chosen["rear_beam_radius"],
+        "front_face_beam_radius": chosen["front_face_beam_radius"],
+        "rear_face_beam_radius": chosen["rear_face_beam_radius"],
+        "chief_bend_deg": chosen["chief_bend_deg"],
+        "chief_angle_at_image_deg": chosen["chief_angle_at_image_deg"],
+        "placement": placement,
+    })
+    return result
 
 
 def conjugate_stop_diameter(solve: dict, magnitude: float, working_fno: float) -> float:
@@ -955,6 +1121,9 @@ class _SurrogateCore:
     title_seed: str
     extra_notes: list[str] = field(default_factory=list)
     fixed_conjugate: bool = False
+    # bugs/0807: the two groups' own drawn glass when it differs from the datum discs
+    group1_aperture: "float | None" = None
+    group2_aperture: "float | None" = None
 
 
 def build_surrogate_from_assets(
@@ -1254,6 +1423,8 @@ def _core_from_datasheet_cardinals(
 
     fixed_conjugate = False
     conjugate_solve = None
+    stop_pinned_note = ""
+    fno = cardinals.fno if (cardinals.fno and cardinals.fno > 0.0) else 8.0
     if (
         getattr(cardinals, "conjugate_constrained", False)
         and cardinals.magnification
@@ -1261,18 +1432,76 @@ def _core_from_datasheet_cardinals(
         and cardinals.mount_flange_mm
         and span > 0.0
     ):
-        # bugs/0792: solve for the LENS, not for a focal length the catalogue never states.
-        try:
-            conjugate_solve = solve_conjugate_two_groups(
-                abs(float(cardinals.magnification)),
-                float(cardinals.optimum_wd),
-                span,
-                float(cardinals.mount_flange_mm),
-            )
-        except Exception:
-            conjugate_solve = None
+        magnitude = abs(float(cardinals.magnification))
+        # bugs/0807: when the drawing says where the iris is, the stop goes THERE, and the groups
+        # follow from it (solve_conjugate_two_groups_at_stop) instead of from a fixed rim margin.
+        stop_mm = getattr(cardinals, "stop_from_front_mm", None)
+        if stop_mm:
+            barrel = getattr(cardinals, "front_barrel_radius_mm", None)
+            barrel_source = "the drawing's front barrel diameter"
+            if not barrel and assets.primary_step:
+                measured = _step_barrel_diameter(assets.primary_step)
+                barrel = 0.5 * measured if measured else None
+                barrel_source = "the STEP barrel"
+            ring = getattr(cardinals, "stop_ring_mm", None)
+            circle = float(cardinals.image_circle) if cardinals.image_circle else 0.0
+            try:
+                conjugate_solve = solve_conjugate_two_groups_at_stop(
+                    magnitude,
+                    float(cardinals.optimum_wd),
+                    span,
+                    float(cardinals.mount_flange_mm),
+                    float(stop_mm),
+                    working_fno=float(fno),
+                    object_field_half=0.5 * circle / magnitude,
+                    front_barrel_radius=float(barrel) if barrel else float("nan"),
+                    rear_group_after=float(ring[1]) if ring else None,
+                )
+            except Exception as exc:
+                conjugate_solve = None
+                stop_pinned_note = (
+                    f"bugs/0807: the drawing puts the stop at {float(stop_mm):g} mm "
+                    f"({getattr(cardinals, 'stop_source', None) or 'drawing'}), but it could not be "
+                    f"honoured ({exc}); the groups sit {5.0:g} mm inside each end instead."
+                )
+            else:
+                sol = conjugate_solve["solution"]
+                rim = solve_conjugate_two_groups(magnitude, float(cardinals.optimum_wd), span,
+                                                 float(cardinals.mount_flange_mm))
+                rim_profile = conjugate_beam_profile(rim, magnitude, fno, 0.5 * circle / magnitude)
+                limit = {
+                    "barrel-limited": f"group 1 is as large as {barrel_source} (radius "
+                                      f"{float(barrel):.4g} mm) can hold",
+                    "rear-group-at-the-iris": "group 2 sits right behind the iris ring",
+                    "front-beam-exceeds-barrel": f"even the smallest group 1 needs a "
+                                                 f"{conjugate_solve['front_beam_radius']:.4g} mm "
+                                                 f"beam radius, more than {barrel_source} "
+                                                 f"({float(barrel):.4g} mm)",
+                }.get(conjugate_solve["placement"], conjugate_solve["placement"])
+                stop_pinned_note = (
+                    f"bugs/0807: the aperture stop sits where the drawing puts the iris -- "
+                    f"{float(stop_mm):g} mm behind the front face "
+                    f"({getattr(cardinals, 'stop_source', None) or 'drawing'}); {limit}, which "
+                    f"leaves the weakest rear group this housing allows: group 1 {sol.g1:.4g} mm "
+                    f"and group 2 {span - sol.g2:.4g} mm behind the front face, the edge chief ray "
+                    f"bending {conjugate_solve['chief_bend_deg']:.2f} deg at group 2 and reaching "
+                    f"the sensor at {conjugate_solve['chief_angle_at_image_deg']:.2f} deg (groups "
+                    f"at the rims: {rim_profile['chief_bend_deg']:.2f} and "
+                    f"{rim_profile['chief_angle_at_image_deg']:.2f} deg). The image-side angle is "
+                    f"not a vendor figure."
+                )
+        if conjugate_solve is None:
+            # bugs/0792: solve for the LENS, not for a focal length the catalogue never states.
+            try:
+                conjugate_solve = solve_conjugate_two_groups(
+                    magnitude,
+                    float(cardinals.optimum_wd),
+                    span,
+                    float(cardinals.mount_flange_mm),
+                )
+            except Exception:
+                conjugate_solve = None
 
-    fno = cardinals.fno if (cardinals.fno and cardinals.fno > 0.0) else 8.0
     aperture_type, aperture_value = "FNO", _fmt(fno)
 
     if conjugate_solve is not None:
@@ -1375,6 +1604,31 @@ def _core_from_datasheet_cardinals(
         lens_aperture = round(
             max(stop_diameter * 1.4, min(lens_aperture, housing)), 4
         )
+    # bugs/0807: a stop-pinned solve knows the beam each GROUP carries -- draw each group's glass
+    # around it (never wider than the barrel that holds group 1, nor narrower than the stop), so the
+    # rays do not run past a disc sized for a different placement. The datum discs are unchanged.
+    group1_aperture = group2_aperture = None
+    if conjugate_solve is not None and "front_beam_radius" in conjugate_solve:
+        front_need = 2.0 * float(conjugate_solve["front_beam_radius"])
+        barrel_d = 2.0 * float(getattr(cardinals, "front_barrel_radius_mm", None) or 0.0)
+        group1_aperture = max(lens_aperture, front_need)
+        if barrel_d > 0.0:
+            group1_aperture = min(group1_aperture, max(barrel_d, lens_aperture))
+        group1_aperture = round(group1_aperture, 4)
+        group2_aperture = round(
+            min(lens_aperture, max(stop_diameter, 2.1 * float(conjugate_solve["rear_beam_radius"]))), 4)
+        # the datum discs are the housing's glass: they must still pass the cone at each end (the
+        # smaller stop above shrank the field+stop heuristic below the object cone at the front face)
+        front_face_need = 2.1 * float(conjugate_solve["front_face_beam_radius"])
+        rear_face_need = 2.1 * float(conjugate_solve["rear_face_beam_radius"])
+        front_aperture = max(lens_aperture, front_face_need)
+        rear_aperture = max(lens_aperture, rear_face_need)
+        if housing:
+            front_aperture = max(lens_aperture, min(front_aperture, housing))
+            rear_aperture = max(lens_aperture, min(rear_aperture, housing))
+        front_aperture, rear_aperture = round(front_aperture, 4), round(rear_aperture, 4)
+    else:
+        front_aperture = rear_aperture = lens_aperture
     image_diameter = (
         round(float(cardinals.image_circle), 4)
         if (cardinals.image_circle and cardinals.image_circle > 0.0)
@@ -1406,6 +1660,7 @@ def _core_from_datasheet_cardinals(
     notes = [
         f"Optical span = {span:.4g} mm ({span_source}).",
         solve_note,
+        *([stop_pinned_note] if stop_pinned_note else []),
         "Optics derived from the datasheet PDF; no .zmx prescription or Black-Box "
         "System/Prescription Data dump was present.",
     ]
@@ -1427,8 +1682,8 @@ def _core_from_datasheet_cardinals(
         object_gap=object_gap,
         image_gap=image_gap,
         stop_diameter=stop_diameter,
-        front_aperture=lens_aperture,
-        rear_aperture=lens_aperture,
+        front_aperture=front_aperture,
+        rear_aperture=rear_aperture,
         object_diameter=object_diameter,
         image_diameter=image_diameter,
         aperture_type=aperture_type,
@@ -1438,6 +1693,8 @@ def _core_from_datasheet_cardinals(
         fixed_conjugate=fixed_conjugate,
         title_seed=title_seed,
         extra_notes=notes,
+        group1_aperture=group1_aperture,
+        group2_aperture=group2_aperture,
     )
 
 
@@ -1475,6 +1732,8 @@ def _assemble_surrogate(
         object_diameter=core.object_diameter,
         image_diameter=core.image_diameter,
         wavefront_rel=wavefront_rel,
+        group1_aperture=getattr(core, "group1_aperture", None),
+        group2_aperture=getattr(core, "group2_aperture", None),
     )
     notes = list(assets.notes) + list(core.extra_notes)
 
@@ -1620,6 +1879,8 @@ def _surrogate_surfaces(
     object_diameter: float,
     image_diameter: float,
     wavefront_rel: str | None,
+    group1_aperture: "float | None" = None,
+    group2_aperture: "float | None" = None,
 ) -> list[dict]:
     # bugs/0792: an OBJECT-SPACE TELECENTRIC lens puts its stop at the front group's back focal
     # plane -- that is what makes the entrance pupil infinite and the chief rays parallel off the
@@ -1659,7 +1920,7 @@ def _surrogate_surfaces(
             "name": "Blackbox Group 1",
             "rc": round(solution.f1, 6),
             "thickness": round(group_split, 6),
-            "diameter": round(front_aperture, 4),
+            "diameter": round(group1_aperture if group1_aperture else front_aperture, 4),
             "glass": "AIR",
         },
         {
@@ -1675,7 +1936,7 @@ def _surrogate_surfaces(
             "name": "Blackbox Group 2",
             "rc": round(solution.f2, 6),
             "thickness": round(solution.g2, 6),
-            "diameter": round(rear_aperture, 4),
+            "diameter": round(group2_aperture if group2_aperture else rear_aperture, 4),
             "glass": "AIR",
         },
         {

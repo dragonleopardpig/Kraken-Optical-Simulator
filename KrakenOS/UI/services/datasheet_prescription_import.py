@@ -727,6 +727,13 @@ class DatasheetCardinals:
     # coincident-principal-plane derivation is provably wrong for this magnification, so the
     # surrogate builder solves for the lens (two groups inside the housing) instead of for an f.
     conjugate_constrained: bool = False
+    # bugs/0807: where the vendor drawing puts the IRIS (the aperture stop of an object-space
+    # telecentric), in mm behind the housing's front face, and the radius of the barrel in front
+    # of it. None when the source does not state them.
+    stop_from_front_mm: float | None = None
+    stop_source: str | None = None
+    stop_ring_mm: tuple | None = None   # the dimensioned iris ring the stop sits in, if any
+    front_barrel_radius_mm: float | None = None
 
     @property
     def ppa(self) -> float | None:
