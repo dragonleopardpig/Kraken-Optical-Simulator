@@ -605,79 +605,146 @@ class LayoutImportExportMixin:
             return str(path_text)
 
     def _regenerate_missing_optical_solid_caches(self) -> None:
-        """bugs/0021: rebuild any promoted body STL whose cache file is missing
-        but whose source STEP is still present, BEFORE the missing-assets scan.
+        """bugs/0021 + bugs/0810: rebuild missing derived CAD caches BEFORE the missing-assets scan.
 
-        Covers both the file-backed optical solid (``Solid_3d_stl`` <-
-        ``OpticalSolidSourcePath``) and the analytic-promoted body
-        (``StepAnalyticBodyStlPath`` <- ``StepAnalyticPromotion.source_step_path``).
-        The regenerated STL is written under the synced ``attachment/`` cache
-        and the row's path is rewritten project-relative. Best-effort: any
-        failure leaves the row for the safety-net analytic fallback (the system
-        build neutralises a still-missing Solid_3d_stl) and the dialog.
+        bugs/0021 re-meshed a file-backed ``Solid_3d_stl`` from ``OpticalSolidSourcePath`` and an
+        analytic body from its promotion source. bugs/0810 (``cad_cache_recipes``) adds what that
+        could not rebuild, or rebuilt WRONG: generated beam-splitter template STEPs (from their recorded
+        parameters) and overlay-promoted bodies (source STEP through the recorded overlay pose, written
+        back to the recorded path). Every rebuilt optical-solid body must reproduce the row's recorded
+        ``OpticalSolidFaces`` or it is refused -- a body with its optical roles on the wrong triangles
+        is worse than the placeholder. What happened is kept in ``_cad_cache_rebuild_notes``.
         """
-        try:
-            from KrakenOS.UI.layout_editor import _resolve_project_file_path
-        except Exception:
-            return
-        # (derived cache key, source key, source is nested under a promotion dict)
-        pairs = (
-            ("Solid_3d_stl", "OpticalSolidSourcePath", False),
-            ("StepAnalyticBodyStlPath", "StepAnalyticPromotion.source_step_path", True),
-        )
-        service = None
+        notes: list[str] = []
         for row in getattr(self, "rows", []) or []:
             advanced = getattr(row, "advanced", None)
             if not isinstance(advanced, dict):
                 continue
-            for cache_key, source_key, nested in pairs:
-                cache_value = advanced.get(cache_key)
-                if not isinstance(cache_value, str) or cache_value.strip() in {"", "None"}:
-                    continue
+            try:
+                notes.extend(self._rebuild_missing_cad_templates(advanced))
+            except Exception as exc:
+                notes.append(f"template rebuild raised {type(exc).__name__}: {exc}")
+            for body_key in ("Solid_3d_stl", "StepAnalyticBodyStlPath"):
                 try:
-                    if _resolve_project_file_path(cache_value).exists():
-                        continue  # cache present -- nothing to regenerate
+                    note = self._rebuild_row_body_cache(advanced, body_key=body_key)
+                except Exception as exc:
+                    note = f"{body_key} rebuild raised {type(exc).__name__}: {exc}"
+                if note:
+                    notes.append(note)
+        self._cad_cache_rebuild_notes = notes
+        for note in notes:
+            try:
+                self.append_debug(f"CAD cache (bugs/0810): {note}")
+            except Exception:
+                pass
+
+    def _rebuild_missing_cad_templates(self, advanced: dict) -> list[str]:
+        """bugs/0810: every generated beam-splitter template the row references and the disk lacks."""
+        from KrakenOS.UI.layout_editor import _resolve_project_file_path
+        from KrakenOS.UI.services import cad_cache_recipes as recipes
+
+        notes: list[str] = []
+        seen: set[str] = set()
+
+        def walk(value):
+            if isinstance(value, dict):
+                for item in value.values():
+                    yield from walk(item)
+            elif isinstance(value, (list, tuple)):
+                for item in value:
+                    yield from walk(item)
+            elif isinstance(value, str) and "beam_splitter_templates" in value:
+                yield value
+
+        for text in walk(advanced):
+            try:
+                path = _resolve_project_file_path(text)
+            except Exception:
+                continue
+            if str(path) in seen or path.exists() or not recipes._TEMPLATE_NAME.match(path.name):
+                continue
+            seen.add(str(path))
+            _ok, note = recipes.rebuild_beam_splitter_template(path, advanced)
+            notes.append(note)
+            if _ok:
+                try:
+                    self._clear_missing_path(str(path))
                 except Exception:
-                    continue
-                if nested:
-                    outer, _, inner = source_key.partition(".")
-                    nested_dict = advanced.get(outer)
-                    source_value = nested_dict.get(inner) if isinstance(nested_dict, dict) else None
-                else:
-                    source_value = advanced.get(source_key)
-                if not isinstance(source_value, str) or not source_value.strip():
-                    continue
+                    pass
+        return notes
+
+    def _rebuild_row_body_cache(self, advanced: dict, *, body_key: str, source_path=None) -> str:
+        """Rebuild one row's missing body cache; returns a note ("" when there was nothing to do).
+
+        Shared by the load path and the missing-assets dialog's relocate (bugs/0810), so both take the
+        same route: an overlay-promoted body by its recorded recipe, written back to the SAME path; any
+        other body by the bugs/0021 re-mesh, accepted only if it reproduces the recorded faces.
+        """
+        from KrakenOS.UI.layout_editor import _resolve_project_file_path
+        from KrakenOS.UI.services import cad_cache_recipes as recipes
+
+        cache_value = advanced.get(body_key)
+        if not isinstance(cache_value, str) or cache_value.strip() in {"", "None"}:
+            return ""
+        try:
+            cache_path = _resolve_project_file_path(cache_value)
+        except Exception:
+            return ""
+        if cache_path.exists():
+            return ""
+        if body_key == "Solid_3d_stl" and recipes.is_overlay_promoted_body(advanced):
+            # bugs/0810: NOT the bugs/0021 re-mesh -- that meshes the STEP in its native frame and
+            # repoints the row at it (measured: face S001/F001 centroid -8.84 where 12.5 is recorded).
+            built, note = recipes.rebuild_overlay_promoted_body(self, advanced, cache_path)
+            if built:
                 try:
-                    source_path = _resolve_project_file_path(source_value)
-                except Exception:
-                    continue
-                if not source_path.exists():
-                    continue  # source also gone -- leave it for the dialog
-                label, optical_axis = _promoted_body_label_and_axis(advanced)
-                if service is None:
-                    try:
-                        service = self._step_overlay_promotion_service()
-                    except Exception:
-                        return
-                try:
-                    new_stl = service.regenerate_promoted_body_stl_from_source(
-                        source_path,
-                        label=label,
-                        # the file-backed Solid_3d_stl body is stored without the
-                        # optical-axis re-orientation, so only pass it for the
-                        # analytic body to match how each was originally written.
-                        optical_axis=optical_axis if cache_key == "StepAnalyticBodyStlPath" else None,
-                    )
-                except Exception:
-                    new_stl = None
-                if not new_stl:
-                    continue
-                advanced[cache_key] = self._portable_cache_path(new_stl)
-                try:
-                    self._clear_missing_path(new_stl)
                     self._clear_missing_path(cache_value)
                 except Exception:
                     pass
+            return note
+        if source_path is None:
+            if body_key == "Solid_3d_stl":
+                source_value = advanced.get("OpticalSolidSourcePath")
+            else:
+                promotion = advanced.get("StepAnalyticPromotion")
+                source_value = promotion.get("source_step_path") if isinstance(promotion, dict) else None
+            if not isinstance(source_value, str) or not source_value.strip():
+                return ""
+            try:
+                source_path = _resolve_project_file_path(source_value)
+            except Exception:
+                return ""
+        source_path = Path(source_path)
+        if not source_path.exists():
+            return ""  # the source is gone too -- the dialog asks for it
+        label, optical_axis = _promoted_body_label_and_axis(advanced)
+        service = self._step_overlay_promotion_service()
+        new_stl = service.regenerate_promoted_body_stl_from_source(
+            source_path,
+            label=label,
+            # the file-backed Solid_3d_stl body is stored without the optical-axis
+            # re-orientation, so only pass it for the analytic body to match how each
+            # was originally written.
+            optical_axis=optical_axis if body_key == "StepAnalyticBodyStlPath" else None,
+        )
+        if not new_stl:
+            return f"{cache_path.name}: could not be re-meshed from {source_path.name}"
+        if body_key == "Solid_3d_stl":
+            try:
+                import pyvista as pv
+
+                _checked, problem = recipes.face_table_mismatch(pv.read(str(new_stl)), advanced)
+            except Exception as exc:
+                problem = f"the re-mesh could not be read ({exc})"
+            if problem is not None:
+                return f"{cache_path.name}: re-mesh of {source_path.name} refused -- {problem}"
+        advanced[body_key] = self._portable_cache_path(new_stl)
+        try:
+            self._clear_missing_path(new_stl)
+            self._clear_missing_path(cache_value)
+        except Exception:
+            pass
+        return f"{cache_path.name}: re-meshed from {source_path.name} -> {Path(new_stl).name}"
 
     def _prompt_for_missing_cad_assets(self) -> None:
         """Show the Missing CAD assets dialog if the layout has any.
@@ -693,7 +760,30 @@ class LayoutImportExportMixin:
             return
         from KrakenOS.UI.panels.missing_assets_dialog import MissingAssetsDialog
 
-        MissingAssetsDialog.run(self, editor=self, assets=assets)
+        # bugs/0810: NOT modal. A modal wait inside the load stopped every run without a person at the
+        # screen -- penta phases 449-452 hung for their whole deadline on this dialog -- and the scene
+        # was invisible behind it anyway. The load finishes with placeholders; relocating a file
+        # rebuilds and redraws when the dialog closes.
+        MissingAssetsDialog.run(
+            self, editor=self, assets=assets, modal=False, on_resolve=self._after_missing_assets_dialog
+        )
+
+    def _after_missing_assets_dialog(self) -> None:
+        """bugs/0810: the dialog closed -- rebuild what the relocations made possible and redraw."""
+        for step in (
+            self._regenerate_missing_optical_solid_caches,
+            self._invalidate_preview_scene_trace,
+            self._sync_table,
+            lambda: self.refresh_plot(suppress_analysis=True, defer_trace=True),
+            lambda: self._refresh_open_3d_views(),
+        ):
+            try:
+                step()
+            except Exception as exc:
+                try:
+                    self.append_debug(f"missing-assets refresh step failed: {exc}")
+                except Exception:
+                    pass
 
     def save_layout(self) -> bool:
         self._commit_pending_table_edit()

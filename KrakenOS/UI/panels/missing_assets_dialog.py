@@ -188,10 +188,14 @@ class MissingAssetsDialog(tk.Toplevel):
         editor: Any,
         assets: list[MissingAsset],
         on_resolve: Optional[Callable[[], None]] = None,
+        modal: bool = True,
     ) -> None:
         if not assets:
             return
         dialog = cls(parent, editor=editor, assets=assets, on_resolve=on_resolve)
+        if not modal:
+            # bugs/0810: the layout load no longer waits here -- ``on_resolve`` redraws on close.
+            return
         try:
             dialog.grab_set()
         except Exception:
@@ -501,69 +505,10 @@ class MissingAssetsDialog(tk.Toplevel):
         just keeps the row's placeholder. The rebuilt path is stored
         project-relative (bugs/0021) so it stays portable across machines.
         """
-        body_stl_value = advanced.get(body_key)
-        if not isinstance(body_stl_value, str) or not body_stl_value:
-            return
-        # Skip when the current cache is already on disk -- nothing to rebuild.
+        # bugs/0810: the editor's shared route -- an overlay-promoted body by its recorded recipe, any
+        # other body by the bugs/0021 re-mesh, both accepted only if they reproduce the recorded faces.
         try:
-            from KrakenOS.UI.layout_editor import _resolve_project_file_path
-
-            if _resolve_project_file_path(body_stl_value).exists():
-                return
-        except Exception:
-            try:
-                if Path(body_stl_value).expanduser().exists():
-                    return
-            except Exception:
-                return
-        label = "optical"
-        optical_axis: Optional[tuple[float, float, float]] = None
-        # The file-backed Solid_3d_stl body is cached WITHOUT the optical-axis
-        # +Z re-orientation; only the analytic body carries one. Read the label
-        # from whichever promotion dict the row has.
-        for promo_key in ("StepOverlayPromotion", "StepAnalyticPromotion"):
-            promotion = advanced.get(promo_key)
-            if not isinstance(promotion, dict):
-                continue
-            label_value = promotion.get("step_label")
-            if isinstance(label_value, str) and label_value.strip():
-                label = label_value.strip().lower()
-            if body_key == "StepAnalyticBodyStlPath":
-                axis_value = promotion.get("optical_axis")
-                if isinstance(axis_value, (list, tuple)) and len(axis_value) == 3:
-                    try:
-                        optical_axis = (
-                            float(axis_value[0]),
-                            float(axis_value[1]),
-                            float(axis_value[2]),
-                        )
-                    except Exception:
-                        optical_axis = None
-        try:
-            service = self.editor._step_overlay_promotion_service()
-        except Exception:
-            return
-        try:
-            new_stl_path = service.regenerate_promoted_body_stl_from_source(
-                source_step_path,
-                label=label,
-                optical_axis=optical_axis,
-            )
-        except Exception:
-            new_stl_path = None
-        if not new_stl_path:
-            return
-        try:
-            new_stl_path = self.editor._portable_cache_path(new_stl_path)
-        except Exception:
-            pass
-        advanced[body_key] = new_stl_path
-        # Forget any cached "this path is missing" entry on the
-        # renderer so the next refresh picks the regenerated STL up
-        # immediately, without waiting for the 5-second TTL.
-        try:
-            self.editor._clear_missing_path(new_stl_path)
-            self.editor._clear_missing_path(body_stl_value)
+            self.editor._rebuild_row_body_cache(advanced, body_key=body_key, source_path=source_step_path)
         except Exception:
             pass
 
