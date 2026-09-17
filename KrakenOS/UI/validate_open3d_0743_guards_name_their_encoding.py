@@ -62,26 +62,42 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         )
 
     # ---- C: the class is closed --------------------------------------------------------------------
-    env = dict(os.environ)
-    env["PYTHONUTF8"] = "0"
-    env["LC_ALL"] = "C"
-    env["PYTHONPATH"] = os.pathsep.join([str(ROOT), env.get("PYTHONPATH", "")]).rstrip(os.pathsep)
-    try:
-        done = subprocess.run(
-            [sys.executable, "-m", "KrakenOS.UI.validate_open3d_0738_phantom_spacer_surfaces"],
-            cwd=str(ROOT), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, timeout=600,
-        )
-        output, code = done.stdout, done.returncode
-    except Exception as exc:  # pragma: no cover - defensive
-        output, code = f"{type(exc).__name__}: {exc}", -1
+    # Run the same source-reading guard under the normal locale AND an ascii one, and require the SAME
+    # outcome. The first version required an outright PASS under ascii, so when 0738 failed for a
+    # reason that had nothing to do with encoding (a scaffolding row added to its scene), this guard
+    # reported "fails under an ascii locale" -- a false cause. The question C asks is whether the
+    # LOCALE changes anything.
+    def _run(ascii_locale: bool):
+        env = dict(os.environ)
+        if ascii_locale:
+            env["PYTHONUTF8"] = "0"
+            env["LC_ALL"] = "C"
+        env["PYTHONPATH"] = os.pathsep.join([str(ROOT), env.get("PYTHONPATH", "")]).rstrip(os.pathsep)
+        try:
+            done = subprocess.run(
+                [sys.executable, "-m", "KrakenOS.UI.validate_open3d_0738_phantom_spacer_surfaces"],
+                cwd=str(ROOT), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, timeout=600,
+            )
+            return done.stdout, done.returncode
+        except Exception as exc:  # pragma: no cover - defensive
+            return f"{type(exc).__name__}: {exc}", -1
+
+    def _verdicts(output: str) -> list[str]:
+        return [line.strip() for line in output.splitlines()
+                if line.strip().startswith(("PASS:", "FAIL:", "- FAIL:"))]
+
+    normal_out, normal_code = _run(False)
+    ascii_out, ascii_code = _run(True)
     ok(
-        code == 0 and "PASSED" in output,
-        f"C1: a source-reading guard passes under an ascii locale (exit {code})",
+        ascii_code == normal_code and _verdicts(ascii_out) == _verdicts(normal_out),
+        f"C1: a source-reading guard gives the SAME result under an ascii locale as under the normal "
+        f"one (exit {ascii_code} vs {normal_code}, {len(_verdicts(ascii_out))} vs "
+        f"{len(_verdicts(normal_out))} verdicts)",
     )
     ok(
-        "UnicodeDecodeError" not in output,
-        "C2: and raises no decode error there",
+        "UnicodeDecodeError" not in ascii_out and "UnicodeEncodeError" not in ascii_out,
+        "C2: and raises no decode or encode error there",
     )
 
     passed = not any(note.startswith("FAIL") for note in notes)

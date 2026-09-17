@@ -125,14 +125,28 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     phantom = set(stub._ns_phantom_spacer_surfaces())
     # bugs/0745 split row 7, so pin this by NAME rather than by index -- the scene gains and loses
     # scaffolding rows over time and a hardcoded index set only re-breaks.
+    # 2026-09-17: the scene gained a "sensor standoff" row on 09-10 (absent from the 09-07 backup this
+    # guard was written against). It is undrawn AIR with no stop, wall, detector or scatter -- a bare
+    # spacer by this rule's own contract -- and with it removed the unchanged rule returns exactly the
+    # original three names, so the scene changed, not the rule.
     expected = {
         i for i, r in enumerate(rows)
-        if str(r.get("name") or "") in ("air", "to lens (unfolded RA mirror 1)", "prism exit gap (air)")
+        if str(r.get("name") or "") in (
+            "air", "to lens (unfolded RA mirror 1)", "prism exit gap (air)", "sensor standoff",
+        )
     }
     ok(
         phantom == expected and len(phantom) >= 3,
         f"A1: exactly the bare undrawn spacers after solids are phantom -- "
         f"{sorted((k, names[k]) for k in phantom)}",
+    )
+    # a phantom standoff must never take the SENSOR with it: the Image row after it stays real
+    image_rows = [i for i, r in enumerate(rows) if str(r.get("surface") or "") == "Image"]
+    ok(
+        bool(image_rows) and not (set(image_rows) & phantom),
+        f"A1b: the Image row{'s' if len(image_rows) != 1 else ''} {image_rows} after the phantom "
+        f"sensor standoff {'stay' if len(image_rows) != 1 else 'stays'} REAL -- skipping the "
+        f"standoff must not skip the sensor",
     )
     # by NAME (bugs/0745 split row 7, so the Filter's index moves)
     filt = next(i for i, r in enumerate(rows) if str(r.get("name") or "").startswith("Filter"))
