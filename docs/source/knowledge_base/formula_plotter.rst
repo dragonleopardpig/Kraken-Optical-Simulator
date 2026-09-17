@@ -48,8 +48,17 @@ values you have entered for parameters.
 Reflection example
 ------------------
 
-The initial example follows ``attachment/Reflection.png``. The index in the
-image is the relative index :math:`n_{ti}`, so the extra definitions are
+The initial example uses the equations in this diagram:
+
+.. figure:: /_static/knowledge_base/formula_plotter/Reflection.png
+   :alt: Reflection diagram showing natural-light reflectance R_n and the parallel and perpendicular Fresnel amplitude coefficients.
+   :width: 100%
+   :align: center
+
+   Original ``Reflection.png`` diagram. Click the image to view it at full size.
+
+The index in the image is the relative index :math:`n_{ti}`, so the extra
+definitions are
 
 .. math::
 
