@@ -91,3 +91,9 @@ Unchanged and passing: 0790, 0791, 0792, 0793, 0794, 0796, 0647, 0806 (live swap
 
 A scene built with the old surrogate keeps its rows until the lens is swapped again (Swap Imaging Lens
 from Folder); the saved `MV-CS050-60UM_V5_TCL4.0X-65DI-5M.py` still carries the rim placement.
+
+Update (16:40): that last clause was true at 14:19 and stopped being true at 15:42, when the user swapped the
+lens in an app started at 15:41:37 (after this commit). The scene saved at 15:43:45 carries the iris
+placement: group 1 f +37.41875 at 23.28 mm, stop at 60.70 mm Ø11.974, group 2 f -19.827925 at 72.05 mm --
+identical to `common_optical_layouts/machine_vision_spo_tcl4_0x_65di_5m_tcl4_0x_65di_5m.py`, which that swap
+wrote at 15:42:51. A later status table repeated the stale clause without re-reading the file.
