@@ -1,0 +1,196 @@
+.formula-plotter {
+    border: 1px solid #d3dce1;
+    border-radius: 8px;
+    background: #f7f9fa;
+    padding: 20px;
+    margin: 24px 0;
+    color: #263b48;
+}
+
+.formula-plotter [hidden] {
+    display: none !important;
+}
+
+.formula-plotter label {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    min-width: 0;
+}
+
+.formula-plotter textarea,
+.formula-plotter select,
+.formula-plotter input[type="number"] {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    border: 1px solid #aabcc6;
+    border-radius: 4px;
+    padding: 8px;
+    background: white;
+    color: #243744;
+    box-shadow: none;
+}
+
+.formula-plotter textarea {
+    font-family: monospace;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    resize: vertical;
+    white-space: pre;
+    overflow: auto;
+}
+
+.formula-plotter input[type="range"] {
+    width: 100%;
+    min-height: 28px;
+    accent-color: #800000;
+    cursor: pointer;
+}
+
+.formula-plotter button {
+    border: 1px solid #aabcc6;
+    border-radius: 4px;
+    padding: 9px 14px;
+    background: white;
+    color: #263b48;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.formula-plotter button.formula-plotter__primary {
+    background: #800000;
+    color: white;
+    border-color: #800000;
+}
+
+.formula-plotter button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.formula-plotter :focus-visible {
+    outline: 3px solid #287b9b;
+    outline-offset: 2px;
+}
+
+.formula-plotter__heading,
+.formula-plotter__actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 12px 0;
+}
+
+.formula-plotter__heading strong {
+    flex: 1 1 220px;
+    font-size: 1.1rem;
+}
+
+.formula-plotter__heading label {
+    flex-direction: row;
+    align-items: center;
+}
+
+.formula-plotter__axes,
+.formula-plotter__range {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+    margin: 20px 0;
+}
+
+.formula-plotter__range {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.formula-plotter__parameter {
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr 1fr;
+    gap: 12px;
+    align-items: end;
+    margin: 12px 0;
+}
+
+.formula-plotter__parameters {
+    border-top: 1px solid #d3dce1;
+}
+
+.formula-plotter .formula-plotter__hint,
+.formula-plotter [data-role="edit-state"] {
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: #4d6270;
+    margin: 8px 0;
+}
+
+.formula-plotter__status {
+    background: #e4eff0;
+    border-left: 3px solid #287271;
+    padding: 10px 12px;
+    font-size: 0.875rem;
+}
+
+.formula-plotter__status--error {
+    background: #fff0eb;
+    border-color: #a13921;
+    color: #852d1a;
+}
+
+.formula-plotter__chart {
+    width: 100%;
+    height: auto;
+    display: block;
+    background: white;
+    border: 1px solid #d3dce1;
+    border-radius: 5px;
+    margin: 16px 0;
+}
+
+.formula-plotter__chart text {
+    font: 12px sans-serif;
+    fill: #4d6270;
+}
+
+.formula-plotter__chart .formula-plotter__axis {
+    font-weight: 700;
+    font-size: 14px;
+}
+
+.formula-plotter__grid {
+    stroke: #e1e7ec;
+    stroke-width: 1;
+}
+
+.formula-plotter__curve {
+    fill: none;
+    stroke: #800000;
+    stroke-width: 2.5;
+    stroke-linejoin: round;
+}
+
+.formula-plotter__point {
+    fill: #287b9b;
+    stroke: white;
+    stroke-width: 2;
+}
+
+.formula-plotter__preview {
+    overflow-x: auto;
+    padding: 8px;
+}
+
+.formula-plotter summary {
+    cursor: pointer;
+    font-size: 0.875rem;
+}
+
+@media (max-width: 700px) {
+    .formula-plotter__axes,
+    .formula-plotter__parameter {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}

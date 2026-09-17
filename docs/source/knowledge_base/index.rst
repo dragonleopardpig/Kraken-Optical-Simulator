@@ -10,6 +10,7 @@ real sensor.
    :maxdepth: 1
 
    rules_of_thumb
+   formula_plotter
    cardinal_points
    pupil_sampling
    lens_design_intro

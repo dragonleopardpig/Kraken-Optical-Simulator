@@ -20,3 +20,10 @@ package set, so a fresh devenv shell has the Read the Docs theme available.
 
 The converted provisional manual starts at `docs/source/manual/index.rst`.
 The source PDF is retained at `KrakenOS/Docs/USER_MANUAL_KrakenOS_Provisional.pdf`.
+
+The Knowledge Base includes a browser-only LaTeX equation plotter at
+`knowledge_base/formula_plotter.html`. Its reflection and Gaussian examples
+use the same dependency-based evaluator as user-entered equations. The
+vendored parser and complex-arithmetic libraries load only on that page.
+Run its numerical/parser checks with `node --test tests/test_formula_plotter.cjs`
+from the repository root.

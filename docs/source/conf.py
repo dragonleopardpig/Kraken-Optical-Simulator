@@ -12,6 +12,7 @@ extensions = [
     "sphinx.ext.mathjax",
     "jupyterlite_sphinx",
     "worked_solution_toggle",
+    "formula_plotter",
 ]
 templates_path = ["_templates"]
 exclude_patterns = [
