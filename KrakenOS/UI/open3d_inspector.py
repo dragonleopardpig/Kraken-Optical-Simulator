@@ -1476,6 +1476,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.editor._invalidate_preview_scene_trace()
         except Exception:
             pass
+        # bugs/0812: the gate changes which sources the SHARED preview trace launches, and the main
+        # 2D draws that trace too -- mark it stale so Done 2D re-plots (the bugs/0298 invariant).
+        self._mark_2d_layout_stale()
         try:
             self.refresh_from_editor(force_retrace=True)
         except Exception as exc:
@@ -4611,6 +4614,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self.editor.append_debug(f"STEP translate commit failed for {label}: {exc}")
                 return
             refocus_note = ""
+            if getattr(self.editor, "_last_translate_row_shifts", None):
+                # bugs/0812: the commit wrote row gaps -- the prescription changed, so the main 2D is
+                # stale whether or not a refocus follows (the bugs/0298 invariant).
+                self._mark_2d_layout_stale()
             if label == "lens" and getattr(self.editor, "_last_translate_row_shifts", None):
                 # bugs/0528 (flag_20260803_203614 "FOV changed but the rays are defocus"): the
                 # GIZMO-ARROW lens drag is the SAME conjugate edit as the 0520 body-grab carry
@@ -4626,7 +4633,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     self.editor.append_debug(f"lens-drag Solve-for-FOV refocus failed: {exc}")
                 if refocus_note:
                     try:
-                        self.refresh_from_editor(force_retrace=True)
+                        self._apply_model_change()  # retrace + 2D stale, together (bugs/0298)
                     except Exception as exc:
                         self.editor.append_debug(f"STEP translate refocus refresh failed: {exc}")
                     try:
