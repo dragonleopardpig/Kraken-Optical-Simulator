@@ -8979,12 +8979,26 @@ class LayoutTableWorkbenchMixin:
         if norm <= 1e-9:
             return
         n = n / norm
+        # bugs/0808: measure in the SAME in-plane frame the drawn sensor and FOV rectangles use
+        # (detector_coverage_overlay._basis: width along v, height along u). This built its own
+        # frame with u = n x X, i.e. the WIDTH along Y -- so an 8.446 x 7.066 sensor was checked
+        # transposed, and the landscape field's +-4.223 mm corners "landed 0.69 mm outside the
+        # active area" on every render of the TCL4.0X scene (0.69 = 4.223 - 3.533).
+        from KrakenOS.UI.services.detector_coverage_overlay import _basis as _coverage_basis
+
+        height_axis, width_axis = _coverage_basis(n)
+        # the strip frame the bugs/0774-0776 laws were measured in stays as it was (om05a's traced
+        # |m| reads the strip length along it); only the inside/outside test moves to the drawn frame
         tmp = np.array([1.0, 0.0, 0.0])
         if abs(float(tmp @ n)) > 0.9:
             tmp = np.array([0.0, 1.0, 0.0])
         u = np.cross(n, tmp)
         u = u / np.linalg.norm(u)
         v = np.cross(n, u)
+        # a field sized to fill the sensor lands its corner rays ON the edge; floating point puts
+        # some of them 4e-7 mm past it (measured on the TCL4.0X scene: 774 rays), which is not light
+        # leaving the active area
+        edge_tol = 1e-6 * max(half_u, half_v)
         c = np.asarray(centre, dtype=float).reshape(3)
         outside = 0
         inside = 0
@@ -9018,8 +9032,8 @@ class LayoutTableWorkbenchMixin:
                 continue
             d = end - c
             du, dv = abs(float(d @ u)), abs(float(d @ v))
-            over = max(du - half_u, dv - half_v)
-            if over > 0.0:
+            over = max(abs(float(d @ width_axis)) - half_u, abs(float(d @ height_axis)) - half_v)
+            if over > edge_tol:
                 outside += 1
                 worst = max(worst, over)
             else:

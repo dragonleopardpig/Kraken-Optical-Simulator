@@ -278,8 +278,60 @@ class LayoutPolylineDisplayMixin:
     def _current_camera_record(self) -> dict[str, object] | None:
         return camera_record(self._current_camera_model())
 
+    def _camera_sensor_orientation(self) -> dict:
+        """How the imported camera body turns its sensor about the optical axis (bugs/0808).
+
+        The sensor is fixed inside the camera, so it rolls with the body. The body is posed by
+        ``_cad_mesh_aligned_to_optical_axis`` as Rx(x) -> Ry(y) -> Rz(roll); the body's own +X
+        (a landscape sensor's width at import, roll 0) lands at in-plane angle
+        ``atan2(sin(roll) cos(y), cos(roll) cos(y))`` -- Rx never moves it, a y flip only adds
+        180 deg, which a rectangle does not see. Measured before this: every saved scene with a
+        90/270 deg roll carries a SQUARE 23.04 mm sensor, and every non-square sensor sits at 0 or
+        180, so honouring the roll changes no existing scene.
+
+        Returns ``roll_deg`` (the sensor's width angle, (-180, 180]), ``quarter_turns`` (0..3,
+        nearest), ``swapped`` (width and height trade places) and ``residual_deg`` (what a
+        quarter-turn model cannot represent; reported, not drawn).
+        """
+        none = {"roll_deg": 0.0, "quarter_turns": 0, "swapped": False, "residual_deg": 0.0}
+        if getattr(self, "imported_camera_step_path", None) is None:
+            return none
+        try:
+            roll = np.deg2rad(float(getattr(self, "camera_step_rotation_z_deg", 0.0) or 0.0))
+            tilt = np.deg2rad(float(getattr(self, "camera_step_rotation_y_deg", 0.0) or 0.0))
+        except (TypeError, ValueError):
+            return none
+        if abs(float(np.cos(tilt))) < 1e-6:
+            angle = float(np.rad2deg(roll))
+        else:
+            angle = float(np.rad2deg(np.arctan2(np.sin(roll) * np.cos(tilt), np.cos(roll) * np.cos(tilt))))
+        angle = (angle + 180.0) % 360.0 - 180.0
+        if not np.isfinite(angle):
+            return none
+        quarter = int(round(angle / 90.0))
+        return {
+            "roll_deg": angle,
+            "quarter_turns": quarter % 4,
+            "swapped": quarter % 2 != 0,
+            "residual_deg": angle - 90.0 * quarter,
+        }
+
     def _current_camera_sensor_active_mm(self) -> tuple[float, float] | None:
-        return camera_sensor_active_mm(self._current_camera_model())
+        dims = camera_sensor_active_mm(self._current_camera_model())
+        if dims is None:
+            return None
+        # bugs/0808 (flag_20260917_140152: "when I rotate the camera, the FOV length x width will
+        # become width x length"): the sensor rolls with the camera body. Every consumer reads this
+        # pair as the WORLD horizontal x vertical extent -- the drawn sensor and FOV rectangles, the
+        # launched field, the fill-the-sensor solve, the delivered-FOV readouts -- so a quarter turn
+        # is honoured here, once, and all of them follow.
+        try:
+            swapped = bool(self._camera_sensor_orientation()["swapped"])
+        except Exception:
+            swapped = False
+        if swapped:
+            return (float(dims[1]), float(dims[0]))
+        return dims
 
     def _camera_detector_active_dims_overrides(self) -> dict[int, tuple[float, float]] | None:
         """Detector active dims sourced from the selected camera's vendor sensor.

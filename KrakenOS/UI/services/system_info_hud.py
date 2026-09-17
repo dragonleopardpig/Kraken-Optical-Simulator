@@ -76,6 +76,25 @@ def format_system_info_lines(fov_wh, sensor_wh, resolution_px, pixel_size_um) ->
     return lines
 
 
+def format_sensor_roll_lines(orientation) -> list[str]:
+    """bugs/0808: say when the camera is rolled -- and when the roll is not a quarter turn, that the
+    sensor is modelled at the nearest one (the launched field and the solves are axis-aligned)."""
+    if not isinstance(orientation, dict):
+        return []
+    try:
+        roll = float(orientation.get("roll_deg", 0.0))
+        residual = float(orientation.get("residual_deg", 0.0))
+        quarter = int(orientation.get("quarter_turns", 0))
+    except (TypeError, ValueError):
+        return []
+    if abs(roll) < 1e-6 or abs(abs(roll) - 180.0) < 1e-6:
+        return []
+    if abs(residual) < 0.05:
+        return [f"Sensor roll: {roll:.0f} deg" + (" (portrait)" if quarter % 2 else "")]
+    return [f"Sensor roll: {roll:.4g} deg -- modelled at {90 * round(roll / 90.0):.0f} deg "
+            f"(only quarter turns rotate the field)"]
+
+
 def system_info_hud_text(editor) -> str:
     """Gather the HUD inputs from the live editor and format them.
 
@@ -99,7 +118,23 @@ def system_info_hud_text(editor) -> str:
             pixel_size = record.get("pixel_size_um")
     except Exception:
         resolution = pixel_size = None
+    # bugs/0808: the FOV and sensor pairs are in the WORLD frame (width = horizontal); a camera
+    # rolled a quarter turn carries its pixel rows vertically, so pair them the same way.
+    orientation = None
+    try:
+        orientation = editor._camera_sensor_orientation()
+    except Exception:
+        orientation = None
+    if isinstance(orientation, dict) and orientation.get("swapped"):
+        try:
+            if resolution is not None and len(resolution) >= 2:
+                resolution = (resolution[1], resolution[0])
+            if pixel_size is not None and len(pixel_size) >= 2:
+                pixel_size = (pixel_size[1], pixel_size[0])
+        except TypeError:
+            pass
     lines = format_system_info_lines(fov, sensor, resolution, pixel_size)
+    lines = lines + format_sensor_roll_lines(orientation)
     # bugs/0719: the NON-banner focus-residual readout -- the lens is at the requested WD,
     # the sensor was left where the vendor put it, and the exact conjugate's track mismatch
     # is a number the user needs to see in the scene (not a refusal, so not the red banner).
