@@ -100,3 +100,46 @@ off in this scene; its 60 x 40 x 20 default was read as the device.
   on the shoulder, no note, every field focused on the sensor, |m| = 4.0.
 
 A/B on the old `layout_table_workbench.py`: A1-A6 and D1 FAIL (A6 measured deficit 2.0), B1-B2 PASS.
+
+## Follow-up: flag_20260917_133231 -- "I still see rays fan out"
+
+Build `92c9892b` (the fix was running). No swap in that session: the user had SAVED the scene at 12:10,
+from the pre-fix session, so the file itself carried the error -- WD 64.9037 (a later solve had refocused
+the object onto the misplaced sensor), shoulder->sensor 19.1260, camera face +1.600 mm off the
+shoulder, |m| 4.155. Loading a file restores what it says; the fix only acts on a swap.
+
+* Repaired through the app's own path (load -> Swap Imaging Lens from Folder -> save), original kept as
+  `attachment/MV-CS050-60UM_V5_TCL4.0X-65DI-5M.pre0806_backup.py`. Reloaded: WD 65.000, shoulder->sensor
+  17.526, camera face on the shoulder, paraxial |m| 4.000.
+
+User (single-sided telecentric): "what looks weird is the rays sudden bend outward", "Shouldn't light
+rays focus in crossed fashion? Inverted image kind of ray crossing."
+
+Measured on the seated scene (chief ray interpolated to the stop centre across the 31-ray fan):
+
+* object side: chief rays leave the object at **0.000 deg** -- the telecentricity SPO specifies;
+* the image IS inverted (+1.376 mm -> -5.506 mm): the chief rays cross the axis **at the stop**
+  (z 117.1), mid-barrel, where all fields overlap in the fat beam -- so the crossing is not visible;
+* every bundle converges to one point on the sensor (spot 0) -- the cones end AT the sensor, which
+  stops the light, so the X of a focus is only ever half drawn;
+* the "sudden outward bend" is Blackbox Group 2 (f = -23.88) 5 mm inside the rear end: -5.9 deg of
+  chief-ray bend, 7.61 deg arriving at the sensor (exit pupil z 183.8).
+
+A negative rear group is FORCED, not an artefact: with both groups inside the barrel a 4x image in a
+225 mm object->sensor track needs a telephoto rear (a positive G2 tops out at |m| 2.2 with G2 at the rear,
+and |m| = 4 would need G1 at z 45, in front of the lens). Its POSITION is the surrogate's choice (bugs/0792:
+5 mm inside each end), and that choice makes the kink as sharp and as late as it can be. The two-group
+family, all delivering WD 65 / |m| 4 / NA 0.16 / identical focus:
+
+| G1 z | G2 z | f2 | stop z | bend at G2 | chief angle at sensor |
+|---|---|---|---|---|---|
+| 70 | 202.5 (current) | -23.9 | 117.1 | -5.9 | 7.6 |
+| 80 | 167.4 | -28.8 | **125.7 = drawn IRIS** | -2.5 | 4.2 |
+| 85 | 144.6 | -24.0 | **125.7** | -1.5 | 3.5 |
+
+The SPO drawing marks the IRIS 54.9..66.5 mm behind the front face (z 119.9..131.5); for an object-side
+telecentric lens the iris IS the aperture stop, so it is vendor data that pins the placement the
+current rule ignores (its stop sits at 117.1, in front of the iris ring). Constraint found while
+checking: moving G1 back grows the front beam (G1 at 80: edge-field marginal ray r 14.4 against the
+26.08 mm group disc) -- a placement change must re-size the group apertures or it vignettes.
+Not changed here: it regenerates every datasheet telecentric surrogate and is the user's call.
