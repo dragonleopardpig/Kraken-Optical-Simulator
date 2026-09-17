@@ -296,6 +296,192 @@ def mesh_outline_strips(
         return []
 
 
+class _SceneDepthBuffer:
+    """bugs/0802: an orthographic z-buffer of every solid in the view, for hidden-line removal.
+
+    Without it the DXF is a SEE-THROUGH wireframe: every edge of every body is projected,
+    front and back. Measured on the user's scene -- 67.5% of the lens body's feature edges and
+    **94.2%** of the camera's are occluded by their own body, which is the "camera is also
+    quite messy" thicket, and the back-facing ones surfacing inside the lens taper are the
+    "stray lines" that no 2D rule could separate from genuine front detail. The discriminator
+    is DEPTH, so measure depth.
+
+    Rasterises triangles into a fixed grid once per export; testing a point is then a lookup.
+    Cost on that scene: 0.32 s for 11272 triangles, 5.5 s for 231606.
+    """
+
+    def __init__(self, view_direction, resolution: int = 1400):
+        view = np.asarray(view_direction, dtype=float).reshape(3)
+        self.view = view / (float(np.linalg.norm(view)) or 1.0)
+        up = np.array([0.0, 0.0, 1.0])
+        if abs(float(np.dot(up, self.view))) > 0.9:
+            up = np.array([0.0, 1.0, 0.0])
+        self.e0 = np.cross(up, self.view)
+        self.e0 = self.e0 / (float(np.linalg.norm(self.e0)) or 1.0)
+        self.e1 = np.cross(self.view, self.e0)
+        self.resolution = int(resolution)
+        self._tris: list[tuple[np.ndarray, np.ndarray]] = []
+        self.buffer = None
+        self._front = None
+        self._origin = None
+        self._scale = 1.0
+        self._depth_span = 1.0
+
+    def to_plane(self, points) -> np.ndarray:
+        a = np.asarray(points, dtype=float).reshape(-1, 3)
+        return np.column_stack([a @ self.e0, a @ self.e1])
+
+    def depth_of(self, points) -> np.ndarray:
+        a = np.asarray(points, dtype=float).reshape(-1, 3)
+        return -(a @ self.view)          # larger = nearer the viewer
+
+    def add_mesh(self, polydata, actor_matrix=None) -> None:
+        try:
+            import pyvista as pv
+
+            mesh = pv.wrap(polydata)
+            points = np.asarray(mesh.points, dtype=float)
+            if actor_matrix is not None:
+                m = np.asarray(actor_matrix, dtype=float)
+                points = (np.hstack([points, np.ones((len(points), 1))]) @ m.T)[:, :3]
+            faces = np.asarray(mesh.faces, dtype=np.int64)
+            if points.size == 0 or faces.size == 0:
+                return
+            tris, i = [], 0
+            while i < len(faces):
+                count = int(faces[i])
+                if count == 3:
+                    tris.append(faces[i + 1:i + 4])
+                i += count + 1
+            if not tris:
+                return
+            self._tris.append((points, np.asarray(tris, dtype=np.int64)))
+            self.buffer = None
+        except Exception:
+            return
+
+    def _build(self) -> None:
+        if not self._tris:
+            return
+        uv = np.vstack([self.to_plane(p) for p, _t in self._tris])
+        lo, hi = uv.min(axis=0), uv.max(axis=0)
+        span = float((hi - lo).max()) * 1.002
+        if span <= 0.0:
+            return
+        res = self.resolution
+        scale = (res - 1) / span
+        buffer = np.full((res, res), -np.inf, dtype=np.float64)
+        depths = []
+        for points, tris in self._tris:
+            plane = (self.to_plane(points) - lo) * scale
+            depth = self.depth_of(points)
+            depths.append(depth)
+            corners = plane[tris]
+            zs = depth[tris]
+            xmin = np.clip(np.floor(corners[:, :, 0].min(axis=1)).astype(int), 0, res - 1)
+            xmax = np.clip(np.ceil(corners[:, :, 0].max(axis=1)).astype(int), 0, res - 1)
+            ymin = np.clip(np.floor(corners[:, :, 1].min(axis=1)).astype(int), 0, res - 1)
+            ymax = np.clip(np.ceil(corners[:, :, 1].max(axis=1)).astype(int), 0, res - 1)
+            for k in range(len(corners)):
+                x0, x1, y0, y1 = xmin[k], xmax[k], ymin[k], ymax[k]
+                if x1 < x0 or y1 < y0:
+                    continue
+                gx, gy = np.meshgrid(np.arange(x0, x1 + 1), np.arange(y0, y1 + 1))
+                a, b, c = corners[k]
+                det = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
+                if abs(det) < 1e-12:
+                    continue
+                l1 = ((b[1] - c[1]) * (gx - c[0]) + (c[0] - b[0]) * (gy - c[1])) / det
+                l2 = ((c[1] - a[1]) * (gx - c[0]) + (a[0] - c[0]) * (gy - c[1])) / det
+                l3 = 1.0 - l1 - l2
+                inside = (l1 >= -1e-9) & (l2 >= -1e-9) & (l3 >= -1e-9)
+                if not inside.any():
+                    continue
+                z = l1 * zs[k][0] + l2 * zs[k][1] + l3 * zs[k][2]
+                view = buffer[y0:y1 + 1, x0:x1 + 1]
+                np.maximum(view, np.where(inside, z, -np.inf), out=view)
+        self.buffer = buffer
+        # CONSERVATIVE test surface: the FARTHEST front depth in each 3x3 neighbourhood. A line
+        # lying ON a rim or silhouette samples pixels the adjacent, slightly nearer triangle
+        # covers, and against the raw buffer it flickered hidden/visible at pixel pitch --
+        # closed hole rims came apart into dotted runs and flange edges turned dashed (six-view
+        # 1880 -> 6219 polylines). A line genuinely BEHIND a face still fails, because that
+        # face covers the whole neighbourhood.
+        try:
+            from scipy.ndimage import minimum_filter
+
+            self._front = minimum_filter(buffer, size=3, mode="nearest")
+        except Exception:
+            self._front = buffer
+        self._origin = lo
+        self._scale = scale
+        stacked = np.concatenate(depths)
+        self._depth_span = max(float(stacked.max() - stacked.min()), 1e-9)
+
+    def visible_runs(self, strip, tolerance_fraction: float = 2e-3) -> list[np.ndarray]:
+        """Split a world-space strip into the runs that are NOT hidden behind a solid."""
+        if self.buffer is None:
+            self._build()
+        if self.buffer is None:
+            return [np.asarray(strip, dtype=float)]
+        points = np.asarray(strip, dtype=float).reshape(-1, 3)
+        if len(points) < 2:
+            return []
+        # Test ALONG each segment, not just at its vertices: a merged straight edge is often
+        # one long 2-point segment, and with both ends visible its middle can still pass
+        # behind a body. Sample at the buffer's own pixel pitch -- finer cannot be resolved.
+        pitch = 1.0 / max(float(self._scale), 1e-12)
+        samples = [points[:1]]
+        for start, end in zip(points[:-1], points[1:]):
+            length = float(np.linalg.norm(end - start))
+            steps = min(max(int(np.ceil(length / pitch)), 1), 4096)
+            fractions = np.linspace(0.0, 1.0, steps + 1)[1:, None]
+            samples.append(start + fractions * (end - start))
+        points = np.vstack(samples)
+        plane = self.to_plane(points)
+        depth = self.depth_of(points)
+        res = self.resolution
+        px = np.rint((plane - self._origin) * self._scale).astype(int)
+        # Outside the rasterised extent NOTHING is in front. Clipping such a sample to the
+        # border pixel made it inherit that pixel's depth -- a line leaving one side of a body
+        # read as hidden all the way out, and the guard's crossing strip came back as one run.
+        in_grid = (px[:, 0] >= 0) & (px[:, 0] < res) & (px[:, 1] >= 0) & (px[:, 1] < res)
+        surface = self._front if self._front is not None else self.buffer
+        front = np.full(len(points), -np.inf)
+        front[in_grid] = surface[px[in_grid, 1], px[in_grid, 0]]
+        tol = self._depth_span * float(tolerance_fraction)
+        visible = (depth >= front - tol) | ~np.isfinite(front)
+        # Close hidden gaps of a couple of samples inside a visible line: at the pixel pitch
+        # they are rasterisation noise, not occlusion, and left open they cut a continuous
+        # edge into dashes.
+        if visible.any() and not visible.all():
+            max_gap = 2
+            index = 0
+            n = len(visible)
+            while index < n:
+                if visible[index]:
+                    index += 1
+                    continue
+                end = index
+                while end < n and not visible[end]:
+                    end += 1
+                if index > 0 and end < n and (end - index) <= max_gap:
+                    visible[index:end] = True
+                index = end
+        runs: list[np.ndarray] = []
+        start = None
+        for index, flag in enumerate(visible):
+            if flag and start is None:
+                start = index
+            elif not flag and start is not None:
+                if index - start >= 2:
+                    runs.append(points[start:index])
+                start = None
+        if start is not None and len(points) - start >= 2:
+            runs.append(points[start:])
+        return runs
+
+
 def mesh_outline_polygons(
     polydata,
     view_direction,
@@ -674,6 +860,8 @@ def _postprocess_layer_polylines(
             a = tuple(np.round(simple[0], 3))
             b = tuple(np.round(simple[-1], 3))
             length = float(np.sum(np.linalg.norm(np.diff(simple, axis=0), axis=1)))
+            if length <= 1e-9:
+                continue  # bugs/0802: a polyline of zero length has nothing to draw
             key = (color, simple.shape[0], min(a, b), max(a, b), round(length, 2))
             if key in seen:
                 continue
@@ -797,6 +985,11 @@ def collect_viewport_dxf_layers(inspector) -> dict[str, dict[str, object]]:
             break
         pending.append(prop)
     body_outline_rings: list[np.ndarray] = []
+    # bugs/0802: one orthographic z-buffer for the whole view, so the drawing can show only
+    # what is actually visible. Filled in the actor sweep below and consulted by every body
+    # strip -- including the STEP companion EDGE actors, which is why it is SCENE-wide rather
+    # than per mesh (the lens occludes the camera, not just itself).
+    depth_buffer = _SceneDepthBuffer(camera.GetDirectionOfProjection())
     counts = {"actors": 0, "skipped_heavy": 0}
     while pending:
         actor = pending.pop(0)
@@ -858,6 +1051,7 @@ def collect_viewport_dxf_layers(inspector) -> dict[str, dict[str, object]]:
             # exported (they were the 60k-segment horizontal soup). The actor matrix
             # is baked into the silhouette input, so project without it.
             view_dir = camera.GetDirectionOfProjection()
+            depth_buffer.add_mesh(polydata, actor_matrix)  # bugs/0802
             strips = mesh_outline_strips(polydata, view_dir, actor_matrix)
             # bugs/0799: the projected-triangle union gives the body's outline as CLOSED
             # rings. Any silhouette/feature fragment lying ON that boundary is the same
@@ -869,8 +1063,12 @@ def collect_viewport_dxf_layers(inspector) -> dict[str, dict[str, object]]:
             if flat_rings:
                 # In the VIEW PLANE: the ring is lifted to the mesh's mean depth, so a 3D
                 # comparison would measure depth, not the drawing.
-                flat_strips = _strips_not_already_drawn(flat_strips, flat_rings)
-            if not flat_strips and not flat_rings:
+                surviving = _strips_not_already_drawn(flat_strips, flat_rings)
+                keep = {id(a) for a in surviving}
+                pairs = [(w, f) for w, f in zip(strips, flat_strips) if id(f) in keep]
+            else:
+                pairs = list(zip(strips, flat_strips))
+            if not pairs and not flat_rings:
                 counts["skipped_heavy"] += 1
                 continue
             if layer is None or layer == "KRAKEN_RAYS":
@@ -880,8 +1078,12 @@ def collect_viewport_dxf_layers(inspector) -> dict[str, dict[str, object]]:
                 layers[layer]["polylines"].append(
                     {"points": flat, "color": None, "closed": True}
                 )
-            for flat in flat_strips:
-                layers[layer]["polylines"].append({"points": flat, "color": None})
+            for world_strip, flat in pairs:
+                # bugs/0802: carry the WORLD points so hidden-line removal can test depth
+                # once every solid in the view has been rasterised.
+                layers[layer]["polylines"].append(
+                    {"points": flat, "color": None, "world": world_strip}
+                )
             continue
 
         strips = polydata_line_strips(polydata)
@@ -900,9 +1102,17 @@ def collect_viewport_dxf_layers(inspector) -> dict[str, dict[str, object]]:
         aci = nearest_aci(color) if color is not None else None
         for strip in strips:
             flat = project_points(strip, view, actor_matrix)
-            layers[layer]["polylines"].append(
-                {"points": flat, "color": aci if layer == "KRAKEN_RAYS" and aci else None}
-            )
+            entry = {"points": flat, "color": aci if layer == "KRAKEN_RAYS" and aci else None}
+            if layer == "KRAKEN_BODIES":
+                # bugs/0802: a STEP companion EDGE actor is body line art too, and it is the
+                # densest source of see-through edges. Give it world points (actor matrix
+                # applied, as project_points does) so the depth test can reach it.
+                world = np.asarray(strip, dtype=float).reshape(-1, 3)
+                if actor_matrix is not None:
+                    m = np.asarray(actor_matrix, dtype=float)
+                    world = (np.hstack([world, np.ones((len(world), 1))]) @ m.T)[:, :3]
+                entry["world"] = world
+            layers[layer]["polylines"].append(entry)
     # The axes, from the MODEL records: one continuous polyline each (the layer's
     # DASHED linetype renders the dashes -- geometry stays a single vector line).
     for record in list(getattr(inspector, "_optical_axis_pick_records", None) or []):
@@ -915,6 +1125,41 @@ def collect_viewport_dxf_layers(inspector) -> dict[str, dict[str, object]]:
         layers["KRAKEN_AXES"]["polylines"].append(
             {"points": project_points(points, view, None), "color": None}
         )
+
+    # bugs/0802: hidden-line removal. Every body strip is split into the runs that are not
+    # behind a solid; the closed outline rings are kept whole (an outline is on the silhouette
+    # by construction, and a ring cut into runs would stop being a shape). Rays, axes and
+    # overlays are NOT filtered -- the 3D view draws them over the scene and the drawing
+    # follows the view (bugs/0800).
+    body_spec = layers.get("KRAKEN_BODIES")
+    if body_spec is not None and depth_buffer.buffer is None:
+        depth_buffer._build()
+    if body_spec is not None and depth_buffer.buffer is not None:
+        kept_polylines: list[dict] = []
+        hidden_dropped = 0
+        for entry in body_spec["polylines"]:
+            if entry.get("closed"):
+                kept_polylines.append(entry)
+                continue
+            world = entry.get("world")
+            if world is None:
+                kept_polylines.append(entry)
+                continue
+            runs = depth_buffer.visible_runs(world)
+            if not runs:
+                hidden_dropped += 1
+                continue
+            if len(runs) == 1 and len(runs[0]) == len(np.asarray(world)):
+                kept_polylines.append(entry)
+                continue
+            hidden_dropped += 1
+            for run in runs:
+                kept_polylines.append({
+                    "points": project_points(run, view, None),
+                    "color": entry.get("color"),
+                })
+        counts["hidden_lines_removed"] = hidden_dropped
+        body_spec["polylines"] = kept_polylines
 
     # bugs/0799: the STEP bodies also arrive as companion EDGE actors (lines-only
     # polydata), which never pass through the mesh outline path -- so the outline dedupe
@@ -1217,14 +1462,28 @@ def collect_component_six_view_layers(
     for name, vdir, right, up in SIX_VIEW_BASES:
         right_v = np.asarray(right, dtype=float)
         up_v = np.asarray(up, dtype=float)
+        # bugs/0802: a six-view sheet is the worst case for see-through line art -- the user's
+        # camera TOP view drew the connector internals, the PCB and the far wall through the
+        # body (94.2% of this camera's feature edges are occluded). One depth buffer per view
+        # direction; every strip is cut to the runs that are actually visible.
+        depth = _SceneDepthBuffer(vdir)
+        for polydata, actor_matrix in meshes:
+            depth.add_mesh(polydata, actor_matrix)
+
+        def _visible(world_strip):
+            runs = depth.visible_runs(world_strip)
+            return runs if runs else []
+
         raw: list[dict] = []
         for polydata, actor_matrix in meshes:
             for strip in mesh_outline_strips(polydata, vdir, actor_matrix):
-                flat = np.stack([strip @ right_v, strip @ up_v], axis=1)
-                raw.append({"points": flat, "color": None})
+                for run in _visible(strip):
+                    flat = np.stack([run @ right_v, run @ up_v], axis=1)
+                    raw.append({"points": flat, "color": None})
         for pts in line_strips_world:
-            flat = np.stack([pts @ right_v, pts @ up_v], axis=1)
-            raw.append({"points": flat, "color": None})
+            for run in _visible(pts):
+                flat = np.stack([run @ right_v, run @ up_v], axis=1)
+                raw.append({"points": flat, "color": None})
         polys = _postprocess_layer_polylines(raw, decompose=True)
         if not polys:
             continue
