@@ -107,9 +107,13 @@ def run_checks() -> tuple[bool, list[str]]:
         failures.append("corroboration: '85 mm' with a space must still corroborate")
 
     # --- LAST RESORT: a real spec row wins ---------------------------------------------------
-    source = inspect.getsource(dsi.parse_datasheet_cardinals)
+    # bugs/0787: parse_datasheet_cardinals runs the text layer (then OCR) through _cardinals_from_text,
+    # where the labelled rows and the designation fallback now live.
+    if "_cardinals_from_text(" not in inspect.getsource(dsi.parse_datasheet_cardinals):
+        failures.append("consumer: parse_datasheet_cardinals must parse through _cardinals_from_text")
+    source = inspect.getsource(dsi._cardinals_from_text)
     if "model_designation_cardinals" not in source:
-        failures.append("consumer: parse_datasheet_cardinals must route through the helper")
+        failures.append("consumer: _cardinals_from_text must route through the helper")
     designation_at = source.find("model_designation_cardinals")
     for pattern in ("f['’]eff", "Focal len"):
         labelled_at = source.find(pattern)

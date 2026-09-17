@@ -97,7 +97,8 @@ def _roll_arc_sweeps(src: str):
             for tgt in node.targets:
                 if isinstance(tgt, ast.Name) and tgt.id == "roll_specs":
                     specs = ast.literal_eval(node.value)
-                    return [abs(v[3] - v[2]) for v in specs.values()]
+                    # the spec tuple ends with (start_deg, end_deg); bugs/0249 dropped the leading fields
+                    return [abs(v[-1] - v[-2]) for v in specs.values()]
     return None
 
 

@@ -69,7 +69,8 @@ def run_checks() -> "tuple[bool, list[str]]":
             "classes (annotated cube / cube source / cell picker / renderer) are missing"
         )
     else:
-        for key in ("AnnotatedCube", "CubeSource", "CellPicker", "PolyDataMapper", "Renderer", "Actor"):
+        # bugs/0249: the chamfered cube is built as PolyData from Points (no vtkCubeSource)
+        for key in ("AnnotatedCube", "PolyData", "Points", "CellPicker", "PolyDataMapper", "Renderer", "Actor"):
             if key not in vtk:
                 failures.append(f"A FAIL: _import_vtk() missing `{key}`")
 

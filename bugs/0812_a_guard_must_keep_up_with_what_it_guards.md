@@ -71,3 +71,24 @@ lens), promoting a prism placed 42 mm off axis moves the collimated launch by 44
 
 The 11 phases pass one at a time in the penta harness (68, 123, 130, 139, 148, 250, 263, 269, 294, 296,
 477). Before this change each failed on the missing attribute or signature.
+
+## Second batch: source contracts that followed a refactor
+
+| phase | guard | what moved | by |
+|---|---|---|---|
+| 147 | `navigation_cube` | the cube is chamfered PolyData from Points; there is no `vtkCubeSource` | 0249 |
+| 226 | `nav_cube_hover` | `roll_specs` values are `(start, end)`; the guard read `v[3] - v[2]` | 0249 |
+| 257 | `datasheet_lens_import` | the menu label is now "Import Lens from Folder (replaces scene)..." | 0381 |
+| 299 | `context_menu_focus_restore` | the dismiss checks `grab_current()` before taking focus; the fake had none | 0348 |
+| 440 | `0565_model_designation_lens` | the labelled-row and designation parsing moved to `_cardinals_from_text` | 0787 |
+
+For each, the check now follows the current code:
+
+* 147 requires the PolyData/Points classes;
+* 226 reads the last two numbers of each spec;
+* 257 matches the entry and its command, not one exact label;
+* 440 checks both hops: the routing, and the labelled-before-designation order.
+
+299 also gains check 1b: while a dialog holds the grab, a dismiss leaves focus with the dialog.
+
+Phases 147, 226, 257, 299 and 440 pass in the penta harness.

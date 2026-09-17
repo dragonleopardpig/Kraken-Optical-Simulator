@@ -56,11 +56,16 @@ class _FakeMenu:
 
 
 class _FakeWidget:
-    def __init__(self) -> None:
+    def __init__(self, grab=None) -> None:
         self.focus_calls = 0
+        self._grab = grab
 
     def focus_set(self) -> None:
         self.focus_calls += 1
+
+    def grab_current(self):
+        # bugs/0348: a modal dialog opened by a menu entry holds a Tk grab
+        return self._grab
 
 
 def _make_svc(*, menu, widget):
@@ -93,6 +98,15 @@ def _check_behaviour() -> list[str]:
         )
     if inspector._active_context_menu is not None:
         failures.append("FAIL(1): dismissing must clear _active_context_menu to None")
+
+    # 1b. bugs/0348: when a menu entry opened a modal dialog (it holds the grab), the deferred dismiss
+    #     must NOT pull keyboard focus away from that dialog.
+    menu_b = _FakeMenu()
+    widget_b = _FakeWidget(grab=object())
+    svc_b, _inspector_b = _make_svc(menu=menu_b, widget=widget_b)
+    svc_b._dismiss_active_context_menu()
+    if widget_b.focus_calls:
+        failures.append("FAIL(1b): a dismiss while a dialog holds the grab must leave focus with the dialog (bugs/0348)")
 
     # 2. No live menu -> the pre-post clear must not steal focus.
     widget2 = _FakeWidget()

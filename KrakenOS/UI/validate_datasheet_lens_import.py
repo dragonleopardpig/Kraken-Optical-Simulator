@@ -21,6 +21,8 @@ extractor + full build end to end.
 
 from __future__ import annotations
 
+import re
+
 import tempfile
 from pathlib import Path
 
@@ -207,7 +209,10 @@ def run_checks():
         failures.append("3D importer does not guard cancellation / rebuild the scene")
     if "dialog_parent=None" not in workbench_src or "return model" not in workbench_src:
         failures.append("editor importer does not accept dialog_parent / return the model")
-    if "Import Lens from Folder..." not in controls_src:
+    # bugs/0381 relabelled it so it cannot be mistaken for Swap: "(replaces scene)"; match the entry
+    # and its command, not one exact label.
+    if not re.search(r'"Import Lens from Folder[^"]*\.\.\."\s*,[^\n]*\n?\s*self\.inspector\.import_machine_vision_lens_from_folder',
+                     controls_src):
         failures.append("3D CAD menu has no 'Import Lens from Folder...' entry")
     if "self.inspector.import_machine_vision_lens_from_folder" not in controls_src:
         failures.append("3D CAD menu entry is not wired to the inspector importer")
