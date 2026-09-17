@@ -99,6 +99,10 @@ class _StubAddEditor:
 
     add_illumination_led_source = SourceModelingMixin.add_illumination_led_source
     _drawable_scene_source_descriptors = SourceModelingMixin._drawable_scene_source_descriptors
+    # bugs/0290: seed from the physical LED module when one is imported (none here -> panel values)
+    _illumination_emitter_module_seed = SourceModelingMixin._illumination_emitter_module_seed
+    # bugs/0292: the coaxial-illuminator descriptor rides on the spec (no module -> the fallback dims)
+    _coaxial_illuminator_descriptor_from_module = SourceModelingMixin._coaxial_illuminator_descriptor_from_module
     _dedupe_scene_source_ids = staticmethod(dedupe_scene_source_ids)
 
     def __init__(self, specs=None):

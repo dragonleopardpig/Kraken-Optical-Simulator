@@ -116,6 +116,9 @@ class _FakeInspector:
     _parallel_scale_for_orthographic_fit = staticmethod(
         Kraken3DInspector._parallel_scale_for_orthographic_fit
     )
+    # bugs/0278: every preset first leaves a Normal-to-Sensor isolation (re-shows what it hid)
+    _restore_sensor_isolation = Kraken3DInspector._restore_sensor_isolation
+    _show_sensor_isolation_hidden = Kraken3DInspector._show_sensor_isolation_hidden
 
     def __init__(self) -> None:
         self._camera = _FakeCamera()

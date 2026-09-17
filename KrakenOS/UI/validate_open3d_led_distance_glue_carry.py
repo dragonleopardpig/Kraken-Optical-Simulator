@@ -76,10 +76,17 @@ class _FakeEditor:
         self.led_step_object_edge_local_z = float(edge_local_z)
         self._offsets = {"led": [0.0, 0.0, 0.0], "optical": [0.0, 0.0, 0.0]}
         self.status_var = SimpleNamespace(set=lambda *a, **k: None)
+        self.scene_source_carries: list = []
         if glued:
             assert self.set_optical_led_glue(True), "test setup: glue should succeed"
 
     # --- fake-only collaborators ---
+    def _carry_glued_scene_sources(self, delta):
+        # bugs/0512: the LED distance movers also carry LED-glued illumination emitters; record
+        # the shift handed over (the real method filters by each spec's glued_to_led).
+        self.scene_source_carries.append(tuple(float(v) for v in delta))
+        return 0
+
     def _step_path_for_label(self, label):
         label = str(label or "").strip().lower()
         if label == "led":
@@ -146,6 +153,14 @@ def run_checks() -> "tuple[bool, list[str]]":
     ed_c._carry_led_glue_over_translation_change(before_c)  # nothing changed in between
     if not _approx(ed_c.rows[0].desp, (0.0, 0.0, 0.0)):
         failures.append(f"C FAIL: a zero-shift LED move must not carry the BS (got {ed_c.rows[0].desp})")
+    if ed_c.scene_source_carries:
+        failures.append(f"C FAIL: a zero-shift LED move must not carry the emitters (got {ed_c.scene_source_carries})")
+    # bugs/0512: the same distance move hands the LED's net shift to the glued illumination emitters.
+    if not (len(ed.scene_source_carries) == 1 and _approx(ed.scene_source_carries[0], (0.0, 0.0, -50.0))):
+        failures.append(
+            f"A FAIL: the -50 mm LED distance move must carry glued emitters by (0,0,-50) "
+            f"(got {ed.scene_source_carries})"
+        )
 
     # D) Unglued -> no carry at all.
     ed_d = _FakeEditor(glued=False, distance=200.0)

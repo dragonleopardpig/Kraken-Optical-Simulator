@@ -48,6 +48,8 @@ def _stub_inspector(root, axis_map, calls):
         open_stock_lens_importer=lambda **k: calls.append(("stock", k)),
         import_optical_stl_solid=lambda: calls.append("stl"),
         open_current_path_component_placement=lambda: calls.append("comp"),
+        # bugs/0669: the axis menu also opens the Inspection Part dialog
+        open_inspection_part_dialog=lambda: calls.append("part"),
     ).items():
         setattr(insp, k, v)
     insp.editor = insp

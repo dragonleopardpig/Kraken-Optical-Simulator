@@ -75,7 +75,14 @@ def _section1(failures: list[str]) -> None:
         render=lambda *a, **k: None,
         _remove_renderer_view_prop=lambda *a, **k: None,
         _add_renderer_view_prop=lambda *a, **k: None,
+        # bugs/0334: a face selection and a pinned clear-aperture opening are exclusive
+        _selected_opening_outline_actor=None,
+        _selected_opening_label="",
+        _selected_opening_face_id="",
+        _selected_opening_center=None,
+        _selected_opening_normal=None,
     )
+    insp._clear_selected_step_opening = types.MethodType(K._clear_selected_step_opening, insp)
     insp._set_selected_step_face = types.MethodType(K._set_selected_step_face, insp)
     insp._clear_selected_step_face = types.MethodType(K._clear_selected_step_face, insp)
     insp._has_selected_step_face = types.MethodType(K._has_selected_step_face, insp)

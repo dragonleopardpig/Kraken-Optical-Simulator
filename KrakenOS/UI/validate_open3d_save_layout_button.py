@@ -71,6 +71,12 @@ class _FakeInspector:
     def __init__(self, editor: _FakeEditor) -> None:
         self.editor = editor
         self.status_var = _StatusVar()
+        self.sidecars: list = []
+
+    def _write_open3d_session_sidecar(self, layout_path) -> None:
+        # bugs/0305: a successful save also writes the 3D-session sidecar next to the layout;
+        # record it instead of touching the disk.
+        self.sidecars.append(layout_path)
 
 
 def validate() -> list[Check]:
@@ -99,18 +105,19 @@ def validate() -> list[Check]:
     editor = _FakeEditor(current_file=Path("/tmp/machine_vision_AZ85_RA_Mirror.py"), save_returns=True)
     inspector = _FakeInspector(editor)
     result = Kraken3DInspector.save_layout(inspector)
-    ordered_ok = editor.calls == ["sync", "save"]
+    ordered_ok = editor.calls == ["sync", "save"] and inspector.sidecars == [editor.current_layout_file]
     status_ok = inspector.status_var.value == "Saved machine_vision_AZ85_RA_Mirror.py"
     checks.append(Check(
         "ORDER + SUCCESS: syncs BEFORE saving, returns True, reports the saved file name",
         bool(result) and ordered_ok and status_ok,
-        f"result={result} calls={editor.calls} status={inspector.status_var.value!r}",
+        f"result={result} calls={editor.calls} sidecars={inspector.sidecars} status={inspector.status_var.value!r}",
     ))
 
     cancel_editor = _FakeEditor(current_file=None, save_returns=False)
     cancel_inspector = _FakeInspector(cancel_editor)
     cancel_result = Kraken3DInspector.save_layout(cancel_inspector)
-    cancel_ok = (cancel_result is False) and cancel_inspector.status_var.value == "Save cancelled"
+    cancel_ok = ((cancel_result is False) and cancel_inspector.status_var.value == "Save cancelled"
+                 and not cancel_inspector.sidecars)
     checks.append(Check(
         "CANCEL IS HONEST: a dismissed Save As returns False and says 'Save cancelled'",
         cancel_ok,

@@ -8683,9 +8683,10 @@ def phase_148_navigation_cube_click(
         real_orient = cube._apply_orientation
         real_step = cube._apply_step
 
-        def wrapped_orient(offset, view_up):
+        def wrapped_orient(offset, view_up, *extra):
+            # bugs/0254: the widget also passes the picked sign (a corner's ISO roll is view-relative)
             orient_hits.append(tuple(round(float(v), 2) for v in offset))
-            return real_orient(offset, view_up)
+            return real_orient(offset, view_up, *extra)
 
         def wrapped_step(kind):
             step_hits.append(kind)
@@ -8697,7 +8698,8 @@ def phase_148_navigation_cube_click(
             render_window.Render()
             inspector.update()
             width, height = render_window.GetSize()
-            x0, y0, x1, y1 = _CUBE_VIEWPORT
+            # the live corner viewport is pixel-square and recomputed per render (seeded with the constant)
+            x0, y0, x1, y1 = getattr(cube, "_viewport", None) or _CUBE_VIEWPORT
             grid_x = np.linspace(int(x0 * width) + 2, int(x1 * width) - 2, 13).astype(int)
             grid_y = np.linspace(int(y0 * height) + 2, int(y1 * height) - 2, 13).astype(int)
             cam = renderer.GetActiveCamera()

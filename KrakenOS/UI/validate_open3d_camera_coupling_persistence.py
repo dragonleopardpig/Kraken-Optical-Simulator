@@ -80,6 +80,9 @@ class _FakeCameraEditor(LayoutTableWorkbenchMixin):
     def _current_field_type(self):
         return self.field_type_var.get()
 
+    def _current_object_mode(self):
+        return "Finite"
+
     def _current_image_diameter_mode(self):
         return self.image_diameter_mode_var.get()
 
@@ -206,6 +209,12 @@ def run_checks() -> tuple[bool, list[str]]:
         failures.append(
             f"P2c legacy decouple left the image aperture Manual-locked "
             f"({legacy.image_diameter_mode_var.get()} != Auto)"
+        )
+    # bugs/0311: with no stash to restore, the camera's pinned Real Image Height is reset to the
+    # object-mode default so the sensor-sized image circle does not linger.
+    if legacy.field_type_var.get() != "Object Height":
+        failures.append(
+            f"P2d legacy decouple left the camera-pinned field ({legacy.field_type_var.get()} != Object Height)"
         )
 
     return (not failures, failures)

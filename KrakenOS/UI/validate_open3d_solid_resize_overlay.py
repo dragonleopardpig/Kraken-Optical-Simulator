@@ -65,6 +65,9 @@ def _bind():
         "_step_resize_signature",
         "_apply_step_overlay_resize",
         "_step_overlay_resize_axes",
+        # bugs/0143: the resize setter now invalidates only when the pose/shape signature changed
+        "_step_overlay_mutation_signature",
+        "_invalidate_step_overlay_after_mutation",
     ):
         setattr(editor, name, getattr(ScenePlacementMixin, name).__get__(editor, _FakeEditor))
     return editor
@@ -167,8 +170,12 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         from KrakenOS.UI.open3d_inspector import Kraken3DInspector
         from KrakenOS.UI.services.open3d_face_assignment import Open3DFaceAssignmentService
 
+        # bugs/0102 moved the element verbs into append_element_context_actions, which the STEP-overlay
+        # right-click (and the Scene Components tree) call -- follow the delegation.
         menu_src = inspect.getsource(Open3DFaceAssignmentService._show_surface_function_context_menu)
-        ok('"Resize Solid..."' in menu_src and "_open_step_overlay_resize_popup(" in menu_src,
+        actions_src = inspect.getsource(Open3DFaceAssignmentService.append_element_context_actions)
+        ok("append_element_context_actions(menu, step_label=step_label)" in menu_src
+           and '"Resize Solid..."' in actions_src and "_open_step_overlay_resize_popup(" in actions_src,
            "W9: the STEP-overlay right-click menu offers 'Resize Solid...'")
 
         popup_src = inspect.getsource(Kraken3DInspector._open_step_overlay_resize_popup)
@@ -178,9 +185,12 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
            "W10a: popup builds coupled cross-section/depth vs free W/H/D and calls the apply")
 
         apply_src = inspect.getsource(Kraken3DInspector._apply_step_overlay_resize_solve)
+        # the retrace goes through _apply_model_change (force_retrace + marks the 2D stale, bugs/0262)
+        model_change_src = inspect.getsource(Kraken3DInspector._apply_model_change)
         ok("_set_step_resize_for_label(" in apply_src
            and "_begin_history_capture" in apply_src
-           and "refresh_from_editor" in apply_src,
+           and ("refresh_from_editor" in apply_src
+                or ("_apply_model_change()" in apply_src and "force_retrace=True" in model_change_src)),
            "W10b: apply captures history, sets the resize spec, and retraces")
     except Exception as exc:  # pragma: no cover - heavy/optional import
         skip(f"W9/W10: inspector source-contract import unavailable ({type(exc).__name__}: {exc})")

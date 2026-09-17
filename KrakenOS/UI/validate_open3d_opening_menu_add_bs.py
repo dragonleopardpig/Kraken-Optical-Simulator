@@ -75,6 +75,8 @@ def _build_opening_menu(label: str) -> list[str]:
         ),
     )
     svc._show_selected_opening_context_menu = types.MethodType(FA._show_selected_opening_context_menu, svc)
+    # bugs/0379: the opening menu also carries the edge-pick clear-aperture items
+    svc._add_clear_aperture_edge_menu_items = types.MethodType(FA._add_clear_aperture_edge_menu_items, svc)
     svc._popup_context_menu = types.MethodType(
         lambda self, menu, event: captured.__setitem__("menu", menu), svc
     )

@@ -88,6 +88,7 @@ class _FakeEditor:
         self.status_var = SimpleNamespace(set=lambda *a, **k: None)
         self._typed = float(typed)
         self.prefill_seen: float | None = None
+        self.scene_source_carries: list = []
         if glued:
             assert self.set_optical_led_glue(True), "test setup: glue should succeed"
 
@@ -97,6 +98,12 @@ class _FakeEditor:
         return self._typed
 
     # --- fake-only collaborators ---
+    def _carry_glued_scene_sources(self, delta):
+        # bugs/0512: the LED distance movers also carry LED-glued illumination emitters; record
+        # the shift handed over (the real method filters by each spec's glued_to_led).
+        self.scene_source_carries.append(tuple(float(v) for v in delta))
+        return 0
+
     def _default_led_object_edge_distance(self) -> float:
         return 50.0
 

@@ -63,6 +63,10 @@ class _FakePicker:
     def GetPickPosition(self):
         return self._local
 
+    def GetCellId(self):
+        # a chamfered-cube facet id; -1 = none, so the widget classifies the local hit point
+        return -1
+
 
 class _FakeWindow:
     def __init__(self, size=(200, 200)) -> None:
@@ -78,8 +82,13 @@ def _widget(*, available=True, arrow_actor=None, arrow_kind=None,
     real handle_left_press logic runs display-free."""
     from KrakenOS.UI.services.nav_cube_widget import NavigationCube
 
+    from KrakenOS.UI.services.nav_cube_widget import _CUBE_VIEWPORT
+
     cube = NavigationCube.__new__(NavigationCube)
     cube.available = available
+    cube._viewport = _CUBE_VIEWPORT  # __init__ seeds the live corner viewport with this
+    cube._cell_signs = []       # facet-id -> sign table (built with the VTK cube); empty -> classify
+    cube._iso_up_axis = None
     cube._render_window = _FakeWindow()
     cube._arrow_renderer = object()
     cube._cube_renderer = object()
@@ -90,7 +99,7 @@ def _widget(*, available=True, arrow_actor=None, arrow_kind=None,
     cube._arrow_actors = [(arrow_actor, arrow_kind)] if arrow_actor is not None else []
     cube.orient_hits = []
     cube.step_hits = []
-    cube._apply_orientation = lambda offset, up: cube.orient_hits.append((tuple(offset), tuple(up)))
+    cube._apply_orientation = lambda offset, up, sign=None: cube.orient_hits.append((tuple(offset), tuple(up)))
     cube._apply_step = lambda kind: cube.step_hits.append(kind)
     return cube
 

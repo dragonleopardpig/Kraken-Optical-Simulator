@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import inspect
+import re
 from types import MethodType
 
 import numpy as np
@@ -66,6 +67,7 @@ class _FakeEditor:
         sampling_mode: str | None = None,
         update_state: bool = True,
         include_live_step_overlays: bool = False,
+        trace_rays: bool = True,  # bugs/0400: bodies-only builds skip the trace
     ):
         self.build_sampling_modes.append(sampling_mode)
         self.build_update_states.append(bool(update_state))
@@ -83,6 +85,7 @@ class _FakeEditor:
 def _inspector_with_fake_editor(editor: _FakeEditor) -> Kraken3DInspector:
     inspector = object.__new__(Kraken3DInspector)
     inspector.editor = editor
+    inspector._placement_drag_state = None  # __init__ seeds it; refresh_from_editor reads it (fold-carry retrace)
     inspector.status_var = _StatusVar()
     inspector._last_refresh_sampling_mode = "world_envelope"
     inspector.refresh_calls = []
@@ -202,12 +205,17 @@ def _validate_machine_vision_open3d_rebuilds_launch_cone_after_2d_refresh() -> N
         if not layout_name:
             raise AssertionError("Machine Vision 150 mm measured layout was not discovered.")
         app.load_layout_by_name(layout_name, refresh=True)
-        if str(getattr(app, "_active_preview_sampling_mode", "") or "") != "world_envelope":
+        # A flat 2D fan: world_envelope for a non-sequential/folded trace, display_slice for a sequential
+        # one (_preview_scene_sampling_mode, bugs/0203) -- this lens traces sequentially today.
+        if str(getattr(app, "_active_preview_sampling_mode", "") or "") not in {"world_envelope", "display_slice"}:
             raise AssertionError(
-                "Machine Vision load should seed the flat 2D world-envelope fan before Open 3D opens; "
+                "Machine Vision load should seed a flat 2D fan before Open 3D opens; "
                 f"got {getattr(app, '_active_preview_sampling_mode', None)!r}."
             )
         inspector = type("_FakeInspector", (), {"_last_refresh_sampling_mode": None})()
+        # bugs/0646/0718: a load defers the trace until the user asks for rays (Trace Now / ticking
+        # Show Rays clears the gate); until then every refresh is bodies-only. Ask, as they would.
+        app._preview_trace_deferred_until_requested = False
         result = app._open3d_trace_refresh_service().build_inspector_refresh(
             inspector,
             update_state=False,
@@ -323,7 +331,10 @@ def _validate_face_role_save_forces_stale_trace_rebuild() -> None:
         raise AssertionError("CAD/STL face-role text fields do not save on focus-out.")
     if "_invalidate_optical_solid_face_assignment_trace(row_index, face_id, function)" not in assign_source:
         raise AssertionError("Direct CAD/STL face assignment does not clear stale traced scene state.")
-    if "force_retrace: bool = False" not in refresh_source or "refresh_from_editor(force_retrace=force_retrace)" not in refresh_source:
+    # bugs/0450 added geometry_changed=True to the same call -- match the forwarded argument, not the line
+    if "force_retrace: bool = False" not in refresh_source or not re.search(
+        r"refresh_from_editor\(\s*force_retrace=force_retrace\b", refresh_source
+    ):
         raise AssertionError("Open 3D view refresh helper cannot propagate forced retrace requests.")
     # Performance: the slow Face Editor / Save Roles came from render_face_preview
     # re-reading the body mesh from disk + re-extracting feature edges on EVERY
@@ -341,7 +352,10 @@ def _validate_face_role_save_forces_stale_trace_rebuild() -> None:
 def _validate_row_face_hover_uses_runtime_mesh_geometry() -> None:
     hover_source = inspect.getsource(Kraken3DInspector._hover_overlay_for_row_face)
     pick_source = inspect.getsource(Kraken3DInspector._row_face_ray_pick_for_display_xy)
-    outline_source = inspect.getsource(Kraken3DInspector._set_step_hover_outline)
+    # the setter became a timing wrapper around _set_step_hover_outline_impl -- read both
+    outline_source = inspect.getsource(Kraken3DInspector._set_step_hover_outline) + inspect.getsource(
+        Kraken3DInspector._set_step_hover_outline_impl
+    )
     runtime_call = "_runtime_world_face_triangles_for_record" in hover_source
     fallback_call = "world_triangles = self._world_face_triangles_for_record" in hover_source
     if not runtime_call or not fallback_call:
