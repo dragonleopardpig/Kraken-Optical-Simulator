@@ -183,7 +183,20 @@ def _strips_not_already_drawn(
         if len(pts) < 2 or pts.shape[1] != ref_points.shape[1]:
             kept.append(strip)
             continue
-        distances, _ = tree.query(pts)
+        # bugs/0811: test the candidate ALONG its segments, as the reference is. Its vertices alone
+        # say nothing about its middle: the SPO port's flange plate has a 17 mm bottom edge whose two
+        # ends sit on the outline ring (the 0.05 mm notch floors at either end), so a vertex-only
+        # test called the whole edge "already drawn" and the plate was left open at the bottom.
+        deltas = np.diff(pts, axis=0)
+        lengths = np.linalg.norm(deltas, axis=1)
+        probes = [pts]
+        for start, delta, length in zip(pts[:-1], deltas, lengths):
+            steps = int(length / tol) if tol > 0.0 else 0
+            if steps > 1:
+                steps = min(steps, 4096)
+                fractions = np.linspace(0.0, 1.0, steps, endpoint=False)[1:, None]
+                probes.append(start + fractions * delta)
+        distances, _ = tree.query(np.vstack(probes))
         if float(np.max(distances)) > tol:
             kept.append(strip)
     return kept
@@ -328,6 +341,7 @@ class _SceneDepthBuffer:
         self._origin = None
         self._scale = 1.0
         self._depth_span = 1.0
+        self._exact = None
 
     def to_plane(self, points) -> np.ndarray:
         a = np.asarray(points, dtype=float).reshape(-1, 3)
@@ -425,6 +439,7 @@ class _SceneDepthBuffer:
             return
         depths = np.concatenate([self.depth_of(p) for p, _t in self._tris])
         self._depth_span = max(float(depths.max() - depths.min()), 1e-9)
+        self._exact = None   # bugs/0811: triangle lookup for _exactly_hidden, built on first use
         self.buffer, self._front, self._scale = self._rasterise(lo, span, self._tris)
         self._origin = lo
         # bugs/0803: one grid for the whole view is too coarse for the parts that matter.
@@ -467,6 +482,43 @@ class _SceneDepthBuffer:
             # several bodies.
             return self._origin, self.buffer, self._front, self._scale, not self._grids
         return best[0], best[3], best[4], best[5], True
+
+    def _exactly_hidden(self, point, tol: float) -> bool:
+        """bugs/0811: is this one world point behind a triangle, tested on the triangles themselves?
+
+        The pixel test cannot answer this within a pixel of a rim: the 3x3 filter makes the
+        neighbourhood's FARTHEST depth the surface, so a line behind a face reads visible for one
+        pixel next to that face's edge. Inclusive of triangle edges -- a line lying ON an
+        occluder's own edge has the occluder's depth there and is not hidden by it.
+        """
+        if self._exact is None:
+            exact = []
+            for points, tris in self._tris:
+                plane = self.to_plane(points)[tris]            # (n, 3, 2)
+                exact.append((plane, self.depth_of(points)[tris], plane.min(axis=1), plane.max(axis=1)))
+            self._exact = exact
+        q = self.to_plane(point)[0]
+        d = float(self.depth_of(point)[0])
+        for plane, zs, lo, hi in self._exact:
+            near = np.nonzero((lo[:, 0] <= q[0]) & (hi[:, 0] >= q[0]) & (lo[:, 1] <= q[1]) & (hi[:, 1] >= q[1]))[0]
+            if len(near) == 0:
+                continue
+            a, b, c = plane[near, 0], plane[near, 1], plane[near, 2]
+            det = (b[:, 1] - c[:, 1]) * (a[:, 0] - c[:, 0]) + (c[:, 0] - b[:, 0]) * (a[:, 1] - c[:, 1])
+            ok = np.abs(det) > 1e-12
+            if not ok.any():
+                continue
+            a, b, c, det, z = a[ok], b[ok], c[ok], det[ok], zs[near[ok]]
+            l1 = ((b[:, 1] - c[:, 1]) * (q[0] - c[:, 0]) + (c[:, 0] - b[:, 0]) * (q[1] - c[:, 1])) / det
+            l2 = ((c[:, 1] - a[:, 1]) * (q[0] - c[:, 0]) + (a[:, 0] - c[:, 0]) * (q[1] - c[:, 1])) / det
+            l3 = 1.0 - l1 - l2
+            inside = (l1 >= -1e-9) & (l2 >= -1e-9) & (l3 >= -1e-9)
+            if not inside.any():
+                continue
+            front = l1 * z[:, 0] + l2 * z[:, 1] + l3 * z[:, 2]
+            if bool(np.any(front[inside] > d + tol)):
+                return True
+        return False
 
     def visible_runs(self, strip, tolerance_fraction: float = 2e-3) -> list[np.ndarray]:
         """Split a world-space strip into the runs that are NOT hidden behind a solid."""
@@ -562,7 +614,22 @@ class _SceneDepthBuffer:
         # cost 130 -> 127 lines over 5 mm by opening gaps in them. Measured on one scene; the
         # distinction is stated as observed, not as a law.
         min_length = 3.0 * pitch if (full_resolution and not self._grids) else 0.0
+        # bugs/0811: a CUT run of at most three samples may exist only because of the 3x3 filter --
+        # the filter reaches one pixel past an occluder's rim, and a line passing behind that
+        # occluder reads visible there. Measured on the SPO port: the flange plate's M3 hole walls
+        # sit 1.7 mm behind its front face and each kept a 0.105 mm tick under the plate's top
+        # edge. At pixel pitch such a tick and a real short peek are the same two samples (the
+        # bugs/0803 D fixture's 0.25 mm peek past a box is too), so ask the triangles: the run
+        # survives if the middle of any of its steps is not behind one. Only runs that the RAW
+        # buffer hides somewhere are asked -- elsewhere the filter changed nothing.
+        raw = np.full(len(points), -np.inf)
+        raw[in_grid] = grid_buffer[px[in_grid, 1], px[in_grid, 0]]
+        raw_visible = (depth >= raw - tol) | ~np.isfinite(raw)
         for first, last in spans:
+            if last - first <= 2 and not bool(raw_visible[first:last + 1].all()):
+                middles = 0.5 * (points[first:last] + points[first + 1:last + 1])
+                if all(self._exactly_hidden(m[None, :], tol) for m in middles):
+                    continue
             interior = [
                 original[int(vertex_at[i])]
                 for i in range(first + 1, last)
