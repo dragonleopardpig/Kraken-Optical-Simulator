@@ -70,3 +70,22 @@ measure along (om05a's traced |m|) is left as it was.
 
 Arbitrary (non-quarter) rolls rotate nothing -- the launch field and the solves are axis-aligned. The HUD
 states the modelled angle. Per-branch cameras (`branch_detector_camera_assignments`) have no roll.
+
+## Follow-up: flag_20260917_155044 -- "the Orange drawn sensor does not match the Camera STEP sensor size"
+
+Measured on the saved scene (camera rolled 90 deg): the camera STEP's axial faces around the image
+plane (z 225.026):
+
+| z | what | x extent | y extent |
+|---|---|---|---|
+| 224.690 | a centred 136-cell rectangle | -6.45..+6.45 (12.90) | -7.85..+7.85 (15.70) |
+| 225.026 | the drawn (orange) sensor | -3.533..+3.533 (7.066) | -4.223..+4.223 (8.446) |
+
+The datasheet (`MV-CS050-60UMUC ... datasheet_20241205`): 2/3", 2448 x 2048 at 3.45 um -> active area
+8.446 x 7.066 mm. The orange rectangle IS that active area; the STEP's 12.90 x 15.70 rectangle 0.34 mm
+in front of the image plane is the sensor PACKAGE face, which the pixel area sits inside. Different
+things, so not expected to be the same size -- no change.
+
+It does independently confirm the orientation rule above: both rectangles are centred on the axis and
+both are PORTRAIT at the 90 deg roll (long side along y), i.e. this camera's STEP carries its sensor's
+width along the body's own X, as the roll rule assumes.
