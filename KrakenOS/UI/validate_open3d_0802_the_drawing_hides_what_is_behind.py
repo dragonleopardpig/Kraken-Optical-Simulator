@@ -119,6 +119,10 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
     from KrakenOS.UI.services import dxf_viewport_export as dxe
 
     viewport_src = inspect.getsource(dxe.collect_viewport_dxf_layers)
+    # bugs/0809 moved the per-strip loop into _remove_hidden_lines (so it can be tested without a
+    # display); the collector calls it, and the rules below live there.
+    if hasattr(dxe, "_remove_hidden_lines") and "_remove_hidden_lines(" in viewport_src:
+        viewport_src += inspect.getsource(dxe._remove_hidden_lines)
     ok("_SceneDepthBuffer" in viewport_src and "visible_runs" in viewport_src,
        "E: the viewport export removes hidden lines")
     ok('layers.get("KRAKEN_BODIES")' in viewport_src,

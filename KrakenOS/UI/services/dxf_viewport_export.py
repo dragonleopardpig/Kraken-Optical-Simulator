@@ -977,6 +977,46 @@ def _postprocess_layer_polylines(
     return out
 
 
+def _remove_hidden_lines(polylines: list[dict], depth_buffer, view) -> "tuple[list[dict], int]":
+    """bugs/0802: keep only the runs of each body strip that no solid hides.
+
+    Closed outline rings pass whole (an outline is on the silhouette by construction, and a ring
+    cut into runs would stop being a shape); entries without world points pass whole. Returns the
+    new polyline list and how many entries were cut or dropped.
+    """
+    kept: list[dict] = []
+    removed = 0
+    for entry in polylines:
+        if entry.get("closed"):
+            kept.append(entry)
+            continue
+        world = entry.get("world")
+        if world is None:
+            kept.append(entry)
+            continue
+        runs = depth_buffer.visible_runs(world)
+        if not runs:
+            removed += 1
+            continue
+        world_points = np.asarray(world, dtype=float).reshape(-1, 3)
+        run = np.asarray(runs[0], dtype=float).reshape(-1, 3)
+        # bugs/0809: "fully visible" is the WHOLE strip coming back, not a run with the same
+        # NUMBER of points. A partly hidden 2-point edge returns a 2-point run too -- its two
+        # visible end samples -- and the old count test kept the entry, so the full edge was
+        # drawn: the SPO port's M3 hole walls, 0.105 mm visible of 2 mm, came out whole.
+        if (
+            len(runs) == 1
+            and len(run) == len(world_points)
+            and np.allclose(run[[0, -1]], world_points[[0, -1]], atol=1e-9)
+        ):
+            kept.append(entry)
+            continue
+        removed += 1
+        for run in runs:
+            kept.append({"points": project_points(run, view, None), "color": entry.get("color")})
+    return kept, removed
+
+
 def collect_viewport_dxf_layers(inspector) -> dict[str, dict[str, object]]:
     """Walk the inspector's renderer and flatten every visible actor into layered 2D
     polylines in the current camera's view plane."""
@@ -1115,6 +1155,11 @@ def collect_viewport_dxf_layers(inspector) -> dict[str, dict[str, object]]:
         try:
             if not actor.GetVisibility():
                 continue
+            # bugs/0809: a 2D overlay (the HUD text box, scalar bars, the nav-cube labels) lives
+            # in SCREEN pixels. Its quad was flattened through the view matrix as if it were a
+            # body, and the HUD box landed in the drawing as a 545 mm line far below the lens.
+            if hasattr(actor, "IsA") and actor.IsA("vtkActor2D"):
+                continue
             mapper = actor.GetMapper() if hasattr(actor, "GetMapper") else None
             polydata = mapper.GetInput() if mapper is not None else None
             if polydata is None:
@@ -1242,31 +1287,9 @@ def collect_viewport_dxf_layers(inspector) -> dict[str, dict[str, object]]:
     if body_spec is not None and depth_buffer.buffer is None:
         depth_buffer._build()
     if body_spec is not None and depth_buffer.buffer is not None:
-        kept_polylines: list[dict] = []
-        hidden_dropped = 0
-        for entry in body_spec["polylines"]:
-            if entry.get("closed"):
-                kept_polylines.append(entry)
-                continue
-            world = entry.get("world")
-            if world is None:
-                kept_polylines.append(entry)
-                continue
-            runs = depth_buffer.visible_runs(world)
-            if not runs:
-                hidden_dropped += 1
-                continue
-            if len(runs) == 1 and len(runs[0]) == len(np.asarray(world)):
-                kept_polylines.append(entry)
-                continue
-            hidden_dropped += 1
-            for run in runs:
-                kept_polylines.append({
-                    "points": project_points(run, view, None),
-                    "color": entry.get("color"),
-                })
-        counts["hidden_lines_removed"] = hidden_dropped
-        body_spec["polylines"] = kept_polylines
+        body_spec["polylines"], counts["hidden_lines_removed"] = _remove_hidden_lines(
+            body_spec["polylines"], depth_buffer, view
+        )
 
     # bugs/0799: the STEP bodies also arrive as companion EDGE actors (lines-only
     # polydata), which never pass through the mesh outline path -- so the outline dedupe
@@ -1501,6 +1524,11 @@ def collect_component_six_view_layers(
             pass
         try:
             if not actor.GetVisibility():
+                continue
+            # bugs/0809: a 2D overlay (the HUD text box, scalar bars, the nav-cube labels) lives
+            # in SCREEN pixels. Its quad was flattened through the view matrix as if it were a
+            # body, and the HUD box landed in the drawing as a 545 mm line far below the lens.
+            if hasattr(actor, "IsA") and actor.IsA("vtkActor2D"):
                 continue
             mapper = actor.GetMapper() if hasattr(actor, "GetMapper") else None
             polydata = mapper.GetInput() if mapper is not None else None
