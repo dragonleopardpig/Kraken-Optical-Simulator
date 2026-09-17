@@ -17,7 +17,9 @@ Using the plotter
 -----------------
 
 1. Enter one complete definition per line, such as ``y = a x^2`` and
-   ``a = 2``. Select **Build plot** after editing the equations.
+   ``a = 2``. The **Rendered equations** panel directly below the editor
+   updates as you type, so you can check fractions, powers, and symbols.
+   Select **Build plot** once the equations look correct.
 2. Choose the **X-axis variable** to sweep and the **Y-axis variable** to
    calculate. All variables found in the equations are available. Selecting
    a defined variable for X temporarily replaces its definition with the sweep;
@@ -31,8 +33,13 @@ Using the plotter
    bounds, and a numeric field for precise values. Numeric fields can also
    hold values outside the slider bounds.
 5. Use **Inspect X** to read sampled coordinates, or **Download CSV** to save
-   the current curve. **Rendered equations** shows a typeset preview when
-   the documentation's MathJax renderer is available.
+   the current curve.
+
+The preview shows your current input even before a plot can be built, for
+example while parameter definitions are missing. Rendering an equation does
+not mean it is supported by the numerical evaluator; **Build plot** checks
+that separately. Incomplete LaTeX is marked in the preview, and a message
+appears if the documentation's MathJax renderer cannot load.
 
 Sliders update the graph immediately. Rebuilding after editing resets
 parameter values to the definitions in the editor. Changing the axes keeps

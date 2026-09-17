@@ -129,15 +129,19 @@ w = 2`;
         };
     }
 
-    function parse(source) {
+    function sourceLines(source) {
         if (source.length > 24000) throw new Error("Use at most 24,000 characters.");
-        const lines = source
+        return source
             .replace(/%[^\n]*/g, "")
             .replace(/\\(?:begin|end)\{(?:aligned|align\*?|gathered|gather\*?|equation\*?)\}/g, "")
             .replace(/\\\[|\\\]|\$+/g, "")
             .replace(/\\\\/g, "\n")
             .replace(/&/g, "")
             .split("\n");
+    }
+
+    function parse(source) {
+        const lines = sourceLines(source);
         const definitions = new Map();
         const variables = new Set();
         for (const [index, raw] of lines.entries()) {
@@ -242,5 +246,5 @@ w = 2`;
         return { points, nonreal, undefinedCount };
     }
 
-    return { parse, plan, sample, label, REFLECTION, GAUSSIAN };
+    return { parse, plan, sample, label, sourceLines, REFLECTION, GAUSSIAN };
 });

@@ -29,13 +29,18 @@
           <label for="${prefix}-source">LaTeX equations</label>
           <p class="formula-plotter__hint" id="${prefix}-help">One complete equation per line, in any order. Define constants here or enter their values below. The selected X variable is swept over its range.</p>
           <textarea id="${prefix}-source" data-role="source" rows="9" spellcheck="false" autocapitalize="off" aria-describedby="${prefix}-help"></textarea>
+          <section class="formula-plotter__preview-panel" aria-labelledby="${prefix}-preview-heading">
+            <strong id="${prefix}-preview-heading">Rendered equations</strong>
+            <p class="formula-plotter__hint">Updates as you type. Check the fractions, powers, and symbols before selecting Build plot.</p>
+            <p class="formula-plotter__hint" data-role="preview-status" role="status" aria-live="polite"></p>
+            <div class="formula-plotter__preview" data-role="preview"></div>
+          </section>
           <div class="formula-plotter__actions">
             <button type="button" class="formula-plotter__primary" data-role="build">Build plot</button>
             <span data-role="edit-state"></span>
           </div>
           <p class="formula-plotter__status" data-role="status" role="status" aria-live="polite"></p>
           <div data-role="workspace" hidden>
-            <details><summary>Rendered equations</summary><div class="formula-plotter__preview" data-role="preview"></div></details>
             <div class="formula-plotter__axes">
               <label>X-axis variable<select data-role="x"></select></label>
               <label>Y-axis variable<select data-role="y"></select></label>
@@ -55,7 +60,7 @@
           </div>`;
         const find = (name) => root.querySelector(`[data-role="${name}"]`);
         const controls = Object.fromEntries([
-            "source", "example", "load", "build", "edit-state", "status", "workspace", "preview",
+            "source", "example", "load", "build", "edit-state", "status", "workspace", "preview", "preview-status",
             "x", "y", "angles", "minimum", "maximum", "start", "end", "start-label", "end-label",
             "parameters", "dependency", "chart", "probe", "probe-value", "csv",
         ].map((name) => [name, find(name)]));
@@ -66,6 +71,9 @@
         let frame = null;
         let probePoint = null;
         let graphPosition = null;
+        let previewTimer = null;
+        let previewRevision = 0;
+        let previewQueue = Promise.resolve();
         const parameterInputs = new Map();
         const parameterValues = new Map();
 
@@ -247,26 +255,60 @@
             });
         }
 
-        async function preview() {
-            const math = window.MathJax;
-            if (math?.startup?.promise) await math.startup.promise;
-            if (math?.typesetClear) math.typesetClear([controls.preview]);
-            controls.preview.replaceChildren();
-            model.definitions.forEach((definition) => {
-                const line = document.createElement("div");
-                line.textContent = `\\[${definition.latex}\\]`;
-                controls.preview.append(line);
-            });
-            if (math?.typesetPromise) {
-                try {
-                    await math.typesetPromise([controls.preview]);
-                } catch (_) {
-                    controls.preview.dataset.rendering = "latex";
+        async function preview(source, revision) {
+            if (revision !== previewRevision) return;
+            try {
+                const lines = engine.sourceLines(source).map((line) => line.trim()).filter(Boolean);
+                if (!lines.length) {
+                    controls["preview-status"].textContent = "Enter LaTeX above to see the rendered equations.";
+                    return;
                 }
+                if (lines.length > 64) throw new Error("Use at most 64 equations in the preview.");
+                const math = window.MathJax;
+                if (math?.startup?.promise) await math.startup.promise;
+                if (revision !== previewRevision) return;
+                const convert = math?.tex2chtmlPromise || math?.tex2svgPromise;
+                if (!convert) throw new Error("MathJax could not load. Reload the page to retry the formula preview.");
+                const metrics = math.getMetricsFor(controls.preview, true);
+                const fragment = document.createDocumentFragment();
+                for (const latex of lines) {
+                    const formula = await convert.call(math, latex, metrics);
+                    if (revision !== previewRevision) return;
+                    const row = document.createElement("div");
+                    row.className = "formula-plotter__equation";
+                    row.append(formula);
+                    fragment.append(row);
+                }
+                controls.preview.replaceChildren(fragment);
+                math.startup.document.reset();
+                math.startup.document.updateDocument();
+                const hasErrors = controls.preview.querySelector("[data-mjx-error], mjx-merror");
+                controls["preview-status"].textContent = hasErrors
+                    ? "Some LaTeX could not be rendered. Check the highlighted formula."
+                    : "Preview of the current input. Build plot checks whether the equations can be evaluated.";
+            } catch (error) {
+                if (revision !== previewRevision) return;
+                controls.preview.replaceChildren();
+                controls["preview-status"].textContent = error.message;
+            } finally {
+                if (revision === previewRevision) controls.preview.setAttribute("aria-busy", "false");
             }
         }
 
+        function schedulePreview(delay = 250) {
+            clearTimeout(previewTimer);
+            const revision = ++previewRevision;
+            const source = controls.source.value;
+            controls.preview.replaceChildren();
+            controls.preview.setAttribute("aria-busy", "true");
+            controls["preview-status"].textContent = "Updating preview…";
+            previewTimer = setTimeout(() => {
+                previewQueue = previewQueue.then(() => preview(source, revision));
+            }, delay);
+        }
+
         function build(preferred = {}) {
+            schedulePreview(0);
             try {
                 const nextModel = engine.parse(controls.source.value);
                 const oldX = controls.x.value;
@@ -283,7 +325,6 @@
                 controls.x.value = preferred.x || (model.variables.includes(oldX) ? oldX : free || model.variables[1] || model.variables[0]);
                 controls.y.value = preferred.y || (model.variables.includes(oldY) ? oldY : model.definitions.keys().next().value);
                 selectAxes();
-                preview().catch(() => {});
             } catch (error) {
                 model = null;
                 calculation = null;
@@ -306,6 +347,7 @@
         controls.load.addEventListener("click", loadExample);
         controls.build.addEventListener("click", () => build());
         controls.source.addEventListener("input", () => {
+            schedulePreview();
             if (controls.source.value !== activeSource) {
                 controls["edit-state"].textContent = "Equations changed — select Build plot.";
                 invalidate("Select Build plot to apply the edited equations.");

@@ -178,14 +178,25 @@
     stroke-width: 2;
 }
 
-.formula-plotter__preview {
-    overflow-x: auto;
-    padding: 8px;
+.formula-plotter__preview-panel {
+    margin: 16px 0;
+    padding: 16px;
+    background: white;
+    border: 1px solid #d3dce1;
+    border-radius: 5px;
 }
 
-.formula-plotter summary {
-    cursor: pointer;
-    font-size: 0.875rem;
+.formula-plotter__preview {
+    min-height: 48px;
+    overflow-x: auto;
+}
+
+.formula-plotter__equation {
+    padding: 4px 8px;
+}
+
+.formula-plotter__equation + .formula-plotter__equation {
+    border-top: 1px solid #edf1f4;
 }
 
 @media (max-width: 700px) {
