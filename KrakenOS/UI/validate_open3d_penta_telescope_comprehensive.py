@@ -16328,6 +16328,10 @@ phase_594_a_save_writes_the_table = _phase_from_standalone(
     594, "a save writes the table: the user found the om05a prism assembly haywire -- the whole B-side train, both beam-splitter far halves and both LED panels sat 8.82 mm off the authored placement every one of them carries, while the A-side rows and the same rows in the 80 mm bench read 0.000. Both files record the SAME authored centres, so re-seating them onto it is the user's \"copy the prism assembly from om05a_folded_80mm.py\". The first repair reported drift 0.000000 and saved a file that still held the old placement: _write_layout_file begins with _read_rows_from_table(), so rows edited in memory and saved without _sync_table() are silently overwritten by the stale table -- the trap the bugs/0591/0608 lens refit already had to comment around. Re-seated through the table the scene went from 6 of 1103 rays reaching with a 127 mm waist to 644 on-strip at 0.7 um, and the 3D scene from \"no ray reaches the sensor\" to an image 0.457 mm in front of it. The two big RA mirrors keep a 3.563 mm authored/live gap that is the SNAPSHOT being stale, not a displacement: the 80 mm bench images with the same live pose, and phase 505's A8b now reports that same 3.563 mm on the measured cover strip (0815)",
     "KrakenOS.UI.validate_open3d_0815_a_save_writes_the_table",
     "a_save_writes_the_table")
+phase_595_a_slid_row_says_so = _phase_from_standalone(
+    595, "a slid row says so: bugs/0769 split a leg in the user's om05a scene (RA mirror 2's 45.13 -> 36.31 plus an 8.82 mm sensor standoff), preserved the sum AT THE SENSOR and recorded \"nothing moves\" -- but seven free-placed prism rows sat BETWEEN the row that lost the 8.82 mm and the row that gained it, so their station and their world z dropped by exactly that, and the scene traced 6 rays of 1103 until the user looked at it and said the prisms were off centre. Nothing in the app had said a word, although the bugs/0750 audit has had the instrument since: its DELTA form is silent on an unmoved scene and on a merely stale snapshot (om05a's own 3.563 mm from bugs/0760), so it can run on every model change. It now does -- _apply_model_change takes a reading before the redraw, refresh_scene makes the painted scene the next baseline (both the sync and the async trace), and the rows that moved ride the solve banner. The notice REPORTS: a promoted row is usually vendor hardware and where it sits is the user's, so nothing is moved back for them, and a row that returns to its seat clears its own notice at the next paint (0816)",
+    "KrakenOS.UI.validate_open3d_0816_a_slid_row_says_so",
+    "a_slid_row_says_so")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16988,6 +16992,7 @@ def main() -> int:
             phase_592_a_line_touching_the_outline_is_not_on_it,
             phase_593_a_cache_is_a_recipe,
             phase_594_a_save_writes_the_table,
+            phase_595_a_slid_row_says_so,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

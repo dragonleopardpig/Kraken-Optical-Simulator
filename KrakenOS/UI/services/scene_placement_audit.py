@@ -142,3 +142,82 @@ def format_moved_report(moved):
             f"  (moved {r['moved_mm']:+.4f})"
         )
     return "\n".join(lines)
+
+
+def moves_since(before, after, tol_mm=DEFAULT_TOL_MM):
+    """bugs/0816: :func:`compare_drifts` restricted to rows that are still the SAME row.
+
+    ``compare_drifts`` pairs readings by row INDEX, which is what an edit preserves. A scene
+    LOAD or a row insert renumbers everything, and every renumbered row would then read as a
+    move. Pair by index AND name, so a reading taken across a load reports nothing instead of
+    reporting everything.
+    """
+    prior = {r["row"]: r for r in (before or [])}
+    kept_after = []
+    kept_before = []
+    for record in after or []:
+        was = prior.get(record["row"])
+        if was is None or str(was.get("name")) != str(record.get("name")):
+            continue
+        kept_before.append(was)
+        kept_after.append(record)
+    return compare_drifts(kept_before, kept_after, tol_mm)
+
+
+def prune_resolved_moves(moved, current, tol_mm=DEFAULT_TOL_MM):
+    """Drop the rows that have come back to the drift they had before the edit.
+
+    ``moved`` is a :func:`moves_since` result carried on the scene; ``current`` a fresh
+    :func:`pinned_placement_drifts` reading. A row is kept only while it is still further from
+    its authored placement than it was before the edit that flagged it -- so an undo, a re-seat
+    or a compensating edit clears the notice by itself, and nothing has to remember to.
+    """
+    live = {r["row"]: r for r in (current or [])}
+    kept = []
+    for record in moved or []:
+        now = live.get(record.get("row"))
+        if now is None or now.get("drift_mm") is None:
+            continue
+        if str(now.get("name")) != str(record.get("name")):
+            continue
+        if float(now["drift_mm"]) <= float(record.get("before_mm", 0.0)) + float(tol_mm):
+            continue
+        kept.append({**record, "after_mm": float(now["drift_mm"])})
+    return kept
+
+
+def format_placement_move_lines(moved, max_rows: int = 4) -> list[str]:
+    """bugs/0816: the in-scene notice for rows an edit slid off their authored placement.
+
+    Pure formatter, [] when nothing moved. It REPORTS -- it never proposes that the app move
+    anything back, because a promoted row is usually vendor hardware and where it sits is the
+    user's call ([[vendor hardware is immutable]]).
+    """
+    records = [r for r in (moved or []) if r.get("moved_mm") is not None]
+    if not records:
+        return []
+    records = sorted(records, key=lambda r: -float(r["moved_mm"]))
+    worst = float(records[0]["moved_mm"])
+
+    def _mm(value) -> str:
+        """Micron resolution, and the walk's 1e-14 noise reads as the 0.000 it means."""
+        value = float(value)
+        return f"{0.0 if abs(value) < NOISE_FLOOR_MM else value:.3f}"
+
+    lines = [
+        f"PLACEMENT: the last edit slid {len(records)} pinned row(s) off the authored placement "
+        f"they carry (worst {_mm(worst)} mm)"
+    ]
+    for record in records[:max_rows]:
+        lines.append(
+            f"  row {int(record['row'])} {str(record['name'])[:34]}: "
+            f"{_mm(record['before_mm'])} -> {_mm(record['after_mm'])} mm off "
+            f"({float(record['moved_mm']):+.3f})"
+        )
+    if len(records) > max_rows:
+        lines.append(f"  ... and {len(records) - max_rows} more")
+    lines.append(
+        "  Undo the edit, or move them back yourself -- the scene changed where they sit, "
+        "and nothing was moved for you"
+    )
+    return lines

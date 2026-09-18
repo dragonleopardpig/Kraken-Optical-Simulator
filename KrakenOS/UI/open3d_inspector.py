@@ -18666,6 +18666,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     pixel_size_um=self._flag_camera_pixel_size_um(),
                 )
             )
+            # bugs/0816: rows an edit slid off their authored placement ride the same banner.
+            # Nothing is moved back for the user -- a promoted row is usually vendor hardware
+            # and where it sits is theirs to decide.
+            from KrakenOS.UI.services.scene_placement_audit import format_placement_move_lines
+
+            lines.extend(
+                format_placement_move_lines(
+                    self.editor.__dict__.get("_pinned_placement_moves")
+                )
+            )
             text = "\n".join(lines)
             try:
                 if not bool(self.show_solve_banner_var.get()):
@@ -18955,6 +18965,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # Apply a restored camera pose (buffered by a session restore) after the
         # rebuild -- funnelled here so it covers both the sync and async traces.
         self._apply_pending_session_camera()
+        # bugs/0816: the painted scene is the baseline the next edit is measured against, and
+        # a row that has come back to its seat clears its own notice. Same funnel, same reason.
+        self._refresh_pinned_placement_baseline()
         return result
 
     def _reapply_selection_after_scene_rebuild(self) -> None:
@@ -25772,9 +25785,80 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         LED add, resize solve, wavefront map, measure edit, detector carry-drag) retraced the 3D
         and left the 2D showing the OLD prescription until something else happened to dirty it.
         Route model changes through here so the pair cannot be split again;
-        `validate_open3d_model_change_marks_2d_stale` enforces it."""
+        `validate_open3d_model_change_marks_2d_stale` enforces it.
+
+        bugs/0816: it is also where an edit that slid a PINNED row off its authored placement
+        gets caught. bugs/0769 split a leg in om05a_folded.py with the sum preserved at the
+        sensor and recorded "nothing moves"; seven free-placed prism rows sat between the two
+        halves and dropped 8.82 mm, and the scene traced 6 rays of 1103 until the user said the
+        prisms looked off centre. The 0750 audit's DELTA form is silent on an unmoved scene and
+        on a merely stale snapshot, so it can run on every model change."""
+        self._note_pinned_placement_moves()
         self._mark_2d_layout_stale()
         self.refresh_from_editor(sampling_mode=sampling_mode, force_retrace=True)
+
+    def _pinned_placement_reading(self):
+        """bugs/0816: per-row drift of the live pose from the authored placement, or None.
+
+        Row math only -- no trace -- and never raises: it is read inside display and edit paths
+        that must not fail because a scene carries no promoted rows."""
+        try:
+            from KrakenOS.UI.services.scene_placement_audit import pinned_placement_drifts
+
+            rows = list(getattr(self.editor, "rows", None) or [])
+            if not rows:
+                return None
+            return pinned_placement_drifts(rows)
+        except Exception:
+            return None
+
+    def _note_pinned_placement_moves(self) -> None:
+        """bugs/0816: compare the reading taken at the last paint with the rows as they are NOW.
+
+        Called from `_apply_model_change`, i.e. after the edit and before the redraw, so the
+        stored baseline is the scene as the user last saw it."""
+        try:
+            from KrakenOS.UI.services.scene_placement_audit import (
+                format_moved_report,
+                moves_since,
+            )
+
+            after = self._pinned_placement_reading()
+            before = self.editor.__dict__.get("_pinned_placement_reading")
+            if not after or not before:
+                return
+            moved = moves_since(before, after)
+            if not moved:
+                return
+            carried = list(self.editor.__dict__.get("_pinned_placement_moves") or [])
+            fresh = {int(record["row"]) for record in moved}
+            self.editor._pinned_placement_moves = moved + [
+                record for record in carried if int(record.get("row", -1)) not in fresh
+            ]
+            worst = max(float(record["moved_mm"]) for record in moved)
+            self.editor.status_var.set(
+                f"This edit moved {len(moved)} pinned row(s) off their authored placement "
+                f"(worst {worst:.4g} mm) -- see the 3D banner"
+            )
+            self.editor.append_debug("PLACEMENT: " + format_moved_report(moved))
+        except Exception:
+            return
+
+    def _refresh_pinned_placement_baseline(self) -> None:
+        """bugs/0816: after a paint, the scene on screen IS the baseline for the next edit --
+        and any flagged row that has come back to where it was stops being flagged."""
+        try:
+            from KrakenOS.UI.services.scene_placement_audit import prune_resolved_moves
+
+            reading = self._pinned_placement_reading()
+            if reading is None:
+                return
+            carried = self.editor.__dict__.get("_pinned_placement_moves")
+            if carried:
+                self.editor._pinned_placement_moves = prune_resolved_moves(carried, reading)
+            self.editor._pinned_placement_reading = reading
+        except Exception:
+            return
 
     def finish_stl_placement(self) -> None:
         if self._stl_placement_dirty:
