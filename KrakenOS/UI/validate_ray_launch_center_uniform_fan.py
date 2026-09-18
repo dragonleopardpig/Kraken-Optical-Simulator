@@ -150,8 +150,20 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
     # Launch origin is the object centre, not the field edge.
     origins = {tuple(np.round(np.asarray(p.points_world, float)[0, :3], 4)) for p in paths
                if np.asarray(p.points_world, float).ndim == 2 and len(p.points_world)}
-    if origins and not all(abs(o[0]) < 1e-3 and abs(o[1]) < 1e-3 for o in origins):
-        notes.append(f"FAIL: field=1 launch origins not centred: {sorted(origins)}")
+    # bugs/0522: Field Samples = 1 launches the object CENTRE plus four compulsory FOV-CORNER probes,
+    # so an obstruction clipping a corner cannot hide. The centre must still be there, and nothing may
+    # launch from anywhere else.
+    centred = [o for o in origins if abs(o[0]) < 1e-3 and abs(o[1]) < 1e-3]
+    others = [o for o in origins if o not in centred]
+    corner = max((max(abs(o[0]), abs(o[1])) for o in others), default=0.0)
+    corners_ok = all(
+        abs(abs(o[0]) - corner) < 1e-3 and abs(abs(o[1]) - corner) < 1e-3 for o in others
+    ) and len(others) <= 4
+    if origins and (not centred or not corners_ok):
+        notes.append(
+            f"FAIL: field=1 must launch the object centre plus at most the four FOV corners "
+            f"(+-{corner:g}), got {sorted(origins)}"
+        )
         passed = False
 
     if verbose:

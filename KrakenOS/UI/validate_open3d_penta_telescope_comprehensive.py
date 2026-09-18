@@ -361,6 +361,14 @@ def phase_1_pre_snap_click(
     inspector.update_idletasks()
     picked_label_after_pick = inspector._picked_step_label
 
+    # bugs/0338 made the rotation gizmo OPT-IN: arming a label selects it, and the handles appear
+    # only while the toolbar's Move/Rotate-whole-body checkbox is ticked. Check the gate, then tick
+    # it as the user would and check the handles.
+    inspector.show_rotation_handles_var.set(False)
+    inspector.show_step_rotation_handler("optical")
+    inspector.update_idletasks()
+    handles_gated_off = _count_rotation_handles(inspector)
+    inspector.show_rotation_handles_var.set(True)
     inspector.show_step_rotation_handler("optical")
     inspector.update_idletasks()
     handles_after_arm = _count_rotation_handles(inspector)
@@ -374,6 +382,7 @@ def phase_1_pre_snap_click(
         {
             "picked_label_idle": picked_label_idle,
             "handles_idle": handles_idle,
+            "handles_with_checkbox_off": handles_gated_off,
             "picked_label_after_pick": picked_label_after_pick,
             "handles_after_arm": handles_after_arm,
             "picked_label_after_clear": picked_label_after_clear,
@@ -388,9 +397,14 @@ def phase_1_pre_snap_click(
         result.notes.append(
             f"_set_step_highlight didn't make picked_label='optical' (got {picked_label_after_pick!r})"
         )
+    if handles_gated_off != 0:
+        result.notes.append(
+            f"the Move/Rotate checkbox is OFF but {handles_gated_off} rotation handle(s) drew (bugs/0338)"
+        )
     if handles_after_arm <= 0:
         result.notes.append(
-            f"show_step_rotation_handler produced no handle actors (got {handles_after_arm})"
+            f"show_step_rotation_handler produced no handle actors with the checkbox ON "
+            f"(got {handles_after_arm})"
         )
     if picked_label_after_clear is not None:
         result.notes.append(
@@ -431,6 +445,7 @@ def phase_2_multi_element_click(
         # leftover from import_optical_step_overlay -- it breaks
         # the moment the scene has anything else in it (e.g. when
         # Phase 0 already loaded the prism cascade).
+        inspector.show_rotation_handles_var.set(True)  # bugs/0338: the gizmo is opt-in
         inspector._set_step_highlight("optical")
         inspector.update_idletasks()
         inspector.show_step_rotation_handler("optical")
@@ -691,15 +706,29 @@ def phase_6_direct_thickness_input(
 ) -> PhaseResult:
     """Item #5: direct thickness edit shifts subsequent rows along the axis."""
     result = PhaseResult(name="Phase 6: direct thickness input")
+    # Edit an AIR GAP, not a glass centre thickness: the first Standard row here is a promoted BALL
+    # lens's S1, whose thickness IS the ball's diameter -- growing it makes a ball thicker than itself,
+    # so its S2 cap is drawn clipped and the drawn shift measures the clamp instead of the edit (the
+    # model still follows exactly, which this phase now asserts separately). Prefer a row whose next
+    # row belongs to a different element.
     target = None
+    fallback = None
     for index, row in enumerate(app.rows):
-        if (
+        if not (
             str(getattr(row, "surface", "")) == "Standard"
             and float(row.thickness) > 0.0
             and index + 1 < len(app.rows)
         ):
+            continue
+        if fallback is None:
+            fallback = index
+        this_element = str(getattr(row, "element", "") or "")
+        next_element = str(getattr(app.rows[index + 1], "element", "") or "")
+        if this_element != next_element or not this_element:
             target = index
             break
+    if target is None:
+        target = fallback
     if target is None:
         result.notes.append("no Standard row with positive thickness + next row available")
         result.passed = False
@@ -728,7 +757,16 @@ def phase_6_direct_thickness_input(
         return 0.5 * (bmin + bmax)
 
     before_centroid = _row_centroid(target + 1)
-    delta_thickness = 5.0
+    before_station = None
+    try:
+        before_station = np.asarray(app._surface_reference_world_point(target + 1), dtype=float).reshape(3)
+    except Exception:
+        before_station = None
+    # 1 mm, not 5: the first Standard row with a positive thickness in this chain is a promoted BALL
+    # lens's S1, whose thickness is the glass centre thickness. +5 mm makes a ball thicker than its
+    # own diameter, so the drawn S2 cap is clipped and its centroid moves less than the vertex --
+    # measuring a clamp, not the edit. A physically sane edit moves the row one-for-one.
+    delta_thickness = 1.0
     app.rows[target].thickness = float(app.rows[target].thickness) + delta_thickness
     try:
         app._sync_table()
@@ -744,19 +782,53 @@ def phase_6_direct_thickness_input(
         result.passed = False
         return result
     shift = float(np.linalg.norm(after_centroid - before_centroid))
+    station_shift = None
+    try:
+        after_station = np.asarray(app._surface_reference_world_point(target + 1), dtype=float).reshape(3)
+        if before_station is not None:
+            station_shift = float(np.linalg.norm(after_station - before_station))
+    except Exception:
+        station_shift = None
     result.detail.update(
         {
             "edited_row_index": target,
+            "edited_row": f"{getattr(app.rows[target], 'name', '')!r} ({getattr(app.rows[target], 'surface', '')})",
+            "next_row": f"{getattr(app.rows[target + 1], 'name', '')!r} "
+                        f"({getattr(app.rows[target + 1], 'surface', '')}) "
+                        f"desp_z={float(getattr(app.rows[target + 1], 'desp_z', 0.0) or 0.0):.3f} "
+                        f"free_placed={'StepOverlayPromotion' in (getattr(app.rows[target + 1], 'advanced', {}) or {})}",
             "delta_thickness_mm": delta_thickness,
             "next_row_shift_mm": shift,
+            "next_row_station_shift_mm": None if station_shift is None else round(station_shift, 4),
             "before_centroid": [round(float(v), 3) for v in before_centroid],
             "after_centroid": [round(float(v), 3) for v in after_centroid],
         }
     )
-    if shift < 0.5 * delta_thickness:
+    same_element = (
+        str(getattr(app.rows[target], "element", "") or "")
+        == str(getattr(app.rows[target + 1], "element", "") or "")
+        and bool(str(getattr(app.rows[target], "element", "") or ""))
+    )
+    if same_element:
+        # The two rows are the same glass element (here a promoted ball lens's S1/S2), so the edit
+        # grows the GLASS: the drawn second cap is re-cut against the new centre thickness and its
+        # centroid legitimately moves by less than the vertex. What must hold is that it follows the
+        # edit's direction; the exact follow is asserted on the model's own station below.
+        moved_along = float((after_centroid - before_centroid)[2])
+        if moved_along * delta_thickness <= 0.0:
+            result.notes.append(
+                f"editing row S{target}.thickness by {delta_thickness} mm moved the drawn row "
+                f"S{target+1} by {moved_along:.3f} mm along the axis (wrong direction)"
+            )
+    elif shift < 0.5 * delta_thickness:
         result.notes.append(
             f"editing row S{target}.thickness by {delta_thickness} mm only shifted "
             f"row S{target+1} by {shift:.3f} mm (expected ~{delta_thickness} mm)"
+        )
+    if station_shift is not None and abs(station_shift - delta_thickness) > 1e-6:
+        result.notes.append(
+            f"row S{target+1}'s own station moved {station_shift:.4f} mm for a {delta_thickness} mm "
+            f"thickness edit (the model must follow the edit exactly)"
         )
     # Restore the original thickness so subsequent phases see the same chain.
     app.rows[target].thickness = float(app.rows[target].thickness) - delta_thickness
@@ -1295,6 +1367,26 @@ def phase_10_analytic_lens_selection_not_all_red(
         )
 
         png_path = Path(tempfile.gettempdir()) / "penta_phase10_lens_selected.png"
+        # Frame the selected body before counting pixels: the pink-pixel floor is about the FILL, not
+        # about where the camera happens to sit. Left as the harness found it, this ball lens rendered
+        # ~20 px wide at the frame's left edge -- 289 pink pixels of a correct pink body.
+        try:
+            renderer = getattr(inspector, "_renderer", None)
+            bounds = None
+            for actor in target_actors:
+                b = np.asarray(actor.GetBounds(), dtype=float)
+                bounds = b if bounds is None else np.array([
+                    min(bounds[0], b[0]), max(bounds[1], b[1]),
+                    min(bounds[2], b[2]), max(bounds[3], b[3]),
+                    min(bounds[4], b[4]), max(bounds[5], b[5]),
+                ])
+            if renderer is not None and bounds is not None:
+                renderer.ResetCamera(*[float(v) for v in bounds])
+                camera = renderer.GetActiveCamera()
+                camera.Zoom(1.6)
+                inspector._reset_camera_clipping_range_for_scene()
+        except Exception as exc:  # pragma: no cover - framing is best-effort
+            result.detail["snapshot_framing"] = f"{type(exc).__name__}: {exc}"
         inspector.update()
         render_window_to_png(inspector, png_path)
         red_px, pink_px = classify_red_pink(png_path)
@@ -2543,13 +2635,20 @@ def phase_18_promoted_row_slides(
     h0 = _zhandle()
 
     n_steps = 6
+    drag_pixels = 20.0
     for _ in range(n_steps):
-        inspector._apply_placement_drag_motion(20.0, 0.0)
+        inspector._apply_placement_drag_motion(drag_pixels, 0.0)
     inspector.update_idletasks()
     z_mid = _row_z(target)
     desp_mid = float(getattr(app.rows[target], "desp_z", 0.0))
     pending = float(state.get("pending_translate_mm", 0.0))
-    expected = n_steps * z_step
+    # A translate slide is SMOOTH (bugs "smooth BS placement drag"): the body tracks the cursor 1:1
+    # instead of jumping in span/20 steps, so the drag delivers pixels * step / pixels-per-step, not
+    # one step per motion. (Rotate, and a live "Snap mm", keep the discrete step.)
+    pixels_per_step = float(inspector._placement_drag_pixels_per_step())
+    expected = (n_steps * drag_pixels) * z_step / pixels_per_step
+    result.detail["pixels_per_step"] = round(pixels_per_step, 3)
+    result.detail["expected_mm"] = round(expected, 3)
     result.detail["pending_mm"] = round(pending, 3)
     result.detail["desp_z_mid_committed"] = round(desp_mid - desp0, 3)
 
@@ -3839,27 +3938,48 @@ def phase_39_detector_coverage_live(
         finally:
             app.__dict__.pop("_keep_scene_viewers_across_layout_replacement", None)
 
-        # (a) Layout load alone (camera restored from settings) must cover.
+        # (a) bugs/0673 (the bugs/0615 doctrine): a layout SAVED with a deliberately authored field
+        # keeps it -- this one has carried field 11.52 with a Manual image diameter since April, so
+        # the load must NOT overwrite it. bug 0033's parity still holds for scenes whose saved field
+        # IS the autofill's own signature; the covering itself is checked by picking the camera below,
+        # exactly as a user does from the dropdown.
         half_diag = 16.291740238538054
         diagonal = 2.0 * half_diag
-        max_rih = None
+        saved_rih = None
         try:
-            max_rih = float(app._field_metrics_summary().get("max_real_image_height"))
+            saved_rih = float(app._field_metrics_summary().get("max_real_image_height"))
         except Exception:
+            saved_rih = None
+        saved_diam = float(getattr(app.rows[-1], "diameter", 0.0) or 0.0)
+        result.detail["loaded_real_image_height"] = round(saved_rih, 4) if saved_rih is not None else None
+        result.detail["loaded_image_diameter"] = round(saved_diam, 4)
+        if saved_rih is None or abs(saved_rih - 11.52) > 1e-2 or abs(saved_diam - 25.0) > 1e-2:
+            result.passed = False
+            result.notes.append(
+                f"FAIL (a): the load did not keep the layout's authored field/aperture "
+                f"(field {saved_rih}, diameter {saved_diam:.4g}; expected 11.52 / 25)"
+            )
+        # Now the camera pick itself: it must cover the sensor (field = half-diagonal, aperture = diagonal).
+        try:
+            app._on_camera_model_changed()
+            app.update_idletasks()
+            max_rih = float(app._field_metrics_summary().get("max_real_image_height"))
+        except Exception as exc:
             max_rih = None
+            result.notes.append(f"FAIL (a): the camera pick raised {exc!r}")
         img_diam = float(getattr(app.rows[-1], "diameter", 0.0) or 0.0)
         result.detail["max_real_image_height"] = round(max_rih, 4) if max_rih is not None else None
         result.detail["image_diameter"] = round(img_diam, 4)
         if max_rih is None or abs(max_rih - half_diag) > 1e-2:
             result.passed = False
             result.notes.append(
-                f"FAIL (a): layout load did not auto-fill to covering; max_real_image_height="
+                f"FAIL (a): picking the camera did not auto-fill to covering; max_real_image_height="
                 f"{max_rih}, expected ~{half_diag:.4g}"
             )
         if abs(img_diam - diagonal) > 1e-2:
             result.passed = False
             result.notes.append(
-                f"FAIL (a): image-surface diameter {img_diam:.4g} after load, expected sensor diagonal ~{diagonal:.4g}"
+                f"FAIL (a): image-surface diameter {img_diam:.4g} after the pick, expected sensor diagonal ~{diagonal:.4g}"
             )
 
         obj_idx = next((i for i, r in enumerate(app.rows) if str(getattr(r, "surface", "")) == "Object"), 0)

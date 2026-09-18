@@ -159,3 +159,31 @@ lighting **5%** of the 23 mm sensor with a dark rim, where the old 0286 rescale 
 module-seeded emitter lights **100%** against the bare panel's 5%.
 
 Phases 233, 241, 251, 253, 254, 255, 305 and 307 pass.
+
+## Fifth batch: the early interaction phases (0-40), where the INTERACTION moved
+
+These run in sequence on one live app, so they must be judged in that sequence -- run alone, phase 6
+finds no rows to edit and phase 10 frames a different scene. In sequence, six failed.
+
+| phase | what it pinned | what the code does now |
+|---|---|---|
+| 1, 2 | arming a STEP draws rotation handles | bugs/0338 made the gizmo OPT-IN: arming selects, the handles appear while the toolbar's Move/Rotate-whole-body checkbox is ticked |
+| 6 | a 5 mm thickness edit slides the next row 5 mm | the first Standard row here is a promoted BALL lens's S1, whose thickness IS the ball's diameter: growing it draws a clipped S2 cap |
+| 10 | the selected lens fills > 500 pink pixels | the pink fill was correct; the ball rendered ~20 px wide at the frame's edge (289 px) |
+| 18 | a 6-step drag moves 6 handle steps | a translate slide is SMOOTH (pixels * step / pixels-per-step = 11.892 mm, not 6 x 1.784) |
+| 36 | Field Samples = 1 launches only the object centre | bugs/0522 adds four COMPULSORY FOV-corner probes |
+| 39 | loading a layout auto-fills the field to cover the sensor | bugs/0673: a layout SAVED with an authored field keeps it (this one has carried 11.52 since April) |
+
+The checks now:
+
+* **1** ticks the checkbox as a user would AND asserts the gate: with it off, no handles draw.
+* **2** ticks it once per fixture.
+* **6** edits 1 mm, asserts the model's own station follows EXACTLY (1.0000 mm), and for two rows of the
+  same glass element requires the drawn row to follow the edit's direction (the cap is re-cut).
+* **10** frames the selected body before counting: 61103 pink pixels, 6 red.
+* **18** expects the smooth slide and records `pixels_per_step` (18.0) with it.
+* **36** requires the object centre plus at most the four FOV corners.
+* **39** asserts the authored field survives the load (11.52 / aperture 25), then picks the camera as a
+  user does and requires coverage (16.2917 / 32.5835).
+
+Phases 0-40 pass in sequence.
