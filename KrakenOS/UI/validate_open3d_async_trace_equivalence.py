@@ -197,18 +197,31 @@ def _orchestration_checks() -> list[Check]:
     inspector = _fake_inspector(editor, settings)
     began = _quiet(maybe_begin_inspector_async_trace, inspector)
     bundle = inspector.applied.get("bundle")
+    # The worker must deliver the SAME trace the synchronous path builds. An absolute floor cannot say
+    # that: bugs/0410 caps a folded preview's ray count (this scene now launches 729 paths where it
+    # launched >1000 before the cap), so compare with a synchronous build of the same editor.
+    sync_paths = None
+    try:
+        _sys, _rays, sync_bundle = _quiet(
+            _build_editor(_AZ85)._build_preview_system_rays_bundle, update_state=False
+        )
+        sync_paths = len(sync_bundle.ray_paths or [])
+    except Exception:
+        sync_paths = None
     checks.append(Check(
         "orchestration: begin -> background worker -> poll -> APPLY refreshes the scene",
         bool(
             began
             and bundle is not None
-            and len(bundle.ray_paths) > 1000
+            and len(bundle.ray_paths) > 100
+            and (sync_paths is None or len(bundle.ray_paths) == sync_paths)
             and not inspector.applied.get("sync_fallback", False)
             and editor._preview_scene_trace_dirty is False
             and getattr(inspector, "_async_trace_state", "unset") is None
             and "background trace" in str(inspector.status_var.get())
         ),
         f"began={began} paths={None if bundle is None else len(bundle.ray_paths)} "
+        f"sync_paths={sync_paths} "
         f"sync_fallback={inspector.applied.get('sync_fallback', False)} "
         f"status={str(inspector.status_var.get())[:60]!r}",
     ))

@@ -38,7 +38,12 @@ from pathlib import Path
 import numpy as np
 
 _REPO = Path(__file__).resolve().parents[2]
-_SCENE = _REPO / "attachment" / "penta.py"
+# attachment/penta.py records its promoted bodies in the LEGACY ~/.cache/krakenos cache, which is
+# gone, and they cannot be rebuilt: their face tables index ~880 triangles of a gmsh mesh, where the
+# source STEP tessellates to 16 (bugs/0810 refuses such a rebuild rather than put the optical roles on
+# the wrong triangles). Measuring coating physics needs solids that BUILD, so use the harness's own
+# cascade fixture, whose five bodies are present with 35 recorded faces.
+_SCENE = _REPO / "attachment" / "five_penta_prism_cascade.py"
 _COATING = "Protected mirror 94%"
 
 

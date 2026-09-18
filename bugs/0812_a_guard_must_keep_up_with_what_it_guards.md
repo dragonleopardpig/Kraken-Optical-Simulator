@@ -202,3 +202,26 @@ clipping off (the BS transmit arm carrying its own lens and camera). 74 matches 
 pattern, and 90 walks the delegation chain to its end rather than one named hop.
 
 Phases 41-95 pass in sequence.
+
+## Seventh batch: phases 96-290
+
+| phase | what it pinned | what is true now |
+|---|---|---|
+| 149 | two 90 deg rotate clicks NEGATE the camera's view-up vector | a preset's view-up need not be perpendicular to the sight line (iso carries world +Y, dot 0.405) and `vtkCamera.Roll` keeps that axial part; the PICTURE -- the in-plane part -- rotates exactly |
+| 172 | coating physics on `attachment/penta.py` | that scene's four bodies live in the LEGACY `~/.cache/krakenos` cache, are gone, and cannot be rebuilt (their face tables index ~880 triangles of a gmsh mesh; the source STEP tessellates to 16, so bugs/0810 refuses) |
+| 199 | the async worker's bundle has > 1000 ray paths | bugs/0410 caps a folded preview's ray count: this scene launches 729 |
+| 282 | the LED window's face id is `F112` | ids are an enumeration and are now solid-qualified (`S006/F040`); the geometry checks (centroid, normal, squareness, score 0.933) all still pass |
+
+* **149** measures the view-up projected into the plane perpendicular to the sight line: 1.4142 per
+  click, 0.0 flip residual after two, 0.0 return after four.
+* **172** moves to the harness's own cascade fixture, whose five bodies are present with 35 recorded
+  faces. It then measures the real thing: bare reflectance **0.042 -> 0.960** coated, against the
+  table's ~0.95. Production was right; the scene was unmeasurable. **Phase 172 passed during the
+  census only because those bodies were missing then** -- bugs/0810 restored every cache it could, and
+  this one it refuses, which is what turned the phase honest.
+* **199** compares the worker's bundle with a SYNCHRONOUS build of the same editor (729 == 729), which
+  is what "off-thread equals synchronous" means, instead of an absolute floor.
+* **282** identifies the window by geometry and requires its id to be DETERMINISTIC across two loads
+  (anything persisting a clear aperture depends on that), not equal to a literal.
+
+Phases 96-290 pass in sequence.

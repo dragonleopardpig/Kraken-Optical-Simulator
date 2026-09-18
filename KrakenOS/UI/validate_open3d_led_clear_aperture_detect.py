@@ -19,8 +19,9 @@ What it checks
      ranked (square outranks rectangular); a solid panel, a sub-window sliver, an
      oversized housing wall and a non-flat (thick-bbox) face are all rejected.
   B. Real LED STEP (needs OCC + attachment/LED/OPT-CO90-...; SKIP without them):
-     the detector's top candidate is the object-facing square window F112
-     (centroid ~ (7.3, -1.3, 36.5), normal ~ -Z, squareness ~1, score > 0.9).
+     the detector's top candidate is the object-facing square window
+     (centroid ~ (7.3, -1.3, 36.5), normal ~ -Z, squareness ~1, score > 0.9), and its face id is
+     deterministic across loads (the id itself is an enumeration, now solid-qualified).
 
 Run:
     .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_led_clear_aperture_detect
@@ -103,15 +104,28 @@ def _check_real_led(failures: list[str], notes: list[str]) -> None:
         return
     top = cands[0]
     face_id = str(doc.outer_faces[top.face_index].face_id)
-    if face_id != "F112":
-        failures.append(f"FAIL(B): top candidate should be the F112 object window, got {face_id}")
+    # The window is identified by its GEOMETRY (centroid, normal, squareness, score) below. The face
+    # ID is an enumeration of the analytic document -- it is now solid-qualified ("S006/F040" where
+    # this guard first read "F112") -- so require only that it is present and DETERMINISTIC: the same
+    # STEP must resolve to the same id twice, or nothing downstream could persist a clear aperture.
+    if not face_id:
+        failures.append("FAIL(B): the top candidate carries no face id")
+    doc_again = load_step_analytic_document(_LED_STEP, linear_deflection_mm=1.0, angular_deflection_rad=0.5)
+    cands_again = detect_clear_aperture_openings_from_analytic_faces(doc_again.outer_faces)
+    face_id_again = (
+        str(doc_again.outer_faces[cands_again[0].face_index].face_id) if cands_again else ""
+    )
+    if face_id_again != face_id:
+        failures.append(
+            f"FAIL(B): the detected window's face id is not deterministic ({face_id} vs {face_id_again})"
+        )
     cx, cy, cz = top.centroid
     if not (abs(cx - 7.3) < 3.0 and abs(cy - (-1.3)) < 3.0 and abs(cz - 36.5) < 3.0):
-        failures.append(f"FAIL(B): F112 centroid should be ~(7.3,-1.3,36.5), got ({cx:.1f},{cy:.1f},{cz:.1f})")
+        failures.append(f"FAIL(B): the window centroid should be ~(7.3,-1.3,36.5), got ({cx:.1f},{cy:.1f},{cz:.1f})")
     if abs(abs(top.normal[2]) - 1.0) > 0.05:
-        failures.append(f"FAIL(B): F112 normal should face along Z, got {tuple(round(v,2) for v in top.normal)}")
+        failures.append(f"FAIL(B): the window normal should face along Z, got {tuple(round(v,2) for v in top.normal)}")
     if top.score <= 0.9:
-        failures.append(f"FAIL(B): F112 should score > 0.9 (a clean detection), got {top.score:.3f}")
+        failures.append(f"FAIL(B): the window should score > 0.9 (a clean detection), got {top.score:.3f}")
     notes.append(
         f"real LED: {len(cands)} candidate(s); top={face_id} score={top.score:.3f} "
         f"squ={top.squareness:.2f} fill={top.bbox_fill:.2f}"
@@ -146,7 +160,7 @@ def main() -> int:
             print(f"  - {item}")
         return 1
     print("[PASS] LED clear-aperture auto-detect: rim-window signature ranks the opening, "
-          "rejects panels/slivers/walls; top real-LED candidate is F112")
+          "rejects panels/slivers/walls; top real-LED candidate is the object window")
     for item in soft:
         print(f"  - {item}")
     return 0

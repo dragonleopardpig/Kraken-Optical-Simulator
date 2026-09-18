@@ -8928,9 +8928,19 @@ def phase_149_navigation_cube_rotate(
             ups.append(view_up())
 
         sight_drift = max(float(np.linalg.norm(d - base_dir)) for d in dirs)
-        up_back = float(np.linalg.norm(ups[4] - ups[0]))
-        up_per_click = min(float(np.linalg.norm(ups[k + 1] - ups[k])) for k in range(4))
-        up_half_flip = float(np.linalg.norm(ups[2] + ups[0]))
+        # The PICTURE is the view-up projected into the plane perpendicular to the sight line: a
+        # preset's view-up need not be perpendicular to it (iso carries world +Y, dot 0.405 with the
+        # sight line), and vtkCamera.Roll keeps that axial part, so the raw vector cannot negate.
+        # What the user sees -- the in-plane part -- rotates exactly.
+        def _in_plane(vec: "np.ndarray") -> "np.ndarray":
+            flat = vec - float(np.dot(vec, base_dir)) * base_dir
+            norm = float(np.linalg.norm(flat))
+            return flat / norm if norm else flat
+
+        picture = [_in_plane(u) for u in ups]
+        up_back = float(np.linalg.norm(picture[4] - picture[0]))
+        up_per_click = min(float(np.linalg.norm(picture[k + 1] - picture[k])) for k in range(4))
+        up_half_flip = float(np.linalg.norm(picture[2] + picture[0]))
 
         result.detail["sight_line_drift"] = round(sight_drift, 6)
         result.detail["four_clicks_up_return"] = round(up_back, 6)
