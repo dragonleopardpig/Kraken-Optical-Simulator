@@ -103,6 +103,9 @@ def run_checks() -> "tuple[bool, list[str]]":
     if any(resolve_optical_solid_face_coating(x) is not None for x in ("", "Clear / no coating", "a free note")):
         failures.append("A: resolver returns a table for clear/empty/free-text (should be None -> additive)")
 
+    from KrakenOS.UI.services.penta_cascade_fixture import ensure_five_penta_cascade
+
+    ensure_five_penta_cascade(_SCENE)   # bugs/0821: derived from the analytic cascade
     if not _SCENE.exists():
         notes.append("SKIP build/physics: attachment/penta.py unavailable")
         return (not failures), (failures + notes)

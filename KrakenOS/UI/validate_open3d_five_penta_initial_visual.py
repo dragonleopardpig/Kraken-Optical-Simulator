@@ -88,6 +88,9 @@ def _compare_initial_and_trace_now(initial: dict[str, object], trace_now: dict[s
 
 
 def capture_case(layout_path: Path = DEFAULT_LAYOUT_PATH, output_dir: Path = DEFAULT_OUTPUT_DIR) -> dict[str, object]:
+    from KrakenOS.UI.services.penta_cascade_fixture import ensure_five_penta_cascade
+
+    ensure_five_penta_cascade(layout_path)   # bugs/0821: derived from the analytic cascade
     if not layout_path.exists():
         raise RuntimeError(f"Expected saved five-penta layout: {layout_path}")
     output_dir = output_dir.resolve()

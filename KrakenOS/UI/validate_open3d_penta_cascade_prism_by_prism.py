@@ -137,6 +137,9 @@ def _step_report(inspector: Kraken3DInspector, prism_count: int, app: KrakenLayo
 
 
 def _run() -> int:
+    from KrakenOS.UI.services.penta_cascade_fixture import ensure_five_penta_cascade
+
+    ensure_five_penta_cascade(CASCADE_LAYOUT)   # bugs/0821: derived from the analytic cascade
     if not CASCADE_LAYOUT.exists():
         print(f"SKIP: cascade fixture missing at {CASCADE_LAYOUT}", file=sys.stderr)
         return 0

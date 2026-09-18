@@ -1034,6 +1034,9 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    from KrakenOS.UI.services.penta_cascade_fixture import ensure_five_penta_cascade
+
+    ensure_five_penta_cascade(PENTA_CASCADE_PATH)   # bugs/0821: derived from the analytic cascade
     if not PENTA_CASCADE_PATH.exists():
         raise SystemExit(f"penta cascade fixture not found: {PENTA_CASCADE_PATH}")
 

@@ -269,9 +269,14 @@ def phase_0_load_cascade(
     cascade produces folded chief-ray segments.
     """
     result = PhaseResult(name="Phase 0: load 5-penta-prism cascade")
-    if not PENTA_CASCADE_PATH.exists():
+    # bugs/0821: the 7-row cascade is the analytic telescope cascade's prism head plus an Image
+    # row at the origin -- byte-identical rows -- so it is derived on demand rather than stored.
+    from KrakenOS.UI.services.penta_cascade_fixture import ensure_five_penta_cascade
+
+    if ensure_five_penta_cascade(PENTA_CASCADE_PATH) is None:
         result.notes.append(
-            f"cascade fixture missing: {PENTA_CASCADE_PATH}; cannot run downstream phases"
+            f"cascade fixture missing: {PENTA_CASCADE_PATH}, and it could not be derived from "
+            f"five_penta_prism_analytic_telescope_cascade.py; cannot run downstream phases"
         )
         result.passed = False
         return result
@@ -16348,6 +16353,10 @@ phase_599_a_lens_surface_is_an_element = _phase_from_standalone(
     599, "a lens surface is an ELEMENT, not one face of it: bugs/0819 reported that the ELS-85's glass could not be measured, and the user asked whether the vendor STEP was missing an element. It is not. The vendor splits one lens surface across several spherical faces and _step_glass_aperture measured a FACE: the ELS-85 carries each element as two half-caps, both with extents [2.657, 28.058, 14.158] and both on the sphere centred [17.006, -2.417, 54.0], so the reader took 14.158 mm for an element 28.058 mm across -- on an 85 mm f/4.5 lens whose pupil alone is 18.889 mm, which is how the fragment gave itself away. The 150 mm 15056 splits its steeply curved elements four ways (18.596 -> 26.624) and the 0.75X telecentric two ways (14.893 -> 29.643). Faces are now grouped by the sphere they lie on (centre and radius) and each element measured on the union of its faces; a face with no sphere parameters is still its own element and the area gate still drops a small protective cap. Measured across all 22 vendor lens STEPs, only those three change -- the PYRITE bodies, whose elements are one face each, and the ball lens, whose single hemisphere IS its glass, read exactly as before (0820)",
     "KrakenOS.UI.validate_open3d_0820_a_lens_surface_is_an_element",
     "a_lens_surface_is_an_element")
+phase_600_the_cascade_is_a_recipe = _phase_from_standalone(
+    600, "the 7-row penta cascade is derived, not stored: the user retired the five_penta fixtures -- \"we only need five_penta_prism_analytic_telescope_cascade.py\" -- and the one the whole suite loads was among them, which phase 0 hard-fails without and six other modules read. Measured, the user was right that the analytic file 'got more': it carries 18 rows to the plain cascade's 7 and its first six, Object plus Penta prism 1..5, are BYTE-IDENTICAL; the only difference is the tail, where the plain file stops at an Image row at the origin and the analytic one continues into ball lenses, a DCV, an achromat and a cylindrical. So the plain cascade is the analytic one's prism head plus that Image row, and keeping both stored the same geometry twice. ensure_five_penta_cascade derives it through the editor's own writer when it is missing, phase 0 and the five standalone consumers ensure before they judge, and the file is untracked. Verified by deleting it: the suite regenerated it and phases 0-60 passed exactly as with the stored fixture (60 pass, only the baseline-known phase 52 red), with the derived rows matching the source field for field (0821)",
+    "KrakenOS.UI.validate_open3d_0821_the_cascade_is_a_recipe",
+    "the_cascade_is_a_recipe")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17013,6 +17022,7 @@ def main() -> int:
             phase_597_the_rays_box_states_the_scene,
             phase_598_the_surrogate_draws_the_vendor_glass,
             phase_599_a_lens_surface_is_an_element,
+            phase_600_the_cascade_is_a_recipe,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

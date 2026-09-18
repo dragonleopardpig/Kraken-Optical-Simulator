@@ -203,6 +203,10 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         notes.append(f"SKIP: editor unavailable for the scene checks ({type(exc).__name__}: {exc})")
         return ok, notes
     for label, path, builtin, expected in SCENES:
+        if path is not None and "five_penta_prism_cascade.py" in str(path):
+            from KrakenOS.UI.services.penta_cascade_fixture import ensure_five_penta_cascade
+
+            ensure_five_penta_cascade(path)   # bugs/0821
         if path is not None and not path.exists():
             notes.append(f"SKIP: {label} is not checked out (gitignored attachment)")
             continue
