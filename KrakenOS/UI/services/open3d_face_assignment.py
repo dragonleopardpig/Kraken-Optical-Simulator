@@ -1393,6 +1393,7 @@ class Open3DFaceAssignmentService:
                         label="Unpromote to STEP overlay",
                         command=lambda idx=row_index: self._unpromote_step_solid_from_context(idx),
                     )
+                    self._append_placement_seat_action(menu, row_index)
                 if self._row_is_glued_optical_bs(row_index):
                     menu.add_command(label="Unglue BS from LED", command=lambda: self._set_optical_led_glue(False))
                 elif self._row_is_glueable_optical_bs(row_index):
@@ -1422,6 +1423,7 @@ class Open3DFaceAssignmentService:
                         label="Unpromote to STEP overlay",
                         command=lambda idx=row_index: self._unpromote_step_solid_from_context(idx),
                     )
+                    self._append_placement_seat_action(menu, row_index)
                     menu.add_separator()
                 if self._row_is_glued_optical_bs(row_index):
                     menu.add_command(label="Unglue BS from LED", command=lambda: self._set_optical_led_glue(False))
@@ -2149,6 +2151,77 @@ class Open3DFaceAssignmentService:
         except Exception:
             return False
         return isinstance(advanced, dict) and isinstance(advanced.get("StepOverlayPromotion"), dict)
+
+    def _append_placement_seat_action(self, menu, row_index: int) -> None:
+        """bugs/0817: offer to re-record the authored placement -- only on a row that is OFF it.
+
+        A row sitting on its seat has nothing to re-record, and an entry that is always there
+        invites a click that does nothing."""
+        try:
+            from KrakenOS.UI.services.scene_placement_audit import (
+                DEFAULT_TOL_MM,
+                pinned_placement_drifts,
+            )
+
+            rows = list(getattr(self.editor, "rows", None) or [])
+            record = next(
+                (
+                    r for r in pinned_placement_drifts(rows)
+                    if int(r["row"]) == int(row_index) and r.get("drift_mm") is not None
+                ),
+                None,
+            )
+            if record is None or float(record["drift_mm"]) <= DEFAULT_TOL_MM:
+                return
+            menu.add_command(
+                label=f"Pin Current Placement as Authored ({float(record['drift_mm']):.3f} mm off)...",
+                command=lambda idx=int(row_index): self._pin_row_placement_from_context(idx),
+            )
+        except Exception:
+            return
+
+    def _pin_row_placement_from_context(self, row_index: int) -> None:
+        """Right-click "Pin Current Placement as Authored": show both poses, then record the
+        live one on the user's say-so. Nothing moves (bugs/0817)."""
+        try:
+            from tkinter import messagebox
+
+            from KrakenOS.UI.services.scene_placement_audit import pinned_placement_drifts
+
+            rows = list(getattr(self.editor, "rows", None) or [])
+            record = next(
+                (r for r in pinned_placement_drifts(rows) if int(r["row"]) == int(row_index)),
+                None,
+            )
+            if record is None or record.get("live") is None:
+                return
+            authored = [float(v) for v in record["authored"]]
+            live = [float(v) for v in record["live"]]
+            drift = float(record["drift_mm"])
+            if not messagebox.askyesno(
+                "Pin current placement as authored",
+                f"{record['name']} sits {drift:.3f} mm from the placement recorded for it.\n\n"
+                f"recorded:  ({authored[0]:.3f}, {authored[1]:.3f}, {authored[2]:.3f})\n"
+                f"live pose: ({live[0]:.3f}, {live[1]:.3f}, {live[2]:.3f})\n\n"
+                "Record the LIVE pose as this row's authored placement?\n"
+                "Nothing moves -- only the recorded placement changes.",
+                parent=self._inspector,
+            ):
+                return
+            applied, message = self.editor.pin_row_placement_as_authored(int(row_index))
+            if applied and self._inspector is not None:
+                self._inspector._apply_model_change()
+            elif not applied:
+                try:
+                    self.editor.status_var.set(message)
+                except Exception:
+                    pass
+        except Exception as exc:
+            self.editor.append_debug(f"Pin placement of S{row_index} failed: {exc}")
+            try:
+                self.editor.status_var.set(f"Pin placement failed: {exc}")
+            except Exception:
+                pass
 
     def _unpromote_step_solid_from_context(self, row_index: int) -> None:
         """Right-click "Unpromote to STEP overlay": revert the promoted optical solid

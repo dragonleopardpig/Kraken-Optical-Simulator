@@ -7341,6 +7341,88 @@ class ScenePlacementMixin:
             inpath_axial_placement=inpath_axial_placement,
         )
 
+    def pin_row_placement_as_authored(
+        self, row_index: int, *, record_history: bool = True, sync_table: bool = True
+    ) -> "tuple[bool, str]":
+        """bugs/0817 (user-invoked): record where a promoted row SITS as the placement it carries.
+
+        ``StepOverlayPromotion.center_world`` is written once, at promotion. A row seated after
+        that keeps a snapshot nothing refreshes -- bugs/0760 moved om05a's big RA mirror 3.563 mm
+        onto the clearance measured from the production assembly, and every consumer anchored on
+        the snapshot (the bugs/0750 audit, the bugs/0816 notice, the authored cover strips) has
+        been that far behind ever since. This is the only way to refresh it, and it is never
+        automatic: where vendor hardware sits is the user's call ([[vendor hardware is
+        immutable]]), so the app records their placement instead of proposing one.
+
+        Returns ``(applied, message)``. Nothing moves -- only the recorded placement changes.
+        """
+        from KrakenOS.UI.services.scene_placement_audit import (
+            DEFAULT_TOL_MM,
+            pinned_placement_drifts,
+        )
+
+        rows = list(getattr(self, "rows", None) or [])
+        index = int(row_index)
+        if not (0 <= index < len(rows)):
+            return False, f"row {index} is not in this scene"
+        row = rows[index]
+        record = next(
+            (r for r in pinned_placement_drifts(rows) if int(r["row"]) == index), None
+        )
+        if record is None:
+            return False, f"S{index} carries no authored placement to refresh"
+        if record.get("live") is None or record.get("drift_mm") is None:
+            return False, f"S{index} has no walked pose, so there is nothing to record"
+        authored = [float(v) for v in record["authored"]]
+        live = [float(v) for v in record["live"]]
+        drift = float(record["drift_mm"])
+        if drift <= DEFAULT_TOL_MM:
+            return False, (
+                f"S{index} {record['name']} already sits on its authored placement "
+                f"({drift:.6f} mm)"
+            )
+        history_started = False
+        if (
+            bool(record_history)
+            and "_history_restoring" in self.__dict__
+            and "_history_pending_state" in self.__dict__
+        ):
+            try:
+                self._begin_history_capture()
+                history_started = True
+            except Exception:
+                history_started = False
+        advanced = dict(getattr(row, "advanced", None) or {})
+        promotion = dict(advanced.get("StepOverlayPromotion") or {})
+        promotion["center_world"] = live
+        # the re-pin stays auditable in the saved scene: where it used to say the row sat
+        promotion["center_world_repinned_from"] = authored
+        advanced["StepOverlayPromotion"] = promotion
+        row.advanced = advanced
+        if bool(sync_table) and "table" in self.__dict__:
+            # bugs/0815: the layout writer re-reads the TABLE, so keep the two in step
+            try:
+                self._sync_table()
+                self._select_table_row(index)
+            except Exception:
+                pass
+        if history_started:
+            self._commit_history_capture()
+        message = (
+            f"S{index} {record['name']}: authored placement re-recorded at the live pose "
+            f"({authored[0]:.3f}, {authored[1]:.3f}, {authored[2]:.3f}) -> "
+            f"({live[0]:.3f}, {live[1]:.3f}, {live[2]:.3f}), {drift:.3f} mm"
+        )
+        try:
+            self.append_debug("PLACEMENT re-pinned: " + message)
+        except Exception:
+            pass
+        try:
+            self.status_var.set(message)
+        except Exception:
+            pass
+        return True, message
+
     def unpromote_optical_solid_to_overlay(
         self, row_index: int, *, refresh_open_3d: bool = True
     ) -> dict[str, object] | None:

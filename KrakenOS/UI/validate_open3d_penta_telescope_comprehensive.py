@@ -16332,6 +16332,10 @@ phase_595_a_slid_row_says_so = _phase_from_standalone(
     595, "a slid row says so: bugs/0769 split a leg in the user's om05a scene (RA mirror 2's 45.13 -> 36.31 plus an 8.82 mm sensor standoff), preserved the sum AT THE SENSOR and recorded \"nothing moves\" -- but seven free-placed prism rows sat BETWEEN the row that lost the 8.82 mm and the row that gained it, so their station and their world z dropped by exactly that, and the scene traced 6 rays of 1103 until the user looked at it and said the prisms were off centre. Nothing in the app had said a word, although the bugs/0750 audit has had the instrument since: its DELTA form is silent on an unmoved scene and on a merely stale snapshot (om05a's own 3.563 mm from bugs/0760), so it can run on every model change. It now does -- _apply_model_change takes a reading before the redraw, refresh_scene makes the painted scene the next baseline (both the sync and the async trace), and the rows that moved ride the solve banner. The notice REPORTS: a promoted row is usually vendor hardware and where it sits is the user's, so nothing is moved back for them, and a row that returns to its seat clears its own notice at the next paint (0816)",
     "KrakenOS.UI.validate_open3d_0816_a_slid_row_says_so",
     "a_slid_row_says_so")
+phase_596_a_seat_that_moved_can_be_re_recorded = _phase_from_standalone(
+    596, "a seat that moved on purpose can be re-recorded: StepOverlayPromotion.center_world is written once, at promotion, so bugs/0760's deliberate move -- the big om05a RA mirror seated 3.563 mm out onto the 7.596 mm clearance measured on the production assembly, against the 4.033 mm the scene had -- left a snapshot nothing could refresh, and the bugs/0750 audit, the bugs/0816 notice and the authored cover strips have all been 3.563 mm behind ever since (phase 505's A8b still reports it). A promoted row's right-click, on the canvas and in the Scene Components tree, now offers 'Pin Current Placement as Authored' with the amount in the label, and only on a row that is actually off its seat; it shows both poses, records the LIVE one on the user's say-so and keeps the old one as center_world_repinned_from. It MOVES NOTHING -- thickness, decentres, tilts and the live pose are untouched, which is the whole point on vendor hardware -- and it is never automatic (0817)",
+    "KrakenOS.UI.validate_open3d_0817_a_seat_that_moved_can_be_re_recorded",
+    "a_seat_that_moved_can_be_re_recorded")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16993,6 +16997,7 @@ def main() -> int:
             phase_593_a_cache_is_a_recipe,
             phase_594_a_save_writes_the_table,
             phase_595_a_slid_row_says_so,
+            phase_596_a_seat_that_moved_can_be_re_recorded,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
