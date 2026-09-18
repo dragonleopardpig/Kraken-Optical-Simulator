@@ -39,6 +39,7 @@ Exit: 0 = pass, 1 = regression.
 from __future__ import annotations
 
 import inspect
+import re
 
 import numpy as np
 
@@ -103,11 +104,13 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
        "C1: footprint maps width(half_w)->bitangent (horizontal)")
     ok("bitangent * half_h" not in foot_src,
        "C2: footprint no longer maps height(half_h)->bitangent (old portrait)")
+    # Match the ARGUMENT ORDER (width axis first = the horizontal bitangent), not the local variable
+    # names: the callers spell the basis ov/ou and iv/iu today.
     cov_src = inspect.getsource(dco.detector_coverage_overlay_specs)
-    ok("_rect_points(obj_pt, v, u," in cov_src,
+    ok(bool(re.search(r"_rect_points\(\s*obj_pt,\s*\w*v\w*,\s*\w*u\w*,", cov_src)),
        "C3: object FOV rect builds width->v (horizontal)")
     qe_src = inspect.getsource(qeo.QuickEstimationOverlayService.add_overlays)
-    ok("_rect_points(img_pt, v, u," in qe_src,
+    ok(bool(re.search(r"_rect_points\(\s*img_pt,\s*\w*v\w*,\s*\w*u\w*,", qe_src)),
        "C4: QE recommended-sensor rect builds width->v (horizontal)")
 
     # --- D. the faint pickable FOV fill matches the green edge (bugs/0072) -----

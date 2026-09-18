@@ -120,9 +120,23 @@ def run_checks() -> "tuple[bool, list[str]]":
     # source check false-failed this guard from the 0297 refactor onward (it sat
     # mis-binned in the 0434 environmental baseline until flag_20260726_111415).
     src = inspect.getsource(type(bs_editor)._current_finite_paraxial_magnification)
+    # Follow the chain as far as it goes: the shared reference now delegates the row work again, to
+    # _first_order_reference_for_rows, where the straighten gate lives.
     chain_src = src
-    if "_shared_first_order_reference" in src:
-        chain_src += inspect.getsource(type(bs_editor)._shared_first_order_reference)
+    seen: set[str] = set()
+    pending = ["_shared_first_order_reference", "_first_order_reference_for_rows"]
+    while pending:
+        name = pending.pop(0)
+        if name in seen or name not in chain_src:
+            continue
+        seen.add(name)
+        method = getattr(type(bs_editor), name, None)
+        if method is None:
+            continue
+        try:
+            chain_src += inspect.getsource(method)
+        except Exception:
+            continue
     if "_layout_needs_paraxial_reference" not in chain_src:
         failures.append(
             "FAIL: the magnification's first-order chain must straighten on "

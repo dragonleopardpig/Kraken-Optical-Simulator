@@ -187,3 +187,18 @@ The checks now:
   user does and requires coverage (16.2917 / 32.5835).
 
 Phases 0-40 pass in sequence.
+
+## Sixth batch: phases 41-95
+
+| phase | what it pinned | what the code does now |
+|---|---|---|
+| 54 | arming a STEP draws rotation handles | bugs/0338's opt-in gizmo again -- tick the checkbox |
+| 63 | with clipping OFF a FOLDED escape stays visible (bugs/0016/0018) | bugs/0554, the user's own definition: "a clipped ray is any ray not reaching the sensor" -- a folded ray that lands nowhere is clipped like any other |
+| 74 C3/C4 | `_rect_points(obj_pt, v, u,` / `(img_pt, v, u,` verbatim | the callers spell the basis `ov, ou` and `v_i, u_i`; the ORDER (width axis first) is what matters |
+| 90 | the straighten gate is one hop from `_current_finite_paraxial_magnification` | bugs/0297/0440 moved it into the shared first-order reference, which now delegates again to `_first_order_reference_for_rows` |
+
+63 also gains the case its new rule creates: a folded ray that DOES reach a detector stays visible with
+clipping off (the BS transmit arm carrying its own lens and camera). 74 matches the argument order by
+pattern, and 90 walks the delegation chain to its end rather than one named hop.
+
+Phases 41-95 pass in sequence.

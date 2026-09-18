@@ -4623,6 +4623,7 @@ def phase_54_step_reselect_single_gizmo(
     def per_label(label: str) -> int:
         return inspector._step_rotation_handle_count_for_label(label)
 
+    inspector.show_rotation_handles_var.set(True)  # bugs/0338: the gizmo is opt-in
     inspector.show_step_rotation_handler("optical")
     inspector.update_idletasks()
     after_optical = _count_rotation_handles(inspector)

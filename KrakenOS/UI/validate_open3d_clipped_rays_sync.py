@@ -66,12 +66,14 @@ def _snapshot_editor_for(fname: str):
 
 
 def _synthetic_paths():
-    """Build five RayPath3D records, one per terminal class.
+    """Build six RayPath3D records, one per terminal class.
 
-    With clipping OFF the filter keeps only the detector hit and the folded
-    escape (beam-splitter style second branch, bugs 0018); the non-folded
-    escape, the detector miss, and the aperture stop are all hidden as
-    vignetting (bug 0062 — the 3D filter matches 2D's detector-hit rule).
+    With clipping OFF the filter keeps the rays that REACH the sensor -- the user's own definition
+    (bugs/0554, 2026-08-05: "a clipped ray is any ray not reaching the sensor. So if the transmitted
+    path of a BS has a lens and camera, those rays must be shown"). So the detector hit stays, and so
+    does a FOLDED ray that lands on a detector; a folded ray that lands nowhere is clipped like any
+    other, where bugs/0016/0018 used to keep it for having bounced. The non-folded escape, the
+    detector miss and the aperture stop stay hidden (bug 0062).
     """
     from KrakenOS.UI.scene_geometry import RayEvent3D, RayPath3D
 
@@ -93,6 +95,8 @@ def _synthetic_paths():
         "missed_detector": _path(2, [_terminal("missed_detector")]),
         "hit_detector": _path(3, [_terminal("detector")]),
         "stopped": _path(4, [_terminal("aperture_stop")]),
+        # bugs/0554: a folded branch that ARRIVES somewhere is visible because it arrives.
+        "folded_hit": _path(5, [_fold(), _terminal("detector")]),
     }
 
 
@@ -191,15 +195,16 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         if on is not None and off is not None:
             on_idx = {int(r[0]) for r in on}
             off_idx = {int(r[0]) for r in off}
-            expected_on = {0, 1, 2, 3, 4}
-            # bug 0062: OFF keeps only the detector hit (3) + folded escape (1);
-            # the non-folded escape (0), detector miss (2) and stop (4) are hidden.
-            expected_off = {1, 3}
+            expected_on = {0, 1, 2, 3, 4, 5}
+            # bug 0062 + bugs/0554: OFF keeps what REACHES the sensor -- the detector hit (3) and the
+            # folded ray that lands on a detector (5). The folded ESCAPE (1), the non-folded escape
+            # (0), the detector miss (2) and the stop (4) are all clipped.
+            expected_off = {3, 5}
             if on_idx != expected_on:
                 _fail(f"clipped ON should render all 5 rays, got indices {sorted(on_idx)}")
             if off_idx != expected_off:
                 _fail(
-                    "clipped OFF should keep only the detector hit + folded escape, "
+                    "clipped OFF should keep only the rays that reach the sensor, "
                     f"got indices {sorted(off_idx)} (expected {sorted(expected_off)})"
                 )
 
