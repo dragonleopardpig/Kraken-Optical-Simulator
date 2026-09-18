@@ -16344,6 +16344,10 @@ phase_598_the_surrogate_draws_the_vendor_glass = _phase_from_standalone(
     598, "the surrogate draws the vendor's glass, not its barrel: the user flagged machine_vision_120mm_65M.py as \"lens surrogate oversized\" -- its Front/Rear Optical Vertex Datum discs were drawn at 46.0 mm and the Blackbox groups at 38.0 mm against a PYRITE 5.6/120 STEP whose visible glass measures 30.39 mm inside a 46 mm collar. bugs/0703 taught the folder import to size discs from the measured glass and it still does (the same folder imports at 30.3906 today), but nothing could reach a scene already built: this one descends from machine_vision_120mm_pyrite_datasheet_1x.py, a July layout with 46.0 and 38.0 hard-coded. The lens STEP's right-click now offers 'Refit Surrogate Glass to Vendor STEP (46 -> 30.39 mm)...', and only when the discs really are wider; it shrinks the block onto the measured glass, never touches the aperture stop, never goes below it and never enlarges, so a narrower disc the user drew stays theirs. Measured on the flagged scene: four rows 46/38 -> 30.3906 with the 21.55 mm stop untouched and the ray count unchanged at 189 -- the prescription does not move, only how wide the glass is DRAWN, and with it the vendor's own vignette (0819)",
     "KrakenOS.UI.validate_open3d_0819_the_surrogate_draws_the_vendor_glass",
     "the_surrogate_draws_the_vendor_glass")
+phase_599_a_lens_surface_is_an_element = _phase_from_standalone(
+    599, "a lens surface is an ELEMENT, not one face of it: bugs/0819 reported that the ELS-85's glass could not be measured, and the user asked whether the vendor STEP was missing an element. It is not. The vendor splits one lens surface across several spherical faces and _step_glass_aperture measured a FACE: the ELS-85 carries each element as two half-caps, both with extents [2.657, 28.058, 14.158] and both on the sphere centred [17.006, -2.417, 54.0], so the reader took 14.158 mm for an element 28.058 mm across -- on an 85 mm f/4.5 lens whose pupil alone is 18.889 mm, which is how the fragment gave itself away. The 150 mm 15056 splits its steeply curved elements four ways (18.596 -> 26.624) and the 0.75X telecentric two ways (14.893 -> 29.643). Faces are now grouped by the sphere they lie on (centre and radius) and each element measured on the union of its faces; a face with no sphere parameters is still its own element and the area gate still drops a small protective cap. Measured across all 22 vendor lens STEPs, only those three change -- the PYRITE bodies, whose elements are one face each, and the ball lens, whose single hemisphere IS its glass, read exactly as before (0820)",
+    "KrakenOS.UI.validate_open3d_0820_a_lens_surface_is_an_element",
+    "a_lens_surface_is_an_element")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17008,6 +17012,7 @@ def main() -> int:
             phase_596_a_seat_that_moved_can_be_re_recorded,
             phase_597_the_rays_box_states_the_scene,
             phase_598_the_surrogate_draws_the_vendor_glass,
+            phase_599_a_lens_surface_is_an_element,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

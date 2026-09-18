@@ -936,26 +936,48 @@ def _step_glass_aperture(step_path: Path | str) -> float | None:
             )
 
             doc = load_step_analytic_document(source)
-        spheres: list[tuple[float, float]] = []
+        # bugs/0820: an ELEMENT, not a face. A vendor STEP often splits one lens surface
+        # across several spherical faces -- the ELS-85 carries each element as TWO half-caps
+        # (extents [2.657, 28.058, 14.158], both halves sharing the sphere centre
+        # [17.006, -2.417, 54.0]) and the 150 mm 15056 splits its steeply curved elements four
+        # ways. Measuring a FACE then reads the fragment: 14.158 mm for an element that is
+        # 28.058 mm across, on an 85/4.5 lens whose pupil alone is 18.9 mm. Group the faces by
+        # the sphere they lie on and measure each element's union.
+        groups: dict[tuple, list[np.ndarray]] = {}
+        areas: dict[tuple, float] = {}
         for face in getattr(doc, "faces", []) or []:
             if str(getattr(face, "surface_type", "")).strip().lower() != "sphere":
                 continue
             bbox = np.asarray(getattr(face, "bbox", ()), dtype=float).reshape(-1)
             if bbox.size != 6 or not bool(np.all(np.isfinite(bbox))):
                 continue
-            extents = sorted(
-                [abs(bbox[3] - bbox[0]), abs(bbox[4] - bbox[1]), abs(bbox[5] - bbox[2])]
-            )
+            params = getattr(face, "parameters", None) or getattr(face, "analytic_parameters", None) or {}
+            centre = params.get("center") if isinstance(params, dict) else None
+            radius = params.get("radius_mm") if isinstance(params, dict) else None
+            try:
+                key = (
+                    tuple(np.round(np.asarray(centre, dtype=float).reshape(3), 3)),
+                    round(float(radius), 3) if radius is not None else None,
+                )
+            except (TypeError, ValueError):
+                key = ("face", id(face))   # ungroupable -> its own element, as before
+            groups.setdefault(key, []).append(bbox)
+            areas[key] = areas.get(key, 0.0) + float(getattr(face, "area_mm2", 0.0) or 0.0)
+        elements: list[tuple[float, float]] = []
+        for key, boxes in groups.items():
+            stack = np.vstack(boxes)
+            lo, hi = stack[:, :3].min(axis=0), stack[:, 3:].max(axis=0)
+            extents = sorted(float(v) for v in (hi - lo))
             # A spherical cap's two LATERAL extents are its aperture diameter;
             # the small extent is the sag. The middle extent is the safe read.
             diameter = float(extents[1])
-            area = float(getattr(face, "area_mm2", 0.0) or 0.0)
+            area = float(areas.get(key, 0.0))
             if diameter > 1.0 and area > 1e-6 and math.isfinite(diameter):
-                spheres.append((diameter, area))
-        if not spheres:
+                elements.append((diameter, area))
+        if not elements:
             return None
-        area_max = max(area for _diameter, area in spheres)
-        substantial = [d for d, area in spheres if area >= 0.25 * area_max]
+        area_max = max(area for _diameter, area in elements)
+        substantial = [d for d, area in elements if area >= 0.25 * area_max]
         if not substantial:
             return None
         glass = float(max(substantial))
