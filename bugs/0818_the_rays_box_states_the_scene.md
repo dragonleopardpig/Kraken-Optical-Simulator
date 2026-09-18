@@ -73,4 +73,12 @@ method driven through a shim:
 Phase 584 (the bugs/0801 guard) failed on this change for a reason worth recording: its fake
 inspector carried only `show_rays_var`, so once `_pending_rays_note` delegated, the call raised
 inside the guard's own fixture and the untick never happened. The fixture now carries the real
-method bound to the fake ([[a guard must keep up with what it guards]]). Phases 8, 584 and 597 pass.
+method bound to the fake ([[a guard must keep up with what it guards]]).
+
+Sweeping phases 546-598 afterwards found the SAME fixture a second time --
+`validate_open3d_0800_the_export_follows_the_view` (phase 583, check E "a deferred open explains the
+state") builds its own bare `_Insp`, so the delegated call raised there too and the note came back
+empty. Fixed the same way. One delegation, two fakes that had to learn it: when a method starts
+calling out to another object, every stand-in for that object is part of the change.
+
+Phases 8, 583, 584 and 597 pass.
