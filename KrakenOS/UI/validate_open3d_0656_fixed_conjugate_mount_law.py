@@ -100,10 +100,29 @@ def _check_import(ok, notes) -> None:
         # image circle 11 mm at 0.75x = 14.7 mm object-side, plus the pupil -- not the
         # 1.4x-pupil that drew 3.5 mm rings the rays visibly passed beyond.
         disc = min(float(rows[i].diameter) for i in (first, first + 1, first + 3, first + 4))
+        want = 11.0 / 0.75 + 0.9 * (70.417 / 13.3)
+        # bugs/0703 (the user's third oversized flag) put a ceiling on 0662's rule: the drawn disc is
+        # the vendor's VISIBLE GLASS when that is smaller, and "a corner ray drawn passing the glass
+        # rim is the vendor's own vignette, honestly shown" (the trace extends the blackbox aperture
+        # regardless, bugs/0624). This lens measures 14.893 mm of glass inside a 29.5 mm barrel, so
+        # the field+pupil figure is unreachable here -- accept the clamp, never below the pupil.
+        glass = None
+        try:
+            from KrakenOS.UI.services.machine_vision_folder_import import _step_glass_aperture
+
+            steps = sorted(
+                list(LENS_FOLDER.glob("*.step")) + list(LENS_FOLDER.glob("*.STEP")) + list(LENS_FOLDER.glob("*.stp"))
+            )
+            glass = _step_glass_aperture(steps[0]) if steps else None
+        except Exception:
+            glass = None
+        pupil = 1.4 * (70.417 / 13.3)
+        clamped = glass is not None and abs(disc - float(glass)) <= 0.05
         ok(
-            disc >= 11.0 / 0.75 + 0.9 * (70.417 / 13.3),
-            f"A6 (0662): datum/group discs cover the imaged field "
-            f"(min {disc:.2f} mm >= image circle/|m| + pupil ~ {11.0/0.75 + 70.417/13.3:.2f})",
+            (disc >= want or clamped) and disc >= pupil,
+            f"A6 (0662 + 0703): datum/group discs cover the imaged field, or the vendor's own glass "
+            f"when that is smaller (min {disc:.2f} mm; field+pupil ~ {want:.2f}, measured glass "
+            f"{'unavailable' if glass is None else f'{float(glass):.2f}'}, pupil {pupil:.2f})",
         )
     finally:
         try:

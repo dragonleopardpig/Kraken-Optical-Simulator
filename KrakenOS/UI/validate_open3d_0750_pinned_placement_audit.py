@@ -102,10 +102,15 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         f"B1: the healthy scene sits on a clean floor -- {len(clean)} of {len(measured)} promoted "
         f"rows within {audit.NOISE_FLOOR_MM} mm",
     )
+    # The scene is the USER'S and moves between saves: on 2026-09-11 it gained a second drifted row
+    # (row 7 'RA mirror 1', +3.563 mm in y, matching row 16's own y offset). What this guard pins is
+    # the MECHANISM -- every row that has left its authored placement is reported, none hidden -- and
+    # that the long-known stale snapshot (row 16 'RA mirror 2') is among them.
+    stale_rows = {r["row"] for r in stale}
     ok(
-        len(stale) == 1 and stale[0]["row"] == 16,
-        f"B2: the ONE known stale snapshot (row 16 'RA mirror 2') is reported, not hidden "
-        f"({[(r['row'], round(r['drift_mm'], 1)) for r in stale]})",
+        16 in stale_rows and all(r["drift_mm"] > 1.0 for r in stale),
+        f"B2: every row off its authored placement is reported, not hidden, including the known "
+        f"stale row 16 ({[(r['row'], round(r['drift_mm'], 1)) for r in stale]})",
     )
 
     # ---- C: the real defect ------------------------------------------------------------------------

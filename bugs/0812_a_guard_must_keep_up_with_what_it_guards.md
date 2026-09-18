@@ -225,3 +225,17 @@ Phases 41-95 pass in sequence.
   (anything persisting a clear aperture depends on that), not equal to a literal.
 
 Phases 96-290 pass in sequence.
+
+## Eighth batch: phases 480-545
+
+| phase | what it pinned | what is true now |
+|---|---|---|
+| 492 | the datum/group discs cover image circle/|m| + pupil (>= 19.43 mm) | bugs/0703 (the user's third oversized flag) caps the drawn disc at the vendor's VISIBLE GLASS: this lens measures 14.893 mm of glass inside a 29.5 mm barrel, and "a corner ray drawn passing the glass rim is the vendor's own vignette, honestly shown" |
+| 541 | exactly ONE row (16) is off its authored placement | the user's scene gained a second on 2026-09-11 (row 7, +3.563 mm in y) -- see bugs/0815 |
+
+492 accepts the clamp when the measured glass is smaller, and still requires the disc to cover the
+pupil footprint (14.89 >= 7.41). 541 asserts the MECHANISM: every drifted row reported, none hidden,
+including the long-known stale row 16.
+
+Phase 505 remains failing and is now written up as **bugs/0815**: it is the consequence of that drift
+(6 of 1103 rays reach the strip), and re-seating the user's mirrors is their call.
