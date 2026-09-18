@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from io import StringIO
 from pathlib import Path
 
 import matplotlib
@@ -1260,10 +1261,15 @@ def main() -> None:
             raise ValueError(f"Duplicate illustration: {key}")
         caption = TOPICS[key] if key in TOPICS else PROBLEMS[key]
         path = OUTPUT / figure_name(key)
+        buffer = StringIO()
         figure.savefig(
-            path,
+            buffer,
             format="svg",
             metadata={"Date": None, "Title": caption, "Description": caption},
+        )
+        path.write_text(
+            "\n".join(line.rstrip() for line in buffer.getvalue().splitlines()) + "\n",
+            encoding="utf-8",
         )
         if args.preview_dir:
             figure.savefig(args.preview_dir / path.with_suffix(".png").name, dpi=130)
