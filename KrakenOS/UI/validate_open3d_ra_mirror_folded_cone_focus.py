@@ -41,7 +41,8 @@ dedicated guard, ``validate_open3d_ra_mirror_rays_reach_detector``, asserts the 
 Asserts (all display-free, on the live AZ85 editor):
   1. #2 routing: ``_folded_scene_prefers_launch_cone()`` is True and BOTH
      ``_preview_scene_sampling_mode()`` and ``_preview_3d_sampling_mode()`` == "world_cone";
-  2. #2 density+shape: the production (world_cone) on-axis bundle is DENSE (>= 100 rays) where
+  2. #2 density+shape: the production (world_cone) on-axis bundle is DENSE (most of what it
+     launches gets through; bugs/0410 caps the folded preview's ray count) where
      the forced "world_envelope" gives only the sparse <= 40, AND the world_cone cross-section
      mid-arm is a 2D DISK (2nd singular value substantial), not a collinear fan;
   3. #5: the wired on-axis cone lands at the REFLECTED image -- endpoint X AND Z match the
@@ -179,8 +180,22 @@ def run_checks() -> tuple[bool, list[str]]:
         notes.append("#2 routing: promoted-mirror fold -> world_cone (scene + 3D)")
 
     # (2) #2 density+shape: production cone is DENSE where the old envelope is sparse, and is a disk
-    if len(cone_oa) < 100:
-        failures.append(f"#2 density: production world_cone on-axis rays too few ({len(cone_oa)} < 100 -> still sparse)")
+    # bugs/0410 caps the ray count on a folded/prism preview (default 10) so the trace stays snappy,
+    # so the absolute count this guard first pinned (>= 100, written before that cap) no longer
+    # describes a dense cone. Measure density against what the scene ITSELF launches on axis: the
+    # cone is dense when most of its launched on-axis rays get through.
+    launched_oa = 0
+    for path in list(getattr(cone_bundle, "ray_paths", None) or []):
+        pw = np.asarray(getattr(path, "points_world", None), dtype=float)
+        if pw.ndim == 2 and pw.shape[0] >= 2 and pw.shape[1] >= 3 and float(np.linalg.norm(pw[0][:3])) <= 1.0:
+            launched_oa += 1
+    if launched_oa < 40:
+        failures.append(f"#2 density: the on-axis cone launches too few rays ({launched_oa} < 40 -> the cap collapsed it)")
+    elif len(cone_oa) < 0.6 * launched_oa:
+        failures.append(
+            f"#2 density: only {len(cone_oa)} of {launched_oa} launched on-axis cone rays reach the sensor "
+            f"(< 60% -> the cone is being clipped away)"
+        )
     if len(env_oa) > 40:
         failures.append(f"#2 density: forced world_envelope not sparse ({len(env_oa)} > 40) -> contrast is vacuous")
     if len(cone_oa) < 3 * max(len(env_oa), 1):
@@ -195,7 +210,8 @@ def run_checks() -> tuple[bool, list[str]]:
             )
         else:
             notes.append(
-                f"#2 density+shape: cone {len(cone_oa)} vs envelope {len(env_oa)} on-axis rays; "
+                f"#2 density+shape: cone {len(cone_oa)} of {launched_oa} launched vs envelope "
+                f"{len(env_oa)} on-axis rays; "
                 f"cone cross-section disk s2={s2:.3f} ({cross.shape[0]} rays) at X={0.5*drawn_x:.1f}"
             )
 

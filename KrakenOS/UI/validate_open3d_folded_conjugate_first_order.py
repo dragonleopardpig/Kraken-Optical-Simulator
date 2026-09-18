@@ -47,7 +47,13 @@ from KrakenOS.UI.services.paraxial_tools import ParaxialToolsMixin
 from KrakenOS.UI.validate_open3d_folded_fov_solve import _load_unfolded, _qe
 from KrakenOS.UI.validate_open3d_two_fold_image_arm_follow import _two_fold_editor
 
-_FOV = 54.0          # the width the user typed
+# The width the user typed was 54 mm. bugs/0717-0719: a folded FOV solve now slides the LENS along
+# its leg and never the vendor mirror ([[vendor hardware is immutable]]), and on this fixture 54 mm
+# needs the lens +117.9 mm where 43.2 mm of room is left -- so it is REFUSED with those numbers
+# (that contract is guarded in validate_open3d_folded_fov_segment_merge). Measured boundary here:
+# 32 mm solves, 35 mm needs 44.1 mm. Use a field this fold can deliver, so the FIRST-ORDER checks
+# below measure what they are about.
+_FOV = 32.0
 _IMAGE_LEG = 30.0    # the "last distance" the user pinned
 
 

@@ -124,8 +124,13 @@ def run_checks() -> "tuple[bool, list[str]]":
     osplit = editor._folded_object_conjugate_split()
     isplit = editor._folded_image_conjugate_split()
     img_far = round(float(isplit["far"]), 3)
-    # solve 1: FOV 55 + pin a SHORT object->mirror leg (drains object gap row 0)
-    ok1, _ = _quiet(qe.fov_solve, "object", "thickness", 55.0, 55.0, None)
+    # solve 1: a wide FOV + pin a SHORT object->mirror leg (drains object gap row 0).
+    # The flag typed 55 x 55. bugs/0717-0719: a folded solve slides the LENS and never the vendor
+    # mirror ([[vendor hardware is immutable]]), and on this fixture 55 needs the lens +117.9 mm
+    # where 43.2 mm of room is left, so it is refused with those numbers (guarded in
+    # validate_open3d_folded_fov_segment_merge). 32 x 32 is the widest this fold delivers, and it
+    # still drains row 0 -- which is what this check is about.
+    ok1, _ = _quiet(qe.fov_solve, "object", "thickness", 32.0, 32.0, None)
     ok1o, _ = _quiet(editor._apply_folded_object_split, "near", 50.0)
     ok1i, _ = _quiet(editor._apply_folded_image_split, "far", img_far)
     # solve 2: FOV 20 + same pins -- the conjugate must NOT no-op
@@ -135,7 +140,7 @@ def run_checks() -> "tuple[bool, list[str]]":
     pin_honored = abs(float(final_split["near"]) - 50.0) < 1e-3
     total_20 = abs(float(final_split["total"]) - 130.635) < 0.5  # FOV20 object total
     add(
-        "C setup: FOV55 + short object pin succeeds (drains row 0)",
+        "C setup: a deliverable wide FOV + short object pin succeeds (drains row 0)",
         ok1 and ok1o and ok1i, f"ok1={ok1} pin_obj={ok1o} pin_img={ok1i}",
     )
     add(
@@ -151,15 +156,25 @@ def run_checks() -> "tuple[bool, list[str]]":
     # ---- (D) plain (no-constraint) sequence unchanged --------------------------------------- #
     editor_p = _two_fold_editor()
     qe_p = Svc(types.SimpleNamespace(editor=editor_p))
-    okp1, _ = _quiet(qe_p.fov_solve, "object", "thickness", 55.0, 55.0, None)
-    row0_before = float(editor_p.rows[0].thickness)
+    okp1, _ = _quiet(qe_p.fov_solve, "object", "thickness", 32.0, 32.0, None)  # see (C): 55 is refused
+    gaps_before = [float(r.thickness) for r in editor_p.rows]
     okp2, _ = _quiet(qe_p.fov_solve, "object", "thickness", 20.0, 20.0, None)
-    row0_after = float(editor_p.rows[0].thickness)
-    # plain FOV20 solve keeps row 0 positive (no spill needed) -- single-row write path
+    gaps_after = [float(r.thickness) for r in editor_p.rows]
+    split_p = editor_p._folded_object_conjugate_split() or {}
+    # With no pin set, the object leg's write lands in ONE row and does not spill into its siblings.
+    # bugs/0717: that row is the lens-side gap (object -> mirror is fixed hardware; the LENS slides),
+    # where this check first expected the object gap row itself to shrink.
+    object_rows = {int(split_p.get("near_gap_row", 0)), int(split_p.get("far_gap_row", 0))}
+    changed_object_rows = {i for i in object_rows if abs(gaps_after[i] - gaps_before[i]) > 1e-6}
+    near_row = int(split_p.get("near_gap_row", 0))
     add(
-        "D plain two-solve sequence both succeed, primary row absorbs (no spill)",
-        okp1 and okp2 and row0_after > 0.0 and row0_after < row0_before,
-        f"okp1={okp1} okp2={okp2} row0 {row0_before:.3f}->{row0_after:.3f}",
+        "D plain two-solve sequence both succeed, ONE object-leg row absorbs it (no spill)",
+        okp1 and okp2 and len(changed_object_rows) == 1 and near_row not in changed_object_rows
+        and abs(float(split_p.get("total", float("nan"))) - 130.635) < 0.5
+        and all(g >= 0.0 for g in gaps_after),
+        f"okp1={okp1} okp2={okp2} object rows changed={sorted(changed_object_rows)} "
+        f"(near row {near_row} held) total={float(split_p.get('total', float('nan'))):.4g} "
+        f"min gap={min(gaps_after):.3f}",
     )
 
     # ---- (E) wiring ------------------------------------------------------------------------- #

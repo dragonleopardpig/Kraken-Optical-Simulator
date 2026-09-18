@@ -83,6 +83,19 @@ def _mirror_and_arm(rows):
     return centers[mirror2], centers[arm_row]
 
 
+
+def _image_seat_center_normal(editor):
+    """The scene's own folded Image seat (centre, normal) from the pose-override walk, or None."""
+    overrides = getattr(getattr(editor, "last_system", None), "_optical_solid_output_port_pose_overrides", {}) or {}
+    pose = overrides.get(len(editor.rows) - 1)
+    if not isinstance(pose, dict):
+        return None
+    center = np.asarray(pose.get("center"), dtype=float).reshape(3)
+    normal = np.asarray(pose.get("rotation"), dtype=float).reshape(3, 3)[:, 2]
+    norm = float(np.linalg.norm(normal))
+    return center, (normal / norm if norm > 1e-12 else normal)
+
+
 def validate_two_fold_image_arm_follow() -> list[Check]:
     from KrakenOS.UI.services.quick_estimation import QuickEstimationService
 
@@ -98,11 +111,24 @@ def validate_two_fold_image_arm_follow() -> list[Check]:
     m2_after, arm_after = _mirror_and_arm(editor.rows)
     off_after = float(m2_after[2] - arm_after[2])
     moved = float(np.linalg.norm(m2_after - m2_before))
+    # bugs/0717/0718 changed WHAT a folded Solve-for-Thickness moves: it slides the LENS BLOCK along
+    # its leg and leaves the vendor mirror where the scene puts it ([[vendor hardware is immutable]]),
+    # where bugs/0236 expected the mirror itself to be carried. What must hold either way is that the
+    # trailing mirror stays ON the beam and the scene still images -- so assert that, and record what
+    # moved. The carry itself is still exercised by (B), where a segment split does move the arm.
+    _s, _r, solved_bundle = _quiet(editor._build_preview_system_rays_bundle, update_state=True)
+    reached = 0
+    seat = _image_seat_center_normal(editor)
+    if seat is not None and getattr(solved_bundle, "ray_paths", None):
+        seat_c, seat_n = seat
+        ends = np.asarray([np.asarray(p.points_world, dtype=float)[-1][:3] for p in solved_bundle.ray_paths])
+        reached = int((np.abs((ends - seat_c[None, :]) @ seat_n) < 1e-6).sum())
     checks.append(Check(
-        "THICKNESS ON BEAM: folded conjugate solve moves the trailing mirror but keeps its "
-        "beam offset (not frozen off-axis)",
-        bool(ok_solve) and moved > 1.0 and abs(off_after - off_before) < 1e-3,
-        f"ok={ok_solve} mirror_moved={moved:.3f} beam_offset {off_before:.4f}->{off_after:.4f}",
+        "THICKNESS ON BEAM: the folded conjugate solve keeps the trailing mirror on the beam and "
+        "the scene still images",
+        bool(ok_solve) and abs(off_after - off_before) < 1e-3 and reached >= 8,
+        f"ok={ok_solve} mirror_moved={moved:.3f} (the lens block slides instead, bugs/0717) "
+        f"beam_offset {off_before:.4f}->{off_after:.4f} rays_on_sensor={reached}",
     ))
 
     # ---- (B) the object-segment split is un-gated on a two-fold AND carries the mirror --------- #

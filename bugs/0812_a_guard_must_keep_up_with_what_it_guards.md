@@ -92,3 +92,36 @@ For each, the check now follows the current code:
 299 also gains check 1b: while a dialog holds the grab, a dismiss leaves focus with the dialog.
 
 Phases 147, 226, 257, 299 and 440 pass in the penta harness.
+
+## Third batch: the folded RA-mirror family, where the DESIGN moved
+
+Five folded phases encoded contracts that later bugs deliberately replaced. The product is right; each
+check now states the current contract and, where the old expectation had a point, keeps it as a
+separate check.
+
+| phase | what the check pinned | what the code does now |
+|---|---|---|
+| 181 | the folded cone carries >= 100 on-axis rays | bugs/0410 CAPS the folded preview's ray count (default 10) so the trace stays snappy: 81 launched, 65 through |
+| 203 B | an identity fold transform yields no straight equivalent | bugs/0567: a promoted MIRROR row is a fold by construction, because a 0433-frozen scene reports no transform at all |
+| 203 D | the AZ85 two-mirror detector sits at a coordinate measured in July | the scene has been re-saved since; the seat is the scene's own answer |
+| 213 A | a folded Solve-for-Thickness MOVES the trailing mirror | bugs/0717-0719: it slides the LENS along its leg and leaves vendor hardware alone |
+| 214, 261, 276 | 55 x 55 (54 mm) solves on the two-fold fixture | that field needs the lens +117.9 mm where 43.2 mm of room is left, so it is REFUSED with those numbers |
+
+The checks now:
+
+* **181** measures density against the scene's own launch -- the cone is dense when most of what it
+  launches gets through (65 of 81), and the disk-not-fan and 3x-the-envelope checks are unchanged.
+* **203** silences the bugs/0567 breadcrumb to test the transform gate on its own, adds B2 for the
+  breadcrumb itself, and compares the detector with the folded Image seat the scene computes
+  (detector == seat, 293 rays on it).
+* **213** asserts what must hold either way: the mirror keeps its beam offset and the scene still
+  images (477 rays on the sensor). The carry is still exercised by (B), where a segment split moves
+  the arm 79 mm.
+* **214** adds "OUT OF RANGE IS SAID": 55 x 55 is refused with the lens move it needs (117.91 mm), the
+  room it has (43.22 mm) and Force FOV as the way to see the collision -- then runs the merged
+  sequence at 32 x 32, the widest this fold delivers (35 x 35 needs 44.12 mm).
+* **261** solves at 32 mm: |m| lands exactly on target with zero residual defocus and a 0.0 um spot.
+* **276** solves at 32 mm and asserts the object-leg write lands in ONE row with no spill -- now the
+  lens-side gap (row 2), since object -> mirror is fixed hardware.
+
+Phases 181, 183, 185, 186, 189, 194, 202, 203, 213, 214, 261 and 276 all pass.

@@ -76,14 +76,37 @@ def validate_folded_fov_segment_merge() -> list[Check]:
     off_before = float(m2_before[2] - arm_before[2])
     semi_before = qe._target_object_semi
 
-    # ---- the MERGED sequence: fov_solve(object,thickness,55x55) then the object-segment split ---- #
-    ok_fov, msg_fov = _quiet(qe.fov_solve, "object", "thickness", 55.0, 55.0, None)
+    # ---- (A0) the field the flag typed is now REFUSED, with numbers ------------------------------ #
+    # bugs/0717-0719 changed what a folded FOV solve may move: it slides the LENS along its leg and
+    # never the vendor mirror ([[vendor hardware is immutable]]). On this fixture 55 x 55 needs the
+    # lens +117.9 mm where 43.2 mm of physical room is left, so the solve refuses and says so, with
+    # Force FOV as the way to SEE the collision ([[no silent solve failure]]). Measured boundary:
+    # 32 x 32 solves, 35 x 35 needs 44.1 mm.
+    ok_big, msg_big = _quiet(qe.fov_solve, "object", "thickness", 55.0, 55.0, None)
+    info_big = dict(getattr(editor, "_fov_solve_refusal_info", None) or {})
+    need_big = float(info_big.get("lens_move_needed_mm", float("nan")))
+    room_big = float(info_big.get("leg_room_mm", float("nan")))
+    checks.append(Check(
+        "OUT OF RANGE IS SAID: a field this fold cannot deliver is refused with the lens move it "
+        "needs and the room it has",
+        (not ok_big) and np.isfinite(need_big) and np.isfinite(room_big) and need_big > room_big
+        and "Force FOV" in str(msg_big),
+        f"ok={ok_big} needs={need_big:.2f} mm room={room_big:.2f} mm msg={str(msg_big)[:60]!r}",
+    ))
+
+    # ---- the MERGED sequence: a field this fold CAN deliver, then the object-segment split ------- #
+    editor = _two_fold_editor()
+    qe = _qe(editor)
+    m2_before, arm_before = _mirror_and_arm(editor.rows)
+    off_before = float(m2_before[2] - arm_before[2])
+    semi_before = qe._target_object_semi
+    ok_fov, msg_fov = _quiet(qe.fov_solve, "object", "thickness", 32.0, 32.0, None)
     semi_after = qe._target_object_semi
     split1 = _quiet(editor._folded_object_conjugate_split)
 
-    expected_semi = float(np.hypot(55.0, 55.0) / 2.0)  # object diagonal semi of a 55x55 field
+    expected_semi = float(np.hypot(32.0, 32.0) / 2.0)  # object diagonal semi of a 32x32 field
     checks.append(Check(
-        "FOV CHANGES: Solve-for-Thickness sets the target object FOV to the typed 55x55 (label input moves)",
+        "FOV CHANGES: Solve-for-Thickness sets the target object FOV to the typed 32x32 (label input moves)",
         bool(ok_fov)
         and semi_after is not None
         and abs(float(semi_after) - expected_semi) < 0.5
