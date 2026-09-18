@@ -99,6 +99,30 @@ Each refit was applied as a MINIMAL text edit -- the command decides the numbers
 back) and only those literals are written, in whichever of the two layout styles the file uses --
 then the file is re-loaded and every row field compared, so nothing but the intended diameters moves.
 
+### The rule that decides it: a glass narrower than the pupil is not the front element
+
+The AZ85 sweep was the one that produced the rule. `ELS-85-4.5V16K.STEP` reads **14.16 mm** of
+"glass" against a scene whose stop is **18.89 mm** (85 / 4.5). A front element narrower than the
+pupil it must pass cannot exist, so 14.16 mm is not the front element -- the reader found an inner
+element or a mount ring. With `target = max(glass, stop)` the refit would have quietly drawn that
+lens at exactly its pupil, on a measurement already known to be wrong.
+
+So the command REFUSES when the measured glass is narrower than the pupil the scene passes, naming
+both numbers, and the right-click does not offer a verb that cannot run. Measured, live:
+
+```
+machine_vision_AZ85_RA_Mirror.py       the lens STEP measures 14.16 mm of glass, narrower than
+machine_vision_els_85_4_5v16k.py       the 18.89 mm pupil this scene passes -- that cannot be the
+                                       front element, so nothing was refitted
+machine_vision_150mm_measured.py       ... 18.6 mm of glass, narrower than the 19.36 mm pupil ...
+machine_vision_150mm_datasheet_1x.py   ... 18.6 mm of glass, narrower than the 19.36 mm pupil ...
+```
+
+That single rule accounts for all four layouts held back below, which had shown three different
+symptoms -- a parity fixture losing its vignetted strays, and two scenes losing 20 and 12 reaching
+rays. They were all the same defect: the refit falling back to the stop on a bad measurement and
+squeezing the lens onto its own pupil.
+
 ### Why the 150 mm pair is held back: the drawn disc is load-bearing
 
 Refitting them turned `validate_open3d_clipped_vignetting_parity` red on its premise:

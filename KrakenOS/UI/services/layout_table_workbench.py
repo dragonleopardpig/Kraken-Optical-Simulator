@@ -1835,6 +1835,17 @@ class LayoutTableWorkbenchMixin:
                     stop_mm = max(stop_mm, float(row.diameter))
                 except (TypeError, ValueError):
                     pass
+        # bugs/0819 follow-up (the AZ85 sweep): a measurement BELOW the pupil the scene passes
+        # cannot be the front element. The ELS-85 STEP reads 14.16 mm of "glass" against an
+        # 18.89 mm stop (85 / 4.5) -- the reader found an inner element or a mount ring, not the
+        # front glass. Taking max(glass, stop) there would quietly draw the lens at exactly its
+        # pupil, on a measurement known to be wrong. Refuse and say which numbers disagree.
+        if stop_mm > 0.0 and float(glass) < stop_mm - 1e-6:
+            return False, (
+                f"the lens STEP measures {float(glass):.4g} mm of glass, narrower than the "
+                f"{stop_mm:.4g} mm pupil this scene passes -- that cannot be the front element, "
+                f"so nothing was refitted"
+            )
         target = max(float(glass), float(stop_mm))
         changes: list[tuple[int, float, float]] = []
         for index in range(front, rear + 1):

@@ -2175,6 +2175,19 @@ class Open3DFaceAssignmentService:
             )
             if widest <= float(glass) + 0.5:
                 return
+            # bugs/0819 follow-up: a measurement below the scene's own pupil is not the front
+            # element (the ELS-85 reads 14.16 mm against an 18.89 mm stop), and the command
+            # refuses it -- so do not offer a verb that cannot run.
+            stop_mm = max(
+                (
+                    float(row.diameter)
+                    for row in rows[front:rear + 1]
+                    if str(getattr(row, "surface", "")).strip().lower() == "aperture"
+                ),
+                default=0.0,
+            )
+            if stop_mm > 0.0 and float(glass) < stop_mm - 1e-6:
+                return
             menu.add_command(
                 label=f"Refit Surrogate Glass to Vendor STEP ({widest:.4g} -> {float(glass):.4g} mm)...",
                 command=lambda: self._refit_lens_glass_from_context(),

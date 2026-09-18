@@ -100,13 +100,17 @@ def _check_refit(ok) -> None:
         not applied and [round(float(r.diameter), 4) for r in narrow.rows][1:6] == [12.0, 12.0, 8.0, 12.0, 12.0],
         "A4: discs already inside the glass are left exactly as the user drew them",
     )
-    # never below the stop, even when the measured glass is smaller than it
-    tight = _fake_editor([90.0, 46.0, 38.0, 21.55, 38.0, 46.0, 90.0], 10.0)
-    applied, message = tight.refit_lens_surrogate_glass_to_step()
-    drawn = [round(float(row.diameter), 4) for row in tight.rows]
+    # a measurement BELOW the scene's own pupil is not the front element -- refuse it.
+    # The real case (the AZ85 sweep): the ELS-85 STEP reads 14.16 mm against an 18.89 mm stop.
+    bogus = _fake_editor([90.0, 29.0, 29.0, 18.8889, 27.26, 27.26, 90.0], 14.1585)
+    applied, message = bogus.refit_lens_surrogate_glass_to_step()
+    drawn = [round(float(row.diameter), 4) for row in bogus.rows]
     ok(
-        applied and min(drawn[1:6]) >= 21.55,
-        f"A5: a measurement below the stop cannot shrink the glass past it ({drawn[1:6]})",
+        not applied
+        and "cannot be the front element" in message
+        and drawn[1:6] == [29.0, 29.0, 18.8889, 27.26, 27.26],
+        f"A5: a glass reading narrower than the pupil the scene passes is refused, with both "
+        f"numbers, and nothing is drawn differently ({message[:60]})",
     )
     no_glass = _fake_editor([90.0, 46.0, 38.0, 21.55, 38.0, 46.0, 90.0], None)
     applied, message = no_glass.refit_lens_surrogate_glass_to_step()
@@ -246,6 +250,11 @@ def _check_ui(ok) -> None:
     ok(
         _labels(VENDOR_GLASS_MM, VENDOR_GLASS_MM) == [],
         "D2: a surrogate already at the glass is offered nothing",
+    )
+    ok(
+        _labels(29.0, 14.1585) == [],
+        "D2b: nor is one whose STEP reads narrower than the scene's own pupil -- the command "
+        "would refuse it, so the verb is not offered",
     )
     src = inspect.getsource(Open3DFaceAssignmentService._refit_lens_glass_from_context)
     ok(
