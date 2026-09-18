@@ -16324,6 +16324,10 @@ phase_593_a_cache_is_a_recipe = _phase_from_standalone(
     593, "a cache is a recipe: asked to fix the validation errors that kept being skipped as known, the per-phase census found 449-452 never finishing and 169, 170, 181-194 failing on missing files. 23 derived files under attachment/cad_cache, promoted-body STLs and a generated beam-splitter template referenced 132 times by 15 scenes, had been moved to the Filen trash. Loading such a scene opened the MODAL missing-assets dialog, so unattended runs hung; guards building rows without the load path lost their bodies; and the only rebuild (bugs/0021) re-meshed an overlay-promoted body in the STEP's native frame and repointed the row, face S001/F001 at x -8.84 where the scene records +12.5. The scene records each recipe: a template's name is the hash of its recorded parameters, an overlay body is the source STEP through the recorded overlay pose, cleaned and centred (resized to the recorded bounds when it was resized), and OpticalSolidFaces proves the result face by face. Rebuilt bodies are written only when every recorded face reproduces, at the recorded path, never repointed; the dialog is non-modal and redraws when closed; tools/rebuild_cad_caches.py rebuilds every scene's caches (21 rebuilt, 0 refused, 0 still missing). The overlay bodies came back bit-identical to the originals recovered from the trash; 447 and 449-452 pass, as do 169, 170, 183, 185, 186 and 189; 181 and 194 still fail on their own older assertions (0810)",
     "KrakenOS.UI.validate_open3d_0810_a_cache_is_a_recipe",
     "a_cache_is_a_recipe")
+phase_594_a_save_writes_the_table = _phase_from_standalone(
+    594, "a save writes the table: the user found the om05a prism assembly haywire -- the whole B-side train, both beam-splitter far halves and both LED panels sat 8.82 mm off the authored placement every one of them carries, while the A-side rows and the same rows in the 80 mm bench read 0.000. Both files record the SAME authored centres, so re-seating them onto it is the user's \"copy the prism assembly from om05a_folded_80mm.py\". The first repair reported drift 0.000000 and saved a file that still held the old placement: _write_layout_file begins with _read_rows_from_table(), so rows edited in memory and saved without _sync_table() are silently overwritten by the stale table -- the trap the bugs/0591/0608 lens refit already had to comment around. Re-seated through the table the scene went from 6 of 1103 rays reaching with a 127 mm waist to 644 on-strip at 0.7 um, and the 3D scene from \"no ray reaches the sensor\" to an image 0.457 mm in front of it. The two big RA mirrors keep a 3.563 mm authored/live gap that is the SNAPSHOT being stale, not a displacement: the 80 mm bench images with the same live pose, and phase 505's A8b now reports that same 3.563 mm on the measured cover strip (0815)",
+    "KrakenOS.UI.validate_open3d_0815_a_save_writes_the_table",
+    "a_save_writes_the_table")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16983,6 +16987,7 @@ def main() -> int:
             phase_591_a_partly_hidden_edge_is_not_whole,
             phase_592_a_line_touching_the_outline_is_not_on_it,
             phase_593_a_cache_is_a_recipe,
+            phase_594_a_save_writes_the_table,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

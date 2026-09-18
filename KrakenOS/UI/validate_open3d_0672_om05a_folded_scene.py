@@ -211,12 +211,18 @@ def _check_scene(ok, notes) -> None:
         # bugs/0683/0684: the authored partial-FOV bands -- the MEASURED delivered field
         # per face (with the real first-surface mirrors + BS cube the window widened to
         # y -4..+3 at ~90% reach; bugs/0683_band_scan.py re-run post-0684).
+        # bugs/0815: assert the SPAN and the bugs/0721 symmetry, not the pre-0721 raw
+        # numbers. A device-face band is centred ON its face: `symmetrize_face_bands`
+        # rewrites every authored v-range on load (keeping the span), so the scene's
+        # -5.25..+3.1 has read -4.175..+4.175 since 0721 -- and reads that way in the
+        # saved file now that the user re-saved it. Checking the old asymmetric pair
+        # made this guard fail on the contract its own production code enforces.
         bands = getattr(editor, "layout_object_fov_bands", None) or []
         band_ok = (
             len(bands) == 2
             and all(
-                abs(float(b.get("v_lo", 99.0)) + 5.25) < 0.6
-                and abs(float(b.get("v_hi", 99.0)) - 3.1) < 0.6
+                abs((float(b.get("v_hi", 99.0)) - float(b.get("v_lo", 99.0))) - 8.35) < 0.6
+                and abs(float(b.get("v_lo", 99.0)) + float(b.get("v_hi", 99.0))) < 1e-6
                 and abs(float(b.get("half_width", 0.0)) - 27.5) < 0.5
                 for b in bands
             )
@@ -225,8 +231,10 @@ def _check_scene(ok, notes) -> None:
         )
         ok(
             band_ok,
-            f"A8: both PART faces carry the calculated one-side FOV band (55.0 x 8.35, y -5.25..+3.1, "
-            f"at z=0 and z=-50) ({len(bands)} bands)",
+            f"A8: both PART faces carry the calculated one-side FOV band (55.0 x 8.35, CENTRED on "
+            f"the face per 0721, at z=0 and z=-50) ({len(bands)} bands"
+            + (f", v {float(bands[0].get('v_lo', 0.0)):+.3f}..{float(bands[0].get('v_hi', 0.0)):+.3f}"
+               if bands else "") + ")",
         )
         # bugs/0692: each band also AUTHORS its measured sensor cover strip (the image of
         # the band -- bugs/0692_sensor_reach_sweep.py: arm A z -30.3..-27.1 razor spots,
@@ -246,11 +254,25 @@ def _check_scene(ok, notes) -> None:
             and abs(float(strips[1].get("v_lo", 99.0)) + 6.224) < 0.6
             and abs(float(strips[1].get("v_hi", 99.0)) + 3.114) < 0.6
         )
+        # bugs/0815: say WHAT the live strip measured when this fails. The trace
+        # re-authors the strips off the LIVE geometry, so a strip that misses the
+        # authored one by the same offset as a mirror's authored/live gap is reporting
+        # that gap, not a coverage regression -- on the user's scene both strips land
+        # 3.563 mm off in x and y, exactly the RA-mirror-1 authored/live drift.
+        _s0 = strips[0] if strips else {}
+        _live = ""
+        try:
+            _c = np.asarray(_s0.get("center"), dtype=float)
+            _live = (f"; live A centre ({_c[0]:.3f}, {_c[1]:.3f}) vs authored (-272.650, -1.655) "
+                     f"= off by ({_c[0] + 272.65:+.3f}, {_c[1] + 1.655:+.3f}) mm, "
+                     f"v {float(_s0.get('v_lo')):+.3f}..{float(_s0.get('v_hi')):+.3f}")
+        except (TypeError, ValueError, IndexError):
+            _live = "; live A strip unreadable"
         ok(
             strip_ok,
             "A8b: both bands author their MEASURED cover strip in the DETECTOR frame "
             "(0697: the overlay anchors on the LIVE pose so rotations carry the strips; "
-            "A z -30.25..-27.25, B z -23.29..-20.18 on the saved scene)",
+            "A z -30.25..-27.25, B z -23.29..-20.18 on the saved scene)" + _live,
         )
         # bugs/0695: the sensor plane is derived LIVE from the Image row -- the
         # vendor-true rebuild moved it (and any future refocus moves it again).
