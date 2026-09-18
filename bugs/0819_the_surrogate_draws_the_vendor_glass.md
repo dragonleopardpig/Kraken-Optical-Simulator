@@ -123,6 +123,30 @@ symptoms -- a parity fixture losing its vignetted strays, and two scenes losing 
 rays. They were all the same defect: the refit falling back to the stop on a bad measurement and
 squeezing the lens onto its own pupil.
 
+### Can the reader be improved instead? Measured: no
+
+The obvious follow-up was to stop `_step_glass_aperture` under-measuring. It cannot be done from
+what the files contain:
+
+* **The ELS-85 has no front glass in the STEP.** 483 faces: 181 cylinders, 125 planes, 104 bsplines,
+  69 cones and **4 spheres, all the same 14.158 mm cap**. The bsplines are all under 1.3 mm (fillets,
+  knurling, lettering) and the large planes are the 53 mm barrel flats. The 14.16 mm sphere is a real
+  lens surface -- just not the front one, which the vendor did not model. There is no better number
+  in the file.
+* **A shape rule that fixes the 150 mm breaks a ball lens.** `15056.STEP`'s spheres are
+  near-hemispheres (18.596 mm across a 14.296 mm sag, area/disc 1.09) -- balls, not caps. Requiring
+  a shallow cap (sag <= 0.5 x diameter) rejects them, which is right, but measured across all 22
+  vendor lens STEPs it also turns `ball_lens/step_63227.stp` from 9.617 mm to nothing (a ball lens IS
+  a hemisphere, and 9.617 is correct there) and moves `67304_0.75X_Telecentric` from 14.893 to
+  10.679 mm. One win, one regression, one unexplained change: not a rule worth shipping.
+* **Both consumers are already floored.** The import takes
+  `max(stop_diameter * 1.4, min(lens_aperture, housing))`, so a bogus 14.16 mm reading cannot drag a
+  new import below 1.4x the pupil (els_85 imports at 26.44 mm, not 14.16), and the refit refuses a
+  sub-pupil measurement outright (above).
+
+So the measurement stays as it is and the callers keep the floor. Recorded here so the next reader of
+this file does not re-run the investigation.
+
 ### Why the 150 mm pair is held back: the drawn disc is load-bearing
 
 Refitting them turned `validate_open3d_clipped_vignetting_parity` red on its premise:
