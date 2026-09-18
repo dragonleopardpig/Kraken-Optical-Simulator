@@ -159,11 +159,23 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
                     self._value = bool(value)
 
             class _Insp:
-                def __init__(self, rays_on):
+                """bugs/0818 moved the rule to the painter and left `_pending_rays_note`
+                delegating to `Kraken3DInspector._sync_show_rays_toggle_to_scene`, so a fake
+                inspector carrying only the toggle stopped modelling the thing under test.
+                Carry the REAL method, bound to the fake ([[a guard must keep up with what it
+                guards]])."""
+
+                def __init__(self, rays_on, editor=None):
+                    from KrakenOS.UI.open3d_inspector import Kraken3DInspector
+
                     self.show_rays_var = _Var(rays_on)
+                    self.editor = editor
+                    self._sync_show_rays_toggle_to_scene = (
+                        Kraken3DInspector._sync_show_rays_toggle_to_scene.__get__(self, type(self))
+                    )
 
             app._preview_trace_deferred_until_requested = True
-            deferred_insp = _Insp(True)
+            deferred_insp = _Insp(True, app)
             note_on = app._pending_rays_note(deferred_insp)
             ok("Trace Now" in note_on and "Show Rays is off" in note_on,
                f"E: a deferred open explains the state ({note_on.strip()[:60]}...)")
