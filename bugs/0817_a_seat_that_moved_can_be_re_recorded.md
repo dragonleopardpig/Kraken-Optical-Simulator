@@ -67,6 +67,36 @@ A second re-pin of the same row declines: "already sits on its authored placemen
   the command confirms, applies through the editor and redraws through the chokepoint; both
   promoted-row branches of the element menu offer it.
 
+## Done on the user's scene (2026-09-18, at their request)
+
+Both big RA mirrors re-pinned headlessly, backup `attachment/om05a_folded.pre0817_repin_backup.py`:
+
+| row | drift before | after | geometry |
+|---|---|---|---|
+| 7 RA mirror 1 (50 mm) | 3.5630 | **0.000000** | unchanged |
+| 15 RA mirror 2 (40 mm) | 5.0388 | **0.000000** | unchanged |
+
+Every promoted row in the scene now reads 0.000 -- the first time the whole thing sits on its
+recorded placement -- and the old values stay as `center_world_repinned_from` ([0.0, 52.8, -25.0]
+and [-272.7, 52.75, -25.0]). No row field moved: thickness, decentres and tilts are identical to the
+backup.
+
+**Phase 505 is green.** Two of its checks were reading the pre-bugs/0760 snapshot:
+
+* **A2** asserted mirror 2's "part-anchored CAD pose" as (-272.7, 52.75, -25) -- the place it sat
+  before 0760 put it on the vendor clearance. It passed only because the stale snapshot agreed with
+  it; the LIVE pose never did. Re-derived to (-269.137, 56.313, -25).
+* **A8b** compared the live cover strip against constants measured before the same move, missing by
+  exactly 3.563 mm and nothing else. Re-derived to centre (-269.087, 1.822), half-width 10.311, and
+  the two arms mirrored in v.
+
+The strips' v-RANGE is deliberately not pinned. A trace re-measures the strip from the LIVE launch,
+which samples one field row in v, so it reports a 0.047 mm slice rather than the strip's height; the
+authored 3.0 mm comes from bugs/0692's dedicated field sweep. That sweep was re-run on the re-pinned
+scene (arm A lands z -29.88 .. -19.83, arm B -30.17 .. -20.12, sensor x ~ -269.1, object x +-30 ->
+sensor x -281.45 .. -256.74), and the authored bands were restored into the scene afterwards so the
+saved strips keep their measured height instead of the live slice.
+
 ## Note for whoever re-pins om05a
 
 Phase 505's A8b compares the live cover strip against constants measured BEFORE bugs/0760. Once the

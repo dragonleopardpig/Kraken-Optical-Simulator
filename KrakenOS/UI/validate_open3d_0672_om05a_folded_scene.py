@@ -89,9 +89,14 @@ def _check_scene(ok, notes) -> None:
             promo = (spec.get("advanced") or {}).get("StepOverlayPromotion")
             return np.asarray((promo or {}).get("center_world", (np.nan,) * 3), dtype=float)
 
+        # bugs/0760 moved both big RA mirrors 3.563 mm onto the clearance measured on
+        # om05a_26_1_r03_2s_lr_asm.stp (vendor 7.596 mm against the scene's 4.033 mm), and
+        # bugs/0817 re-pinned their promotion snapshots there, so THIS is the part-anchored
+        # CAD pose now. Until the re-pin this check read the pre-0760 snapshot and called a
+        # stale record the CAD pose; the live pose never matched it.
         m2 = next((spec for _i, spec in solids if str(spec.get("name", "")) == "RA mirror 2 (40 mm)"), {})
         ok(
-            np.allclose(_centre(m2), (-272.7, 52.75, -25.0), atol=0.5),
+            np.allclose(_centre(m2), (-269.137, 56.313, -25.0), atol=0.5),
             f"A2: mirror2 is FREE-PLACED at the part-anchored CAD pose ({np.round(_centre(m2), 1).tolist()})",
         )
         image_index = next(i for i, r in enumerate(rows) if str(r.surface) == "Image")
@@ -240,19 +245,34 @@ def _check_scene(ok, notes) -> None:
         # the band -- bugs/0692_sensor_reach_sweep.py: arm A z -30.3..-27.1 razor spots,
         # arm B z -22.8..-18.2 at the compromise focus), drawn by the coverage overlay as
         # two dashed edges on the sensor die ("actual cover area" -- user request).
+        # bugs/0817/0820: the constants this used to compare against were measured BEFORE
+        # bugs/0760 moved both big RA mirrors 3.563 mm onto the clearance measured from
+        # om05a_26_1_r03_2s_lr_asm.stp, so the live strip missed them by exactly that and by
+        # nothing else. The mirrors are now re-pinned (every promoted row reads 0.000 drift),
+        # which makes the live pose the authored one, so the strip is re-derived against it:
+        # centre (-269.087, 1.822), half-width 10.311.
+        #
+        # The v-RANGE is deliberately not pinned to the authored 3.0 mm. The overlay measures
+        # the strip from the LIVE launch, which samples one field row in v, so it reports a
+        # 0.047 mm slice through the strip rather than its height; the authored 3.0 mm comes
+        # from bugs/0692's dedicated field sweep (re-run 2026-09-18: arm A lands z -29.88 ..
+        # -19.83, arm B -30.17 .. -20.12). What the live measurement CAN support is that the
+        # slice sits on the strip and that the two arms mirror each other, which is the
+        # split-field property this check exists for.
         strips = [b.get("image_strip") or {} for b in bands]
+        def _mid(strip) -> float:
+            return 0.5 * (float(strip.get("v_lo", 0.0)) + float(strip.get("v_hi", 0.0)))
+
         strip_ok = (
             len(strips) == 2
             and all(
-                abs(float(s.get("center", [99, 99, 99])[0]) + 272.65) < 0.5
-                and abs(float(s.get("center", [99, 99, 99])[1]) + 1.655) < 0.5
-                and abs(float(s.get("half_width", 0.0)) - 11.52) < 0.1
+                abs(float(s.get("center", [99, 99, 99])[0]) + 269.087) < 0.5
+                and abs(float(s.get("center", [99, 99, 99])[1]) - 1.822) < 0.5
+                and abs(float(s.get("half_width", 0.0)) - 10.311) < 0.1
                 for s in strips
             )
-            and abs(float(strips[0].get("v_lo", 99.0)) - 0.845) < 0.6
-            and abs(float(strips[0].get("v_hi", 99.0)) - 3.845) < 0.6
-            and abs(float(strips[1].get("v_lo", 99.0)) + 6.224) < 0.6
-            and abs(float(strips[1].get("v_hi", 99.0)) + 3.114) < 0.6
+            and _mid(strips[0]) > 0.0 > _mid(strips[1])
+            and abs(_mid(strips[0]) + _mid(strips[1])) < 0.1
         )
         # bugs/0815: say WHAT the live strip measured when this fails. The trace
         # re-authors the strips off the LIVE geometry, so a strip that misses the
@@ -272,7 +292,8 @@ def _check_scene(ok, notes) -> None:
             strip_ok,
             "A8b: both bands author their MEASURED cover strip in the DETECTOR frame "
             "(0697: the overlay anchors on the LIVE pose so rotations carry the strips; "
-            "A z -30.25..-27.25, B z -23.29..-20.18 on the saved scene)" + _live,
+            "re-derived after the 0817 re-pin: centre (-269.087, 1.822), half-width 10.311, "
+            "the two arms mirrored in v)" + _live,
         )
         # bugs/0695: the sensor plane is derived LIVE from the Image row -- the
         # vendor-true rebuild moved it (and any future refocus moves it again).

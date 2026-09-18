@@ -111,15 +111,19 @@ def _check_real_folders(ok, notes) -> None:
             (p for ext in ("*.stp", "*.STEP", "*.step") for p in TELE_075.glob(ext)), None
         )
         glass = _step_glass_aperture(tele_step) if tele_step is not None else None
-        # bugs/0703: the glass cap (14.89) still COVERS the 0662 object-side
-        # field (11/0.75 = 14.67) -- the vendor's front glass is exactly the
-        # field it guarantees; the old +stop pad exceeded the physical glass.
+        # bugs/0703: the disc still COVERS the 0662 object-side field (11/0.75 = 14.67)
+        # and never exceeds the vendor's glass; the old +stop pad exceeded the physical glass.
+        # bugs/0820: it is no longer EQUAL to the glass here. The 14.89 mm this used to compare
+        # against was half of a split element -- the reader now groups the faces by their sphere
+        # and measures 29.64 mm, so the field-driven 19.96 mm disc sits INSIDE the glass instead
+        # of being pinned to it. Assert the two properties that actually matter.
         ok(
             glass is not None
-            and abs(model.front_aperture - glass) < 0.01
+            and model.front_aperture <= float(glass) + 0.01
             and model.front_aperture >= 11.0 / 0.75,
-            f"B2: the 0.75x telecentric disc is its glass and still covers the "
-            f"0662 object field ({model.front_aperture:.2f} mm >= {11.0/0.75:.2f})",
+            f"B2: the 0.75x telecentric disc stays inside its glass and still covers the "
+            f"0662 object field ({model.front_aperture:.2f} mm, glass "
+            f"{float(glass) if glass else float('nan'):.2f}, field {11.0/0.75:.2f})",
         )
     else:
         notes.append("SKIP: B2: the 67304 folder is not in this checkout")

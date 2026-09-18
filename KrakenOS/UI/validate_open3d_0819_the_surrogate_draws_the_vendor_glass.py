@@ -165,7 +165,7 @@ def _check_scene(ok, skip) -> None:
     if not SCENE.exists():
         skip("C: the flagged scene is not on this machine (Filen-synced)")
         return
-    text = SCENE.read_text()
+    text = SCENE.read_text(encoding="utf-8")
     drawn = []
     for block in re.finditer(r"surfaces\.append\(\{(.*?)\}\)\n", text, re.S):
         name = re.search(r"'name': '([^']*)'", block.group(1))
@@ -197,7 +197,7 @@ def _check_shipped_layouts(ok, skip) -> None:
         if not path.exists():
             skip(f"E: {name} is not on this machine")
             continue
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         drawn = []
         for match in re.finditer(
             r"['\"]name['\"]:\s*['\"]([^'\"]*(?:Datum|Group)[^'\"]*)['\"][\s\S]{0,400}?"
