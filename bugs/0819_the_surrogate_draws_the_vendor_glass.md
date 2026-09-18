@@ -77,6 +77,60 @@ normalisation, not this fix.
 * D: the verb appears only on an oversized surrogate, carries both numbers, and the command
   confirms -> editor -> `_apply_model_change`.
 
+## The sweep across the shipped layouts, and where it stops
+
+Measured per layout: the vendor glass, the widest drawn disc, and what the refit costs in rays that
+REACH the sensor (`reaches_image`, 189-ray preview unless noted).
+
+| layout | glass | widest | reach before -> after | done |
+|---|---|---|---|---|
+| `machine_vision_120mm_pyrite_datasheet_1x` | 30.39 | 46.00 | 189 -> 189 | **refitted** |
+| `machine_vision_120mm_pyrite_datasheet_05x` | 30.39 | 46.00 | 189 -> 189 | **refitted** |
+| `machine_vision_pyrite_45_85_05x_20x_v38...` | 22.29 | 26.48 | 165 -> 165 | **refitted** (local, untracked) |
+| `machine_vision_pyrite_45_90_03x_v38...` | 28.39 | 50.06 | 189 -> 189 | **refitted** (local, untracked) |
+| `machine_vision_pyrite_56_80_10x_v38...` | 23.82 | 46.00 | 189 -> 189 | **refitted** (local, untracked) |
+| `machine_vision_pyrite_40_45_v38...` | 14.64 | 16.37 | 189 -> 189 | **refitted** (local, untracked) |
+| `machine_vision_150mm_datasheet_1x` / `_0_5x` | 18.60 | 35.00 | 147 -> 147 | **held back** -- see below |
+| `machine_vision_AZ85_RA_Mirror` | 14.16 | 29.00 | 325/729 -> 325/729 | held back: 95 guards read it |
+| `machine_vision_els_85_4_5v16k` | 14.16 | 26.44 | 189 -> **169** | held back: loses 20 |
+| `machine_vision_150mm_measured` | 18.60 | 35.00 | 141 -> **129** | held back: loses 12 |
+
+Each refit was applied as a MINIMAL text edit -- the command decides the numbers (load, refit, read
+back) and only those literals are written, in whichever of the two layout styles the file uses --
+then the file is re-loaded and every row field compared, so nothing but the intended diameters moves.
+
+### Why the 150 mm pair is held back: the drawn disc is load-bearing
+
+Refitting them turned `validate_open3d_clipped_vignetting_parity` red on its premise:
+
+```
+before:  PASS parity layout produces vignetted strays to hide (total=45 hit=27)
+after:   FAIL parity layout produces vignetted strays to hide (total=45 hit=45)
+```
+
+The launch samples the DRAWN aperture, so narrowing the discs narrowed the bundle and every ray
+landed on the detector: the 18 vignetted strays that fixture is built on stopped existing. The disc
+is not decoration -- on a scene whose aperture is not stop-pinned it sets what is launched. That is
+exactly why bugs/0819 makes the refit a user-invoked verb that says what it will do, rather than
+something the app does on its own, and why the two layouts that LOSE reaching rays (els_85, 150 mm
+measured) are the user's call and not mine: the loss is the vendor's real vignette appearing, and
+whether a fixture should show it is a decision about the fixture.
+
+`machine_vision_AZ85_RA_Mirror` loses nothing measurable but is read by 95 guards -- a sweep of it
+belongs in a run of its own.
+
+### Guards run after the sweep
+
+`validate_open3d_lens_step_datum_attached`, `validate_open3d_aperture_stop_vignette`,
+`validate_open3d_ray_fan_count`, `validate_ray_launch_center_uniform_fan`,
+`validate_open3d_clipped_rays_sync`, `validate_open3d_launch_cone_geometry`,
+`validate_open3d_object_plane_after_promote`, `validate_open3d_thickness_solve`,
+`validate_open3d_quick_estimation_conjugate` -- all pass, as does penta phase 598 with its new
+check E pinning the two swept layouts.
+
+`validate_machine_vision_pyrite_120_surrogate` fails, and failed identically with the file restored
+from git: it is about the STEP's glass-vertex Z offsets, not the diameters, and predates this work.
+
 ## Still open -- the shipped layouts of that vintage
 
 Measured across `KrakenOS/common_optical_layouts/machine_vision_*.py` with a bundled lens STEP, the

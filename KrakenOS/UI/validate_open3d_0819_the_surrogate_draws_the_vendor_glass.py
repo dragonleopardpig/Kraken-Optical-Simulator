@@ -174,6 +174,40 @@ def _check_scene(ok, skip) -> None:
     )
 
 
+REFITTED_LAYOUTS = {
+    # bugs/0819 sweep: shipped layouts brought onto their STEP's measured glass, with the
+    # measurement each one was refitted to. The 150 mm pair is deliberately NOT here -- the
+    # launch samples the drawn aperture, so refitting those two removes the vignetted strays
+    # validate_open3d_clipped_vignetting_parity is built on (hit 27/45 -> 45/45).
+    "machine_vision_120mm_pyrite_datasheet_1x.py": 30.3906,
+    "machine_vision_120mm_pyrite_datasheet_05x.py": 30.3935,
+}
+
+
+def _check_shipped_layouts(ok, skip) -> None:
+    """E: the swept layouts stay on their glass -- a regenerated file must not bring the
+    barrel back."""
+    root = PROJECT_ROOT / "KrakenOS/common_optical_layouts"
+    for name, glass in sorted(REFITTED_LAYOUTS.items()):
+        path = root / name
+        if not path.exists():
+            skip(f"E: {name} is not on this machine")
+            continue
+        text = path.read_text()
+        drawn = []
+        for match in re.finditer(
+            r"['\"]name['\"]:\s*['\"]([^'\"]*(?:Datum|Group)[^'\"]*)['\"][\s\S]{0,400}?"
+            r"['\"]diameter['\"]:\s*([\d.]+)",
+            text,
+        ):
+            drawn.append((match.group(1), float(match.group(2))))
+        ok(
+            bool(drawn) and all(value <= glass + 0.01 for _n, value in drawn),
+            f"E-{name}: every datum/group disc is drawn at the vendor glass "
+            f"({glass:.4g} mm; found {sorted({round(v, 4) for _n, v in drawn})})",
+        )
+
+
 def _check_ui(ok) -> None:
     from KrakenOS.UI.services.open3d_face_assignment import Open3DFaceAssignmentService
 
@@ -240,6 +274,7 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     _check_refit(ok)
     _check_measurement(ok, skip)
     _check_scene(ok, skip)
+    _check_shipped_layouts(ok, skip)
     _check_ui(ok)
 
     passed = not any(n.startswith("FAIL") for n in notes)

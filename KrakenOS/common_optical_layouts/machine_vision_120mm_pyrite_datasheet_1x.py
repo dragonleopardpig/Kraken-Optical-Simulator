@@ -251,7 +251,7 @@ SURFACES = [
         "name": "Front Optical Vertex Datum",
         "rc": 0.0,
         "thickness": GROUP_1_Z,
-        "diameter": 46.0,
+        "diameter": 30.390570413265394,
         "glass": "AIR",
     },
     {
@@ -259,7 +259,7 @@ SURFACES = [
         "name": "Blackbox Group 1",
         "rc": GROUP_1_FOCAL_LENGTH,
         "thickness": GROUP_1_TO_STOP,
-        "diameter": 38.0,
+        "diameter": 30.390570413265394,
         "glass": "AIR",
     },
     {
@@ -275,7 +275,7 @@ SURFACES = [
         "name": "Blackbox Group 2",
         "rc": GROUP_2_FOCAL_LENGTH,
         "thickness": GROUP_2_TO_REAR,
-        "diameter": 38.0,
+        "diameter": 30.390570413265394,
         "glass": "AIR",
     },
     {
@@ -283,7 +283,7 @@ SURFACES = [
         "name": "Rear Optical Vertex Datum",
         "rc": 0.0,
         "thickness": REAR_VERTEX_TO_IMAGE_1X,
-        "diameter": 46.0,
+        "diameter": 30.390570413265394,
         "glass": "AIR",
     },
     {
