@@ -16340,6 +16340,10 @@ phase_597_the_rays_box_states_the_scene = _phase_from_standalone(
     597, "the Show Rays box states the scene on EVERY path: the user, after 0801 -- \"I still see Rays ON is tick but no rays is actually on. I have to untick and tick to make it work. I randomly open .py files.\" 0801 made the box match the scene and unticked it in open_3d_view; measured, two paths kept the tick anyway. The 3D-session sidecar restores the SAVED overlay toggles at the START of every refresh_from_editor, and om05a_folded.open3d.json carries show_rays_var true, so the box the open path had just cleared was re-ticked by the very refresh that followed it (measured on a fresh open, settled past the STEP cache warm-up: ticked True, gate True, 0 ray actors); and loading another .py into an already-open inspector never runs the open path at all, leaving the same lie after every load. The rule now lives at the PAINTER, where the session restore no longer gets the last word and every present and future refresh entry inherits it, and _pending_rays_note delegates to it instead of repeating it. It can only turn the box OFF -- asking for rays stays the user's, and ticking is still the deliberate request that clears the bugs/0646 gate and traces, which bugs/0718 requires. Measured after: open gives ticked False with 0 actors, ONE tick gives ticked True with 12 actors and the gate cleared, an ordinary repaint keeps them, unticking hides them, and a load into the open window leaves the box off rather than lying (0818)",
     "KrakenOS.UI.validate_open3d_0818_the_rays_box_states_the_scene",
     "the_rays_box_states_the_scene")
+phase_598_the_surrogate_draws_the_vendor_glass = _phase_from_standalone(
+    598, "the surrogate draws the vendor's glass, not its barrel: the user flagged machine_vision_120mm_65M.py as \"lens surrogate oversized\" -- its Front/Rear Optical Vertex Datum discs were drawn at 46.0 mm and the Blackbox groups at 38.0 mm against a PYRITE 5.6/120 STEP whose visible glass measures 30.39 mm inside a 46 mm collar. bugs/0703 taught the folder import to size discs from the measured glass and it still does (the same folder imports at 30.3906 today), but nothing could reach a scene already built: this one descends from machine_vision_120mm_pyrite_datasheet_1x.py, a July layout with 46.0 and 38.0 hard-coded. The lens STEP's right-click now offers 'Refit Surrogate Glass to Vendor STEP (46 -> 30.39 mm)...', and only when the discs really are wider; it shrinks the block onto the measured glass, never touches the aperture stop, never goes below it and never enlarges, so a narrower disc the user drew stays theirs. Measured on the flagged scene: four rows 46/38 -> 30.3906 with the 21.55 mm stop untouched and the ray count unchanged at 189 -- the prescription does not move, only how wide the glass is DRAWN, and with it the vendor's own vignette (0819)",
+    "KrakenOS.UI.validate_open3d_0819_the_surrogate_draws_the_vendor_glass",
+    "the_surrogate_draws_the_vendor_glass")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17003,6 +17007,7 @@ def main() -> int:
             phase_595_a_slid_row_says_so,
             phase_596_a_seat_that_moved_can_be_re_recorded,
             phase_597_the_rays_box_states_the_scene,
+            phase_598_the_surrogate_draws_the_vendor_glass,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

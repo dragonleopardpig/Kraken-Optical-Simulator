@@ -1273,6 +1273,7 @@ class Open3DFaceAssignmentService:
                     label="Swap Imaging Lens from Folder (keeps scene)...",
                     command=lambda: self._swap_imaging_lens_from_context(),
                 )
+                self._append_lens_glass_refit_action(menu)
             menu.add_command(
                 label=self._step_surrogate_reset_label(step_label),
                 command=lambda picked_label=step_label: self._glue_step_to_surrogate_from_context(picked_label),
@@ -2151,6 +2152,70 @@ class Open3DFaceAssignmentService:
         except Exception:
             return False
         return isinstance(advanced, dict) and isinstance(advanced.get("StepOverlayPromotion"), dict)
+
+    def _append_lens_glass_refit_action(self, menu) -> None:
+        """bugs/0819: offer the glass refit only when the surrogate is actually drawn wider
+        than the vendor STEP's measured glass -- on a scene the import already sized right
+        (bugs/0703) there is nothing to do and the entry would only mislead."""
+        try:
+            glass = self.editor.lens_surrogate_glass_aperture_mm()
+            if not glass:
+                return
+            front, rear = self.editor._imaging_lens_block_indices()
+            if front is None or rear is None:
+                return
+            rows = list(getattr(self.editor, "rows", None) or [])
+            widest = max(
+                (
+                    float(row.diameter)
+                    for row in rows[front:rear + 1]
+                    if str(getattr(row, "surface", "")).strip().lower() != "aperture"
+                ),
+                default=0.0,
+            )
+            if widest <= float(glass) + 0.5:
+                return
+            menu.add_command(
+                label=f"Refit Surrogate Glass to Vendor STEP ({widest:.4g} -> {float(glass):.4g} mm)...",
+                command=lambda: self._refit_lens_glass_from_context(),
+            )
+        except Exception:
+            return
+
+    def _refit_lens_glass_from_context(self) -> None:
+        """Right-click "Refit Surrogate Glass to Vendor STEP": confirm with both numbers, then
+        shrink the drawn discs onto the vendor's glass (bugs/0819). The prescription -- powers,
+        gaps, the stop -- is untouched; only how wide the glass is DRAWN changes, and with it
+        the vignette the scene shows honestly."""
+        try:
+            from tkinter import messagebox
+
+            glass = self.editor.lens_surrogate_glass_aperture_mm()
+            if not glass:
+                return
+            if not messagebox.askyesno(
+                "Refit surrogate glass",
+                f"The vendor lens STEP measures {float(glass):.4g} mm of glass.\n\n"
+                "Draw the surrogate's discs at that size instead of the barrel?\n"
+                "Powers, gaps and the aperture stop are unchanged -- only the drawn glass, "
+                "so rays that miss it will show the vendor's own vignette.",
+                parent=self._inspector,
+            ):
+                return
+            applied, message = self.editor.refit_lens_surrogate_glass_to_step()
+            if applied and self._inspector is not None:
+                self._inspector._apply_model_change()
+            elif not applied:
+                try:
+                    self.editor.status_var.set(message)
+                except Exception:
+                    pass
+        except Exception as exc:
+            self.editor.append_debug(f"Lens glass refit failed: {exc}")
+            try:
+                self.editor.status_var.set(f"Lens glass refit failed: {exc}")
+            except Exception:
+                pass
 
     def _append_placement_seat_action(self, menu, row_index: int) -> None:
         """bugs/0817: offer to re-record the authored placement -- only on a row that is OFF it.

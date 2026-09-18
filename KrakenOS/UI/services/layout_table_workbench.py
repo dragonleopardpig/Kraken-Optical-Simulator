@@ -1777,6 +1777,122 @@ class LayoutTableWorkbenchMixin:
         # PRESERVED (untouched) so the swapped lens keeps the pose the user aligned it to.
 
 
+    def lens_surrogate_glass_aperture_mm(self) -> "float | None":
+        """bugs/0819: the vendor's MEASURED glass aperture for the scene's imaging-lens STEP.
+
+        The same reader the folder import has used since bugs/0703 -- the visible glass inside
+        the collar, falling back to the barrel and then the transverse extent. None when the
+        scene has no lens STEP or nothing can be measured.
+        """
+        try:
+            from KrakenOS.UI.services import machine_vision_folder_import as mvi
+
+            step_path = self._step_path_for_label("lens")
+            if not step_path:
+                return None
+            for reader in (
+                mvi._step_glass_aperture,
+                mvi._step_barrel_diameter,
+                mvi._step_transverse_extent,
+            ):
+                try:
+                    value = reader(step_path)
+                except Exception:
+                    value = None
+                if value and float(value) > 0.0:
+                    return float(value)
+        except Exception:
+            return None
+        return None
+
+    def refit_lens_surrogate_glass_to_step(
+        self, *, record_history: bool = True, sync_table: bool = True
+    ) -> "tuple[bool, str]":
+        """bugs/0819 (user, flag_20260918_134600: "lens surrogate oversized"): bring the drawn
+        surrogate discs onto the vendor's measured glass.
+
+        bugs/0703 taught the FOLDER IMPORT to size the discs from the glass the STEP actually
+        shows (the PYRITE bodies carry ~22-30 mm of glass inside a 46 mm collar). Scenes built
+        before that -- and the shipped layouts of that vintage, which hard-code 46.0 datum discs
+        against a 30.39 mm glass -- keep the barrel-sized discs for good, because nothing
+        re-derives them. This does, on the scene in hand.
+
+        It only ever SHRINKS, never below the stop: a disc the user narrowed deliberately is
+        theirs, and the aperture row IS the stop, so it is left alone. Returns ``(applied,
+        message)``.
+        """
+        rows = list(getattr(self, "rows", None) or [])
+        front, rear = self._imaging_lens_block_indices(rows)
+        if front is None or rear is None:
+            return False, "this scene has no imaging-lens surrogate block to refit"
+        glass = self.lens_surrogate_glass_aperture_mm()
+        if not glass:
+            return False, "the lens STEP's glass aperture could not be measured on this scene"
+        stop_mm = 0.0
+        for row in rows[front:rear + 1]:
+            if str(getattr(row, "surface", "")).strip().lower() == "aperture":
+                try:
+                    stop_mm = max(stop_mm, float(row.diameter))
+                except (TypeError, ValueError):
+                    pass
+        target = max(float(glass), float(stop_mm))
+        changes: list[tuple[int, float, float]] = []
+        for index in range(front, rear + 1):
+            row = rows[index]
+            if str(getattr(row, "surface", "")).strip().lower() == "aperture":
+                continue   # the stop is the stop -- never resized to the glass
+            try:
+                current = float(row.diameter)
+            except (TypeError, ValueError):
+                continue
+            if current > target + 1e-6:
+                changes.append((index, current, target))
+        if not changes:
+            return False, (
+                f"the surrogate already draws within the vendor glass "
+                f"({target:.4g} mm); nothing to refit"
+            )
+        history_started = False
+        if (
+            bool(record_history)
+            and "_history_restoring" in self.__dict__
+            and "_history_pending_state" in self.__dict__
+        ):
+            try:
+                self._begin_history_capture()
+                history_started = True
+            except Exception:
+                history_started = False
+        for index, _before, after in changes:
+            rows[index].diameter = float(after)
+        if bool(sync_table) and "table" in self.__dict__:
+            # bugs/0815: the writer re-reads the TABLE, so the edit has to reach it
+            try:
+                self._sync_table()
+                self._select_table_row(front)
+            except Exception:
+                pass
+        if history_started:
+            self._commit_history_capture()
+        widest = max(before for _i, before, _a in changes)
+        message = (
+            f"Surrogate glass refitted to the vendor STEP: {len(changes)} row(s) "
+            f"{widest:.4g} -> {target:.4g} mm"
+            + (f" (never below the {stop_mm:.4g} mm stop)" if stop_mm else "")
+        )
+        try:
+            self.append_debug(
+                "LENS GLASS refit: "
+                + "; ".join(f"S{i} {b:.4g}->{a:.4g}" for i, b, a in changes)
+            )
+        except Exception:
+            pass
+        try:
+            self.status_var.set(message)
+        except Exception:
+            pass
+        return True, message
+
     def _apply_swapped_lens_aperture(self, settings) -> str:
         """bugs/0796: a swap ADOPTS the incoming lens's aperture declaration.
 
