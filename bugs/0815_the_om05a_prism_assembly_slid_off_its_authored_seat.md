@@ -85,6 +85,39 @@ it. Rendered both ways (`scratchpad/om05a/before_left.png`, `after_left.png`).
 bugs/0776's scene-declared ruler for the strip-position law, a property of this bench, and both files
 are the same bench; it adds a check and moves nothing.
 
+## Where both numbers came from (user: "the 3.563 gap was introduced after studying the production stp?")
+
+Yes -- and both offsets in this scene have a documented origin.
+
+**3.563 mm is bugs/0760**, measured on `attachment/om05a_26_1_r03_2s_lr_asm.stp` itself: of its 12
+solids exactly one matches a 50 mm RA-mirror envelope, and the nearest part above it stands
+**7.596 mm** away, where both scenes had seated it at 4.033 mm. The fix wrote
+`row 7 'RA mirror 1 (50 mm)' desp_y +52.8000 -> +56.3630` in BOTH files, plus the downstream group,
+and RA mirror 2 explicitly because it is absolutely seated -- its 5.039 mm is 3.563 x sqrt(2), the
+displacement of a beam folded by a 45 deg mirror moved 3.563 mm. |m| agreed to seven figures before
+and after. So the LIVE poses are the vendor-true seats and the `center_world` snapshots are what
+never caught up: 0760 saw the audit go red on row 7 and recorded it as "the intended edit".
+
+**8.820 mm is bugs/0769**, which gave this scene the real `sensor standoff` row the 80 mm bench
+already had:
+
+```
+RA mirror 2 (40 mm)  45.13  ->  36.31  +  sensor standoff 8.82      (sum preserved: 45.13)
+```
+
+The sum is preserved at the SENSOR, and the note says "nothing moves" -- true of everything that
+rides the chain to the end. Rows 16-22 do not: they are free-placed and sit BETWEEN the row that
+lost 8.82 mm and the row that gained it, so their station -- and their world z -- dropped by exactly
+8.82 mm. bugs/0756 made the same split on `om05a_folded_80mm.py` and saw it coming: "Rows 17-23
+(arm B) sit between them and would have slid by -8.82 mm (bugs/0748); their `desp_z` is corrected by
+the same amount. The bugs/0750 audit reports no promoted row moved." That correction is what 0769
+did not carry over, and re-applying it is this fix.
+
+Production MOTOR 1 is safe by construction: it writes the seat as a `desp_x`, the standoff as a
+thickness AFTER the B rows, and its filter carry as a sum-preserving PAIR before them, so the
+station at row 16 never changes. The gap was in a scene surgery step, not in the app -- which is
+exactly why nothing announced it.
+
 ## Still open -- the two big RA mirrors' authored snapshot is stale
 
 Rows 7 and 15 keep their 3.563 mm gap, and phase 505's A8b now reports the same 3.563 mm on the
@@ -95,8 +128,22 @@ live pose (56.363) for RA mirror 1 and images through it, and this scene now del
 rays with it. `StepOverlayPromotion.center_world` is only ever written at promotion time, so a row
 seated after promotion keeps a snapshot that nothing refreshes -- and every consumer anchored on it
 (the authored cover strips, the 0750 audit) stays 3.563 mm behind. Moving vendor hardware to satisfy
-a snapshot is exactly what [[vendor hardware is immutable]] forbids; the missing piece is a
-user-invoked "pin the current placement as authored". That is the next item, not this fix.
+a snapshot is exactly what [[vendor hardware is immutable]] forbids: bugs/0760 put that mirror
+where the production assembly says it goes.
+
+Two pieces are missing, and the origin section above says which matters more:
+
+* **nothing announced the slide.** 0769's edit moved seven promoted rows off their authored
+  placement and said "nothing moves"; the scene then traced 6 rays of 1103 for weeks. The 0750
+  audit's DELTA form (`compare_drifts`, silent by construction on an unmoved scene and on a stale
+  snapshot) exists for exactly this and is wired into guards only. Run it across
+  `_apply_model_change()` and any edit that slides a pinned row has to say so in the 3D scene --
+  the [[no silent solve failure]] rule, applied to placement.
+* **a seat that moves on purpose has no way to be re-recorded.** `StepOverlayPromotion.center_world`
+  is only ever written at promotion time, so 0760's deliberate move left a snapshot nothing can
+  refresh, and every consumer anchored on it (the authored cover strips, the audit, phase 505's
+  A8b) stays 3.563 mm behind. A user-invoked "pin the current placement as authored" closes it;
+  never automatic.
 
 ## Guards
 
