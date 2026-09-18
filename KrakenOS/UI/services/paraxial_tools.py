@@ -1542,6 +1542,23 @@ class ParaxialToolsMixin:
         index = int(near_gap_row)
         remaining = float(delta)
         floor = max(int(gap_start), 0)
+        changes: list[tuple[int, float]] = []
+
+        def _carry() -> None:
+            # bugs/0813: a free-placed trailing mirror is pinned along global +Z, so a gap delta on
+            # a leg AFTER the first fold walks the SENSOR along the reflected leg while the mirror
+            # stays put -- the sensor leaves the beam and every ray misses. The folded solve carries
+            # such followers back onto the beam (bugs/0236/0244); this spreader must too, since the
+            # best-focus snap reaches the near leg only through here.
+            if not changes:
+                return
+            try:
+                from KrakenOS.UI.nonseq_output_ports import carry_free_placed_followers_after_fold
+
+                carry_free_placed_followers_after_fold(rows, list(changes))
+            except Exception:
+                pass
+
         while index >= floor and 0 <= index < len(rows):
             # bugs/0581: never book the delta in a STATION-NEUTRAL row (the glued BS,
             # thickness pinned at 0 by bugs/0435). A write there survives only until the next
@@ -1553,10 +1570,14 @@ class ParaxialToolsMixin:
             current = float(getattr(rows[index], "thickness", 0.0) or 0.0)
             applied = max(current + remaining, 0.0)
             rows[index].thickness = applied
+            if abs(applied - current) > 0.0:
+                changes.append((index, applied - current))
             remaining -= applied - current
             if abs(remaining) <= 1e-9:
+                _carry()
                 return True
             index -= 1
+        _carry()
         return abs(remaining) <= 1e-9
 
     def _apply_frozen_image_split(

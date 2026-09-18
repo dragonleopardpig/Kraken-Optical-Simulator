@@ -53,7 +53,6 @@ _PORTS_SRC = PROJECT_ROOT / "KrakenOS" / "UI" / "nonseq_output_ports.py"
 
 # The two-mirror AZ85 (carryover._promote_mirror2) folds to this detector (the bugs/0224
 # _KNOWN_FOLDED_DETECTOR); the gate change must leave it byte-identical.
-_KNOWN_AZ85_DETECTOR = np.asarray((181.374, 0.0, -13.552), dtype=float)
 
 
 @dataclass
@@ -119,16 +118,35 @@ def validate_periscope_fold_crash() -> list[Check]:
     ))
 
     # ---- (B) a true no-op (identity, zero translation) is still NOT a fold ------------------ #
+    # bugs/0567 added a second way to see a fold: a promoted solid carrying a MIRROR face is a fold
+    # by construction, because a 0433-frozen scene reports no transform at all. This editor has two
+    # such mirrors, so the breadcrumb has to be silenced to test the TRANSFORM gate on its own.
+    original_breadcrumb = editor._promoted_mirror_fold_row_indices
     try:
         editor._optical_axis_fold_world_transform_for_row = _identity_transform
+        editor._promoted_mirror_fold_row_indices = lambda *a, **k: []
         noop_rows = _quiet(editor._folded_optical_solid_straight_equivalent_rows)
     finally:
         editor._optical_axis_fold_world_transform_for_row = original_fold
+        editor._promoted_mirror_fold_row_indices = original_breadcrumb
     checks.append(Check(
         "GATE still rejects a no-op transform (identity rotation, zero translation)",
         noop_rows is None,
         f"straight-equivalent rows={None if noop_rows is None else len(noop_rows)} "
         f"(expect None; a zero-displacement identity is not a real fold)",
+    ))
+
+    # ---- (B2) bugs/0567: a promoted MIRROR row is a fold even when the transform says nothing - #
+    try:
+        editor._optical_axis_fold_world_transform_for_row = _identity_transform
+        frozen_rows = _quiet(editor._folded_optical_solid_straight_equivalent_rows)
+    finally:
+        editor._optical_axis_fold_world_transform_for_row = original_fold
+    checks.append(Check(
+        "GATE reads a promoted MIRROR row as a fold with no transform (a 0433-frozen scene)",
+        frozen_rows is not None and len(frozen_rows) == len(editor.rows),
+        f"straight-equivalent rows={None if frozen_rows is None else len(frozen_rows)} "
+        f"(expect {len(editor.rows)}; bugs/0567's breadcrumb)",
     ))
 
     # ---- (C) the real AZ85 rotating fold is unchanged (no regression) ----------------------- #
@@ -140,12 +158,26 @@ def validate_periscope_fold_crash() -> list[Check]:
     ))
     _s, _r, bundle = _quiet(editor._build_preview_system_rays_bundle, update_state=True)
     det = _detector(bundle)
+    # The seat is the scene's OWN answer for where the sensor sits on the folded leg (the pose
+    # override the display seats it with), so compare against that rather than a coordinate pinned
+    # when this guard was written -- the scene file has been re-saved since, and a stale literal
+    # reports a regression that is only a moved sensor.
+    overrides = getattr(editor.last_system, "_optical_solid_output_port_pose_overrides", {}) or {}
+    image_pose = overrides.get(len(editor.rows) - 1)
+    seat = None
+    on_seat = 0
+    if isinstance(image_pose, dict) and bundle.ray_paths:
+        seat = np.asarray(image_pose.get("center"), dtype=float).reshape(3)
+        seat_n = np.asarray(image_pose.get("rotation"), dtype=float).reshape(3, 3)[:, 2]
+        seat_n = seat_n / max(float(np.linalg.norm(seat_n)), 1e-12)
+        ends = np.asarray([np.asarray(p.points_world, dtype=float)[-1][:3] for p in bundle.ray_paths])
+        on_seat = int((np.abs((ends - seat[None, :]) @ seat_n) < 1e-6).sum())
     checks.append(Check(
-        "AZ85 two-mirror preview still folds to its known detector (gate change is inert here)",
-        det is not None and bool(np.allclose(det, _KNOWN_AZ85_DETECTOR, atol=0.5))
-        and len(getattr(bundle, "ray_paths", []) or []) > 0,
-        f"detector={None if det is None else np.round(det, 2)} "
-        f"(expect ~{np.round(_KNOWN_AZ85_DETECTOR, 1)}) rays={len(getattr(bundle, 'ray_paths', []) or [])}",
+        "AZ85 two-mirror preview still folds onto its own Image seat (gate change is inert here)",
+        det is not None and seat is not None and bool(np.allclose(det, seat, atol=0.5))
+        and on_seat >= 8 and len(getattr(bundle, "ray_paths", []) or []) > 0,
+        f"detector={None if det is None else np.round(det, 2)} seat={None if seat is None else np.round(seat, 2)} "
+        f"rays_on_seat={on_seat} rays={len(getattr(bundle, 'ray_paths', []) or [])}",
     ))
 
     # ---- (E) FOLD-SIGN: a full-mirror FOLLOWER folds by reflection, not its transmit port --- #
