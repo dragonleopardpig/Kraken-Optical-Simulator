@@ -444,6 +444,13 @@ def _check_real_vendor_scene(failures: list[str], notes: list[str]) -> None:
         editor = _snapshot_editor(rows, settings)
         editor.current_layout_file = path
         editor._normalize_special_rows()
+        # The scene has since been re-saved WITH a 55 x 74 mm coaxial side LED of its own (this
+        # guard's own note records it as scene_sources: []). That source floods the sensor, so the
+        # overlay legitimately draws the DIRECT density heatmap instead of the projection under test
+        # here (_compute_source_illumination_overlay_spec prefers density when illumination reaches
+        # the sensor). Start from the scene's optics with no source, so the LED added below is the
+        # only one -- which is the case this check is about.
+        editor.layout_scene_source_specs = []
         editor.add_illumination_led_source(record_history=False)
         system = _build_runtime_system(path, editor.rows)
         wavelength = editor._current_wavelength()
@@ -470,9 +477,13 @@ def _check_real_vendor_scene(failures: list[str], notes: list[str]) -> None:
         editor, system, object_index, ray_records=records,
         object_plane_z=editor._object_surface_plane_z(object_index), object_radius=radius,
     )
-    if samples["relayed_count"] != 0 or samples["direct_count"] < 100:
+    # The added LED seats ON the object plane, so the samples must be dominated by DIRECT light. The
+    # scene also carries a promoted beam splitter above the object, which genuinely returns a little
+    # of that light to the object plane (measured: 16 relayed against 173 direct), so a small relayed
+    # tail is physics, not the relay model taking over.
+    if samples["direct_count"] < 100 or samples["relayed_count"] > 0.2 * samples["direct_count"]:
         failures.append(
-            f"REAL: expected DIRECT-only samples for an object-plane LED "
+            f"REAL: expected DIRECT-dominated samples for an object-plane LED "
             f"(direct={samples['direct_count']} relayed={samples['relayed_count']})"
         )
     footprint_half = float(np.max(np.abs(samples["x"]))) if samples["x"].size else 0.0

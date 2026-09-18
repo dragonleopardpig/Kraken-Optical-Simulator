@@ -204,6 +204,11 @@ def _load_vendor_editor(path):
     editor = _snapshot_editor(rows, settings)
     editor.current_layout_file = path
     editor._normalize_special_rows()
+    # The scene has since been re-saved WITH a 55 x 74 mm coaxial side LED of its own. It floods the
+    # sensor, so both the bare and the module-seeded case would draw the same full-sensor density
+    # heatmap and the comparison below would compare nothing. Start from the optics with no source:
+    # the emitter this check adds is the one under test.
+    editor.layout_scene_source_specs = []
     return editor
 
 

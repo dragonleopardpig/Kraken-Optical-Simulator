@@ -152,8 +152,29 @@ def _check_binding(failures: list[str], notes: list[str]) -> None:
         if abs(float(np.linalg.norm(direction)) - 1.0) > 1e-6:
             failures.append("BINDING: direction is not a unit vector")
         body = np.asarray(app._surface_reference_world_point(row_index), dtype=float).reshape(-1)[:3]
-        if float(np.dot(direction, centroid - body)) <= 0.0:
-            failures.append("BINDING: direction must point OUTWARD (away from the solid body centre)")
+        # bugs/0269 made the DEFAULT aim INWARD -- a face-bound emitter lights INTO the solid it sits
+        # on (the coupling case: light into a beam-splitter cube so it folds down to the FOV).
+        # 'outward' is still available and floods the scene, so check that the two are opposites.
+        if float(np.dot(direction, centroid - body)) >= 0.0:
+            failures.append("BINDING: the default aim must point INWARD, into the solid (bugs/0269)")
+        outward_id = app.create_illumination_source_at_face(row_index, face_id=face_id, aim="outward")
+        outward_spec = next(
+            (s for s in app.layout_scene_source_specs if str(s.get("source_id", "")) == str(outward_id)),
+            None,
+        )
+        if outward_spec is None:
+            failures.append("BINDING: aim='outward' minted no source")
+        else:
+            outward_dir = np.array(
+                [outward_spec["source_l"], outward_spec["source_m"], outward_spec["source_n"]], dtype=float
+            )
+            if float(np.dot(outward_dir, centroid - body)) <= 0.0:
+                failures.append("BINDING: aim='outward' must point AWAY from the solid body centre")
+            if not np.allclose(outward_dir, -direction, atol=1e-6):
+                failures.append(
+                    f"BINDING: the two aims must be opposites (inward {direction.tolist()}, "
+                    f"outward {outward_dir.tolist()})"
+                )
 
         # Re-marking the same face updates in place; it must not pile up a duplicate.
         app.create_illumination_source_at_face(row_index, face_id=face_id)

@@ -174,6 +174,11 @@ def _check_real_scene(notes: list[str]) -> bool:
         editor = _snapshot_editor(rows, settings)
         editor.current_layout_file = path
         editor._normalize_special_rows()
+        # The scene has since been re-saved WITH a 55 x 74 mm coaxial side LED of its own, and a
+        # physical source REPLACES the imaging launch -- so the "source-absent" half below would be
+        # false and the transmit arm would never reach the Image. Start from the optics with no
+        # source: the flood this check is about is the one it adds a few lines down.
+        editor.layout_scene_source_specs = []
     except Exception as exc:  # pragma: no cover - defensive
         notes.append(f"real-scene load raised ({exc!r}); skipped")
         return True
@@ -218,14 +223,29 @@ def _check_real_scene(notes: list[str]) -> bool:
     else:
         notes.append(f"real scene: {len(phantoms)} illumination-flood arm(s) draw-suppressed (kept as hard-stops)")
 
-    if not reached:
-        notes.append("real scene: the transmit arm that reaches the Image is missing")
+    # bugs/0680: an ordinary physical source REPLACES the imaging launch ("the emitter starts
+    # illuminating the moment it is added"), so once the flood is added there are no imaging rays and
+    # no arm can be stamped reached_image. What must survive is the detector ON THE SENSOR: find it by
+    # position (the Image row's plane, on axis) and require that it is not suppressed.
+    image_z = float(sum(float(r.thickness) for r in editor.rows[:-1]))
+    on_sensor = [
+        t for t in targets
+        if bool(getattr(t, "is_detector", False))
+        and abs(float(np.asarray(t.center_world).reshape(-1)[2]) - image_z) <= 0.5
+        and float(np.hypot(*np.asarray(t.center_world).reshape(-1)[:2])) <= 0.5
+    ]
+    drawn_on_sensor = [t for t in on_sensor if not (getattr(t, "metadata", {}) or {}).get("draw_suppressed")]
+    if not on_sensor:
+        notes.append(f"real scene: no detector at the sensor plane z={image_z:.1f} after the flood")
         ok = False
-    elif any((t.metadata or {}).get("draw_suppressed") for t in reached):
-        notes.append("real scene: the reached-image detector was wrongly suppressed (the real sensor vanished)")
+    elif not drawn_on_sensor:
+        notes.append("real scene: the sensor's own detector was wrongly suppressed (the real sensor vanished)")
         ok = False
     else:
-        notes.append(f"real scene: reached-image detector kept + drawn ({len(reached)})")
+        notes.append(
+            f"real scene: the sensor detector at z={image_z:.1f} is kept + drawn ({len(drawn_on_sensor)}); "
+            f"reached-image arms {len(reached)} (0 once the flood replaces the imaging launch, bugs/0680)"
+        )
 
     anchor = editor._source_illumination_anchor_target(bundle)
     if anchor is None:
@@ -233,8 +253,8 @@ def _check_real_scene(notes: list[str]) -> bool:
         ok = False
     else:
         az = float(np.asarray(anchor.center_world).reshape(-1)[2])
-        if str((getattr(anchor, "metadata", {}) or {}).get("focus_source")) != "reached_image" or az < 500.0:
-            notes.append(f"real scene: anchor is not the on-sensor reached-image detector (z={az:.1f})")
+        if abs(az - image_z) > 0.5:
+            notes.append(f"real scene: the heatmap anchor is not the sensor (z={az:.1f}, sensor {image_z:.1f})")
             ok = False
         else:
             notes.append(f"real scene: heatmap anchor stays the on-sensor detector (z={az:.1f})")

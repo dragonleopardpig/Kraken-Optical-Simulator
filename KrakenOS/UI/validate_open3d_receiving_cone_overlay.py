@@ -27,24 +27,34 @@ def run_checks() -> tuple[bool, list[str]]:
     if not spec:
         failures.append("cone builder returned None for a valid MV-150-like geometry")
     else:
+        # bugs/0419: the loft is SAMPLED along the axis (axial_rings = axial_segments + 1) so a folded
+        # display can bend each ring onto its leg; it was two rings when this guard was written.
         pts = np.asarray(spec["points"], dtype=float)
-        n = pts.shape[0] // 2
-        if pts.shape != (2 * n, 3) or n < 8:
-            failures.append(f"cone points malformed: {pts.shape}")
+        rings = int(spec.get("axial_rings", 0))
+        n = pts.shape[0] // rings if rings else 0
+        if rings < 2 or n < 8 or pts.shape != (rings * n, 3):
+            failures.append(f"cone points malformed: {pts.shape} over {rings} ring(s)")
         else:
-            if not np.allclose(pts[:n, 2], 0.0) or not np.allclose(pts[n:, 2], 180.0):
-                failures.append("cone rings are not seated on the Object / pupil planes")
-            radii = np.linalg.norm(pts[n:, :2], axis=1)
+            first, last = pts[:n], pts[-n:]
+            if not np.allclose(first[:, 2], 0.0) or not np.allclose(last[:, 2], 180.0):
+                failures.append("cone end rings are not seated on the Object / pupil planes")
+            ring_z = np.array([pts[k * n:(k + 1) * n, 2].mean() for k in range(rings)])
+            if not np.all(np.diff(ring_z) > 0.0) or not np.allclose(
+                ring_z, np.linspace(0.0, 180.0, rings), atol=1e-9
+            ):
+                failures.append(f"the intermediate rings do not step evenly along the axis ({ring_z[:3]}...)")
+            radii = np.linalg.norm(last[:, :2], axis=1)
             if not np.allclose(radii, 20.0, atol=1e-9):
                 failures.append("pupil ring radius does not match the entrance pupil")
-            fx = np.max(np.abs(pts[:n, 0]))
-            fy = np.max(np.abs(pts[:n, 1]))
+            fx = np.max(np.abs(first[:, 0]))
+            fy = np.max(np.abs(first[:, 1]))
             if abs(fx - 19.5) > 1e-9 or abs(fy - 19.5) > 1e-9:
                 failures.append("FOV ring does not span the imaged FOV half-extents")
         if float(spec["opacity"]) > 0.3:
             failures.append("the cone must stay faint (opacity <= 0.3)")
         faces = np.asarray(spec["faces"], dtype=np.int64)
-        if faces.size != 2 * n * 4:
+        # two triangles per quad, per segment, per slab; VTK cells are [3, a, b, c]
+        if rings >= 2 and faces.size != 2 * (rings - 1) * n * 4:
             failures.append(f"cone side skin face count wrong: {faces.size}")
     if build_receiving_cone_overlay(0.0, 19.5, 0.0, 180.0, 20.0) is not None:
         failures.append("degenerate FOV must return None")

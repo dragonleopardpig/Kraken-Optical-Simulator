@@ -198,7 +198,14 @@ def _build_coupling_fixture(ray_count: int):
     system = _build_system_from_specs(surfaces)
     rays = Kos.raykeeper(system)
     max_radius = max((max(r.diameter / 2.0, 0.5) for r in rows), default=1.0)
-    editor._trace_preview_rays(system, rays, float(settings["wavelength"]), max_radius, allow_full_pupil=False)
+    # bugs/0590: the interactive preview caps a source at 200 rays; a caller that MEASURES opts out
+    # with full_count_sources. Without it this fixture's 800-ray LED arrives as ~200, the
+    # source -> object irradiance map is a handful of scattered hits, and the fold/perp signal this
+    # guard reads is noise.
+    editor._trace_preview_rays(
+        system, rays, float(settings["wavelength"]), max_radius,
+        allow_full_pupil=False, full_count_sources=True,
+    )
     bundle = build_scene_bundle(
         rows=rows, system=system, rays=rays, sources=sources,
         field_count=len(sources),

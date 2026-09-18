@@ -133,6 +133,11 @@ def _check_real_mv150(failures: list[str], notes: list[str]) -> None:
     editor.tk = object()
     editor.current_layout_file = str(_MV150)
     editor._normalize_special_rows()
+    # The scene has since been re-saved WITH a 55 x 74 mm coaxial side LED. A physical source
+    # REPLACES the imaging launch (bugs/0680), so the trace would carry no imaging rays and no arm
+    # could reach the Image -- and the analysis overlays below are about the IMAGING chain. Drive
+    # the optics with no source, which is the state this check was written against.
+    editor.layout_scene_source_specs = []
     system, _rays, bundle = editor._build_preview_system_rays_bundle(
         sampling_mode="world_envelope",
         update_state=True,

@@ -143,6 +143,35 @@ def _drawn_detector_rows(bundle):
     return rows
 
 
+def _drawn_detectors_on_image_plane(bundle, image_z: float, tol: float = 0.5):
+    """Detector targets that DRAW at the scene's Image plane, whatever row they are recorded on.
+
+    The vendor scene has since been re-saved with its beam splitter promoted, so the imaging chain
+    branches and the real sensor arrives as the transmit ARM's detector (a synthetic row >= 100000)
+    sitting exactly on the Image row's plane, not as a sequential row target. That is the real
+    detector either way -- identify it by WHERE it is.
+    """
+    import numpy as _np
+
+    found = []
+    for t in getattr(bundle, "targets", []) or []:
+        if not bool(getattr(t, "is_detector", False)):
+            continue
+        if (getattr(t, "metadata", None) or {}).get("draw_suppressed"):
+            continue
+        try:
+            center = _np.asarray(getattr(t, "center_world"), dtype=float).reshape(3)
+        except Exception:
+            continue
+        if abs(float(center[2]) - float(image_z)) <= tol and float(_np.hypot(center[0], center[1])) <= tol:
+            found.append(t)
+    return found
+
+
+def _image_plane_z(editor) -> float:
+    return float(sum(float(r.thickness) for r in editor.rows[:-1]))
+
+
 def _check_real_vendor_scene(failures: list[str], notes: list[str]) -> None:
     from pathlib import Path
 
@@ -165,9 +194,14 @@ def _check_real_vendor_scene(failures: list[str], notes: list[str]) -> None:
         failures.append(f"REAL: driving the vendor scene raised {exc!r}")
         return
 
+    image_z = _image_plane_z(base)
     base_rows = _drawn_detector_rows(base_bundle)
-    if not base_rows:
-        failures.append("REAL: the no-LED baseline has no drawn detector -- fixture changed, check the scene")
+    base_on_image = _drawn_detectors_on_image_plane(base_bundle, image_z)
+    if not base_rows and not base_on_image:
+        failures.append(
+            f"REAL: the no-LED baseline draws no detector at the Image plane z={image_z:.2f} "
+            "-- fixture changed, check the scene"
+        )
         return
 
     led_targets = list(getattr(led_bundle, "targets", []) or [])
@@ -180,13 +214,20 @@ def _check_real_vendor_scene(failures: list[str], notes: list[str]) -> None:
         notes.append(f"REAL: {len(drawn_phantoms)} branch detector(s) draw and legitimately supersede -- not a flood phantom")
 
     led_rows = _drawn_detector_rows(led_bundle)
-    if not led_rows:
+    led_on_image = _drawn_detectors_on_image_plane(led_bundle, image_z)
+    if not led_rows and not led_on_image:
         failures.append("REAL: Add LED DROPPED the real detector (the flag) -- 0291 regressed")
 
     # The surviving detector must have a surface curve + an 'Image' label (drawn by both views).
     curve_rows = {int(getattr(c, "row_index", -1)) for c in (getattr(led_bundle, "surface_curves", []) or [])}
     if led_rows and not (led_rows & curve_rows):
         failures.append(f"REAL: the surviving detector row(s) {sorted(led_rows)} have no surface curve to draw")
+    if not led_rows and led_on_image:
+        image_row = len(led.rows) - 1
+        if image_row not in curve_rows:
+            failures.append(
+                f"REAL: the Image row {image_row} has no surface curve to draw under the arm detector"
+            )
     labels = [str(getattr(l, "text", getattr(l, "label", ""))) for l in (getattr(led_bundle, "labels", []) or [])]
     if "Image" not in labels:
         failures.append(f"REAL: the 'Image' detector label is gone after Add LED ({labels})")
@@ -197,6 +238,7 @@ def _check_real_vendor_scene(failures: list[str], notes: list[str]) -> None:
 
     notes.append(
         f"real vendor scene: detector rows {sorted(base_rows)} survive Add LED as {sorted(led_rows)}; "
+        f"{len(base_on_image)} -> {len(led_on_image)} drawn detector(s) on the Image plane z={image_z:.2f}; "
         f"{len(phantoms)} phantom flood branch(es) stay suppressed; object + 'Image' label intact"
     )
 

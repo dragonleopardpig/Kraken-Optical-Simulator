@@ -125,3 +125,37 @@ The checks now:
   lens-side gap (row 2), since object -> mirror is fixed hardware.
 
 Phases 181, 183, 185, 186, 189, 194, 202, 203, 213, 214, 261 and 276 all pass.
+
+## Fourth batch: the illumination family, where the SCENE moved (and one starved measurement)
+
+Eight illumination phases drive `attachment/machine_vision_150mm_test.py`. That scene has been
+re-saved since these guards were written -- it now carries a **55 x 74 mm coaxial side LED**, where the
+guards' own notes record it as `scene_sources: []`. Two production rules then apply and change what the
+checks see:
+
+* a **physical scene source REPLACES the imaging launch** (bugs/0680), so a scene with its own LED
+  traces the flood, not the imaging chain -- no arm can reach the Image;
+* the overlay prefers the **DIRECT density heatmap** whenever illumination reaches the sensor
+  (bugs/0286), instead of the projection that three of these checks are about.
+
+| phase | what it needed | fix |
+|---|---|---|
+| 251, 253, 254, 305 | the scene's optics with no source of their own | start from `layout_scene_source_specs = []`, so the source each check adds is the one under test |
+| 253 | zero relayed samples for an object-plane LED | the scene's promoted beam splitter genuinely returns a little light (16 relayed against 173 direct): require DIRECT-dominated, not DIRECT-only |
+| 251 | an arm stamped `reached_image` after the flood | there is none once the flood replaces the imaging launch: find the sensor's detector BY POSITION (the Image plane) and require it drawn and anchoring the heatmap |
+| 255 | a drawn detector on a sequential row | the BS scene delivers the sensor as the transmit ARM's detector (row >= 100000) sitting on the Image plane: identify it by position |
+| 233 | the face-bound emitter aims OUTWARD | bugs/0269 made the default aim INWARD (light into the solid, the BS coupling case); the check now asserts inward AND that `aim="outward"` is its opposite |
+| 307 | a 2-ring cone loft | bugs/0419 samples the loft along the axis (41 rings) so a folded display can crease it; the check reads `axial_rings`, the end rings and the even spacing |
+
+**241 was a starved measurement, not drift.** Its fixture traces an 800-ray LED through
+`_trace_preview_rays` without `full_count_sources`, so bugs/0590's interactive 200-ray cap trimmed it:
+the source -> object irradiance map came out as ~294 scattered hits over +-50 mm and the coupling had no
+signal to act on (fold 0.375 -> 0.375). With the opt-out the same fixture gives 1242 irradiance hits and
+the coupling deepens the fold dip **0.616 -> 0.268** while the perpendicular axis stays uniform at
+**1.000** -- exactly what bugs/0274 built it to do.
+
+Measured after the fixes: 253's LED footprint reads half **4.99 mm** (the 10 mm LED), imaged to a patch
+lighting **5%** of the 23 mm sensor with a dark rim, where the old 0286 rescale lit 33%; 254's
+module-seeded emitter lights **100%** against the bare panel's 5%.
+
+Phases 233, 241, 251, 253, 254, 255, 305 and 307 pass.
