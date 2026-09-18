@@ -62,6 +62,31 @@ right.
   bugs/0819 sweep decisions stand, including leaving `machine_vision_AZ85_RA_Mirror` (95 guards) and
   the two vignetting fixtures alone.
 
+## The sweep bugs/0819 had to stop, finished
+
+With the element measured, every layout 0819 held back was re-measured. The three ray losses that
+had forced the hold-backs were artifacts of the fragment: with the real element there is nothing to
+lose.
+
+| layout | glass now (was) | widest disc | refit | rays reaching |
+|---|---|---|---|---|
+| `AZ85_RA_Mirror` | 28.06 (14.16) | 29.00 | **29.00 -> 28.0585** | 325/729 -> 325/729 |
+| `150mm_datasheet_1x` / `_0_5x` | 26.62 (18.60) | 35.00 | **35.00 -> 26.6243** | 147/189 -> 147/189 |
+| `150mm_measured` | 26.62 (18.60) | 35.00 | **35.00 -> 26.6243** | 141/189 -> 141/189 |
+| `els_85_4_5v16k` | 28.06 (14.16) | 26.44 | no-op -- already inside | -- |
+| `67304_0.75X_telecentric` | 29.64 (14.89) | 14.89 | no-op -- narrower than its glass | -- |
+
+`machine_vision_AZ85_RA_Mirror` is read by 95 guards, so it was verified across the WHOLE suite
+rather than a range: phases 0-599 with the app rebuilt per chunk. 0-290 clean apart from phase 52,
+which the 2026-08-30 baseline already records as `fail` and which still fails with the bugs/0816 and
+bugs/0818 painter hooks disabled; 291-479 all 189; 480-545 clean once bugs/0668's B2 and the
+encoding slip phase 539 caught were fixed, with **phase 505 green for the first time** after the
+bugs/0817 re-pin; 546-599 all 54.
+
+The 150 mm trio was verified separately against the 21 guards that read it, including
+`validate_open3d_clipped_vignetting_parity`, which still reports `total=45 hit=27`: 26.62 mm leaves
+the vignetting that the old sub-pupil squeeze destroyed.
+
 ## Guard
 
 `validate_open3d_0820_a_lens_surface_is_an_element` (penta phase 599), display-free:

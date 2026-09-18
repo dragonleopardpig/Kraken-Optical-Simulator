@@ -485,7 +485,7 @@ def build_system():
     s3.Grating_D = 0.0
     s3.Grating_Angle = 0.0
     s3.Thickness = 17.638524767
-    s3.Diameter = 29.0
+    s3.Diameter = 28.058481284259557
     s3.InDiameter = 0.0
     s3.Drawing = 1.0
     s3.TiltX = 0.0
@@ -496,7 +496,7 @@ def build_system():
     s3.DespZ = 0.0
     s3.AxisMove = 0.0
     s3.Glass = 'AIR'
-    surfaces.append({'surface': 'Standard', 'element': '', 'name': 'Front Optical Vertex Datum', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 17.638524767, 'diameter': 29.0, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+    surfaces.append({'surface': 'Standard', 'element': '', 'name': 'Front Optical Vertex Datum', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 17.638524767, 'diameter': 28.058481284259557, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
 
     s4 = Kos.surf()
     s4.Name = 'Blackbox Group 1'
@@ -507,7 +507,7 @@ def build_system():
     s4.Grating_D = 0.0
     s4.Grating_Angle = 0.0
     s4.Thickness = 9.86152751788
-    s4.Diameter = 29.0
+    s4.Diameter = 28.058481284259557
     s4.InDiameter = 0.0
     s4.Drawing = 1.0
     s4.TiltX = 0.0
@@ -520,7 +520,7 @@ def build_system():
     s4.Glass = 'AIR'
     s4.Thin_Lens = 159.488524767
     s4.Rc = 0.0
-    surfaces.append({'surface': 'Thin Lens', 'element': 'Blackbox Group 1', 'name': 'Blackbox Group 1', 'rc': 159.488524767, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 9.86152751788, 'diameter': 29.0, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+    surfaces.append({'surface': 'Thin Lens', 'element': 'Blackbox Group 1', 'name': 'Blackbox Group 1', 'rc': 159.488524767, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 9.86152751788, 'diameter': 28.058481284259557, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
 
     s5 = Kos.surf()
     s5.Name = 'Aperture Stop F/4.5'

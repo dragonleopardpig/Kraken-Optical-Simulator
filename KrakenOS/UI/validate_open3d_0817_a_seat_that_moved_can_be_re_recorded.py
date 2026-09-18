@@ -75,12 +75,42 @@ def _check_live(ok, skip) -> None:
             return
         index = int(before["row"])
         row = rows[index]
+
+        # bugs/0817 was DONE on this scene on 2026-09-18: both big RA mirrors carry the live
+        # pose now, so the check cannot rely on finding a drifted row -- it would be asserting
+        # that the user has not tidied up yet. Record the outcome, then STAGE a stale snapshot
+        # of its own (the snapshot only, never the geometry) so the command is still exercised
+        # on a real scene.
+        promotion_now = dict((row.advanced or {}).get("StepOverlayPromotion") or {})
+        ok(
+            float(before["drift_mm"]) <= 1e-9
+            and promotion_now.get("center_world_repinned_from") is not None,
+            f"A0: {TARGET} sits on its authored placement and says where it used to sit "
+            f"({float(before['drift_mm']):.6f} mm, from "
+            f"{promotion_now.get('center_world_repinned_from')})",
+        )
+
+        stale = [float(v) for v in before["authored"]]
+        stale[1] -= 3.563                      # the bugs/0760 move, put back on the SNAPSHOT
+        advanced = dict(row.advanced or {})
+        promotion = dict(advanced.get("StepOverlayPromotion") or {})
+        promotion["center_world"] = list(stale)
+        promotion.pop("center_world_repinned_from", None)
+        advanced["StepOverlayPromotion"] = promotion
+        row.advanced = advanced
+        before = _drift_for(list(editor.rows), TARGET)
+
         pose_before = [float(v) for v in before["live"]]
         geom_before = (
             float(row.thickness), float(row.desp_x), float(row.desp_y), float(row.desp_z),
             float(row.tilt_x), float(row.tilt_y), float(row.tilt_z),
         )
         authored_before = [float(v) for v in before["authored"]]
+        ok(
+            abs(float(before["drift_mm"]) - 3.563) < 1e-3,
+            f"A0b: staging the pre-0760 snapshot makes the row read 3.563 mm adrift again "
+            f"({float(before['drift_mm']):.4f})",
+        )
 
         applied, message = editor.pin_row_placement_as_authored(index)
         after = _drift_for(list(editor.rows), TARGET)
