@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="806.4pt" height="316.8pt" viewBox="0 0 806.4 316.8" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <title>Refraction through a parallel plate restores the original direction but leaves a perpendicular lateral displacement.</title>
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:title>Refraction through a parallel plate restores the original direction but leaves a perpendicular lateral displacement.</dc:title>
+    <dc:description>Refraction through a parallel plate restores the original direction but leaves a perpendicular lateral displacement.</dc:description>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.10.8, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 316.8 
+L 806.4 316.8 
+L 806.4 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 353.171609 313.79976 
+L 423.211356 313.79976 
+L 423.211356 13.629417 
+L 353.171609 13.629417 
+z
+" clip-path="url(#p5aaa4cecf4)" style="fill: #dfedf5; stroke: #dfedf5; stroke-linejoin: miter"/>
+   </g>
+   <g id="line2d_1">
+    <path d="M 253.114828 63.657807 
+L 353.171609 163.714588 
+L 423.211356 201.152408 
+L 523.268137 301.209189 
+" clip-path="url(#p5aaa4cecf4)" style="fill: none; stroke: #2563a6; stroke-width: 1.6; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_2">
+    <path d="M 353.171609 163.714588 
+L 478.242586 288.785565 
+" clip-path="url(#p5aaa4cecf4)" style="fill: none; stroke-dasharray: 5.92,2.56; stroke-dashoffset: 0; stroke: #c87916; stroke-width: 1.6"/>
+   </g>
+   <g id="line2d_3">
+    <path d="M 303.143219 163.714588 
+L 453.228391 163.714588 
+" clip-path="url(#p5aaa4cecf4)" style="fill: none; stroke-dasharray: 2,3.3; stroke-dashoffset: 0; stroke: #82909e; stroke-width: 2"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 462.64731 240.588361 
+Q 471.238651 249.179703 478.248854 256.189905 
+" style="fill: none; stroke: #2563a6; stroke-width: 2; stroke-linecap: round"/>
+    <path d="M 476.693219 251.523001 
+L 478.248854 256.189905 
+L 473.581949 254.63427 
+" style="fill: none; stroke: #2563a6; stroke-width: 2; stroke-linecap: round"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 409.51104 214.852724 
+Q 415.060487 209.303277 420.609935 203.753829 
+" style="fill: none; stroke: #087f8c; stroke-width: 1.5; stroke-linecap: round"/>
+    <path d="M 414.177945 213.297089 
+L 409.51104 214.852724 
+L 411.066675 210.18582 
+" style="fill: none; stroke: #087f8c; stroke-width: 1.5; stroke-linecap: round"/>
+    <path d="M 415.94303 205.309464 
+L 420.609935 203.753829 
+L 419.0543 208.420734 
+" style="fill: none; stroke: #087f8c; stroke-width: 1.5; stroke-linecap: round"/>
+   </g>
+   <g id="text_1">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #087f8c" x="415.704259" y="219.241559" transform="rotate(-0 415.704259 219.241559)">a</text>
+   </g>
+   <g id="text_2">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #24384b" x="373.180127" y="56.657807" transform="rotate(-0 373.180127 56.657807)">glass n = 1.5</text>
+   </g>
+   <g id="text_3">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #24384b" x="268.120507" y="66.663486" transform="rotate(-0 268.120507 66.663486)">air</text>
+   </g>
+   <g id="text_4">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #24384b" x="463.23123" y="206.742979" transform="rotate(-0 463.23123 206.742979)">emerging ray</text>
+   </g>
+   <g id="text_5">
+    <!-- $\theta_t$ -->
+    <g style="fill: #24384b" transform="translate(373.182966 173.720267)">
+     <text>
+      <tspan x="0" y="-0.328125" style="font-style: oblique; font-size: 10px; font-family: 'DejaVu Sans'; fill: #24384b">θ</tspan>
+      <tspan x="6.118164" y="1.3125" style="font-style: oblique; font-size: 7px; font-family: 'DejaVu Sans'; fill: #24384b">t</tspan>
+     </text>
+    </g>
+   </g>
+   <g id="text_6">
+    <!-- $\theta_i$ -->
+    <g style="fill: #24384b" transform="translate(320.650317 141.706071)">
+     <text>
+      <tspan x="0" y="-0.328125" style="font-style: oblique; font-size: 10px; font-family: 'DejaVu Sans'; fill: #24384b">θ</tspan>
+      <tspan x="6.118164" y="1.3125" style="font-style: oblique; font-size: 7px; font-family: 'DejaVu Sans'; fill: #24384b">i</tspan>
+     </text>
+    </g>
+   </g>
+   <g id="patch_5">
+    <path d="M 356.286016 93.674842 
+Q 388.190863 93.674842 420.095711 93.674842 
+" style="fill: none; stroke: #087f8c; stroke-linecap: round"/>
+    <path d="M 360.686016 95.874842 
+L 356.286016 93.674842 
+L 360.686016 91.474842 
+" style="fill: none; stroke: #087f8c; stroke-linecap: round"/>
+    <path d="M 415.695711 91.474842 
+L 420.095711 93.674842 
+L 415.695711 95.874842 
+" style="fill: none; stroke: #087f8c; stroke-linecap: round"/>
+   </g>
+   <g id="text_7">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #24384b" x="385.687224" y="86.674842" transform="rotate(-0 385.687224 86.674842)">d</text>
+   </g>
+  </g>
+  <g id="text_8">
+   <text style="font-weight: 700; font-size: 15px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: middle; fill: #193047" x="403.2" y="14.397896" transform="rotate(-0 403.2 14.397896)">Parallel plate: same emerging direction, shifted ray</text>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="p5aaa4cecf4">
+   <rect x="228.100633" y="23.635095" width="350.198734" height="290.164665"/>
+  </clipPath>
+ </defs>
+</svg>

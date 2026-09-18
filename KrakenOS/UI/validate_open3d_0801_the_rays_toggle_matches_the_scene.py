@@ -63,16 +63,28 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
         def set(self, value):
             self._value = bool(value)
 
-    class _Insp:
-        def __init__(self, rays_on):
-            self.show_rays_var = _Var(rays_on)
-
     class _Editor(tdst.ThreeDSceneToolsMixin):
         def __init__(self, deferred):
             self._preview_trace_deferred_until_requested = deferred
 
+    class _Insp:
+        """bugs/0818 moved the rule to the painter and left `_pending_rays_note` delegating to
+        `Kraken3DInspector._sync_show_rays_toggle_to_scene`, so a fake inspector that carries
+        only the toggle no longer models the thing under test -- it would make this check pass
+        (or, as it did, fail) for a reason that has nothing to do with the behaviour. Carry the
+        REAL method, bound to the fake, and this still tests what it says it tests."""
+
+        def __init__(self, rays_on, editor=None):
+            from KrakenOS.UI.open3d_inspector import Kraken3DInspector
+
+            self.show_rays_var = _Var(rays_on)
+            self.editor = editor
+            self._sync_show_rays_toggle_to_scene = (
+                Kraken3DInspector._sync_show_rays_toggle_to_scene.__get__(self, type(self))
+            )
+
     deferred_editor = _Editor(True)
-    insp = _Insp(True)
+    insp = _Insp(True, deferred_editor)
     note = deferred_editor._pending_rays_note(insp)
     ok(not insp.show_rays_var.get(),
        "C: a deferred open unticks Show Rays, so the box states the empty scene")
@@ -80,11 +92,11 @@ def run_checks(verbose: bool = False) -> "tuple[bool, list[str]]":
        f"C: and says how to get rays ({note.strip()[:70]}...)")
 
     traced_editor = _Editor(False)
-    kept = _Insp(True)
+    kept = _Insp(True, traced_editor)
     ok(traced_editor._pending_rays_note(kept) == "" and kept.show_rays_var.get(),
        "C: a traced scene leaves the user's toggle exactly as it was")
 
-    already_off = _Insp(False)
+    already_off = _Insp(False, deferred_editor)
     ok(deferred_editor._pending_rays_note(already_off) == "",
        "C: nothing to say when the box is already off")
 

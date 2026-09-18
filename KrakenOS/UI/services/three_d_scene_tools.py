@@ -312,19 +312,14 @@ class ThreeDSceneToolsMixin:
         deliberate request that clears the gate and traces
         (``_on_show_rays_changed``) -- the toggle works on a fresh load without Trace Now.
         """
+        # bugs/0818: one implementation, at the painter -- this path only adds the export hint.
+        # The open path is no longer the only place the rule holds (the session restore re-ticked
+        # the box right after it, and a load into an open inspector never came through here).
         try:
-            if not bool(getattr(self, "_preview_trace_deferred_until_requested", False)):
-                return ""
-            rays_var = getattr(inspector, "show_rays_var", None)
-            if rays_var is None or not bool(rays_var.get()):
-                return ""
-            rays_var.set(False)
+            note = inspector._sync_show_rays_toggle_to_scene()
         except Exception:
             return ""
-        return (
-            " -- Show Rays is off because the fast load deferred the trace: tick it (or "
-            "press Trace Now) to trace. The STEP/DXF export follows the view."
-        )
+        return (note + " The STEP/DXF export follows the view.") if note else ""
 
     def _start_open3d_step_cache_warmup(self, inspector) -> bool:
         specs = self._open3d_step_cache_warmup_specs()

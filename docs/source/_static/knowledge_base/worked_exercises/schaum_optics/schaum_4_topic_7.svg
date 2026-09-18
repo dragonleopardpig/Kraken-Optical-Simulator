@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="806.4pt" height="316.8pt" viewBox="0 0 806.4 316.8" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <title>Problem 4.94: rays from the object meet at a real, inverted, half-height mirror image.</title>
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:title>Problem 4.94: rays from the object meet at a real, inverted, half-height mirror image.</dc:title>
+    <dc:description>Problem 4.94: rays from the object meet at a real, inverted, half-height mirror image.</dc:description>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.10.8, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 316.8 
+L 806.4 316.8 
+L 806.4 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="PathCollection_1">
+    <defs>
+     <path id="mdd349d20c7" d="M 0 3 
+C 0.795609 3 1.55874 2.683901 2.12132 2.12132 
+C 2.683901 1.55874 3 0.795609 3 0 
+C 3 -0.795609 2.683901 -1.55874 2.12132 -2.12132 
+C 1.55874 -2.683901 0.795609 -3 0 -3 
+C -0.795609 -3 -1.55874 -2.683901 -2.12132 -2.12132 
+C -2.683901 -1.55874 -3 -0.795609 -3 0 
+C -3 0.795609 -2.683901 1.55874 -2.12132 2.12132 
+C -1.55874 2.683901 -0.795609 3 0 3 
+z
+" style="stroke: #087f8c"/>
+    </defs>
+    <g clip-path="url(#p5b9c737c8b)">
+     <use xlink:href="#mdd349d20c7" x="288.857211" y="173.663693" style="fill: #087f8c; stroke: #087f8c"/>
+     <use xlink:href="#mdd349d20c7" x="517.542789" y="173.663693" style="fill: #087f8c; stroke: #087f8c"/>
+    </g>
+   </g>
+   <g id="line2d_1">
+    <path d="M 3.00024 173.663693 
+L 803.39976 173.663693 
+" clip-path="url(#p5b9c737c8b)" style="fill: none; stroke: #8a99a8; stroke-width: 0.8; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_2">
+    <path d="M 741.08294 293.780322 
+L 741.34017 290.739395 
+L 741.590805 287.698467 
+L 741.834843 284.65754 
+L 742.072287 281.616613 
+L 742.303134 278.575685 
+L 742.527386 275.534758 
+L 742.745042 272.493831 
+L 742.956103 269.452903 
+L 743.160568 266.411976 
+L 743.358437 263.371049 
+L 743.54971 260.330122 
+L 743.734388 257.289194 
+L 743.912471 254.248267 
+L 744.083957 251.20734 
+L 744.248849 248.166412 
+L 744.407144 245.125485 
+L 744.558844 242.084558 
+L 744.703948 239.04363 
+L 744.842456 236.002703 
+L 744.974369 232.961776 
+L 745.099686 229.920848 
+L 745.218408 226.879921 
+L 745.330534 223.838994 
+L 745.436064 220.798067 
+L 745.534999 217.757139 
+L 745.627338 214.716212 
+L 745.713081 211.675285 
+L 745.792229 208.634357 
+L 745.864781 205.59343 
+L 745.930737 202.552503 
+L 745.990098 199.511575 
+L 746.042863 196.470648 
+L 746.089033 193.429721 
+L 746.128607 190.388793 
+L 746.161585 187.347866 
+L 746.187967 184.306939 
+L 746.207754 181.266012 
+L 746.220946 178.225084 
+L 746.227541 175.184157 
+L 746.227541 172.14323 
+L 746.220946 169.102302 
+L 746.207754 166.061375 
+L 746.187967 163.020448 
+L 746.161585 159.97952 
+L 746.128607 156.938593 
+L 746.089033 153.897666 
+L 746.042863 150.856738 
+L 745.990098 147.815811 
+L 745.930737 144.774884 
+L 745.864781 141.733957 
+L 745.792229 138.693029 
+L 745.713081 135.652102 
+L 745.627338 132.611175 
+L 745.534999 129.570247 
+L 745.436064 126.52932 
+L 745.330534 123.488393 
+L 745.218408 120.447465 
+L 745.099686 117.406538 
+L 744.974369 114.365611 
+L 744.842456 111.324683 
+L 744.703948 108.283756 
+L 744.558844 105.242829 
+L 744.407144 102.201902 
+L 744.248849 99.160974 
+L 744.083957 96.120047 
+L 743.912471 93.07912 
+L 743.734388 90.038192 
+L 743.54971 86.997265 
+L 743.358437 83.956338 
+L 743.160568 80.91541 
+L 742.956103 77.874483 
+L 742.745042 74.833556 
+L 742.527386 71.792628 
+L 742.303134 68.751701 
+L 742.072287 65.710774 
+L 741.834843 62.669847 
+L 741.590805 59.628919 
+L 741.34017 56.587992 
+L 741.08294 53.547065 
+" clip-path="url(#p5b9c737c8b)" style="fill: none; stroke: #087f8c; stroke-width: 3; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_3">
+    <path d="M 60.171634 73.566503 
+L 746.228366 73.566503 
+L 403.2 223.712289 
+" clip-path="url(#p5b9c737c8b)" style="fill: none; stroke: #2563a6; stroke-width: 1.6; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_4">
+    <path d="M 60.171634 73.566503 
+L 746.228366 173.663693 
+L 403.2 223.712289 
+" clip-path="url(#p5b9c737c8b)" style="fill: none; stroke: #c87916; stroke-width: 1.6; stroke-linecap: square"/>
+   </g>
+   <g id="patch_2">
+    <path d="M 60.171634 171.662849 
+Q 60.171634 123.616056 60.171634 77.805331 
+" style="fill: none; stroke: #087f8c; stroke-width: 2; stroke-linecap: round"/>
+    <path d="M 57.971634 82.205331 
+L 60.171634 77.805331 
+L 62.371634 82.205331 
+" style="fill: none; stroke: #087f8c; stroke-width: 2; stroke-linecap: round"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 403.2 175.664537 
+Q 403.2 198.689862 403.2 219.479119 
+" style="fill: none; stroke: #b83749; stroke-width: 2; stroke-linecap: round"/>
+    <path d="M 405.4 215.079119 
+L 403.2 219.479119 
+L 401 215.079119 
+" style="fill: none; stroke: #b83749; stroke-width: 2; stroke-linecap: round"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 614.047711 131.42285 
+Q 581.574801 145.636458 551.150325 158.953452 
+" style="fill: none; stroke: #2563a6; stroke-width: 2; stroke-linecap: round"/>
+    <path d="M 556.063262 159.204544 
+L 551.150325 158.953452 
+L 554.29896 155.173757 
+" style="fill: none; stroke: #2563a6; stroke-width: 2; stroke-linecap: round"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 613.896966 192.971136 
+Q 581.574626 197.687037 551.464926 202.080109 
+" style="fill: none; stroke: #c87916; stroke-width: 2; stroke-linecap: round"/>
+    <path d="M 556.13645 203.621816 
+L 551.464926 202.080109 
+L 555.501206 199.267914 
+" style="fill: none; stroke: #c87916; stroke-width: 2; stroke-linecap: round"/>
+   </g>
+   <g id="text_1">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #24384b" x="284.857211" y="193.663693" transform="rotate(-0 284.857211 193.663693)">C</text>
+   </g>
+   <g id="text_2">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #24384b" x="513.542789" y="193.663693" transform="rotate(-0 513.542789 193.663693)">F</text>
+   </g>
+   <g id="text_3">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #24384b" x="65.171634" y="66.566503" transform="rotate(-0 65.171634 66.566503)">1 cm object</text>
+   </g>
+   <g id="text_4">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #24384b" x="343.2" y="248.712289" transform="rotate(-0 343.2 248.712289)">0.5 cm inverted image</text>
+   </g>
+   <g id="text_5">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #24384b" x="179.514423" y="41.542205" transform="rotate(-0 179.514423 41.542205)">Paraxial rays; horizontal distances in cm</text>
+   </g>
+  </g>
+  <g id="text_6">
+   <text style="font-weight: 700; font-size: 15px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: middle; fill: #193047" x="403.2" y="14.397896" transform="rotate(-0 403.2 14.397896)">Concave mirror: Problem 4.94</text>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="p5b9c737c8b">
+   <rect x="3.00024" y="23.517908" width="800.39952" height="290.281852"/>
+  </clipPath>
+ </defs>
+</svg>

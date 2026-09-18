@@ -18968,6 +18968,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # bugs/0816: the painted scene is the baseline the next edit is measured against, and
         # a row that has come back to its seat clears its own notice. Same funnel, same reason.
         self._refresh_pinned_placement_baseline()
+        # bugs/0818: and the Show Rays box states what this paint actually drew -- the session
+        # restore and a load into an open inspector both used to leave it ticked over a
+        # bodies-only scene.
+        self._sync_show_rays_toggle_to_scene()
         return result
 
     def _reapply_selection_after_scene_rebuild(self) -> None:
@@ -25796,6 +25800,39 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._note_pinned_placement_moves()
         self._mark_2d_layout_stale()
         self.refresh_from_editor(sampling_mode=sampling_mode, force_retrace=True)
+
+    def _sync_show_rays_toggle_to_scene(self) -> str:
+        """bugs/0818: the Show Rays box states what is ON SCREEN -- on every path, not just one.
+
+        bugs/0801 established the rule ("main thing here is matching UI toggle with actual
+        scene") and unticked the box in `open_3d_view`. Two paths keep the tick anyway:
+
+        * the 3D-session sidecar restores the SAVED overlay toggles at the START of every
+          `refresh_from_editor`, so a scene whose sidecar carries ``show_rays_var: true``
+          re-ticks the box the open path had just cleared -- om05a_folded.open3d.json does;
+        * loading another .py into an ALREADY-OPEN inspector never runs the open path at all.
+
+        Either way the box reads on over a bodies-only scene: the user, "I still see Rays ON is
+        tick but no rays is actually on. I have to untick and tick to make it work."
+
+        Enforced at the painter, so every present and future entry inherits it. It only ever
+        turns the box OFF -- asking for rays stays the user's to do, and ticking is still the
+        deliberate request that clears the bugs/0646 gate and traces (bugs/0801), which is why
+        this must never tick it back on.
+        """
+        try:
+            if not bool(getattr(self.editor, "_preview_trace_deferred_until_requested", False)):
+                return ""
+            var = getattr(self, "show_rays_var", None)
+            if var is None or not bool(var.get()):
+                return ""
+            var.set(False)
+        except Exception:
+            return ""
+        return (
+            " -- Show Rays is off because the fast load deferred the trace: tick it (or "
+            "press Trace Now) to trace."
+        )
 
     def _pinned_placement_reading(self):
         """bugs/0816: per-row drift of the live pose from the authored placement, or None.

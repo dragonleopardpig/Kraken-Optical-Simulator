@@ -16336,6 +16336,10 @@ phase_596_a_seat_that_moved_can_be_re_recorded = _phase_from_standalone(
     596, "a seat that moved on purpose can be re-recorded: StepOverlayPromotion.center_world is written once, at promotion, so bugs/0760's deliberate move -- the big om05a RA mirror seated 3.563 mm out onto the 7.596 mm clearance measured on the production assembly, against the 4.033 mm the scene had -- left a snapshot nothing could refresh, and the bugs/0750 audit, the bugs/0816 notice and the authored cover strips have all been 3.563 mm behind ever since (phase 505's A8b still reports it). A promoted row's right-click, on the canvas and in the Scene Components tree, now offers 'Pin Current Placement as Authored' with the amount in the label, and only on a row that is actually off its seat; it shows both poses, records the LIVE one on the user's say-so and keeps the old one as center_world_repinned_from. It MOVES NOTHING -- thickness, decentres, tilts and the live pose are untouched, which is the whole point on vendor hardware -- and it is never automatic (0817)",
     "KrakenOS.UI.validate_open3d_0817_a_seat_that_moved_can_be_re_recorded",
     "a_seat_that_moved_can_be_re_recorded")
+phase_597_the_rays_box_states_the_scene = _phase_from_standalone(
+    597, "the Show Rays box states the scene on EVERY path: the user, after 0801 -- \"I still see Rays ON is tick but no rays is actually on. I have to untick and tick to make it work. I randomly open .py files.\" 0801 made the box match the scene and unticked it in open_3d_view; measured, two paths kept the tick anyway. The 3D-session sidecar restores the SAVED overlay toggles at the START of every refresh_from_editor, and om05a_folded.open3d.json carries show_rays_var true, so the box the open path had just cleared was re-ticked by the very refresh that followed it (measured on a fresh open, settled past the STEP cache warm-up: ticked True, gate True, 0 ray actors); and loading another .py into an already-open inspector never runs the open path at all, leaving the same lie after every load. The rule now lives at the PAINTER, where the session restore no longer gets the last word and every present and future refresh entry inherits it, and _pending_rays_note delegates to it instead of repeating it. It can only turn the box OFF -- asking for rays stays the user's, and ticking is still the deliberate request that clears the bugs/0646 gate and traces, which bugs/0718 requires. Measured after: open gives ticked False with 0 actors, ONE tick gives ticked True with 12 actors and the gate cleared, an ordinary repaint keeps them, unticking hides them, and a load into the open window leaves the box off rather than lying (0818)",
+    "KrakenOS.UI.validate_open3d_0818_the_rays_box_states_the_scene",
+    "the_rays_box_states_the_scene")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -16998,6 +17002,7 @@ def main() -> int:
             phase_594_a_save_writes_the_table,
             phase_595_a_slid_row_says_so,
             phase_596_a_seat_that_moved_can_be_re_recorded,
+            phase_597_the_rays_box_states_the_scene,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

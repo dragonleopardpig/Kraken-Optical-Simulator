@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="806.4pt" height="316.8pt" viewBox="0 0 806.4 316.8" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <title>Huygens and Ramsden oculars have different front focal-plane positions despite both producing collimated output.</title>
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:title>Huygens and Ramsden oculars have different front focal-plane positions despite both producing collimated output.</dc:title>
+    <dc:description>Huygens and Ramsden oculars have different front focal-plane positions despite both producing collimated output.</dc:description>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.10.8, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 316.8 
+L 806.4 316.8 
+L 806.4 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="line2d_1">
+    <path d="M 3.00024 180.387044 
+L 399.168 180.387044 
+" clip-path="url(#p7c68bb0c74)" style="fill: none; stroke: #8a99a8; stroke-width: 0.8; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_2">
+    <path d="M 259.344085 272.525201 
+L 259.344085 93.668778 
+" clip-path="url(#p7c68bb0c74)" style="fill: none; stroke-dasharray: 7.4,3.2; stroke-dashoffset: 0; stroke: #c87916; stroke-width: 2"/>
+   </g>
+   <g id="patch_2">
+    <path d="M 84.564191 259.536377 
+Q 84.564191 180.387651 84.564191 101.238925 
+" style="fill: none; stroke: #087f8c; stroke-width: 2; stroke-linecap: round"/>
+    <path d="M 86.764191 255.136377 
+L 84.564191 259.536377 
+L 82.364191 255.136377 
+" style="fill: none; stroke: #087f8c; stroke-width: 2; stroke-linecap: round"/>
+    <path d="M 82.364191 105.638925 
+L 84.564191 101.238925 
+L 86.764191 105.638925 
+" style="fill: none; stroke: #087f8c; stroke-width: 2; stroke-linecap: round"/>
+   </g>
+   <g id="text_1">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #24384b" x="76.564191" y="84.665801" transform="rotate(-0 76.564191 84.665801)">L1</text>
+   </g>
+   <g id="patch_3">
+    <path d="M 317.604049 259.536377 
+Q 317.604049 180.387651 317.604049 101.238925 
+" style="fill: none; stroke: #087f8c; stroke-width: 2; stroke-linecap: round"/>
+    <path d="M 319.804049 255.136377 
+L 317.604049 259.536377 
+L 315.404049 255.136377 
+" style="fill: none; stroke: #087f8c; stroke-width: 2; stroke-linecap: round"/>
+    <path d="M 315.404049 105.638925 
+L 317.604049 101.238925 
+L 319.804049 105.638925 
+" style="fill: none; stroke: #087f8c; stroke-width: 2; stroke-linecap: round"/>
+   </g>
+   <g id="text_2">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #24384b" x="309.604049" y="84.665801" transform="rotate(-0 309.604049 84.665801)">L2</text>
+   </g>
+   <g id="text_3">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #c87916" x="209.344085" y="286.277434" transform="rotate(-0 209.344085 286.277434)">front focal plane</text>
+   </g>
+   <g id="text_4">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #24384b" x="37.130222" y="56.650917" transform="rotate(-0 37.130222 56.650917)">Coordinates in units of q</text>
+   </g>
+   <g id="text_5">
+    <text style="font-size: 12px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: middle" x="201.08412" y="32.636033" transform="rotate(-0 201.08412 32.636033)">Huygens: f1 = 3q, f2 = q</text>
+   </g>
+  </g>
+  <g id="axes_2">
+   <g id="line2d_3">
+    <path d="M 407.232 180.387044 
+L 803.39976 180.387044 
+" clip-path="url(#p75d3ea0f52)" style="fill: none; stroke: #8a99a8; stroke-width: 0.8; stroke-linecap: square"/>
+   </g>
+   <g id="line2d_4">
+    <path d="M 459.665968 272.525201 
+L 459.665968 93.668778 
+" clip-path="url(#p75d3ea0f52)" style="fill: none; stroke-dasharray: 7.4,3.2; stroke-dashoffset: 0; stroke: #c87916; stroke-width: 2"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 488.795951 259.536377 
+Q 488.795951 180.387651 488.795951 101.238925 
+" style="fill: none; stroke: #087f8c; stroke-width: 2; stroke-linecap: round"/>
+    <path d="M 490.995951 255.136377 
+L 488.795951 259.536377 
+L 486.595951 255.136377 
+" style="fill: none; stroke: #087f8c; stroke-width: 2; stroke-linecap: round"/>
+    <path d="M 486.595951 105.638925 
+L 488.795951 101.238925 
+L 490.995951 105.638925 
+" style="fill: none; stroke: #087f8c; stroke-width: 2; stroke-linecap: round"/>
+   </g>
+   <g id="text_6">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #24384b" x="480.795951" y="84.665801" transform="rotate(-0 480.795951 84.665801)">L1</text>
+   </g>
+   <g id="patch_5">
+    <path d="M 566.475904 259.536377 
+Q 566.475904 180.387651 566.475904 101.238925 
+" style="fill: none; stroke: #087f8c; stroke-width: 2; stroke-linecap: round"/>
+    <path d="M 568.675904 255.136377 
+L 566.475904 259.536377 
+L 564.275904 255.136377 
+" style="fill: none; stroke: #087f8c; stroke-width: 2; stroke-linecap: round"/>
+    <path d="M 564.275904 105.638925 
+L 566.475904 101.238925 
+L 568.675904 105.638925 
+" style="fill: none; stroke: #087f8c; stroke-width: 2; stroke-linecap: round"/>
+   </g>
+   <g id="text_7">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #24384b" x="558.475904" y="84.665801" transform="rotate(-0 558.475904 84.665801)">L2</text>
+   </g>
+   <g id="text_8">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #c87916" x="409.665968" y="286.277434" transform="rotate(-0 409.665968 286.277434)">front focal plane</text>
+   </g>
+   <g id="text_9">
+    <text style="font-size: 10px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: start; fill: #24384b" x="441.361982" y="56.650917" transform="rotate(-0 441.361982 56.650917)">Coordinates in units of q</text>
+   </g>
+   <g id="text_10">
+    <text style="font-size: 12px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: middle" x="605.31588" y="32.636033" transform="rotate(-0 605.31588 32.636033)">Ramsden: f1 = f2 = q</text>
+   </g>
+  </g>
+  <g id="text_11">
+   <text style="font-weight: 700; font-size: 15px; font-family: 'DejaVu Sans', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Arial', 'Helvetica', 'Avant Garde', sans-serif; text-anchor: middle; fill: #193047" x="403.2" y="14.397896" transform="rotate(-0 403.2 14.397896)">Ocular front focal planes: compare the actual lens positions</text>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="p7c68bb0c74">
+   <rect x="3.00024" y="38.636033" width="396.16776" height="275.163727"/>
+  </clipPath>
+  <clipPath id="p75d3ea0f52">
+   <rect x="407.232" y="38.636033" width="396.16776" height="275.163727"/>
+  </clipPath>
+ </defs>
+</svg>
