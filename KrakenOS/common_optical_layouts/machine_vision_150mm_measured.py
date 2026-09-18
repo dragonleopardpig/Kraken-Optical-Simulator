@@ -196,7 +196,7 @@ def build_system():
     s1.Grating_D = 0.0
     s1.Grating_Angle = 0.0
     s1.Thickness = 1.45390219
-    s1.Diameter = 35.0
+    s1.Diameter = 26.62428160497955
     s1.InDiameter = 0.0
     s1.Drawing = 1.0
     s1.TiltX = 0.0
@@ -207,7 +207,7 @@ def build_system():
     s1.DespZ = 0.0
     s1.AxisMove = 0.0
     s1.Glass = 'AIR'
-    surfaces.append({'surface': 'Standard', 'element': '', 'name': 'Lens Front Datum', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 1.45390219, 'diameter': 35.0, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+    surfaces.append({'surface': 'Standard', 'element': '', 'name': 'Lens Front Datum', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 1.45390219, 'diameter': 26.62428160497955, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
 
     s2 = Kos.surf()
     s2.Name = 'Blackbox Group 1'
@@ -218,7 +218,7 @@ def build_system():
     s2.Grating_D = 0.0
     s2.Grating_Angle = 0.0
     s2.Thickness = 24.405
-    s2.Diameter = 26.8
+    s2.Diameter = 26.62428160497955
     s2.InDiameter = 0.0
     s2.Drawing = 1.0
     s2.TiltX = 0.0
@@ -231,7 +231,7 @@ def build_system():
     s2.Glass = 'AIR'
     s2.Thin_Lens = 272.10667374
     s2.Rc = 0.0
-    surfaces.append({'surface': 'Thin Lens', 'element': 'Blackbox Group 1', 'name': 'Blackbox Group 1', 'rc': 272.10667374, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 24.405, 'diameter': 26.8, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+    surfaces.append({'surface': 'Thin Lens', 'element': 'Blackbox Group 1', 'name': 'Blackbox Group 1', 'rc': 272.10667374, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 24.405, 'diameter': 26.62428160497955, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
 
     s3 = Kos.surf()
     s3.Name = 'Aperture'
@@ -264,7 +264,7 @@ def build_system():
     s4.Grating_D = 0.0
     s4.Grating_Angle = 0.0
     s4.Thickness = 1.308924688
-    s4.Diameter = 26.8
+    s4.Diameter = 26.62428160497955
     s4.InDiameter = 0.0
     s4.Drawing = 1.0
     s4.TiltX = 0.0
@@ -277,7 +277,7 @@ def build_system():
     s4.Glass = 'AIR'
     s4.Thin_Lens = 306.07721324
     s4.Rc = 0.0
-    surfaces.append({'surface': 'Thin Lens', 'element': 'Blackbox Group 2', 'name': 'Blackbox Group 2', 'rc': 306.07721324, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 1.308924688, 'diameter': 26.8, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+    surfaces.append({'surface': 'Thin Lens', 'element': 'Blackbox Group 2', 'name': 'Blackbox Group 2', 'rc': 306.07721324, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 1.308924688, 'diameter': 26.62428160497955, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
 
     s5 = Kos.surf()
     s5.Name = 'Lens Rear Datum'
@@ -288,7 +288,7 @@ def build_system():
     s5.Grating_D = 0.0
     s5.Grating_Angle = 0.0
     s5.Thickness = 308.19
-    s5.Diameter = 35.0
+    s5.Diameter = 26.62428160497955
     s5.InDiameter = 0.0
     s5.Drawing = 1.0
     s5.TiltX = 0.0
@@ -299,7 +299,7 @@ def build_system():
     s5.DespZ = 0.0
     s5.AxisMove = 0.0
     s5.Glass = 'AIR'
-    surfaces.append({'surface': 'Standard', 'element': '', 'name': 'Lens Rear Datum', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 308.19, 'diameter': 35.0, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
+    surfaces.append({'surface': 'Standard', 'element': '', 'name': 'Lens Rear Datum', 'rc': 0.0, 'k': 0.0, 'axicon': 0.0, 'diff_ord': 0.0, 'grating_d': 0.0, 'grating_angle': 0.0, 'thickness': 308.19, 'diameter': 26.62428160497955, 'in_diameter': 0.0, 'drawing': 1.0, 'extra_data': 0.0, 'uda': 'None', 'advanced': {}, 'tilt_x': 0.0, 'tilt_y': 0.0, 'tilt_z': 0.0, 'desp_x': 0.0, 'desp_y': 0.0, 'desp_z': 0.0, 'axis_move': 0.0, 'glass': 'AIR', 'optimize_rc': False, 'optimize_rc_bounds': None, 'optimize_thickness': False, 'optimize_thickness_bounds': None})
 
     s6 = Kos.surf()
     s6.Name = 'Image'

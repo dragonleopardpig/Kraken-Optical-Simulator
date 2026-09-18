@@ -63,7 +63,7 @@ SURFACES = [
         "name": "Lens Front Datum",
         "rc": 0.0,
         "thickness": FRONT_TO_HOUSING_GROUP_1,
-        "diameter": 35.0,
+        "diameter": 26.62428160497955,
         "glass": "AIR",
     },
     {
@@ -71,7 +71,7 @@ SURFACES = [
         "name": "Blackbox Group 1",
         "rc": GROUP_1_FOCAL_LENGTH,
         "thickness": GROUP_1_TO_STOP,
-        "diameter": 26.8,
+        "diameter": 26.62428160497955,
         "glass": "AIR",
     },
     {
@@ -87,7 +87,7 @@ SURFACES = [
         "name": "Blackbox Group 2",
         "rc": GROUP_2_FOCAL_LENGTH,
         "thickness": GROUP_2_TO_REAR,
-        "diameter": 26.8,
+        "diameter": 26.62428160497955,
         "glass": "AIR",
     },
     {
@@ -95,7 +95,7 @@ SURFACES = [
         "name": "Lens Rear Datum",
         "rc": 0.0,
         "thickness": 272.0,
-        "diameter": 35.0,
+        "diameter": 26.62428160497955,
         "glass": "AIR",
     },
     {
