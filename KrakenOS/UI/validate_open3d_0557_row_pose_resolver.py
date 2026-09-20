@@ -126,7 +126,10 @@ def run_checks() -> tuple[bool, list[str]]:
         from KrakenOS.UI.services.three_d_scene_tools import ThreeDSceneToolsMixin
 
         swap_src = inspect.getsource(LayoutTableWorkbenchMixin._swap_frozen_block_frame)
-        if "row_placement.world_pose" not in swap_src:
+        # bugs/0826 Phase C: the IR reads this same resolver internally, so asking it
+        # satisfies the intent. Hand-rolled station + desp still fails, which is the point.
+        if not any(name in swap_src for name in
+                   ("row_placement.world_pose", "scene_ir.world_frame")):
             failures.append(
                 "consumer: the lens-swap frozen block frame (bugs/0547) must ask the resolver, not "
                 "re-derive station + desp"

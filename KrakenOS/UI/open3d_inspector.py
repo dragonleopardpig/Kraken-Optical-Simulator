@@ -14455,9 +14455,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             # five consumers hand-rolled this and each got a frozen scene wrong) -- adopt the
             # terminal Image row's resolved frame, orientation included.
             try:
-                from KrakenOS.UI.services import row_placement as _row_placement
+                # bugs/0826 Phase C: read the Scene IR. Identical today; at Phase D the fold
+                # arrives inside lower() and this consumer gets it without further change.
+                from KrakenOS.UI.services import scene_ir as _scene_ir
 
-                _pos, _rot, _space = _row_placement.world_frame(self.editor, len(self.editor.rows) - 1)
+                _pos, _rot, _space = _scene_ir.world_frame(self.editor, len(self.editor.rows) - 1)
                 _pos = np.asarray(_pos, dtype=float).reshape(3)
                 if np.all(np.isfinite(_pos)):
                     drawn = _pos

@@ -979,7 +979,7 @@ class LayoutTableWorkbenchMixin:
         Returns ``{origin, axis, tilt, placement}``."""
         import numpy as np
 
-        from KrakenOS.UI.services import row_placement
+        from KrakenOS.UI.services import row_placement, scene_ir
 
         rows = self.rows
         front, rear = int(front), int(rear)
@@ -989,8 +989,13 @@ class LayoutTableWorkbenchMixin:
             return None
         # bugs/0557: one resolver answers "where is this row", instead of each consumer
         # re-deriving station + desp for itself (the mistake behind 0517/0519/0525/0547/0556).
+        # bugs/0826 Phase C: read the Scene IR, lowered once for the whole comparison.
+        _ir = scene_ir.lower(self, bodies=False)
+
         def _pose(index):
-            return np.asarray(row_placement.world_pose(self, int(index)).position, dtype=float)
+            return np.asarray(
+                scene_ir.world_frame(self, int(index), scene_ir=_ir)[0], dtype=float
+            )
 
         origin = _pose(front)
         axis = _pose(rear) - origin
@@ -1092,13 +1097,18 @@ class LayoutTableWorkbenchMixin:
             return None
         import numpy as np
 
-        from KrakenOS.UI.services import row_placement
+        from KrakenOS.UI.services import scene_ir
 
+        # bugs/0826 Phase C: ONE lowering for the whole sweep. Lowering per row would cost
+        # N x ~5.6 ms on a 25-row scene for an answer that does not change within the loop.
+        _ir = scene_ir.lower(self, bodies=False)
         capture = {"rows": [], "camera": None, "illumination": None}
         for index in range(int(front) + 1, len(self.rows)):
             row = self.rows[index]
             try:
-                pose = np.asarray(row_placement.world_pose(self, index).position, dtype=float)
+                pose = np.asarray(
+                    scene_ir.world_frame(self, index, scene_ir=_ir)[0], dtype=float
+                )
             except Exception:
                 continue
             capture["rows"].append((row, pose))
@@ -1126,15 +1136,21 @@ class LayoutTableWorkbenchMixin:
             return
         import numpy as np
 
-        from KrakenOS.UI.services import row_placement
+        from KrakenOS.UI.services import scene_ir
 
+        # bugs/0826 Phase C: lowered FRESH here, not reused from the capture above -- this
+        # runs AFTER the move, and comparing a post-move pose against a pre-move lowering
+        # would report zero drift by construction. One lowering, outside the loop.
+        _ir = scene_ir.lower(self, bodies=False)
         index_of = {id(row): index for index, row in enumerate(self.rows)}
         for row, target in capture["rows"]:
             index = index_of.get(id(row))
             if index is None:
                 continue  # a replaced lens row -- gone by design
             try:
-                current = np.asarray(row_placement.world_pose(self, index).position, dtype=float)
+                current = np.asarray(
+                    scene_ir.world_frame(self, index, scene_ir=_ir)[0], dtype=float
+                )
             except Exception:
                 continue
             drift = float(np.linalg.norm(current - target))

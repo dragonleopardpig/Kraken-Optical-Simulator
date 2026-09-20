@@ -55,6 +55,9 @@ GATE_SCENES = ("attachment/machine_vision_ELS85.py", "attachment/om05a_folded.py
 PHASE_C_CONVERTED = (
     "KrakenOS/UI/services/geometric_analysis.py",
     "KrakenOS/UI/services/three_d_scene_tools.py",
+    "KrakenOS/UI/open3d_inspector.py",
+    "KrakenOS/UI/services/layout_polyline_display.py",
+    "KrakenOS/UI/services/layout_table_workbench.py",
 )
 
 

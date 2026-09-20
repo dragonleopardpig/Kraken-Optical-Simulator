@@ -156,11 +156,22 @@ def detect_cycles(edges: dict[str, str | None]) -> list[list[str]]:
     return cycles
 
 
-def lower(editor: Any) -> SceneIR:
-    """Lower a live editor to flat data. Pure and read-only: changes nothing."""
+def lower(editor: Any, *, bodies: bool = True) -> SceneIR:
+    """Lower a live editor to flat data. Pure and read-only: changes nothing.
+
+    ``bodies=False`` lowers surfaces ONLY. Body lowering runs the output-port pose walk and
+    the promotion scrape, which is real work a caller asking "where is row N" never needs --
+    and more than work: measured, it reaches editor attributes that a partially-constructed
+    editor answers with unbounded ``tkinter.__getattr__`` recursion, so making every
+    ``world_frame`` call lower bodies turned a cheap single-row read into a RecursionError
+    (caught by bugs/0546's swap guard during Phase C).
+    """
     from KrakenOS.UI.services import row_placement as rp
     from KrakenOS.UI.services.result_diagnostics import NO_REMEDY, WARNING, Finding
 
+    # ``rows`` is a REQUIRED attribute, so getattr is safe here. Do not copy this shape
+    # for an OPTIONAL one: the editor is a tk.Tk subclass and tkinter's __getattr__
+    # recurses on an unknown name rather than raising, so the default never applies.
     rows = list(getattr(editor, "rows", []) or [])
     findings: list = []
 
@@ -195,7 +206,8 @@ def lower(editor: Any) -> SceneIR:
             has_orientation=rotation is not None,
         ))
 
-    entities.extend(_lower_bodies(editor, rows, labels, surface_ids, findings))
+    if bodies:
+        entities.extend(_lower_bodies(editor, rows, labels, surface_ids, findings))
 
     edges = {e.id: e.derived_from for e in entities if e.derived_from is not None}
     for cycle in detect_cycles(edges):
@@ -230,7 +242,12 @@ def lower(editor: Any) -> SceneIR:
         entities=tuple(entities),
         provenance={
             "rows": len(rows),
-            "scene": str(getattr(editor, "current_layout_name", "") or ""),
+            # NOT getattr: the editor is a tk.Tk subclass, and tkinter's Misc.__getattr__
+            # answers an unknown name with getattr(self.tk, name), which RECURSES instead of
+            # raising AttributeError -- so getattr's default never applies and a probe for a
+            # name the editor happens not to carry dies with RecursionError. bugs/0546's swap
+            # guard caught exactly that during Phase C. Read the instance dict directly.
+            "scene": str(editor.__dict__.get("current_layout_name", "") or ""),
             "lowering": "phase-A",
         },
         findings=tuple(findings),
@@ -407,7 +424,9 @@ def world_frame(editor: Any, row_index: int, *, scene_ir: "SceneIR | None" = Non
     lowering shared across a refresh is the architecture, and persisting one ACROSS refreshes
     is the thing the design forbids.
     """
-    ir = scene_ir if scene_ir is not None else lower(editor)
+    # Surfaces only when we must lower ourselves: this answers a ROW's pose, and the body
+    # walk is both wasted work and a far wider blast radius (see lower's docstring).
+    ir = scene_ir if scene_ir is not None else lower(editor, bodies=False)
     for entity in ir.of_kind("surface"):
         if entity.source_row is not None and int(entity.source_row) == int(row_index):
             matrix = np.asarray(entity.to_world, dtype=float)

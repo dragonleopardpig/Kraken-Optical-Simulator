@@ -2191,13 +2191,18 @@ class LayoutPolylineDisplayMixin:
         if front is None or rear is None or int(front) == int(rear):
             return None
         try:
-            from KrakenOS.UI.services import row_placement
+            # bugs/0826 Phase C: read the Scene IR. Lowered ONCE and read twice -- that is
+            # the architecture in miniature, and why lowering is never cached across
+            # refreshes: within one it is shared, across them it is recomputed so a derived
+            # body's pose cannot go stale.
+            from KrakenOS.UI.services import scene_ir
 
+            _ir = scene_ir.lower(self, bodies=False)
             front_pose = np.asarray(
-                row_placement.world_pose(self, int(front)).position, dtype=float
+                scene_ir.world_frame(self, int(front), scene_ir=_ir)[0], dtype=float
             ).reshape(3)
             rear_pose = np.asarray(
-                row_placement.world_pose(self, int(rear)).position, dtype=float
+                scene_ir.world_frame(self, int(rear), scene_ir=_ir)[0], dtype=float
             ).reshape(3)
         except Exception as exc:
             self.append_debug(f"Lens surrogate optical axis unavailable: {exc}")
