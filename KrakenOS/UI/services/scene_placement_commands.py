@@ -4685,10 +4685,29 @@ class ScenePlacementMixin:
             # bare except below turned the failure into None, which is this function's
             # "unbounded leg" signal -- telling the caller a lens had room to slide into a
             # fold mirror.
-            block_end = np.asarray(scene_ir.world_frame(self, last)[0], dtype=float)
-            fold_centre = np.asarray(scene_ir.world_frame(self, mirror_row)[0], dtype=float)
-        except Exception:
+            # bugs/0836: the DRAWN frame, for both, and for the leg. world_frame answers in
+            # whatever frame each row's own numbers are in, and on om05a those differ between
+            # these two rows while BOTH tag "sequential": the rear datum read [0, 0, 314.92]
+            # and RA mirror 2 (authored absolute) read [-269.137, 56.313, -25.0]. Subtracting
+            # them along the plan's pre-fold leg gave -339.92 mm of "room" on a bench that has
+            # room, and the barrel term below then took a folded-world bound away from a
+            # pre-fold coordinate and clamped the nonsense to zero without a word.
+            drawn = scene_ir.drawn_leg_unit(self, last, unit)
+            if drawn is not None:
+                unit = drawn
+            block_end = np.asarray(scene_ir.drawn_world_frame(self, last)[0], dtype=float)
+            fold_centre = np.asarray(scene_ir.drawn_world_frame(self, mirror_row)[0], dtype=float)
+        except Exception as exc:
+            # None means "no fold ahead, unbounded leg" to every caller, so an exception
+            # arriving here used to read as "the lens may slide as far as it likes" -- on the
+            # crash-avoidance path. Say what was swallowed (bugs/0836).
+            self._lens_leg_room_unmeasured = (
+                f"lens-to-fold room NOT measured ({type(exc).__name__}: {exc}) -- treated as "
+                "an unbounded leg, so only the section gaps are holding the barrel back"
+            )
+            self.append_debug(self._lens_leg_room_unmeasured)
             return None
+        self._lens_leg_room_unmeasured = ""
         along = float(np.dot(fold_centre - block_end, unit))
         clearance = 0.5 * float(getattr(self.rows[mirror_row], "diameter", 0.0) or 0.0)
         # bugs/0583 (flag_20260807_104943 "the lens crashed to RA mirror"): the room was
@@ -4706,6 +4725,10 @@ class ScenePlacementMixin:
                     np.asarray(mesh.bounds, dtype=float), unit
                 )
                 if hi_s is not None:
+                    # bugs/0836: mesh.bounds is DRAWN, so block_end must be too -- it is now.
+                    # Before, this subtracted a folded-world bound from a pre-fold coordinate
+                    # (2.366 - 314.920) and max(0, ...) reported the barrel as not overhanging
+                    # at all, which is the term bugs/0583 added to stop it entering the prism.
                     body_overhang = max(0.0, float(hi_s) - float(np.dot(block_end, unit)))
         except Exception:
             body_overhang = 0.0
@@ -4982,23 +5005,16 @@ class ScenePlacementMixin:
         if not (diameter > 0.0) or not np.isfinite(thickness) or not np.isfinite(diameter):
             return None
         try:
-            from KrakenOS.UI.services import row_placement as _rp
             from KrakenOS.UI.services import scene_ir
 
-            position, rotation, space = scene_ir.world_frame(self, index)
+            # bugs/0836: the ONE place that answers "where is this row drawn". This used to
+            # hand-apply the fold here, branching on placement space; that branch now lives in
+            # drawn_world_frame, which is the seam Phase D moves into lower().
+            position, rotation, _frame = scene_ir.drawn_world_frame(self, index)
         except Exception:
             return None
         position = np.asarray(position, dtype=float).reshape(3)
         matrix = np.eye(3) if rotation is None else np.asarray(rotation, dtype=float).reshape(3, 3)
-        if str(space) == _rp.SEQUENTIAL:
-            try:
-                transform = self._optical_axis_fold_world_transform_for_row(index)
-            except Exception:
-                transform = None
-            if transform is not None:
-                fold = np.asarray(transform, dtype=float).reshape(4, 4)
-                position = (fold @ np.append(position, 1.0))[:3]
-                matrix = fold[:3, :3] @ matrix
         radius = 0.5 * diameter
         corners = np.array(
             [
@@ -5081,6 +5097,22 @@ class ScenePlacementMixin:
                     unit = None
             except Exception:
                 unit = None
+            if unit is not None:
+                # bugs/0836: the frozen desp-leg plan's direction is the PRE-FOLD leg, because
+                # that is the frame its desp writes use. The obstacles below are DRAWN. Handed
+                # om05a's plan direction (0, 0, 1) this walk found NO obstacle at all on a
+                # bench whose Filter 48-926 is 16 mm away -- method "none", room None, the
+                # crash-avoidance measure silently inert. Turn it onto the drawn leg; when the
+                # row is not folded for display this changes nothing, and when leg_unit is
+                # (0,0,1) it reproduces the no-leg_unit branch below exactly.
+                try:
+                    from KrakenOS.UI.services import scene_ir as _sir
+
+                    turned = _sir.drawn_leg_unit(self, front, unit)
+                    if turned is not None:
+                        unit = turned
+                except Exception:
+                    pass
         if unit is None:
             try:
                 transform = self._optical_axis_fold_world_transform_for_row(front)

@@ -448,6 +448,104 @@ def _surface_entity_for_row(editor, row_index: int) -> "EntityIR | None":
         has_orientation=rotation is not None,
     )
 
+def _output_port_pose(editor: Any, row_index: int):
+    """The output-port pose override for a row, or None. bugs/0836."""
+    try:
+        from KrakenOS.UI.nonseq_output_ports import optical_solid_output_port_pose_overrides
+
+        overrides = optical_solid_output_port_pose_overrides(None, editor.rows)
+    except Exception:
+        return None
+    pose = overrides.get(int(row_index)) if isinstance(overrides, dict) else None
+    return pose if isinstance(pose, dict) else None
+
+
+def drawn_world_frame(editor: Any, row_index: int, *, scene_ir: "SceneIR | None" = None):
+    """``(position, rotation_3x3_or_None, frame)`` where the row is actually DRAWN.
+
+    bugs/0836, and the Phase D seam. :func:`world_frame` answers in whatever frame the row's
+    own numbers are in -- the straight-equivalent for a SEQUENTIAL row -- which is honest but
+    is NOT where the body is. Anything comparing a row against DRAWN geometry (a STEP mesh's
+    world AABB, an actor's bounds, another row's pose) needs this one, or it subtracts two
+    frames and gets a number with no meaning.
+
+    **The rule is measured, not derived, and two plausible derivations were wrong first.**
+    On ``om05a_folded``, per row, against the pose audit's DRAWN column:
+
+    * The placement SPACE does not decide it. Every row there tags ``sequential``, including
+      RA mirror 2, whose ``desp`` is already its folded centre.
+    * Applying ``_optical_axis_fold_world_transform_for_row`` does not either. That transform
+      is ``F(v) = C + R (v - S)`` with ``S`` the row's straight-axis STATION, so it is only
+      valid on a row whose prescription IS ``[0, 0, z]``. Rows 3, 5, 7, 8, 15 and 16-22 carry
+      a decentre and it mis-places every one of them: RA mirror 2 lands at ``[124.5, 0, 244.1]``
+      instead of ``[-269.1, 56.3, -25.0]``, and the front datum's ``desp_x = -8.78`` (bugs/0832's
+      inert marker) is carried into world as a Z offset, ``-33.78`` where the scene draws
+      ``-25.0``.
+    * The OUTPUT-PORT pose override reproduces DRAWN on every row that has one -- all 23 of
+      them on that bench, to the 0.08 mm an actor's bbox centre differs from its surface.
+
+    So: a row with an override is drawn AT that override; a row without one is drawn where its
+    own numbers put it. No fold is applied here at all, which is why the two derivations above
+    could disagree with the display without anything noticing.
+
+    **At Phase D this becomes what ``world_frame`` returns**, ``lower()`` resolves the override,
+    and every caller drops back to ``world_frame``.
+    """
+    position, rotation, _space = world_frame(editor, row_index, scene_ir=scene_ir)
+    pose = _output_port_pose(editor, row_index)
+    if pose is None:
+        # Nothing repositions this row: its own numbers are where it is drawn.
+        return position, rotation, FRAME_POST_FOLD
+    try:
+        centre = np.asarray(pose.get("center"), dtype=float).reshape(3)
+    except Exception:
+        return position, rotation, FRAME_POST_FOLD
+    if not np.all(np.isfinite(centre)):
+        return position, rotation, FRAME_POST_FOLD
+    turned = rotation
+    try:
+        candidate = np.asarray(pose.get("rotation"), dtype=float).reshape(3, 3)
+        if np.all(np.isfinite(candidate)):
+            turned = candidate
+    except Exception:
+        pass
+    return centre, turned, FRAME_POST_FOLD
+
+
+def drawn_leg_unit(editor: Any, row_index: int, leg_unit) -> "np.ndarray | None":
+    """bugs/0836: a leg direction expressed in the DRAWN frame.
+
+    The lens slide plan's direction is the PRE-FOLD leg, because that is the frame its ``desp``
+    bookkeeping writes in -- right for the write, wrong for measuring against bodies. On
+    ``om05a_folded`` the plan says ``(0, 0, 1)`` while the drawn leg runs along ``-x``, so a
+    room measure handed the plan's direction found NO obstacle at all on a bench whose filter
+    is 16 mm away.
+
+    Turned by the row's own output-port rotation, which is the same thing that places it.
+    Unchanged when the row has no override, and None when the input is not a direction.
+    """
+    try:
+        unit = np.asarray(leg_unit, dtype=float).reshape(3)
+    except Exception:
+        return None
+    norm = float(np.linalg.norm(unit))
+    if not np.isfinite(norm) or norm <= 1.0e-12:
+        return None
+    unit = unit / norm
+    pose = _output_port_pose(editor, row_index)
+    if pose is None:
+        return unit
+    try:
+        rotation = np.asarray(pose.get("rotation"), dtype=float).reshape(3, 3)
+    except Exception:
+        return unit
+    if not np.all(np.isfinite(rotation)):
+        return unit
+    turned = rotation @ unit
+    norm = float(np.linalg.norm(turned))
+    return turned / norm if np.isfinite(norm) and norm > 1.0e-12 else unit
+
+
 def world_frame(editor: Any, row_index: int, *, scene_ir: "SceneIR | None" = None):
     """``(position, rotation_3x3_or_None, space)`` for a row, read from the IR.
 
