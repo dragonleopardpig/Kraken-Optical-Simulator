@@ -112,6 +112,35 @@ Both instruments, gated together, per commit — neither alone caught everything
 
 Plus the Phase-A addition: IR pose == consumer pose, per entity, per kind.
 
+### Measured baseline, ELS85, 2026-09-20
+
+    rows=9  drawn_row_actors=9  bodies=0
+    row 7 Standard   PRESCRIPTION (245.02, 0.00, 54.35)
+                     DRAWN        (246.28, 0.00, 55.60)   1.78 mm  <== DISAGREE
+    every other row  0.00 mm
+
+The repro is alive. Row 7's 1.78 mm is the divergence the previous design left
+uncharacterised (candidate: the solid's centroid-vs-vertex convention), and it is
+reproducible in about two minutes. That is Phase B's target number: it must still read
+1.78 mm after the IR is wired, and move only in Phase D.
+
+### Phase A has a prerequisite: the instrument is blind to bodies
+
+`bodies=0` above is not a property of the scene. ELS85 declares **six** promoted-solid
+references and its STEP file is present on disk
+(`attachment/cad_cache/beam_splitter_templates/bs_plate_8980ed101283236d.step`, 16.6 kB),
+yet `_body_centers` -- which calls `_transformed_imported_step_mesh_for_label` -- returns
+nothing.
+
+So the acceptance instrument cannot currently see the entity kind that generates the live
+bugs: 0748 and 0815 are **body** drift, seven rows at 8.820 mm. Gating on a pair of audits
+where one is blind to bodies would repeat the 0457 lesson prospectively -- a confident,
+precise measurement of the wrong thing.
+
+**Fix `_body_centers` before Phase A begins.** Until it reports bodies on ELS85 and on the
+om05a benches, the IR comparison has no baseline for the half of the scope that matters
+most, and no phase after it can be honestly gated.
+
 A note on the corpus: the 0457 repro scene `machine_vision_AZ85_RA_Mirror_BS.py` is no longer in
 `attachment/`, but its successor is — **AZ85 IS ELS-85**, the same lens renamed, and
 `machine_vision_ELS85.py` carries the same structure that made it the repro: 21 world-placement
@@ -130,6 +159,10 @@ body-drift cases. The gate set should be those five, not the old one.
   stays the source of truth.
 
 ## Open questions
+
+0. **Why does `_body_centers` see no bodies?** Blocks Phase A (above).
+   Not a design question so much as the first task, but it is unanswered and everything
+   downstream is gated on it.
 
 1. **Entity identity across a rebuild.** `id` must be stable or the audits cannot pair entities
    between runs, and per-row desp compounding (0815) means row index alone is not stable under
