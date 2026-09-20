@@ -182,9 +182,7 @@ body-drift cases. The gate set should be those five, not the old one.
    labels (omitting `optical`) and swallowed every failure. Fixed: ELS85 now reports 2 bodies,
    om05a_folded 11 at 0.0000 mm. Phase A is unblocked.
 
-1. **Entity identity across a rebuild.** `id` must be stable or the audits cannot pair entities
-   between runs, and per-row desp compounding (0815) means row index alone is not stable under
-   insertion. Candidate: `(kind, authored label, ordinal)`. Needs a decision before Phase A.
+1. ~~Entity identity across a rebuild.~~ **DECIDED 2026-09-20.** Worked through below.
 2. **Where does `lower()` run, and how often?** Once per scene change is the intent, but the
    0700/0646 fast-load work means "scene change" is not currently one event. Lowering on every
    refresh would be correct and possibly too slow — needs measurement against
@@ -242,9 +240,8 @@ convention to remember.
 
 ### Consequence for open question 1
 
-A derived body's identity should key on its **anchor plus datum**, not its row index. Row index
-is unstable under insertion, which is precisely the situation 0815 arose in; the anchor
-relationship is not. `(anchor_id, datum_hash)` now leads `(kind, label, ordinal)`.
+A derived body's identity must not key on its row index — that is unstable under insertion,
+precisely the situation 0815 arose in. See the identity decision below, which refines this.
 
 ### Derivation chains may be deeper than one hop
 
@@ -290,3 +287,42 @@ prism stack moving rigidly is correct behaviour and should move rigidly.
 No depth *limit* is imposed. A limit would be arbitrary, and the cycle check is what actually
 prevents non-termination. If a pathological depth ever shows up as a lowering cost, that is a
 measurement for open question 2, not a reason to cap the model.
+
+
+## Decided: entity identity is `(kind, label, ordinal)`, uniformly
+
+**Measured first.** Row labels are not unique, on both gate scenes, including for the entity kind
+the IR cares about most:
+
+    machine_vision_ELS85.py   9 rows   'Promoted OPTICAL STEP optical solid' x2
+    om05a_folded.py          25 rows   'air' x2
+
+So a label alone cannot be an identity, and an ordinal among same-`(kind, label)` entities is
+required. Every entity gets the same scheme, derived bodies included.
+
+### Why not `(anchor_id, datum_hash)` for derived bodies
+
+Yesterday's note put that in the lead. It is wrong, and the reason is worth keeping: **re-gluing a
+body changes where it is, not which body it is.** Keying identity on the anchor would give a body
+a new id whenever it is re-seated, so the audit would report the old one as deleted and the new
+one as appearing — exactly at the moment you most want to track it across the change.
+
+The anchor stays where it belongs, as `derived_from` provenance. Identity and derivation answer
+different questions: *which thing is this* versus *why is it here*.
+
+A uniform scheme also gives the audits one pairing rule instead of one per kind, which matters
+because the audits must pair entities between runs to say anything at all.
+
+### The remaining weakness, stated rather than hidden
+
+`ordinal` is unstable if a duplicate-named entity is inserted *before* an existing one: the two
+swap ids. There is no stable authored identifier in the scene format to fall back on, so this is
+a real limit, not an oversight.
+
+Mitigation is in the instrument, not the scheme: when an entity's pose changes by more than the
+tolerance *and* another entity of the same `(kind, label)` changes by the mirror amount, the
+audit reports **unpaired** rather than reporting two drifts. A wrong pairing produces two
+confident, precise, wrong numbers — the failure mode this whole document exists to stop.
+
+If scene files later grow a stable per-row uuid, identity should move to it and this section
+becomes obsolete. Nothing else in the IR depends on the scheme.
