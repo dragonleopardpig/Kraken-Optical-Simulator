@@ -291,6 +291,37 @@ def wrap_banner_lines(lines, *, width: int = BANNER_REASON_WIDTH) -> list[str]:
     return out
 
 
+#: bugs/0838: a vtkTextActor's advance width per character, as a fraction of its font size.
+#: MEASURED off the flagged captures, not assumed: the system HUD's longest line is 32
+#: characters in a ~223 px box and the wrapped banner's is 110 in a ~719 px box -- 7.0 and
+#: 6.5 px per character at font size 13, i.e. 0.54 and 0.50 of the font size. 0.55 is the
+#: conservative end, which errs by moving the banner RIGHT (away from the HUD) rather than
+#: overlapping it.
+BANNER_CHAR_WIDTH_RATIO = 0.55
+#: The frame and background a text actor paints around its text.
+BANNER_FRAME_PAD_PX = 12.0
+
+
+def text_actor_width_px(text, font_size_px: float = 13.0) -> float:
+    """bugs/0838: how wide a text actor will render, computed from its TEXT.
+
+    VTK's ``GetSize`` is the obvious way to ask and it is not trustworthy here: the banner's
+    placement used it and produced a position that disagreed with the HUD on screen by 4x
+    (285 px drawn, ~1055 px reported), because ``_update_system_info_hud`` sets the text
+    without rendering and ``GetSize`` can report the last RENDERED extent. bugs/0837 then used
+    that number to decide whether the banner FITS, so one bad reading sent the banner to the
+    stacked fallback, on top of the scene -- a worse outcome than the overflow it was added to
+    prevent.
+
+    Deriving from the text is deterministic, needs no renderer, and is testable. It is an
+    ESTIMATE and says so; a few percent of error moves the banner a few pixels, which is the
+    right failure mode for a layout offset. A wrong ``GetSize`` moved it 800.
+    """
+    lines = str(text or "").splitlines() or [""]
+    longest = max((len(line) for line in lines), default=0)
+    return longest * float(font_size_px) * BANNER_CHAR_WIDTH_RATIO + BANNER_FRAME_PAD_PX
+
+
 def solve_banner_anchor(hud_width_px, banner_width_px, view_width_px) -> "tuple[float, float]":
     """bugs/0837: where the solve banner sits, as ``(x, y)`` in normalized viewport.
 

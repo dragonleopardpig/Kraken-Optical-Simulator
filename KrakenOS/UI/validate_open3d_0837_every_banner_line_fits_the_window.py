@@ -64,7 +64,13 @@ def run_checks() -> tuple[bool, list[str]]:
     else:
         notes.append("SOURCE the assembly point does not wrap its lines")
         ok = False
-    if "solve_banner_anchor(" in place and "GetSize(renderer, banner_size)" in place:
+    # bugs/0838 superseded HOW the width is obtained: this check originally demanded
+    # `GetSize(renderer, banner_size)`, and when 0838 replaced that with a text-derived
+    # estimate the gate BLOCKED on this phase -- two of my own guards contradicting each
+    # other. The durable claim is that placement knows the banner's own width and feeds the
+    # pure anchor, not which call supplies it.
+    measures_banner = "text_actor_width_px(" in place or "GetSize(renderer, banner_size)" in place
+    if "solve_banner_anchor(" in place and measures_banner:
         notes.append("SOURCE = placement measures the BANNER's own width and uses the pure anchor")
     else:
         notes.append("SOURCE placement does not read the banner width")

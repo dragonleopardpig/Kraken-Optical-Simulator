@@ -18799,11 +18799,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if hud is None or renderer is None:
             return
         try:
-            # vtkTextActor.GetSize takes an OUTPUT array -- calling it with one argument
-            # raises, which silently left the banner stacked on the first cut.
-            size = [0, 0]
-            hud.GetSize(renderer, size)               # (w, h) in display pixels
-            width_px = int(size[0])
+            # bugs/0838: from the TEXT, not GetSize. The user asked for the banner back
+            # beside the resolution HUD after bugs/0837 put it in the stacked fallback, on top
+            # of the scene -- and it went there because GetSize reported a HUD width four
+            # times what was drawn, so the "does it fit" test failed. See text_actor_width_px.
+            from KrakenOS.UI.services.system_info_hud import text_actor_width_px
+
+            try:
+                hud_text = hud.GetInput() or ""
+            except Exception:
+                hud_text = ""
+            width_px = text_actor_width_px(hud_text, 13.0)
             if width_px <= 0:
                 return
             viewport = renderer.GetSize()             # (w, h) of the render window
@@ -18815,14 +18821,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             # nothing about where it ends. Measured on flag_20260920_203630: a start of 0.445
             # passed and the banner still ran off a 2478 px window, cutting the STRAY LIGHT
             # line mid-word.
-            banner_size = [0, 0]
-            try:
-                actor.GetSize(renderer, banner_size)
-            except Exception:
-                banner_size = [0, 0]
             from KrakenOS.UI.services.system_info_hud import solve_banner_anchor
 
-            x_norm, y_norm = solve_banner_anchor(width_px, banner_size[0], view_w)
+            try:
+                banner_text = actor.GetInput() or ""
+            except Exception:
+                banner_text = ""
+            banner_px = text_actor_width_px(banner_text, 13.0)
+            x_norm, y_norm = solve_banner_anchor(width_px, banner_px, view_w)
             coordinate = actor.GetPositionCoordinate()
             coordinate.SetCoordinateSystemToNormalizedViewport()
             coordinate.SetValue(x_norm, y_norm)
