@@ -76,7 +76,7 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         if path.name == "scene_ir.py":
             continue
         try:
-            if "scene_ir" not in path.read_text():
+            if "scene_ir" not in path.read_text(encoding="utf-8"):
                 continue
         except Exception:
             continue

@@ -136,7 +136,7 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
        "F5: and they hash apart, so one source cannot crowd out the other")
 
     # ---- G: the overlay is wired to it, and draws no random numbers ------------------------------
-    source = __import__("pathlib").Path(sir.__file__).read_text()
+    source = __import__("pathlib").Path(sir.__file__).read_text(encoding="utf-8")
     ok("default_rng" not in source and "rng.choice" not in source,
        "G1: the overlay module consults no RNG at all any more")
     ok("stable_ray_subset" in source and "ray_identity" in source,
