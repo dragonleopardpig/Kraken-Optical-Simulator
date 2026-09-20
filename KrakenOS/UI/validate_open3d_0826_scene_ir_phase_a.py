@@ -30,8 +30,11 @@ Checks (display-free except D, which drives two real scenes):
   F  cycle detection names the WHOLE cycle, self-reference included;
   G  a dangling anchor is reported;
   H  compare_to_consumer does not cross kinds, and unpaired is never agreement;
-  I  no APP code imports the IR -- Phase A's 'changes nothing' claim is enforced,
-     not trusted. Phase C relaxes this deliberately, one consumer at a time.
+  I  only DELIBERATELY converted consumers import the IR, and every listed conversion
+     is real -- Phase C relaxes read-from-nowhere one consumer at a time without
+     discarding the protection;
+  J  scene_ir.world_frame is a byte-identical drop-in for row_placement.world_frame,
+     including returning None for a row carrying no tilts.
 
 Run:  .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_0826_scene_ir_phase_a
 """
@@ -44,6 +47,14 @@ import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 GATE_SCENES = ("attachment/machine_vision_ELS85.py", "attachment/om05a_folded.py")
+
+#: Phase C converts consumers ONE PER COMMIT. This list is the record of which are
+#: deliberate; anything else importing the IR is an accidental wiring and fails I1.
+#: Keeping it explicit is what lets the read-from-nowhere protection survive Phase C
+#: instead of being deleted the moment the first consumer lands.
+PHASE_C_CONVERTED = (
+    "KrakenOS/UI/services/geometric_analysis.py",
+)
 
 
 def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, list[str]]":
@@ -84,8 +95,40 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         if path.name.startswith("validate_") or rel.startswith("tools/"):
             continue
         consumers.append(rel)
-    ok(not consumers,
-       f"I1: no app code imports the IR -- Phase A reads from nowhere (found {consumers})")
+    unexpected = sorted(set(consumers) - set(PHASE_C_CONVERTED))
+    ok(not unexpected,
+       f"I1: only DELIBERATELY converted consumers import the IR (unexpected: {unexpected})")
+    missing = sorted(set(PHASE_C_CONVERTED) - set(consumers))
+    ok(not missing,
+       f"I2: every listed conversion is real -- a stale entry would hide an accidental "
+       f"wiring behind it (listed but not importing: {missing})")
+
+    # ---- J: the world_frame drop-in ---------------------------------------------------------
+    from KrakenOS.UI.services import scene_ir as _sir
+
+    _no_rot = EntityIR(id="surface:n#0", kind="surface", to_world=np.eye(4),
+                       frame=FRAME_STRAIGHT_EQUIVALENT, placement_space="sequential",
+                       source_row=0, has_orientation=False)
+    _rot = np.eye(4); _rot[:3, :3] = np.diag([1.0, -1.0, -1.0])
+    _has_rot = EntityIR(id="surface:r#0", kind="surface", to_world=_rot,
+                        frame=FRAME_STRAIGHT_EQUIVALENT, placement_space="world",
+                        source_row=1, has_orientation=True)
+    _ir = SceneIR(entities=(_no_rot, _has_rot))
+    _p, _r, _s = _sir.world_frame(None, 0, scene_ir=_ir)
+    ok(_r is None,
+       "J1: a row carrying no tilts returns rotation=None, not a stored identity -- the "
+       "conflation bugs/0556 made when it hardcoded (0,0,1) for a flipped sensor")
+    ok(_s == "sequential", "J2: and its placement space is carried through")
+    _p2, _r2, _s2 = _sir.world_frame(None, 1, scene_ir=_ir)
+    ok(_r2 is not None and np.allclose(_r2, np.diag([1.0, -1.0, -1.0])),
+       "J3: a row WITH orientation returns the real rotation")
+    ok(_s2 == "world", "J4: and its space too")
+    try:
+        _sir.world_frame(None, 99, scene_ir=_ir)
+        _raised = False
+    except IndexError:
+        _raised = True
+    ok(_raised, "J5: a row the IR has no entity for raises rather than returning a default")
 
     # ---- B: identity ----------------------------------------------------------------------------
     ok(entity_id("surface", "air", 0) != entity_id("surface", "air", 1),

@@ -63,6 +63,13 @@ class EntityIR:
     datum_delta: np.ndarray | None = None
     authored_center: np.ndarray | None = None   # the promotion snapshot: a CHECK value
     fallback: str | None = None
+    #: True when the source row carried tilts. The IR stores identity in ``to_world`` when
+    #: it did not, and identity is indistinguishable from a real identity rotation -- while
+    #: ``row_placement.world_frame`` returns None there. A consumer that derives a normal
+    #: from a rotation behaves differently on None than on identity (bugs/0556 hardcoded
+    #: (0,0,1) for a flipped sensor by making exactly that conflation), so the distinction
+    #: is carried explicitly rather than inferred back out of the matrix.
+    has_orientation: bool = False
 
     @property
     def position(self) -> np.ndarray:
@@ -176,14 +183,16 @@ def lower(editor: Any) -> SceneIR:
             continue
         space = pose.space
         frame = FRAME_ALREADY_WORLD if space == rp.WORLD else FRAME_STRAIGHT_EQUIVALENT
+        rotation = rp.rotation_matrix(row)
         entities.append(EntityIR(
             id=surface_ids[index],
             kind="surface",
-            to_world=_matrix(pose.position, rp.rotation_matrix(row)),
+            to_world=_matrix(pose.position, rotation),
             frame=frame,
             placement_space=space,
             source_row=index,
             label=labels[index],
+            has_orientation=rotation is not None,
         ))
 
     entities.extend(_lower_bodies(editor, rows, labels, surface_ids, findings))
@@ -378,3 +387,30 @@ def compare_to_consumer(scene_ir: SceneIR, consumer_positions: dict, *,
         rows.append({"id": entity.id, "row": entity.source_row, "delta_mm": delta,
                      "status": "agree" if delta <= tol_mm else "DISAGREE"})
     return rows
+
+
+def world_frame(editor: Any, row_index: int, *, scene_ir: "SceneIR | None" = None):
+    """``(position, rotation_3x3_or_None, space)`` for a row, read from the IR.
+
+    A drop-in for :func:`row_placement.world_frame`, returning the identical shape --
+    including ``None`` for a row that carries no tilts, which is why ``EntityIR`` records
+    ``has_orientation`` rather than letting a stored identity masquerade as one.
+
+    Today the two are the same answer: the IR's surface entities are built from
+    ``prescription_pose``, which is exactly what ``row_placement`` returns. **That is the
+    point of Phase C** -- re-pointing changes no behaviour now, and at Phase D, when the fold
+    moves inside :func:`lower`, every consumer reading through here gets the fold while the
+    ones still calling ``row_placement`` do not.
+
+    ``scene_ir`` lets a caller that already lowered this refresh pass it in. Lowering costs
+    0.17-0.38% of a refresh, so lowering per call is affordable rather than free -- one
+    lowering shared across a refresh is the architecture, and persisting one ACROSS refreshes
+    is the thing the design forbids.
+    """
+    ir = scene_ir if scene_ir is not None else lower(editor)
+    for entity in ir.of_kind("surface"):
+        if entity.source_row is not None and int(entity.source_row) == int(row_index):
+            matrix = np.asarray(entity.to_world, dtype=float)
+            rotation = matrix[:3, :3] if entity.has_orientation else None
+            return matrix[:3, 3], rotation, entity.placement_space
+    raise IndexError(f"row {row_index} has no surface entity in the IR")

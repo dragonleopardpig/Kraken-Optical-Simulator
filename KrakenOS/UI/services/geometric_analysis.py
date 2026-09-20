@@ -655,16 +655,22 @@ class GeometricAnalysisMixin:
 
     def _world_detector_plane(self):
         """(centre, normal, tangent1, tangent2, radius) of the terminal Image row in WORLD,
-        via the ``row_placement`` resolver — the one place that answers "where is this row"
-        correctly on a frozen scene (its own docstring counts five hand-rolled consumers that
-        each got this wrong). Returns None when the scene has no resolvable Image plane."""
+        via the Scene IR — the one place that answers "where is this row" correctly on a
+        frozen scene (``row_placement``'s docstring counts five hand-rolled consumers that
+        each got this wrong). Returns None when the scene has no resolvable Image plane.
+
+        bugs/0826 Phase C: read through ``scene_ir.world_frame`` rather than
+        ``row_placement.world_frame``. Identical today -- the IR's surface entities are built
+        from ``prescription_pose``, verified byte-identical over 67 rows on four scenes -- and
+        at Phase D, when the fold moves inside ``lower()``, this consumer gets the fold while
+        one still calling ``row_placement`` would not."""
         rows = list(getattr(self, "rows", []) or [])
         if len(rows) < 2 or str(getattr(rows[-1], "surface", "") or "") != "Image":
             return None
         try:
-            from KrakenOS.UI.services import row_placement
+            from KrakenOS.UI.services import scene_ir
 
-            position, rotation, _space = row_placement.world_frame(self, len(rows) - 1)
+            position, rotation, _space = scene_ir.world_frame(self, len(rows) - 1)
         except Exception:
             return None
         centre = np.asarray(position, dtype=float).reshape(3)
