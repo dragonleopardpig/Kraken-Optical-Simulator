@@ -18702,6 +18702,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     self.editor.__dict__.get("_pinned_placement_moves")
                 )
             )
+            # bugs/0837: wrap EVERY line here, at the one point they converge. bugs/0835
+            # wrapped only the refusal's reason, so the focus summary's 223-character STRAY
+            # LIGHT line still ran past the window edge and lost its ending.
+            from KrakenOS.UI.services.system_info_hud import wrap_banner_lines
+
+            lines = wrap_banner_lines(lines)
             text = "\n".join(lines)
             try:
                 if not bool(self.show_solve_banner_var.get()):
@@ -18804,13 +18810,19 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             view_w = float(viewport[0]) if viewport and viewport[0] else 0.0
             if not (view_w > 1.0):
                 return
-            gap_px = 18.0
-            x_norm = 0.012 + (float(width_px) + gap_px) / view_w
-            # never push it off the right edge -- fall back to stacked if it will not fit
-            if x_norm > 0.72:
-                x_norm, y_norm = 0.012, 0.83
-            else:
-                y_norm = 0.985
+            # bugs/0837: bound by the BANNER's own width, not just its start. The old rule
+            # checked `x_norm > 0.72` -- a statement about where the text BEGINS, which says
+            # nothing about where it ends. Measured on flag_20260920_203630: a start of 0.445
+            # passed and the banner still ran off a 2478 px window, cutting the STRAY LIGHT
+            # line mid-word.
+            banner_size = [0, 0]
+            try:
+                actor.GetSize(renderer, banner_size)
+            except Exception:
+                banner_size = [0, 0]
+            from KrakenOS.UI.services.system_info_hud import solve_banner_anchor
+
+            x_norm, y_norm = solve_banner_anchor(width_px, banner_size[0], view_w)
             coordinate = actor.GetPositionCoordinate()
             coordinate.SetCoordinateSystemToNormalizedViewport()
             coordinate.SetValue(x_norm, y_norm)

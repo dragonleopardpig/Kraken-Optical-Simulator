@@ -264,6 +264,62 @@ def wrap_banner_reason(
     return wrapped or [text]
 
 
+def wrap_banner_lines(lines, *, width: int = BANNER_REASON_WIDTH) -> list[str]:
+    """bugs/0837: wrap EVERY banner line, not just the refusal's reason.
+
+    bugs/0835 wrapped ``reason`` and stopped there. It fixed one line when the defect was in
+    the formatter: the focus summary's own lines never passed through it, and on
+    flag_20260920_203630 the STRAY LIGHT line ran to **223 characters** -- twice the budget --
+    rendered about 1500 px wide, and was cut off by the WINDOW EDGE at "...left out of the
+    focus measu", losing "and drawn faint in the 3D scene". Same loss as 0835, a different
+    mechanism: no character cap was involved, the text simply ran past the viewport.
+
+    Applied at the single point where the banner's text is assembled, so every producer is
+    covered -- the refusal block, the focus summary, the placement-move lines, and whatever is
+    added next. An already-short line is returned untouched.
+    """
+    out: list[str] = []
+    for line in list(lines or []):
+        text = str(line or "")
+        if not text.strip():
+            out.append(text)
+            continue
+        if len(text) <= int(width):
+            out.append(text)
+            continue
+        out.extend(wrap_banner_reason(text, width=width))
+    return out
+
+
+def solve_banner_anchor(hud_width_px, banner_width_px, view_width_px) -> "tuple[float, float]":
+    """bugs/0837: where the solve banner sits, as ``(x, y)`` in normalized viewport.
+
+    Beside the system HUD when the WHOLE banner fits there; stacked underneath when it does
+    not. The pre-0837 rule bounded only the START -- ``if x_norm > 0.72`` -- which says nothing
+    about whether the banner's own width clears the right edge. Measured on
+    flag_20260920_203630: a start of 0.445 passed that check and the banner still ran off a
+    2478 px window.
+
+    Pure arithmetic so it can be checked without a renderer, which is the half that was never
+    testable before.
+    """
+    try:
+        view_w = float(view_width_px)
+        hud_w = float(hud_width_px)
+        banner_w = float(banner_width_px or 0.0)
+    except (TypeError, ValueError):
+        return 0.012, 0.83
+    if not (view_w > 1.0) or not (hud_w > 0.0):
+        return 0.012, 0.83
+    gap_px = 18.0
+    margin_px = 12.0
+    x_norm = 0.012 + (hud_w + gap_px) / view_w
+    fits = banner_w <= 0.0 or (x_norm * view_w + banner_w + margin_px) <= view_w
+    if x_norm > 0.72 or not fits:
+        return 0.012, 0.83
+    return x_norm, 0.985
+
+
 def format_solve_refusal_lines(info) -> list[str]:
     """bugs/0717 (user directive: "The UI shouldn't silently fail and display as
     though it is working"): the in-scene SOLVE-REFUSED banner. Pure formatter --
