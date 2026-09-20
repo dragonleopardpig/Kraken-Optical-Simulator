@@ -178,9 +178,9 @@ body-drift cases. The gate set should be those five, not the old one.
 
 ## Open questions
 
-0. **Why does `_body_centers` see no bodies?** Blocks Phase A (above).
-   Not a design question so much as the first task, but it is unanswered and everything
-   downstream is gated on it.
+0. ~~Why does `_body_centers` see no bodies?~~ **CLOSED 2026-09-20.** It hardcoded three
+   labels (omitting `optical`) and swallowed every failure. Fixed: ELS85 now reports 2 bodies,
+   om05a_folded 11 at 0.0000 mm. Phase A is unblocked.
 
 1. **Entity identity across a rebuild.** `id` must be stable or the audits cannot pair entities
    between runs, and per-row desp compounding (0815) means row index alone is not stable under
@@ -189,7 +189,66 @@ body-drift cases. The gate set should be those five, not the old one.
    0700/0646 fast-load work means "scene change" is not currently one event. Lowering on every
    refresh would be correct and possibly too slow — needs measurement against
    `summarize_open3d_timing` before Phase C.
-3. **Do promoted STEP bodies carry their own `to_world`, or derive it from their anchor row?**
-   0503 says lens glue is *relative* (reference + datum delta) and the reference must never be
-   shifted in slide/carry code. The IR must express that relationship, not flatten it — otherwise
-   lowering bakes in a seat that later moves.
+3. ~~Do promoted STEP bodies carry their own `to_world`, or derive it from their anchor row?~~
+   **DECIDED 2026-09-20: they DERIVE.** Worked through below.
+
+
+## Decided: promoted bodies derive from their anchor row
+
+A promoted body's `to_world` is **computed during lowering** from its anchor row's `to_world`
+plus its stored datum delta. It is never copied from a saved snapshot.
+
+### This does not break flatness
+
+The IR stays flat data with one explicit `to_world` per entity. Derivation is about **when** the
+relationship is resolved, not about what the IR stores: `lower()` resolves it, every run. So an
+entity still carries one `(4,4)` matrix and no consumer ever walks a reference chain — but that
+matrix cannot go stale, because nothing persists it.
+
+    body.to_world = anchor.to_world @ datum_delta
+
+The relationship is still recorded, as **provenance**, not as something consumers resolve:
+
+    EntityIR.derived_from: str | None      # the anchor entity's id
+    EntityIR.datum_delta:  np.ndarray | None
+
+That is what lets an audit answer *why* a body is where it is, and what makes a re-lowering
+after the anchor moves produce the right answer instead of a stale one.
+
+### What it settles
+
+**bugs/0503 is satisfied by construction.** Glue seats at reference + datum delta and the
+reference is never shifted by slide/carry code — because slide/carry no longer touches the body
+at all. It moves the anchor row; the body follows at the next lowering.
+
+**`StepOverlayPromotion.center_world` stops being a source of truth** and becomes a *check
+value*: what the body was at authoring time. That reframes today's measurements exactly:
+
+* `om05a_folded.py` — 11 promoted bodies, **0.0000 mm** from authored. Derivation and snapshot
+  agreeing, as they should on an unmoved scene.
+* ELS85 — 9.38 mm and 42.65 mm. Under the derived model that is the expected reading for a
+  **stale snapshot**, not a misplaced body, which is exactly why `scene_placement_audit` warns
+  against absolute readings and offers `compare_drifts` instead.
+
+Post-Phase-D the snapshot can be re-derived on save and absolute drift becomes meaningful again.
+Until then it stays informational, as the audit already reports it.
+
+**It gives bugs/0748 and 0815 a shape.** Those are per-row desps COMPOUNDING down a chain: an
+edit to two gaps slid seven downstream rows 8.820 mm. With a body one hop from its anchor rather
+than the accumulation of every row before it, a gap edit moves the anchor and the body follows by
+exactly the anchor's movement. The vendor-seat rule already learned the hard way — ONE frame-desp
+on the FIRST follower row, never per-row — becomes the natural expression rather than a
+convention to remember.
+
+### Consequence for open question 1
+
+A derived body's identity should key on its **anchor plus datum**, not its row index. Row index
+is unstable under insertion, which is precisely the situation 0815 arose in; the anchor
+relationship is not. `(anchor_id, datum_hash)` now leads `(kind, label, ordinal)`.
+
+### What this leaves open
+
+Whether derivation chains may be **deeper than one hop** — a body glued to a promoted body rather
+than to a surface row. Depth > 1 is more faithful to how assemblies are actually authored (the
+om05a prism assembly is a stack); depth 1 is cheaper to audit and cannot cycle. Needs a call
+before Phase A freezes the IR shape.
