@@ -16393,6 +16393,10 @@ phase_609_popup_picture_and_semi = _phase_from_standalone(
     609, "the post-swap popup shows the part, and its semi-FOV follows the rectangle: that popup IS the post-swap prompt (_prompt_fov_solve_after_swap -> _open_quick_estimation_fov_popup), so it is where the FOV decision is made and where the picture belongs -- bugs/0828 had given it only to the Inspection Part dialog. It also fixes a regression bugs/0829 introduced and the user's own screenshot caught: making the height face-derived left _fov_context computing semi from the WIDTH alone via the sensor aspect, so a 52.5 x 1.05 field read 'Object FOV (semi) = 37.12', the answer for a 52.5 SQUARE, when its true semi-diagonal is 26.255 -- 1.41x too large. Now hypot(w, h) / 2, falling back to the aspect conversion only when the height box is empty, so a square field still reads the pre-0829 41.95 and the no-device path is unchanged. 0829 changed what the boxes MEAN without checking what else read them (0830)",
     "KrakenOS.UI.validate_open3d_0830_popup_picture_and_semi",
     "popup_picture_and_semi")
+phase_610_legend_fits_the_canvas = _phase_from_standalone(
+    610, "the illustration legend fits inside its canvas: bugs/0830 put the part picture in the post-swap FOV popup with a one-line legend that the user's screenshot showed spilling past BOTH borders -- measured against live Tk font metrics, 196 px in a 190 px canvas. Split into two colour-matched lines (91 px and 108 px) with the drawing area cut from 120 to 96 px so the part cannot collide: the drawing now ends at y=78, the legend sits at y=100 and 111, the canvas is 120. Third layout defect this session to survive every headless check and be caught the moment something was actually drawn (0828's chain measured 1246 px wide; 0830's picture was missing from the popup the user was looking at). The guard measures against live font metrics rather than a hardcoded width, and asserts the OLD legend overflowed so the fix cannot be reverted to 'it looked fine' (0831)",
+    "KrakenOS.UI.validate_open3d_0831_legend_fits_the_canvas",
+    "legend_fits_the_canvas")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17068,6 +17072,7 @@ def main() -> int:
             phase_607_field_chain_and_illustration,
             phase_608_fov_popup_prefills_from_the_face,
             phase_609_popup_picture_and_semi,
+            phase_610_legend_fits_the_canvas,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

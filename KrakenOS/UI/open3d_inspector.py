@@ -23126,7 +23126,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     _cv = tk.Canvas(dialog, width=190, height=120, highlightthickness=1,
                                     highlightbackground="#bbbbbb", background="#fafafa")
                     _cv.grid(row=0, column=2, rowspan=4, padx=(4, 12), pady=(12, 6), sticky="n")
-                    _polys = face_polygons(_ispec, width_px=190, height_px=120)
+                    _polys = face_polygons(_ispec, width_px=190, height_px=96)
                     for _name in ("back", "bottom", "left", "right", "top", "front"):
                         _pts = [c for xy in _polys[_name] for c in xy]
                         if _name in _lit:
@@ -23136,8 +23136,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                         else:
                             _f, _o = "#e9eef2", "#9fb0bd"
                         _cv.create_polygon(*_pts, fill=_f, outline=_o, width=1)
-                    _cv.create_text(95, 110, text="green = inspected   grey = unreachable",
-                                    fill="#666666", font=("TkDefaultFont", 7))
+                    # bugs/0831: one line of legend is wider than a 190 px canvas and spilled
+                    # past both borders (measured in the user's screenshot). Two short lines
+                    # fit; the part drawing is given the room above them.
+                    _cv.create_text(95, 100, text="green = inspected",
+                                    fill="#2f7f3f", font=("TkDefaultFont", 7))
+                    _cv.create_text(95, 111, text="grey = not imageable",
+                                    fill="#888888", font=("TkDefaultFont", 7))
             except Exception:
                 pass
         w0, h0 = (wh if wh else (0.0, 0.0))
