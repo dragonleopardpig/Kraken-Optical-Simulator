@@ -18629,6 +18629,26 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         """bugs/0732: show/hide the in-scene solve+focus banner without touching the solve."""
         self._update_solve_refusal_banner(render=True)
 
+    def _delivered_field_now(self):
+        """bugs/0834: ``(|m|, (width, height))`` the scene delivers RIGHT NOW, or None.
+
+        The same two reads the solve itself records into ``_solve_summary_info`` -- paraxial
+        magnification and the camera's active sensor -- so "has this changed?" is asked of the
+        identical quantity rather than an equivalent one. Paraxial only: no trace, nothing
+        cached, safe to call on every banner refresh.
+
+        None, never a guess, when either read fails; the caller treats that as "cannot tell"
+        and leaves the SOLVE line alone.
+        """
+        try:
+            magnification = abs(float(self.editor._current_finite_paraxial_magnification()))
+            if not (magnification > 0.0):
+                return None
+            dims = self.editor._current_camera_sensor_active_mm()
+            return magnification, (float(dims[0]) / magnification, float(dims[1]) / magnification)
+        except Exception:
+            return None
+
     def _update_solve_refusal_banner(self, *, render: bool = False) -> None:
         """bugs/0717 (user directive: "The UI shouldn't silently fail and display
         as though it is working"): when a FOV solve REFUSED, the scene looks
@@ -18666,6 +18686,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     # bugs/0767: the pixel is what decides whether a residual is worth acting
                     # on -- the same camera record the system HUD reads.
                     pixel_size_um=self._flag_camera_pixel_size_um(),
+                    # bugs/0834: re-MEASURE what the scene delivers, every time the banner is
+                    # drawn, so a SOLVE line left standing by a later device edit or refusal
+                    # cannot keep presenting itself as current.
+                    delivered_now=self._delivered_field_now(),
                 )
             )
             # bugs/0816: rows an edit slid off their authored placement ride the same banner.

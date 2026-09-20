@@ -2078,8 +2078,55 @@ def focused_image_plane_label_specs(image_point, image_axis, info, half_height,
 _NO_GAIN_FROM_REFOCUS = 0.9
 
 
+#: bugs/0834: how far the scene's magnification may drift from the one the last solve
+#: recorded before its SOLVE line stops describing the present. 0.1% is far below anything a
+#: user would act on and far above float noise; the flagged case drifted 7%.
+_SOLVE_SUMMARY_STALE_FRACTION = 1.0e-3
+
+
+def solve_summary_superseded(solve_info, delivered_now) -> str:
+    """bugs/0834: "" when the last solve's SOLVE line still describes the scene, else a phrase
+    naming what the scene delivers NOW.
+
+    ``_solve_summary_info`` is written when a solve APPLIES and never revisited.  Anything that
+    changes the conjugates afterwards -- resizing the inspected device, moving it along the
+    axis, a later request that is REFUSED -- leaves the line standing as though it were
+    current.  Measured on flag_20260920_182008: the banner carried
+
+        delivered now: |m| 0.407  FOV 56.57 x 56.57 mm       <- the refusal, current
+        SOLVE: delivering 52.5 x 52.5 mm (|m| 0.4389); ...    <- the previous solve, stale
+
+    three lines apart.  Both numbers were correct.  Nothing said which one was now.
+
+    Pure comparison, so it is the same answer headlessly as on screen: ``delivered_now`` is
+    ``(m, (w, h))`` measured at banner time, and mismatching magnification is the test -- the
+    field follows from it and the sensor, so |m| is the one quantity that cannot agree by
+    coincidence.  Returns "" whenever either side is unmeasurable: an unknown is never a
+    reason to caption something stale.
+    """
+    if not isinstance(solve_info, dict) or not solve_info:
+        return ""
+    try:
+        was = abs(float(solve_info.get("delivered_m")))
+        now = abs(float(delivered_now[0]))
+        wh = delivered_now[1]
+    except (TypeError, ValueError, IndexError, KeyError):
+        return ""
+    if not (was > 0.0) or not (now > 0.0):
+        return ""
+    if abs(now - was) <= _SOLVE_SUMMARY_STALE_FRACTION * was:
+        return ""
+    try:
+        return (
+            f"the scene now delivers {float(wh[0]):.4g} x {float(wh[1]):.4g} mm "
+            f"(|m| {now:.4g})"
+        )
+    except (TypeError, ValueError, IndexError):
+        return f"the scene now delivers |m| {now:.4g}"
+
+
 def format_focus_summary_lines(
-    focus_info, solve_info=None, notes=None, pixel_size_um=None
+    focus_info, solve_info=None, notes=None, pixel_size_um=None, delivered_now=None
 ) -> list[str]:
     """bugs/0728: the in-scene focus summary the user asked for -- what the solve did (or did
     NOT do), and where the image actually forms. Pure formatter; [] when there is nothing to
@@ -2111,7 +2158,20 @@ def format_focus_summary_lines(
                 action = ""
         head = "; ".join(part for part in (field, action) if part)
         if head:
-            lines.append("SOLVE: " + head)
+            # bugs/0834: say WHEN, not just what. A solve line that no longer describes the
+            # scene is not deleted -- the user still wants to know the lens moved -25.19 mm --
+            # but it stops presenting itself as the present.
+            superseded = solve_summary_superseded(solve_info, delivered_now)
+            if superseded:
+                # On its OWN line, in the banner's existing continuation style. Inlining the
+                # caption made a 155-character line in a panel whose other lines cap at the
+                # 110 the reason text is truncated to -- and this session has already put
+                # three layout defects on screen that every headless check passed (0828,
+                # 0830, 0831). The guard measures these lengths.
+                lines.append("SOLVE (superseded): " + head)
+                lines.append("  -- " + superseded)
+            else:
+                lines.append("SOLVE: " + head)
     if isinstance(focus_info, dict) and focus_info:
         try:
             offset = float(focus_info.get("offset_mm"))
