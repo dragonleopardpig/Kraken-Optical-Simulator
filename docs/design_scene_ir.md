@@ -326,3 +326,43 @@ confident, precise, wrong numbers — the failure mode this whole document exist
 
 If scene files later grow a stable per-row uuid, identity should move to it and this section
 becomes obsolete. Nothing else in the IR depends on the scheme.
+
+## Phase B finding: ELS85-style bodies are NOT derivable from stored metadata
+
+Measured on `machine_vision_ELS85.py`, both promoted rows:
+
+    row 6  station-neutral solid, row_thickness 0
+           center_world   (6.2946, 0, 47.6146)
+           placement_off  (6.2946, 0,  9.9258)   == (cw.x, cw.y, bounds_min.z)
+           cw - po        (0, 0, 37.6888)        == R @ (0, 0, half_z)   EXACT
+
+    row 7  45-degree plate, row_thickness 40, station_neutral unset
+           center_world   (206.1534, 0, 71.8971)
+           placement_off  (212.4034, 0, 65.6471)
+           cw - po        (-6.25, 0, 6.25)  |d| = 8.8388
+           R @ (0,0,hz)   (0, 12.5, 0)      |d| = 12.5             NO MATCH
+           and its bounds describe a 25 mm cube while axial_reserve_mm says 40
+
+So the `cw - po = R @ (0,0,half_z)` rule holds for one row and fails for the other, and row 7's
+metadata is internally inconsistent.
+
+**But the rule would not help even where it holds.** `center_world` and `placement_offset_xyz`
+are both AUTHORED snapshots, so reconstructing one from the other is circular. A datum must
+relate the body to its **anchor row**, and the only available expression — `cw - row_pose` —
+can be computed solely from the *current* pose. That is correct exactly while nothing has
+moved, which is precisely the condition it cannot detect. Deriving from it would bake any prior
+movement into the datum and call it authored intent.
+
+### Consequence
+
+There is **no lowering-side fix**. The promotion writer must record the datum at promote time.
+That is a behaviour change, so it belongs after Phase B, not in it — and it only helps scenes
+promoted afterwards; existing scenes keep falling back until re-promoted.
+
+Until then `lower()` marks these bodies `fallback="authored snapshot (no live derivation)"`,
+claims no derivation, withholds `authored_center`, and emits
+`scene_ir.anchor_not_reconstructible` carrying this measurement. The guard pins the negative
+result so a later partial reconstruction cannot quietly reintroduce the circularity.
+
+This does not block Phase C. om05a-class scenes — the ones whose body drift generates the live
+bugs — derive correctly through the output-port graph at 0.0000 mm.

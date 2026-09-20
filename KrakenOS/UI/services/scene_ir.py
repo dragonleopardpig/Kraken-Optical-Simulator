@@ -323,11 +323,18 @@ def _anchor_not_reconstructible(body_id: str, row_index: int):
         code="scene_ir.anchor_not_reconstructible",
         severity=WARNING,
         summary=f"{body_id} declares anchor='row_pose' but the IR cannot rebuild its pose",
-        detail=f"row {row_index}: placement_offset_xyz is not a delta from the row pose "
-               f"(its z equals bounds_min_world's z), so no datum reconstruction is available",
-        remedy="Falling back to the authored snapshot, which goes stale the moment the row "
-               "moves. Phase B must find this mechanism's real datum before the body can "
-               "be derived.",
+        detail=f"row {row_index}: measured on ELS85 -- placement_offset_xyz is the AUTHORED "
+               f"pose, not a delta. cw - po = R @ (0,0,half_z) holds exactly for the "
+               f"station-neutral solid (row 6) and fails for the 45-degree plate (row 7, "
+               f"|cw-po|=8.84 against |R@(0,0,hz)|=12.5, whose bounds say a 25 mm cube while "
+               f"its axial_reserve says 40 mm). Even where it holds it reconstructs one "
+               f"AUTHORED value from another, which is circular: a datum must relate the body "
+               f"to its anchor ROW, and cw - row_pose can only be computed from the CURRENT "
+               f"pose, so it is right only while nothing has moved -- exactly the case it "
+               f"cannot detect",
+        remedy="No lowering-side fix exists. The promotion WRITER must record the datum at "
+               "promote time; until then these bodies fall back to a snapshot that goes "
+               "stale the moment their row moves.",
     )
 
 

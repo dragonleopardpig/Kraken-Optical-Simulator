@@ -70,3 +70,37 @@ self-reference, a 50-deep chain terminating (no depth limit), cross-kind pairing
 never counted as agreement, and both gate scenes lowering with every surface agreeing with the
 prescription consumer (9/9 and 25/25) and every output-port-derived body at 0.0000 mm from
 authored.
+
+## Phase B follow-up: the ELS85 datum does not exist, and cannot
+
+Measured on both promoted rows:
+
+    row 6  station-neutral, thickness 0
+           cw (6.2946, 0, 47.6146)   po (6.2946, 0, 9.9258)
+           cw - po = (0, 0, 37.6888) == R @ (0, 0, half_z)    EXACT
+
+    row 7  45-degree plate, thickness 40, station_neutral unset
+           cw (206.1534, 0, 71.8971) po (212.4034, 0, 65.6471)
+           cw - po = (-6.25, 0, 6.25), |d| 8.8388
+           R @ (0,0,half_z) = (0, 12.5, 0),  |d| 12.5         NO MATCH
+           its bounds describe a 25 mm cube while axial_reserve_mm says 40
+
+The rule holds for one row, fails for the other, and row 7's metadata is internally
+inconsistent. **But it would not help even where it holds**: `center_world` and
+`placement_offset_xyz` are both AUTHORED snapshots, so reconstructing one from the other is
+circular. A datum must relate the body to its anchor ROW, and the only available expression --
+`cw - row_pose` -- can be computed only from the CURRENT pose. That is right exactly while
+nothing has moved, which is precisely the condition it cannot detect; deriving from it would
+bake prior movement into the datum and call it authored intent.
+
+So there is no lowering-side fix. The promotion WRITER must record the datum at promote time,
+which is a behaviour change and belongs after Phase B, and even then only helps scenes promoted
+afterwards.
+
+The guard pins this negative result: both bodies must report unreconstructible, the warning must
+say *why* (circular, not merely unavailable), and neither may claim a derivation or offer an
+authored check value. A later partial reconstruction now fails here instead of quietly
+reintroducing the circularity.
+
+This does not block Phase C -- om05a-class scenes, whose body drift generates the live bugs,
+derive correctly through the output-port graph at 0.0000 mm.

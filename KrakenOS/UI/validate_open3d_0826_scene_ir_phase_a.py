@@ -25,7 +25,8 @@ Checks (display-free except D, which drives two real scenes):
   B  identity is (kind, label, ordinal) and duplicate labels get distinct ids;
   C  the frame tag is honest and the post-fold invariant reads FALSE today, on purpose;
   D  the real gate scenes lower, and the IR agrees with the prescription consumer;
-  E  a fallback never claims a derivation and never reports a fake-zero authored delta;
+  E  a fallback never claims a derivation and never reports a fake-zero authored delta,
+     and the ELS85 not-reconstructible finding is pinned against a circular 'fix';
   F  cycle detection names the WHOLE cycle, self-reference included;
   G  a dangling anchor is reported;
   H  compare_to_consumer does not cross kinds, and unpaired is never agreement.
@@ -181,6 +182,24 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
                 else:
                     ok(entity.derivation != DERIVE_NONE,
                        f"E[{name}]: {entity.id} has a live pose, so it names its mechanism")
+            # E2 (Phase B): the ELS85 negative result is PINNED. cw - po equals
+            # R @ (0,0,half_z) for the station-neutral solid and not for the 45-degree
+            # plate, and even where it holds it reconstructs one AUTHORED value from
+            # another -- circular. A later "fix" that derives from authored metadata alone
+            # must fail here rather than quietly re-introducing that.
+            if name == "machine_vision_ELS85.py":
+                anchor_warnings = [f for f in ir.findings
+                                   if f.code == "scene_ir.anchor_not_reconstructible"]
+                ok(len(anchor_warnings) == 2,
+                   f"E2[{name}]: both anchor='row_pose' bodies report unreconstructible "
+                   f"(got {len(anchor_warnings)})")
+                ok(all("circular" in f.detail for f in anchor_warnings),
+                   "E2: the warning states WHY -- reconstructing one authored value from "
+                   "another is circular, not merely unavailable")
+                ok(all(e.derivation == DERIVE_NONE and e.authored_center is None
+                       for e in ir.of_kind("body")),
+                   "E2: no ELS85 body claims a derivation or offers an authored check value")
+
             derived = [e for e in ir.of_kind("body") if e.derivation == DERIVE_OUTPUT_PORT]
             if derived:
                 worst = max(
