@@ -392,3 +392,25 @@ today**, because the IR is extracted from `prescription_pose`. It is kept anyway
 non-zero reading there would mean the lowering diverged from the thing it was extracted from —
 the one failure that would invalidate every other IR reading. It is a smoke detector, not a
 measurement, and the audit says so.
+
+
+## Loose end: three STEP labels report a path but no geometry
+
+`pose_audit` reports, on both gate scenes:
+
+    UNMEASURED  step label 'lens'/'camera'/'led': has a STEP path but produced no geometry
+
+Traced statically as far as is possible without a scene load:
+`_step_path_for_label` delegates to `StepOverlayImportService.step_path_for_label`, which
+returns `imported_<label>_step_path` — **the same attribute** `_transformed_imported_<label>_step_mesh`
+checks on its first line. So a non-None path means the builder does not bail at that guard: the
+failure is **downstream in the mesh build** (OCC load, cache signature, or an empty result),
+not in the path lookup.
+
+That matters for scope: it is a STEP-overlay concern, entirely separate from the promoted-body
+path the IR needs, and om05a's eleven promoted bodies resolve correctly without it. It is
+recorded here so the audit's `UNMEASURED` lines are not mistaken for a body-derivation gap.
+
+Not chased further: it needs a live scene load to instrument, and the correct next step is to
+wrap the builder and record which of its stages returns empty — the same "prove which one fires"
+discipline that eliminated three candidate sites on bugs/0457.
