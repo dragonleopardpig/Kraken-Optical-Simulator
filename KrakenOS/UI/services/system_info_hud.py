@@ -144,7 +144,30 @@ def system_info_hud_text(editor) -> str:
         )
     except Exception:
         pass
-    return "\n".join(lines)
+    # bugs/0840 (user request): object-side depth of field at the one-pixel criterion. The
+    # f-number comes from the aperture the scene is actually set to -- FNO only, because an
+    # EPD or NA entry is not an f-number and converting one silently would be a fabricated
+    # input to a number the user will act on.
+    try:
+        aperture_type = str(editor.aperture_type_var.get() or "").strip().upper()
+        if aperture_type == "FNO":
+            magnification = None
+            if fov is not None and sensor is not None:
+                try:
+                    magnification = float(sensor[0]) / float(fov[0])
+                except (TypeError, ValueError, ZeroDivisionError, IndexError):
+                    magnification = None
+            pixel = None
+            if pixel_size is not None and len(pixel_size) >= 1:
+                pixel = pixel_size[0]
+            lines = lines + format_depth_of_field_lines(
+                editor.aperture_value_var.get(), magnification, pixel
+            )
+    except Exception:
+        pass
+    # bugs/0840: the HUD is point form too -- align it. Generous width: the HUD sits top-left
+    # against nothing, so its rows should not wrap, only line up.
+    return "\n".join(format_kv_table(lines, width=200))
 
 
 def format_focus_residual_lines(info) -> list[str]:
@@ -264,6 +287,87 @@ def wrap_banner_reason(
     return wrapped or [text]
 
 
+def split_label(line: str) -> "tuple[str, str, str]":
+    """bugs/0840: ``(indent, label, detail)`` for a banner/HUD line.
+
+    Every line these actors produce is already point form -- ``SOLVE: ...``, ``FOCUS: ...``,
+    ``Pixel size: ...`` -- which is a two-column structure being rendered as prose. The user
+    said so: *"since the banner use a point form, why not display it as a table?"*
+
+    Splits on the FIRST ``": "``. A label is only a label if it is short and carries no
+    sentence punctuation, so ``"SOLVE REFUSED -- the drawn scene does NOT deliver this
+    request"`` stays one full-width row rather than being cut at some interior colon.
+    """
+    raw = str(line or "")
+    stripped = raw.lstrip()
+    indent = raw[: len(raw) - len(stripped)]
+    head, sep, tail = stripped.partition(": ")
+    if not sep or len(head) > 24 or any(ch in head for ch in ".!?;"):
+        return indent, "", stripped
+    return indent, head, tail
+
+
+def format_kv_table(lines, *, width: int, gap: int = 2) -> list[str]:
+    """bugs/0840: render point-form lines as an aligned two-column table.
+
+    The label column is as wide as the widest label; the detail column takes the rest and
+    wraps into it, with continuations indented to the column so a wrapped value still reads as
+    one cell. A line with no label spans the full width -- headings like "SOLVE REFUSED ..."
+    are not values and should not be forced into a column.
+
+    Alignment by space padding only works in a MONOSPACE font, which is why bugs/0840 moves
+    both actors to Courier. In the Arial they used before, "MMMM" and "iiii" are 0.919 and
+    0.227 of the font size per character, so padded columns would be ragged by design.
+    """
+    rows = [split_label(line) for line in list(lines or [])]
+    label_w = max((len(indent) + len(label) for indent, label, _d in rows if label), default=0)
+    if label_w <= 0:
+        return wrap_banner_lines(lines, width=width)
+    detail_w = max(int(width) - label_w - int(gap), BANNER_MIN_WRAP_CHARS)
+    out: list[str] = []
+    for indent, label, detail in rows:
+        if not label:
+            out.extend(wrap_banner_lines([indent + detail], width=int(width)))
+            continue
+        head = (indent + label).ljust(label_w) + " " * int(gap)
+        pieces = wrap_banner_lines([detail], width=detail_w) or [""]
+        out.append(head + pieces[0])
+        for piece in pieces[1:]:
+            out.append(" " * (label_w + int(gap)) + piece.lstrip())
+    return out
+
+
+def format_depth_of_field_lines(f_number, magnification, pixel_size_um) -> list[str]:
+    """bugs/0840: OBJECT-SIDE depth of field at the one-pixel blur criterion.
+
+        DOF = 2 N c (1 + |m|) / m^2        c = one pixel, N = the lens f-number
+
+    The user chose object side explicitly, and it is the one their work asks about: how much
+    DEVICE DEPTH stays inside a pixel of blur. The banner already reports an image-side
+    residual ("the image forms 0.1155 mm in front of the sensor"), so this row names its side,
+    its criterion and every input -- two depths on one screen with no labels is the bugs/0828
+    failure waiting to happen.
+
+    Returns [] unless all three inputs are usable; a depth of field computed from a guessed
+    f-number would be worse than none.
+    """
+    try:
+        n = float(f_number)
+        m = abs(float(magnification))
+        c_mm = float(pixel_size_um) / 1000.0
+    except (TypeError, ValueError):
+        return []
+    if not (n > 0.0) or not (m > 1.0e-9) or not (c_mm > 0.0):
+        return []
+    dof = 2.0 * n * c_mm * (1.0 + m) / (m * m)
+    if not (dof > 0.0) or dof != dof:
+        return []
+    return [
+        f"DOF (1 px): {dof:.4g} mm object side "
+        f"(N {n:.4g}, |m| {m:.4g}, c {c_mm * 1000.0:.4g} um)"
+    ]
+
+
 def wrap_banner_lines(lines, *, width: int = BANNER_REASON_WIDTH) -> list[str]:
     """bugs/0837: wrap EVERY banner line, not just the refusal's reason.
 
@@ -291,13 +395,18 @@ def wrap_banner_lines(lines, *, width: int = BANNER_REASON_WIDTH) -> list[str]:
     return out
 
 
-#: bugs/0838: a vtkTextActor's advance width per character, as a fraction of its font size.
-#: MEASURED off the flagged captures, not assumed: the system HUD's longest line is 32
-#: characters in a ~223 px box and the wrapped banner's is 110 in a ~719 px box -- 7.0 and
-#: 6.5 px per character at font size 13, i.e. 0.54 and 0.50 of the font size. 0.55 is the
-#: conservative end, which errs by moving the banner RIGHT (away from the HUD) rather than
-#: overlapping it.
-BANNER_CHAR_WIDTH_RATIO = 0.55
+#: bugs/0840: a vtkTextActor's advance width per character, as a fraction of its font size.
+#: Both actors are COURIER now, and this is measured -- not estimated -- by rendering off
+#: screen and asking VTK afterwards:
+#:
+#:     Courier @ 13   32 chars -> 256 px    110 -> 879 px    223 -> 1783 px
+#:                    "MMMM..." -> 0.615    "iiii..." -> 0.612
+#:
+#: 8.000 px per character, 0.615 of the font size, for every sample including all-M and
+#: all-i. bugs/0838 had to approximate because the actors were Arial, where the same probe
+#: gives 0.919 for "MMMM" and 0.227 for "iiii" -- a per-character width that does not exist.
+#: Monospace is what makes a TABLE possible and the width exact at the same time.
+BANNER_CHAR_WIDTH_RATIO = 0.615
 #: The frame and background a text actor paints around its text.
 BANNER_FRAME_PAD_PX = 12.0
 

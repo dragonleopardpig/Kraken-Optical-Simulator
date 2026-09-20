@@ -50,8 +50,11 @@ FLAG_BANNER_RAW = [
     "focus measurement and drawn faint in the 3D scene",
 ]
 VIEW_W = 2478.0
-DRAWN_HUD_PX = 223.0      # measured off the capture
-DRAWN_BANNER_PX = 719.0   # measured off the capture
+# bugs/0840 moved both actors to COURIER, so these are re-measured for it -- by rendering off
+# screen and asking VTK after a real render, not read off a screenshot. The Arial figures the
+# first version carried (223 and 719) were right for the font that was there at the time.
+DRAWN_HUD_PX = 256.0      # 32 chars in Courier @ 13
+DRAWN_BANNER_PX = 879.0   # 110 chars in Courier @ 13
 
 
 def run_checks() -> tuple[bool, list[str]]:

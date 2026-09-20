@@ -59,10 +59,17 @@ def run_checks() -> tuple[bool, list[str]]:
     width = int(BANNER_REASON_WIDTH)
     src = _inspect.getsource(oi.Kraken3DInspector._update_solve_refusal_banner)
     place = _inspect.getsource(oi.Kraken3DInspector._place_solve_banner_beside_system_hud)
-    if "wrap_banner_lines(lines)" in src:
-        notes.append("SOURCE = every line is wrapped where the banner text is assembled")
+    # bugs/0840 replaced the plain wrap at this point with the table formatter, which wraps
+    # each cell -- and the gate BLOCKED here, because this check named the CALL instead of the
+    # claim. The second time in one session that one of my guards pinned an implementation and
+    # failed on its own successor (bugs/0838 did it to bugs/0837's GetSize check). What must
+    # stay true is that the LINES ARE LAID OUT where they are assembled, so no producer can
+    # emit an unbounded line.
+    lays_out = "wrap_banner_lines(lines" in src or "format_kv_table(lines" in src
+    if lays_out:
+        notes.append("SOURCE = every line is laid out where the banner text is assembled")
     else:
-        notes.append("SOURCE the assembly point does not wrap its lines")
+        notes.append("SOURCE the assembly point does not bound its lines")
         ok = False
     # bugs/0838 superseded HOW the width is obtained: this check originally demanded
     # `GetSize(renderer, banner_size)`, and when 0838 replaced that with a text-derived

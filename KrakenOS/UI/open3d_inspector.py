@@ -18580,6 +18580,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 actor = vtkTextActor()
                 prop = actor.GetTextProperty()
                 prop.SetFontSize(13)
+                # bugs/0840: monospace, so the label column lines up and the
+                # width is exact (Courier measures 8.000 px/char at size 13).
+                prop.SetFontFamilyToCourier()
                 prop.SetColor(0.05, 0.09, 0.16)
                 try:
                     prop.SetBackgroundColor(1.0, 1.0, 1.0)
@@ -18706,9 +18709,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             # wrapped only the refusal's reason, so the focus summary's 223-character STRAY
             # LIGHT line still ran past the window edge and lost its ending.
             from KrakenOS.UI.services.system_info_hud import (
+                BANNER_REASON_WIDTH,
                 banner_wrap_chars,
+                format_kv_table,
                 text_actor_width_px,
-                wrap_banner_lines,
             )
 
             # bugs/0839: wrap to the room that is THERE, not to a constant. Horizontal space
@@ -18721,7 +18725,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 budget = banner_wrap_chars(hud_px, view_w, 13.0)
             except Exception:
                 budget = None
-            lines = wrap_banner_lines(lines) if budget is None else wrap_banner_lines(lines, width=budget)
+            # bugs/0840: every one of these lines is "LABEL: value" -- render the column.
+            lines = format_kv_table(lines, width=budget or int(BANNER_REASON_WIDTH))
             text = "\n".join(lines)
             try:
                 if not bool(self.show_solve_banner_var.get()):
@@ -18744,6 +18749,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 actor = vtkTextActor()
                 prop = actor.GetTextProperty()
                 prop.SetFontSize(13)
+                # bugs/0840: monospace, so the label column lines up and the width is exact.
+                prop.SetFontFamilyToCourier()
                 prop.SetBold(1)
                 prop.SetColor(0.55, 0.04, 0.04)
                 try:
