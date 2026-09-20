@@ -16385,6 +16385,10 @@ phase_607_field_chain_and_illustration = _phase_from_standalone(
     607, "the device dialog shows the DERIVATION and a picture of the part: three numbers confused the user in one session and every one was arithmetically correct -- the device stayed 20 mm after they typed 50x50 (they had edited Required FOV), the scene drew FOV 21.0x8.3 while the banner said delivering 21 x 21 (per-FACE vs whole-sensor field), and a swap pre-filled 59.3284 (sensor 23.04 / |m| 0.3883). Each was a number shown without its parent, so every chain line now names what produced it, and the per-face field is MEASURED rather than computed -- the first draft of the module computed it from sensor/|m| and labelled it 'per face', reproducing the exact conflation it exists to prevent. A canvas draws the part at TRUE proportions with the inspected faces green and the unreachable ones grey: a 20x20x1 device renders a 100 px edge against 5 px of thickness, so the thin field explains itself. NO face selector -- bugs/0768 removed it at the user's request and the guard pins its absence; the fold turns sideways into the lens so only edge faces are reachable at all (0828)",
     "KrakenOS.UI.validate_open3d_0828_field_chain_and_illustration",
     "field_chain_and_illustration")
+phase_608_fov_popup_prefills_from_the_face = _phase_from_standalone(
+    608, "the Object-plane FOV popup pre-fills from the FACE, not the sensor: every number in it was correct and mutually consistent -- 59.3284 is sensor 23.04 / |m| 0.38835, 'Object FOV (semi) = 41.95' is that square's semi-diagonal, and the fold legs 9 + 6.85 summed to the stated 15.85 -- but the inspected faces on om05a are 20 x 1 mm EDGES, so a square 59.33 field was 3x the face length and 59x its thickness, a field the machine cannot deliver because the fold turns sideways and each face receives a strip. 'Fill just one box -- the other is derived from the sensor aspect' actively FORCED that square. With a device enabled the popup now pre-fills face + 5%, the same target solve_fov_to_inspection_face already uses, so the popup and the solve stop offering different fields; with no device the sensor prefill is unchanged but states its parent. The guard asserts the ORIGINAL numbers were self-consistent so this is never mistaken for an arithmetic fix (0829)",
+    "KrakenOS.UI.validate_open3d_0829_fov_popup_prefills_from_the_face",
+    "fov_popup_prefills_from_the_face")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17058,6 +17062,7 @@ def main() -> int:
             phase_605_scene_ir_phase_a,
             phase_606_ray_count_is_quadratic,
             phase_607_field_chain_and_illustration,
+            phase_608_fov_popup_prefills_from_the_face,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

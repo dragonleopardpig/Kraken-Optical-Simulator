@@ -23075,6 +23075,34 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         ttk.Label(dialog, text=prompt, wraplength=320, justify="left").grid(
             row=0, column=0, columnspan=2, padx=12, pady=(12, 6), sticky="w"
         )
+        # bugs/0829: when a DEVICE is enabled the inspected FACE sets the field, not the
+        # sensor. The sensor prefill (sensor / |m|) offered 59.3284 x 59.3284 on a bench
+        # whose inspected faces are 20 x 1 mm edges -- 3x the face length and 59x its
+        # thickness -- and the number's parent was stated nowhere. The face prefill is the
+        # one solve_fov_to_inspection_face already uses (face + 5%), so the popup and the
+        # solve now offer the SAME field instead of two different ones.
+        prefill_note = ""
+        if plane == "object":
+            try:
+                from KrakenOS.UI.services.inspection_field_chain import (
+                    FACE_FOV_MARGIN, explain_prefill)
+                from KrakenOS.UI.services.inspection_part import (
+                    face_dims, normalize_inspection_part_spec)
+
+                _spec = normalize_inspection_part_spec(
+                    self.editor.__dict__.get("inspection_part_spec"))
+                if _spec.get("enabled"):
+                    _fw, _fh = face_dims(_spec, _spec.get("active_face", "front"))
+                    if _fw > 0 and _fh > 0:
+                        wh = (_fw * FACE_FOV_MARGIN, _fh * FACE_FOV_MARGIN)
+                        prefill_note = (f"from the inspected face {_fw:g} x {_fh:g} mm "
+                                        f"+ {(FACE_FOV_MARGIN - 1) * 100:g}% margin")
+                if not prefill_note and wh:
+                    prefill_note = explain_prefill(
+                        qe.sensor_active_dimensions() or (0.0, 0.0),
+                        self.editor._current_finite_paraxial_magnification())
+            except Exception:
+                prefill_note = ""
         w0, h0 = (wh if wh else (0.0, 0.0))
         width_var = tk.StringVar(value=(f"{w0:.6g}" if w0 else ""))
         height_var = tk.StringVar(value=(f"{h0:.6g}" if h0 else ""))
@@ -23091,7 +23119,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         )
         ttk.Label(
             dialog,
-            text="Fill just one box — the other is derived from the sensor aspect.",
+            # bugs/0829: the aspect note is only true when the SENSOR sets the field. With
+            # a device enabled the FACE sets it, and on a folded split-field bench that face
+            # is a thin edge -- so forcing a square from the sensor aspect offers a field the
+            # machine cannot deliver. State which parent is actually in force.
+            text=(f"Pre-filled {prefill_note}." if prefill_note
+                  else "Fill just one box — the other is derived from the sensor aspect."),
             foreground="#888888",
             wraplength=320,
             justify="left",
