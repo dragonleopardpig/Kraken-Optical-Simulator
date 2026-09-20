@@ -183,10 +183,8 @@ body-drift cases. The gate set should be those five, not the old one.
    om05a_folded 11 at 0.0000 mm. Phase A is unblocked.
 
 1. ~~Entity identity across a rebuild.~~ **DECIDED 2026-09-20.** Worked through below.
-2. **Where does `lower()` run, and how often?** Once per scene change is the intent, but the
-   0700/0646 fast-load work means "scene change" is not currently one event. Lowering on every
-   refresh would be correct and possibly too slow — needs measurement against
-   `summarize_open3d_timing` before Phase C.
+2. ~~Where does `lower()` run, and how often?~~ **DECIDED 2026-09-20: every refresh, uncached.**
+   Measured below.
 3. ~~Do promoted STEP bodies carry their own `to_world`, or derive it from their anchor row?~~
    **DECIDED 2026-09-20: they DERIVE.** Worked through below.
 
@@ -414,3 +412,44 @@ recorded here so the audit's `UNMEASURED` lines are not mistaken for a body-deri
 Not chased further: it needs a live scene load to instrument, and the correct next step is to
 wrap the builder and record which of its stages returns empty — the same "prove which one fires"
 discipline that eliminated three candidate sites on bugs/0457.
+
+
+## Decided: `lower()` runs on every refresh, and is NOT cached
+
+Measured on M90aPro inside `devenv shell`, om05a_folded.py (25 rows, 37 entities):
+
+    refresh 0:  2359.7 ms    lower(): 6.33 ms   ->  0.27% of a refresh
+    refresh 1:  3219.1 ms    lower(): 5.63 ms   ->  0.17%
+    refresh 2:  1496.6 ms    lower(): 5.70 ms   ->  0.38%
+
+    lower() alone, median of 12:   ELS85  0.32 ms (9 rows, 11 entities)
+                                   om05a  5.57 ms (25 rows, 37 entities)
+                                   om05a80 5.46 ms (26 rows, 38 entities)
+
+The concern was that per-refresh lowering might be too slow. It is a **rounding error** — three
+parts in a thousand of the work a refresh already does. The question is settled in the
+direction that needed no compromise.
+
+### The consequence is the important part
+
+Because lowering is cheap enough to run every refresh, **it must not be cached**, and that is
+not a performance decision — it is what makes the derivation guarantee real.
+
+The whole point of "promoted bodies derive from their anchor row" is that a body's `to_world`
+**cannot go stale, because nothing persists it**. A cache would persist it, reintroducing
+exactly the staleness that `StepOverlayPromotion.center_world` already demonstrates: an
+authored snapshot that was right once and silently wrong after anything moved. bugs/0483 made
+the same finding from the other side — the cached bundle placement goes stale the moment a
+solve moves a solid and something asks before the next refresh.
+
+So: no memoisation, no dirty-flag, no "recompute when the scene changes". Recompute always.
+At 5.6 ms the correct thing and the cheap thing are the same thing, which is a rare enough
+alignment to write down.
+
+### What this does not settle
+
+The fast-load state (bugs/0646) means a load defers tracing, so "refresh" is not one event
+there either. Lowering during a fast load is harmless at this cost, but Phase C should confirm
+the IR is lowered AFTER the deferred trace clears rather than from the no-rays state — the IR
+describes geometry, not rays, so this is expected to be a non-issue, and it should be checked
+rather than assumed.
