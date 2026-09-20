@@ -16389,6 +16389,10 @@ phase_608_fov_popup_prefills_from_the_face = _phase_from_standalone(
     608, "the Object-plane FOV popup pre-fills from the FACE, not the sensor: every number in it was correct and mutually consistent -- 59.3284 is sensor 23.04 / |m| 0.38835, 'Object FOV (semi) = 41.95' is that square's semi-diagonal, and the fold legs 9 + 6.85 summed to the stated 15.85 -- but the inspected faces on om05a are 20 x 1 mm EDGES, so a square 59.33 field was 3x the face length and 59x its thickness, a field the machine cannot deliver because the fold turns sideways and each face receives a strip. 'Fill just one box -- the other is derived from the sensor aspect' actively FORCED that square. With a device enabled the popup now pre-fills face + 5%, the same target solve_fov_to_inspection_face already uses, so the popup and the solve stop offering different fields; with no device the sensor prefill is unchanged but states its parent. The guard asserts the ORIGINAL numbers were self-consistent so this is never mistaken for an arithmetic fix (0829)",
     "KrakenOS.UI.validate_open3d_0829_fov_popup_prefills_from_the_face",
     "fov_popup_prefills_from_the_face")
+phase_609_popup_picture_and_semi = _phase_from_standalone(
+    609, "the post-swap popup shows the part, and its semi-FOV follows the rectangle: that popup IS the post-swap prompt (_prompt_fov_solve_after_swap -> _open_quick_estimation_fov_popup), so it is where the FOV decision is made and where the picture belongs -- bugs/0828 had given it only to the Inspection Part dialog. It also fixes a regression bugs/0829 introduced and the user's own screenshot caught: making the height face-derived left _fov_context computing semi from the WIDTH alone via the sensor aspect, so a 52.5 x 1.05 field read 'Object FOV (semi) = 37.12', the answer for a 52.5 SQUARE, when its true semi-diagonal is 26.255 -- 1.41x too large. Now hypot(w, h) / 2, falling back to the aspect conversion only when the height box is empty, so a square field still reads the pre-0829 41.95 and the no-device path is unchanged. 0829 changed what the boxes MEAN without checking what else read them (0830)",
+    "KrakenOS.UI.validate_open3d_0830_popup_picture_and_semi",
+    "popup_picture_and_semi")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17063,6 +17067,7 @@ def main() -> int:
             phase_606_ray_count_is_quadratic,
             phase_607_field_chain_and_illustration,
             phase_608_fov_popup_prefills_from_the_face,
+            phase_609_popup_picture_and_semi,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

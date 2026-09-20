@@ -23103,6 +23103,43 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                         self.editor._current_finite_paraxial_magnification())
             except Exception:
                 prefill_note = ""
+        # bugs/0830 (user, twice): "I am looking at the swap lens pop up now, I don't see
+        # device illustration." This popup IS the post-swap prompt
+        # (_prompt_fov_solve_after_swap -> _open_quick_estimation_fov_popup), so it is where
+        # the FOV decision is actually made -- and therefore where the picture of what is
+        # being inspected belongs, not only in the Inspection Part dialog that bugs/0828
+        # gave it to. A 20 x 20 x 1 part drawn at true proportions is the whole explanation
+        # for a 21 x 1.05 field.
+        if plane == "object":
+            try:
+                from KrakenOS.UI.services.inspection_field_chain import (
+                    face_polygons, inspected_faces, unreachable_faces)
+                from KrakenOS.UI.services.inspection_part import (
+                    normalize_inspection_part_spec)
+
+                _ispec = normalize_inspection_part_spec(
+                    self.editor.__dict__.get("inspection_part_spec"))
+                if _ispec.get("enabled"):
+                    _folded = len(self.editor.__dict__.get("rows", []) or []) > 12
+                    _lit = inspected_faces(_ispec, folded=_folded)
+                    _dead = unreachable_faces(_ispec, folded=_folded)
+                    _cv = tk.Canvas(dialog, width=190, height=120, highlightthickness=1,
+                                    highlightbackground="#bbbbbb", background="#fafafa")
+                    _cv.grid(row=0, column=2, rowspan=4, padx=(4, 12), pady=(12, 6), sticky="n")
+                    _polys = face_polygons(_ispec, width_px=190, height_px=120)
+                    for _name in ("back", "bottom", "left", "right", "top", "front"):
+                        _pts = [c for xy in _polys[_name] for c in xy]
+                        if _name in _lit:
+                            _f, _o = "#2f7f3f", "#1d5f2a"
+                        elif _name in _dead:
+                            _f, _o = "#d8d8d8", "#bbbbbb"
+                        else:
+                            _f, _o = "#e9eef2", "#9fb0bd"
+                        _cv.create_polygon(*_pts, fill=_f, outline=_o, width=1)
+                    _cv.create_text(95, 110, text="green = inspected   grey = unreachable",
+                                    fill="#666666", font=("TkDefaultFont", 7))
+            except Exception:
+                pass
         w0, h0 = (wh if wh else (0.0, 0.0))
         width_var = tk.StringVar(value=(f"{w0:.6g}" if w0 else ""))
         height_var = tk.StringVar(value=(f"{h0:.6g}" if h0 else ""))
@@ -23368,8 +23405,25 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     return {}
                 if w <= 0:
                     return {}
+                # bugs/0830: use BOTH boxes. horizontal_to_diagonal(w) derives the diagonal
+                # from the WIDTH via the sensor aspect, which was right while the two boxes
+                # were locked to that aspect. bugs/0829 made the height face-derived and
+                # independent, so a 52.5 x 1.05 field reported semi 37.12 -- the answer for
+                # a 52.5 SQUARE -- when its true semi-diagonal is 26.255. Measure the
+                # rectangle the user is actually looking at; fall back to the aspect
+                # conversion only when the height box is empty.
+                import math
+
                 try:
-                    semi = float(qe.horizontal_to_diagonal(w)) / 2.0
+                    raw_h = (height_var.get() or "").strip()
+                    h = float(raw_h) if raw_h else 0.0
+                except ValueError:
+                    h = 0.0
+                try:
+                    if h > 0:
+                        semi = math.hypot(w, h) / 2.0
+                    else:
+                        semi = float(qe.horizontal_to_diagonal(w)) / 2.0
                 except Exception:
                     return {}
                 return {_fov_key: semi} if semi > 0 else {}
