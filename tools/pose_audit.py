@@ -111,6 +111,27 @@ def _drawn_poses(inspector) -> dict:
 STEP_OVERLAY_LABELS = ("optical", "lens", "camera", "led")
 
 
+def _ir_poses(app) -> "tuple[dict, tuple, str | None]":
+    """The Scene IR's answer per row, plus its findings (bugs/0826, Phase A).
+
+    This is the column that answers "who produced this pose". Every previous attempt on
+    bugs/0457 had to wrap candidate functions until one fired, and three sites were
+    eliminated that way without finding the producer. The IR states what it believes for
+    every row, so a drawn actor that disagrees with it names its own divergence.
+    """
+    try:
+        from KrakenOS.UI.services.scene_ir import lower
+
+        scene_ir = lower(app)
+    except Exception as exc:
+        return {}, (), f"lowering raised {exc!r}"
+    out = {}
+    for entity in scene_ir.of_kind("surface"):
+        if entity.source_row is not None:
+            out[int(entity.source_row)] = entity.position
+    return out, scene_ir.findings, None
+
+
 def _body_centers(app) -> "tuple[dict, list[str]]":
     """Every body the audit can see, and why it could not see the rest.
 
@@ -256,12 +277,15 @@ def main(argv: list[str]) -> int:
                 except Exception:
                     continue
 
+        ir_disagreements: list[str] = []
         drawn = _drawn_poses(inspector) if inspector is not None else {}
         bodies, body_problems = _body_centers(app)
+        ir_poses, ir_findings, ir_error = _ir_poses(app)
 
         print(f"\nPOSE AUDIT — {scene.name}")
         print(f"  rows={len(app.rows)}  drawn_row_actors={len(drawn)}  bodies={len(bodies)}\n")
-        print(f"  {'row':>4} {'surface':<11} {'PRESCRIPTION':^30} {'DRAWN':^30}  delta")
+        print(f"  {'row':>4} {'surface':<11} {'PRESCRIPTION':^30} {'DRAWN':^30}  delta"
+              f"   {'IR':^30} ir\u0394")
         for index, row in enumerate(app.rows):
             presc, _tilts = _prescription_pose(app, index)
             drawn_pose = drawn.get(index)
@@ -274,9 +298,24 @@ def main(argv: list[str]) -> int:
                     f"row {index} ({getattr(row, 'surface', '?')}): drawn {np.round(drawn_pos, 2).tolist()} "
                     f"vs prescription {np.round(presc, 2).tolist()}"
                 )
+            ir_pos = ir_poses.get(index)
+            # bugs/0826: the IR is EXTRACTED from the prescription today, so this column is
+            # expected to read 0.00 until Phase C re-points consumers. A non-zero here now
+            # means the lowering diverged from the thing it was extracted from -- which is
+            # the one failure that would invalidate every other IR reading.
+            ir_delta = "" if ir_pos is None else f"{float(np.linalg.norm(ir_pos - presc)):6.2f}"
+            if ir_pos is None:
+                ir_delta = "unpaired"
+                ir_disagreements.append(f"row {index}: the IR has no pose for this row")
+            elif float(np.linalg.norm(ir_pos - presc)) > POSITION_TOL_MM:
+                ir_disagreements.append(
+                    f"row {index}: IR {np.round(ir_pos, 2).tolist()} vs prescription "
+                    f"{np.round(presc, 2).tolist()}"
+                )
             print(
                 f"  {index:>4} {str(getattr(row, 'surface', ''))[:11]:<11} "
                 f"{_fmt(presc)} {_fmt(drawn_pos)} {delta}{flag}"
+                f"   {_fmt(ir_pos)} {ir_delta}"
             )
 
         for index, (pos, orient) in sorted(drawn.items()):
@@ -305,6 +344,20 @@ def main(argv: list[str]) -> int:
         if drifted:
             print(f"    ({len(drifted)} promoted bod{'y' if len(drifted) == 1 else 'ies'} "
                   f"drift from authored; use scene_placement_audit.compare_drifts to gate)")
+
+        print("\n  SCENE IR (bugs/0826):")
+        if ir_error is not None:
+            print(f"    UNAVAILABLE  {ir_error}")
+        else:
+            print(f"    {len(ir_poses)} surface poses; "
+                  f"{len(ir_disagreements)} disagree with the prescription")
+            if ir_findings:
+                from KrakenOS.UI.services.result_diagnostics import read_this_first
+
+                for line in read_this_first(ir_findings, title="IR findings"):
+                    print(f"    {line}")
+        for line in ir_disagreements:
+            print(f"    IR DISAGREE  {line}")
 
         print()
         if not drawn:

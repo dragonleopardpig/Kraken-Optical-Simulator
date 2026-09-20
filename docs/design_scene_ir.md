@@ -366,3 +366,29 @@ result so a later partial reconstruction cannot quietly reintroduce the circular
 
 This does not block Phase C. om05a-class scenes — the ones whose body drift generates the live
 bugs — derive correctly through the output-port graph at 0.0000 mm.
+
+
+## Where the IR-vs-consumer instrument lives, and where it deliberately does not
+
+Phase A's plan was to extend **both** audits with an IR-vs-consumer column. Only one of them
+can carry a meaningful one.
+
+**`tools/pose_audit.py` gets it.** Its DRAWN column comes from the live VTK actors, which is a
+genuinely independent source, so IR-vs-DRAWN is the comparison that can finally answer *who
+produced this pose*. Every previous attempt had to wrap candidate functions until one fired,
+and three sites were eliminated that way without ever finding the producer.
+
+**`scene_placement_audit` does not.** Its live body centre comes from the output-port pose walk
+— which is one of the IR's own two derivation sources. An IR column there would read 0.0000 mm
+by construction, and a comparison that cannot fail is not a measurement. It would look exactly
+like the strongest possible agreement while testing nothing, which is the failure this document
+keeps returning to.
+
+So the body-side check stays what it already is: authored snapshot versus live walk, gated
+through `compare_drifts`.
+
+One consequence worth stating: **IR-vs-PRESCRIPTION in `pose_audit` is also near-tautological
+today**, because the IR is extracted from `prescription_pose`. It is kept anyway, because a
+non-zero reading there would mean the lowering diverged from the thing it was extracted from —
+the one failure that would invalidate every other IR reading. It is a smoke detector, not a
+measurement, and the audit says so.
