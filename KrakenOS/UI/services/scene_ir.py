@@ -181,7 +181,16 @@ def lower(editor: Any, *, bodies: bool = True) -> SceneIR:
     entities: list[EntityIR] = []
     for index, row in enumerate(rows):
         try:
-            pose = rp.prescription_pose(editor, index)
+            # rp.world_pose, NOT rp.prescription_pose. world_pose's own docstring calls it
+            # "**The** resolver"; prescription_pose is the lower-level function behind it.
+            # Reading the public one matters beyond tidiness: bugs/0572's guard stubs
+            # row_placement.world_pose to drive the method with a probe object, and reaching
+            # past it to prescription_pose bypassed the stub and hit the real resolver, which
+            # needs a full editor. Phase C turned that into a silent None -- the caller's
+            # "unbounded leg" signal -- so a lens could be told it had room to slide into a
+            # fold mirror. Read the public resolver and the seam stays a seam.
+            pose = rp.world_pose(editor, index)
+            rotation = rp.rotation_matrix(row)
         except Exception as exc:
             findings.append(Finding(
                 code="scene_ir.unlowerable_row",
@@ -194,7 +203,6 @@ def lower(editor: Any, *, bodies: bool = True) -> SceneIR:
             continue
         space = pose.space
         frame = FRAME_ALREADY_WORLD if space == rp.WORLD else FRAME_STRAIGHT_EQUIVALENT
-        rotation = rp.rotation_matrix(row)
         entities.append(EntityIR(
             id=surface_ids[index],
             kind="surface",
@@ -406,6 +414,40 @@ def compare_to_consumer(scene_ir: SceneIR, consumer_positions: dict, *,
     return rows
 
 
+
+def _surface_entity_for_row(editor, row_index: int) -> "EntityIR | None":
+    """Build the ONE surface entity for ``row_index`` WITHOUT lowering the scene.
+
+    bugs/0572 caught why this must exist: routing ``world_frame`` through a whole-scene
+    ``lower()`` made a single-row question demand that EVERY row be lowerable. The guard's
+    probe supplies two rows, the real code needs one -- and in production a scene carrying a
+    single unreadable row would break a query about an unrelated one. The original
+    ``world_pose`` call asked about one row and touched one row; this restores that.
+    """
+    from KrakenOS.UI.services import row_placement as rp
+
+    rows = list(getattr(editor, "rows", []) or [])
+    if not (0 <= int(row_index) < len(rows)):
+        return None
+    row = rows[int(row_index)]
+    try:
+        pose = rp.world_pose(editor, int(row_index))
+        rotation = rp.rotation_matrix(row)
+    except Exception:
+        return None
+    space = getattr(pose, "space", rp.SEQUENTIAL)
+    label = str(getattr(row, "name", "") or getattr(row, "surface", "") or "")
+    return EntityIR(
+        id=entity_id("surface", label, 0),
+        kind="surface",
+        to_world=_matrix(pose.position, rotation),
+        frame=FRAME_ALREADY_WORLD if space == rp.WORLD else FRAME_STRAIGHT_EQUIVALENT,
+        placement_space=space,
+        source_row=int(row_index),
+        label=label,
+        has_orientation=rotation is not None,
+    )
+
 def world_frame(editor: Any, row_index: int, *, scene_ir: "SceneIR | None" = None):
     """``(position, rotation_3x3_or_None, space)`` for a row, read from the IR.
 
@@ -424,12 +466,20 @@ def world_frame(editor: Any, row_index: int, *, scene_ir: "SceneIR | None" = Non
     lowering shared across a refresh is the architecture, and persisting one ACROSS refreshes
     is the thing the design forbids.
     """
-    # Surfaces only when we must lower ourselves: this answers a ROW's pose, and the body
-    # walk is both wasted work and a far wider blast radius (see lower's docstring).
-    ir = scene_ir if scene_ir is not None else lower(editor, bodies=False)
-    for entity in ir.of_kind("surface"):
-        if entity.source_row is not None and int(entity.source_row) == int(row_index):
-            matrix = np.asarray(entity.to_world, dtype=float)
-            rotation = matrix[:3, :3] if entity.has_orientation else None
-            return matrix[:3, 3], rotation, entity.placement_space
-    raise IndexError(f"row {row_index} has no surface entity in the IR")
+    if scene_ir is not None:
+        for entity in scene_ir.of_kind("surface"):
+            if entity.source_row is not None and int(entity.source_row) == int(row_index):
+                matrix = np.asarray(entity.to_world, dtype=float)
+                return (matrix[:3, 3],
+                        matrix[:3, :3] if entity.has_orientation else None,
+                        entity.placement_space)
+        raise IndexError(f"row {row_index} has no surface entity in the IR")
+    # No pre-lowered IR: build JUST this row. Lowering the scene to answer about one row
+    # is what bugs/0572 caught -- see _surface_entity_for_row.
+    entity = _surface_entity_for_row(editor, row_index)
+    if entity is None:
+        raise IndexError(f"row {row_index} has no readable pose")
+    matrix = np.asarray(entity.to_world, dtype=float)
+    return (matrix[:3, 3],
+            matrix[:3, :3] if entity.has_orientation else None,
+            entity.placement_space)

@@ -4679,14 +4679,14 @@ class ScenePlacementMixin:
         try:
             unit = np.asarray(direction, dtype=float).reshape(3)
             unit = unit / max(float(np.linalg.norm(unit)), 1.0e-12)
-            # bugs/0826 Phase C: one lowering, two reads.
-            _ir = scene_ir.lower(self, bodies=False)
-            block_end = np.asarray(
-                scene_ir.world_frame(self, last, scene_ir=_ir)[0], dtype=float
-            )
-            fold_centre = np.asarray(
-                scene_ir.world_frame(self, mirror_row, scene_ir=_ir)[0], dtype=float
-            )
+            # bugs/0826 Phase C: TWO reads, so ask for two ROWS -- do not lower the scene.
+            # bugs/0572 caught the cost of getting this backwards: a whole-scene lowering
+            # made this single-row question require every row to be lowerable, and the
+            # bare except below turned the failure into None, which is this function's
+            # "unbounded leg" signal -- telling the caller a lens had room to slide into a
+            # fold mirror.
+            block_end = np.asarray(scene_ir.world_frame(self, last)[0], dtype=float)
+            fold_centre = np.asarray(scene_ir.world_frame(self, mirror_row)[0], dtype=float)
         except Exception:
             return None
         along = float(np.dot(fold_centre - block_end, unit))

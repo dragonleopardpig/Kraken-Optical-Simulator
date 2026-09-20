@@ -2197,12 +2197,11 @@ class LayoutPolylineDisplayMixin:
             # body's pose cannot go stale.
             from KrakenOS.UI.services import scene_ir
 
-            _ir = scene_ir.lower(self, bodies=False)
             front_pose = np.asarray(
-                scene_ir.world_frame(self, int(front), scene_ir=_ir)[0], dtype=float
+                scene_ir.world_frame(self, int(front))[0], dtype=float
             ).reshape(3)
             rear_pose = np.asarray(
-                scene_ir.world_frame(self, int(rear), scene_ir=_ir)[0], dtype=float
+                scene_ir.world_frame(self, int(rear))[0], dtype=float
             ).reshape(3)
         except Exception as exc:
             self.append_debug(f"Lens surrogate optical axis unavailable: {exc}")

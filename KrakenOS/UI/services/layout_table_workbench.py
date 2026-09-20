@@ -989,13 +989,11 @@ class LayoutTableWorkbenchMixin:
             return None
         # bugs/0557: one resolver answers "where is this row", instead of each consumer
         # re-deriving station + desp for itself (the mistake behind 0517/0519/0525/0547/0556).
-        # bugs/0826 Phase C: read the Scene IR, lowered once for the whole comparison.
-        _ir = scene_ir.lower(self, bodies=False)
-
+        # bugs/0826 Phase C: a few rows, so ask per ROW rather than lowering the scene
+        # (bugs/0572: a whole-scene lowering makes a single-row question fail on an
+        # unrelated unreadable row).
         def _pose(index):
-            return np.asarray(
-                scene_ir.world_frame(self, int(index), scene_ir=_ir)[0], dtype=float
-            )
+            return np.asarray(scene_ir.world_frame(self, int(index))[0], dtype=float)
 
         origin = _pose(front)
         axis = _pose(rear) - origin
