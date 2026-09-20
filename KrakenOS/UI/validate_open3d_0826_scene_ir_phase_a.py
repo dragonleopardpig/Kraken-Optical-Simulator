@@ -29,7 +29,9 @@ Checks (display-free except D, which drives two real scenes):
      and the ELS85 not-reconstructible finding is pinned against a circular 'fix';
   F  cycle detection names the WHOLE cycle, self-reference included;
   G  a dangling anchor is reported;
-  H  compare_to_consumer does not cross kinds, and unpaired is never agreement.
+  H  compare_to_consumer does not cross kinds, and unpaired is never agreement;
+  I  no APP code imports the IR -- Phase A's 'changes nothing' claim is enforced,
+     not trusted. Phase C relaxes this deliberately, one consumer at a time.
 
 Run:  .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_0826_scene_ir_phase_a
 """
@@ -63,6 +65,27 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         entity_id,
         lower,
     )
+
+    # ---- I: read from nowhere --------------------------------------------------------------------
+    # Phase A's whole safety argument is that it changes nothing, which holds only while no
+    # APP code consumes it. A later commit wiring it into a service would silently end that
+    # without any test noticing -- so the invariant is enforced here rather than trusted.
+    # Phase C is when this check is deliberately relaxed, one consumer at a time.
+    consumers = []
+    for path in sorted(PROJECT_ROOT.glob("KrakenOS/**/*.py")) + sorted(PROJECT_ROOT.glob("tools/**/*.py")):
+        if path.name == "scene_ir.py":
+            continue
+        try:
+            if "scene_ir" not in path.read_text():
+                continue
+        except Exception:
+            continue
+        rel = path.relative_to(PROJECT_ROOT).as_posix()
+        if path.name.startswith("validate_") or rel.startswith("tools/"):
+            continue
+        consumers.append(rel)
+    ok(not consumers,
+       f"I1: no app code imports the IR -- Phase A reads from nowhere (found {consumers})")
 
     # ---- B: identity ----------------------------------------------------------------------------
     ok(entity_id("surface", "air", 0) != entity_id("surface", "air", 1),
