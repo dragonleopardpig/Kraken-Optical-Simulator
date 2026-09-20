@@ -322,6 +322,41 @@ def text_actor_width_px(text, font_size_px: float = 13.0) -> float:
     return longest * float(font_size_px) * BANNER_CHAR_WIDTH_RATIO + BANNER_FRAME_PAD_PX
 
 
+#: Never wrap narrower than this, however cramped the window: below it the banner stops being
+#: readable prose and becomes a column.
+BANNER_MIN_WRAP_CHARS = 48
+
+
+def banner_wrap_chars(hud_width_px, view_width_px, font_size_px: float = 13.0) -> int:
+    """bugs/0839: how many characters fit on ONE banner line, given the room beside the HUD.
+
+    The user's words: *"the banner should make use of the horizontal space more, vertical comes
+    later if run out of horizontal space."* bugs/0835 and bugs/0837 wrapped to a FIXED 110
+    characters, which on a 2478 px window drew the banner about 725 px wide and left ~1400 px
+    of empty space to its right while stacking text vertically. A constant cannot know the
+    window.
+
+    So the budget is the room that is actually there: the viewport, less where the banner
+    starts beside the HUD, less a margin, divided by the per-character advance. On the flagged
+    2478 px window beside a 241 px HUD that is ~300 characters, so the 223-character STRAY
+    LIGHT line stops wrapping at all -- one line, ending around x=1884 of 2478.
+
+    Floored at :data:`BANNER_MIN_WRAP_CHARS` so a narrow window degrades to a readable column
+    rather than to slivers.
+    """
+    try:
+        view_w = float(view_width_px)
+        hud_w = float(hud_width_px)
+    except (TypeError, ValueError):
+        return int(BANNER_REASON_WIDTH)
+    if not (view_w > 1.0):
+        return int(BANNER_REASON_WIDTH)
+    x_norm, _y = solve_banner_anchor(hud_w, 0.0, view_w)
+    available_px = view_w - (x_norm * view_w) - BANNER_FRAME_PAD_PX - 12.0
+    per_char = max(float(font_size_px) * BANNER_CHAR_WIDTH_RATIO, 1.0e-6)
+    return max(int(BANNER_MIN_WRAP_CHARS), int(available_px / per_char))
+
+
 def solve_banner_anchor(hud_width_px, banner_width_px, view_width_px) -> "tuple[float, float]":
     """bugs/0837: where the solve banner sits, as ``(x, y)`` in normalized viewport.
 

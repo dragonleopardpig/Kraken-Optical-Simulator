@@ -18705,9 +18705,23 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             # bugs/0837: wrap EVERY line here, at the one point they converge. bugs/0835
             # wrapped only the refusal's reason, so the focus summary's 223-character STRAY
             # LIGHT line still ran past the window edge and lost its ending.
-            from KrakenOS.UI.services.system_info_hud import wrap_banner_lines
+            from KrakenOS.UI.services.system_info_hud import (
+                banner_wrap_chars,
+                text_actor_width_px,
+                wrap_banner_lines,
+            )
 
-            lines = wrap_banner_lines(lines)
+            # bugs/0839: wrap to the room that is THERE, not to a constant. Horizontal space
+            # first; a line only goes vertical once the window runs out.
+            budget = None
+            try:
+                hud = self.__dict__.get("_system_info_hud_actor")
+                view_w = float(self._renderer.GetSize()[0])
+                hud_px = text_actor_width_px((hud.GetInput() or "") if hud else "", 13.0)
+                budget = banner_wrap_chars(hud_px, view_w, 13.0)
+            except Exception:
+                budget = None
+            lines = wrap_banner_lines(lines) if budget is None else wrap_banner_lines(lines, width=budget)
             text = "\n".join(lines)
             try:
                 if not bool(self.show_solve_banner_var.get()):
