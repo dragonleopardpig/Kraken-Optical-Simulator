@@ -16365,6 +16365,10 @@ phase_602_overlay_registry = _phase_from_standalone(
     602, "the app names the overlay family instead of the user guessing: three object-plane overlay families scale to the same field semi-diagonal and TWO draw the byte-identical green (0.2,0.9,0.35) 0.02 apart in opacity (QE pick disc 0.10, Det pick fill 0.08), while the third -- reference surfaces -- takes its opacity from the scene bundle's mesh opacity and has NO literal at all, which is why bugs/0659 round 1 blamed it for a disc it does not draw. overlay_registry declares each family's colour, opacity, shapes, toggle var, UI paths, owning module and actor lifecycle; identify_overlay never excludes a family by a literal it does not declare (excluding it IS the 0659 mistake, automated), overlay_clash_report names every shared colour and what separates it, and verify_registry_against_source re-reads the literals from their real modules so a drift fails here instead of turning the registry into the next stale note. Shape rules OUT the rectangle-drawer rather than narrowing to one family -- the reference disc is a disc too (0823)",
     "KrakenOS.UI.validate_open3d_0823_overlay_registry",
     "overlay_registry")
+phase_603_stable_ray_subset = _phase_from_standalone(
+    603, "which rays get DRAWN depends on the ray, not its position: the illumination overlay capped with rng.choice(len(polylines), cap) -- a draw over LIST POSITIONS that its own comment called deterministic, and is, for one fixed list. Across runs anything that changed the list re-rolled every ray on screen: a different ray budget, a role tag that now matches (the 20260708_1516..1519 fallback swaps the whole input), one more ray clipping short, or any upstream RNG consumption -- on exactly the path a user reaches for to find where stray light came from. Selection is now a pure function of (ray identity, seed) through a splitmix64 finalizer, keyed on the engine's source_ray_index and never on position. Precisely: order-independent, RNG-decoupled and reproducible at a fixed population, but NOT population-independent under smallest-k -- select_by_probability is the policy for comparing two budgets, and the first draft of the comment overclaimed this and was corrected. _split now carries (record, polyline) pairs while the aperture statistics keep reading the FULL populations (0824)",
+    "KrakenOS.UI.validate_open3d_0824_stable_ray_subset",
+    "stable_ray_subset")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17033,6 +17037,7 @@ def main() -> int:
             phase_600_the_cascade_is_a_recipe,
             phase_601_illumination_map_shot_noise,
             phase_602_overlay_registry,
+            phase_603_stable_ray_subset,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

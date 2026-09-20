@@ -32,6 +32,12 @@ ILLUM_APERTURE_PERCENTILE = 98.0
 # plenty to read the fan and keeps the overlay light. Subsampling is deterministic (seeded).
 ILLUM_RAY_MAX_PER_CLASS = 240
 ILLUM_RAY_SUBSAMPLE_SEED = 7
+# bugs/0824: the cap is applied by the ray's OWN identity, not its list position. The
+# drawn set no longer depends on list ORDER, on how many rays preceded it, or on any
+# upstream RNG consumption -- all of which used to re-roll the whole overlay. Growing
+# the population still tightens which hashes win; for a set that must be identical
+# across two different ray budgets, use stable_ray_subset.select_by_probability.
+
 
 # A polyline must span at least this far in world z to be drawable. A ray blocked at the LED's own
 # source aperture (status "Stop @ S0") collapses to a single dot at the emitter plane; it is not part
@@ -101,11 +107,24 @@ def _merge_polylines(polylines):
     return np.vstack(points), np.asarray(cells, dtype=np.int64)
 
 
-def _subsample(polylines, cap, rng):
-    if cap is None or len(polylines) <= int(cap):
-        return polylines
-    idx = rng.choice(len(polylines), int(cap), replace=False)
-    return [polylines[i] for i in idx]
+def _subsample(items, cap, seed, *, key=None):
+    """Cap the drawn set by identity hash (bugs/0824).
+
+    ``key`` maps an item to its stable ray identity. Without one -- a caller that
+    genuinely has nothing but geometry -- the polyline's own rounded endpoints are
+    the identity: still far better than a positional draw, because the same ray
+    keeps the same identity when the population around it changes.
+    """
+    from KrakenOS.UI.services.stable_ray_subset import select_smallest_k
+
+    items = list(items)
+    if cap is None or len(items) <= int(cap):
+        return items
+    if key is None:
+        def key(arr):
+            a = np.asarray(arr, dtype=float)
+            return tuple(np.round(np.concatenate((a[0], a[-1])), 6).tolist())
+    return select_smallest_k(items, int(cap), key=key, seed=int(seed))
 
 
 def _terminals(polylines):
@@ -155,7 +174,6 @@ def build_source_illumination_rays_overlay(
     half-extents), or None when there is nothing drawable."""
     if not records:
         return None
-    rng = np.random.default_rng(int(seed))
 
     def _role_matches(record):
         if role is None:
@@ -163,12 +181,14 @@ def build_source_illumination_rays_overlay(
         return str(record.get("source_role", "")).strip().lower() == str(role).strip().lower()
 
     def _split(selected):
+        """Pairs of (record, polyline): bugs/0824 needs the record's identity to
+        survive as far as the cap, so the draw is keyed on the ray, not its index."""
         reaching_arr, clipped_arr = [], []
         for record in selected:
             arr = _record_polyline(record, min_z_span)
             if arr is None:
                 continue
-            (reaching_arr if _reaches_fov(record) else clipped_arr).append(arr)
+            (reaching_arr if _reaches_fov(record) else clipped_arr).append((record, arr))
         return reaching_arr, clipped_arr
 
     # Prefer rays tagged with the illumination role, but if that yields nothing drawable -- a
@@ -185,10 +205,17 @@ def build_source_illumination_rays_overlay(
 
     reaching_total = len(reaching)
     clipped_total = len(clipped)
-    reaching_draw = _subsample(reaching, max_per_class, rng)
-    clipped_draw = _subsample(clipped, max_per_class, rng)
-    reaching_points, reaching_lines = _merge_polylines(reaching_draw)
-    clipped_points, clipped_lines = _merge_polylines(clipped_draw)
+    from KrakenOS.UI.services.stable_ray_subset import ray_identity
+
+    _key = lambda pair: ray_identity(pair[0])  # noqa: E731 -- one-line adapter
+    reaching_draw = _subsample(reaching, max_per_class, seed, key=_key)
+    clipped_draw = _subsample(clipped, max_per_class, seed, key=_key)
+    # Geometry statistics below read the FULL populations, not the drawn sample: the
+    # clear aperture is a property of every ray that passed, not of the 240 on screen.
+    reaching_arrs = [a for _, a in reaching]
+    clipped_arrs = [a for _, a in clipped]
+    reaching_points, reaching_lines = _merge_polylines([a for _, a in reaching_draw])
+    clipped_points, clipped_lines = _merge_polylines([a for _, a in clipped_draw])
 
     # The clip plane is where the red rays die -- the BS-exit stop (median terminal z, ~75 in the
     # coaxial scene). Naming the fold axis is subtler than "which way do the clipped rays spread":
@@ -197,7 +224,7 @@ def build_source_illumination_rays_overlay(
     # compare against the survivors: the reaching (green) rays that make it through define the clear
     # aperture at the stop, and the clipped (red) rays only stick OUT past that envelope on the
     # foreshortened fold axis. The fold axis is the one with the larger clipped-beyond-survivor margin.
-    clip_terminals = _terminals(clipped)
+    clip_terminals = _terminals(clipped_arrs)
     clip_plane_z = float(np.median(clip_terminals[:, 2])) if clip_terminals.size else None
     clip_axis = None
     aperture_half = None
@@ -205,8 +232,8 @@ def build_source_illumination_rays_overlay(
     aperture_points = np.empty((0, 3), dtype=float)
     aperture_lines = np.empty((0,), dtype=np.int64)
     if clip_plane_z is not None:
-        survivor_xy = _plane_crossings(reaching, clip_plane_z)
-        clipped_xy = _plane_crossings(clipped, clip_plane_z)
+        survivor_xy = _plane_crossings(reaching_arrs, clip_plane_z)
+        clipped_xy = _plane_crossings(clipped_arrs, clip_plane_z)
         if survivor_xy.shape[0] >= 8:
             # The clear aperture the green rays actually pass through -- the limiting BS-exit-stop
             # opening, foreshortened on the fold axis. This is the rectangle the red rays are cut on.
@@ -296,7 +323,6 @@ def build_illumination_marker_rays_overlay(
     Returns a spec dict (points (N,3) + VTK line cells + colour + counts) or None when nothing is drawable."""
     if not records:
         return None
-    rng = np.random.default_rng(int(seed))
     polylines = []
     for record in records:
         arr = _marker_record_polyline(record, min_span)
@@ -305,7 +331,7 @@ def build_illumination_marker_rays_overlay(
     if not polylines:
         return None
     total = len(polylines)
-    drawn = _subsample(polylines, max_rays, rng)
+    drawn = _subsample(polylines, max_rays, seed)
     points, lines = _merge_polylines(drawn)
     if points.shape[0] < 2 or lines.size < 3:
         return None
