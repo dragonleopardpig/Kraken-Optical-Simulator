@@ -2178,13 +2178,38 @@ class LayoutPolylineDisplayMixin:
             return None
 
     def _lens_surrogate_optical_axis_line(self):
-        """``(point, direction)`` of the lens SURROGATE's optical axis: the line through its
-        Front and Rear Optical Vertex Datum rows, with the datum-span MIDPOINT as the point.
+        """``(point, direction)`` of the lens SURROGATE's optical axis, spanning its Front and
+        Rear Optical Vertex Datum rows.
 
         Read through the ONE row-pose resolver (bugs/0557), so it is the real leg on a
         0433-frozen scene and the straight-equivalent on a sequential one -- the same frame
         :meth:`_lens_step_overlay_axis_world_line` reports in.  ``None`` when the two datums
-        are not both locatable or sit on top of each other.
+        are not both locatable, sit on top of each other, or are placed in DIFFERENT spaces.
+
+        How the line is built depends on that space, because ``desp`` does not mean the same
+        thing in the two (bugs/0832, ``docs/design_row_placement_space.md``):
+
+        WORLD -- the 0433 freeze has baked the folded leg into ``desp``, so a datum's pose IS
+            its absolute position and the CHORD between the two datums is the only right
+            answer.  ``machine_vision_ELS85`` reads (1, 0, 0) this way: both datums carry a
+            matched 55 mm x / -55 mm z offset that is the real 45 deg leg.
+
+        SEQUENTIAL -- ``desp_x/desp_y`` mean "how far this surface sits OFF the axis", not
+            "where the axis is", so a chord turns ONE marker's decentre into a tilt of the
+            whole lens.  Measured on ``om05a_folded``: the Front Optical Vertex Datum carries
+            ``desp_x = -8.78`` (optically inert -- ``rc`` 0, AIR, a pure marker) while every
+            other lens row, the Aperture Stop included, sits at 0; the chord tilted 12.41 deg
+            and read 7.01 mm off on a scene whose rows are drawn exactly co-axial.  Zeroing
+            that one number took the same reading to 0.0000 mm / 0.0000 deg.  So here the
+            DIRECTION is the chain's own (a decentre cannot tilt the chain) and the transverse
+            position is the MEDIAN over the whole datum-to-datum span -- which keeps a lens
+            that really is decentred (every row sharing one offset) while outvoting a single
+            odd marker.
+
+        This is not cosmetic: ``center_lens_body_on_surrogate_axis`` runs on every lens SWAP
+        and moves the CAD body onto whatever this returns, so a tilted line pushes the barrel
+        OFF the axis the user is looking at -- 6.27 mm of it, plus 0.31 mm into the Filter
+        48-926, on the flagged 2026-09-20 17:49/17:51 captures.
         """
         front = self._lens_datum_row_index("front")
         rear = self._lens_datum_row_index("rear")
@@ -2195,24 +2220,90 @@ class LayoutPolylineDisplayMixin:
             # the architecture in miniature, and why lowering is never cached across
             # refreshes: within one it is shared, across them it is recomputed so a derived
             # body's pose cannot go stale.
+            from KrakenOS.UI.services import row_placement as _rp
             from KrakenOS.UI.services import scene_ir
 
-            front_pose = np.asarray(
-                scene_ir.world_frame(self, int(front))[0], dtype=float
-            ).reshape(3)
-            rear_pose = np.asarray(
-                scene_ir.world_frame(self, int(rear))[0], dtype=float
-            ).reshape(3)
+            front_frame = scene_ir.world_frame(self, int(front))
+            rear_frame = scene_ir.world_frame(self, int(rear))
+            front_pose = np.asarray(front_frame[0], dtype=float).reshape(3)
+            rear_pose = np.asarray(rear_frame[0], dtype=float).reshape(3)
+            front_space, rear_space = str(front_frame[2]), str(rear_frame[2])
         except Exception as exc:
             self.append_debug(f"Lens surrogate optical axis unavailable: {exc}")
             return None
         if not (np.all(np.isfinite(front_pose)) and np.all(np.isfinite(rear_pose))):
             return None
+        if front_space != rear_space:
+            # One endpoint absolute and the other an offset from a station: the chord between
+            # them is a line between two coordinate systems. Refuse rather than return a
+            # number, because the caller MOVES the lens body onto it.
+            self.append_debug(
+                f"Lens surrogate optical axis refused: the Front datum (row {int(front)}) is "
+                f"{front_space}-placed and the Rear datum (row {int(rear)}) is {rear_space}-"
+                "placed, so there is no common frame to draw the axis in."
+            )
+            return None
+
+        if front_space == _rp.SEQUENTIAL:
+            axis_point = self._sequential_surrogate_axis_point(
+                int(front), int(rear), front_pose, rear_pose
+            )
+            if axis_point is None:
+                return None
+            span = float(rear_pose[2] - front_pose[2])
+            if abs(span) <= 1.0e-9:
+                return None
+            # The chain advances along +z in the sequential frame; desp_z is part of the
+            # station, so the SIGN comes from the datum order, never from the transverse pair.
+            return axis_point, np.array([0.0, 0.0, 1.0 if span > 0.0 else -1.0], dtype=float)
+
         direction = rear_pose - front_pose
         length = float(np.linalg.norm(direction))
         if length <= 1.0e-9:
             return None
         return 0.5 * (front_pose + rear_pose), direction / length
+
+    def _sequential_surrogate_axis_point(self, front, rear, front_pose, rear_pose):
+        """bugs/0832: a point ON the lens surrogate's axis, for SEQUENTIAL datum rows.
+
+        Axial coordinate: the datum-span midpoint, unchanged.  Transverse: the MEDIAN
+        ``(desp_x, desp_y)`` over every row from the front datum to the rear datum inclusive.
+        A genuinely decentred lens has all of them sharing one offset and the median returns
+        it; a single mis-set marker -- ``om05a_folded``'s -8.78 among four zeros -- is
+        outvoted.  The mean would not be: it splits the difference and leaves the body half
+        way off the axis, which is the 4.39 mm residual that a direction-only repair leaves
+        behind.
+        """
+        from KrakenOS.UI.services import row_placement as _rp
+
+        lo, hi = sorted((int(front), int(rear)))
+        rows = getattr(self, "rows", None) or []
+        transverse = []
+        for index in range(lo, hi + 1):
+            if index < 0 or index >= len(rows):
+                continue
+            row = rows[index]
+            tilts = _rp.row_tilts(row)
+            if tilts is not None and float(np.max(np.abs(tilts))) > 1.0e-9:
+                # A tilted row's desp is not a plain x/y decentre of the chain, so it gets no
+                # vote -- it cannot be compared with the untilted ones.
+                continue
+            try:
+                transverse.append(
+                    (float(getattr(row, "desp_x", 0.0)), float(getattr(row, "desp_y", 0.0)))
+                )
+            except Exception:
+                continue
+        if not transverse:
+            return 0.5 * (front_pose + rear_pose)
+        offsets = np.asarray(transverse, dtype=float)
+        if not np.all(np.isfinite(offsets)):
+            return None
+        centre = np.median(offsets, axis=0)
+        return np.array(
+            [float(centre[0]), float(centre[1]), 0.5 * float(front_pose[2] + rear_pose[2])],
+            dtype=float,
+        )
 
     def _transformed_imported_optical_step_mesh(self):
         if self.imported_optical_step_path is None:
