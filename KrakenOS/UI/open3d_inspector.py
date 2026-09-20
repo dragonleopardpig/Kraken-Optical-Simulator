@@ -18720,9 +18720,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             budget = None
             try:
                 hud = self.__dict__.get("_system_info_hud_actor")
-                view_w = float(self._renderer.GetSize()[0])
+                view_w, view_h = (float(v) for v in self._renderer.GetSize()[:2])
                 hud_px = text_actor_width_px((hud.GetInput() or "") if hud else "", 13.0)
-                budget = banner_wrap_chars(hud_px, view_w, 13.0)
+                budget = banner_wrap_chars(
+                    hud_px, view_w, 13.0,
+                    reserved_right_px=self._nav_cube_reserved_width_px(view_w, view_h),
+                )
             except Exception:
                 budget = None
             # bugs/0840: every one of these lines is "LABEL: value" -- render the column.
@@ -18805,6 +18808,36 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if render:
             self.render()
 
+    def _nav_cube_reserved_width_px(self, view_width_px, view_height_px) -> float:
+        """bugs/0841: pixels on the RIGHT the navigation cube owns, so the banner stays clear.
+
+        Asked of the cube's own placement function rather than guessed, so the two cannot
+        drift: the cube is a pixel-SQUARE corner viewport whose side follows the window
+        height, 278 px of a 2478 x 1264 window and 132 px of a 900 x 600 one. It sits in the
+        same vertical band as the banner, which is why a fit test against the full viewport
+        width let the banner run underneath it.
+
+        0.0 when the cube is absent or its placement cannot be read -- reserving space for a
+        widget that is not there would shrink the banner for no reason.
+        """
+        try:
+            from KrakenOS.UI.services.nav_cube_widget import (
+                _CORNER_SIDE_FRACTION,
+                corner_square_viewport,
+            )
+
+            if self.__dict__.get("_navigation_cube") is None:
+                return 0.0
+            viewport = corner_square_viewport(
+                float(view_width_px), float(view_height_px),
+                side_fraction=_CORNER_SIDE_FRACTION,
+            )
+            if not viewport:
+                return 0.0
+            return max(0.0, (1.0 - float(viewport[0])) * float(view_width_px))
+        except Exception:
+            return 0.0
+
     def _place_solve_banner_beside_system_hud(self, actor) -> None:
         """bugs/0762 (user: "Can also position the solve banner beside the Magnification,
         Resolution banner, side by side?"): sit the solve banner to the RIGHT of the system-info
@@ -18849,7 +18882,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception:
                 banner_text = ""
             banner_px = text_actor_width_px(banner_text, 13.0)
-            x_norm, y_norm = solve_banner_anchor(width_px, banner_px, view_w)
+            x_norm, y_norm = solve_banner_anchor(
+                width_px, banner_px, view_w,
+                reserved_right_px=self._nav_cube_reserved_width_px(view_w, float(viewport[1])),
+            )
             coordinate = actor.GetPositionCoordinate()
             coordinate.SetCoordinateSystemToNormalizedViewport()
             coordinate.SetValue(x_norm, y_norm)

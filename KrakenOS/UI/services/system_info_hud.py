@@ -436,7 +436,9 @@ def text_actor_width_px(text, font_size_px: float = 13.0) -> float:
 BANNER_MIN_WRAP_CHARS = 48
 
 
-def banner_wrap_chars(hud_width_px, view_width_px, font_size_px: float = 13.0) -> int:
+def banner_wrap_chars(
+    hud_width_px, view_width_px, font_size_px: float = 13.0, *, reserved_right_px: float = 0.0
+) -> int:
     """bugs/0839: how many characters fit on ONE banner line, given the room beside the HUD.
 
     The user's words: *"the banner should make use of the horizontal space more, vertical comes
@@ -460,13 +462,19 @@ def banner_wrap_chars(hud_width_px, view_width_px, font_size_px: float = 13.0) -
         return int(BANNER_REASON_WIDTH)
     if not (view_w > 1.0):
         return int(BANNER_REASON_WIDTH)
-    x_norm, _y = solve_banner_anchor(hud_w, 0.0, view_w)
-    available_px = view_w - (x_norm * view_w) - BANNER_FRAME_PAD_PX - 12.0
+    x_norm, _y = solve_banner_anchor(hud_w, 0.0, view_w, reserved_right_px=reserved_right_px)
+    try:
+        reserved = max(0.0, float(reserved_right_px))
+    except (TypeError, ValueError):
+        reserved = 0.0
+    available_px = view_w - reserved - (x_norm * view_w) - BANNER_FRAME_PAD_PX - 12.0
     per_char = max(float(font_size_px) * BANNER_CHAR_WIDTH_RATIO, 1.0e-6)
     return max(int(BANNER_MIN_WRAP_CHARS), int(available_px / per_char))
 
 
-def solve_banner_anchor(hud_width_px, banner_width_px, view_width_px) -> "tuple[float, float]":
+def solve_banner_anchor(
+    hud_width_px, banner_width_px, view_width_px, *, reserved_right_px: float = 0.0
+) -> "tuple[float, float]":
     """bugs/0837: where the solve banner sits, as ``(x, y)`` in normalized viewport.
 
     Beside the system HUD when the WHOLE banner fits there; stacked underneath when it does
@@ -488,8 +496,18 @@ def solve_banner_anchor(hud_width_px, banner_width_px, view_width_px) -> "tuple[
         return 0.012, 0.83
     gap_px = 18.0
     margin_px = 12.0
+    # bugs/0841: the viewport is not all usable. The navigation cube owns a square in the TOP
+    # RIGHT -- 278 px of a 2478 px window -- in the same vertical band the banner occupies, so
+    # a fit test against the full width let the banner run underneath it. Measured on the
+    # flagged capture: the banner ended at 2406 with the cube starting at 2200, a 206 px
+    # overlap. The right edge the banner may reach is the window LESS that square.
+    try:
+        reserved = max(0.0, float(reserved_right_px))
+    except (TypeError, ValueError):
+        reserved = 0.0
+    usable_w = max(view_w - reserved, 1.0)
     x_norm = 0.012 + (hud_w + gap_px) / view_w
-    fits = banner_w <= 0.0 or (x_norm * view_w + banner_w + margin_px) <= view_w
+    fits = banner_w <= 0.0 or (x_norm * view_w + banner_w + margin_px) <= usable_w
     if x_norm > 0.72 or not fits:
         return 0.012, 0.83
     return x_norm, 0.985
