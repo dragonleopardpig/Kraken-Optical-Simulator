@@ -137,6 +137,24 @@ bugs: 0748 and 0815 are **body** drift, seven rows at 8.820 mm. Gating on a pair
 where one is blind to bodies would repeat the 0457 lesson prospectively -- a confident,
 precise measurement of the wrong thing.
 
+### The audit's own core comparison is invalid on a FOLDED scene
+
+Running it on `om05a_folded.py` reports **9 drawn-vs-prescription disagreements** with
+values like row 8 `drawn [-185.27, 56.36, -25.00]` against `prescription [0, 0, 275.01]`.
+Those are not defects. DRAWN is folded; PRESCRIPTION is the straight-equivalent, because
+`row_placement.world_pose()` does not apply the fold. The instrument is comparing the two
+quantities this whole design exists to stop people comparing.
+
+So today the audit's core reading is only meaningful on an UNFOLDED scene, which is why
+ELS85 reads cleanly (one genuine 1.78 mm) and om05a reads as nine false positives. The
+audit becomes valid on folded benches at exactly the moment Phase D moves the fold inside
+`lower()` -- the instrument and the fix are the same change, and neither can be judged
+before it.
+
+Practical consequence for the gate set: until Phase D, gate the drawn-vs-prescription
+comparison on the unfolded scenes only, and gate the folded benches on **body drift**,
+which is already correct on them (all eleven promoted bodies read 0.0000 mm).
+
 **Fix `_body_centers` before Phase A begins.** Until it reports bodies on ELS85 and on the
 om05a benches, the IR comparison has no baseline for the half of the scope that matters
 most, and no phase after it can be honestly gated.

@@ -104,20 +104,117 @@ def _drawn_poses(inspector) -> dict:
     return out
 
 
-def _body_centers(app) -> dict:
-    out = {}
-    for label in ("lens", "camera", "led"):
+#: The canonical STEP-overlay labels, as ``open3d_inspector`` itself enumerates them.
+#: The first version of this audit listed only three and omitted "optical", which is
+#: where a promoted beam splitter lives -- so ELS85 reported bodies=0 while declaring six
+#: promoted solids with its STEP file present on disk.
+STEP_OVERLAY_LABELS = ("optical", "lens", "camera", "led")
+
+
+def _body_centers(app) -> "tuple[dict, list[str]]":
+    """Every body the audit can see, and why it could not see the rest.
+
+    Returns ``(bodies, problems)``. A body is ``{"center", "kind", ...}``; promoted rows
+    additionally carry ``authored`` and ``drift_mm``.
+
+    Two kinds, because a scene's bodies are not all of one sort:
+
+    * **step overlay** -- an imported STEP drawn under one of the four labels.
+    * **promoted** -- a CAD row promoted to an optical element. Its authored world centre
+      lives in ``advanced["StepOverlayPromotion"]["center_world"]`` and its live centre
+      comes from the follower walk. The overlay refresh deliberately SKIPS promoted
+      bodies, so the label path alone can never see them -- which is exactly why a scene
+      whose bodies are all promoted audited as having none.
+
+    Nothing is swallowed. The old version wrapped the whole loop in
+    ``except Exception: continue``, so a body that failed to measure was indistinguishable
+    from a body that was not there -- the bugs/0457 lesson in a different costume.
+    """
+    bodies: dict = {}
+    problems: list[str] = []
+
+    for label in STEP_OVERLAY_LABELS:
+        try:
+            if app._step_path_for_label(label) is None:
+                continue  # genuinely absent, not a failure
+        except Exception as exc:
+            problems.append(f"step label {label!r}: path lookup raised {exc!r}")
+            continue
         try:
             mesh = app._transformed_imported_step_mesh_for_label(label)
-            if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
-                continue
-            b = np.asarray(mesh.bounds, dtype=float).reshape(6)
-            out[label] = np.array(
-                [(b[0] + b[1]) / 2, (b[2] + b[3]) / 2, (b[4] + b[5]) / 2], dtype=float
-            )
-        except Exception:
+        except Exception as exc:
+            problems.append(f"step label {label!r}: mesh build raised {exc!r}")
             continue
-    return out
+        if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
+            problems.append(f"step label {label!r}: has a STEP path but produced no geometry")
+            continue
+        b = np.asarray(mesh.bounds, dtype=float).reshape(6)
+        bodies[f"step:{label}"] = {
+            "center": np.array([(b[0] + b[1]) / 2, (b[2] + b[3]) / 2, (b[4] + b[5]) / 2], float),
+            "kind": "step overlay",
+        }
+
+    # A promoted row IS its body, so its live centre must be the SOLID's centre in the SAME
+    # convention as the authored snapshot (``StepOverlayPromotion.center_world``). Getting
+    # this wrong manufactures a precise, confident, meaningless number -- measured: using
+    # the row's own pose (``_promoted_solid_current_center``, whose first branch returns
+    # ``_split_row_world_center`` = the surface VERTEX) reports 132-480 mm of "drift" on
+    # om05a_folded.py, a scene bugs/0750 calibrated to read 0.000000 mm healthy. The row
+    # pose is the right answer for collision work (bugs/0483) and the wrong quantity here.
+    #
+    # Two commensurate sources, both centre_world:
+    #   1. the output-port pose walk -- what scene_placement_audit is calibrated on;
+    #   2. the last scene bundle's ``optical_solid`` placement, same field name.
+    # When neither answers, the body is still LISTED with its authored centre and the gap is
+    # named. An unmeasurable body must never be silently dropped, and must never borrow a
+    # number from a different convention to look measured.
+    try:
+        from KrakenOS.UI.services.scene_placement_audit import pinned_placement_drifts
+
+        bundle = getattr(app, "_last_scene_bundle", None)
+        bundle_centers: dict = {}
+        for placement in list(getattr(bundle, "placements", None) or []):
+            if str(getattr(placement, "source_kind", "") or "") != "optical_solid":
+                continue
+            try:
+                bundle_centers[int(getattr(placement, "row_index", -1))] = np.asarray(
+                    list(getattr(placement, "center_world"))[:3], dtype=float
+                )
+            except Exception:
+                continue
+
+        for record in pinned_placement_drifts(list(getattr(app, "rows", []) or [])):
+            index = int(record["row"])
+            name = record["name"] or f"row {index}"
+            key = f"promoted:{index}:{name}"
+            authored = np.asarray(record["authored"], dtype=float)
+            live, via = None, None
+            if record["live"] is not None:
+                live, via = np.asarray(record["live"], dtype=float), "output-port walk"
+            elif index in bundle_centers:
+                live, via = bundle_centers[index], "bundle placement"
+            if live is None:
+                bodies[key] = {
+                    "center": None,
+                    "authored": authored,
+                    "drift_mm": None,
+                    "kind": "promoted (authored only)",
+                }
+                problems.append(
+                    f"{key}: no commensurate live centre -- the output-port walk returned "
+                    f"nothing and the bundle carries no optical_solid placement for this row"
+                )
+                continue
+            bodies[key] = {
+                "center": live,
+                "authored": authored,
+                "drift_mm": float(np.linalg.norm(live - authored)),
+                "kind": f"promoted via {via}",
+            }
+    except Exception as exc:
+        problems.append(f"promoted-solid audit raised {exc!r}")
+
+    return bodies, problems
 
 
 def main(argv: list[str]) -> int:
@@ -160,7 +257,7 @@ def main(argv: list[str]) -> int:
                     continue
 
         drawn = _drawn_poses(inspector) if inspector is not None else {}
-        bodies = _body_centers(app)
+        bodies, body_problems = _body_centers(app)
 
         print(f"\nPOSE AUDIT — {scene.name}")
         print(f"  rows={len(app.rows)}  drawn_row_actors={len(drawn)}  bodies={len(bodies)}\n")
@@ -186,9 +283,28 @@ def main(argv: list[str]) -> int:
             if index >= len(app.rows) and orient is not None:
                 print(f"  {index:>4} (synthesised)  drawn={_fmt(pos)} orientation={_fmt(orient)}")
 
-        print("\n  STEP bodies:")
-        for label, center in bodies.items():
-            print(f"    {label:<8} {_fmt(center)}")
+        print("\n  BODIES:")
+        if not bodies and not body_problems:
+            print("    none -- this scene declares no STEP overlay and no promoted solid")
+        for key, body in bodies.items():
+            shown = _fmt(body['center']) if body['center'] is not None else _fmt(body['authored'])
+            line = f"    {key:<34} {shown}  [{body['kind']}]"
+            drift = body.get("drift_mm")
+            if drift is not None:
+                line += f"  drift {float(drift):.4f} mm from authored"
+            print(line)
+        for problem in body_problems:
+            print(f"    UNMEASURED  {problem}")
+        # Body drift is REPORTED, not failed on. scene_placement_audit documents that an
+        # absolute reading is red at rest on rows whose authored snapshot is merely stale
+        # (om05a_folded_80mm row 16 sits at 545 mm from a sign difference predating all of
+        # this), so compare_drifts -- the delta form -- is the gating instrument. Inventing
+        # an absolute tolerance here would make the audit noisy exactly where it must be
+        # trusted.
+        drifted = [b for b in bodies.values() if (b.get("drift_mm") or 0.0) > POSITION_TOL_MM]
+        if drifted:
+            print(f"    ({len(drifted)} promoted bod{'y' if len(drifted) == 1 else 'ies'} "
+                  f"drift from authored; use scene_placement_audit.compare_drifts to gate)")
 
         print()
         if not drawn:

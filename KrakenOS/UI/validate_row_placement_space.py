@@ -8,19 +8,23 @@ their drift produced 0448, 0456, 0457-A and 0457-B.
 Checks:
   SOURCE -- the resolver exists, names the world-placement keys once, and spells out the
             "do not fold twice" predicate.
-  REAL   -- on the AZ85 BS scene the frozen chain classifies WORLD (including the Image row),
+  REAL   -- on the ELS85 (=AZ85) BS scene the frozen chain classifies WORLD (including the Image row),
             while the object and the later-added beam splitter stay SEQUENTIAL.
   SCOPE  -- Step 1 adds the resolver WITHOUT re-pointing consumers, so this phase pins the
             classification only. The behavioural half (the display must skip the fold for a
-            WORLD row) lands in Step 2; `tools/pose_audit.py` measures it and currently
-            reports the 51.50 mm double fold on row 8.
+            WORLD row) lands in Step 2. NOTE: the famous 51.50 mm "double fold" was an
+            actor at opacity 0.0 -- a picking proxy nobody could see. pose_audit counts
+            VISIBLE actors only and reports no visible actor for the Image row.
 """
 from __future__ import annotations
 
 import inspect as _inspect
 from pathlib import Path
 
-SCENE = Path("attachment/machine_vision_AZ85_RA_Mirror_BS.py")
+# AZ85 IS ELS-85 -- the same lens, renamed. machine_vision_AZ85_RA_Mirror_BS.py no longer
+# exists, so this guard SKIPPED rather than checking anything. ELS85 carries the same
+# structure that made it the case: 21 world-placement keys and a promoted beam splitter.
+SCENE = Path("attachment/machine_vision_ELS85.py")
 
 
 def run_checks() -> tuple[bool, list[str]]:
@@ -40,7 +44,7 @@ def run_checks() -> tuple[bool, list[str]]:
         ok = False
 
     if not SCENE.exists():
-        notes.append("SKIP: the AZ85 BS scene is absent (gitignored attachment)")
+        notes.append("SKIP: the ELS85 BS scene is absent (gitignored attachment)")
         return ok, notes
 
     app = None
@@ -76,7 +80,7 @@ def run_checks() -> tuple[bool, list[str]]:
         if image_row is not None and rp.must_not_display_fold(app.rows[image_row]):
             notes.append(
                 "SCOPE = the Image row is flagged must_not_display_fold "
-                "(Step 2 wires the display to it; the audit measures the 51.50 mm gap today)"
+                "(Step 2 wires the display to it)"
             )
         else:
             notes.append("SCOPE the Image row is not flagged against a second fold")
