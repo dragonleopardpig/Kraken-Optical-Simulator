@@ -16373,6 +16373,10 @@ phase_604_read_this_first = _phase_from_standalone(
     604, "one shared shape for 'this number should not be believed': fifteen report surfaces had no common way to say a result is untrustworthy, and saying nothing looked identical to passing. result_diagnostics encodes three rules that each already cost a bug -- an empty finding list renders 'Nothing was measured. This is NOT a clean result' rather than silence (0822); a WARNING with an empty remedy is REFUSED AT CONSTRUCTION citing 0777, which shipped 'move the device stage / camera focus to land it' for a blur no move could shrink, with NO_REMEDY the way to state that nothing can be done and have it counted and printed; and warnings render above info with the count as the first line. illumination_findings re-expresses the 0822 verdicts under stable dotted codes while illumination_diagnostic_lines is untouched so no existing reader shifts, asserted here rather than assumed. The undersampling remedy now also offers binning coarser, which the MV-150 rebin sweep showed reads 13.3% error at 32 bins against 49.7% at the auto 128 on the same data (0825)",
     "KrakenOS.UI.validate_open3d_0825_read_this_first",
     "read_this_first")
+phase_605_scene_ir_phase_a = _phase_from_standalone(
+    605, "Scene IR Phase A -- lower a scene to flat data and read it from NOWHERE: Step 2 of the earlier design stalled because nobody could find the producer of the drawn geometry (one patch inert, both curve builders and every _compute_*_layout_geometry* wrapped and none fired while twelve row actors drew), so Phase A builds the instrument that can state what every consumer believes and moves nothing. It found the design's uniform-anchor assumption was wrong on half the gate set: ELS85 declares ScenePlacement.anchor='row_pose' on 3 rows while om05a_folded has NO anchors and NO placement offsets yet resolves 11 bodies at 0.0000 mm through the output-port graph -- two mechanisms, differently shaped. ELS85's declared mechanism cannot be reconstructed (center_world is not row pose + placement_offset_xyz; that offset's z equals bounds_min_world's z), so those bodies fall back and SAY so. to_world carries a frame tag because world_pose does not fold, and is_fully_post_fold() is asserted FALSE -- a guard that passed today would measure nothing, and it turns green at Phase D (0826)",
+    "KrakenOS.UI.validate_open3d_0826_scene_ir_phase_a",
+    "scene_ir_phase_a")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17043,6 +17047,7 @@ def main() -> int:
             phase_602_overlay_registry,
             phase_603_stable_ray_subset,
             phase_604_read_this_first,
+            phase_605_scene_ir_phase_a,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
