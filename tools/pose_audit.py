@@ -19,7 +19,9 @@ bugs/0457 until this reproduces the -48.8 the live app draws.
 Usage:
     DISPLAY=:N .devenv/state/venv/bin/python tools/pose_audit.py [scene.py]
 
-Default scene: attachment/machine_vision_AZ85_RA_Mirror_BS.py (the 0457 repro).
+Default scene: attachment/machine_vision_ELS85.py -- AZ85 IS ELS-85 (same lens, renamed),
+and machine_vision_AZ85_RA_Mirror_BS.py no longer exists. ELS85 carries the same structure
+that made it the 0457 repro: 21 world-placement keys and a promoted beam splitter.
 """
 from __future__ import annotations
 
@@ -28,7 +30,7 @@ from pathlib import Path
 
 import numpy as np
 
-DEFAULT_SCENE = Path("attachment/machine_vision_AZ85_RA_Mirror_BS.py")
+DEFAULT_SCENE = Path("attachment/machine_vision_ELS85.py")
 POSITION_TOL_MM = 1.0
 ANGLE_TOL_DEG = 1.0
 
