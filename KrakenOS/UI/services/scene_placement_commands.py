@@ -3500,11 +3500,13 @@ class ScenePlacementMixin:
                 and str(seating_reason or "") == "designed_image_target"
             ):
                 try:
-                    from KrakenOS.UI.services import row_placement as _row_placement
+                    from KrakenOS.UI.services import scene_ir as _scene_ir
 
                     rows = list(getattr(self, "rows", None) or [])
                     if len(rows) >= 2:
-                        prev_pos, _prev_rot, _ = _row_placement.world_frame(self, len(rows) - 2)
+                        # bugs/0826 Phase C: read the Scene IR (surfaces only -- this asks
+                        # a ROW's pose, and the body walk is wasted work here).
+                        prev_pos, _prev_rot, _ = _scene_ir.world_frame(self, len(rows) - 2)
                         leg = sensor_point - np.asarray(prev_pos, dtype=float).reshape(3)
                         norm = float(np.linalg.norm(leg))
                         if np.isfinite(norm) and norm > 1.0e-6 and float((leg / norm) @ beam) < 0.0:
@@ -4662,7 +4664,7 @@ class ScenePlacementMixin:
         only the section gaps constrain the slide.
         """
         try:
-            from KrakenOS.UI.services import row_placement
+            from KrakenOS.UI.services import scene_ir
 
             folds = [int(i) for i in self._promoted_mirror_fold_row_indices()]
         except Exception:
@@ -4677,8 +4679,14 @@ class ScenePlacementMixin:
         try:
             unit = np.asarray(direction, dtype=float).reshape(3)
             unit = unit / max(float(np.linalg.norm(unit)), 1.0e-12)
-            block_end = np.asarray(row_placement.world_pose(self, last).position, dtype=float)
-            fold_centre = np.asarray(row_placement.world_pose(self, mirror_row).position, dtype=float)
+            # bugs/0826 Phase C: one lowering, two reads.
+            _ir = scene_ir.lower(self, bodies=False)
+            block_end = np.asarray(
+                scene_ir.world_frame(self, last, scene_ir=_ir)[0], dtype=float
+            )
+            fold_centre = np.asarray(
+                scene_ir.world_frame(self, mirror_row, scene_ir=_ir)[0], dtype=float
+            )
         except Exception:
             return None
         along = float(np.dot(fold_centre - block_end, unit))

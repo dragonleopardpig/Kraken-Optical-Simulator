@@ -58,6 +58,7 @@ PHASE_C_CONVERTED = (
     "KrakenOS/UI/open3d_inspector.py",
     "KrakenOS/UI/services/layout_polyline_display.py",
     "KrakenOS/UI/services/layout_table_workbench.py",
+    "KrakenOS/UI/services/scene_placement_commands.py",
 )
 
 
