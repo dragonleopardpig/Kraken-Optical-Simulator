@@ -16381,6 +16381,10 @@ phase_606_ray_count_is_quadratic = _phase_from_standalone(
     606, "the preview ray count costs N SQUARED and the UI never said so: measured on the user's own 25.7-minute om05a session, 16 traces cost 448 s, one lens swap cost 150 s, and 91% of all bundle time was 78 bundles x 361 rays -- while all nine scene refreshes together cost 31 s, so rendering was never the cost. NsTraceLoop already runs at 9.9 ms/ray against the 80 ms/ray of the 0166 era, so the cell-normal cache and decimated proxy are working; what remained was volume. _full_pupil_grid_xy builds an N x N grid from ray_count and the combo offers 5..41, i.e. 25 to 1681 rays per bundle -- a 67x range behind one number that reads as linear, and both the user's scenes carry 31 (961 rays, ~47 s/trace). The Ray count LABEL now states rays/bundle and an estimated trace time before it is paid, and a SOLVE or SWAP iterates at a sparse fan via _solve_preview_ray_count_override -- the same transient-clamp shape as the drag/promote/folded overrides, none of which covered the solve or the swap. The clamp NEVER raises a user's choice, and both sites clear it in a finally because a leaked clamp would silently degrade every later trace (0827)",
     "KrakenOS.UI.validate_open3d_0827_ray_count_is_quadratic",
     "ray_count_is_quadratic")
+phase_607_field_chain_and_illustration = _phase_from_standalone(
+    607, "the device dialog shows the DERIVATION and a picture of the part: three numbers confused the user in one session and every one was arithmetically correct -- the device stayed 20 mm after they typed 50x50 (they had edited Required FOV), the scene drew FOV 21.0x8.3 while the banner said delivering 21 x 21 (per-FACE vs whole-sensor field), and a swap pre-filled 59.3284 (sensor 23.04 / |m| 0.3883). Each was a number shown without its parent, so every chain line now names what produced it, and the per-face field is MEASURED rather than computed -- the first draft of the module computed it from sensor/|m| and labelled it 'per face', reproducing the exact conflation it exists to prevent. A canvas draws the part at TRUE proportions with the inspected faces green and the unreachable ones grey: a 20x20x1 device renders a 100 px edge against 5 px of thickness, so the thin field explains itself. NO face selector -- bugs/0768 removed it at the user's request and the guard pins its absence; the fold turns sideways into the lens so only edge faces are reachable at all (0828)",
+    "KrakenOS.UI.validate_open3d_0828_field_chain_and_illustration",
+    "field_chain_and_illustration")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17053,6 +17057,7 @@ def main() -> int:
             phase_604_read_this_first,
             phase_605_scene_ir_phase_a,
             phase_606_ray_count_is_quadratic,
+            phase_607_field_chain_and_illustration,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

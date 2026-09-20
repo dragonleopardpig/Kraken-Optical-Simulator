@@ -389,13 +389,60 @@ def open_inspection_part_dialog(editor):
     # field images the FRONT face and its mirror image on the BACK, so the choice was never the
     # user's to make here. ``active_face`` stays in the spec (scenes carry it, and the six
     # blow-out axes still need it) -- it is just not a control any more.
-    ttk.Label(
-        body,
-        text="L runs along the top prism's longest dimension, W across the prism gap\n"
-             "(one inspected face to the other), T is the prism's short dimension.\n"
-             "The two inspected faces are L x T, W apart; blank FOV = that face +5%.",
-        justify="left",
-    ).grid(row=7, column=0, columnspan=2, sticky="w", pady=(6, 8))
+    # bugs/0828: the paragraph above said "the two inspected faces are L x T" and the user
+    # still could not connect it to the numbers -- a dense sentence does not attach to the
+    # fields above it. Replaced by a PICTURE of the part at true proportions with the two
+    # inspected faces lit, plus a derivation chain where every line names its parent.
+    # No face selector: bugs/0768 removed that deliberately and it stays removed.
+    from KrakenOS.UI.services.inspection_field_chain import (
+        chain_text, face_polygons, field_chain, inspected_faces, unreachable_faces,
+    )
+
+    illo = tk.Canvas(body, width=210, height=150, highlightthickness=1,
+                     highlightbackground="#bbbbbb", background="#fafafa")
+    illo.grid(row=7, column=0, sticky="w", pady=(8, 4))
+    chain_var = tk.StringVar(value="")
+    ttk.Label(body, textvariable=chain_var, justify="left", font=("TkFixedFont", 8),
+              wraplength=380).grid(row=7, column=1, sticky="nw", pady=(8, 4), padx=(10, 0))
+
+    def _redraw(*_args):
+        """Picture + chain from whatever is typed RIGHT NOW, so the consequence of a
+        number is visible before Apply rather than after a minutes-long retrace."""
+        try:
+            live = normalize_inspection_part_spec(dict(
+                spec, width_mm=float(w_var.get() or 0), depth_mm=float(d_var.get() or 0),
+                height_mm=float(h_var.get() or 0)))
+        except Exception:
+            return
+        folded = bool(getattr(editor, "_folded_display_enabled", None) or
+                      len(getattr(editor, "rows", []) or []) > 12)
+        lit = inspected_faces(live, folded=folded)
+        dead = unreachable_faces(live, folded=folded)
+        illo.delete("all")
+        polys = face_polygons(live, width_px=210, height_px=150)
+        for name in ("back", "bottom", "left", "right", "top", "front"):
+            pts = [c for xy in polys[name] for c in xy]
+            if name in lit:
+                fill, outline = "#2f7f3f", "#1d5f2a"      # inspected
+            elif name in dead:
+                fill, outline = "#d8d8d8", "#bbbbbb"      # greyed: unreachable
+            else:
+                fill, outline = "#e9eef2", "#9fb0bd"
+            illo.create_polygon(*pts, fill=fill, outline=outline, width=1)
+        illo.create_text(105, 140, text="green = inspected   grey = unreachable",
+                         fill="#666666", font=("TkDefaultFont", 7))
+        try:
+            fov = float(fov_var.get()) if str(fov_var.get()).strip() else None
+        except Exception:
+            fov = None
+        chain_var.set(chain_text(field_chain(live, face_dims_fn=face_dims, required_fov=fov)))
+
+    for _v in (w_var, d_var, h_var, fov_var):
+        try:
+            _v.trace_add("write", _redraw)
+        except Exception:
+            pass
+    _redraw()
 
     def _read() -> dict[str, Any]:
         # bugs/0768: the two derived keys come from the LIVE spec, never from a widget --
