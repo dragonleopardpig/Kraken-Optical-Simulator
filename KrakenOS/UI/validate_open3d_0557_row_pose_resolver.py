@@ -18,6 +18,10 @@ Each was patched in isolation, so the class survived every fix. ``row_placement.
 ``world_frame`` are now the single answer, and this guard exists so the sixth consumer cannot
 quietly re-derive it.
 
+bugs/0826 Phase C: consumers are migrating to ``scene_ir.world_frame``, which reads the same
+resolver internally. Both spellings satisfy this guard; hand-rolling station + desp still does
+not, which is the property that actually matters.
+
 Checks (pure, no VTK/tk):
 - WORLD ROW: a frozen row's baked placement IS its world pose, and the resolver reports it as
   ``WORLD`` so a caller can never mistake it for a straight-equivalent.
@@ -128,7 +132,12 @@ def run_checks() -> tuple[bool, list[str]]:
                 "re-derive station + desp"
             )
         anchor_src = inspect.getsource(ThreeDSceneToolsMixin._imaging_detector_row_anchor_target)
-        if "row_placement.world_frame" not in anchor_src:
+        # bugs/0826 Phase C: the Scene IR is now the single answer, and it reads the resolver
+        # internally -- so asking IT satisfies this guard's intent exactly. Accepting both keeps
+        # the check meaningful (a consumer that hand-rolls station + desp still fails) while
+        # letting consumers migrate one per commit.
+        if not any(name in anchor_src for name in
+                   ("row_placement.world_frame", "scene_ir.world_frame")):
             failures.append(
                 "consumer: the Normal-to-Sensor anchor (bugs/0556) must ask the resolver for its "
                 "centre and orientation"

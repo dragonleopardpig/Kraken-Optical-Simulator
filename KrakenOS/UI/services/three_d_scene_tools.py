@@ -4173,7 +4173,9 @@ class ThreeDSceneToolsMixin:
         normal = np.asarray((0.0, 0.0, 1.0), dtype=float)
         tangent = np.asarray((0.0, 1.0, 0.0), dtype=float)
         try:
-            from KrakenOS.UI.services import row_placement
+            # bugs/0826 Phase C: read the Scene IR, not row_placement directly. Identical
+            # today; at Phase D this consumer gets the fold from lower() automatically.
+            from KrakenOS.UI.services import scene_ir
 
             desp = np.asarray(
                 (float(row.desp_x), float(row.desp_y), float(row.desp_z)), dtype=float
@@ -4182,7 +4184,7 @@ class ThreeDSceneToolsMixin:
                 (float(row.tilt_x), float(row.tilt_y), float(row.tilt_z)), dtype=float
             )
             if np.any(np.abs(desp) > 1e-9) or np.any(np.abs(tilts) > 1e-9):
-                position, rotation, _space = row_placement.world_frame(self, image_index)
+                position, rotation, _space = scene_ir.world_frame(self, image_index)
                 if position is not None and np.all(np.isfinite(position)):
                     center = np.asarray(position, dtype=float)
                 if rotation is not None:

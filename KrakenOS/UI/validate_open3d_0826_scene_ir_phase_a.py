@@ -54,6 +54,7 @@ GATE_SCENES = ("attachment/machine_vision_ELS85.py", "attachment/om05a_folded.py
 #: instead of being deleted the moment the first consumer lands.
 PHASE_C_CONVERTED = (
     "KrakenOS/UI/services/geometric_analysis.py",
+    "KrakenOS/UI/services/three_d_scene_tools.py",
 )
 
 
