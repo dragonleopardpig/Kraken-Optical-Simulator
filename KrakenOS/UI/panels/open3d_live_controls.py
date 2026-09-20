@@ -377,8 +377,19 @@ class Open3DLiveControlsPanel:
         handler=None,
         sync_fields: bool = False,
         width: int = 12,
+        hint_fn=None,
     ) -> ttk.Combobox:
-        ttk.Label(parent, text=label).grid(row=row, column=column, sticky="w", pady=(0, 2), padx=(8 if column else 0, 0))
+        # bugs/0827: ``hint_fn(value) -> str`` makes the LABEL live, so a setting whose cost
+        # is not obvious from its number can state that cost before it is paid. Used by Ray
+        # count, where the pupil grid is N x N: 9 is 81 rays, 41 is 1681, and nothing in the
+        # control said the dial was quadratic.
+        hint_var = None
+        if hint_fn is not None:
+            hint_var = tk.StringVar(value=label)
+            ttk.Label(parent, textvariable=hint_var).grid(
+                row=row, column=column, sticky="w", pady=(0, 2), padx=(8 if column else 0, 0))
+        else:
+            ttk.Label(parent, text=label).grid(row=row, column=column, sticky="w", pady=(0, 2), padx=(8 if column else 0, 0))
         combo = ttk.Combobox(
             parent,
             textvariable=self.editor_var(var_name),
@@ -387,6 +398,17 @@ class Open3DLiveControlsPanel:
             values=tuple(values),
         )
         combo.grid(row=row + 1, column=column, sticky="ew", pady=(0, 8), padx=(8 if column else 0, 0))
+        if hint_var is not None:
+            def _refresh_hint(*_args):
+                try:
+                    hint_var.set(f"{label} -- {hint_fn(self.editor_var(var_name).get())}")
+                except Exception:
+                    hint_var.set(label)   # a hint must never break the control
+            _refresh_hint()
+            try:
+                self.editor_var(var_name).trace_add("write", _refresh_hint)
+            except Exception:
+                pass
         bind_combobox_commit(
             combo,
             lambda _event: self.inspector._commit_live_control_update(handler=handler, sync_fields=sync_fields),
@@ -417,7 +439,12 @@ class Open3DLiveControlsPanel:
             handler=self.editor._on_source_model_changed,
             width=14,
         )
-        self.live_labeled_combo(parent, 2, 0, "Ray count", "ray_count_var", RAY_FAN_COUNT_VALUES, sync_fields=True)
+        from KrakenOS.UI.services.trace_cost import format_ray_count_hint
+
+        self.live_labeled_combo(
+            parent, 2, 0, "Ray count", "ray_count_var", RAY_FAN_COUNT_VALUES,
+            sync_fields=True, hint_fn=format_ray_count_hint,
+        )
         self.live_labeled_entry(parent, 2, 1, "Cone [deg]", "source_cone_angle_var")
         self.live_labeled_entry(parent, 4, 0, "Source radius", "source_radius_var")
         self.live_labeled_entry(parent, 4, 1, "Power", "source_power_var")

@@ -16377,6 +16377,10 @@ phase_605_scene_ir_phase_a = _phase_from_standalone(
     605, "Scene IR Phase A -- lower a scene to flat data and read it from NOWHERE: Step 2 of the earlier design stalled because nobody could find the producer of the drawn geometry (one patch inert, both curve builders and every _compute_*_layout_geometry* wrapped and none fired while twelve row actors drew), so Phase A builds the instrument that can state what every consumer believes and moves nothing. It found the design's uniform-anchor assumption was wrong on half the gate set: ELS85 declares ScenePlacement.anchor='row_pose' on 3 rows while om05a_folded has NO anchors and NO placement offsets yet resolves 11 bodies at 0.0000 mm through the output-port graph -- two mechanisms, differently shaped. ELS85's declared mechanism cannot be reconstructed (center_world is not row pose + placement_offset_xyz; that offset's z equals bounds_min_world's z), so those bodies fall back and SAY so. to_world carries a frame tag because world_pose does not fold, and is_fully_post_fold() is asserted FALSE -- a guard that passed today would measure nothing, and it turns green at Phase D (0826)",
     "KrakenOS.UI.validate_open3d_0826_scene_ir_phase_a",
     "scene_ir_phase_a")
+phase_606_ray_count_is_quadratic = _phase_from_standalone(
+    606, "the preview ray count costs N SQUARED and the UI never said so: measured on the user's own 25.7-minute om05a session, 16 traces cost 448 s, one lens swap cost 150 s, and 91% of all bundle time was 78 bundles x 361 rays -- while all nine scene refreshes together cost 31 s, so rendering was never the cost. NsTraceLoop already runs at 9.9 ms/ray against the 80 ms/ray of the 0166 era, so the cell-normal cache and decimated proxy are working; what remained was volume. _full_pupil_grid_xy builds an N x N grid from ray_count and the combo offers 5..41, i.e. 25 to 1681 rays per bundle -- a 67x range behind one number that reads as linear, and both the user's scenes carry 31 (961 rays, ~47 s/trace). The Ray count LABEL now states rays/bundle and an estimated trace time before it is paid, and a SOLVE or SWAP iterates at a sparse fan via _solve_preview_ray_count_override -- the same transient-clamp shape as the drag/promote/folded overrides, none of which covered the solve or the swap. The clamp NEVER raises a user's choice, and both sites clear it in a finally because a leaked clamp would silently degrade every later trace (0827)",
+    "KrakenOS.UI.validate_open3d_0827_ray_count_is_quadratic",
+    "ray_count_is_quadratic")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17048,6 +17052,7 @@ def main() -> int:
             phase_603_stable_ray_subset,
             phase_604_read_this_first,
             phase_605_scene_ir_phase_a,
+            phase_606_ray_count_is_quadratic,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

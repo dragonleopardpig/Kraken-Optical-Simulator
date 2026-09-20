@@ -2401,7 +2401,26 @@ class LayoutTableWorkbenchMixin:
             # left the 35x35 readout -6.8% off after a PYRITE swap).
             self._folded_m_correction_state = None
             self._folded_field_center_state = None  # bugs/0625
-            self._swap_auto_refocus_to_best_focus()
+            # bugs/0827: the auto-refocus iterates a trace per step, and the pupil grid is
+            # N x N. Measured, one om05a swap cost 150 s end to end. Clamp the intermediate
+            # traces to a sparse fan; the finally restores the user's density so the scene
+            # they finally look at is full fidelity.
+            from KrakenOS.UI.services.trace_cost import solve_preview_ray_count
+
+            _swap_prev = self.__dict__.get("_solve_preview_ray_count_override")
+            try:
+                self._solve_preview_ray_count_override = solve_preview_ray_count(
+                    self._current_ray_count()
+                )
+            except Exception:
+                self._solve_preview_ray_count_override = _swap_prev
+            try:
+                self._swap_auto_refocus_to_best_focus()
+            finally:
+                if _swap_prev is None:
+                    self.__dict__.pop("_solve_preview_ray_count_override", None)
+                else:
+                    self._solve_preview_ray_count_override = _swap_prev
             # bugs/0608: invalidating is only half the job -- until the user's NEXT solve the
             # readout was the RAW folded first order (measured on this scene: promised |m|
             # 1.506 vs 1.160 delivered, so the FOV label implied a full sensor while the rays
@@ -9713,7 +9732,27 @@ class LayoutTableWorkbenchMixin:
             qe = inspector._quick_estimation_service() if inspector is not None else QuickEstimationService(SimpleNamespace(editor=self))
         except Exception:
             qe = QuickEstimationService(SimpleNamespace(editor=self))
-        ok, msg = qe.fov_solve("object", "thickness", w * margin, h * margin, force=force)
+        # bugs/0827: iterate the solve at a sparse fan. The pupil grid is N x N, so the
+        # user's ray_count is quadratic -- measured, 31 means 961 rays/bundle and ~47 s
+        # per trace, and a solve traces repeatedly before showing anything. Cleared in
+        # the finally so the next explicit trace is full density. Never raises the
+        # user's choice (see solve_preview_ray_count).
+        from KrakenOS.UI.services.trace_cost import solve_preview_ray_count
+
+        _prev_clamp = self.__dict__.get("_solve_preview_ray_count_override")
+        try:
+            self._solve_preview_ray_count_override = solve_preview_ray_count(
+                self._current_ray_count()
+            )
+        except Exception:
+            self._solve_preview_ray_count_override = _prev_clamp
+        try:
+            ok, msg = qe.fov_solve("object", "thickness", w * margin, h * margin, force=force)
+        finally:
+            if _prev_clamp is None:
+                self.__dict__.pop("_solve_preview_ray_count_override", None)
+            else:
+                self._solve_preview_ray_count_override = _prev_clamp
         # bugs/0713 (flag 165937 "seems like the FOV is not 5% as stated"): the
         # green bands draw the REQUIRED field. On a successful solve the QE
         # helper already wrote them; on a REFUSAL they must still take the

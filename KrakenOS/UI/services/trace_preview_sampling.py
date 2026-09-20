@@ -2163,6 +2163,14 @@ class TracePreviewSamplingMixin:
             # ONLY around _trace_preview_rays_folded_aware's preview trace + cleared in its finally,
             # so the analysis modes (which call _current_ray_count at other times) keep full density.
             override = self.__dict__.get("_folded_preview_ray_count_override")
+        if override is None:
+            # bugs/0827: a SOLVE or a SWAP traces repeatedly before the user sees
+            # anything, and the dial is quadratic -- measured, one om05a swap cost 150 s
+            # and 16 solves/traces cost 448 s, 91% of it in 78 full-density bundles.
+            # Same transient-clamp shape as the drag (0024), promote (0105) and folded
+            # (0410) overrides above; cleared in the operation's finally so the next
+            # explicit trace is full density.
+            override = self.__dict__.get("_solve_preview_ray_count_override")
         if override is not None:
             try:
                 return max(1, int(override))
