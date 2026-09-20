@@ -246,9 +246,47 @@ A derived body's identity should key on its **anchor plus datum**, not its row i
 is unstable under insertion, which is precisely the situation 0815 arose in; the anchor
 relationship is not. `(anchor_id, datum_hash)` now leads `(kind, label, ordinal)`.
 
-### What this leaves open
+### Derivation chains may be deeper than one hop
 
-Whether derivation chains may be **deeper than one hop** — a body glued to a promoted body rather
-than to a surface row. Depth > 1 is more faithful to how assemblies are actually authored (the
-om05a prism assembly is a stack); depth 1 is cheaper to audit and cannot cycle. Needs a call
-before Phase A freezes the IR shape.
+**DECIDED 2026-09-20: depth > 1 is allowed, with an explicit cycle check at lowering.**
+
+The om05a prism assembly is physically a stack, so forcing depth 1 would make lowering flatten a
+real relationship — and flattening it is precisely what loses the property that makes bugs/0815
+expressible. A body must be able to name the promoted body it is glued to, not just the nearest
+surface row.
+
+Three consequences for `lower()`:
+
+**1. Resolution is topological, not row order.** An anchor must be lowered before anything
+derived from it. Lowering therefore builds the derivation graph first and walks it in dependency
+order; entity order in `SceneIR.entities` stays presentation order, so the two must not be
+conflated.
+
+**2. A cycle is detected, reported, and survived — never silently resolved.** The graph walk
+detects cycles and dangling anchors (an entity naming an anchor that does not exist). Both are
+scene-authoring errors, and the project's rule is that a refusal must alert with its parameters
+rather than quietly pick a remedy. So lowering:
+
+* emits a WARNING `Finding` (bugs/0825 vocabulary) naming **every** entity in the cycle, not just
+  the one where the walk happened to notice it;
+* falls back to the authored `center_world` snapshot for those entities *only*, marking them in
+  provenance as `derived_from=None, fallback="authored snapshot (cycle)"`;
+* leaves every other entity fully derived.
+
+The fallback is deliberate: a cycle must not make the rest of the scene unlowerable, and the
+marked provenance means the audit can see exactly which entities are running on a stale value
+instead of silently trusting them. `read_this_first` already ranks that warning above the
+numbers it would otherwise corrupt.
+
+Self-reference is the degenerate cycle and takes the same path.
+
+**3. The 0748/0815 claim needs stating precisely at depth > 1.** A body is one hop from its
+anchor, and that anchor may itself derive. The compounding argument still holds, but for a
+sharper reason than "one hop": every hop is an **explicit authored relationship**, whereas the
+compounding in 0748 was the accumulation of every row that happened to precede the body in the
+chain, related to it or not. Depth is not the problem; unrelated accumulation was. A three-deep
+prism stack moving rigidly is correct behaviour and should move rigidly.
+
+No depth *limit* is imposed. A limit would be arbitrary, and the cycle check is what actually
+prevents non-termination. If a pathological depth ever shows up as a lowering cost, that is a
+measurement for open question 2, not a reason to cap the model.
