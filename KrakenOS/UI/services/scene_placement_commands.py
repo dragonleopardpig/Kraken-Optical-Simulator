@@ -4939,6 +4939,86 @@ class ScenePlacementMixin:
         hi = world.max(axis=0)
         return (float(lo[0]), float(hi[0]), float(lo[1]), float(hi[1]), float(lo[2]), float(hi[2]))
 
+    def _element_row_world_aabb(self, index):
+        """bugs/0833: world AABB of an ordinary DRAWN optical element row -- real matter that
+        carries no promoted STL -- or None when the row is not a body.
+
+        A promoted ``Solid_3d_stl`` is not the only thing a barrel can hit.  ``om05a_folded``'s
+        Filter 48-926 is a plain surrogate row (N-BK7, O50.8, 1.0 mm thick, drawing on) sitting
+        between the lens block and RA mirror 2; it is drawn as a solid plate and is physically
+        in the way, but it has no STL, so every obstacle walk looked straight past it to the
+        mirror 40 mm further on and reported room the lens did not have.
+
+        GLASS is the discriminator, not "is it drawn": a datum row draws a disc too, and
+        bugs/0806 is explicit that the rear vertex datum's disc is a reference plane the camera
+        MOUNTS on, not a body to clear.  Air is not matter; N-BK7 is.
+
+        Frame: the row is posed exactly as the DISPLAY poses it, because the lens body this
+        gets compared against is already there -- a SEQUENTIAL row is a station + decentre and
+        gets its leg's fold, a WORLD row is absolute and must NOT be folded a second time (the
+        durable frozen-fold gate).  Measured while building this: folding om05a's WORLD-placed
+        RA mirror 2 again put it at +124.5 instead of -269.1.
+        """
+        rows = getattr(self, "rows", None) or []
+        try:
+            index = int(index)
+        except (TypeError, ValueError):
+            return None
+        if not (0 <= index < len(rows)):
+            return None
+        row = rows[index]
+        glass = str(getattr(row, "glass", "") or "").strip().upper()
+        if glass in ("", "AIR", "NONE", "MIRROR"):
+            # MIRROR rows are surfaces, not slabs; a real mirror reaches the scene as a
+            # promoted solid, which _solid_row_world_aabb already measures from its STL.
+            return None
+        try:
+            if not float(getattr(row, "drawing", 1.0) or 0.0):
+                return None
+            diameter = float(getattr(row, "diameter", 0.0) or 0.0)
+            thickness = float(getattr(row, "thickness", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            return None
+        if not (diameter > 0.0) or not np.isfinite(thickness) or not np.isfinite(diameter):
+            return None
+        try:
+            from KrakenOS.UI.services import row_placement as _rp
+            from KrakenOS.UI.services import scene_ir
+
+            position, rotation, space = scene_ir.world_frame(self, index)
+        except Exception:
+            return None
+        position = np.asarray(position, dtype=float).reshape(3)
+        matrix = np.eye(3) if rotation is None else np.asarray(rotation, dtype=float).reshape(3, 3)
+        if str(space) == _rp.SEQUENTIAL:
+            try:
+                transform = self._optical_axis_fold_world_transform_for_row(index)
+            except Exception:
+                transform = None
+            if transform is not None:
+                fold = np.asarray(transform, dtype=float).reshape(4, 4)
+                position = (fold @ np.append(position, 1.0))[:3]
+                matrix = fold[:3, :3] @ matrix
+        radius = 0.5 * diameter
+        corners = np.array(
+            [
+                [sx * radius, sy * radius, sz]
+                for sx in (-1.0, 1.0)
+                for sy in (-1.0, 1.0)
+                for sz in (0.0, float(thickness))
+            ],
+            dtype=float,
+        )
+        world = (matrix @ corners.T).T + position
+        if not np.all(np.isfinite(world)):
+            return None
+        lo, hi = world.min(axis=0), world.max(axis=0)
+        return (
+            float(lo[0]), float(hi[0]),
+            float(lo[1]), float(hi[1]),
+            float(lo[2]), float(hi[2]),
+        )
+
     def _lens_block_physical_room_mm(self, front, rear, direction_sign, *, leg_unit=None) -> dict:
         """bugs/0719: how far the imaging-lens block may travel along its leg before its BODY
         touches the nearest vendor solid in that direction, with the leg gap as the hard cap.
@@ -5075,8 +5155,14 @@ class ScenePlacementMixin:
         for index in indices:
             row = rows[index]
             advanced = row.advanced if isinstance(getattr(row, "advanced", None), dict) else {}
+            element_bounds = None
             if not advanced.get("Solid_3d_stl"):
-                continue
+                # bugs/0833: a promoted STL is not the only real matter on the leg -- see
+                # _element_row_world_aabb. Without this the walk skipped om05a's Filter 48-926
+                # (N-BK7, O50.8) and measured the room to RA mirror 2 instead, 40 mm past it.
+                element_bounds = self._element_row_world_aabb(index)
+                if element_bounds is None:
+                    continue
             if first_solid_row is None:
                 first_solid_row = int(index)
             if lens_lo is None or lens_hi is None:
@@ -5087,10 +5173,13 @@ class ScenePlacementMixin:
                 # projection (on om05a: a coaxial bar instead of RA mirror 1). Keep the
                 # row-order nearest solid there, exactly as before.
                 continue
-            try:
-                obstacle_bounds = self._solid_row_world_aabb(index)
-            except Exception:
-                obstacle_bounds = None
+            if element_bounds is not None:
+                obstacle_bounds = element_bounds
+            else:
+                try:
+                    obstacle_bounds = self._solid_row_world_aabb(index)
+                except Exception:
+                    obstacle_bounds = None
             if obstacle_bounds is None:
                 continue
             try:

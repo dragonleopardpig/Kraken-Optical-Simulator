@@ -1485,6 +1485,109 @@ class LayoutTableWorkbenchMixin:
             return None
         return (col[0] / n, col[1] / n, col[2] / n)
 
+    def _row_world_body_aabb(self, index):
+        """bugs/0833: world AABB of whatever real matter row ``index`` carries, or None.
+
+        The STL measure first (bugs/0719 -- it matches om05a's RA-mirror-1 ACTOR to 0.16 mm),
+        then the promotion metadata, then an ordinary glass element.
+        """
+        rows = getattr(self, "rows", None) or []
+        try:
+            index = int(index)
+        except (TypeError, ValueError):
+            return None
+        if not (0 <= index < len(rows)):
+            return None
+        for getter in (
+            lambda: self._solid_row_world_aabb(index),
+            lambda: self._promoted_solid_world_bounds(rows[index], row_index=index),
+            lambda: self._element_row_world_aabb(index),
+        ):
+            try:
+                bounds = getter()
+            except Exception:
+                bounds = None
+            if bounds is not None:
+                try:
+                    values = tuple(float(v) for v in bounds)
+                except Exception:
+                    continue
+                if len(values) == 6:
+                    return values
+        return None
+
+    def _nearest_body_row_along_leg(self, bounds, leg_axis, *, exclude=()):
+        """bugs/0833: ``(row_index, obstacle_bounds)`` of the real body nearest ``bounds`` along
+        ``leg_axis``, chosen by GEOMETRY -- or ``(None, None)``.
+
+        The camera clearance layer used to assume the obstacle was ``rows[-2]``.  That is the
+        last gap row: on om05a it is 'sensor standoff', a plain air gap carrying no body, so the
+        exact mesh check reported "0 mm: missing obstacle" on every swap while RA mirror 2 --
+        the thing the camera can actually hit -- sat eight rows back, unexamined.
+
+        Row ORDER is not the fix either, and the first draft of this proved it: walking back
+        from the sensor lands on 'LED panel B', a promoted solid belonging to the illumination
+        arm that is nowhere near the camera.  om05a's row order is not spatial.  So the same
+        recipe bugs/0719 settled on for the lens: a candidate must overlap the moving body in
+        BOTH directions perpendicular to the leg (0.5 mm tolerance), and the smallest
+        face-to-face separation along the leg wins.
+        """
+        rows = getattr(self, "rows", None) or []
+        try:
+            import numpy as _np
+
+            unit = _np.asarray([float(v) for v in leg_axis], dtype=float).reshape(3)
+            norm = float(_np.linalg.norm(unit))
+            if not _np.isfinite(norm) or norm < 1.0e-9:
+                return None, None
+            unit = unit / norm
+            seed = _np.asarray((1.0, 0.0, 0.0))
+            if abs(float(_np.dot(seed, unit))) > 0.9:
+                seed = _np.asarray((0.0, 1.0, 0.0))
+            perp_v = seed - float(_np.dot(seed, unit)) * unit
+            perp_v = perp_v / max(float(_np.linalg.norm(perp_v)), 1.0e-12)
+            perp_w = _np.cross(unit, perp_v)
+            own_lo, own_hi = self._aabb_corner_projection_range(bounds, unit)
+            if own_lo is None:
+                return None, None
+        except Exception:
+            return None, None
+        skip = {int(i) for i in exclude}
+        own_c, own_h = 0.5 * (own_lo + own_hi), 0.5 * (own_hi - own_lo)
+        best = None
+        for index in range(len(rows)):
+            if index in skip:
+                continue
+            obstacle = self._row_world_body_aabb(index)
+            if obstacle is None:
+                continue
+            overlap = True
+            for axis in (perp_v, perp_w):
+                try:
+                    a0, a1 = self._aabb_corner_projection_range(bounds, axis)
+                    b0, b1 = self._aabb_corner_projection_range(obstacle, axis)
+                except Exception:
+                    overlap = False
+                    break
+                if b0 is None or a0 is None or float(b0) > float(a1) + 0.5 or float(b1) < float(a0) - 0.5:
+                    overlap = False
+                    break
+            if not overlap:
+                continue
+            try:
+                obs_lo, obs_hi = self._aabb_corner_projection_range(obstacle, unit)
+            except Exception:
+                continue
+            if obs_lo is None:
+                continue
+            obs_c, obs_h = 0.5 * (obs_lo + obs_hi), 0.5 * (obs_hi - obs_lo)
+            separation = abs(own_c - obs_c) - (own_h + obs_h)
+            if best is None or separation < best[0]:
+                best = (float(separation), int(index), obstacle)
+        if best is None:
+            return None, None
+        return best[1], best[2]
+
     def _swap_camera_body_clearance_deficit(self) -> float:
         """Extra image-gap (mm) so the glued camera BODY clears the upstream promoted solid
         (e.g. the RA fold mirror) by the clearance, from REAL mesh geometry along the folded
@@ -1502,8 +1605,10 @@ class LayoutTableWorkbenchMixin:
         if len(rows) < 3:
             dbg["result"] = "skip: <3 rows"
             return 0.0
-        dbg["upstream_name"] = str(getattr(rows[-2], "name", "") or "")
-        dbg["upstream_surface"] = str(getattr(rows[-2], "surface", "") or "")
+        upstream_index = len(rows) - 2
+        dbg["upstream_row"] = int(upstream_index)
+        dbg["upstream_name"] = str(getattr(rows[upstream_index], "name", "") or "")
+        dbg["upstream_surface"] = str(getattr(rows[upstream_index], "surface", "") or "")
         # bugs/0806: the lens's rear vertex datum is the mount face the camera seats on -- its
         # drawn disc is a reference plane, not a body, and "clearing" it by 2 mm unseats the lens.
         if self._camera_seats_on_lens_flange():
@@ -1516,7 +1621,6 @@ class LayoutTableWorkbenchMixin:
         cam_bounds, cam_reason = self._camera_body_world_bounds()
         dbg["cam_reason"] = cam_reason
         dbg["cam_bounds"] = [round(v, 2) for v in cam_bounds] if cam_bounds else None
-        upstream_index = len(rows) - 2
         # Prefer the REAL displayed AABB the inspector captured from the live rendered actor
         # (bugs/0395): the promotion metadata (stale once moved) and the scene-bundle
         # placement (an unfolded/system frame) both put the mirror in the WRONG place, so the
@@ -1531,21 +1635,50 @@ class LayoutTableWorkbenchMixin:
                     obstacle_bounds = candidate
             except Exception:
                 obstacle_bounds = None
+        leg = self._folded_leg_axis_unit()
+        dbg["leg"] = [round(v, 3) for v in leg] if leg else None
         if obstacle_bounds is not None:
             dbg["obstacle_center_source"] = "inspector_actor"
         else:
             live_center = self._promoted_solid_current_center(upstream_index)
             dbg["obstacle_center_source"] = "live_bundle" if live_center is not None else "stale_promotion"
-            obstacle_bounds = self._promoted_solid_world_bounds(rows[-2], row_index=upstream_index)
+            obstacle_bounds = self._promoted_solid_world_bounds(
+                rows[upstream_index], row_index=upstream_index
+            )
+            if obstacle_bounds is None and cam_bounds is not None and leg is not None:
+                # bugs/0833: rows[-2] carries no body on this scene. Find the obstacle the way
+                # bugs/0719 finds the lens's: by geometry along the leg.
+                found, found_bounds = self._nearest_body_row_along_leg(
+                    cam_bounds, leg, exclude=(len(rows) - 1,)
+                )
+                if found is not None:
+                    upstream_index = int(found)
+                    obstacle_bounds = found_bounds
+                    dbg["obstacle_center_source"] = "nearest_body_along_leg"
+                    dbg["upstream_row"] = int(found)
+                    dbg["upstream_name"] = str(getattr(rows[found], "name", "") or "")
+                    dbg["upstream_surface"] = str(getattr(rows[found], "surface", "") or "")
         dbg["obstacle_bounds"] = [round(v, 2) for v in obstacle_bounds] if obstacle_bounds else None
-        leg = self._folded_leg_axis_unit()
-        dbg["leg"] = [round(v, 3) for v in leg] if leg else None
         missing = [name for name, value in
                    (("camera", cam_bounds), ("obstacle", obstacle_bounds), ("leg", leg))
                    if value is None]
         if missing:
+            # bugs/0833: this used to return a bare 0.0 -- an ABSENCE reported as a measurement,
+            # which is exactly the failure the user's standing rule forbids ("a refused solve
+            # must ALERT"). It read "0 mm: missing obstacle" on every om05a swap for as long as
+            # the flags go back, and nothing ever surfaced it. Say it where the user reads it.
             dbg["result"] = "0 mm: missing " + ", ".join(missing)
+            try:
+                self._swap_clearance_unmeasured = (
+                    "camera body-clearance NOT measured (no "
+                    + ", ".join(missing)
+                    + ") -- the cheap gap floor is the only thing holding the camera off "
+                    + (dbg.get("upstream_name") or "the upstream element")
+                )
+            except Exception:
+                pass
             return 0.0
+        self._swap_clearance_unmeasured = ""
         deficit = self._camera_body_clearance_deficit_pure(
             cam_bounds, obstacle_bounds, leg, self._SWAP_REFOCUS_MIN_CLEARANCE_MM
         )
@@ -1582,6 +1715,7 @@ class LayoutTableWorkbenchMixin:
         gap_index = len(rows) - 2
         self._swap_refocus_note = ""
         self._swap_clearance_note = ""
+        self._swap_clearance_unmeasured = ""
         notes: list[str] = []          # clearance / collision statements
         refocus_notes: list[str] = []  # why best focus was not reached
 
@@ -1589,7 +1723,12 @@ class LayoutTableWorkbenchMixin:
             # Two channels: the caller prefixes the refocus one with "NOT refocused:", which
             # would misdescribe a clearance message (bugs/0594).
             self._swap_refocus_note = "; ".join(note for note in refocus_notes if note)
-            self._swap_clearance_note = "; ".join(note for note in notes if note)
+            # bugs/0833: a clearance layer that could not run says so, next to the ones that
+            # did. Silence here reads as "checked, and clear".
+            unmeasured = str(self.__dict__.get("_swap_clearance_unmeasured", "") or "")
+            self._swap_clearance_note = "; ".join(
+                note for note in (notes + ([unmeasured] if unmeasured else [])) if note
+            )
 
         try:
             moved = self.snap_detector_to_image_plane()
