@@ -16361,6 +16361,10 @@ phase_601_illumination_map_shot_noise = _phase_from_standalone(
     601, "an illumination map that is mostly shot noise SAYS SO: the bin rule min(max(24, sqrt(N)*3), 128) grows the grid as fast as the samples, so hits-per-bin stays near 1 at any ray budget and every feature is Poisson noise. Measured on the real MV-150 coaxial-LED scene at its shipped 8000 rays, the 2-D heatmap lands at 1.17 hits per lit bin (92.6% relative error, ~343x more rays needed for 5%) while penta 175's 1-D strip profile gets 19.6 hits/bin (22.6% error) against a 0.617 edge/centre dip -- so the dark edges ARE real but that map could never have shown them, and bugs/0596 had already reached the same verdict by hand on another scene (294 hits, 16x16 grid, ~1.1 hits/bin) after two candidate fixes left every metric byte-identical. The map now carries UNWEIGHTED per-bin counts beside the power histogram (huge per-bin power must not buy a sparse map a pass), and the report leads with a sampling verdict naming the ray count a 5%-error map needs, plus a flux ledger closing input-hit-missed on power and launched-hit-missed on rays. A clean result still prints its numbers: silence means nothing was measured (0822)",
     "KrakenOS.UI.validate_open3d_0822_illumination_sampling_diagnostic",
     "illumination_sampling_diagnostic")
+phase_602_overlay_registry = _phase_from_standalone(
+    602, "the app names the overlay family instead of the user guessing: three object-plane overlay families scale to the same field semi-diagonal and TWO draw the byte-identical green (0.2,0.9,0.35) 0.02 apart in opacity (QE pick disc 0.10, Det pick fill 0.08), while the third -- reference surfaces -- takes its opacity from the scene bundle's mesh opacity and has NO literal at all, which is why bugs/0659 round 1 blamed it for a disc it does not draw. overlay_registry declares each family's colour, opacity, shapes, toggle var, UI paths, owning module and actor lifecycle; identify_overlay never excludes a family by a literal it does not declare (excluding it IS the 0659 mistake, automated), overlay_clash_report names every shared colour and what separates it, and verify_registry_against_source re-reads the literals from their real modules so a drift fails here instead of turning the registry into the next stale note. Shape rules OUT the rectangle-drawer rather than narrowing to one family -- the reference disc is a disc too (0823)",
+    "KrakenOS.UI.validate_open3d_0823_overlay_registry",
+    "overlay_registry")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17028,6 +17032,7 @@ def main() -> int:
             phase_599_a_lens_surface_is_an_element,
             phase_600_the_cascade_is_a_recipe,
             phase_601_illumination_map_shot_noise,
+            phase_602_overlay_registry,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
