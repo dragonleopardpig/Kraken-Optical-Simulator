@@ -898,3 +898,106 @@ def illumination_diagnostic_lines(
                 )
 
     return lines
+
+
+def illumination_findings(
+    *,
+    map_data: dict[str, object] | None = None,
+    records: list[dict[str, object]] | None = None,
+    launched_rays: int | None = None,
+) -> list:
+    """The bugs/0822 verdicts as bugs/0825 Finding objects.
+
+    Same conclusions as ``illumination_diagnostic_lines`` -- which keeps its own text
+    so existing readers do not shift -- expressed in the shared vocabulary so the
+    "read this first" surface can rank them beside other analyses' findings.
+    """
+    from KrakenOS.UI.services.result_diagnostics import INFO, NO_REMEDY, WARNING, Finding
+
+    found: list = []
+
+    if records:
+        ledger = illumination_flux_ledger(records)
+        if ledger.get("available"):
+            if int(ledger["ray_residual"]) != 0:
+                found.append(Finding(
+                    code="illumination.ray_ledger",
+                    severity=WARNING,
+                    summary="the ray ledger does not close",
+                    detail=(
+                        f"launched={ledger['launched_rays']}, hit={ledger['hit_rays']}, "
+                        f"missed={ledger['missed_rays']}, unaccounted={ledger['ray_residual']}"
+                    ),
+                    remedy=(
+                        "Some rays reached a terminal nothing books -- find the missing "
+                        "terminal before trusting any throughput read off this trace."
+                    ),
+                ))
+            if float(ledger["residual_fraction"]) > ILLUMINATION_FLUX_LEDGER_WARN:
+                found.append(Finding(
+                    code="illumination.power_ledger",
+                    severity=WARNING,
+                    summary="the power ledger does not close",
+                    detail=(
+                        f"input={ledger['input_power']:.6g}, hit={ledger['hit_power']:.6g}, "
+                        f"missed={ledger['missed_power']:.6g}, "
+                        f"unaccounted={ledger['power_residual']:.6g} "
+                        f"({format_percent_value(ledger['residual_fraction'])} of input)"
+                    ),
+                    remedy=(
+                        "Power is leaking into an unbooked terminal -- the throughput "
+                        "figure is an overstatement until it closes."
+                    ),
+                ))
+            if ledger["closes"]:
+                found.append(Finding(
+                    code="illumination.ledger",
+                    severity=INFO,
+                    summary="flux ledger closes",
+                    detail=(
+                        f"input={ledger['input_power']:.6g} = hit={ledger['hit_power']:.6g} "
+                        f"+ missed={ledger['missed_power']:.6g}; rays "
+                        f"{ledger['launched_rays']} = {ledger['hit_rays']} + "
+                        f"{ledger['missed_rays']}"
+                    ),
+                ))
+
+    if map_data:
+        launched = int(launched_rays) if launched_rays else None
+        if launched is None and records:
+            launched = int(sum(int(r.get("launched_rays", 0) or 0) for r in records)) or None
+        sampling = illumination_sampling_diagnostic(map_data, launched_rays=launched)
+        if sampling.get("available"):
+            mean_hits = float(sampling["mean_hits_per_lit_bin"])
+            detail = (
+                f"{mean_hits:.3g} hits per lit bin across {sampling['lit_bins']} lit bins; "
+                f"{format_percent_value(sampling['relative_error'])} relative error"
+            )
+            if sampling["undersampled"]:
+                if "recommended_rays" in sampling:
+                    remedy = (
+                        f"Launch about {sampling['recommended_rays']} rays "
+                        f"(~{float(sampling['scale_factor']):.0f}x more) for ~5% error -- "
+                        f"or bin coarser, which buys the same confidence far cheaper."
+                    )
+                else:
+                    remedy = (
+                        f"Needs about {float(sampling['scale_factor']):.0f}x more rays for "
+                        f"~5% error, or a coarser grid for the same confidence cheaper."
+                    )
+                found.append(Finding(
+                    code="illumination.undersampled",
+                    severity=WARNING,
+                    summary="this map is mostly shot noise -- its structure is not physical",
+                    detail=detail,
+                    remedy=remedy,
+                ))
+            else:
+                found.append(Finding(
+                    code="illumination.sampling",
+                    severity=INFO,
+                    summary="sampling adequate",
+                    detail=detail,
+                ))
+
+    return found

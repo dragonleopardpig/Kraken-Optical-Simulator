@@ -16369,6 +16369,10 @@ phase_603_stable_ray_subset = _phase_from_standalone(
     603, "which rays get DRAWN depends on the ray, not its position: the illumination overlay capped with rng.choice(len(polylines), cap) -- a draw over LIST POSITIONS that its own comment called deterministic, and is, for one fixed list. Across runs anything that changed the list re-rolled every ray on screen: a different ray budget, a role tag that now matches (the 20260708_1516..1519 fallback swaps the whole input), one more ray clipping short, or any upstream RNG consumption -- on exactly the path a user reaches for to find where stray light came from. Selection is now a pure function of (ray identity, seed) through a splitmix64 finalizer, keyed on the engine's source_ray_index and never on position. Precisely: order-independent, RNG-decoupled and reproducible at a fixed population, but NOT population-independent under smallest-k -- select_by_probability is the policy for comparing two budgets, and the first draft of the comment overclaimed this and was corrected. _split now carries (record, polyline) pairs while the aperture statistics keep reading the FULL populations (0824)",
     "KrakenOS.UI.validate_open3d_0824_stable_ray_subset",
     "stable_ray_subset")
+phase_604_read_this_first = _phase_from_standalone(
+    604, "one shared shape for 'this number should not be believed': fifteen report surfaces had no common way to say a result is untrustworthy, and saying nothing looked identical to passing. result_diagnostics encodes three rules that each already cost a bug -- an empty finding list renders 'Nothing was measured. This is NOT a clean result' rather than silence (0822); a WARNING with an empty remedy is REFUSED AT CONSTRUCTION citing 0777, which shipped 'move the device stage / camera focus to land it' for a blur no move could shrink, with NO_REMEDY the way to state that nothing can be done and have it counted and printed; and warnings render above info with the count as the first line. illumination_findings re-expresses the 0822 verdicts under stable dotted codes while illumination_diagnostic_lines is untouched so no existing reader shifts, asserted here rather than assumed. The undersampling remedy now also offers binning coarser, which the MV-150 rebin sweep showed reads 13.3% error at 32 bins against 49.7% at the auto 128 on the same data (0825)",
+    "KrakenOS.UI.validate_open3d_0825_read_this_first",
+    "read_this_first")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17038,6 +17042,7 @@ def main() -> int:
             phase_601_illumination_map_shot_noise,
             phase_602_overlay_registry,
             phase_603_stable_ray_subset,
+            phase_604_read_this_first,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
