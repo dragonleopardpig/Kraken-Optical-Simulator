@@ -216,6 +216,54 @@ def solve_banner_outcome(info) -> str:
     return "forced_fits"
 
 
+#: bugs/0835: the banner panel is sized to its longest line, so this is what keeps the block
+#: readable. The reason used to be CUT to it; it is now WRAPPED to it.
+BANNER_REASON_WIDTH = 110
+#: More than this and it is a runaway, not an explanation.
+BANNER_REASON_MAX_LINES = 4
+
+
+def wrap_banner_reason(
+    reason, *, width: int = BANNER_REASON_WIDTH, max_lines: int = BANNER_REASON_MAX_LINES
+) -> list[str]:
+    """bugs/0835: the refusal's reason WRAPPED onto continuation lines instead of cut off.
+
+    ``reason[:107] + "..."`` kept the panel narrow by throwing away the end of the sentence.
+    On flag_20260920_182008 that read:
+
+        that field needs the lens -131.2 mm along its leg, but only 129.2 mm of physical
+        room is left before its bo...
+
+    and the words it swallowed were the ones worth having: WHICH body the lens reaches
+    ("RA mirror 1 (50 mm)"), the station gap, the shortfall, and the remedy. The whole sentence
+    is 250 characters; the user saw 107 of them, ending mid-word.
+
+    Wrapping keeps the panel exactly as wide as the cap intended while keeping the sentence.
+    Hyphens are never break points, so "ELS-85", "48-926" and "-131.2" stay whole; a token
+    longer than the whole width (there is no such number, but a path would be) is broken rather
+    than allowed to overflow the panel the cap exists to protect.
+    """
+    import textwrap
+
+    text = str(reason or "").strip()
+    if not text:
+        return []
+    try:
+        wrapped = textwrap.wrap(
+            text,
+            width=int(width),
+            subsequent_indent="  ",
+            break_long_words=True,
+            break_on_hyphens=False,
+            max_lines=int(max_lines),
+            placeholder=" ...",
+        )
+    except Exception:
+        # Never let the formatter be the thing that fails: the un-wrapped sentence beats none.
+        return [text]
+    return wrapped or [text]
+
+
 def format_solve_refusal_lines(info) -> list[str]:
     """bugs/0717 (user directive: "The UI shouldn't silently fail and display as
     though it is working"): the in-scene SOLVE-REFUSED banner. Pure formatter --
@@ -269,7 +317,7 @@ def format_solve_refusal_lines(info) -> list[str]:
         lines.append(now)
     reason = str(info.get("reason", "") or "").strip()
     if reason:
-        lines.append(reason if len(reason) <= 110 else reason[:107] + "...")
+        lines.extend(wrap_banner_reason(reason))
     penetration = info.get("forced_penetration_mm")
     obstacle = str(info.get("forced_obstacle", "") or "")
     forced_moved = info.get("forced_moved_mm")
