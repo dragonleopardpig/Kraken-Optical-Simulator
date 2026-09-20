@@ -61,7 +61,7 @@ def run_checks() -> tuple[bool, list[str]]:
     wanted = {
         "drawn_world_frame": ir_src,
         "drawn_leg_unit": ir_src,
-        "Phase D this becomes what": ir_src,
+        "Phase D has landed": ir_src,
         "scene_ir.drawn_leg_unit(self, last, unit)": spc_src,
         "scene_ir.drawn_world_frame(self, last)": spc_src,
     }
@@ -153,8 +153,13 @@ def run_checks() -> tuple[bool, list[str]]:
             mirror_row = int(min(ahead))
             old_unit = np.asarray(direction, dtype=float)
             old_unit = old_unit / max(float(np.linalg.norm(old_unit)), 1.0e-12)
-            old_block = np.asarray(scene_ir.world_frame(app, last)[0], dtype=float)
-            old_fold = np.asarray(scene_ir.world_frame(app, mirror_row)[0], dtype=float)
+            # From the PRESCRIPTION, not world_frame: bugs/0826 Phase D made world_frame
+            # post-fold, so the two endpoints are now on one leg and the old arithmetic can no
+            # longer reproduce. The defect lived in the prescription frame; reproduce it there.
+            from KrakenOS.UI.services import row_placement as _rp
+
+            old_block = np.asarray(_rp.prescription_pose(app, last).position, dtype=float)
+            old_fold = np.asarray(_rp.prescription_pose(app, mirror_row).position, dtype=float)
             old_along = float(np.dot(old_fold - old_block, old_unit))
             old_room = old_along - 0.5 * float(getattr(app.rows[mirror_row], "diameter", 0.0) or 0.0)
             if old_room < -100.0:

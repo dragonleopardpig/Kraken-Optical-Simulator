@@ -278,6 +278,7 @@ def main(argv: list[str]) -> int:
                     continue
 
         ir_disagreements: list[str] = []
+        ir_undrawn: list[int] = []
         drawn = _drawn_poses(inspector) if inspector is not None else {}
         bodies, body_problems = _body_centers(app)
         ir_poses, ir_findings, ir_error = _ir_poses(app)
@@ -299,19 +300,33 @@ def main(argv: list[str]) -> int:
                     f"vs prescription {np.round(presc, 2).tolist()}"
                 )
             ir_pos = ir_poses.get(index)
-            # bugs/0826: the IR is EXTRACTED from the prescription today, so this column is
-            # expected to read 0.00 until Phase C re-points consumers. A non-zero here now
-            # means the lowering diverged from the thing it was extracted from -- which is
-            # the one failure that would invalidate every other IR reading.
-            ir_delta = "" if ir_pos is None else f"{float(np.linalg.norm(ir_pos - presc)):6.2f}"
+            # bugs/0826 Phase D: the IR is no longer extracted from the prescription -- lower()
+            # resolves the output-port override, so to_world is a real world pose. The
+            # meaningful comparison is therefore against DRAWN, which is the whole claim: the
+            # IR says where the user sees the row. Before Phase D this column compared against
+            # the prescription and read 0.00 by construction, which is why the audit's core
+            # reading was invalid on a FOLDED bench (om05a reported nine false positives -- it
+            # was comparing the two quantities the design exists to stop people comparing).
+            # A row with NO drawn actor cannot be compared at all: falling back to the
+            # prescription would compare a post-fold pose against a straight-equivalent one and
+            # count the difference as a defect -- the exact conflation this audit exists to
+            # stop, reintroduced from the other side. The first draft of this Phase D change
+            # did precisely that and reported om05a's four air/gap rows as disagreements.
+            ir_delta = ""
             if ir_pos is None:
                 ir_delta = "unpaired"
                 ir_disagreements.append(f"row {index}: the IR has no pose for this row")
-            elif float(np.linalg.norm(ir_pos - presc)) > POSITION_TOL_MM:
-                ir_disagreements.append(
-                    f"row {index}: IR {np.round(ir_pos, 2).tolist()} vs prescription "
-                    f"{np.round(presc, 2).tolist()}"
-                )
+            elif drawn_pos is None:
+                ir_delta = "not drawn"
+                ir_undrawn.append(int(index))
+            else:
+                gap = float(np.linalg.norm(ir_pos - drawn_pos))
+                ir_delta = f"{gap:6.2f}"
+                if gap > POSITION_TOL_MM:
+                    ir_disagreements.append(
+                        f"row {index}: IR {np.round(ir_pos, 2).tolist()} vs drawn "
+                        f"{np.round(drawn_pos, 2).tolist()}"
+                    )
             print(
                 f"  {index:>4} {str(getattr(row, 'surface', ''))[:11]:<11} "
                 f"{_fmt(presc)} {_fmt(drawn_pos)} {delta}{flag}"
@@ -350,7 +365,11 @@ def main(argv: list[str]) -> int:
             print(f"    UNAVAILABLE  {ir_error}")
         else:
             print(f"    {len(ir_poses)} surface poses; "
-                  f"{len(ir_disagreements)} disagree with the prescription")
+                  f"{len(ir_disagreements)} disagree with what is DRAWN "
+                  f"(bugs/0826 Phase D: to_world is post-fold, so DRAWN is the reference)")
+            if ir_undrawn:
+                print(f"    {len(ir_undrawn)} row(s) have no drawn actor and are NOT compared: "
+                      f"{ir_undrawn}")
             if ir_findings:
                 from KrakenOS.UI.services.result_diagnostics import read_this_first
 

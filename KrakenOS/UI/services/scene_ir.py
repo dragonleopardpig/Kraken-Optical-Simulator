@@ -177,6 +177,8 @@ def lower(editor: Any, *, bodies: bool = True) -> SceneIR:
 
     labels = [str(getattr(r, "name", "") or getattr(r, "surface", "") or "") for r in rows]
     surface_ids = _assign_ids("surface", labels)
+    # bugs/0826 Phase D: resolved ONCE for the whole walk -- per row it would be quadratic.
+    port_overrides = _output_port_overrides(editor)
 
     entities: list[EntityIR] = []
     for index, row in enumerate(rows):
@@ -202,11 +204,14 @@ def lower(editor: Any, *, bodies: bool = True) -> SceneIR:
             ))
             continue
         space = pose.space
-        frame = FRAME_ALREADY_WORLD if space == rp.WORLD else FRAME_STRAIGHT_EQUIVALENT
+        # bugs/0826 Phase D: the fold is resolved HERE, so to_world is a real world pose.
+        position, rotation, frame = _post_fold_surface_pose(
+            editor, index, pose, rotation, overrides=port_overrides
+        )
         entities.append(EntityIR(
             id=surface_ids[index],
             kind="surface",
-            to_world=_matrix(pose.position, rotation),
+            to_world=_matrix(position, rotation),
             frame=frame,
             placement_space=space,
             source_row=index,
@@ -436,17 +441,77 @@ def _surface_entity_for_row(editor, row_index: int) -> "EntityIR | None":
     except Exception:
         return None
     space = getattr(pose, "space", rp.SEQUENTIAL)
+    # bugs/0826 Phase D: the same resolver lower() uses, so one row and every row agree.
+    position, rotation, frame = _post_fold_surface_pose(editor, int(row_index), pose, rotation)
     label = str(getattr(row, "name", "") or getattr(row, "surface", "") or "")
     return EntityIR(
         id=entity_id("surface", label, 0),
         kind="surface",
-        to_world=_matrix(pose.position, rotation),
-        frame=FRAME_ALREADY_WORLD if space == rp.WORLD else FRAME_STRAIGHT_EQUIVALENT,
+        to_world=_matrix(position, rotation),
+        frame=frame,
         placement_space=space,
         source_row=int(row_index),
         label=label,
         has_orientation=rotation is not None,
     )
+
+def _output_port_overrides(editor: Any) -> dict:
+    """Every output-port pose override in the scene, once. bugs/0826 Phase D.
+
+    ``lower()`` walks every row, so it resolves this ONCE and passes it down; the single-row
+    path builds it for the one row it is asked about. Computing it per row inside a whole-scene
+    lowering would be quadratic.
+    """
+    try:
+        from KrakenOS.UI.nonseq_output_ports import optical_solid_output_port_pose_overrides
+
+        overrides = optical_solid_output_port_pose_overrides(None, editor.rows)
+    except Exception:
+        return {}
+    return overrides if isinstance(overrides, dict) else {}
+
+
+def _post_fold_surface_pose(editor: Any, row_index: int, pose, rotation, overrides=None):
+    """``(position, rotation, frame)`` for a surface, with the fold RESOLVED. Phase D.
+
+    This is the change the whole design was for: ``to_world`` is a real world pose. A row
+    repositioned by a promoted solid's output port is placed AT that override -- measured in
+    bugs/0836 to reproduce the DRAWN scene on all 23 such rows of ``om05a_folded``, to the
+    0.08 mm an actor's bbox centre differs from its surface. A row with no override is not
+    repositioned by anything, so its own numbers already are its world pose.
+
+    The fold TRANSFORM is deliberately not used here. ``_optical_axis_fold_world_transform_for_row``
+    is ``F(v) = C + R (v - S)`` with ``S`` the straight-axis STATION, so it is only valid on a
+    row whose prescription IS ``[0, 0, z]``; on om05a it mis-places 8 of the 23 override rows,
+    flinging RA mirror 2 to ``[124.49, 0, 244.14]`` instead of ``[-269.14, 56.31, -25.0]``.
+    Phase D is the override, not the transform (bugs/0836).
+
+    Both lowering paths call THIS, so the pre-lowered and single-row answers cannot drift --
+    a divergence there would be invisible and would break exactly the consumers Phase C
+    re-pointed.
+    """
+    from KrakenOS.UI.services import row_placement as rp
+
+    space = getattr(pose, "space", rp.SEQUENTIAL)
+    position = getattr(pose, "position", None)
+    table = _output_port_overrides(editor) if overrides is None else overrides
+    port = table.get(int(row_index)) if isinstance(table, dict) else None
+    if isinstance(port, dict) and port.get("center") is not None:
+        try:
+            centre = np.asarray(port.get("center"), dtype=float).reshape(3)
+        except Exception:
+            centre = None
+        if centre is not None and np.all(np.isfinite(centre)):
+            turned = rotation
+            try:
+                candidate = np.asarray(port.get("rotation"), dtype=float).reshape(3, 3)
+                if np.all(np.isfinite(candidate)):
+                    turned = candidate
+            except Exception:
+                pass
+            return centre, turned, FRAME_POST_FOLD
+    return position, rotation, (FRAME_ALREADY_WORLD if space == rp.WORLD else FRAME_POST_FOLD)
+
 
 def _output_port_pose(editor: Any, row_index: int):
     """The output-port pose override for a row, or None. bugs/0836."""
@@ -461,55 +526,19 @@ def _output_port_pose(editor: Any, row_index: int):
 
 
 def drawn_world_frame(editor: Any, row_index: int, *, scene_ir: "SceneIR | None" = None):
-    """``(position, rotation_3x3_or_None, frame)`` where the row is actually DRAWN.
+    """``(position, rotation_3x3_or_None, frame)`` where the row is DRAWN.
 
-    bugs/0836, and the Phase D seam. :func:`world_frame` answers in whatever frame the row's
-    own numbers are in -- the straight-equivalent for a SEQUENTIAL row -- which is honest but
-    is NOT where the body is. Anything comparing a row against DRAWN geometry (a STEP mesh's
-    world AABB, an actor's bounds, another row's pose) needs this one, or it subtracts two
-    frames and gets a number with no meaning.
+    **Phase D has landed, so this is now exactly :func:`world_frame`.** It survives as a name
+    because bugs/0836's callers say what they need -- the drawn frame -- and because the
+    distinction it drew was real for the day it existed: before Phase D, ``world_frame``
+    answered in the straight-equivalent for a SEQUENTIAL row, and anything comparing a row
+    against drawn geometry got a number with no meaning.
 
-    **The rule is measured, not derived, and two plausible derivations were wrong first.**
-    On ``om05a_folded``, per row, against the pose audit's DRAWN column:
-
-    * The placement SPACE does not decide it. Every row there tags ``sequential``, including
-      RA mirror 2, whose ``desp`` is already its folded centre.
-    * Applying ``_optical_axis_fold_world_transform_for_row`` does not either. That transform
-      is ``F(v) = C + R (v - S)`` with ``S`` the row's straight-axis STATION, so it is only
-      valid on a row whose prescription IS ``[0, 0, z]``. Rows 3, 5, 7, 8, 15 and 16-22 carry
-      a decentre and it mis-places every one of them: RA mirror 2 lands at ``[124.5, 0, 244.1]``
-      instead of ``[-269.1, 56.3, -25.0]``, and the front datum's ``desp_x = -8.78`` (bugs/0832's
-      inert marker) is carried into world as a Z offset, ``-33.78`` where the scene draws
-      ``-25.0``.
-    * The OUTPUT-PORT pose override reproduces DRAWN on every row that has one -- all 23 of
-      them on that bench, to the 0.08 mm an actor's bbox centre differs from its surface.
-
-    So: a row with an override is drawn AT that override; a row without one is drawn where its
-    own numbers put it. No fold is applied here at all, which is why the two derivations above
-    could disagree with the display without anything noticing.
-
-    **At Phase D this becomes what ``world_frame`` returns**, ``lower()`` resolves the override,
-    and every caller drops back to ``world_frame``.
+    Kept deliberately rather than inlined: a caller that means "wherever this row's own numbers
+    put it" and one that means "where the user sees it" are different intents, and only one of
+    them stayed correct across Phase D.
     """
-    position, rotation, _space = world_frame(editor, row_index, scene_ir=scene_ir)
-    pose = _output_port_pose(editor, row_index)
-    if pose is None:
-        # Nothing repositions this row: its own numbers are where it is drawn.
-        return position, rotation, FRAME_POST_FOLD
-    try:
-        centre = np.asarray(pose.get("center"), dtype=float).reshape(3)
-    except Exception:
-        return position, rotation, FRAME_POST_FOLD
-    if not np.all(np.isfinite(centre)):
-        return position, rotation, FRAME_POST_FOLD
-    turned = rotation
-    try:
-        candidate = np.asarray(pose.get("rotation"), dtype=float).reshape(3, 3)
-        if np.all(np.isfinite(candidate)):
-            turned = candidate
-    except Exception:
-        pass
-    return centre, turned, FRAME_POST_FOLD
+    return world_frame(editor, row_index, scene_ir=scene_ir)
 
 
 def drawn_leg_unit(editor: Any, row_index: int, leg_unit) -> "np.ndarray | None":

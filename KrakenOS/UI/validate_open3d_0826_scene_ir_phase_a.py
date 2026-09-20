@@ -219,24 +219,69 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
             ok(all(e.frame in (FRAME_POST_FOLD, FRAME_STRAIGHT_EQUIVALENT, FRAME_ALREADY_WORLD)
                    for e in ir.entities),
                f"C[{name}]: every entity declares a known frame")
-            ok(ir.is_fully_post_fold() is False,
-               f"C[{name}]: the post-fold invariant reads FALSE today -- Phase D is what "
-               f"makes it true, and a guard that passed now would be measuring nothing")
+            # bugs/0826 Phase D LANDED: this assertion was written red on purpose and is
+            # the acceptance for it. lower() now resolves the output-port pose override, so
+            # to_world is a real world pose and the design's invariant holds. The tag is what
+            # makes that CHECKABLE rather than aspirational -- an implementation that shipped
+            # a straight-equivalent under the name "to_world" is the defect it exists to stop.
+            ok(ir.is_fully_post_fold() is True,
+               f"C[{name}]: the post-fold invariant HOLDS -- Phase D resolved the fold inside "
+               f"lower(), which is the whole point of the design")
             seq = [e for e in ir.of_kind("surface") if e.placement_space == "sequential"]
-            ok(all(e.frame == FRAME_STRAIGHT_EQUIVALENT for e in seq),
-               f"C[{name}]: every SEQUENTIAL surface is tagged straight_equivalent, never "
-               f"post_fold -- world_pose does not fold")
+            ok(all(e.frame in (FRAME_POST_FOLD, FRAME_ALREADY_WORLD) for e in seq),
+               f"C[{name}]: every SEQUENTIAL surface is tagged post_fold -- lower() "
+               f"resolves the fold, so the straight-equivalent never escapes as to_world")
 
             # D: the IR agrees with the consumer it was extracted from
             from KrakenOS.UI.services import row_placement as rp
 
+            # bugs/0826 Phase D: the IR is no longer the prescription, and that IS the
+            # change. It must still equal the prescription EXACTLY on every row nothing
+            # repositions, and differ exactly on the rows an output-port override moves --
+            # an IR that drifted on an unfolded row would be a bug wearing Phase D's clothes.
+            from KrakenOS.UI.services.scene_ir import _output_port_overrides
+
+            overrides = _output_port_overrides(editor)
+            moved = {
+                int(i) for i, pose in (overrides or {}).items()
+                if isinstance(pose, dict) and pose.get("center") is not None
+            }
             consumer = {i: rp.prescription_pose(editor, i).position
                         for i in range(len(editor.rows))}
             cmp = compare_to_consumer(ir, consumer)
-            bad = [r for r in cmp if r["status"] != "agree"]
-            ok(not bad,
-               f"D[{name}]: all {len(cmp)} surface entities agree with the prescription "
-               f"consumer (got {bad[:3]})")
+            drifted = [
+                r for r in cmp
+                if r["status"] != "agree" and int(r.get("row", r.get("source_row", -1))) not in moved
+            ]
+            ok(not drifted,
+               f"D[{name}]: every row WITHOUT an output-port override still equals the "
+               f"prescription exactly (got {drifted[:3]})")
+            # A REAL assertion, not a tally. The first draft of this read
+            # `ok(not moved or True, ...)` -- always true, a guard measuring nothing, which is
+            # exactly what this file's own Phase A note warns against. The checkable claim is:
+            # an override whose centre DIFFERS from the prescription must have moved the IR,
+            # and one that AGREES with it must have left the IR alone. The second is what
+            # would catch a Phase D that over-reaches.
+            import numpy as _np
+
+            should_move, should_not = set(), set()
+            for _index in moved:
+                try:
+                    _centre = _np.asarray(overrides[_index]["center"], dtype=float).reshape(3)
+                    _presc = _np.asarray(consumer[_index], dtype=float).reshape(3)
+                except Exception:
+                    continue
+                (should_move if float(_np.max(_np.abs(_centre - _presc))) > 1.0e-6
+                 else should_not).add(int(_index))
+            disagreeing = {
+                int(r.get("row", r.get("source_row", -1))) for r in cmp if r["status"] != "agree"
+            }
+            ok(should_move <= disagreeing,
+               f"D[{name}]: all {len(should_move)} override rows whose centre differs from the "
+               f"prescription moved the IR (missing {sorted(should_move - disagreeing)[:3]})")
+            ok(not (should_not & disagreeing),
+               f"D[{name}]: an override that AGREES with the prescription leaves the IR alone "
+               f"({len(should_not)} such rows; moved anyway: {sorted(should_not & disagreeing)[:3]})")
             ok(len(ir.of_kind("surface")) == len(editor.rows),
                f"D[{name}]: one surface entity per row, none dropped silently")
             ok(len({e.id for e in ir.entities}) == len(ir.entities),

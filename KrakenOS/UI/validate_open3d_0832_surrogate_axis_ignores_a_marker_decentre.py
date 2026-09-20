@@ -38,8 +38,15 @@ import numpy as np
 SEQ_SCENE = Path("attachment/om05a_folded.py")
 WORLD_SCENE = Path("attachment/machine_vision_ELS85.py")
 
-OLD_CHORD_OFFSET_MM = 7.0128
+#: The TILT is the invariant that reproduces exactly: it comes from the two datum poses alone.
 OLD_CHORD_TILT_DEG = 12.4076
+#: The offset does NOT reproduce exactly, and saying so matters. The live pre-0832 reading was
+#: 7.0128 mm, measured against the CAD barrel axis probed through the placement frame. bugs/0826
+#: Phase D moved that probe to the drawn frame, so the guard reconstructs the historical body
+#: axis as the straight +Z instead and gets 4.3900 -- the datum midpoint's own decentre,
+#: half of -8.78, without the tilt-projection term the real probe contributed. A lower bound on
+#: the original defect, not a reproduction of it.
+OLD_CHORD_OFFSET_MM = 4.39
 
 
 def _load(scene: Path):
@@ -64,26 +71,33 @@ def _off_axis(app) -> "tuple[float, float] | None":
 
 
 def _chord(app) -> "tuple[float, float] | None":
-    """What the PRE-0832 code returned: the raw datum-to-datum chord."""
-    from KrakenOS.UI.services import scene_ir
+    """What the PRE-0832 code returned: the raw datum-to-datum chord.
+
+    Read from ``prescription_pose``, NOT ``scene_ir.world_frame``. bugs/0826 Phase D made
+    world_frame post-fold, so the drawn datums are co-axial and this chord reads 0.0000 --
+    the defect genuinely cannot reproduce from the drawn frame any more. It still lives in
+    the PRESCRIPTION, which is the frame bugs/0832 was reading when it was written, so that
+    is where the guard must reproduce it or it proves nothing.
+    """
+    from KrakenOS.UI.services import row_placement as rp
 
     front = app._lens_datum_row_index("front")
     rear = app._lens_datum_row_index("rear")
     if front is None or rear is None:
         return None
-    front_pose = np.asarray(scene_ir.world_frame(app, int(front))[0], dtype=float).reshape(3)
-    rear_pose = np.asarray(scene_ir.world_frame(app, int(rear))[0], dtype=float).reshape(3)
+    front_pose = np.asarray(rp.prescription_pose(app, int(front)).position, dtype=float).reshape(3)
+    rear_pose = np.asarray(rp.prescription_pose(app, int(rear)).position, dtype=float).reshape(3)
     direction = rear_pose - front_pose
     length = float(np.linalg.norm(direction))
     if length <= 1.0e-9:
         return None
     point, direction = 0.5 * (front_pose + rear_pose), direction / length
-    body = app._lens_step_overlay_axis_world_line()
-    if body is None:
-        return None
-    gap = point - np.asarray(body[0], dtype=float)
-    perp = gap - float(np.dot(gap, direction)) * direction
-    cosine = min(1.0, abs(float(np.dot(body[1], direction))))
+    # The pre-0832 body axis: the placement frame, which is where it was before Phase D moved
+    # it to the drawn frame. Reconstructed here so both halves of the historical comparison
+    # are historical -- mixing the old chord with the new body axis would measure neither.
+    straight = np.array([0.0, 0.0, 1.0], dtype=float)
+    perp = point - float(np.dot(point, straight)) * straight
+    cosine = min(1.0, abs(float(np.dot(straight, direction))))
     return float(np.linalg.norm(perp)), float(np.degrees(np.arccos(cosine)))
 
 
@@ -131,10 +145,12 @@ def run_checks() -> tuple[bool, list[str]]:
         if old is None:
             notes.append("SEQ the pre-0832 chord could not be measured (no lens body axis?)")
             ok = False
-        elif old[0] > 1.0 and old[1] > 1.0:
+        elif old[0] > 1.0 and abs(old[1] - OLD_CHORD_TILT_DEG) <= 1.0e-3:
             notes.append(
-                f"SEQ = the OLD chord really was broken here: {old[0]:.4f} mm off, "
-                f"{old[1]:.4f} deg tilt (recorded {OLD_CHORD_OFFSET_MM} / {OLD_CHORD_TILT_DEG})"
+                f"SEQ = the OLD chord really was broken here: {old[1]:.4f} deg tilt "
+                f"(recorded {OLD_CHORD_TILT_DEG}, the invariant), {old[0]:.4f} mm off "
+                f"(>= {OLD_CHORD_OFFSET_MM}; the live 7.0128 also carried the CAD probe this "
+                f"reconstruction cannot reach post-Phase-D)"
             )
         else:
             notes.append(
@@ -148,11 +164,27 @@ def run_checks() -> tuple[bool, list[str]]:
             notes.append("SEQ the surrogate axis is now refused outright")
             ok = False
         else:
+            # bugs/0826 Phase D: the datums come back POST-FOLD, so the axis is the DRAWN
+            # leg -- on om05a that is -x, not the straight chain's +z. Assert it is a unit
+            # direction that matches the chord of the two drawn datums, which is the claim
+            # that actually matters: the axis is where the user sees the lens.
             direction = np.asarray(line[1], dtype=float)
-            if abs(abs(float(direction[2])) - 1.0) <= 1.0e-9:
-                notes.append("SEQ = the sequential axis runs along the chain (0, 0, +-1)")
+            from KrakenOS.UI.services import scene_ir as _sir
+
+            f_pose = np.asarray(_sir.world_frame(app, int(front))[0], dtype=float)
+            r_pose = np.asarray(_sir.world_frame(app, int(rear))[0], dtype=float)
+            drawn = r_pose - f_pose
+            drawn = drawn / max(float(np.linalg.norm(drawn)), 1.0e-12)
+            if float(np.max(np.abs(direction - drawn))) <= 1.0e-6:
+                notes.append(
+                    f"SEQ = the axis follows the DRAWN datum chord {np.round(drawn, 5).tolist()} "
+                    "(Phase D: post-fold poses, so the leg is the one on screen)"
+                )
             else:
-                notes.append(f"SEQ the sequential axis direction is {np.round(direction, 5).tolist()}")
+                notes.append(
+                    f"SEQ the axis {np.round(direction, 5).tolist()} does not match the drawn "
+                    f"chord {np.round(drawn, 5).tolist()}"
+                )
                 ok = False
 
         now = _off_axis(app)
@@ -168,21 +200,37 @@ def run_checks() -> tuple[bool, list[str]]:
             notes.append(f"SEQ the body still reads {now[0]:.4f} mm off / {now[1]:.4f} deg tilt")
             ok = False
 
-        # A lens that really IS decentred must keep its decentre.
+        # A lens that really IS decentred must keep its decentre. bugs/0826 Phase D: on THIS
+        # scene the rows are placed by an output-port override, which ignores desp entirely,
+        # so writing desp_x here can no longer move the drawn axis -- correctly. The median
+        # rule still governs a scene whose rows are NOT override-placed, so pin the helper
+        # itself rather than a scene that can no longer exercise it.
         lo, hi = sorted((int(front), int(rear)))
         saved = [float(getattr(app.rows[i], "desp_x", 0.0)) for i in range(lo, hi + 1)]
         try:
             for i in range(lo, hi + 1):
                 app.rows[i].desp_x = 12.5
-            shifted = app._lens_surrogate_optical_axis_line()
-            if shifted is not None and abs(float(shifted[0][0]) - 12.5) <= 1.0e-6:
+            point = app._sequential_surrogate_axis_point(
+                lo, hi, np.array([0.0, 0.0, 0.0]), np.array([0.0, 0.0, 55.0])
+            )
+            if point is not None and abs(float(point[0]) - 12.5) <= 1.0e-6:
                 notes.append(
-                    "DECENTRE = a lens whose every span row shares 12.5 mm keeps its axis at "
-                    "12.5 mm (the median follows a real decentre, it does not zero one)"
+                    "DECENTRE = the median rule keeps a real 12.5 mm decentre shared by every "
+                    "span row (pinned on the helper: this scene's rows are override-placed, so "
+                    "desp no longer reaches the drawn axis at all)"
                 )
             else:
-                got = None if shifted is None else round(float(shifted[0][0]), 6)
+                got = None if point is None else round(float(point[0]), 6)
                 notes.append(f"DECENTRE a real 12.5 mm decentre was not preserved (axis x = {got})")
+                ok = False
+            app.rows[lo].desp_x = -8.78
+            point = app._sequential_surrogate_axis_point(
+                lo, hi, np.array([0.0, 0.0, 0.0]), np.array([0.0, 0.0, 55.0])
+            )
+            if point is not None and abs(float(point[0]) - 12.5) <= 1.0e-6:
+                notes.append("DECENTRE = one odd marker among the span is still outvoted")
+            else:
+                notes.append(f"DECENTRE a lone marker changed the axis: {point}")
                 ok = False
         finally:
             for offset, i in zip(saved, range(lo, hi + 1)):

@@ -2165,6 +2165,20 @@ class LayoutPolylineDisplayMixin:
             )
             if probed is None:
                 return None
+            # bugs/0826 Phase D: the DRAWN frame, because that is what the surrogate axis now
+            # answers in. _transformed_imported_lens_step_mesh ends with this exact transform,
+            # so the probe lands where the barrel is drawn. Applying it HERE is correct where
+            # applying it to a row pose is not: the aligned mesh really does sit on the
+            # straight axis at [0, 0, z_front], which is the F(v) = C + R (v - S) precondition
+            # bugs/0836 found that row poses violate.
+            probed = self._mesh_with_world_transform(
+                probed,
+                self._optical_axis_fold_world_transform_for_row(
+                    self._lens_front_datum_row_index()
+                ),
+            )
+            if probed is None:
+                return None
             seated = np.asarray(probed.points, dtype=float)[-2:]
             if seated.shape != (2, 3) or not np.all(np.isfinite(seated)):
                 return None
@@ -2244,7 +2258,16 @@ class LayoutPolylineDisplayMixin:
             )
             return None
 
-        if front_space == _rp.SEQUENTIAL:
+        # bugs/0826 Phase D: world_frame is POST-FOLD now, so both datums come back where they
+        # are drawn and the CHORD is right in either space -- which is what Phase D was for.
+        # The bugs/0832 sequential special case (direction from the chain, transverse from the
+        # median desp) existed only because these poses used to be the straight-equivalent,
+        # where one marker's desp_x tilted the chord 12.4 deg. The drawn poses never carry that
+        # decentre: the output-port override places the datum on the leg and ignores it, which
+        # is the same conclusion 0832 reached from the other side. _sequential_surrogate_axis_point
+        # is kept for a scene whose rows are NOT repositioned by an override, where desp is
+        # still a decentre off the chain.
+        if front_space == _rp.SEQUENTIAL and not self._row_has_output_port_override(int(front)):
             axis_point = self._sequential_surrogate_axis_point(
                 int(front), int(rear), front_pose, rear_pose
             )
@@ -2262,6 +2285,20 @@ class LayoutPolylineDisplayMixin:
         if length <= 1.0e-9:
             return None
         return 0.5 * (front_pose + rear_pose), direction / length
+
+    def _row_has_output_port_override(self, row_index) -> bool:
+        """bugs/0826 Phase D: is this row placed by a promoted solid's output port?
+
+        If it is, ``scene_ir.world_frame`` returns where it is DRAWN and its ``desp`` is not a
+        decentre off anything -- the override ignores it. If it is not, ``desp`` still means
+        "how far OFF the chain axis" and bugs/0832's median applies.
+        """
+        try:
+            from KrakenOS.UI.services import scene_ir
+
+            return scene_ir._output_port_pose(self, int(row_index)) is not None
+        except Exception:
+            return False
 
     def _sequential_surrogate_axis_point(self, front, rear, front_pose, rear_pose):
         """bugs/0832: a point ON the lens surrogate's axis, for SEQUENTIAL datum rows.
