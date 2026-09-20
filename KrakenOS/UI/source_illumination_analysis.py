@@ -185,7 +185,12 @@ def source_illumination_record_detail_text(record: dict[str, object]) -> str:
     )
 
 
-def source_illumination_report_text(records: list[dict[str, object]], target_label: str) -> str:
+def source_illumination_report_text(
+    records: list[dict[str, object]],
+    target_label: str,
+    *,
+    map_data: dict[str, object] | None = None,
+) -> str:
     if not records:
         return f"# KrakenOS Source Illumination Report\n\nTarget: {target_label}\n\nNo source illumination records. Click Update first.\n"
     totals = source_illumination_report_totals(records)
@@ -196,6 +201,13 @@ def source_illumination_report_text(records: list[dict[str, object]], target_lab
         f"Total source power throughput: {format_percent_value(totals['throughput'])}",
         "",
     ]
+    # bugs/0822: the diagnostic goes ABOVE the per-source rows. A reader who
+    # stops after the first screen must still have seen whether the numbers
+    # below them can be believed.
+    diagnostic = illumination_diagnostic_lines(map_data=map_data, records=records)
+    if diagnostic:
+        lines.extend(diagnostic)
+        lines.append("")
     for record in records:
         lines.append(
             "- {source_id} ({source_name}) | launched={launched} | hit={hit} | missed={missed} | "
@@ -606,6 +618,15 @@ def source_illumination_map_data_from_samples(
     )
     if not np.any(hist > 0.0):
         raise RuntimeError("Source illumination map has no finite bins.")
+    # bugs/0822: the UNWEIGHTED per-bin hit count is what sets Poisson error --
+    # a bin holding one high-power ray is still one sample. Kept alongside the
+    # power histogram so the sampling diagnostic never has to guess.
+    counts, _, _ = np.histogram2d(
+        x_values,
+        y_values,
+        bins=bin_count,
+        range=[[x_min, x_max], [y_min, y_max]],
+    )
     peak = float(np.max(hist))
     density = hist.T / max(peak, 1e-12)
     source_ids = list(samples.get("source_ids", []) or [])
@@ -643,6 +664,7 @@ def source_illumination_map_data_from_samples(
         "y_values": y_values,
         "weights": weights,
         "hist": hist,
+        "counts": counts,
         "density": density,
         "x_edges": x_edges,
         "y_edges": y_edges,
@@ -656,3 +678,223 @@ def source_illumination_map_data_from_samples(
         "target_model": dict(target_model or {}),
         "coordinate_label": "target local" if samples.get("coord") == "local" else "world",
     }
+
+
+# ---------------------------------------------------------------------------
+# bugs/0822: an illumination map that is mostly shot noise must SAY SO.
+#
+# The binning above picks bin_count = min(max(24, sqrt(N)*3), 128) from the hit
+# count alone, so a 10k-hit trace lands on a 128x128 grid -- 16384 bins, under
+# one hit per bin. Every "dark edge" such a map shows is Poisson noise, and the
+# MV-150 coaxial-LED case (fold edge/centre <= 0.85) is exactly the shape a
+# reader would believe. The engine had no way to tell the two apart, which is
+# the same silent-failure class as a solve that refuses without alerting.
+#
+# Thresholds follow the standard Poisson argument (relative error 1/sqrt(n)),
+# the same reasoning optiland's NSQ diagnostics module uses.
+# ---------------------------------------------------------------------------
+
+#: Below this many hits in a lit bin, shot noise dominates the map: relative
+#: Poisson error is 1/sqrt(10) ~= 32%, so a 15% edge-to-centre dip is noise.
+ILLUMINATION_UNDERSAMPLED_HITS_PER_BIN: float = 10.0
+
+#: Hits per lit bin for ~5% relative error (1 / 0.05**2), the quality a
+#: uniformity or dark-edge claim needs before it can be believed.
+ILLUMINATION_TARGET_HITS_PER_BIN: float = 400.0
+
+#: The power ledger (input - hit - missed) must close to this fraction of
+#: input power. Above it, power vanished into something nothing books.
+ILLUMINATION_FLUX_LEDGER_WARN: float = 0.05
+
+
+def illumination_sampling_diagnostic(
+    map_data: dict[str, object],
+    *,
+    launched_rays: int | None = None,
+) -> dict[str, object]:
+    """Judge whether an illumination map carries signal or shot noise.
+
+    Reads the UNWEIGHTED per-bin hit counts (``counts``), not the power
+    histogram: Poisson error is set by how many rays landed, never by how
+    much power each carried.
+
+    Returns a dict with ``lit_bins``, ``mean_hits_per_lit_bin``,
+    ``relative_error``, ``undersampled``, ``scale_factor`` and (when
+    ``launched_rays`` is known) ``recommended_rays``.
+    """
+    counts = np.asarray(map_data.get("counts", np.asarray([])), dtype=float)
+    total_bins = int(counts.size)
+    if total_bins == 0:
+        return {
+            "available": False,
+            "reason": "map carries no per-bin counts",
+            "undersampled": False,
+        }
+
+    lit = counts > 0.0
+    lit_bins = int(np.count_nonzero(lit))
+    total_hits = float(np.sum(counts))
+    if lit_bins == 0 or total_hits <= 0.0:
+        return {
+            "available": False,
+            "reason": "no bin received a hit",
+            "undersampled": False,
+        }
+
+    mean_hits = total_hits / float(lit_bins)
+    relative_error = 1.0 / np.sqrt(mean_hits) if mean_hits > 0.0 else np.inf
+    undersampled = bool(mean_hits < ILLUMINATION_UNDERSAMPLED_HITS_PER_BIN)
+    scale_factor = (
+        ILLUMINATION_TARGET_HITS_PER_BIN / mean_hits if mean_hits > 0.0 else np.inf
+    )
+
+    diagnostic: dict[str, object] = {
+        "available": True,
+        "total_bins": total_bins,
+        "lit_bins": lit_bins,
+        "total_hits": total_hits,
+        "mean_hits_per_lit_bin": float(mean_hits),
+        "relative_error": float(relative_error),
+        "undersampled": undersampled,
+        "scale_factor": float(scale_factor),
+        "target_hits_per_bin": ILLUMINATION_TARGET_HITS_PER_BIN,
+        "undersampled_threshold": ILLUMINATION_UNDERSAMPLED_HITS_PER_BIN,
+    }
+    if launched_rays is not None and int(launched_rays) > 0 and np.isfinite(scale_factor):
+        diagnostic["launched_rays"] = int(launched_rays)
+        diagnostic["recommended_rays"] = int(np.ceil(float(launched_rays) * scale_factor))
+    return diagnostic
+
+
+def illumination_flux_ledger(records: list[dict[str, object]]) -> dict[str, object]:
+    """Close the power and ray ledgers over every source record.
+
+    Power: ``input - hit - missed`` must be ~0. Rays: ``launched - hit -
+    missed`` must be 0 exactly (rays are counted, not estimated). A residual
+    means flux or rays reached a terminal nothing books -- the leak the user
+    would otherwise never see.
+    """
+    if not records:
+        return {"available": False, "reason": "no records", "closes": True}
+
+    def total(field: str) -> float:
+        return float(sum(float(r.get(field, 0.0) or 0.0) for r in records))
+
+    def total_int(field: str) -> int:
+        return int(sum(int(r.get(field, 0) or 0) for r in records))
+
+    input_power = total("input_power")
+    hit_power = total("hit_power")
+    missed_power = total("missed_power")
+    power_residual = input_power - hit_power - missed_power
+    residual_fraction = (
+        abs(power_residual) / input_power if input_power > 0.0 else 0.0
+    )
+
+    launched = total_int("launched_rays")
+    hit_rays = total_int("hit_rays")
+    missed_rays = total_int("missed_rays")
+    ray_residual = launched - hit_rays - missed_rays
+
+    closes = bool(
+        residual_fraction <= ILLUMINATION_FLUX_LEDGER_WARN and ray_residual == 0
+    )
+    return {
+        "available": True,
+        "input_power": input_power,
+        "hit_power": hit_power,
+        "missed_power": missed_power,
+        "power_residual": float(power_residual),
+        "residual_fraction": float(residual_fraction),
+        "launched_rays": launched,
+        "hit_rays": hit_rays,
+        "missed_rays": missed_rays,
+        "ray_residual": int(ray_residual),
+        "closes": closes,
+        "warn_fraction": ILLUMINATION_FLUX_LEDGER_WARN,
+    }
+
+
+def illumination_diagnostic_lines(
+    *,
+    map_data: dict[str, object] | None = None,
+    records: list[dict[str, object]] | None = None,
+    launched_rays: int | None = None,
+) -> list[str]:
+    """Render the sampling and ledger findings as report lines.
+
+    Silence means nothing measured -- never that everything is fine. A clean
+    result still prints its numbers, so the user can see the map was judged.
+
+    ``launched_rays`` lets a caller holding only a map (the heatmap dialog has
+    no records) still get the concrete ray count to re-run at -- the actionable
+    half of the verdict. When omitted it is summed from ``records``; when
+    neither is available the advice degrades to a multiplier.
+    """
+    lines: list[str] = []
+
+    if records:
+        ledger = illumination_flux_ledger(records)
+        if ledger.get("available"):
+            if not ledger["closes"]:
+                if int(ledger["ray_residual"]) != 0:
+                    lines.append(
+                        f"WARNING: ray ledger does not close -- launched="
+                        f"{ledger['launched_rays']}, hit={ledger['hit_rays']}, "
+                        f"missed={ledger['missed_rays']}, unaccounted="
+                        f"{ledger['ray_residual']}. Some rays reached a terminal "
+                        f"nothing books."
+                    )
+                if float(ledger["residual_fraction"]) > ILLUMINATION_FLUX_LEDGER_WARN:
+                    lines.append(
+                        f"WARNING: power ledger does not close -- input="
+                        f"{ledger['input_power']:.6g}, hit={ledger['hit_power']:.6g}, "
+                        f"missed={ledger['missed_power']:.6g}, unaccounted="
+                        f"{ledger['power_residual']:.6g} "
+                        f"({format_percent_value(ledger['residual_fraction'])} of input)."
+                    )
+            else:
+                lines.append(
+                    f"Flux ledger closes: input={ledger['input_power']:.6g} = "
+                    f"hit={ledger['hit_power']:.6g} + missed={ledger['missed_power']:.6g}; "
+                    f"rays {ledger['launched_rays']} = {ledger['hit_rays']} + "
+                    f"{ledger['missed_rays']}."
+                )
+
+    if map_data:
+        launched = int(launched_rays) if launched_rays else None
+        if launched is None and records:
+            launched = int(
+                sum(int(r.get("launched_rays", 0) or 0) for r in records)
+            ) or None
+        sampling = illumination_sampling_diagnostic(map_data, launched_rays=launched)
+        if sampling.get("available"):
+            mean_hits = float(sampling["mean_hits_per_lit_bin"])
+            rel = float(sampling["relative_error"])
+            if sampling["undersampled"]:
+                advice = ""
+                if "recommended_rays" in sampling:
+                    advice = (
+                        f" Launch about {sampling['recommended_rays']} rays "
+                        f"(~{float(sampling['scale_factor']):.0f}x more) for ~5% error."
+                    )
+                else:
+                    advice = (
+                        f" Needs about {float(sampling['scale_factor']):.0f}x more rays "
+                        f"for ~5% error."
+                    )
+                lines.append(
+                    f"WARNING: this map is mostly shot noise -- "
+                    f"{mean_hits:.2g} hits per lit bin across "
+                    f"{sampling['lit_bins']} lit bins gives "
+                    f"{format_percent_value(rel)} relative error. Structure smaller "
+                    f"than that, including any dark edge, is NOT physical.{advice}"
+                )
+            else:
+                lines.append(
+                    f"Sampling adequate: {mean_hits:.4g} hits per lit bin across "
+                    f"{sampling['lit_bins']} lit bins "
+                    f"({format_percent_value(rel)} relative error)."
+                )
+
+    return lines

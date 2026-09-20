@@ -16357,6 +16357,10 @@ phase_600_the_cascade_is_a_recipe = _phase_from_standalone(
     600, "the 7-row penta cascade is derived, not stored: the user retired the five_penta fixtures -- \"we only need five_penta_prism_analytic_telescope_cascade.py\" -- and the one the whole suite loads was among them, which phase 0 hard-fails without and six other modules read. Measured, the user was right that the analytic file 'got more': it carries 18 rows to the plain cascade's 7 and its first six, Object plus Penta prism 1..5, are BYTE-IDENTICAL; the only difference is the tail, where the plain file stops at an Image row at the origin and the analytic one continues into ball lenses, a DCV, an achromat and a cylindrical. So the plain cascade is the analytic one's prism head plus that Image row, and keeping both stored the same geometry twice. ensure_five_penta_cascade derives it through the editor's own writer when it is missing, phase 0 and the five standalone consumers ensure before they judge, and the file is untracked. Verified by deleting it: the suite regenerated it and phases 0-60 passed exactly as with the stored fixture (60 pass, only the baseline-known phase 52 red), with the derived rows matching the source field for field (0821)",
     "KrakenOS.UI.validate_open3d_0821_the_cascade_is_a_recipe",
     "the_cascade_is_a_recipe")
+phase_601_illumination_map_shot_noise = _phase_from_standalone(
+    601, "an illumination map that is mostly shot noise SAYS SO: the bin rule min(max(24, sqrt(N)*3), 128) grows the grid as fast as the samples, so hits-per-bin stays near 1 at any ray budget and every feature is Poisson noise. Measured on the real MV-150 coaxial-LED scene at its shipped 8000 rays, the 2-D heatmap lands at 1.17 hits per lit bin (92.6% relative error, ~343x more rays needed for 5%) while penta 175's 1-D strip profile gets 19.6 hits/bin (22.6% error) against a 0.617 edge/centre dip -- so the dark edges ARE real but that map could never have shown them, and bugs/0596 had already reached the same verdict by hand on another scene (294 hits, 16x16 grid, ~1.1 hits/bin) after two candidate fixes left every metric byte-identical. The map now carries UNWEIGHTED per-bin counts beside the power histogram (huge per-bin power must not buy a sparse map a pass), and the report leads with a sampling verdict naming the ray count a 5%-error map needs, plus a flux ledger closing input-hit-missed on power and launched-hit-missed on rays. A clean result still prints its numbers: silence means nothing was measured (0822)",
+    "KrakenOS.UI.validate_open3d_0822_illumination_sampling_diagnostic",
+    "illumination_sampling_diagnostic")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17023,6 +17027,7 @@ def main() -> int:
             phase_598_the_surrogate_draws_the_vendor_glass,
             phase_599_a_lens_surface_is_an_element,
             phase_600_the_cascade_is_a_recipe,
+            phase_601_illumination_map_shot_noise,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
