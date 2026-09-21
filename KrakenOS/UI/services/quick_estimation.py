@@ -481,6 +481,141 @@ def _restate_refusal_after_put_back(editor, first_try: dict, arm_slid) -> dict:
     return {"make_room_tried_mm": tried_mm, "make_room_put_back": True}
 
 
+def _lens_move_with_camera_stage_first(service, folded, rows, img_row_write) -> "tuple[dict | None, dict]":
+    """bugs/0844: when the lens is blocked by something the CAMERA STAGE carries, the stage goes
+    first. Returns ``(lens_move | None, facts)``.
+
+    The user's report, *"device size changed to 50x50x1, solver rejected ... contradict to actual
+    production"*, and their framing of the cure: *"this sliding problem bound to minimum and
+    maximum ... the algorithm should be able to solve any values in between."*
+
+    The solve drives TWO motors on om05a -- the lens, and the camera stage that carries the
+    Filter, RA mirror 2 and the camera (bugs/0759). It books them lens FIRST, and the lens's
+    room is measured against where the stage stands at that moment. Measured on the shipped
+    scene after a 21 mm solve, asking for the 52.5 mm field the file LOADS at:
+
+        lens needs        +116.389 mm toward the Filter
+        room right now       74.47 mm      -> REFUSED: "a different lens / working distance"
+        the same solve would then move the stage +60.339 mm the same way
+        final lens->Filter gap   23.64 mm  (the file ships at 21.60)
+
+    So the state that collides is one that never exists: the rows are written together and
+    drawn once. Judging it made the answer depend on the PATH -- the same machine solved
+    52.5 mm from a fresh load and refused it after 21 mm. With the stage moved first the
+    result is the fresh-load one: rows 7/12/14 = 166.6231 / 23.63 / 42.93 against
+    166.6231 / 23.64 / 42.92, |m| 0.43886 both, and the conjugate re-measured afterwards
+    leaves object_delta -0.000000, image_delta -0.000000.
+
+    The stage move is ``image_delta + object_delta``: bugs/0575 measured that the thickness
+    pair leaves the sensor's station alone, so the image correction outstanding once the lens
+    has moved is exactly that sum. It is used as the ORDER of two moves the solve makes anyway,
+    not as a new answer -- the booking re-measures the conjugate afterwards as it always does
+    and books whatever is left (nothing, above) through the normal image path.
+
+    The wording stays neutral on purpose: a lens travelling TOWARD THE OBJECT is blocked by the
+    upstream mirror, which no stage move clears -- there the stage is not "in the way", the
+    field simply needs it outside its travel too, and the refusal says exactly that.
+
+    Everything is judged on the FINAL state and nothing is assumed about which body rides the
+    stage: the stage moves, the lens move's own room gate measures again, and if it still
+    refuses -- or the move was not the live-chain thickness pair this order is proven on --
+    the savepoint puts both back exactly (bugs/0843). Same gates as the normal image path: the
+    vendor-hardware lock and the stage's own travel.
+
+    A MODULE-LEVEL function for the bugs/0843 reason: guards bind the real booking onto partial
+    fakes, and a fake without a stage must fall through here, not raise.
+    """
+    editor = service.editor
+    stage_of = getattr(service, "_camera_focus_stage", None)
+    move_stage = getattr(service, "_apply_camera_arm_move", None)
+    locked = getattr(service, "_image_write_locked_by_vendor_hardware", None)
+    seat_axis = getattr(service, "_camera_arm_seat_axis", None)
+    if not (callable(stage_of) and callable(move_stage) and callable(locked) and callable(seat_axis)):
+        return None, {}
+    try:
+        need = float(folded["object_delta"])
+        stage_mm = float(folded["image_delta"]) + need
+        stage = stage_of()
+        arm = (stage or {}).get("arm")
+        if not isinstance(arm, dict) or not np.isfinite(stage_mm) or abs(stage_mm) <= 1.0e-6:
+            return None, {}
+        if locked(rows, img_row_write):
+            return None, {}
+        lands = float(rows[int(arm["row"])].desp_x) + float(seat_axis(stage)[0]) * stage_mm
+    except Exception:
+        return None, {}
+    first_try = {name: editor.__dict__.get(name) for name in _LENS_REFUSAL_CHANNEL}
+    if not (arm["min_mm"] - 1.0e-9 <= lands <= arm["max_mm"] + 1.0e-9):
+        # The stage cannot get out of the way. That IS the limit of this machine, so name it.
+        first_reason = str(first_try.get("_lens_move_refusal") or "").strip()
+        try:
+            editor._lens_move_refusal = (
+                f"{first_reason.rstrip('.')}. This field would also put the camera stage at "
+                f"{lands:.4g} mm, outside its {arm['min_mm']:.4g} to {arm['max_mm']:.4g} mm "
+                f"travel -- nothing was moved."
+            )
+        except Exception:
+            pass
+        return None, {"stage_first_needed_mm": stage_mm, "stage_first_outside_travel": True}
+    try:
+        savepoint = GeometryTransaction(editor, "camera stage first").begin()
+    except Exception as exc:
+        editor.append_debug(f"camera-stage-first skipped: its savepoint could not be opened ({exc})")
+        return None, {}
+    lens_move, stage_moved = None, False
+    with savepoint:
+        try:
+            stage_moved = bool(move_stage(stage_mm))
+        except Exception:
+            stage_moved = False
+        if stage_moved:
+            try:
+                lens_move = editor.translate_lens_block_along_leg(need)
+            except Exception:
+                lens_move = None
+        if isinstance(lens_move, dict) and lens_move.get("mode") == "thickness_pair":
+            savepoint.commit()
+    if savepoint.state == "committed":
+        editor.append_debug(
+            f"folded solve (bugs/0844): the camera stage moved {stage_mm:+.4f} mm FIRST, then "
+            f"the lens {need:+.4f} mm -- the lens-first order was refused on an intermediate "
+            f"state ({str(first_try.get('_lens_move_refusal') or '').strip()[:120]})"
+        )
+        return lens_move, {"stage_first_mm": stage_mm}
+    if savepoint.state != "rolled_back":
+        return None, {}  # 'stuck': the channel describes the scene as it stands (bugs/0843)
+    retry_reason = str(editor.__dict__.get("_lens_move_refusal", "") or "").strip()
+    for name, value in first_try.items():
+        try:
+            setattr(editor, name, value)
+        except Exception:
+            pass
+    if not stage_moved:
+        return None, {}  # the stage never moved: the first refusal stands exactly as it was
+    if isinstance(lens_move, dict):
+        # The lens DID move, by a primitive this order is not proven on (a frozen desp-leg
+        # slide). Put back and let the first refusal stand -- "still refused" would be untrue.
+        editor.append_debug(
+            f"camera-stage-first put back: the lens moved as {lens_move.get('mode')!r}, not the "
+            f"thickness pair this order is measured on (bugs/0844)"
+        )
+        return None, {}
+    first_reason = str(first_try.get("_lens_move_refusal") or "").strip()
+    tried = (
+        f"Moving the camera stage {stage_mm:+.4g} mm first was tried, and the lens move was "
+        f"still refused"
+    )
+    if retry_reason and retry_reason != first_reason:
+        tried += f" ({retry_reason.rstrip('.')})"
+    try:
+        editor._lens_move_refusal = (
+            f"{first_reason.rstrip('.')}. {tried}. The stage was put back -- nothing was moved."
+        )
+    except Exception:
+        pass
+    return None, {"stage_first_tried_mm": stage_mm, "stage_first_put_back": True}
+
+
 def _refused_booking_moves_nothing(func):
     """bugs/0843: a booking that comes back ``(False, why)`` -- or raises -- has moved NOTHING.
 
@@ -2258,6 +2393,18 @@ class QuickEstimationService:
                                 arm_slid = None  # claim == motion: no move, no "Made room first"
                             # 'stuck': the retry's numbers DO describe the scene as it stands;
                             # the booking wrapper adds the could-not-be-put-back sentence.
+                # bugs/0844: still refused -- but the body in the lens's way may be one this same
+                # solve is about to move. Judge the FINAL state: camera stage first, then the
+                # lens, under a savepoint. Measured: this is the whole of the om05a "50x50
+                # refused after a 20x20 solve" report.
+                stage_first_mm = 0.0
+                if object_slid is None and arm_slid is None and abs(float(folded["object_delta"])) > 1.0e-6:
+                    object_slid, stage_first_facts = _lens_move_with_camera_stage_first(
+                        self, folded, rows, img_row_write
+                    )
+                    make_room_facts.update(stage_first_facts)
+                    if object_slid is not None:
+                        stage_first_mm = float(stage_first_facts.get("stage_first_mm", 0.0) or 0.0)
                 # bugs/0783: record the lens move HERE, where every successful booking passes --
                 # the summary used to read it only from the vendor-lock residual below, so a solve
                 # whose image side MOTOR 1 booked cleanly told the user "the lens did not move".
@@ -2622,11 +2769,19 @@ class QuickEstimationService:
                     image_room_note = str(
                         self.editor.__dict__.get("_frozen_image_make_room_note", "") or ""
                     )
+                    # bugs/0844: ``folded`` was re-measured AFTER the stage went first, so its
+                    # image_delta is only what was left (~0). Quote what the sensor travelled.
+                    sensor_moved_mm = float(folded["image_delta"]) + float(stage_first_mm)
+                    order_note = (
+                        ""
+                        if not stage_first_mm
+                        else " The camera stage moved first, to clear the lens's way."
+                    )
                     return True, (
                         f"Solved (folded): object->lens {folded['object_distance']:.6g} mm; the "
-                        f"sensor moved {float(folded['image_delta']):+.4g} mm along its folded leg "
+                        f"sensor moved {sensor_moved_mm:+.4g} mm along its folded leg "
                         f"(the fold mirror stayed put) (|m|={folded['magnitude']:.4g})."
-                        f"{image_room_note}{room_note}{focus_note}"
+                        f"{order_note}{image_room_note}{room_note}{focus_note}"
                     )
                 return True, (
                     f"Solved (folded): object->lens {folded['object_distance']:.6g} mm, "
