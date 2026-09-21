@@ -535,7 +535,10 @@ class LayoutImportExportMixin:
             info = _load_python_data(Path(path))
             self.rows = self._normalized_rows_copy([self._row_from_layout_item(item) for item in info["surfaces"]])
             # bugs/0559: heal a negative gap saved before bugs/0550, pose-preservingly.
-            _healed = self._heal_negative_gaps_on_load(self.rows)
+            # bugs/0845: ... except where the scene DECLARES the gap signed (the camera stage).
+            _healed = self._heal_negative_gaps_on_load(
+                self.rows, self._declared_signed_gap_rows(info)
+            )
             if _healed:
                 _text = ", ".join(f"S{h['row_index']} ({h['name']}) {h['thickness']:+g} mm" for h in _healed)
                 try:
@@ -1411,7 +1414,27 @@ class LayoutImportExportMixin:
         )
 
     @staticmethod
-    def _heal_negative_gaps_on_load(rows) -> list[dict]:
+    def _declared_signed_gap_rows(info) -> "dict[int, float]":
+        """bugs/0845: the gap rows this SCENE declares may run negative -- ``{row: floor_mm}``.
+
+        One source today: ``settings['camera_focus_stage']``. The stage motor (bugs/0759) moves
+        the imaging group rigidly while keeping every downstream station fixed, and the only way
+        the chain can say that is a carry pair plus the SAME delta on the sensor standoff -- so a
+        move toward the lens longer than the standoff drives that row negative BY DESIGN, and the
+        scene says as much: om05a_folded declares row 23's travel as -171.65 .. +30.42 mm.
+        A gap is signed exactly where, and as far as, the scene states it. Pure dict reads."""
+        settings = info.get("settings") if isinstance(info, dict) else None
+        stage = settings.get("camera_focus_stage") if isinstance(settings, dict) else None
+        if not isinstance(stage, dict) or not stage.get("enabled"):
+            return {}
+        try:
+            row, floor = int(stage["row"]), float(stage["min_mm"])
+        except (KeyError, TypeError, ValueError):
+            return {}
+        return {row: floor} if floor < 0.0 else {}
+
+    @staticmethod
+    def _heal_negative_gaps_on_load(rows, signed_rows=None) -> list[dict]:
         """Repair a NEGATIVE gap saved into a layout, without moving anything (bugs/0559).
 
         A gap is a distance and may never be negative -- it makes the station chain run
@@ -1427,7 +1450,22 @@ class LayoutImportExportMixin:
         through ``desp_z`` on every downstream row, since a pose is ``station + desp_z``
         (bugs/0526). Nothing moves -- verified drift 0.0 mm by the 0550 diagnostic, which uses
         exactly this arithmetic. Returns what was healed so the caller can say so out loud rather
-        than silently rewriting the user's file."""
+        than silently rewriting the user's file.
+
+        bugs/0845: "nothing moves" is true of the WORLD and false of the FIRST ORDER, which sums
+        thicknesses and never reads ``desp_z``. Healing the camera stage's standoff therefore
+        changed what the solve believes without changing what is drawn. Measured on the user's
+        saved om05a scene (row 23 = -78.334, the stage having travelled 87.154 mm):
+
+            live session      image track, first order 156.92 mm   = the world's 156.92
+            saved -> reloaded image track, first order 235.26 mm     the world still 156.92
+
+        so every solve after a reload booked the image side 78.33 mm wrong, and the next one
+        parked the Filter 3.9 mm INSIDE the lens barrel. ``signed_rows`` (``{row: floor_mm}``,
+        from :meth:`_declared_signed_gap_rows`) names the gaps the scene declares signed; those
+        are left exactly as saved down to their declared floor. Anything below the floor, and
+        every other negative gap, is still the corruption bugs/0559 repairs."""
+        signed = dict(signed_rows or {})
         healed: list[dict] = []
         for index, row in enumerate(list(rows)):
             try:
@@ -1436,6 +1474,9 @@ class LayoutImportExportMixin:
                 continue
             if thickness >= 0.0:
                 continue
+            floor = signed.get(int(index))
+            if floor is not None and thickness >= float(floor) - 1.0e-9:
+                continue   # the scene's own declared travel: a position, not a corruption
             healed.append(
                 {
                     "row_index": int(index),

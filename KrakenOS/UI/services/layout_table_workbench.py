@@ -529,7 +529,11 @@ class LayoutTableWorkbenchMixin:
         # `open_layout`, so the bugs/0559 heal placed there never ran on the path the app
         # actually uses -- a layout loaded by name kept its saved negative gap. Measured on
         # attachment/machine_vision_Apo75.py: after load, row 6 was still -13.5949.
-        _healed = self._heal_negative_gaps_on_load(loaded_rows)
+        # bugs/0845: except where the scene DECLARES the gap signed (the camera stage's standoff)
+        # -- healing that one kept the world and broke the first order by the healed amount.
+        _healed = self._heal_negative_gaps_on_load(
+            loaded_rows, self._declared_signed_gap_rows(info)
+        )
         if _healed:
             _text = ", ".join(f"S{h['row_index']} ({h['name']}) {h['thickness']:+g} mm" for h in _healed)
             try:
