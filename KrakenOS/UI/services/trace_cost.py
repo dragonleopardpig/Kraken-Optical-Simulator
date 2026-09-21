@@ -95,6 +95,15 @@ def compare_ray_counts(current, candidate, *, nonsequential: bool = True,
     return f"{int(candidate)} costs the same"
 
 
+#: bugs/0842: the clamp a DEVICE-SIZE edit previews at. Resizing the inspected part changes
+#: what is imaged, so the rays legitimately change and must stay VISIBLE -- deferring them the
+#: way a load does would blank the beam on every size change, and this user has filed repeatedly
+#: about seeing the true light. 9 x 9 = 81 rays against 961 at their ray_count of 31 is ~12x
+#: cheaper with the beam still drawn. The recorded cost of the full-density alternative, from
+#: the session in this module's own header: 28.0 s mean per trace, 43.3 s worst.
+DEVICE_EDIT_PREVIEW_RAY_COUNT: int = SOLVE_PREVIEW_RAY_COUNT
+
+
 def solve_preview_ray_count(user_ray_count, *, cap: int = SOLVE_PREVIEW_RAY_COUNT) -> int:
     """The ray count a SOLVE or SWAP should iterate at.
 

@@ -8999,11 +8999,54 @@ class LayoutTableWorkbenchMixin:
             moved = []
             self.append_debug(f"split-field part retarget skipped: {exc}")
         self._commit_history_capture()
-        if moved:
-            self.status_var.set(
-                "Device resized -- " + "; ".join(moved) + ". Solve/set the FOV as usual."
+        # bugs/0842: preview the resize at a SPARSE fan. The pupil grid is N x N, so the
+        # user's ray_count is quadratic -- 31 means 961 rays/bundle, and the recorded cost of
+        # a full-density trace on this scene is 28.0 s mean, 43.3 s worst (trace_cost's own
+        # header). A device edit is the operation the user repeats while dialling a size in,
+        # and it was the only one in the _current_ray_count chain with no clamp at all: drag
+        # (0024), promote (0105), folded (0410) and solve/swap (0827) all have one.
+        #
+        # Clamped, NOT deferred. Deferring the way a load does (bugs/0646) would blank the
+        # beam on every size change; resizing the part changes what is imaged, so the rays
+        # legitimately change and the user needs to SEE them. 81 rays against 961 keeps the
+        # beam drawn at ~12x less cost.
+        from KrakenOS.UI.services.trace_cost import (
+            DEVICE_EDIT_PREVIEW_RAY_COUNT,
+            solve_preview_ray_count,
+        )
+
+        _prev_clamp = self.__dict__.get("_device_edit_preview_ray_count_override")
+        clamped = None
+        try:
+            clamped = solve_preview_ray_count(
+                self._current_ray_count(), cap=DEVICE_EDIT_PREVIEW_RAY_COUNT
             )
-        self._refresh_open_3d_views()
+            self._device_edit_preview_ray_count_override = clamped
+        except Exception:
+            self._device_edit_preview_ray_count_override = _prev_clamp
+        # Say so, in the status line the user is already reading. A quietly coarser beam
+        # would look like a worse trace rather than a faster preview -- the same complaint
+        # bugs/0828 and bugs/0834 were about: a picture without its parent.
+        note = ""
+        try:
+            full = int(self.ray_count_var.get())
+            if clamped is not None and clamped < full:
+                note = (
+                    f" Preview traced at {clamped}x{clamped} rays instead of {full}x{full}"
+                    " -- Trace Now for full density."
+                )
+        except Exception:
+            note = ""
+        message = ("Device resized -- " + "; ".join(moved) + ". Solve/set the FOV as usual."
+                   if moved else "Device updated.")
+        self.status_var.set(message + note)
+        try:
+            self._refresh_open_3d_views()
+        finally:
+            if _prev_clamp is None:
+                self.__dict__.pop("_device_edit_preview_ray_count_override", None)
+            else:
+                self._device_edit_preview_ray_count_override = _prev_clamp
 
     def _measure_focused_image_plane(self, scene_bundle) -> "dict | None":
         """bugs/0728 (user: "instead of showing ray defocusing at the sensor, show the perfect

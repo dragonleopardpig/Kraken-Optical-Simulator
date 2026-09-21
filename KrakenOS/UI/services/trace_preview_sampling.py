@@ -2171,6 +2171,12 @@ class TracePreviewSamplingMixin:
             # (0410) overrides above; cleared in the operation's finally so the next
             # explicit trace is full density.
             override = self.__dict__.get("_solve_preview_ray_count_override")
+        if override is None:
+            # bugs/0842: a DEVICE-SIZE edit retraces the whole scene and nothing clamped it --
+            # the one operation in this chain the user repeats while dialling a number in.
+            # Same transient shape as the four above, cleared in set_inspection_part_spec's
+            # finally so the next explicit trace is full density.
+            override = self.__dict__.get("_device_edit_preview_ray_count_override")
         if override is not None:
             try:
                 return max(1, int(override))
