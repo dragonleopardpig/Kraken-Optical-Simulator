@@ -59,7 +59,10 @@ stays the rule for every row nobody declared.
 - **B** -200 mm is below the declared -171.65 floor: healed
 - **O** an undeclared negative gap beside it is still healed
 - **D** no stage / disabled / non-negative floor / malformed: nothing declared
-- **R** the user's real file: standoff survives, first-order track 156.921 mm = the world's
+- **R** the user's saved scene: standoff survives, first-order track 156.921 mm = the world's.
+  Rebuilt from `om05a_folded.py` plus the five values the user's file saved, because that
+  file (`om05a_folded_refusal.py`) is being deleted -- a guard that SKIPs on a missing file
+  would have lost this check without anyone noticing
 - **W** both loaders pass the declaration (executable lines only)
 
 ## A harness lesson, recorded because it cost the machine ten minutes

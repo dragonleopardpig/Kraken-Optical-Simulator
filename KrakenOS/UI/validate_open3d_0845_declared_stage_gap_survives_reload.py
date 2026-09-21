@@ -17,7 +17,8 @@ world. Every later solve booked the image side 78.33 mm wrong; the next one park
   B  below the declared floor it is corruption again and is healed
   O  another negative gap in the same scene is still healed (0559 keeps its job)
   D  no stage / disabled / non-negative floor / garbage -> nothing is declared
-  R  the user's real file: the standoff survives and first order equals the world track
+  R  the user's saved scene (rebuilt from om05a_folded.py): the standoff survives and
+     first order equals the world track
   W  both loaders hand the declaration to the healer (the bugs/0563 two-loader trap)
 """
 from __future__ import annotations
@@ -126,24 +127,32 @@ def run_checks() -> tuple[bool, list[str]]:
        "D: no stage, a disabled one, a non-negative floor or a malformed spec declares nothing "
        "-- every such scene heals exactly as before")
 
-    # ---- R: the user's real file -----------------------------------------------------------------
-    path = Path("attachment/om05a_folded_refusal.py")
+    # ---- R: the user's saved scene, rebuilt from the ORIGINAL file ------------------------------
+    # The user saved attachment/om05a_folded_refusal.py and will delete it; it differs from the
+    # shipped om05a_folded.py in exactly these five row values (and a split-field band width the
+    # healer never reads), so the guard rebuilds it instead of depending on it.
+    saved = {7: 35.2344243107, 12: 79.6812365146, 14: 118.264339175, 23: STANDOFF_MM}
+    seat_x = -181.982660825
+    path = Path("attachment/om05a_folded.py")
     if not path.exists():
-        notes.append("= R: SKIP -- attachment/om05a_folded_refusal.py is not checked out here")
+        notes.append("= R: SKIP -- attachment/om05a_folded.py is not checked out here")
     else:
         from KrakenOS.UI.layout_editor import KrakenLayoutEditor, _load_python_data
 
         data = _load_python_data(path)
         real = [KrakenLayoutEditor._row_from_layout_item(item) for item in data["surfaces"]]
+        for index, value in saved.items():
+            real[index].thickness = value
+        real[15].desp_x = seat_x
         healed = heal(real, declared(data))
         track = sum(float(real[i].thickness) for i in range(12, 24))
         # the world, measured on the loaded scene: lens rear -> RA mirror 2 102.430 mm along x,
         # RA mirror 2 -> sensor 54.491 mm along y
         ok(healed == [] and float(real[23].thickness) == STANDOFF_MM
            and abs(track - (102.430 + 54.491)) < 0.01,
-           f"R: on the user's saved scene the standoff survives ({real[23].thickness!r}) and the "
-           f"first-order image track is {track:.3f} mm -- the world's 156.921, not the 235.26 a "
-           f"healed reload believed")
+           f"R: on the user's saved scene (om05a_folded + its five saved values) the standoff "
+           f"survives ({real[23].thickness!r}) and the first-order image track is {track:.3f} mm "
+           f"-- the world's 156.921, not the 235.26 a healed reload believed")
 
     # ---- W: both loaders pass it on (executable lines only, not this fix's own comments) --------
     from KrakenOS.UI.services.layout_table_workbench import LayoutTableWorkbenchMixin as W

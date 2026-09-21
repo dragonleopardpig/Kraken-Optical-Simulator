@@ -1,4 +1,5 @@
-"""END TO END through the real fov_solve, starting from the user's SAVED refusal scene.
+"""END TO END through the real fov_solve: the user's 50 mm -> 20 mm -> 50 mm path on
+attachment/om05a_folded.py (or a saved scene given on the command line).
 
 GUARDED on purpose: the preview trace can use a spawn-context worker pool, and spawn re-imports
 the launching script in every worker -- an unguarded probe re-runs itself once per worker.
@@ -71,4 +72,6 @@ def main(scene: str) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1] if len(sys.argv) > 1 else "attachment/om05a_folded_refusal.py"))
+    # Default: the shipped scene, the user's own path (50 mm -> 20 mm -> 50 mm). Pass a saved
+    # scene to start from it instead.
+    raise SystemExit(main(sys.argv[1] if len(sys.argv) > 1 else "attachment/om05a_folded.py"))
