@@ -2438,13 +2438,28 @@ class LayoutTableWorkbenchMixin:
         # the fold arm (mirror + everything behind it + the camera body) down the leg by the
         # deficit. The body-aware room measure charges the barrel overhang + clearance.
         clearance_note = ""
+        _make_room = None
         try:
             plan = self._lens_leg_slide_plan()
             if plan is not None and plan[2]:
                 _members, _direction, _ = plan
                 room = self._lens_leg_room_to_fold(_direction, _members)
                 if room is not None and float(room) < 0.0:
-                    slid = self.slide_fold_arm_along_leg(-float(room))
+                    # bugs/0843: the slide writes three row loops and the camera offset with
+                    # no snapshot, so a raise part-way left a TORN arm that the except below
+                    # filed as "skipped". EXCEPTION-atomicity only, and a tight scope on
+                    # purpose: the refit, the working-distance writes and the refocus all run
+                    # later and must not be torn by a put-back -- and a refused refocus is NOT
+                    # a reason to undo this, because here the slide is the physical remedy
+                    # (without it the longer barrel sits inside the fold prism, bugs/0583).
+                    from KrakenOS.UI.services.geometry_transaction import GeometryTransaction
+
+                    _make_room = GeometryTransaction(self, "swap fold clearance")
+                    with _make_room:
+                        slid = self.slide_fold_arm_along_leg(-float(room))
+                        # A None return wrote nothing (every early return precedes the first
+                        # write), so committing it is a no-op either way.
+                        _make_room.commit()
                     if slid:
                         clearance_note = (
                             f" The replacement lens is longer than the room to the fold mirror:"
@@ -2453,6 +2468,26 @@ class LayoutTableWorkbenchMixin:
                         )
         except Exception as exc:
             self.append_debug(f"swap fold-clearance skipped: {exc}")
+            # The LOCAL note, deliberately: the swap's clearance and refocus note attributes
+            # are zeroed by the refocus that runs after this block. (Their names are not
+            # spelled here on purpose -- guard 0594-D3 substring-matches this function's
+            # source for the clearance attribute, and a comment naming it would let that
+            # guard pass with the real read deleted.) "Nothing was moved" is only true when no
+            # transaction opened or it rolled back; on 'stuck' the arm could NOT be put back
+            # and saying otherwise would be the silent failure this change exists to stop.
+            _state = getattr(_make_room, "state", None)
+            if _state == "stuck":
+                clearance_note = (
+                    f" Making room at the fold mirror FAILED part-way"
+                    f" ({type(exc).__name__}: {exc}) and the arm could not be put back --"
+                    f" use Undo."
+                )
+            else:
+                clearance_note = (
+                    f" The room to the fold mirror could not be checked or made"
+                    f" ({type(exc).__name__}: {exc}) -- nothing was moved, so the barrel may"
+                    f" overlap the fold mirror."
+                )
         self._sync_table()
         self.load_layouts()  # discover the new library surrogate (also insertable later)
         # bugs/0647 follow-up (user 2026-08-27): the swap REFITS to the vendor

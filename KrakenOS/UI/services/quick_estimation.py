@@ -30,9 +30,12 @@ The engine never retraces; callers (``apply_dimension_value``) own the retrace.
 
 from __future__ import annotations
 
+import functools
 from typing import Any
 
 import numpy as np
+
+from KrakenOS.UI.services.geometry_transaction import GeometryTransaction
 
 
 OBJECT_PLANE = "object_plane"
@@ -418,6 +421,115 @@ def placement_quantity_states(
         else:
             states[q] = {"state": "available"}
     return states
+
+
+#: bugs/0843: what the lens movers WIPE at entry and re-measure -- on a retry, that is a
+#: measurement of a scene which is about to stop existing.
+_LENS_REFUSAL_CHANNEL = (
+    "_lens_move_refusal", "_lens_move_room_mm", "_lens_move_refusal_info",
+    "_lens_leg_slide_refusal", "_lens_leg_slide_shortfall",
+)
+
+
+def _restate_refusal_after_put_back(editor, first_try: dict, arm_slid) -> dict:
+    """bugs/0843: after the make-room put-back, make the explanation describe the scene the
+    user is actually looking at.
+
+    The retry wiped the refusal channel and re-measured it on the SLID scene -- it would quote
+    ~275 mm of room on a machine that has ~79 again. That is the bugs/0828 / bugs/0834 defect
+    (a number without its parent) arriving through a revert. Put the FIRST attempt's numbers
+    back, since they were measured on the scene that now exists again, and say what was tried.
+
+    Plain attribute writes only: calling either mover again would wipe the channel a second
+    time. A MODULE-LEVEL function rather than a method on purpose -- guards bind the real
+    booking onto partial fake classes, and a fake reaching this branch without the method would
+    raise AttributeError after the savepoint had already rolled back.
+
+    Returns structured facts for ``_fov_solve_refusal_info`` so a guard asserts VALUES.
+    """
+    held = getattr(editor, "__dict__", {}) or {}
+    retry_reason = str(
+        held.get("_lens_move_refusal", "") or held.get("_lens_leg_slide_refusal", "") or ""
+    ).strip()
+    for name, value in dict(first_try or {}).items():
+        try:
+            setattr(editor, name, value)
+        except Exception:
+            pass
+    if not isinstance(arm_slid, dict):
+        return {}  # the arm never moved: the first refusal stands exactly as it was
+    try:
+        tried_mm = float(arm_slid.get("distance"))
+    except (TypeError, ValueError):
+        tried_mm = None
+    first_reason = str(
+        (first_try or {}).get("_lens_move_refusal")
+        or (first_try or {}).get("_lens_leg_slide_refusal")
+        or ""
+    ).strip()
+    tried = "Making room was tried first"
+    if tried_mm is not None:
+        tried += f" -- the fold mirror and the camera {tried_mm:+.4g} mm along the leg"
+    tried += " -- and the lens move was still refused"
+    if retry_reason and retry_reason != first_reason:
+        tried += f" ({retry_reason.rstrip('.')})"
+    lead = f"{first_reason.rstrip('.')}. " if first_reason else ""
+    try:
+        editor._lens_move_refusal = f"{lead}{tried}. The arm was put back -- nothing was moved."
+    except Exception:
+        pass
+    return {"make_room_tried_mm": tried_mm, "make_room_put_back": True}
+
+
+def _refused_booking_moves_nothing(func):
+    """bugs/0843: a booking that comes back ``(False, why)`` -- or raises -- has moved NOTHING.
+
+    The make-room rescue puts its own arm slide back, but a booking can also be refused AFTER
+    the retry succeeded ("the object or image leg would go negative": arm AND lens moved, the
+    lens body's offset written, its axis anchor popped), and a dozen calls past the slide can
+    raise. The caller then measures "delivered now" on whatever is left, and the inspection
+    cell writes the layout file whether or not the solve was refused.
+
+    ``functools.wraps`` ON PURPOSE: some twenty guards read ``inspect.getsource`` of the
+    booking, one of them down to the indentation of its first ``try``, and getsource unwraps
+    ``__wrapped__``. A ``with`` around the body would have re-indented it out from under them.
+    Bookkeeping must never take the solve down, so a snapshot that cannot be opened runs the
+    booking unprotected -- and SAYS so, because a silently unprotected solve is how this bug
+    stayed invisible.
+    """
+
+    @functools.wraps(func)
+    def _wrapped(self, *args, **kwargs):
+        editor = getattr(self, "editor", None)
+        booking = None
+        if editor is not None:
+            try:
+                booking = GeometryTransaction(
+                    editor, "FOV booking", also=("_fov_solve_lens_move_mm",)
+                ).begin()
+            except Exception as exc:
+                booking = None
+                try:
+                    editor.append_debug(
+                        f"FOV booking runs UNPROTECTED: its snapshot could not be opened ({exc})"
+                    )
+                except Exception:
+                    pass
+        if booking is None:
+            return func(self, *args, **kwargs)
+        with booking:  # an exception leaves it uncommitted -> the geometry is put back
+            result = func(self, *args, **kwargs)
+            refused = isinstance(result, tuple) and len(result) >= 1 and not result[0]
+            if not refused:
+                booking.commit()
+        if booking.state == "stuck" and isinstance(result, tuple) and len(result) == 2:
+            return result[0], (
+                f"{result[1]} The scene could NOT be put back (its rows changed during the "
+                f"solve) -- use Undo."
+            )
+        return result
+
+    return _wrapped
 
 
 class QuickEstimationService:
@@ -1885,6 +1997,7 @@ class QuickEstimationService:
                 )
         return ""
 
+    @_refused_booking_moves_nothing
     def _apply_conjugate_pair(self, object_semi: Any, image_semi: Any, force: bool = False) -> tuple[bool, str]:
         # Folded-aware branch (feature): a promoted RA-mirror fold breaks the plain object/image
         # gap-row assumption -- object_thickness_row/image_thickness_row land on the mirror-adjacent
@@ -2095,21 +2208,56 @@ class QuickEstimationService:
                 # fold: slide the fold mirror, everything behind it and the camera body along the
                 # leg by the shortfall, then take the slide the solve actually asked for.
                 arm_slid = None
+                make_room_facts: dict = {}
                 if object_slid is None and abs(float(folded["object_delta"])) > 1.0e-6:
                     shortfall = float(self.editor.__dict__.get("_lens_leg_slide_shortfall", 0.0) or 0.0)
                     if shortfall > 1.0e-6:
+                        # bugs/0843: making the room and USING it are ONE transaction. Measured:
+                        # the arm slid 197.138 mm, the retry was refused anyway, and the solve
+                        # reported the refusal with row 12 at 276.819 mm (was 79.681) and no
+                        # finite magnification left. A retry that yields no lens move --
+                        # refused, raised, or a stale-shortfall fall-through -- leaves the
+                        # room-making without a purpose, so it goes back, exactly. The first
+                        # attempt's refusal is captured HERE because the retry wipes that
+                        # channel on entry and re-measures it on a scene about to stop existing.
+                        first_try = {
+                            name: self.editor.__dict__.get(name) for name in _LENS_REFUSAL_CHANNEL
+                        }
+                        make_room = None
                         try:
-                            arm_slid = self.editor.slide_fold_arm_along_leg(shortfall + 1.0)
+                            make_room = GeometryTransaction(
+                                self.editor, "make room at the fold"
+                            ).begin()
                         except Exception as exc:
-                            self.editor.append_debug(f"fold arm slide unavailable: {exc}")
-                            arm_slid = None
-                        if arm_slid is not None:
-                            try:
-                                object_slid = self.editor.translate_lens_block_along_leg(
-                                    float(folded["object_delta"])
+                            # No savepoint, no slide: an unprotected arm slide is how the scene
+                            # got broken. The first refusal stands.
+                            self.editor.append_debug(
+                                f"make-room skipped: its savepoint could not be opened ({exc})"
+                            )
+                            make_room = None
+                        if make_room is not None:
+                            with make_room:
+                                try:
+                                    arm_slid = self.editor.slide_fold_arm_along_leg(shortfall + 1.0)
+                                except Exception as exc:
+                                    self.editor.append_debug(f"fold arm slide unavailable: {exc}")
+                                    arm_slid = None
+                                if arm_slid is not None:
+                                    try:
+                                        object_slid = self.editor.translate_lens_block_along_leg(
+                                            float(folded["object_delta"])
+                                        )
+                                    except Exception:
+                                        object_slid = None
+                                if arm_slid is not None and object_slid is not None:
+                                    make_room.commit()
+                            if make_room.state == "rolled_back":
+                                make_room_facts = _restate_refusal_after_put_back(
+                                    self.editor, first_try, arm_slid
                                 )
-                            except Exception:
-                                object_slid = None
+                                arm_slid = None  # claim == motion: no move, no "Made room first"
+                            # 'stuck': the retry's numbers DO describe the scene as it stands;
+                            # the booking wrapper adds the could-not-be-put-back sentence.
                 # bugs/0783: record the lens move HERE, where every successful booking passes --
                 # the summary used to read it only from the vendor-lock residual below, so a solve
                 # whose image side MOTOR 1 booked cleanly told the user "the lens did not move".
@@ -2155,6 +2303,9 @@ class QuickEstimationService:
                             "lens_move_needed_mm": need,
                             "leg_room_mm": float(room_mm) if room_mm is not None else None,
                             "reason": refusal,
+                            # bugs/0843: VALUES, not prose -- whether making room was tried
+                            # and whether it was put back, for the guard and any HUD line.
+                            **make_room_facts,
                         }
                         return False, f"FOV out of range on this fold: {refusal}"
                 # bugs/0575 (flag_20260806_182735, "rays defocus at sensor"): the image write has
