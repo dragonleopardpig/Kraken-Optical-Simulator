@@ -100,6 +100,15 @@ still commits when the retry succeeds), 0594, 0626.
 
 ## Still open
 
+> **CORRECTION (same day, bugs/0844):** the diagnosis below is WRONG and is kept only so the
+> trail is honest. `_lens_leg_slide_plan()[2]` is the branch selector between frozen desp-leg
+> scenes and live-chain scenes; om05a reading `axis:root` is what gives it the correct
+> thickness-pair primitive. Re-snapping it is what slid the arm 197 mm. The real cause of the
+> 50 x 50 refusal was the ORDER of the solve's two motors -- see
+> `0844_camera_stage_goes_first.md` -- and a reload defect, `0845_declared_stage_gap_survives_reload.md`.
+> The transaction in this note stands on its own and is what made the 0844 fix safe.
+
+
 The 50 x 50 refusal itself. `optical_axis_tree.row_world_pose` returns station + desp (the
 straight frame) while the fold emissions are in WORLD, so the lens rows on om05a snap to
 `axis:root` instead of `axis:fold:7`, `_lens_leg_slide_plan()[2]` is False, and
