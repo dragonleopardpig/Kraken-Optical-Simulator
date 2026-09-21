@@ -102,6 +102,15 @@ SAVED refusal scene (needs bugs/0845 as well -- see that note for why):
 
 The 0.011 mm is the traced-focus snap (its own residual is 0.0226 mm).
 
+> **CORRECTION (bugs/0846):** the two 21 mm rows above were solved against the WRONG object
+> face. This script set `inspection_part_spec` directly; the real `set_inspection_part_spec`
+> also moves the object row with the device face (20 mm: face A at z=-15; 50 mm: z=0). So those
+> rows are a 21 mm field on a 50 mm device's geometry, and the "fresh-load" reference beside them
+> compares like with like only in that wrong frame. With the real callback the 20 mm solve lands
+> the lens gap at 35.2344 -- exactly the user's live flag_20260921_162616 and the geometry
+> om05a_folded_refusal.py was saved with. The 52.5 mm rows (50 mm device both ways) stand, and
+> the user confirmed 50 -> 20 -> 50 live in three flags. The diagnostic now uses the callback.
+
 ## What this is NOT
 
 Not the axis tree. bugs/0843's note blamed `optical_axis_tree.snap_rows` for snapping om05a's

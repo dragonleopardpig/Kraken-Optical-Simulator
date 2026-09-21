@@ -576,6 +576,10 @@ def _lens_move_with_camera_stage_first(service, folded, rows, img_row_write) -> 
         if isinstance(lens_move, dict) and lens_move.get("mode") == "thickness_pair":
             savepoint.commit()
     if savepoint.state == "committed":
+        try:
+            editor._fov_solve_stage_first_mm = stage_mm   # bugs/0846: the banner says the order
+        except Exception:
+            pass
         editor.append_debug(
             f"folded solve (bugs/0844): the camera stage moved {stage_mm:+.4f} mm FIRST, then "
             f"the lens {need:+.4f} mm -- the lens-first order was refused on an intermediate "
@@ -640,7 +644,8 @@ def _refused_booking_moves_nothing(func):
         if editor is not None:
             try:
                 booking = GeometryTransaction(
-                    editor, "FOV booking", also=("_fov_solve_lens_move_mm",)
+                    editor, "FOV booking",
+                    also=("_fov_solve_lens_move_mm", "_fov_solve_stage_first_mm"),
                 ).begin()
             except Exception as exc:
                 booking = None
@@ -2014,6 +2019,41 @@ class QuickEstimationService:
         except Exception:
             return None
         return point if np.all(np.isfinite(point)) else None
+
+    def _camera_stage_seat(self) -> "tuple[int, float] | None":
+        """bugs/0846: ``(arm row, seat desp_x)`` of the camera stage right now, or None when the
+        scene has no stage arm. Pure attribute reads."""
+        arm = (self._camera_focus_stage() or {}).get("arm")
+        if not isinstance(arm, dict):
+            return None
+        try:
+            row = int(arm["row"])
+            return row, float(self.editor.rows[row].desp_x)
+        except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+            return None
+
+    def _camera_stage_travel(self, start) -> dict:
+        """bugs/0846: how far the camera stage travelled ALONG THE BEAM since ``start`` (from
+        :meth:`_camera_stage_seat`), as summary keys -- ``{"stage_move_mm": signed}``, positive
+        away from the object like the lens move, or ``{"stage_move_abs_mm": distance}`` when the
+        seat's axis cannot be measured (bugs/0782) and no direction may be claimed. {} when
+        there is no stage, it did not move, or the arm row changed under the solve."""
+        if not start:
+            return {}
+        stage = self._camera_focus_stage()
+        arm = (stage or {}).get("arm")
+        if not isinstance(arm, dict) or int(arm["row"]) != int(start[0]):
+            return {}
+        try:
+            moved = float(self.editor.rows[int(start[0])].desp_x) - float(start[1])
+        except (AttributeError, IndexError, TypeError, ValueError):
+            return {}
+        if not np.isfinite(moved) or abs(moved) < 1.0e-6:
+            return {}
+        sign, leg_unit = self._camera_arm_seat_axis(stage)
+        if leg_unit is None:
+            return {"stage_move_abs_mm": abs(moved)}
+        return {"stage_move_mm": float(sign) * moved}
 
     def _camera_arm_seat_axis(self, stage=None) -> "tuple[float, np.ndarray | None]":
         """bugs/0782 (user: "the production one have exactly 2 motors same as the 80mm version"):
@@ -4191,7 +4231,7 @@ class QuickEstimationService:
         self.set_target_fov(semi)
         self._update_split_field_band_widths(obj_w)
         summary = {"requested_fov_wh": (float(obj_w), float(obj_h)), "lens_move_mm": od,
-                   "group_move_mm": group, "wd_restored": True}
+                   "group_move_mm": group, "stage_move_mm": group, "wd_restored": True}
         try:
             delivered_m = abs(float(editor._current_finite_paraxial_magnification()))
             summary["delivered_m"] = delivered_m
@@ -4272,6 +4312,14 @@ class QuickEstimationService:
         # bugs/0783: the lens move THIS solve made, whichever branch booked it -- the banner's
         # "the lens did not move" read a key only the vendor-lock branch ever wrote.
         self.editor._fov_solve_lens_move_mm = None
+        # bugs/0846: and where the camera stage started, so the banner can report the NET stage
+        # travel of the whole solve (every booking and refinement pass), the way it reports the
+        # lens -- the stage carried the Filter, mirror and camera 75 mm and the banner was silent.
+        self.editor._fov_solve_stage_first_mm = None
+        try:
+            self.editor._fov_solve_stage_start = self._camera_stage_seat()
+        except Exception:
+            self.editor._fov_solve_stage_start = None
         if plane == "object":
             wh = self._sensor_wh(width, height, aspect)
             if wh is None:
@@ -4461,6 +4509,16 @@ class QuickEstimationService:
                         # bugs/0783: a clean MOTOR 1 booking leaves no residual, and without this
                         # the banner said "the lens did not move" after moving it 86.9 mm
                         summary["lens_move_mm"] = float(self.editor.__dict__.get("_fov_solve_lens_move_mm"))
+                    # bugs/0846: the second motor. Measured, not accumulated: the seat now
+                    # against the seat this solve started on.
+                    try:
+                        summary.update(
+                            self._camera_stage_travel(self.editor.__dict__.get("_fov_solve_stage_start"))
+                        )
+                    except Exception:
+                        pass
+                    if self.editor.__dict__.get("_fov_solve_stage_first_mm"):
+                        summary["stage_first"] = True
                     self.editor._solve_summary_info = summary
                     msg = f"Object {obj_w:.6g} x {obj_h:.6g} mm fills the sensor. " + msg
                     # bugs/0717: the force note (moved / penetration / obstacle) is

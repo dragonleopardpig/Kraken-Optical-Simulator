@@ -2125,6 +2125,101 @@ def solve_summary_superseded(solve_info, delivered_now) -> str:
         return f"the scene now delivers |m| {now:.4g}"
 
 
+def _camera_stage_line(solve_info) -> str:
+    """bugs/0846: the camera-stage move a solve made, as a banner line, or "".
+
+    ``stage_move_mm`` is the NET travel along the beam over the whole solve (positive = away
+    from the object, the lens's own sign), measured from the seat the solve started on;
+    ``group_move_mm`` is the bugs/0783 working-distance restore's rigid group move, the same
+    quantity by construction. ``stage_move_abs_mm`` is recorded instead when the seat's axis
+    could not be measured, so the line gives the distance without claiming a direction."""
+    if not isinstance(solve_info, dict):
+        return ""
+    signed = solve_info.get("stage_move_mm")
+    if signed is None:
+        signed = solve_info.get("group_move_mm")
+    text = ""
+    try:
+        if signed is not None and abs(float(signed)) >= 0.005:
+            text = f"moved {float(signed):+.4g} mm along the beam"
+        elif solve_info.get("stage_move_abs_mm") is not None and abs(
+            float(solve_info["stage_move_abs_mm"])
+        ) >= 0.005:
+            text = f"moved {abs(float(solve_info['stage_move_abs_mm'])):.4g} mm"
+    except (TypeError, ValueError):
+        return ""
+    if not text:
+        return ""
+    text += ", carrying everything on it"
+    if solve_info.get("stage_first"):
+        text += " -- first, to clear the lens's way"
+    return "Camera stage: " + text
+
+
+def _landed_or_move_line(focus_info, pixel_size_um) -> str:
+    """bugs/0767's verdict on a measured focus: landed (the blur is inside one pixel), move
+    (defocus the stage can take out), or not-defocus (the sensor already sits at the waist).
+    Hoisted out of :func:`format_focus_summary_lines` by bugs/0846 so the in-focus branch uses
+    the SAME test rather than a second opinion. "" when there is nothing to say."""
+    # bugs/0767: only ask for a move when the blur actually exceeds a pixel. The
+    # sensor cannot resolve anything finer, so a residual whose spot is inside one
+    # pixel IS landed -- saying otherwise sends the user to adjust hardware that is
+    # already right.
+    pixel_mm = None
+    try:
+        if pixel_size_um is not None and len(pixel_size_um) >= 2:
+            pixel_mm = min(
+                float(pixel_size_um[0]), float(pixel_size_um[1])
+            ) / 1000.0
+    except (TypeError, ValueError):
+        pixel_mm = None
+    spot_mm = None
+    try:
+        spot_mm = float(focus_info["rms_plane_mm"])
+    except (TypeError, ValueError, KeyError):
+        spot_mm = None
+    if (
+        pixel_mm is not None and pixel_mm > 0.0
+        and spot_mm is not None and spot_mm <= pixel_mm
+    ):
+        return (
+            f"Landed: the blur on the sensor ({_spot_text(spot_mm)}) is inside one "
+            f"pixel ({_spot_text(pixel_mm)}) -- nothing to move"
+        )
+    else:
+        # bugs/0777 (flag 084908, a 15x15x1 device at FOV 22.5: "Image landed on sensor
+        # ... Please confirm everthing is correct?"): it was not, and the banner said the
+        # wrong thing about it. The measured spot was 230.27 um at the WAIST against
+        # 230.28 um on the sensor -- the sensor already sits at the tightest point of the
+        # beam, so "move the stage to land it" is advice that cannot work. A blur that
+        # does not shrink anywhere along the axis is ABERRATION, not defocus, and the
+        # remedy is a different configuration, not a translation.
+        waist_mm = None
+        try:
+            waist_mm = float(focus_info["rms_waist_mm"])
+        except (KeyError, TypeError, ValueError):
+            waist_mm = None
+        refocusable = True
+        if (
+            waist_mm is not None and spot_mm is not None
+            and spot_mm > 0.0 and waist_mm >= _NO_GAIN_FROM_REFOCUS * spot_mm
+        ):
+            refocusable = False
+        if refocusable:
+            return (
+                "Move the device stage / camera focus to land it -- vendor hardware "
+                "untouched"
+            )
+        else:
+            return (
+                f"THE BLUR IS NOT DEFOCUS: the tightest spot anywhere along the beam is "
+                f"{_spot_text(waist_mm)}, against {_spot_text(spot_mm)} on the sensor -- "
+                f"the sensor is already at the waist, so moving the stage or the camera "
+                f"cannot land it. This configuration does not resolve the field."
+            )
+    return ""
+
+
 def format_focus_summary_lines(
     focus_info, solve_info=None, notes=None, pixel_size_um=None, delivered_now=None
 ) -> list[str]:
@@ -2172,11 +2267,35 @@ def format_focus_summary_lines(
                 lines.append("  -- " + superseded)
             else:
                 lines.append("SOLVE: " + head)
+        # bugs/0846 (user, on the 50x50 solve that went through: "I notice the banner is less
+        # verbose"): the solve drives TWO motors on a staged scene, and the banner named one.
+        # The camera stage carried the Filter, RA mirror 2 and the camera +75.35 mm -- the most
+        # visible move in the scene -- under a SOLVE line that credited only the lens.
+        stage_line = _camera_stage_line(solve_info)
+        if stage_line:
+            lines.append(stage_line)
     if isinstance(focus_info, dict) and focus_info:
         try:
             offset = float(focus_info.get("offset_mm"))
         except (TypeError, ValueError):
             offset = 0.0
+        if abs(offset) < 0.05 and isinstance(solve_info, dict) and solve_info:
+            # bugs/0846: a solve that LANDED said nothing about focus at all -- the whole
+            # FOCUS block sat behind the 0.05 mm gate, so the best outcome produced the least
+            # information, and silence cannot be told apart from "not measured". After a solve
+            # the user asked for, say where the image formed and let the pixel decide
+            # (bugs/0767) whether anything is left to do. With NO solve an in-focus scene still
+            # says nothing (bugs/0728 D3): a banner on every load is clutter.
+            side = str(focus_info.get("side", "from"))
+            line = f"FOCUS: the image forms on the sensor ({abs(offset):.2g} mm {side} it)"
+            try:
+                line += f" -- spot {_spot_text(focus_info['rms_plane_mm'])} on the sensor"
+            except (TypeError, ValueError, KeyError):
+                pass
+            lines.append(line)
+            verdict = _landed_or_move_line(focus_info, pixel_size_um)
+            if verdict:
+                lines.append(verdict)
         if abs(offset) >= 0.05:
             side = str(focus_info.get("side", "from"))
             line = f"FOCUS: the image forms {abs(offset):.4g} mm {side} the sensor"
@@ -2205,62 +2324,11 @@ def format_focus_summary_lines(
                         f"  {entry_name}: {abs(entry_offset):.4g} mm "
                         f"{entry.get('side', 'from')} the sensor"
                     )
-            # bugs/0767: only ask for a move when the blur actually exceeds a pixel. The
-            # sensor cannot resolve anything finer, so a residual whose spot is inside one
-            # pixel IS landed -- saying otherwise sends the user to adjust hardware that is
-            # already right.
-            pixel_mm = None
-            try:
-                if pixel_size_um is not None and len(pixel_size_um) >= 2:
-                    pixel_mm = min(
-                        float(pixel_size_um[0]), float(pixel_size_um[1])
-                    ) / 1000.0
-            except (TypeError, ValueError):
-                pixel_mm = None
-            spot_mm = None
-            try:
-                spot_mm = float(focus_info["rms_plane_mm"])
-            except (TypeError, ValueError, KeyError):
-                spot_mm = None
-            if (
-                pixel_mm is not None and pixel_mm > 0.0
-                and spot_mm is not None and spot_mm <= pixel_mm
-            ):
-                lines.append(
-                    f"Landed: the blur on the sensor ({_spot_text(spot_mm)}) is inside one "
-                    f"pixel ({_spot_text(pixel_mm)}) -- nothing to move"
-                )
-            else:
-                # bugs/0777 (flag 084908, a 15x15x1 device at FOV 22.5: "Image landed on sensor
-                # ... Please confirm everthing is correct?"): it was not, and the banner said the
-                # wrong thing about it. The measured spot was 230.27 um at the WAIST against
-                # 230.28 um on the sensor -- the sensor already sits at the tightest point of the
-                # beam, so "move the stage to land it" is advice that cannot work. A blur that
-                # does not shrink anywhere along the axis is ABERRATION, not defocus, and the
-                # remedy is a different configuration, not a translation.
-                waist_mm = None
-                try:
-                    waist_mm = float(focus_info["rms_waist_mm"])
-                except (KeyError, TypeError, ValueError):
-                    waist_mm = None
-                refocusable = True
-                if (
-                    waist_mm is not None and spot_mm is not None
-                    and spot_mm > 0.0 and waist_mm >= _NO_GAIN_FROM_REFOCUS * spot_mm
-                ):
-                    refocusable = False
-                if refocusable:
-                    lines.append(
-                        "Move the device stage / camera focus to land it -- vendor hardware "
-                        "untouched"
-                    )
-                else:
-                    lines.append(
-                        f"THE BLUR IS NOT DEFOCUS: the tightest spot anywhere along the beam is "
-                        f"{_spot_text(waist_mm)}, against {_spot_text(spot_mm)} on the sensor -- "
-                        f"the sensor is already at the waist, so moving the stage or the camera "
-                        f"cannot land it. This configuration does not resolve the field."
-                    )
+            # bugs/0767: only ask for a move when the blur actually exceeds a pixel (see
+            # _landed_or_move_line, shared with the in-focus branch since bugs/0846).
+            verdict = _landed_or_move_line(focus_info, pixel_size_um)
+            if verdict:
+                lines.append(verdict)
     # bugs/0779 (user: "have you looked into the sudden appear of stray rays issue?"): stray light
     # that reached the sensor by another optical route is left out of the focus measurement, and
     # that must be SAID -- the user sees those rays in the scene. Only rays landing OUTSIDE the
