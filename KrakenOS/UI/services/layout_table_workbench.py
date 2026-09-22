@@ -28,6 +28,7 @@ from KrakenOS.UI.services.machine_vision_folder_import import (
 )
 from KrakenOS.UI.services.open3d_timing import open3d_timing_event, open3d_timing_span
 from KrakenOS.UI.widgets import place_commit_cell_entry
+from KrakenOS.UI.uihost import host_of
 
 
 _PROTECTED_GLOBALS = {
@@ -196,7 +197,7 @@ class LayoutTableWorkbenchMixin:
         if self._table_selection_after_id is not None:
             return
         try:
-            self._table_selection_after_id = self.after_idle(self._emit_custom_table_selection_changed)
+            self._table_selection_after_id = host_of(self).after_idle(self._emit_custom_table_selection_changed)
         except tk.TclError:
             self._table_selection_after_id = None
 
@@ -665,7 +666,7 @@ class LayoutTableWorkbenchMixin:
         """Insert a component-style common layout without applying its global settings."""
         path = self.layout_files.get(name)
         if path is None:
-            messagebox.showerror("Insert Component", f"Common layout not found:\n\n{name}", parent=self)
+            host_of(self).showerror("Insert Component", f"Common layout not found:\n\n{name}", parent=self)
             return
         info: dict[str, object] = {"surfaces": [], "settings": {}}
         try:
@@ -676,21 +677,21 @@ class LayoutTableWorkbenchMixin:
                 surfaces = self._extract_surfaces_from_example(path)
                 loaded_rows = [self._row_from_surface(surface, index, len(surfaces)) for index, surface in enumerate(surfaces)]
             except Exception as exc:
-                messagebox.showerror("Insert Component", f"Could not load {name}:\n\n{exc}", parent=self)
+                host_of(self).showerror("Insert Component", f"Could not load {name}:\n\n{exc}", parent=self)
                 return
 
         loaded_rows = self._normalized_rows_copy(loaded_rows)
         self._auto_assign_missing_elements(loaded_rows)
         additions = self._layout_component_rows_for_insert(loaded_rows, element_name=name)
         if not additions:
-            messagebox.showinfo("Insert Component", f"{name} has no component rows between Object and Image.", parent=self)
+            host_of(self).showinfo("Insert Component", f"{name} has no component rows between Object and Image.", parent=self)
             return
 
         self._commit_pending_table_edit()
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Insert Component", f"Could not read the surface table:\n\n{exc}", parent=self)
+            host_of(self).showerror("Insert Component", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
 
         insert_after = self._selected_insert_index()
@@ -721,7 +722,7 @@ class LayoutTableWorkbenchMixin:
         re-centered like any other component.
         """
         if name not in getattr(self, "machine_vision_files", {}):
-            messagebox.showerror(
+            host_of(self).showerror(
                 "Import Machine Vision Lens",
                 f"Machine-vision lens not found:\n\n{name}",
                 parent=self,
@@ -774,7 +775,7 @@ class LayoutTableWorkbenchMixin:
                 '"Swap Imaging Lens from Folder" instead.'
                 if front is not None else ""
             )
-            if not messagebox.askyesno(
+            if not host_of(self).askyesno(
                 "Import Lens from Folder — this replaces the whole scene",
                 "Importing a lens from a folder REPLACES the entire working scene: the beam "
                 "splitter, camera, LED and any promoted solids are removed and a fresh "
@@ -785,7 +786,7 @@ class LayoutTableWorkbenchMixin:
                 self.status_var.set("Import Lens from Folder cancelled; scene kept.")
                 return None
         if folder is None:
-            folder = filedialog.askdirectory(
+            folder = host_of(self).askdirectory(
                 title="Import Machine Vision Lens from Folder", parent=parent
             )
         if not folder:
@@ -796,7 +797,7 @@ class LayoutTableWorkbenchMixin:
             destination = LAYOUTS_DIR / model.filename
             destination.write_text(source, encoding="utf-8")
         except Exception as exc:
-            messagebox.showerror(
+            host_of(self).showerror(
                 "Import Machine Vision Lens",
                 "Could not build a surrogate from this folder:\n\n"
                 f"{folder}\n\n{exc}",
@@ -940,7 +941,7 @@ class LayoutTableWorkbenchMixin:
         except Exception:
             pass
         if interactive:
-            messagebox.showerror(title, message, parent=parent)
+            host_of(self).showerror(title, message, parent=parent)
 
     def _swap_preserved_block_rows(self, front, rear):
         """Snapshot the block-interior rows a swap must KEEP, each paired with the ABSOLUTE
@@ -2286,7 +2287,7 @@ class LayoutTableWorkbenchMixin:
         # snapping back to the straight global axis.
         frozen_frame = self._swap_frozen_block_frame(front, rear)
         if folder is None:
-            folder = filedialog.askdirectory(
+            folder = host_of(self).askdirectory(
                 title="Swap Imaging Lens -- choose the replacement lens folder", parent=parent
             )
         if not folder:
@@ -2682,7 +2683,7 @@ class LayoutTableWorkbenchMixin:
         # programmatic call, and must never be answered with a modal dialog.
         interactive = folder is None
         if folder is None:
-            folder = filedialog.askdirectory(
+            folder = host_of(self).askdirectory(
                 title="Import Vendor Camera from Folder", parent=parent
             )
         if not folder:
@@ -2883,7 +2884,7 @@ class LayoutTableWorkbenchMixin:
         """
         def provider():
             try:
-                return simpledialog.askfloat(
+                return host_of(self).askfloat(
                     "Camera Flange-to-Sensor Distance",
                     (
                         f"'{imported.name}': the datasheet does not list the optical "
@@ -4822,11 +4823,11 @@ class LayoutTableWorkbenchMixin:
 
     def _ensure_active_cell_visible(self, row_id: str, column_id: str) -> None:
         self.table.see(row_id)
-        self.update_idletasks()
+        host_of(self).update_idletasks()
         columns = list(self.table["columns"])
         if column_id == "#2":
             self.table.xview_moveto(0.0)
-            self.update_idletasks()
+            host_of(self).update_idletasks()
         target_bbox = self.table.bbox(row_id, column_id)
         if target_bbox:
             x, _y, width, _height = target_bbox
@@ -4858,7 +4859,7 @@ class LayoutTableWorkbenchMixin:
         elif target_left + target_width > visible_right:
             desired_left = max(0.0, target_left + target_width - visible_width + 16.0)
             self.table.xview_moveto(min(1.0, desired_left / total_width))
-        self.update_idletasks()
+        host_of(self).update_idletasks()
         self._schedule_active_cell_border_update()
         self._schedule_table_grid_update(delay=1)
 
@@ -4973,9 +4974,9 @@ class LayoutTableWorkbenchMixin:
             return
         try:
             if delay is None:
-                self._active_cell_border_after_id = self.after_idle(self._update_active_cell_border)
+                self._active_cell_border_after_id = host_of(self).after_idle(self._update_active_cell_border)
             else:
-                self._active_cell_border_after_id = self.after(max(0, int(delay)), self._update_active_cell_border)
+                self._active_cell_border_after_id = host_of(self).after(max(0, int(delay)), self._update_active_cell_border)
         except tk.TclError:
             self._active_cell_border_after_id = None
 
@@ -5015,12 +5016,12 @@ class LayoutTableWorkbenchMixin:
     def _schedule_table_grid_update(self, _event: tk.Event | None = None, delay: int = 30) -> None:
         if self._grid_after_id is not None:
             try:
-                self.after_cancel(self._grid_after_id)
+                host_of(self).after_cancel(self._grid_after_id)
             except tk.TclError:
                 pass
             self._grid_after_id = None
         try:
-            self._grid_after_id = self.after(max(0, int(delay)), self._update_table_grid)
+            self._grid_after_id = host_of(self).after(max(0, int(delay)), self._update_table_grid)
         except tk.TclError:
             self._grid_after_id = None
 
@@ -5732,7 +5733,7 @@ class LayoutTableWorkbenchMixin:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Copy Surfaces", f"Could not read the surface table:\n\n{exc}", parent=self)
+            host_of(self).showerror("Copy Surfaces", f"Could not read the surface table:\n\n{exc}", parent=self)
             return "break"
         indices = self._selected_copy_indices()
         if not indices:
@@ -5774,7 +5775,7 @@ class LayoutTableWorkbenchMixin:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Paste Surfaces", f"Could not read the surface table:\n\n{exc}", parent=self)
+            host_of(self).showerror("Paste Surfaces", f"Could not read the surface table:\n\n{exc}", parent=self)
             return "break"
         self._remap_inserted_element_labels(rows)
         insert_after = self._selected_insert_index()
@@ -5814,17 +5815,17 @@ class LayoutTableWorkbenchMixin:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Group Element", f"Could not read the surface table:\n\n{exc}", parent=self)
+            host_of(self).showerror("Group Element", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
         indices = self._selected_table_indices()
         if len(indices) < 2:
-            messagebox.showinfo("Group Element", "Select two or more contiguous surface rows first.", parent=self)
+            host_of(self).showinfo("Group Element", "Select two or more contiguous surface rows first.", parent=self)
             return
         if indices[0] <= 0 or indices[-1] >= len(self.rows) - 1:
-            messagebox.showinfo("Group Element", "Object and Image rows cannot be grouped into an element.", parent=self)
+            host_of(self).showinfo("Group Element", "Object and Image rows cannot be grouped into an element.", parent=self)
             return
         if not self._indices_are_contiguous(indices):
-            messagebox.showinfo("Group Element", "Select a contiguous block of rows before grouping.", parent=self)
+            host_of(self).showinfo("Group Element", "Select a contiguous block of rows before grouping.", parent=self)
             return
 
         self._begin_history_capture()
@@ -5845,7 +5846,7 @@ class LayoutTableWorkbenchMixin:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Ungroup Element", f"Could not read the surface table:\n\n{exc}", parent=self)
+            host_of(self).showerror("Ungroup Element", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
         selected_keys = {
             self._element_key(self.rows[index])
@@ -5854,7 +5855,7 @@ class LayoutTableWorkbenchMixin:
         }
         selected_keys.discard("")
         if not selected_keys:
-            messagebox.showinfo("Ungroup Element", "The selected rows are not part of an element.", parent=self)
+            host_of(self).showinfo("Ungroup Element", "The selected rows are not part of an element.", parent=self)
             return
 
         self._begin_history_capture()
@@ -6092,7 +6093,7 @@ class LayoutTableWorkbenchMixin:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Path View", f"Could not read the surface table:\n\n{exc}", parent=self)
+            host_of(self).showerror("Path View", f"Could not read the surface table:\n\n{exc}", parent=self)
             self.arm_view_var.set(ARM_VIEW_DEFAULT)
             return
         self._refresh_arm_view_choices()
@@ -7187,14 +7188,14 @@ class LayoutTableWorkbenchMixin:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Path Stock Lens", f"Could not read the surface table:\n\n{exc}", parent=self)
+            host_of(self).showerror("Path Stock Lens", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
         if not (0 <= int(splitter_index) < len(self.rows)) or self.rows[int(splitter_index)].surface != BEAM_SPLITTER_SURFACE:
-            messagebox.showinfo("Path Stock Lens", "Right-click a Beam Splitter row first.", parent=self)
+            host_of(self).showinfo("Path Stock Lens", "Right-click a Beam Splitter row first.", parent=self)
             return
         role = str(arm_role or "").strip()
         if role not in {"Transmit", "Reflect"}:
-            messagebox.showerror("Path Stock Lens", f"Unsupported path: {arm_role}", parent=self)
+            host_of(self).showerror("Path Stock Lens", f"Unsupported path: {arm_role}", parent=self)
             return
         self.open_stock_lens_importer(path_placement={"splitter_index": int(splitter_index), "arm_role": role})
 
@@ -7203,14 +7204,14 @@ class LayoutTableWorkbenchMixin:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Path Stock Lens", f"Could not read the surface table:\n\n{exc}", parent=self)
+            host_of(self).showerror("Path Stock Lens", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
         self._refresh_arm_view_choices()
         label = str(self.arm_view_var.get() or ARM_VIEW_DEFAULT).strip()
         arm_key = self._arm_key_for_view_label(label)
         branch_path = self._branch_path_for_arm_key(arm_key)
         if not branch_path:
-            messagebox.showinfo(
+            host_of(self).showinfo(
                 "Path Stock Lens",
                 "Choose a traced Path view first, then run Insert/Actions -> Stock Lens to Current Path View.",
                 parent=self,
@@ -7224,11 +7225,11 @@ class LayoutTableWorkbenchMixin:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Assign Path", f"Could not read the surface table:\n\n{exc}", parent=self)
+            host_of(self).showerror("Assign Path", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
         blocks = self._selected_element_blocks()
         if not blocks:
-            messagebox.showinfo("Assign Path", "Select one or more non-Object/non-Image rows or element groups first.", parent=self)
+            host_of(self).showinfo("Assign Path", "Select one or more non-Object/non-Image rows or element groups first.", parent=self)
             return
 
         self._begin_history_capture()
@@ -7327,11 +7328,11 @@ class LayoutTableWorkbenchMixin:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Assign Path", f"Could not read the surface table:\n\n{exc}", parent=self)
+            host_of(self).showerror("Assign Path", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
         blocks = self._selected_element_blocks()
         if not blocks:
-            messagebox.showinfo("Assign Path", "Select one or more non-Object/non-Image rows or element groups first.", parent=self)
+            host_of(self).showinfo("Assign Path", "Select one or more non-Object/non-Image rows or element groups first.", parent=self)
             return
 
         self._begin_history_capture()
@@ -7348,7 +7349,7 @@ class LayoutTableWorkbenchMixin:
             selected_indices.extend(indices)
         if not selected_indices:
             self._history_pending_state = None
-            messagebox.showinfo("Assign Path", "The selected path is not assignable for these rows.", parent=self)
+            host_of(self).showinfo("Assign Path", "The selected path is not assignable for these rows.", parent=self)
             return
         self._normalize_special_rows()
         leg_id = self._leg_id_from_arm_key(arm_key)
@@ -7681,7 +7682,7 @@ class LayoutTableWorkbenchMixin:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Convert Surface Type", f"Could not read the surface table:\n\n{exc}", parent=self)
+            host_of(self).showerror("Convert Surface Type", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
         self._begin_history_capture()
         row = self.rows[row_index]
@@ -7725,7 +7726,7 @@ class LayoutTableWorkbenchMixin:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Insert Component", f"Could not read the surface table:\n\n{exc}", parent=self)
+            host_of(self).showerror("Insert Component", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
         insert_after = self._context_insert_after_index(row_index)
         common_layouts = {
@@ -7899,11 +7900,11 @@ class LayoutTableWorkbenchMixin:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Insert Fold Mirror", f"Could not read the surface table:\n\n{exc}", parent=self)
+            host_of(self).showerror("Insert Fold Mirror", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
         insert_after = self._context_insert_after_index(row_index)
         if insert_after is None or not can_insert_fold_mirror(self.rows, insert_after):
-            messagebox.showinfo(
+            host_of(self).showinfo(
                 "Insert Fold Mirror",
                 "A fold mirror needs at least one surface after it to reflect onto. "
                 "Select a surface upstream of the image plane and try again.",
@@ -7934,13 +7935,13 @@ class LayoutTableWorkbenchMixin:
         if not (0 <= row_index < len(self.rows)):
             return
         if self.rows[row_index].surface in {"Object", "Image"}:
-            messagebox.showinfo("Shape / Aperture", "Shape presets apply to physical surfaces, not Object/Image rows.", parent=self)
+            host_of(self).showinfo("Shape / Aperture", "Shape presets apply to physical surfaces, not Object/Image rows.", parent=self)
             return
         self._commit_pending_table_edit()
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Shape / Aperture", f"Could not read the surface table:\n\n{exc}", parent=self)
+            host_of(self).showerror("Shape / Aperture", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
         self._begin_history_capture()
         row = self.rows[row_index]
@@ -8000,7 +8001,7 @@ class LayoutTableWorkbenchMixin:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Material", f"Could not read the surface table:\n\n{exc}", parent=self)
+            host_of(self).showerror("Material", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
         self._begin_history_capture()
         for index in indices:
@@ -8030,7 +8031,7 @@ class LayoutTableWorkbenchMixin:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Coating / Polarization", f"Could not read the surface table:\n\n{exc}", parent=self)
+            host_of(self).showerror("Coating / Polarization", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
         self._begin_history_capture()
         preset = COATING_PRESETS[preset_name]
@@ -8061,7 +8062,7 @@ class LayoutTableWorkbenchMixin:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Coating / Polarization", f"Could not read the surface table:\n\n{exc}", parent=self)
+            host_of(self).showerror("Coating / Polarization", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
         self._begin_history_capture()
         for index in indices:
@@ -8130,7 +8131,7 @@ class LayoutTableWorkbenchMixin:
     def set_surface_incidence_angle(self, row_index: int) -> None:
         if not (0 <= row_index < len(self.rows)):
             return
-        value = simpledialog.askfloat(
+        value = host_of(self).askfloat(
             "Set Incidence Angle",
             "Set TiltX/display incidence angle [deg]:",
             initialvalue=float(self.rows[row_index].tilt_x),
@@ -8238,11 +8239,11 @@ class LayoutTableWorkbenchMixin:
             detail.append("Validation passed.")
         message = "\n".join(detail)
         if errors:
-            messagebox.showerror("Validate Surface Row", message, parent=self)
+            host_of(self).showerror("Validate Surface Row", message, parent=self)
         elif warnings_out:
-            messagebox.showwarning("Validate Surface Row", message, parent=self)
+            host_of(self).showwarning("Validate Surface Row", message, parent=self)
         else:
-            messagebox.showinfo("Validate Surface Row", message, parent=self)
+            host_of(self).showinfo("Validate Surface Row", message, parent=self)
 
     @staticmethod
     def _advanced_surface_default_text(attr: str) -> str:
@@ -8575,7 +8576,7 @@ class LayoutTableWorkbenchMixin:
                     float(value)
                 except ValueError:
                     if not quiet:
-                        messagebox.showerror(
+                        host_of(self).showerror(
                             "Invalid value",
                             f"{COLUMN_LABELS[field]} expects a number"
                             + (" or comma/range tolerance values." if field in POSE_TOLERANCE_FIELDS and not path_local_pose_cell else "."),

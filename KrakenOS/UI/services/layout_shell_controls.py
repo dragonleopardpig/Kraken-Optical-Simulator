@@ -4,6 +4,7 @@ import tkinter as tk
 
 from KrakenOS.UI.services.open3d_live_refresh import MAIN_PANEL_LIVE_REFRESH_DELAY_MS
 from KrakenOS.UI.widgets import bind_entry_commit
+from KrakenOS.UI.uihost import host_of
 
 
 _PROTECTED_GLOBALS = {
@@ -780,7 +781,7 @@ class LayoutShellControlsMixin:
         if hasattr(self, "status_var"):
             self.status_var.set("2D plane changed. Refreshing layout.")
         try:
-            self.after_idle(self.refresh_plot)
+            host_of(self).after_idle(self.refresh_plot)
         except Exception:
             self._mark_plot_update_pending()
 
@@ -792,7 +793,7 @@ class LayoutShellControlsMixin:
         if hasattr(self, "status_var"):
             self.status_var.set("2D projection is always Full 3D. Refreshing layout.")
         try:
-            self.after_idle(self.refresh_plot)
+            host_of(self).after_idle(self.refresh_plot)
         except Exception:
             self._mark_plot_update_pending()
 
@@ -864,10 +865,10 @@ class LayoutShellControlsMixin:
             self.status_var.set(message)
 
     def _set_initial_pane_layout(self, force: bool = False) -> None:
-        self.update_idletasks()
+        host_of(self).update_idletasks()
         total_width = self.main_pane.winfo_width()
         if total_width < 500:
-            self.after(100, self._set_initial_pane_layout)
+            host_of(self).after(100, self._set_initial_pane_layout)
             return
         try:
             left_visible = hasattr(self, "left_sidebar_host") and self._pane_present(self.left_sidebar_host)
@@ -896,12 +897,12 @@ class LayoutShellControlsMixin:
             if not force:
                 self._initial_layout_passes += 1
         except Exception:
-            self.after(100, self._set_initial_pane_layout)
+            host_of(self).after(100, self._set_initial_pane_layout)
 
     def _maybe_refresh_initial_pane_layout(self, _event=None) -> None:
         if self._initial_layout_passes >= 40:
             return
-        self.after(100, self._set_initial_pane_layout)
+        host_of(self).after(100, self._set_initial_pane_layout)
 
     def _layout_menu_category(self, name: str) -> str:
         return layout_menu_category(name, self.layout_files.get(name))

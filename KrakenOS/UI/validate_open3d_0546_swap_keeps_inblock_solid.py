@@ -197,7 +197,6 @@ def _run_real_swap(new_block_thicknesses, scene=None, rows=None, editor=None, se
         "render_surrogate_layout_source": getattr(ltw, "render_surrogate_layout_source", None),
         "LAYOUTS_DIR": getattr(ltw, "LAYOUTS_DIR", None),
         "_load_python_data": getattr(ltw, "_load_python_data", None),
-        "messagebox": getattr(ltw, "messagebox", None),
     }
     errors: list[str] = []
     ltw.import_lens_folder = lambda folder: model
@@ -207,12 +206,14 @@ def _run_real_swap(new_block_thicknesses, scene=None, rows=None, editor=None, se
         "surfaces": new_surfaces,
         "settings": dict(settings or {}),
     }
-    ltw.messagebox = SimpleNamespace(
-        showerror=lambda *a, **k: errors.append(a[1] if len(a) > 1 else ""),
-        showinfo=lambda *a, **k: None,
-        askyesno=lambda *a, **k: True,
-        NO="no",
-    )
+    # docs/design_qt_migration.md: dialogs go through the UI host now -- script the answers on
+    # the editor instead of patching the module's `messagebox` name.
+    from KrakenOS.UI.uihost import ScriptedUiHost
+
+    editor.ui = ScriptedUiHost(answers={
+        "showerror": lambda title=None, message=None, **k: errors.append(message or ""),
+        "askyesno": True,
+    })
 
     editor._commit_pending_table_edit = lambda: None
     # The only Tk-var reader inside the real _normalize_special_rows (image diameter mode).

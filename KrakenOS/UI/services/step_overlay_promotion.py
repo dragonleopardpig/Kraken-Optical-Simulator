@@ -32,6 +32,7 @@ from KrakenOS.UI.services.step_overlay_analytic_fit import (
 )
 from KrakenOS.UI.services.step_overlay_labels import STEP_OVERLAY_LABEL_SET
 from KrakenOS.UI.surface_table_model import SurfaceRow
+from KrakenOS.UI.uihost import host_of
 
 # bugs/0079 in-path axial placement (gap-split + trailing AIR spacer at the solid's
 # true Z): RE-ENABLED 2026-06-18. The raise that bugs/0081 kill-switched for was the
@@ -1375,7 +1376,7 @@ class StepOverlayPromotionService:
         if refresh_open_3d:
             self._refresh_open_3d_views()
         if open_face_editor:
-            self.after(120, lambda idx=resolved_insert_at: self.open_optical_solid_face_role_editor(idx))
+            host_of(self).after(120, lambda idx=resolved_insert_at: self.open_optical_solid_face_role_editor(idx))
         return {
             "label": label,
             "row_index": int(resolved_insert_at),

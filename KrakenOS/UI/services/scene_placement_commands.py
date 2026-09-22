@@ -53,6 +53,7 @@ from KrakenOS.UI.services.step_overlay_import import StepOverlayImportService
 from KrakenOS.UI.services.step_overlay_promotion import StepOverlayPromotionService
 from KrakenOS.UI.source_trace_helpers import SOURCE_MODEL_DEFAULT
 from KrakenOS.UI.surface_table_model import SurfaceRow
+from KrakenOS.UI.uihost import host_of
 
 
 #: bugs/0764: how much worse the traced defocus may get before a focus snap is judged a
@@ -2188,7 +2189,7 @@ class ScenePlacementMixin:
         row_index, row, path = selected
         diagnostics = inspect_stl_mesh(path)
         if diagnostics.triangle_count <= 0:
-            messagebox.showerror(
+            host_of(self).showerror(
                 "Place/Orient Selected CAD/STL Solid",
                 "STL geometry could not be read:\n\n" + "\n".join(diagnostics.errors or ("No triangles found.",)),
                 parent=self,

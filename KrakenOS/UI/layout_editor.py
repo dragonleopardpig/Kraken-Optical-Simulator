@@ -441,6 +441,7 @@ from KrakenOS.UI.zemax_rayfile import (
     sample_zemax_rayfile,
     summarize_zemax_rayfile,
 )
+from KrakenOS.UI.uihost import host_of
 
 pv = None
 vtkTkRenderWindowInteractor = None
@@ -2724,7 +2725,7 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         if getattr(self, "headless", False):
             return
         try:
-            messagebox.showerror(
+            host_of(self).showerror(
                 "KrakenOS — action could not complete",
                 f"{val.__class__.__name__}: {val}\n\n"
                 "This action stopped before finishing. The full details are "
@@ -2733,8 +2734,14 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         except Exception:
             pass
 
-    def __init__(self, *, headless: bool = False) -> None:
+    def __init__(self, *, headless: bool = False, ui=None) -> None:
         super().__init__()
+        # docs/design_qt_migration.md: model/controller code reaches the toolkit only through
+        # this host (via uihost.host_of). TkUiHost is today's behaviour by delegation; a guard
+        # may pass a ScriptedUiHost to answer dialogs and drive timers without a display.
+        from KrakenOS.UI.uihost import TkUiHost
+
+        self.ui = ui if ui is not None else TkUiHost(self)
         # KRAKEN_UI_SCALE must land before any point-sized ttk font is set;
         # it also scales the named fonts of this interpreter.
         self._kraken_ui_scale = apply_ui_scale(self)
@@ -2745,7 +2752,7 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         self.minsize(scaled_px(1100, self._kraken_ui_scale), scaled_px(720, self._kraken_ui_scale))
         self.protocol("WM_DELETE_WINDOW", self.request_quit)
         if not self.headless:
-            self.after(50, self._maximize_window)
+            host_of(self).after(50, self._maximize_window)
 
         self.current_layout_file: Path | None = None
         self._last_saved_state: dict[str, object] | None = None
@@ -3086,7 +3093,7 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
             return
         self.__dict__[attr_name] = None
         try:
-            self.after_cancel(after_id)
+            host_of(self).after_cancel(after_id)
         except Exception:
             pass
 
@@ -3102,7 +3109,7 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         ):
             self._cancel_after_callback_attr(attr_name)
         try:
-            self.update_idletasks()
+            host_of(self).update_idletasks()
         except Exception:
             pass
         if self._three_d_inspector is not None:
@@ -3167,7 +3174,7 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
     def _confirm_close_with_optional_save(self) -> bool:
         if not self._layout_has_unsaved_changes():
             return True
-        choice = messagebox.askyesnocancel(
+        choice = host_of(self).askyesnocancel(
             "Save layout before quitting?",
             "The current KrakenOS layout has unsaved changes.\n\nSave before quitting?",
             parent=self,
@@ -3179,7 +3186,7 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         try:
             return bool(self.save_layout())
         except Exception as exc:
-            messagebox.showerror(
+            host_of(self).showerror(
                 "Save failed",
                 f"The layout could not be saved:\n\n{_short_error_message(exc)}",
                 parent=self,

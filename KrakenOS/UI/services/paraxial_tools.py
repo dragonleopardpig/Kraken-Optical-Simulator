@@ -27,6 +27,7 @@ from KrakenOS.UI.services.formula_help import FormulaHelpService
 from KrakenOS.UI.services.row_spec_contracts import _row_specs_signature
 from KrakenOS.UI.surface_table_model import SurfaceRow
 from KrakenOS.UI.trace_intent import BEAM_SPLITTER_SURFACE, _optical_solid_faces_have_mirror_fold
+from KrakenOS.UI.uihost import host_of
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DOCS_HTML_DIR = PROJECT_ROOT / "docs" / "build" / "html"
@@ -882,7 +883,7 @@ class ParaxialToolsMixin:
         if html_path.exists():
             target = html_path
         elif rst_path.exists():
-            messagebox.showinfo(
+            host_of(self).showinfo(
                 "Documentation",
                 f"The built HTML for '{label}' was not found at\n  {html_path}\n\n"
                 "Showing the source RST instead. To build the HTML once:\n\n"
@@ -891,7 +892,7 @@ class ParaxialToolsMixin:
             )
             target = rst_path
         else:
-            messagebox.showwarning(
+            host_of(self).showwarning(
                 "Documentation",
                 f"Docs page '{label}' was not found.\n\nLooked for:\n  {html_path}\n  {rst_path}",
                 parent=self,
@@ -2715,7 +2716,7 @@ class ParaxialToolsMixin:
             self._apply_paraxial_two_f("object")
         except Exception as exc:
             error = _short_error_message(exc)
-            messagebox.showerror("Paraxial 2F", error)
+            host_of(self).showerror("Paraxial 2F", error)
             self.append_debug(f"Paraxial 2F object failed: {exc}")
             self.status_var.set(f"Paraxial 2F object failed: {error}")
         finally:
@@ -2726,7 +2727,7 @@ class ParaxialToolsMixin:
             self._apply_paraxial_two_f("image")
         except Exception as exc:
             error = _short_error_message(exc)
-            messagebox.showerror("Paraxial 2F", error)
+            host_of(self).showerror("Paraxial 2F", error)
             self.append_debug(f"Paraxial 2F image failed: {exc}")
             self.status_var.set(f"Paraxial 2F image failed: {error}")
         finally:
@@ -2737,7 +2738,7 @@ class ParaxialToolsMixin:
             self._apply_paraxial_two_f("pair")
         except Exception as exc:
             error = _short_error_message(exc)
-            messagebox.showerror("Paraxial 2F", error)
+            host_of(self).showerror("Paraxial 2F", error)
             self.append_debug(f"Paraxial 2F pair failed: {exc}")
             self.status_var.set(f"Paraxial 2F pair failed: {error}")
         finally:
@@ -2779,7 +2780,7 @@ class ParaxialToolsMixin:
             self.append_progress(message)
         except Exception as exc:
             error = _short_error_message(exc)
-            messagebox.showerror("Paraxial Solve", error)
+            host_of(self).showerror("Paraxial Solve", error)
             self.append_debug(f"Paraxial solve failed: {exc}")
             self.status_var.set(f"Paraxial solve failed: {error}")
         finally:
@@ -2811,7 +2812,7 @@ class ParaxialToolsMixin:
             self.append_progress(message)
         except Exception as exc:
             error = _short_error_message(exc)
-            messagebox.showerror("Paraxial Solve", error)
+            host_of(self).showerror("Paraxial Solve", error)
             self.append_debug(f"Paraxial variable-thickness solve failed: {exc}")
             self.status_var.set(f"Paraxial solve failed: {error}")
         finally:
@@ -3501,7 +3502,7 @@ class ParaxialToolsMixin:
             self.append_progress(message)
         except Exception as exc:
             error = _short_error_message(exc)
-            messagebox.showerror("Folded Mirror Solve", error)
+            host_of(self).showerror("Folded Mirror Solve", error)
             self.append_debug(f"Folded mirror solve failed: {exc}")
             self.status_var.set(f"Folded mirror solve failed: {error}")
         finally:
@@ -3533,7 +3534,7 @@ class ParaxialToolsMixin:
             self.append_progress(message)
         except Exception as exc:
             error = _short_error_message(exc)
-            messagebox.showerror("Best Image Solve", error)
+            host_of(self).showerror("Best Image Solve", error)
             self.append_debug(f"Best image solve failed: {exc}")
             self.status_var.set(f"Best image solve failed: {error}")
         finally:

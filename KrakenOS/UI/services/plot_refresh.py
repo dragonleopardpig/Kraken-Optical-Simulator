@@ -20,6 +20,7 @@ from KrakenOS.UI.layout_plot_controller import (
 )
 from KrakenOS.UI.scene_projector import auxiliary_projection_planes, projection_axis_labels
 from KrakenOS.UI.scene_renderer_2d import render_scene_2d, set_plot_limits
+from KrakenOS.UI.uihost import host_of
 
 
 def _layout_module():
@@ -57,7 +58,7 @@ class PlotRefreshService:
         status_label = plot_status_label(active_modes, self.layout_preview_mode or "none")
         self._set_analysis_parallel_status(status_label, 1, False)
         self._begin_analysis_progress("Plot refresh")
-        self.update_idletasks()
+        host_of(self).update_idletasks()
         self._clear_cardinal_marker_artists()
         self._clear_physical_distance_artists()
         self._clear_layout_selection_overlay()
@@ -94,7 +95,7 @@ class PlotRefreshService:
         max_radius = max_surface_radius(self.rows)
 
         self._update_analysis_progress("Building system", 1, 5)
-        self.update_idletasks()
+        host_of(self).update_idletasks()
         self.figure.clear()
         # Plane selection drives which layout panes show: a single plane shows
         # only that pane; "All" shows the YZ main pane plus the two auxiliary
@@ -224,7 +225,7 @@ class PlotRefreshService:
                         )
             self.append_debug(capture.getvalue())
             self._update_analysis_progress("Tracing rays", 2, 5)
-            self.update_idletasks()
+            host_of(self).update_idletasks()
             self.last_system = system
             self.last_rays = rays
             if defer_trace:
@@ -239,7 +240,7 @@ class PlotRefreshService:
 
             # --- Phase 3: scene-bundle pipeline ---
             self._update_analysis_progress("Rendering layout", 3, 5)
-            self.update_idletasks()
+            host_of(self).update_idletasks()
             orientation = self._current_display_orientation()
             bundle = self._build_scene_bundle(system, rays, max_radius)
             # bugs/0721: a REAL trace re-measures where each split-field band lands on the
@@ -312,7 +313,7 @@ class PlotRefreshService:
             # fallback when paraxial/pupil data is unavailable for branched
             # non-sequential systems.
             self._update_analysis_progress("Computing cardinals", 4, 5)
-            self.update_idletasks()
+            host_of(self).update_idletasks()
             optics_info: dict = {}
             try:
                 with warnings.catch_warnings():
@@ -363,7 +364,7 @@ class PlotRefreshService:
                     except Exception as diag_exc:
                         self.append_debug(f"{label} refresh skipped: {diag_exc}")
             self._update_analysis_progress("Finalizing", 5, 5)
-            self.update_idletasks()
+            host_of(self).update_idletasks()
             focus_diag = dict(self.editor.__dict__.get("_last_sequential_focus_diagnostic", {}) or {})
             focus_suffix = " | focus warning" if bool(focus_diag.get("warning")) else ""
             try:
@@ -430,4 +431,4 @@ class PlotRefreshService:
         self._autosave_plot()
         self._finish_analysis_progress("Plot refresh", success=True)
         if self._initial_layout_passes < 40:
-            self.after(50, self._set_initial_pane_layout)
+            host_of(self).after(50, self._set_initial_pane_layout)

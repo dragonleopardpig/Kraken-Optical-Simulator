@@ -130,8 +130,8 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
        f"BEFORE persisting the record (build@{i_build} < prompt@{i_prompt} < write@{i_write})")
 
     prompt_src = inspect.getsource(LayoutTableWorkbenchMixin._prompt_camera_flange_distance)
-    ok("simpledialog.askfloat(" in prompt_src,
-       "C2: the prompt asks for a numeric value via simpledialog.askfloat")
+    ok(".askfloat(" in prompt_src,
+       "C2: the prompt asks for a numeric value (askfloat -- through the UI host since the Qt seam)")
     ok("_apply_camera_flange_distance(" in prompt_src,
        "C3: the prompt delegates to the pure _apply_camera_flange_distance decision")
 

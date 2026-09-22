@@ -35,6 +35,7 @@ from pathlib import Path
 from tkinter import ttk
 
 from KrakenOS.UI.services.cad_cache_paths import PROJECT_ROOT
+from KrakenOS.UI.uihost import host_of
 
 _ATTACHMENT_DIR = PROJECT_ROOT / "attachment"
 
@@ -252,7 +253,7 @@ class LayoutBugRecorderMixin:
 
         try:
             self._set_bug_status("Flag bug: capturing full screen, please describe in the dialog...")
-            self.update_idletasks()
+            host_of(self).update_idletasks()
         except Exception:
             pass
 

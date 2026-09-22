@@ -1702,7 +1702,7 @@ def main() -> int:
             and "delete_selected_step" in step_admin_source
             and "open_selected_optical_faces" in step_admin_source,
         ),
-        ("Open 3D Snapshot uses Save As dialog", "filedialog.asksaveasfilename" in snapshot),
+        ("Open 3D Snapshot uses Save As dialog", ".asksaveasfilename(" in snapshot),
         ("Open 3D Snapshot defaults to attachment directory", "initialdir=str(ATTACHMENT_DIR)" in snapshot),
         ("Open 3D Snapshot has a short default filename", 'initialfile="3D.png"' in snapshot),
         ("Open 3D Snapshot uses VTK PNG capture", "vtkWindowToImageFilter" in snapshot and "vtkPNGWriter" in snapshot),

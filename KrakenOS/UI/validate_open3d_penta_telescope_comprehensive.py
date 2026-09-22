@@ -16481,6 +16481,10 @@ phase_629_no_static_method_takes_self = _phase_from_standalone(
     629, "no static method takes self -- the Optimize button and Action -> Paraxial Matrix Report work again: found while cutting the Qt seam, when the converter declined to rewrite a self.after inside start_optimization because it was STATIC. The mixin extraction of 2026-05-26 (fcb42075) left '@staticmethod' a blank line above start_optimization(self) and open_paraxial_matrix_report(self), so the button and the menu entry called them with no arguments and raised TypeError on every click for four months (report_callback_exception showed it; neither feature ran). Decorators removed; a whole-package AST scan found no other static method taking self/cls. Guard: the package-wide invariant with a CONTROL proving the scan catches the exact slip, and both methods called as the UI calls them with a CONTROL showing the static version's TypeError (0850)",
     "KrakenOS.UI.validate_open3d_0850_no_static_method_takes_self",
     "no_static_method_takes_self")
+phase_630_ui_host_seam = _phase_from_standalone(
+    630, "the Qt-migration seam, step 1a/1b: model/controller code reaches the toolkit only through the UI host (docs/design_qt_migration.md; user decisions 2026-09-22: PySide6, one codebase both toolkits, seam first on tk). KrakenOS/UI/uihost: UiHost with tkinter's own names (after/after_cancel/after_idle/update_idletasks, the messagebox/filedialog/simpledialog calls, clipboard); TkUiHost = today's behaviour by delegation (timers on the wrapped widget, dialogs resolved at call time); ScriptedUiHost = no toolkit, a deterministic clock and scripted answers with every call recorded; host_of(owner) = the owner's host, else its editor's, else the owner wrapped so a guard's stubbed after still answers. 175 call sites in 17 services/mixins/editor/inspector files rewritten by an AST-guided converter; six view-building closures in inspection_cell/inspection_part remain for step 1c and are named. The one validator that patched a module's messagebox now scripts the host. Guard: Tk delegation, the scripted host's clock and answers, host resolution, the model layer's purity outside the named closures, and a REAL headless editor built with a ScriptedUiHost asking File -> Open through it with the scripted cancel leaving the layout untouched (0851)",
+    "KrakenOS.UI.validate_open3d_0851_ui_host_seam",
+    "ui_host_seam")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17176,6 +17180,7 @@ def main() -> int:
             phase_627_round_caps_need_a_round_rim,
             phase_628_labels_readable_above_housings,
             phase_629_no_static_method_takes_self,
+            phase_630_ui_host_seam,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

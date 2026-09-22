@@ -9,6 +9,7 @@ from typing import Any
 import tkinter as tk
 
 import numpy as np
+from KrakenOS.UI.uihost import host_of
 
 
 # bugs/0413: hold the tk_popup grab this long (ms) before releasing it. tk_popup
@@ -2206,7 +2207,7 @@ class Open3DFaceAssignmentService:
             glass = self.editor.lens_surrogate_glass_aperture_mm()
             if not glass:
                 return
-            if not messagebox.askyesno(
+            if not host_of(self).askyesno(
                 "Refit surrogate glass",
                 f"The vendor lens STEP measures {float(glass):.4g} mm of glass.\n\n"
                 "Draw the surrogate's discs at that size instead of the barrel?\n"
@@ -2276,7 +2277,7 @@ class Open3DFaceAssignmentService:
             authored = [float(v) for v in record["authored"]]
             live = [float(v) for v in record["live"]]
             drift = float(record["drift_mm"])
-            if not messagebox.askyesno(
+            if not host_of(self).askyesno(
                 "Pin current placement as authored",
                 f"{record['name']} sits {drift:.3f} mm from the placement recorded for it.\n\n"
                 f"recorded:  ({authored[0]:.3f}, {authored[1]:.3f}, {authored[2]:.3f})\n"

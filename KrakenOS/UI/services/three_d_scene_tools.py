@@ -72,6 +72,7 @@ from KrakenOS.UI.services.legacy_3d_scene import Legacy3DSceneService
 from KrakenOS.UI.services.missing_assets_scan import (
     MISSING_RESOURCE_STATE_ATTR,
 )
+from KrakenOS.UI.uihost import host_of
 
 
 def _row_has_skipped_missing_asset(advanced: dict) -> bool:
@@ -345,12 +346,12 @@ class ThreeDSceneToolsMixin:
         try:
             inspector.status_var.set(f"Open 3D warming STEP display cache outside the UI process: {names}")
             self.status_var.set(f"Open 3D warming STEP display cache outside the UI process: {names}")
-            self.update_idletasks()
+            host_of(self).update_idletasks()
         except Exception:
             pass
         self._open3d_step_cache_warmup_pending = True
         try:
-            self.after(50, lambda: self._launch_open3d_step_cache_warmup(inspector, specs, names))
+            host_of(self).after(50, lambda: self._launch_open3d_step_cache_warmup(inspector, specs, names))
         except Exception:
             self._launch_open3d_step_cache_warmup(inspector, specs, names)
         return True
@@ -409,7 +410,7 @@ class ThreeDSceneToolsMixin:
             except Exception:
                 pass
             try:
-                self.after(250, lambda: self._poll_open3d_step_cache_warmup(inspector, names))
+                host_of(self).after(250, lambda: self._poll_open3d_step_cache_warmup(inspector, names))
             except Exception:
                 pass
             return
@@ -460,7 +461,7 @@ class ThreeDSceneToolsMixin:
         if self._legacy_3d_after_id is not None:
             return
         try:
-            self._legacy_3d_after_id = self.after(20, self._poll_legacy_3d_plotter)
+            self._legacy_3d_after_id = host_of(self).after(20, self._poll_legacy_3d_plotter)
         except Exception:
             self._legacy_3d_after_id = None
 
@@ -485,7 +486,7 @@ class ThreeDSceneToolsMixin:
     def _close_legacy_3d_plotter(self) -> None:
         if self._legacy_3d_after_id is not None:
             try:
-                self.after_cancel(self._legacy_3d_after_id)
+                host_of(self).after_cancel(self._legacy_3d_after_id)
             except Exception:
                 pass
             self._legacy_3d_after_id = None
@@ -517,7 +518,7 @@ class ThreeDSceneToolsMixin:
                     self.append_debug(f"Legacy CAD/STL placement close refresh failed: {exc}")
 
             try:
-                self.after(50, refresh_2d_after_legacy_close)
+                host_of(self).after(50, refresh_2d_after_legacy_close)
                 self.status_var.set("Legacy 3D CAD/STL placement closed; refreshing 2D layout.")
             except Exception as exc:
                 self.append_debug(f"Legacy CAD/STL placement close refresh failed: {exc}")
@@ -6011,7 +6012,7 @@ class ThreeDSceneToolsMixin:
     def _enable_legacy_3d_close_handling(self, plotter) -> None:
         def request_close(*_args):
             try:
-                self.after(0, self._close_legacy_3d_plotter)
+                host_of(self).after(0, self._close_legacy_3d_plotter)
             except Exception:
                 self._close_legacy_3d_plotter()
 
@@ -6645,7 +6646,7 @@ class ThreeDSceneToolsMixin:
                 SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
             except Exception:
                 pass
-            selected_path = filedialog.asksaveasfilename(
+            selected_path = host_of(self).asksaveasfilename(
                 parent=self,
                 title="Save 3D view as PNG",
                 initialdir=str(SCREENSHOT_DIR),

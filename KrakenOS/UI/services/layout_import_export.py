@@ -70,6 +70,7 @@ from KrakenOS.UI.surface_table_model import SurfaceRow, insert_surface_rows as _
 from KrakenOS.UI.trace_intent import BEAM_SPLITTER_SURFACE, DIFFUSE_OBJECT_SURFACE, OBJECT_TARGET_SURFACE
 from KrakenOS.UI.zemax_rayfile import find_zemax_nsc_source_files, summarize_zemax_rayfile
 from KrakenOS.UI.zemax_wavefront import load_zemax_wavefront_map
+from KrakenOS.UI.uihost import host_of
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 ATTACHMENT_DIR = PROJECT_ROOT / "attachment"
@@ -240,7 +241,7 @@ class LayoutImportExportMixin:
             message = "\n".join(str(item) for item in missing[:4])
             if len(missing) > 4:
                 message += f"\n... and {len(missing) - 4} more"
-            messagebox.showerror(
+            host_of(self).showerror(
                 "Zemax rayfile source import failed",
                 f"The Zemax non-sequential file references missing ray database file(s):\n\n{message}",
                 parent=self,
@@ -313,7 +314,7 @@ class LayoutImportExportMixin:
         try:
             info = _load_zemax_zmx_data(path)
         except Exception as exc:
-            messagebox.showerror(
+            host_of(self).showerror(
                 "Zemax import failed",
                 f"Could not import {path.name}.\n\n{_short_error_message(exc)}",
                 parent=self,
@@ -375,7 +376,7 @@ class LayoutImportExportMixin:
             Path.home(),
         ]
         initial_dir = next((candidate for candidate in initial_dirs if candidate.exists()), Path.home())
-        path = filedialog.askopenfilename(
+        path = host_of(self).askopenfilename(
             title="Import Zemax prescription or NSC source file",
             initialdir=str(initial_dir),
             filetypes=[
@@ -397,7 +398,7 @@ class LayoutImportExportMixin:
             Path.home(),
         ]
         initial_dir = next((path for path in initial_dirs if path.exists()), Path.home())
-        path = filedialog.askopenfilename(
+        path = host_of(self).askopenfilename(
             title="Import Zemax Wavefront Map text export",
             initialdir=str(initial_dir),
             filetypes=[
@@ -411,7 +412,7 @@ class LayoutImportExportMixin:
         try:
             reference = load_zemax_wavefront_map(path)
         except Exception as exc:
-            messagebox.showerror(
+            host_of(self).showerror(
                 "Zemax Wavefront Map import failed",
                 f"Could not import {Path(path).name}.\n\n{_short_error_message(exc)}",
                 parent=self,
@@ -519,7 +520,7 @@ class LayoutImportExportMixin:
             initial_dir = LAYOUTS_DIR
         else:
             initial_dir = PROJECT_ROOT
-        path = filedialog.askopenfilename(
+        path = host_of(self).askopenfilename(
             title="Open Kraken layout",
             initialdir=str(initial_dir),
             filetypes=[("Python layout", "*.py")],
@@ -806,7 +807,7 @@ class LayoutImportExportMixin:
             SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
         except Exception:
             pass
-        path = filedialog.asksaveasfilename(
+        path = host_of(self).asksaveasfilename(
             title="Save Kraken layout",
             initialdir=str(SCREENSHOT_DIR),
             defaultextension=".py",
@@ -838,7 +839,7 @@ class LayoutImportExportMixin:
         except Exception:
             alive = False
         if not alive:
-            messagebox.showinfo(
+            host_of(self).showinfo(
                 "Export View DXF",
                 "Open the 3D view first -- the DXF is a flattening of the CURRENT 3D "
                 "camera view.",
@@ -852,7 +853,7 @@ class LayoutImportExportMixin:
             SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
         except Exception:
             pass
-        path = filedialog.asksaveasfilename(
+        path = host_of(self).asksaveasfilename(
             title="Export Current 3D View as DXF",
             initialdir=str(SCREENSHOT_DIR),
             initialfile=f"{stem}.dxf",
@@ -868,7 +869,7 @@ class LayoutImportExportMixin:
             summary = export_viewport_to_dxf(inspector, Path(path).expanduser())
         except Exception as exc:
             self.status_var.set(f"DXF export failed: {exc}")
-            messagebox.showerror(
+            host_of(self).showerror(
                 "Export View DXF", f"DXF export failed:\n\n{exc}", parent=self
             )
             return
@@ -891,7 +892,7 @@ class LayoutImportExportMixin:
         except Exception:
             alive = False
         if not alive:
-            messagebox.showinfo(
+            host_of(self).showinfo(
                 "Export Component DXF",
                 "Open the 3D view first -- the six views are projected from the 3D "
                 "scene's geometry.",
@@ -924,7 +925,7 @@ class LayoutImportExportMixin:
             SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
         except Exception:
             pass
-        path = filedialog.asksaveasfilename(
+        path = host_of(self).asksaveasfilename(
             title=f"Export {display} as Six-View DXF",
             initialdir=str(SCREENSHOT_DIR),
             initialfile=f"{stem}_6views.dxf",
@@ -946,7 +947,7 @@ class LayoutImportExportMixin:
             )
         except Exception as exc:
             self.status_var.set(f"Component DXF export failed: {exc}")
-            messagebox.showerror(
+            host_of(self).showerror(
                 "Export Component DXF", f"Component DXF export failed:\n\n{exc}", parent=self
             )
             return
@@ -960,7 +961,7 @@ class LayoutImportExportMixin:
         """Export the current 3D viewer geometry as a STEP assembly."""
         worker = getattr(self, "_step_export_thread", None)
         if worker is not None and worker.is_alive():
-            messagebox.showinfo(
+            host_of(self).showinfo(
                 "3D STEP Export",
                 "A STEP export is already running. Wait for it to finish before starting another export.",
                 parent=self,
@@ -979,7 +980,7 @@ class LayoutImportExportMixin:
             SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
         except Exception:
             pass
-        path = filedialog.asksaveasfilename(
+        path = host_of(self).asksaveasfilename(
             title="Export 3D Assembly STEP",
             initialdir=str(SCREENSHOT_DIR),
             initialfile=f"{stem}.step",
@@ -998,7 +999,7 @@ class LayoutImportExportMixin:
             self._begin_analysis_progress("3D STEP export")
             self.status_var.set("Exporting 3D STEP...")
             self._update_analysis_progress("Building optical system", 1, 8)
-            self.update_idletasks()
+            host_of(self).update_idletasks()
             capture = io.StringIO()
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
@@ -1074,7 +1075,7 @@ class LayoutImportExportMixin:
             self.status_var.set(f"3D STEP export failed: {error}")
             self.append_debug(f"3D STEP export failed: {exc}")
             self._finish_analysis_progress("3D STEP export", success=False)
-            messagebox.showerror(
+            host_of(self).showerror(
                 "3D STEP Export Error",
                 f"Failed to export 3D STEP:\n\n{error}",
                 parent=self,
@@ -1128,7 +1129,7 @@ class LayoutImportExportMixin:
         self.progress_spinner_var.set("...")
         self.progress_percent_var.set("writing")
         thread.start()
-        self.after(120, self._poll_native_step_export_worker)
+        host_of(self).after(120, self._poll_native_step_export_worker)
 
     def _poll_native_step_export_worker(self) -> None:
         queue = getattr(self, "_step_export_queue", None)
@@ -1155,7 +1156,7 @@ class LayoutImportExportMixin:
 
         if terminal_payload is None:
             if thread.is_alive():
-                self.after(160, self._poll_native_step_export_worker)
+                host_of(self).after(160, self._poll_native_step_export_worker)
                 return
             terminal_payload = ("error", "STEP writer exited without reporting a result", "")
 
@@ -1186,7 +1187,7 @@ class LayoutImportExportMixin:
         if tb_text:
             self.append_debug(f"3D STEP export failed:\n{tb_text}")
         self._finish_analysis_progress("3D STEP export", success=False)
-        messagebox.showerror(
+        host_of(self).showerror(
             "3D STEP Export Error",
             f"Failed to export 3D STEP:\n\n{error}",
             parent=self,

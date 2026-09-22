@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from KrakenOS.UI.services.row_spec_contracts import _row_specs_signature
+from KrakenOS.UI.uihost import host_of
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
@@ -524,28 +525,28 @@ class LayoutAnalysisDisplayMixin:
         self.status_var.set("Reset complete. Table contains only Object and Image; click Update to trace.")
         self.append_progress("Reset completed without tracing.")
         if self._initial_layout_passes < 40:
-            self.after(50, self._set_initial_pane_layout)
+            host_of(self).after(50, self._set_initial_pane_layout)
 
     def _autosave_plot(self) -> None:
         if not self.auto_save_plot_var.get():
             return
         if self._autosave_after_id is not None:
             try:
-                self.after_cancel(self._autosave_after_id)
+                host_of(self).after_cancel(self._autosave_after_id)
             except Exception:
                 pass
-        self._autosave_after_id = self.after(400, self._do_autosave_plot)
+        self._autosave_after_id = host_of(self).after(400, self._do_autosave_plot)
 
     def _do_autosave_plot(self) -> None:
         self._autosave_after_id = None
         if not self.auto_save_plot_var.get():
             return
         if self.winfo_width() < 1200 or self.winfo_height() < 700:
-            self._autosave_after_id = self.after(400, self._do_autosave_plot)
+            self._autosave_after_id = host_of(self).after(400, self._do_autosave_plot)
             return
         try:
             AUTO_PLOT_PATH.parent.mkdir(parents=True, exist_ok=True)
-            self.update_idletasks()
+            host_of(self).update_idletasks()
             self.canvas.draw()
             self.figure.savefig(AUTO_PLOT_PATH, dpi=150)
         except Exception as exc:
@@ -1612,7 +1613,7 @@ class LayoutAnalysisDisplayMixin:
             try:
                 from tkinter import messagebox
 
-                messagebox.showinfo(
+                host_of(self).showinfo(
                     "Wavefront 3D",
                     "No wavefront samples yet.\n\nRun the Wavefront analysis first, "
                     "then open the 3D surface.",

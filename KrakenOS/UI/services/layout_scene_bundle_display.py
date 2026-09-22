@@ -4,6 +4,7 @@ import math
 import sys
 
 import numpy as np
+from KrakenOS.UI.uihost import host_of
 
 
 _PROTECTED_GLOBALS = {
@@ -356,8 +357,8 @@ class LayoutSceneBundleDisplayMixin:
         if not self.winfo_exists():
             return
         if hasattr(self, "_refresh_after_id") and self._refresh_after_id is not None:
-            self.after_cancel(self._refresh_after_id)
-        self._refresh_after_id = self.after(120, self._refresh_plot_from_controls)
+            host_of(self).after_cancel(self._refresh_after_id)
+        self._refresh_after_id = host_of(self).after(120, self._refresh_plot_from_controls)
 
     def _refresh_plot_from_controls(self) -> None:
         self._refresh_after_id = None

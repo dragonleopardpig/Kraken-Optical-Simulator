@@ -36,6 +36,7 @@ from KrakenOS.UI.services.catalog_metadata import _normalize_metal_catalog_specs
 from KrakenOS.UI.services.surface_value_parsing import _native_variable_matches
 from KrakenOS.UI.source_trace_helpers import PUPIL_PATTERN_DEFAULT, SOURCE_MODEL_DEFAULT
 from KrakenOS.UI.surface_table_model import SurfaceRow, surface_rows_to_specs
+from KrakenOS.UI.uihost import host_of
 
 DEBUG_LOG_PATH = Path.home() / ".cache" / "krakenos" / "logs" / "kraken_debug_latest.log"
 
@@ -90,7 +91,7 @@ class AnalysisComputeWorkflowMixin:
         self.debug_text.insert("end", line + "\n")
         self.debug_text.see("end")
         self._append_debug_log(line)
-        self.update_idletasks()
+        host_of(self).update_idletasks()
 
     def _bind_text_copy_shortcuts(self, widget: tk.Text) -> None:
         for sequence in ("<Control-c>", "<Control-C>", "<Control-Insert>", "<<Copy>>", "<Control-KeyPress-c>", "<Control-KeyPress-C>"):
@@ -278,9 +279,9 @@ class AnalysisComputeWorkflowMixin:
     def export_wavefront_csv(self) -> None:
         rows = list(getattr(self, "_last_wavefront_samples", []) or [])
         if not rows:
-            messagebox.showinfo("Export Wavefront CSV", "Run Wavefront or Zernike analysis before exporting wavefront samples.", parent=self)
+            host_of(self).showinfo("Export Wavefront CSV", "Run Wavefront or Zernike analysis before exporting wavefront samples.", parent=self)
             return
-        path = filedialog.asksaveasfilename(
+        path = host_of(self).asksaveasfilename(
             title="Export Wavefront Samples CSV",
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv"), ("All files", "*")],
@@ -312,9 +313,9 @@ class AnalysisComputeWorkflowMixin:
     def export_zernike_csv(self) -> None:
         rows = list(getattr(self, "_last_zernike_coefficients", []) or [])
         if not rows:
-            messagebox.showinfo("Export Zernike CSV", "Run Zernike analysis before exporting coefficients.", parent=self)
+            host_of(self).showinfo("Export Zernike CSV", "Run Zernike analysis before exporting coefficients.", parent=self)
             return
-        path = filedialog.asksaveasfilename(
+        path = host_of(self).asksaveasfilename(
             title="Export Zernike Coefficients CSV",
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv"), ("All files", "*")],
@@ -363,7 +364,7 @@ class AnalysisComputeWorkflowMixin:
             return
         self.progress_text.insert("end", message.rstrip() + "\n")
         self.progress_text.see("end")
-        self.update_idletasks()
+        host_of(self).update_idletasks()
 
     def _begin_analysis_progress(self, label: str) -> None:
         if self.optimization_running:
@@ -385,7 +386,7 @@ class AnalysisComputeWorkflowMixin:
             self.progress_bar_var.set(percent)
         else:
             self.progress_percent_var.set(label)
-        self.update_idletasks()
+        host_of(self).update_idletasks()
 
     def _finish_analysis_progress(self, label: str, success: bool = True) -> None:
         if self.optimization_running:
@@ -1000,14 +1001,14 @@ class AnalysisComputeWorkflowMixin:
 
     def _start_progress_spinner(self) -> None:
         if self._spinner_after_id is not None:
-            self.after_cancel(self._spinner_after_id)
+            host_of(self).after_cancel(self._spinner_after_id)
             self._spinner_after_id = None
         self._spinner_phase = 0
         self._animate_progress_spinner()
 
     def _stop_progress_spinner(self) -> None:
         if self._spinner_after_id is not None:
-            self.after_cancel(self._spinner_after_id)
+            host_of(self).after_cancel(self._spinner_after_id)
             self._spinner_after_id = None
         if not self.optimization_running:
             self.progress_spinner_var.set("idle")
@@ -1020,7 +1021,7 @@ class AnalysisComputeWorkflowMixin:
         frames = ("|", "/", "-", "\\")
         self.progress_spinner_var.set(frames[self._spinner_phase % len(frames)])
         self._spinner_phase += 1
-        self._spinner_after_id = self.after(120, self._animate_progress_spinner)
+        self._spinner_after_id = host_of(self).after(120, self._animate_progress_spinner)
 
     @staticmethod
     def _optional_finite_float(value) -> float | None:
@@ -1509,7 +1510,7 @@ class AnalysisComputeWorkflowMixin:
             ),
         )
         self._optimization_process.start()
-        self.after(75, self._poll_optimization_worker)
+        host_of(self).after(75, self._poll_optimization_worker)
 
     def stop_optimization(self) -> None:
         if not self.optimization_running:
@@ -1613,7 +1614,7 @@ class AnalysisComputeWorkflowMixin:
         if completed:
             return
         if process.is_alive():
-            self.after(75, self._poll_optimization_worker)
+            host_of(self).after(75, self._poll_optimization_worker)
             return
         self.append_progress("Optimization worker exited unexpectedly.")
         self._finish_optimization(cancelled=True)

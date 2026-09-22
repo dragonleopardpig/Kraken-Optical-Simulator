@@ -139,6 +139,7 @@ from KrakenOS.UI.surface_table_model import SurfaceRow, surface_row_to_spec
 from KrakenOS.UI.services.offbeam_optical_solid import offbeam_neutralized_body_transform
 from KrakenOS.UI.nonseq_output_ports import optical_solid_output_port_runtime_transform_override
 from KrakenOS.UI import optical_solid_metadata
+from KrakenOS.UI.uihost import host_of
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ATTACHMENT_DIR = PROJECT_ROOT / "attachment"
@@ -541,6 +542,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         _load_3d_backends()
         super().__init__(editor)
         self.editor = editor
+        # docs/design_qt_migration.md: its own host, so its timers stay bound to THIS window (a
+        # Tk `after` registered on a widget dies with it) exactly as before the seam.
+        from KrakenOS.UI.uihost import TkUiHost
+
+        self.ui = TkUiHost(self)
         self.available = False
         self.unavailable_reason = ""
         self.title("KrakenOS 3D Inspector")
@@ -1183,7 +1189,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             else:
                 restore.grid()
         try:
-            self.update_idletasks()
+            host_of(self).update_idletasks()
         except Exception:
             pass
         self.render()
@@ -7917,7 +7923,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def _native_step_material_sequence_prompt(self, label: str) -> str | None:
         display_label = self.editor._step_overlay_display_label(label)
         try:
-            return simpledialog.askstring(
+            return host_of(self).askstring(
                 "Native STEP Materials",
                 (
                     f"Glass/material sequence after each native {display_label} STEP surface.\n"
@@ -8090,7 +8096,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         lines.append("(The trailing region after the back surface is set to AIR automatically.)")
         message = "\n".join(lines)
         try:
-            return simpledialog.askstring(
+            return host_of(self).askstring(
                 "Promote STEP to Analytic Surfaces",
                 message,
                 initialvalue=initial,
@@ -8702,7 +8708,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             try:
                 # Deferred <<TreeviewSelect>> events drain BEFORE idle callbacks, so
                 # releasing on after_idle keeps them suppressed too.
-                self.after_idle(self._release_table_selection_sync_suppression)
+                host_of(self).after_idle(self._release_table_selection_sync_suppression)
                 released = True
             except Exception:
                 released = False
@@ -10427,7 +10433,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return False
         try:
             from tkinter import messagebox
-            confirm = messagebox.askyesno(
+            confirm = host_of(self).askyesno(
                 "Discard recording",
                 "Throw away the in-progress recording? Flag bundles you already saved during "
                 "this session are kept; only the timeline of mouse/key events is discarded.",
@@ -10543,7 +10549,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # the screenshot capture or PIL overlay takes a beat.
         self.status_var.set("Flag bug: capturing screenshot, please describe in the dialog...")
         try:
-            self.update_idletasks()
+            host_of(self).update_idletasks()
         except Exception:
             pass
         recorder = getattr(self, "_event_recorder", None)
@@ -11512,7 +11518,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         try:
             popup.grid(row=1, column=0, sticky="ns", padx=(8, 0), pady=8)
             popup.tkraise()
-            self.update_idletasks()
+            host_of(self).update_idletasks()
         except Exception:
             pass
         self.status_var.set(f"CAD/STL placement side panel opened for S{row_index}.")
@@ -15456,7 +15462,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._galvo_scan_after_id = None
             if after_id is not None:
                 try:
-                    self.after_cancel(after_id)
+                    host_of(self).after_cancel(after_id)
                 except Exception:
                     pass
             self._galvo_scan_frames = []
@@ -15619,7 +15625,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.render()
         self._galvo_scan_frame_index = (frame_index + 1) % frame_count
         try:
-            self._galvo_scan_after_id = self.after(720, self._show_galvo_scan_frame)
+            self._galvo_scan_after_id = host_of(self).after(720, self._show_galvo_scan_frame)
         except Exception:
             self._galvo_scan_after_id = None
 
@@ -15632,7 +15638,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             from vtkmodules.vtkRenderingCore import vtkWindowToImageFilter  # type: ignore
 
             ATTACHMENT_DIR.mkdir(parents=True, exist_ok=True)
-            selected_path = filedialog.asksaveasfilename(
+            selected_path = host_of(self).asksaveasfilename(
                 parent=self,
                 title="Save Open 3D snapshot",
                 initialdir=str(ATTACHMENT_DIR),
@@ -17475,7 +17481,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 continue
             self.editor.status_var.set(f"Composing cell ghost station: {face}...")
             try:
-                self.editor.update_idletasks()
+                host_of(self.editor).update_idletasks()
             except Exception:
                 pass
             try:
@@ -21107,7 +21113,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             )
             return
         try:
-            new_value = simpledialog.askfloat(
+            new_value = host_of(self).askfloat(
                 "Edit Measurement",
                 "Axial distance [mm] -- moves the downstream element to set it:",
                 initialvalue=round(axial, 6),
@@ -22818,7 +22824,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if row is None:
             self.status_var.set("Attach wavefront map: no Thin-Lens surrogate row found.")
             return
-        path = filedialog.askopenfilename(
+        path = host_of(self).askopenfilename(
             title="Attach vendor wavefront (Zemax OPD) map",
             filetypes=[("Zemax wavefront map", "*.txt"), ("All files", "*.*")],
         )
@@ -23168,7 +23174,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             branch_path = None
         if branch_path is not None:
-            self.after(1, lambda bp=str(branch_path): self._open_detector_design_popup(bp))
+            host_of(self).after(1, lambda bp=str(branch_path): self._open_detector_design_popup(bp))
             return True
         srow = self._surface_row_under_cursor(event)
         if srow is None or not (0 <= srow < len(self.editor.rows)):
@@ -23176,11 +23182,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         surface = str(getattr(self.editor.rows[srow], "surface", "") or "")
         if surface == "Object":
             self._record_dialog_command("fov_popup_open", {"plane": "object", "row": int(srow)})
-            self.after(1, lambda: self._open_quick_estimation_fov_popup("object"))
+            host_of(self).after(1, lambda: self._open_quick_estimation_fov_popup("object"))
             return True
         if surface == "Image":
             self._record_dialog_command("fov_popup_open", {"plane": "image", "row": int(srow)})
-            self.after(1, lambda: self._open_quick_estimation_fov_popup("image"))
+            host_of(self).after(1, lambda: self._open_quick_estimation_fov_popup("image"))
             return True
         return False
 
@@ -24230,7 +24236,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self.render()
             except Exception:
                 pass
-            self._forbidden_flash_after = self.after(280, _tick)
+            self._forbidden_flash_after = host_of(self).after(280, _tick)
 
         _tick()
 
@@ -24238,7 +24244,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         after_id = self.__dict__.get("_forbidden_flash_after")
         if after_id is not None:
             try:
-                self.after_cancel(after_id)
+                host_of(self).after_cancel(after_id)
             except Exception:
                 pass
         self._forbidden_flash_after = None
@@ -26205,7 +26211,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     self.editor.append_debug(f"CAD/STL placement close refresh failed: {exc}")
 
             try:
-                self.editor.after(50, refresh_2d_after_close)
+                host_of(self.editor).after(50, refresh_2d_after_close)
                 self.editor.status_var.set("3D CAD/STL placement closed; refreshing 2D layout.")
             except Exception as exc:
                 self.editor.append_debug(f"CAD/STL placement close refresh failed: {exc}")

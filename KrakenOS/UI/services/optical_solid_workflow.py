@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from KrakenOS.UI.optical_solid_metadata import OPTICAL_SOLID_FACE_PORT_DEFAULT
+from KrakenOS.UI.uihost import host_of
 
 
 _PROTECTED_GLOBALS = {
@@ -299,7 +300,7 @@ class LayoutOpticalSolidWorkflowMixin:
 
     def import_optical_stl_solid(self) -> None:
         initial_dir = ATTACHMENT_DIR if ATTACHMENT_DIR.exists() else EXAMPLES_DIR if EXAMPLES_DIR.exists() else PROJECT_ROOT
-        path_text = filedialog.askopenfilename(
+        path_text = host_of(self).askopenfilename(
             title="Import Optical CAD/STL Solid",
             initialdir=str(initial_dir),
             filetypes=OPTICAL_SOLID_FILETYPES,
@@ -311,14 +312,14 @@ class LayoutOpticalSolidWorkflowMixin:
         try:
             mesh_path, cad_source_path, source_format = _optical_solid_mesh_path_from_source(source_path)
         except Exception as exc:
-            messagebox.showerror("Import Optical CAD/STL Solid", f"Could not prepare optical solid:\n\n{exc}", parent=self)
+            host_of(self).showerror("Import Optical CAD/STL Solid", f"Could not prepare optical solid:\n\n{exc}", parent=self)
             return
         diagnostics = inspect_stl_mesh(mesh_path)
         self._commit_pending_table_edit()
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Import Optical CAD/STL Solid", f"Could not read the surface table:\n\n{exc}", parent=self)
+            host_of(self).showerror("Import Optical CAD/STL Solid", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
 
         selected_indices = self._selected_table_indices()
@@ -362,16 +363,16 @@ class LayoutOpticalSolidWorkflowMixin:
             self.status_var.set(
                 f"Imported {source_path.name} at S{insert_at}. Opening CAD/STL face assignment."
             )
-        self.after(120, lambda idx=insert_at: self.open_optical_solid_face_role_editor(idx))
+        host_of(self).after(120, lambda idx=insert_at: self.open_optical_solid_face_role_editor(idx))
 
     def convert_row_to_optical_stl_solid(self, row_index: int) -> None:
         if not (0 <= row_index < len(self.rows)):
             return
         if self.rows[row_index].surface in {"Object", "Image"}:
-            messagebox.showinfo("Optical CAD/STL Solid", "Object/Image rows cannot be converted to optical CAD/STL solids.", parent=self)
+            host_of(self).showinfo("Optical CAD/STL Solid", "Object/Image rows cannot be converted to optical CAD/STL solids.", parent=self)
             return
         initial_dir = ATTACHMENT_DIR if ATTACHMENT_DIR.exists() else EXAMPLES_DIR if EXAMPLES_DIR.exists() else PROJECT_ROOT
-        path_text = filedialog.askopenfilename(
+        path_text = host_of(self).askopenfilename(
             title="Convert Row to Optical CAD/STL Solid",
             initialdir=str(initial_dir),
             filetypes=OPTICAL_SOLID_FILETYPES,
@@ -383,14 +384,14 @@ class LayoutOpticalSolidWorkflowMixin:
         try:
             mesh_path, cad_source_path, source_format = _optical_solid_mesh_path_from_source(source_path)
         except Exception as exc:
-            messagebox.showerror("Optical CAD/STL Solid", f"Could not prepare optical solid:\n\n{exc}", parent=self)
+            host_of(self).showerror("Optical CAD/STL Solid", f"Could not prepare optical solid:\n\n{exc}", parent=self)
             return
         diagnostics = inspect_stl_mesh(mesh_path)
         self._commit_pending_table_edit()
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Optical CAD/STL Solid", f"Could not read the surface table:\n\n{exc}", parent=self)
+            host_of(self).showerror("Optical CAD/STL Solid", f"Could not read the surface table:\n\n{exc}", parent=self)
             return
         previous = self.rows[row_index]
         replacement = self._optical_stl_solid_row(
@@ -421,7 +422,7 @@ class LayoutOpticalSolidWorkflowMixin:
         self.status_var.set(
             f"Converted S{row_index} to optical solid {source_path.name}; opening CAD/STL face assignment."
         )
-        self.after(120, lambda idx=row_index: self.open_optical_solid_face_role_editor(idx))
+        host_of(self).after(120, lambda idx=row_index: self.open_optical_solid_face_role_editor(idx))
 
     def _stl_path_from_row(self, row: SurfaceRow) -> Path | None:
         advanced = row.advanced or {}
@@ -480,11 +481,11 @@ class LayoutOpticalSolidWorkflowMixin:
             try:
                 self._read_rows_from_table()
             except Exception as exc:
-                messagebox.showerror(title, f"Could not read the surface table:\n\n{exc}", parent=self)
+                host_of(self).showerror(title, f"Could not read the surface table:\n\n{exc}", parent=self)
                 return
             item = self._file_backed_stl_row_at(row_index)
             if item is None:
-                messagebox.showinfo(title, "The selected row does not contain a file-backed Solid_3d_stl value.", parent=self)
+                host_of(self).showinfo(title, "The selected row does not contain a file-backed Solid_3d_stl value.", parent=self)
                 return
             row, path = item
         self._open_optical_solid_faces_for_row(int(row_index), row, path)
@@ -494,19 +495,19 @@ class LayoutOpticalSolidWorkflowMixin:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror(title, f"Could not read the surface table:\n\n{exc}", parent=self)
+            host_of(self).showerror(title, f"Could not read the surface table:\n\n{exc}", parent=self)
             return None
         row_index = self._selected_surface_row_index()
         if row_index is None or row_index < 0 or row_index >= len(self.rows):
-            messagebox.showinfo(title, "Select an STL solid row first.", parent=self)
+            host_of(self).showinfo(title, "Select an STL solid row first.", parent=self)
             return None
         row = self.rows[row_index]
         path = self._stl_path_from_row(row)
         if path is None:
-            messagebox.showinfo(title, "The selected row does not contain a file-backed Solid_3d_stl value.", parent=self)
+            host_of(self).showinfo(title, "The selected row does not contain a file-backed Solid_3d_stl value.", parent=self)
             return None
         if not path.exists():
-            messagebox.showerror(title, f"STL file does not exist:\n\n{path}", parent=self)
+            host_of(self).showerror(title, f"STL file does not exist:\n\n{path}", parent=self)
             return None
         return row_index, row, path
 
@@ -2089,7 +2090,7 @@ class LayoutOpticalSolidWorkflowMixin:
         preferred_dir = Path(initial_dir) if initial_dir is not None else default_dir
         if not preferred_dir.exists():
             preferred_dir = default_dir if default_dir.exists() else Path.home()
-        path = filedialog.askopenfilename(
+        path = host_of(self).askopenfilename(
             title=title,
             initialdir=str(preferred_dir),
             filetypes=[
@@ -2102,7 +2103,7 @@ class LayoutOpticalSolidWorkflowMixin:
             return None
         selected = Path(path).expanduser()
         if not selected.exists():
-            messagebox.showerror("STEP file not found", f"File does not exist:\n\n{selected}", parent=parent or self)
+            host_of(self).showerror("STEP file not found", f"File does not exist:\n\n{selected}", parent=parent or self)
             return None
         return selected
 

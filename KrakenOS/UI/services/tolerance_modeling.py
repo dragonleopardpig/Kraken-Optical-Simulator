@@ -30,6 +30,7 @@ from KrakenOS.UI.tolerance_constants import (
     TOLERANCE_MANUFACTURING_ADVANCED_ATTR,
     TOLERANCE_SOLVE_PRESET_DEFAULTS,
 )
+from KrakenOS.UI.uihost import host_of
 
 
 class ToleranceModelingMixin:
@@ -357,7 +358,7 @@ class ToleranceModelingMixin:
         if current:
             sign_prefix = "-" if int(current.get("sign", 1) or 1) < 0 else ""
             initial = f"{sign_prefix}{current.get('group', '')}"
-        value = simpledialog.askstring(
+        value = host_of(self).askstring(
             "Tolerance Coupling",
             "Group name for shared random quantile. Prefix with '-' for inverted/opposite motion. Blank clears coupling.",
             initialvalue=initial,
@@ -629,7 +630,7 @@ class ToleranceModelingMixin:
                 str(current.get("note", "") or ""),
             ]
         ).strip()
-        value = simpledialog.askstring(
+        value = host_of(self).askstring(
             "Tolerance Manufacturing Metadata",
             "Enter: source type | source/spec ID | tags | note. Blank clears metadata.",
             initialvalue=initial,
@@ -824,7 +825,7 @@ class ToleranceModelingMixin:
             self._cleanup_current_popup_menu()
             return
         default_name = str(metadata.get("source_id", "") or metadata.get("source_type", "") or f"{row.name} {spec.label}")
-        name = simpledialog.askstring(
+        name = host_of(self).askstring(
             "Save Manufacturing Template",
             "Template name:",
             initialvalue=default_name,
@@ -867,7 +868,7 @@ class ToleranceModelingMixin:
             self._cleanup_current_popup_menu()
             return
         names = [str(template.get("name", "") or "") for template in templates if str(template.get("name", "") or "")]
-        value = simpledialog.askstring(
+        value = host_of(self).askstring(
             "Apply Manufacturing Template",
             "Enter template name.\nAvailable: " + ", ".join(names),
             initialvalue=names[0] if names else "",
@@ -881,7 +882,7 @@ class ToleranceModelingMixin:
             return
         template = self._tolerance_manufacturing_template_by_name(template_name)
         if template is None:
-            messagebox.showerror(
+            host_of(self).showerror(
                 "Manufacturing Template",
                 f"Template not found: {template_name}",
                 parent=self,
