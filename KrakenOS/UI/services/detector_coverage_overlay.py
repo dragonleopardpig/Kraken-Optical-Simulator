@@ -858,7 +858,23 @@ class DetectorCoverageOverlayService:
             tp.SetFrameColor(float(color[0]), float(color[1]), float(color[2]))
             tp.SetJustificationToCentered()
             tp.SetVerticalJustificationToCentered()
-            self.inspector._add_renderer_view_prop(actor)
+            # bugs/0849: the image-plane labels (sensor, field strips, focus planes) sit at the
+            # sensor, and with a camera STEP glued the sensor is INSIDE the camera housing -- so
+            # every translucent wall between the eye and the label was blended over it, and the
+            # labels read dimmed and cross-hatched by the camera's edges (flag_20260921_172317).
+            # Annotation text goes on the always-on-top layer (the inspector's
+            # _attach_annotation_prop -- the HUD and banner share it and draw over the labels), and
+            # is never pickable: that layer is picked FIRST, and a label must not take a click
+            # meant for the body behind it.
+            try:
+                actor.PickableOff()
+            except Exception:
+                pass
+            attach = getattr(self.inspector, "_attach_annotation_prop", None)
+            if callable(attach):
+                attach(actor)
+            else:
+                self.inspector._add_renderer_view_prop(actor)
             return True
         except Exception as exc:  # pragma: no cover - defensive
             self.editor.append_debug(f"Detector coverage label skipped: {exc}")
@@ -2060,12 +2076,9 @@ def focused_image_plane_label_specs(image_point, image_axis, info, half_height,
     image_name = str(info.get("name") or "").strip()
     if image_name:
         text = f"{image_name}: {text}"   # bugs/0752: say WHICH image this plane belongs to
-    try:
-        waist = float(info.get("rms_waist_mm"))
-        plane = float(info.get("rms_plane_mm"))
-        text += f" (spot {_spot_text(waist)} here vs {_spot_text(plane)} on the sensor)"
-    except (TypeError, ValueError):
-        pass
+    # bugs/0849: the spot sizes are NOT repeated here. The banner's FOCUS row carries them
+    # (with the Landed / not-defocus verdict they feed), and on a split field the scene drew the
+    # same 100-character sentence twice, inside the camera body, over the rays.
     anchor = focus_centre + iu * (float(half_height) * (1.0 + _LABEL_MARGIN) + _LABEL_GAP)
     return [{"anchor": anchor, "text": text, "color": _IMAGE_PLANE}]
 

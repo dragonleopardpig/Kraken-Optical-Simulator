@@ -6274,6 +6274,48 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if render:
             self.render()
 
+    def _annotation_layer_renderer(self):
+        """bugs/0849: the layer annotation text draws in -- the always-on-top overlay the gizmos use
+        (bugs/0112), or the main renderer when that layer could not be created.
+
+        Scene labels sit at the sensor, which with a camera STEP glued is INSIDE the housing, so in
+        the main renderer every translucent wall in front of them was blended over the text. On the
+        top layer they draw over geometry; the HUD and the banner go on the same layer and, being
+        2-D actors, render in its overlay pass AFTER its 3-D props -- so a label can never cover
+        them."""
+        overlay = getattr(self, "_gizmo_overlay_renderer", None)
+        return overlay if overlay is not None else self._renderer
+
+    def _attach_annotation_prop(self, actor) -> None:
+        """bugs/0849: put ``actor`` on the annotation layer exactly once (idempotent -- the scene
+        refresh detaches every prop, and the HUD/banner re-attach on each update)."""
+        target = self._annotation_layer_renderer()
+        if target is None or actor is None:
+            return
+        if target is not self._renderer and self._renderer is not None:
+            try:
+                if self._renderer.HasViewProp(actor):
+                    self._renderer.RemoveViewProp(actor)
+            except Exception:
+                pass
+        try:
+            if not target.HasViewProp(actor):
+                target.AddViewProp(actor)
+        except Exception:
+            self._add_renderer_view_prop(actor)
+
+    def _detach_annotation_prop(self, actor) -> None:
+        """bugs/0849: remove ``actor`` from whichever layer holds it."""
+        if actor is None:
+            return
+        for renderer in (self._renderer, getattr(self, "_gizmo_overlay_renderer", None)):
+            if renderer is None:
+                continue
+            try:
+                renderer.RemoveViewProp(actor)
+            except Exception:
+                pass
+
     def _add_renderer_view_prop(self, actor) -> None:
         if self._renderer is None or actor is None:
             return
@@ -18570,7 +18612,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         actor = self.__dict__.get("_system_info_hud_actor")
         if not text:
             if actor is not None:
-                self._remove_renderer_view_prop(actor)
+                self._detach_annotation_prop(actor)
                 self._system_info_hud_actor = None
                 if render:
                     self.render()
@@ -18602,7 +18644,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 except Exception:
                     pass
                 actor.SetPickable(False)
-                self._add_renderer_view_prop(actor)
+                self._attach_annotation_prop(actor)
                 self._system_info_hud_actor = actor
             except Exception as exc:
                 self.editor.append_debug(f"3D system-info HUD unavailable: {exc}")
@@ -18614,9 +18656,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # runs -- a kept actor object is DETACHED on every refresh after its first.
         # Re-attach unconditionally; HasViewProp keeps it duplicate-free.
         try:
-            has_prop = getattr(self._renderer, "HasViewProp", None)
-            if not (callable(has_prop) and has_prop(actor)):
-                self._add_renderer_view_prop(actor)
+            self._attach_annotation_prop(actor)   # bugs/0849: the annotation layer
         except Exception:
             pass
         try:
@@ -18742,7 +18782,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         actor = self.__dict__.get("_solve_refusal_banner_actor")
         if not text:
             if actor is not None:
-                self._remove_renderer_view_prop(actor)
+                self._detach_annotation_prop(actor)
                 self._solve_refusal_banner_actor = None
                 if render:
                     self.render()
@@ -18772,7 +18812,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 except Exception:
                     pass
                 actor.SetPickable(False)
-                self._add_renderer_view_prop(actor)
+                self._attach_annotation_prop(actor)
                 self._solve_refusal_banner_actor = actor
             except Exception as exc:
                 self.editor.append_debug(f"3D solve-refusal banner unavailable: {exc}")
@@ -18781,9 +18821,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if actor is None:
             return
         try:
-            has_prop = getattr(self._renderer, "HasViewProp", None)
-            if not (callable(has_prop) and has_prop(actor)):
-                self._add_renderer_view_prop(actor)
+            self._attach_annotation_prop(actor)   # bugs/0849: the annotation layer
         except Exception:
             pass
         try:

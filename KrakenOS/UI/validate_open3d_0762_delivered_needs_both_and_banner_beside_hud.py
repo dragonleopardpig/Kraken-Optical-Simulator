@@ -84,13 +84,23 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     from KrakenOS.UI import open3d_inspector as oi
 
     place = inspect.getsource(oi.Kraken3DInspector._place_solve_banner_beside_system_hud)
-    ok("hud.GetSize(renderer, size)" in place,
-       "D1: GetSize is called with its OUTPUT array -- the one-argument form raises and silently "
-       "left the banner stacked")
-    ok("size = [0, 0]" in place,
-       "D2: the output array is allocated before the call")
-    ok("x_norm > 0.72" in place and "0.012, 0.83" in place,
-       "D3: it falls back to the stacked anchor rather than running off the right edge")
+    # bugs/0849: D1-D3 used to pin the IMPLEMENTATION -- `hud.GetSize(renderer, size)`,
+    # `size = [0, 0]`, `x_norm > 0.72` -- and went stale when bugs/0838 deliberately replaced the
+    # unreliable GetSize read with text-derived widths. They now assert what 0762 claimed, on the
+    # pure layout function the placement uses.
+    from KrakenOS.UI.services.system_info_hud import solve_banner_anchor
+
+    view_w, hud_w = 2478.0, 385.0
+    beside = solve_banner_anchor(hud_w, 900.0, view_w)
+    ok(abs(beside[0] - (0.012 + (hud_w + 18.0) / view_w)) < 1e-9 and beside[1] > 0.9,
+       f"D1: a banner that fits sits BESIDE the HUD, offset by the HUD's own width "
+       f"(x {beside[0]:.4f} of the viewport for a {hud_w:.0f} px HUD)")
+    stacked = solve_banner_anchor(hud_w, 2300.0, view_w)
+    ok(stacked == (0.012, 0.83),
+       f"D2: one that would run off the right edge falls back to the stacked anchor {stacked}")
+    code = [ln.split("#", 1)[0] for ln in place.splitlines()]
+    ok(any("solve_banner_anchor(" in ln for ln in code),
+       "D3: the live placement decides through that function")
     ok("_system_info_hud_actor" in place,
        "D4: the offset comes from the HUD's own rendered width, not a guessed constant")
     caller = inspect.getsource(oi.Kraken3DInspector._update_solve_refresh_banner) \

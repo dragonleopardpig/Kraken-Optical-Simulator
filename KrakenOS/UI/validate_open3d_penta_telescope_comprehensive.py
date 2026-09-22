@@ -16465,6 +16465,10 @@ phase_627_round_caps_need_a_round_rim = _phase_from_standalone(
     627, "synthetic round end-caps only for a body that is round: the day-1 ghost -- hovering om05a's housing drew a flat 75 x 156 mm plane through it labelled 'OPTICAL STEP outer +axis face face'. open3d_round_lens_pick synthesises two end-caps (97th-percentile radius, 12 percent hit slack) for any body tagged round-lens-like, and the tag is a second-moment test a box passes. Measured on eight scenes, every tagged body was a false positive -- om05a prism assembly (rim radius varies 52 percent with azimuth), a Pyrite45 camera (58), a Basler telecentric barrel (98) -- and no real lens barrel was tagged. rim_radius_variation (outermost radius per 36 azimuth bins, (max-min)/max) must be <= 0.2 for caps; a square is 0.29. The tag itself is unchanged because it also suppresses dense select edges (bugs/0003). The hover label no longer says 'face face' (_face_note_text, named apart from three functions' face_note locals that would have shadowed it). Guard drives the REAL round_lens_feature_for_display_xy through a fake inspector: a box's cap before (CONTROL) and none after, a cylinder keeps its cap, the metric on a circle/square/sparse cloud, the real prism assembly measured not round, and the label (0848)",
     "KrakenOS.UI.validate_open3d_0848_round_caps_need_a_round_rim",
     "round_caps_need_a_round_rim")
+phase_628_labels_readable_above_housings = _phase_from_standalone(
+    628, "scene labels draw above the housings, the HUD and banner above the labels: flag_20260921_172317 showed the sensor, field-strip and focus-plane labels dimmed and cross-hatched inside the camera body -- with a camera STEP glued the sensor is INSIDE the housing, and in the main renderer every translucent wall in front was blended over the text (the label asks for an 82 percent white background; the camera's edges showed straight through). The focus label also repeated the banner's FOCUS rows, spot sizes included, twice on a split field. Labels now go on the always-on-top layer the gizmos use (bugs/0112), never pickable because that layer is picked first; a real-inspector capture then showed a label OVER the banner, so the HUD and banner moved to the same layer, where 2-D actors render in the overlay pass after the 3-D props and always cover the labels -- one set of helpers (_attach_annotation_prop / _detach_annotation_prop / _annotation_layer_renderer) for all three, main renderer when there is no top layer. The focus label names field, distance and side only. Positions unchanged (user-tuned). Guard: the helpers on two real vtkRenderers (attach, idempotence, detach, fallback), the real label builder (layer, not pickable, legacy fallback), the shortened focus text, and the HUD/banner wiring; bugs/diag_0849_label_layers.py is the rendered check (0849)",
+    "KrakenOS.UI.validate_open3d_0849_labels_readable_above_housings",
+    "labels_readable_above_housings")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17158,6 +17162,7 @@ def main() -> int:
             phase_625_banner_reports_a_landed_solve,
             phase_626_face_records_use_their_own_triangles,
             phase_627_round_caps_need_a_round_rim,
+            phase_628_labels_readable_above_housings,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
