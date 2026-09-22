@@ -2,7 +2,8 @@
 
 Last updated: 2026-06-11
 
-This document summarizes the `nonseq-display-refactor` branch. The upstream
+This document summarizes the `tk` branch (named `nonseq-display-refactor` until 2026-09-22,
+renamed to tell it apart from the coming Qt branch). The upstream
 `README.md` is intentionally left unchanged; this branch README is the public
 entry point for the new UI architecture, branch capabilities, installation
 steps, validation plan, and remaining gaps.
@@ -404,9 +405,9 @@ starting range for broad binary-wheel availability; Python 3.13 is used in the
 current local Nix environment but may have fewer third-party CAD wheels.
 
 ```bash
-git clone https://github.com/Garchupiter/Kraken-Optical-Simulator.git
+git clone https://github.com/dragonleopardpig/Kraken-Optical-Simulator.git
 cd Kraken-Optical-Simulator
-git checkout nonseq-display-refactor
+git checkout tk
 
 python -m venv .venv
 . .venv/bin/activate
@@ -420,7 +421,7 @@ Before a packaged branch release exists, an editable Git install is also
 supported:
 
 ```bash
-python -m pip install -e "git+https://github.com/Garchupiter/Kraken-Optical-Simulator.git@nonseq-display-refactor#egg=KrakenOS[ui]"
+python -m pip install -e "git+https://github.com/dragonleopardpig/Kraken-Optical-Simulator.git@tk#egg=KrakenOS[ui]"
 ```
 
 Notes:
