@@ -8995,8 +8995,6 @@ class LayoutTableWorkbenchMixin:
         dialog.after_idle(place_dialog)
         dialog.after(80, place_dialog)
 
-    @staticmethod
-
     def open_paraxial_matrix_report(self) -> None:
         self._main_paraxial_analysis_dialogs().open_paraxial_matrix_report()
 

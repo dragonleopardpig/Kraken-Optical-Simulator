@@ -1425,8 +1425,6 @@ class AnalysisComputeWorkflowMixin:
             return MeritFunction(operands=[]), []
         return default_spec.build_merit_function(self), [str(default_spec.label)]
 
-    @staticmethod
-
     def start_optimization(self) -> None:
         if self.optimization_running:
             return

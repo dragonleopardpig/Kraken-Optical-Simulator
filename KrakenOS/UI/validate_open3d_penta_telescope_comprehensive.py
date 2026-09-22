@@ -16469,6 +16469,10 @@ phase_628_labels_readable_above_housings = _phase_from_standalone(
     628, "scene labels draw above the housings, the HUD and banner above the labels: flag_20260921_172317 showed the sensor, field-strip and focus-plane labels dimmed and cross-hatched inside the camera body -- with a camera STEP glued the sensor is INSIDE the housing, and in the main renderer every translucent wall in front was blended over the text (the label asks for an 82 percent white background; the camera's edges showed straight through). The focus label also repeated the banner's FOCUS rows, spot sizes included, twice on a split field. Labels now go on the always-on-top layer the gizmos use (bugs/0112), never pickable because that layer is picked first; a real-inspector capture then showed a label OVER the banner, so the HUD and banner moved to the same layer, where 2-D actors render in the overlay pass after the 3-D props and always cover the labels -- one set of helpers (_attach_annotation_prop / _detach_annotation_prop / _annotation_layer_renderer) for all three, main renderer when there is no top layer. The focus label names field, distance and side only. Positions unchanged (user-tuned). Guard: the helpers on two real vtkRenderers (attach, idempotence, detach, fallback), the real label builder (layer, not pickable, legacy fallback), the shortened focus text, and the HUD/banner wiring; bugs/diag_0849_label_layers.py is the rendered check (0849)",
     "KrakenOS.UI.validate_open3d_0849_labels_readable_above_housings",
     "labels_readable_above_housings")
+phase_629_no_static_method_takes_self = _phase_from_standalone(
+    629, "no static method takes self -- the Optimize button and Action -> Paraxial Matrix Report work again: found while cutting the Qt seam, when the converter declined to rewrite a self.after inside start_optimization because it was STATIC. The mixin extraction of 2026-05-26 (fcb42075) left '@staticmethod' a blank line above start_optimization(self) and open_paraxial_matrix_report(self), so the button and the menu entry called them with no arguments and raised TypeError on every click for four months (report_callback_exception showed it; neither feature ran). Decorators removed; a whole-package AST scan found no other static method taking self/cls. Guard: the package-wide invariant with a CONTROL proving the scan catches the exact slip, and both methods called as the UI calls them with a CONTROL showing the static version's TypeError (0850)",
+    "KrakenOS.UI.validate_open3d_0850_no_static_method_takes_self",
+    "no_static_method_takes_self")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17163,6 +17167,7 @@ def main() -> int:
             phase_626_face_records_use_their_own_triangles,
             phase_627_round_caps_need_a_round_rim,
             phase_628_labels_readable_above_housings,
+            phase_629_no_static_method_takes_self,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
