@@ -3886,14 +3886,22 @@ def _reference_aperture_disk_max_opacity(inspector: Kraken3DInspector, row_index
 
 
 def _billboard_label_count(inspector: Kraken3DInspector) -> int:
+    # bugs/0849: annotation text (coverage labels, HUD, banner) lives on the always-on-top layer,
+    # so count text actors on EVERY layer the inspector draws with -- the claim is "the labels are
+    # drawn", not "the labels are in the main renderer".
     n = 0
+    seen: set[int] = set()
     try:
-        props = inspector._renderer.GetViewProps()
-        props.InitTraversal()
-        for _ in range(props.GetNumberOfItems()):
-            p = props.GetNextProp()
-            if p is not None and "TextActor" in p.GetClassName():
-                n += 1
+        for renderer in (inspector._renderer, getattr(inspector, "_gizmo_overlay_renderer", None)):
+            if renderer is None:
+                continue
+            props = renderer.GetViewProps()
+            props.InitTraversal()
+            for _ in range(props.GetNumberOfItems()):
+                p = props.GetNextProp()
+                if p is not None and id(p) not in seen and "TextActor" in p.GetClassName():
+                    seen.add(id(p))
+                    n += 1
     except Exception:
         return -1
     return n

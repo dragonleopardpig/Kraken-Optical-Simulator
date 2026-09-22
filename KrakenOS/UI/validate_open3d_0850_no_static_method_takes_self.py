@@ -56,7 +56,7 @@ def run_checks() -> tuple[bool, list[str]]:
         if "archive" in path.parts:
             continue
         try:
-            tree = ast.parse(path.read_text(errors="replace"))
+            tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
         except SyntaxError:
             continue
         offenders += [f"{path}:{hit}" for hit in _static_self_methods(tree)]

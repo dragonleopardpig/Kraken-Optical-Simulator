@@ -219,7 +219,7 @@ def verify_registry_against_source(repo_root=None) -> list[str]:
             if not path.is_file():
                 problems.append(f"{fam.name}: {rel_path} does not exist")
                 continue
-            text = path.read_text()
+            text = path.read_text(encoding="utf-8")  # bugs/0743: never the locale's
             if f"opacity={value:g}" not in text and f"opacity={value}" not in text:
                 problems.append(
                     f"{fam.name}: declared {what} {value:g} no longer appears in {rel_path}"
@@ -228,7 +228,7 @@ def verify_registry_against_source(repo_root=None) -> list[str]:
             path = root / fam.owner_module.replace(".", "/")
             path = path.with_suffix(".py")
             if path.is_file():
-                text = path.read_text()
+                text = path.read_text(encoding="utf-8")  # bugs/0743: never the locale's
                 literal = ", ".join(f"{c:g}" for c in fam.color)
                 if literal not in text:
                     problems.append(
