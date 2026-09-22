@@ -16489,6 +16489,10 @@ phase_631_model_variables = _phase_from_standalone(
     631, "the model declares its own state variables (Qt seam step 1c part 1): of 135 tk.*Var state variables 92 were made by PANELS onto the editor and model code read or wrote 100 of them (1174 set, 191 get), so without the Tk panels the attributes would not exist and a Qt view cannot make a tk.StringVar. Every UiHost now makes variables (TkUiHost a real tk.*Var with tkinter's default root, ScriptedUiHost an ObservableValue with tk's get coercion and trace signature); the editor's 10 and the inspector's 32 constructor variables are host-made; model_variables.MODEL_VARIABLES declares the 64 panel-made variables the model uses with their start-up values, and ensure_model_variables creates whichever are missing right after the UI build, never replacing one -- under Tk the registry creates nothing. Guard: ObservableValue against real tk variables, the factories, the registry on a toolkit-free owner and on a REAL editor (created none, all tk, no drift), completeness against an AST census (it caught status_var), and host-made constructor variables (0852)",
     "KrakenOS.UI.validate_open3d_0852_model_variables",
     "model_variables")
+phase_632_editor_owns_its_root = _phase_from_standalone(
+    632, "the editor OWNS its Tk root instead of BEING one (Qt seam step 1d): KrakenLayoutEditor(18 mixins, tk.Tk) was the Tk root, so the model could only live inside a Tk application. tk.Tk left the bases; the constructor makes self.root = tk.Tk(); __getattr__ forwards to the root whatever the editor does not define -- the semantics a tk.Tk subclass had -- and __str__ is the root path '.'; tkinter's per-master naming counter is a property onto the root's so an editor-parented and a root-parented widget can never both be '.!frame'; a raising callback still reaches the editor's report_callback_exception (tkinter walks .master up, which now ends at the editor) and the root's handler is the editor's; destroy() ends by destroying the root. A spike showed tkinter accepts a root-owning forwarder as a master, so panels and the 171 editor-instantiating validators keep working unchanged, and an editor built with __new__ now raises a clean AttributeError -- the bugs/0223 recursion class is gone by construction (0853)",
+    "KrakenOS.UI.validate_open3d_0853_editor_owns_its_root",
+    "editor_owns_its_root")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17186,6 +17190,7 @@ def main() -> int:
             phase_629_no_static_method_takes_self,
             phase_630_ui_host_seam,
             phase_631_model_variables,
+            phase_632_editor_owns_its_root,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

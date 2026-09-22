@@ -1,7 +1,19 @@
 # Qt migration -- design and plan
 
-Status: **Phase 1 started 2026-09-22** on branch `tk`. 1a + 1b landed as bugs/0851 (the UI host; 175
-call sites converted); 0850 (two broken static methods) was found on the way.
+Status (2026-09-22): **the seam on `tk` is in place.**
+
+| step | landed |
+|---|---|
+| 1a/1b the UI host; 175 dialog + scheduling call sites through `host_of` | bugs/0851 |
+| 1c the model declares its 64 state variables; hosts make variables; `ObservableValue` | bugs/0852 |
+| 1d the editor OWNS its Tk root instead of BEING one (forwarding) | bugs/0853 |
+| found on the way: two `@staticmethod` slips (Optimize, Paraxial Matrix Report) | bugs/0850 |
+
+Deferred on purpose: moving seven self-contained dialog functions out of services (reached only
+from menu actions; a Qt build calls Qt dialogs instead, so their location does not block Qt), and
+the inspector's own 1d (it IS the 3D view; it becomes a Qt widget in phase 5).
+
+**Next: the Qt branch, phase 2** -- per the user, the branch is created now that the seam exists.
 
 ## Decisions (user, 2026-09-22)
 

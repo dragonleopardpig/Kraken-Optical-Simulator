@@ -2704,7 +2704,36 @@ _layout_plot_interaction_module._sync_layout_globals(globals())
 _layout_scene_bundle_display_module._sync_layout_globals(globals())
 
 
-class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlacementMixin, LayoutOpticalSolidWorkflowMixin, LayoutShellControlsMixin, LayoutPlotInteractionMixin, GeometricAnalysisMixin, LayoutAnalysisDisplayMixin, LayoutSceneBundleDisplayMixin, LayoutPolylineDisplayMixin, LayoutSceneProjectionMixin, ParaxialToolsMixin, AnalysisReportsMixin, ThreeDSceneToolsMixin, LayoutImportExportMixin, TracePreviewSamplingMixin, AnalysisComputeWorkflowMixin, LayoutTableWorkbenchMixin, LayoutBugRecorderMixin, tk.Tk):
+class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlacementMixin, LayoutOpticalSolidWorkflowMixin, LayoutShellControlsMixin, LayoutPlotInteractionMixin, GeometricAnalysisMixin, LayoutAnalysisDisplayMixin, LayoutSceneBundleDisplayMixin, LayoutPolylineDisplayMixin, LayoutSceneProjectionMixin, ParaxialToolsMixin, AnalysisReportsMixin, ThreeDSceneToolsMixin, LayoutImportExportMixin, TracePreviewSamplingMixin, AnalysisComputeWorkflowMixin, LayoutTableWorkbenchMixin, LayoutBugRecorderMixin):
+    # ---- step 1d: stand in for the Tk root it owns ------------------------------------------------
+    def __getattr__(self, name: str):
+        """Anything the editor does not define is looked up on the root it owns -- the semantics a
+        tk.Tk subclass had (tkinter's own __getattr__ then reaches the Tcl interpreter). An editor
+        built with __new__ (the off-thread trace worker, render_layout_snapshot) has no root and
+        gets a clean AttributeError instead of the bugs/0223 recursion."""
+        root = self.__dict__.get("root")
+        if root is None or name == "root":
+            raise AttributeError(name)
+        return getattr(root, name)
+
+    def __str__(self) -> str:
+        root = self.__dict__.get("root")
+        return str(root) if root is not None else object.__repr__(self)
+
+    @property
+    def _last_child_ids(self):
+        # tkinter numbers child widgets per master and ASSIGNS a fresh counter to the master when
+        # it has none; keep one counter -- the root's -- so a widget parented to the editor and one
+        # parented to the root can never both be named `.!frame`.
+        root = self.__dict__.get("root")
+        return None if root is None else root._last_child_ids
+
+    @_last_child_ids.setter
+    def _last_child_ids(self, value) -> None:
+        root = self.__dict__.get("root")
+        if root is not None:
+            root._last_child_ids = value
+
     def report_callback_exception(self, exc, val, tb) -> None:
         """Surface uncaught callback errors instead of failing silently.
 
@@ -2736,6 +2765,15 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
 
     def __init__(self, *, headless: bool = False, ui=None) -> None:
         super().__init__()
+        # docs/design_qt_migration.md step 1d: the editor OWNS its Tk root instead of BEING one, so
+        # the same model can later sit behind a Qt window. Everything that treated the editor as a
+        # Tk widget -- panels parenting widgets to it, `editor.update()`, `editor.after(...)`, the
+        # 171 validators that do both -- keeps working through __getattr__ below, which forwards
+        # to the root exactly what being a tk.Tk used to provide.
+        self.root = tk.Tk()
+        # tkinter reports a callback's exception to the widget tree's root, found by walking
+        # `.master` up -- which now ends at THIS object; set the real root's handler too.
+        self.root.report_callback_exception = self.report_callback_exception
         # docs/design_qt_migration.md: model/controller code reaches the toolkit only through
         # this host (via uihost.host_of). TkUiHost is today's behaviour by delegation; a guard
         # may pass a ScriptedUiHost to answer dialogs and drive timers without a display.
@@ -3171,7 +3209,9 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
             self._analysis_executor_atexit = None
         self._shutdown_analysis_executor()
         self._shutdown_optimization_worker(force=True)
-        super().destroy()
+        root = self.__dict__.get("root")
+        if root is not None:
+            root.destroy()   # step 1d: was super().destroy() when the editor WAS the root
 
     def request_quit(self) -> None:
         if self.headless or self._confirm_close_with_optional_save():
