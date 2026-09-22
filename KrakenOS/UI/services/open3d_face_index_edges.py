@@ -198,6 +198,36 @@ def _surface_triangles_and_face_index_compute(mesh):
     return surface, np.asarray(triangles, dtype=float), np.asarray(values, dtype=int)
 
 
+def triangle_array_and_cell_values(mesh, name: str = FACE_INDEX_CELL_DATA) -> tuple[np.ndarray, np.ndarray]:
+    """bugs/0847: the displayed triangles and the per-cell array ``name``, ALIGNED 1:1.
+
+    A cleaned STEP display mesh can carry degenerate ``VTK_LINE`` cells, and VTK numbers cells
+    verts -> lines -> polys, so every triangle's cell id sits AFTER them. A caller that takes
+    the triangles alone (polys only) and indexes them with cell or tessellation indices is off
+    by the number of stray cells -- 32 on om05a's prism assembly, which built 583 of its 710
+    face records from the wrong triangles. This goes through the same repair as the hover path
+    (:func:`_triangle_only_surface_with_face_index`) so both sides see one numbering. Returns
+    empty arrays when the mesh does not carry ``name`` per cell."""
+    empty = (np.empty((0, 3, 3), dtype=float), np.empty((0,), dtype=int))
+    if pv is None or mesh is None:
+        return empty
+    try:
+        repaired = _triangle_only_surface_with_face_index(mesh)
+        surface = pv.wrap(repaired if repaired is not None else mesh)
+        faces = np.asarray(surface.faces, dtype=np.int64).reshape((-1, 4))
+        if faces.shape[0] <= 0 or not np.all(faces[:, 0] == 3):
+            return empty
+        values = np.asarray(surface.cell_data.get(name, ()), dtype=int)
+        if values.shape[0] != faces.shape[0]:
+            return empty
+        triangles = np.asarray(surface.points, dtype=float)[faces[:, 1:4], :3]
+    except Exception:
+        return empty
+    if triangles.ndim != 3 or triangles.shape[1:] != (3, 3) or not np.all(np.isfinite(triangles)):
+        return empty
+    return np.asarray(triangles, dtype=float), values
+
+
 def triangle_array_and_face_index(mesh) -> tuple[np.ndarray, np.ndarray]:
     """Return displayed triangles and analytic face index values."""
     _surface, triangles, face_index = _surface_triangles_and_face_index(mesh)

@@ -43,6 +43,7 @@ from KrakenOS.UI.services.led_clear_aperture_detect import (
 )
 from KrakenOS.UI.services.open3d_face_index_edges import (
     face_index_for_display_cell,
+    triangle_array_and_cell_values,
     triangle_array_and_face_index,
 )
 from KrakenOS.UI.services.step_face_direction import StepFaceDirectionService
@@ -8209,12 +8210,27 @@ class ScenePlacementMixin:
         if triangles.ndim != 3 or triangles.shape[1:] != (3, 3) or triangles.shape[0] <= 0:
             return None
         face_index_by_triangle = None
+        # bugs/0847: the face tag of each DISPLAYED triangle, aligned. A cleaned STEP mesh carries
+        # degenerate VTK_LINE cells, numbered before the polygons, so the raw cell array is longer
+        # than `triangles` and every triangle's tag sits past them. This used to compare the two
+        # lengths, reject the tags as mismatched, and fall back to the TESSELLATION indices --
+        # shifted by the same count. On om05a's prism assembly (32 line cells) 583 of 710 face
+        # records were built from the wrong triangles, normals off by up to 90 degrees; the hover
+        # outline drawn from one of them is the yellow shape floating above the housing.
         try:
-            candidate = np.asarray(surface.cell_data.get("kraken_step_face_index", ()), dtype=int)
-            if candidate.shape[0] == triangles.shape[0]:
-                face_index_by_triangle = candidate
+            aligned_triangles, aligned_tags = triangle_array_and_cell_values(mesh, "kraken_step_face_index")
+            if aligned_tags.shape[0] == triangles.shape[0] and np.array_equal(aligned_triangles, triangles):
+                face_index_by_triangle = aligned_tags
         except Exception:
             face_index_by_triangle = None
+        if face_index_by_triangle is None:
+            try:
+                candidate = np.asarray(surface.cell_data.get("kraken_step_face_index", ()), dtype=int)
+                if candidate.shape[0] == triangles.shape[0]:
+                    face_index_by_triangle = candidate
+            except Exception:
+                face_index_by_triangle = None
+        outer_index_by_id = {str(face.face_id): index for index, face in enumerate(document.outer_faces)}
         records: list[dict[str, object]] = []
         grouped_face_ids: set[str] = set()
         try:
@@ -8224,14 +8240,24 @@ class ScenePlacementMixin:
         if grouped_records:
             for grouped in grouped_records:
                 record = dict(grouped)
-                indices = tuple(
-                    int(value)
-                    for value in list(record.get("triangle_indices", ())) or ()
-                    if 0 <= int(value) < int(triangles.shape[0])
-                )
+                source_ids = tuple(str(value) for value in list(record.get("source_face_ids", ())) if str(value))
+                # bugs/0847: the group's triangles are the DISPLAYED triangles tagged with its own
+                # source faces. Its stored triangle_indices count the STEP tessellation, which the
+                # display mesh renumbers once cleaning turns degenerate triangles into lines.
+                own = [outer_index_by_id[value] for value in source_ids if value in outer_index_by_id]
+                if face_index_by_triangle is not None and own:
+                    indices = tuple(
+                        int(value)
+                        for value in np.flatnonzero(np.isin(face_index_by_triangle, np.asarray(own, dtype=int)))
+                    )
+                else:
+                    indices = tuple(
+                        int(value)
+                        for value in list(record.get("triangle_indices", ())) or ()
+                        if 0 <= int(value) < int(triangles.shape[0])
+                    )
                 if not indices:
                     continue
-                source_ids = tuple(str(value) for value in list(record.get("source_face_ids", ())) if str(value))
                 grouped_face_ids.update(source_ids)
                 # triangle_indices already index the display-transformed
                 # `triangles`, so derive the cap centroid/normal from those

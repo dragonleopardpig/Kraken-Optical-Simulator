@@ -25287,6 +25287,21 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return None
 
     @staticmethod
+    def _outline_stays_on_triangles(outline, triangles, *, tolerance_mm: float = 0.5) -> bool:
+        """bugs/0847: does ``outline`` lie within the bounding box of the ``triangles`` it outlines
+        (to ``tolerance_mm``, or 2% of their diagonal when larger)? False for an empty outline."""
+        try:
+            if outline is None or int(getattr(outline, "n_points", 0)) <= 0:
+                return False
+            points = np.asarray(triangles, dtype=float).reshape((-1, 3))
+            lo, hi = points.min(axis=0), points.max(axis=0)
+            slack = max(float(tolerance_mm), 0.02 * float(np.linalg.norm(hi - lo)))
+            bounds = np.asarray(outline.bounds, dtype=float).reshape(3, 2)
+            return bool(np.all(bounds[:, 0] >= lo - slack) and np.all(bounds[:, 1] <= hi + slack))
+        except Exception:
+            return False
+
+    @staticmethod
     def _planar_outline_from_triangles(triangles, normal_world=None):
         try:
             triangle_array = np.asarray(triangles, dtype=float)
@@ -25434,6 +25449,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                             selected_triangles,
                             normal_world=face.get("normal_world", face.get("normal")),
                         )
+                        # bugs/0847: a planar outline is only an outline of THIS face while it stays
+                        # inside the face. A lens cap's projected rim does, by construction. A group
+                        # the axisymmetric grouper merged across non-coplanar planes (om05a's prism
+                        # assembly: two -z and two +y patches as one "face") has no single plane,
+                        # and the averaged one drew the shape 29.8 mm outside the housing. Then the
+                        # true boundary edges are the honest outline.
+                        if not self._outline_stays_on_triangles(outline, selected_triangles):
+                            outline = None
                 if outline is None or int(getattr(outline, "n_points", 0)) <= 0:
                     outline = face_outline_from_face_indices(display_mesh, face_indices)
                 overlay = face_mesh
