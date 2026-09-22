@@ -88,6 +88,18 @@ def _timed_open3d_interaction(method):
     return wrapper
 
 
+
+def _face_note_text(face_id, noun: str = "face") -> str:
+    """bugs/0848: " <face_id> face" for a hover line -- without saying it twice when the id is
+    already a face name (the round-lens caps are called "outer +axis face")."""
+    text = str(face_id or "").strip()
+    if not text:
+        return f" {noun}"
+    if text.lower() == noun or text.lower().endswith(" " + noun):
+        return f" {text}"
+    return f" {text} {noun}"
+
+
 class Open3DInteractionService:
     """Handle Open 3D pick and hover interactions for the inspector."""
 
@@ -1115,7 +1127,7 @@ class Open3DInteractionService:
                             if self._picked_row_index is not None:
                                 self._set_row_highlight(None)
                             self._update_hover_status(
-                                f"S{int(row_index)} {row.name or row.surface or 'CAD row'}{(' ' + face_id) if face_id else ''} face",
+                                f"S{int(row_index)} {row.name or row.surface or 'CAD row'}{_face_note_text(face_id)}",
                                 display_xy=(x, y),
                                 render=True,
                             )
@@ -1398,9 +1410,9 @@ class Open3DInteractionService:
                             if hover_key != self._hover_step_cell_key:
                                 outline = self._hover_overlay_for_feature(feature[0], feature[1])
                             self._set_step_hover_outline(outline, hover_key)
-                            face_note = f" {face_id} face" if face_id else " feature"
+                            note = _face_note_text(face_id) if face_id else " feature"
                             self._update_hover_status(
-                                f"{str(step_label).upper()} STEP{face_note}",
+                                f"{str(step_label).upper()} STEP{note}",
                                 display_xy=(x, y),
                                 render=True,
                             )
@@ -1431,9 +1443,8 @@ class Open3DInteractionService:
                                     else None
                                 )
                                 row_name = (row.name or row.surface or "CAD row") if row is not None else "CAD row"
-                                face_note = f" {face_id} face" if face_id else " face"
                                 self._update_hover_status(
-                                    f"S{row_index} {row_name}{face_note}",
+                                    f"S{row_index} {row_name}{_face_note_text(face_id)}",
                                     display_xy=(x, y),
                                     render=True,
                                 )
@@ -1551,7 +1562,7 @@ class Open3DInteractionService:
             coordinate_lines: list[str] = []
             if through_pick is not None:
                 face_id = str(through_pick.face.get("face_id", "") or "").strip() or "face"
-                face_note = f" {face_id} internal face" if through_pick.internal else f" {face_id} face"
+                face_note = f" {face_id} internal face" if through_pick.internal else _face_note_text(face_id)
                 coordinate_lines.append(f"Pick={self._world_xyz_text(through_pick.point_world)}")
                 coordinate_lines.append(f"Center={self._world_xyz_text(self._surface_center_from_face_ray_pick(through_pick))}")
             else:

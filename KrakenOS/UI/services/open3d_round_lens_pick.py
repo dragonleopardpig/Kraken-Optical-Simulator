@@ -20,6 +20,47 @@ from KrakenOS.UI.services.open3d_face_pick import FaceRayPick
 from KrakenOS.UI.services.open3d_timing import open3d_trace_span
 
 
+#: bugs/0848: how much the rim radius may vary with azimuth before a body is not ROUND. A turned
+#: lens or disc varies by tessellation noise (a few percent); the bodies the second-moment test
+#: wrongly passed vary by 52% (om05a prism assembly), 58% (a Pyrite45 camera) and 98% (a Basler
+#: telecentric barrel). A square rim varies by 29%.
+ROUND_RIM_MAX_VARIATION = 0.2
+_ROUND_RIM_BINS = 36
+
+
+def rim_radius_variation(points, center, axis, *, bins: int = _ROUND_RIM_BINS) -> "float | None":
+    """bugs/0848: (max - min) / max of the OUTERMOST radius per azimuth bin about ``axis``, or
+    None when too few bins are populated to judge. 0 for a circle."""
+    try:
+        pts = np.asarray(points, dtype=float).reshape((-1, 3))
+        c = pts - np.asarray(center, dtype=float).reshape(1, 3)
+        axis = np.asarray(axis, dtype=float).reshape(3)
+        axis = axis / float(np.linalg.norm(axis))
+    except Exception:
+        return None
+    radial = c - np.outer(c @ axis, axis)
+    radius = np.linalg.norm(radial, axis=1)
+    seed = np.array([1.0, 0.0, 0.0]) if abs(float(axis[0])) < 0.9 else np.array([0.0, 1.0, 0.0])
+    u = np.cross(axis, seed)
+    u = u / float(np.linalg.norm(u))
+    v = np.cross(axis, u)
+    angle = np.arctan2(radial @ v, radial @ u)
+    index = np.clip(((angle + np.pi) / (2.0 * np.pi) * bins).astype(int), 0, bins - 1)
+    rim = np.full(bins, np.nan)
+    np.fmax.at(rim, index, radius)
+    rim = rim[np.isfinite(rim)]
+    if rim.size < int(0.75 * bins) or float(np.max(rim)) <= 1.0e-12:
+        return None
+    return float((np.max(rim) - np.min(rim)) / np.max(rim))
+
+
+def rim_is_round(points, center, axis, *, max_variation: float = ROUND_RIM_MAX_VARIATION) -> bool:
+    """bugs/0848: is the body's rim actually round about ``axis``? Synthetic round end-caps are
+    only a description of the body when it is."""
+    variation = rim_radius_variation(points, center, axis)
+    return variation is not None and variation <= float(max_variation)
+
+
 def _metadata_round_lens_cap_pick(inspector: Any, label: str, display_xy):
     """Resolve a round optical STEP click to an analytic cap face record.
 
@@ -159,6 +200,13 @@ def round_lens_feature_for_display_xy(inspector: Any, label: str, display_xy):
             continue
         point_array = np.asarray(points, dtype=float).reshape((-1, 3))
         if point_array.shape[0] < 8 or not np.all(np.isfinite(point_array[:, :3])):
+            continue
+        # bugs/0848: the "round-lens-like" tag is a second-moment test -- two similar spreads and
+        # one thin one -- and a box passes it. On om05a's prism assembly this synthesised a
+        # 75 x 156 mm "outer +axis face" through the housing (the day-1 ghost), hit-tested with
+        # 12% of the radius as slack. Caps describe a round body only; anything else keeps its
+        # real faces.
+        if not rim_is_round(point_array[:, :3], object_center, axis[:3]):
             continue
         projections = (point_array[:, :3] - object_center.reshape(1, 3)) @ axis[:3]
         if projections.size < 8 or not np.all(np.isfinite(projections)):
