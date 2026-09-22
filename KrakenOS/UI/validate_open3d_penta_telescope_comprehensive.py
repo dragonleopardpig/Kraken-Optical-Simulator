@@ -16485,6 +16485,10 @@ phase_630_ui_host_seam = _phase_from_standalone(
     630, "the Qt-migration seam, step 1a/1b: model/controller code reaches the toolkit only through the UI host (docs/design_qt_migration.md; user decisions 2026-09-22: PySide6, one codebase both toolkits, seam first on tk). KrakenOS/UI/uihost: UiHost with tkinter's own names (after/after_cancel/after_idle/update_idletasks, the messagebox/filedialog/simpledialog calls, clipboard); TkUiHost = today's behaviour by delegation (timers on the wrapped widget, dialogs resolved at call time); ScriptedUiHost = no toolkit, a deterministic clock and scripted answers with every call recorded; host_of(owner) = the owner's host, else its editor's, else the owner wrapped so a guard's stubbed after still answers. 175 call sites in 17 services/mixins/editor/inspector files rewritten by an AST-guided converter; six view-building closures in inspection_cell/inspection_part remain for step 1c and are named. The one validator that patched a module's messagebox now scripts the host. Guard: Tk delegation, the scripted host's clock and answers, host resolution, the model layer's purity outside the named closures, and a REAL headless editor built with a ScriptedUiHost asking File -> Open through it with the scripted cancel leaving the layout untouched (0851)",
     "KrakenOS.UI.validate_open3d_0851_ui_host_seam",
     "ui_host_seam")
+phase_631_model_variables = _phase_from_standalone(
+    631, "the model declares its own state variables (Qt seam step 1c part 1): of 135 tk.*Var state variables 92 were made by PANELS onto the editor and model code read or wrote 100 of them (1174 set, 191 get), so without the Tk panels the attributes would not exist and a Qt view cannot make a tk.StringVar. Every UiHost now makes variables (TkUiHost a real tk.*Var with tkinter's default root, ScriptedUiHost an ObservableValue with tk's get coercion and trace signature); the editor's 10 and the inspector's 32 constructor variables are host-made; model_variables.MODEL_VARIABLES declares the 64 panel-made variables the model uses with their start-up values, and ensure_model_variables creates whichever are missing right after the UI build, never replacing one -- under Tk the registry creates nothing. Guard: ObservableValue against real tk variables, the factories, the registry on a toolkit-free owner and on a REAL editor (created none, all tk, no drift), completeness against an AST census (it caught status_var), and host-made constructor variables (0852)",
+    "KrakenOS.UI.validate_open3d_0852_model_variables",
+    "model_variables")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17181,6 +17185,7 @@ def main() -> int:
             phase_628_labels_readable_above_housings,
             phase_629_no_static_method_takes_self,
             phase_630_ui_host_seam,
+            phase_631_model_variables,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

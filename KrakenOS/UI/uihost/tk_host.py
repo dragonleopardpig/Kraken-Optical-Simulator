@@ -98,6 +98,29 @@ class TkUiHost(UiHost):
     def askfloat(self, title, prompt, **options):
         return self._simpledialog().askfloat(title, prompt, **options)
 
+    # ---- state variables ----------------------------------------------------------------------
+    # `master` defaults to None -- tkinter's default root -- exactly as the `tk.StringVar(value=...)`
+    # calls these replace; every widget of the app shares one interpreter either way.
+    def string_var(self, value="", **options):
+        import tkinter as tk
+
+        return tk.StringVar(master=options.get("master"), value=value)
+
+    def int_var(self, value=0, **options):
+        import tkinter as tk
+
+        return tk.IntVar(master=options.get("master"), value=value)
+
+    def double_var(self, value=0.0, **options):
+        import tkinter as tk
+
+        return tk.DoubleVar(master=options.get("master"), value=value)
+
+    def boolean_var(self, value=False, **options):
+        import tkinter as tk
+
+        return tk.BooleanVar(master=options.get("master"), value=value)
+
     # ---- clipboard ----------------------------------------------------------------------------
     def clipboard_get(self) -> str:
         return str(self._root.clipboard_get())

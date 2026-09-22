@@ -147,6 +147,27 @@ class ScriptedUiHost(UiHost):
     def askfloat(self, title, prompt, **options):
         return self._answer("askfloat", title, prompt, **options)
 
+    # ---- state variables ----------------------------------------------------------------------
+    def string_var(self, value="", **options):
+        from KrakenOS.UI.uihost.values import ObservableValue
+
+        return ObservableValue("string", value)
+
+    def int_var(self, value=0, **options):
+        from KrakenOS.UI.uihost.values import ObservableValue
+
+        return ObservableValue("int", value)
+
+    def double_var(self, value=0.0, **options):
+        from KrakenOS.UI.uihost.values import ObservableValue
+
+        return ObservableValue("double", value)
+
+    def boolean_var(self, value=False, **options):
+        from KrakenOS.UI.uihost.values import ObservableValue
+
+        return ObservableValue("boolean", value)
+
     # ---- clipboard ------------------------------------------------------------------------------
     def clipboard_get(self) -> str:
         return self._clipboard

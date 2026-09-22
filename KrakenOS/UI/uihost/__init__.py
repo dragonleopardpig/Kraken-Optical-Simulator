@@ -9,8 +9,9 @@ from __future__ import annotations
 from KrakenOS.UI.uihost.base import UiHost
 from KrakenOS.UI.uihost.scripted import ScriptedUiHost
 from KrakenOS.UI.uihost.tk_host import TkUiHost
+from KrakenOS.UI.uihost.values import ObservableValue
 
-__all__ = ["UiHost", "TkUiHost", "ScriptedUiHost", "host_of"]
+__all__ = ["UiHost", "TkUiHost", "ScriptedUiHost", "ObservableValue", "host_of"]
 
 
 def host_of(owner) -> UiHost:

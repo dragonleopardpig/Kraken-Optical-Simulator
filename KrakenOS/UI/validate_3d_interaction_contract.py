@@ -75,6 +75,7 @@ from KrakenOS.UI.services.step_overlay_promotion import StepOverlayPromotionServ
 from KrakenOS.UI.services.tolerance_stackup import ToleranceStackupService
 from KrakenOS.UI.services.trace_preview import TracePreviewService
 from KrakenOS.UI.widgets.tooltips import WidgetTooltip
+from KrakenOS.UI.uihost.introspect import constructor_variable_default as _default_of  # bugs/0852
 
 
 def _scene_path_preserves_raykeeper_terminal_continuation() -> tuple[bool, str]:
@@ -889,10 +890,10 @@ def main() -> int:
         ),
         (
             "Open 3D visual diagnostics are opt-in toggles",
-            "show_reference_surfaces_var = tk.BooleanVar(value=False)" in init
-            and "show_detector_overlays_var = tk.BooleanVar(value=False)" in init
-            and "show_terminal_diagnostics_var = tk.BooleanVar(value=False)" in init
-            and "show_placement_handles_var = tk.BooleanVar(value=False)" in init
+            _default_of(Kraken3DInspector, "show_reference_surfaces_var") is False
+            and _default_of(Kraken3DInspector, "show_detector_overlays_var") is False
+            and _default_of(Kraken3DInspector, "show_terminal_diagnostics_var") is False
+            and _default_of(Kraken3DInspector, "show_placement_handles_var") is False
             and "scene_visibility_toggled" in scene_visibility_changed,
         ),
         (
@@ -1380,7 +1381,7 @@ def main() -> int:
         ("active mode badge covers Source Target", "SOURCE TARGET" in badge_text),
         (
             "Open 3D passive ray selection is disabled by default",
-            "ray_pick_enabled_var = tk.BooleanVar(value=False)" in init
+            _default_of(Kraken3DInspector, "ray_pick_enabled_var") is False
             and '"Pick rays"' in init_with_top_controls
             and "_on_ray_pick_changed" in init_with_top_controls
             and "return bool(self.ray_pick_enabled_var.get())" in ray_pick_enabled

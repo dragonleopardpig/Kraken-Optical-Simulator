@@ -77,6 +77,21 @@ class UiHost:
     def askfloat(self, title: str, prompt: str, **options) -> "float | None":
         raise NotImplementedError
 
+    # ---- state variables (step 1c) ------------------------------------------------------------
+    def string_var(self, value: str = "", **options):
+        """A state variable the model reads and writes and views bind to: a real ``tk.StringVar``
+        from TkUiHost, an :class:`ObservableValue` from a toolkit-free host."""
+        raise NotImplementedError
+
+    def int_var(self, value: int = 0, **options):
+        raise NotImplementedError
+
+    def double_var(self, value: float = 0.0, **options):
+        raise NotImplementedError
+
+    def boolean_var(self, value: bool = False, **options):
+        raise NotImplementedError
+
     # ---- clipboard ----------------------------------------------------------------------------
     def clipboard_get(self) -> str:
         raise NotImplementedError

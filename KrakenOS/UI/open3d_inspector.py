@@ -587,7 +587,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._widget_registry.add(ThicknessDimensionWidget(self))
         self._application_logic = Open3DApplicationLogic(self)
         self._event_recorder = Open3DEventRecorder(self)
-        self.recorder_button_var = tk.StringVar(value="● Record bug")
+        self.recorder_button_var = self.ui.string_var(value="● Record bug")
         self._actor_row_map: dict[str, int] = {}
         self._row_actor_map: dict[int, list[str]] = {}
         self._actor_ray_map: dict[str, int] = {}
@@ -870,77 +870,77 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 pid=int(os.getpid()),
             )
         self._show_rays_before_axis_pick = False
-        self.stl_axis_var = tk.StringVar(value="+Z")
-        self.orient_axis_var = tk.StringVar(value="+Z")
-        self.normal_target_var = tk.StringVar(value=SCENE_NORMAL_TARGET_LABELS["detector"])
-        self.step_carry_grid_var = tk.StringVar(value=STEP_CARRY_GRID_FREE)
-        self.rotation_step_deg_var = tk.StringVar(value="90")
+        self.stl_axis_var = self.ui.string_var(value="+Z")
+        self.orient_axis_var = self.ui.string_var(value="+Z")
+        self.normal_target_var = self.ui.string_var(value=SCENE_NORMAL_TARGET_LABELS["detector"])
+        self.step_carry_grid_var = self.ui.string_var(value=STEP_CARRY_GRID_FREE)
+        self.rotation_step_deg_var = self.ui.string_var(value="90")
         # bugs/0231: user-selectable ISO up-axis. Which WORLD axis points UP in the Iso
         # preset (the other two form the diagonal horizontal spread). Default "y"
         # reproduces the historic Iso view byte-for-byte. The "Iso up" toolbar menu writes
         # this var; set_camera_preset("iso") reads it.
-        self.iso_up_axis_var = tk.StringVar(value="y")
+        self.iso_up_axis_var = self.ui.string_var(value="y")
         self._iso_up_axis = "y"
         # Free-input move/drag snap step (mm). Blank -> the auto span/20 grid; 0 -> SMOOTH
         # (continuous drag); any number -> snap to exactly that step. Lets the user drag the BS
         # smoothly / to a precise step instead of the coarse auto placement-handle snap.
-        self.carry_snap_mm_var = tk.StringVar(value="")
-        self.show_rays_var = tk.BooleanVar(value=True)
+        self.carry_snap_mm_var = self.ui.string_var(value="")
+        self.show_rays_var = self.ui.boolean_var(value=True)
         # bugs/0732 (user: "the red banner is kind of static on the screen, blocking the view"):
         # the solve/focus banner is a fixed viewport actor, so give it an off switch.
-        self.show_solve_banner_var = tk.BooleanVar(value=True)
-        self.ray_pick_enabled_var = tk.BooleanVar(value=False)
+        self.show_solve_banner_var = self.ui.boolean_var(value=True)
+        self.ray_pick_enabled_var = self.ui.boolean_var(value=False)
         # bugs/0338: this checkbox is a selection-MODE switch. Default UNCHECKED so a
         # click picks a FACE or clear-aperture opening (the primary LED interaction);
         # the user opts INTO whole-body move + gizmo by checking it ("activate the
         # gizmo with some other toggle", bugs/0334).
-        self.show_rotation_handles_var = tk.BooleanVar(value=False)
-        self.show_reference_surfaces_var = tk.BooleanVar(value=False)
-        self.show_detector_overlays_var = tk.BooleanVar(value=False)
-        self.show_terminal_diagnostics_var = tk.BooleanVar(value=False)
-        self.show_placement_handles_var = tk.BooleanVar(value=False)
+        self.show_rotation_handles_var = self.ui.boolean_var(value=False)
+        self.show_reference_surfaces_var = self.ui.boolean_var(value=False)
+        self.show_detector_overlays_var = self.ui.boolean_var(value=False)
+        self.show_terminal_diagnostics_var = self.ui.boolean_var(value=False)
+        self.show_placement_handles_var = self.ui.boolean_var(value=False)
         # 3D field-curvature viz (idea #2): translucent curved best-focus surface
         # lofted over the flat detector. Off by default; the field-curvature scan is
         # lazy + cached, computed only when this is on.
-        self.show_best_focus_surface_var = tk.BooleanVar(value=False)
+        self.show_best_focus_surface_var = self.ui.boolean_var(value=False)
         # 3D distortion viz (idea #2, 2nd half): rectilinear reference grid + its
         # radially-warped real image on the detector. Same lazy + cached scan.
-        self.show_distortion_grid_var = tk.BooleanVar(value=False)
+        self.show_distortion_grid_var = self.ui.boolean_var(value=False)
         # 3D astigmatism viz (idea #2a): the separate tangential + sagittal best-focus
         # surfaces; their gap is the astigmatism. Same lazy + cached scan.
-        self.show_astigmatism_var = tk.BooleanVar(value=False)
+        self.show_astigmatism_var = self.ui.boolean_var(value=False)
         # 3D spot-quality viz (idea #1/#3): RMS spot circle per field on the detector.
-        self.show_spot_field_map_var = tk.BooleanVar(value=False)
+        self.show_spot_field_map_var = self.ui.boolean_var(value=False)
         # Camera pixel grid (idea #1): the registered camera's pixel lattice under each spot,
         # so the spot footprint reads in pixels. Needs a registered camera (a pixel pitch).
-        self.show_pixel_grid_var = tk.BooleanVar(value=False)
+        self.show_pixel_grid_var = self.ui.boolean_var(value=False)
         # On-detector relative-illumination heatmap (idea #3): the source-illumination map draped
         # on the sensor as a smooth quad, so the coaxial-LED fold-axis dark edges read directly on
         # the detector. Lazy + cached on the editor; render-only toggle (bugs/0166).
-        self.show_source_illumination_var = tk.BooleanVar(value=False)
+        self.show_source_illumination_var = self.ui.boolean_var(value=False)
         # Coaxial-LED illumination RAYS (Feature B2): the REAL traced LED->BS->object rays, green where
         # they reach the FOV / red where the BS-exit stop clips them -- the mechanism behind the
         # dark-edge heatmap above. Lazy + cached on the editor; render-only toggle (bugs/0166).
-        self.show_source_illumination_rays_var = tk.BooleanVar(value=False)
+        self.show_source_illumination_rays_var = self.ui.boolean_var(value=False)
         # Additive full-surface illumination EMISSION from a marked CAD/STL face (bugs/0267): the marked
         # face floods its whole surface with traced rays, isolated from the imaging trace (bugs/0266).
         # Defaults ON so marking a face gives immediate visual feedback -- cheap when no marker exists
         # (the bundle builder returns empty). Lazy + cached on the editor; render-only toggle (0166).
-        self.show_illumination_marker_rays_var = tk.BooleanVar(value=True)
+        self.show_illumination_marker_rays_var = self.ui.boolean_var(value=True)
         # bugs/0354: the imaging lens's RECEIVING-angle cone -- translucent loft from the
         # imaged FOV to the entrance pupil. Render-only toggle (0166); anchors first-order.
-        self.show_receiving_cone_var = tk.BooleanVar(value=False)
+        self.show_receiving_cone_var = self.ui.boolean_var(value=False)
         # bugs/0355: the flat LED's illumination VOLUME -- translucent folded envelope
         # LED -> BS fold -> FOV, congruent legs (reflection is an isometry). Render-only.
-        self.show_illumination_volume_var = tk.BooleanVar(value=False)
-        self.slide_along_axis_mode_var = tk.BooleanVar(value=False)
-        self.show_live_controls_panel_var = tk.BooleanVar(value=True)
-        self.show_scene_components_panel_var = tk.BooleanVar(value=True)
-        self.live_mode_var = tk.BooleanVar(value=False)
-        self.quick_estimation_var = tk.BooleanVar(value=False)
+        self.show_illumination_volume_var = self.ui.boolean_var(value=False)
+        self.slide_along_axis_mode_var = self.ui.boolean_var(value=False)
+        self.show_live_controls_panel_var = self.ui.boolean_var(value=True)
+        self.show_scene_components_panel_var = self.ui.boolean_var(value=True)
+        self.live_mode_var = self.ui.boolean_var(value=False)
+        self.quick_estimation_var = self.ui.boolean_var(value=False)
         self._quick_estimation_service_instance = None
         self._quick_estimation_readout_vars: dict[str, tk.StringVar] = {}
-        self.status_var = tk.StringVar(value="3D inspector ready")
+        self.status_var = self.ui.string_var(value="3D inspector ready")
 
         self.columnconfigure(0, weight=0)
         self.columnconfigure(1, weight=1)

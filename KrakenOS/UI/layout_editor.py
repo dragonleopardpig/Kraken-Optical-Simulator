@@ -2789,11 +2789,11 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         self._insert_component_menu: tk.Menu | None = None
         self._undo_button: ttk.Button | None = None
         self._redo_button: ttk.Button | None = None
-        self.layout_var = tk.StringVar(value="Common Optical Layout")
-        self.machine_vision_var = tk.StringVar(value="Machine Vision Lens")
-        self.example_var = tk.StringVar(value="Examples")
-        self.arm_view_var = tk.StringVar(value=ARM_VIEW_DEFAULT)
-        self.ray_display_mode_var = tk.StringVar(value=RAY_DISPLAY_DEFAULT)
+        self.layout_var = self.ui.string_var(value="Common Optical Layout")
+        self.machine_vision_var = self.ui.string_var(value="Machine Vision Lens")
+        self.example_var = self.ui.string_var(value="Examples")
+        self.arm_view_var = self.ui.string_var(value=ARM_VIEW_DEFAULT)
+        self.ray_display_mode_var = self.ui.string_var(value=RAY_DISPLAY_DEFAULT)
         self.layout_menu: tk.Menu | None = None
         self._layout_category_menus: list[tk.Menu] = []
         self.machine_vision_menu: tk.Menu | None = None
@@ -2861,11 +2861,11 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         self._left_mode_controls: list[dict[str, object]] = []
         self._left_mode_saved_values: dict[str, str] = {}
         auto_save_default = os.getenv("KRAKEN_AUTO_SAVE_PLOT", "0").strip().lower() in {"1", "true", "yes", "on"}
-        self.auto_save_plot_var = tk.BooleanVar(value=(auto_save_default and not self.headless))
-        self.show_clipped_rays_var = tk.BooleanVar(value=True)
-        self.show_path_labels_var = tk.BooleanVar(value=True)
-        self.emit_full_ray_var = tk.BooleanVar(value=False)
-        self.nonseq_energy_probability_var = tk.BooleanVar(value=False)
+        self.auto_save_plot_var = self.ui.boolean_var(value=(auto_save_default and not self.headless))
+        self.show_clipped_rays_var = self.ui.boolean_var(value=True)
+        self.show_path_labels_var = self.ui.boolean_var(value=True)
+        self.emit_full_ray_var = self.ui.boolean_var(value=False)
+        self.nonseq_energy_probability_var = self.ui.boolean_var(value=False)
         self._last_analysis_label = "2D"
         self._last_analysis_workers = 1
         self._last_analysis_parallel_capable = False
@@ -3029,6 +3029,12 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
 
         self._build_menu()
         self._build_ui()
+        # docs/design_qt_migration.md step 1c: the model declares its own state variables. Under Tk
+        # the panels just created every one, so this creates nothing; without Tk panels (a Qt
+        # shell, a scripted guard) it creates them all through self.ui.
+        from KrakenOS.UI.model_variables import ensure_model_variables
+
+        self._model_variables_created_at_init = ensure_model_variables(self)
         self._bind_global_copy_shortcuts()
         self.bind_all("<Control-z>", self._undo_event, add="+")
         self.bind_all("<Control-y>", self._redo_event, add="+")

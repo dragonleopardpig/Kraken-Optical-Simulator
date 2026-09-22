@@ -48,6 +48,7 @@ import inspect
 import types
 
 import numpy as np
+from KrakenOS.UI.uihost.introspect import constructor_variable_default as _default_of  # bugs/0852
 
 
 class _Status:
@@ -204,7 +205,7 @@ def _section3(failures: list[str]) -> None:
     # 3d) The checkbox DEFAULT is unchecked -> face/edge select is the primary mode;
     #     whole-body move + gizmo is opt-in ("activate the gizmo with some other toggle").
     init_src = inspect.getsource(K.__init__)
-    if "show_rotation_handles_var = tk.BooleanVar(value=False)" not in init_src:
+    if _default_of(K, "show_rotation_handles_var") is not False:
         failures.append("FAIL(3d): the 'Move/Rotate whole body' checkbox must default UNCHECKED (value=False)")
 
 

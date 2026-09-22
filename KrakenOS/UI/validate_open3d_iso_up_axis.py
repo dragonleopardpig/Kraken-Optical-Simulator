@@ -29,6 +29,7 @@ import numpy as np
 
 from KrakenOS.UI.open3d_inspector import Kraken3DInspector
 from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
+from KrakenOS.UI.uihost.introspect import constructor_variable_default as _default_of  # bugs/0852
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -107,7 +108,7 @@ def validate_iso_up_axis() -> list[Check]:
         and "add_radiobutton" in toolbar_src
         and "value=axis_value" in toolbar_src
         and '"y"' in toolbar_src and '"z"' in toolbar_src and '"x"' in toolbar_src
-        and 'self.iso_up_axis_var = tk.StringVar(value="y")' in init_src
+        and _default_of(Kraken3DInspector, "iso_up_axis_var") == "y"
     )
     checks.append(Check(
         "WIRED: the Iso branch reads the helper; the toolbar wires a radiobutton per axis to the var + handler",

@@ -28,6 +28,7 @@ Run:  .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_0732_auto_for
 from __future__ import annotations
 
 import inspect
+from KrakenOS.UI.uihost.introspect import constructor_variable_default as _default_of  # bugs/0852
 
 
 def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, list[str]]":
@@ -96,7 +97,7 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     )
     inspector_source = inspect.getsource(Kraken3DInspector)
     ok(
-        "self.show_solve_banner_var = tk.BooleanVar(value=True)" in inspector_source
+        _default_of(Kraken3DInspector, "show_solve_banner_var") is True
         and 'label="Solve / focus banner"' in inspector_source
         and "def _on_solve_banner_toggled" in inspector_source,
         "C3: the toggle exists, defaults ON, and has a menu entry that re-renders",
