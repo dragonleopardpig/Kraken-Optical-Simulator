@@ -141,9 +141,34 @@ numbers (166.6231 / 23.6413 / -257.3315).
 
 `bugs/diag_0844_path_independence.py` re-measures the real scene end to end.
 
-## Possible follow-up (not measured, not claimed)
+## The mirror case -- measured, not a bug on any staged scene (2026-09-22)
 
-The mirror case: when both fields magnify (m1*m2 > 1) the stage moves TOWARD the lens after the
-lens has been judged against its old position, so a final-state collision could pass the
-lens-first gate. The stage's own travel limits may already cover it on om05a; worth a
-measurement before anyone calls it a bug.
+The order can also err the other way. With the lens-to-Filter gap `c1`, the final gap is a
+function of the field alone, `c1(m) = c1_ref + f (m - m_ref)`, and the lens-first check judges
+the intermediate state:
+
+    intermediate - final = -f (m2 - m1) (1 - 1/(m1 m2))
+
+For `m1 m2 < 1` the intermediate is the SMALLER gap -- pessimistic, the false refusal above. For
+`m1 m2 > 1` with the magnification falling it is the LARGER one -- optimistic: the lens passes
+its check and the stage then moves TOWARD it, with no clearance re-check after the stage.
+
+`bugs/diag_0844_final_state_sweep.py` judges every (start, target) pair from each scene's own
+first order, through the real device callback, without solving:
+
+| scene | pairs | gate passes + stage in travel + FINAL collides | lens-first refused a feasible final |
+|---|---|---|---|
+| om05a_folded | 225 | **0** | 23 (rescued by this fix) |
+| om05a_folded_80mm | 275 | **0** | 32 (rescued by this fix) |
+
+Why none: the Filter-side collision starts near a 100 mm device (90 mm on the 80 mm variant),
+while the stage's own travel refuses from about 60 mm -- a ~40 mm margin -- and the optimistic
+order needs both fields near |m| >= 1, where `c1` is 70-80 mm against a 5.2 mm barrel overhang.
+
+The same sweep states each machine's deliverable range from its own geometry -- the user's
+min/max: om05a_folded devices 20-55 mm on the grid (small end: the barrel reaching RA mirror 1;
+large end: stage travel), om05a_folded_80mm 16-55 mm.
+
+Still possible in principle on a DIFFERENT geometry -- a swapped lens with a much longer rear
+barrel, or a stage with more travel. Re-run the sweep after a lens swap on a staged scene before
+adding a post-stage clearance check that no current scene can reach.
