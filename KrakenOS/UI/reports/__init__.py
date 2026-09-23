@@ -14,6 +14,7 @@ from KrakenOS.UI.reports.detector_aperture import build_detector_aperture_report
 from KrakenOS.UI.reports.gaussian_beam import (build_gaussian_beam_report,
                                                gaussian_cavity_eigenmode)
 from KrakenOS.UI.reports.paraxial_matrix import build_paraxial_matrix_report
+from KrakenOS.UI.reports.ray_inspector import build_ray_inspector_report
 from KrakenOS.UI.reports.source_illumination import build_source_illumination_report
 
 #: name -> builder, for a shell that opens reports by name
@@ -24,10 +25,12 @@ REPORT_BUILDERS = {
     "branch_throughput": build_branch_throughput_report,
     "source_illumination": build_source_illumination_report,
     "gaussian_beam": build_gaussian_beam_report,
+    "ray_inspector": build_ray_inspector_report,
 }
 
 __all__ = ["Report", "ReportChoice", "ReportColumn", "ReportFailed", "ReportValue",
            "REPORT_BUILDERS", "gaussian_cavity_eigenmode",
            "build_paraxial_matrix_report", "build_branch_gaussian_q_report",
            "build_detector_aperture_report", "build_branch_throughput_report",
-           "build_source_illumination_report", "build_gaussian_beam_report"]
+           "build_source_illumination_report", "build_gaussian_beam_report",
+           "build_ray_inspector_report"]

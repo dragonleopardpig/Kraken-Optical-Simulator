@@ -9,6 +9,12 @@ from __future__ import annotations
 from KrakenOS.UI.uihost import host_of
 
 
+def _widget_class():
+    from PySide6.QtWidgets import QWidget
+
+    return QWidget
+
+
 def make_report_model(report):
     """A QAbstractTableModel over a `Report` (built here so importing needs no Qt)."""
     from PySide6.QtCore import QAbstractTableModel, Qt
@@ -47,6 +53,49 @@ def make_report_model(report):
     return ReportTableModel()
 
 
+def make_detail_model(columns):
+    """A table model over already-formatted rows, for the detail half of a master/detail dialog."""
+    from PySide6.QtCore import QAbstractTableModel, Qt
+
+    class DetailTableModel(QAbstractTableModel):
+        def __init__(self) -> None:
+            super().__init__()
+            self.columns = columns
+            self.rows: list = []
+
+        def set_rows(self, rows) -> None:
+            self.beginResetModel()
+            self.rows = list(rows)
+            self.endResetModel()
+
+        def rowCount(self, parent=None) -> int:
+            return len(self.rows)
+
+        def columnCount(self, parent=None) -> int:
+            return len(self.columns)
+
+        def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+            if not index.isValid():
+                return None
+            if role == Qt.ItemDataRole.DisplayRole:
+                row = self.rows[index.row()]
+                return str(row[index.column()]) if index.column() < len(row) else ""
+            if role == Qt.ItemDataRole.TextAlignmentRole:
+                flag = {"r": Qt.AlignmentFlag.AlignRight, "c": Qt.AlignmentFlag.AlignHCenter,
+                        "l": Qt.AlignmentFlag.AlignLeft}[self.columns[index.column()].alignment]
+                return int(flag | Qt.AlignmentFlag.AlignVCenter)
+            return None
+
+        def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+            if role != Qt.ItemDataRole.DisplayRole:
+                return None
+            if orientation == Qt.Orientation.Horizontal:
+                return self.columns[section].heading
+            return str(section)
+
+    return DetailTableModel()
+
+
 def _dialog_class():
     from PySide6.QtWidgets import QDialog
 
@@ -58,7 +107,9 @@ class ReportDialog(_dialog_class()):
 
     def __init__(self, report, parent=None, host=None, rebuild=None) -> None:
         from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialogButtonBox, QHBoxLayout,
-                                       QLabel, QLineEdit, QTableView, QVBoxLayout)
+                                       QLabel, QLineEdit, QSplitter, QTableView, QVBoxLayout,
+                                       QWidget)
+        from PySide6.QtCore import Qt as _Qt
 
         super().__init__(parent)
         self.report = report
@@ -106,7 +157,34 @@ class ReportDialog(_dialog_class()):
         self.table.verticalHeader().setVisible(False)
         for index, column in enumerate(report.columns):
             self.table.setColumnWidth(index, column.width)
-        layout.addWidget(self.table, stretch=1)
+
+        self.detail_model = None
+        self.detail_table = None
+        if report.detail is not None:
+            # master/detail: the hits of whichever row is selected, under the list itself
+            self.detail_model = make_detail_model(report.detail.columns)
+            self.detail_table = QTableView()
+            self.detail_table.setModel(self.detail_model)
+            self.detail_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+            self.detail_table.verticalHeader().setVisible(False)
+            for index, column in enumerate(report.detail.columns):
+                self.detail_table.setColumnWidth(index, column.width)
+            splitter = QSplitter(_Qt.Orientation.Vertical)
+            splitter.addWidget(self.table)
+            detail_box = QWidget()
+            detail_layout = QVBoxLayout(detail_box)
+            detail_layout.setContentsMargins(0, 0, 0, 0)
+            self.detail_label = QLabel(report.detail.label)
+            detail_layout.addWidget(self.detail_label)
+            detail_layout.addWidget(self.detail_table)
+            splitter.addWidget(detail_box)
+            splitter.setStretchFactor(0, 3)
+            splitter.setStretchFactor(1, 2)
+            layout.addWidget(splitter, stretch=1)
+            self.table.selectionModel().currentRowChanged.connect(self._on_master_row)
+            self.select_master_row(0)
+        else:
+            layout.addWidget(self.table, stretch=1)
 
         self.buttons = QDialogButtonBox()
         self.copy_button = None
@@ -121,6 +199,19 @@ class ReportDialog(_dialog_class()):
         self.export_button.clicked.connect(self.export_csv)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
+
+    # ---- master/detail ---------------------------------------------------------------------------
+    def select_master_row(self, index: int) -> None:
+        if self.detail_model is None or not self.report.rows:
+            return
+        index = max(0, min(int(index), len(self.report.rows) - 1))
+        self.table.selectRow(index)
+        self.detail_model.set_rows(self.report.detail.rows(index))
+
+    def _on_master_row(self, current, _previous=None) -> None:
+        if self.detail_model is None or current is None or not current.isValid():
+            return
+        self.detail_model.set_rows(self.report.detail.rows(current.row()))
 
     def control_values(self) -> dict:
         return {key: (widget.currentText() if hasattr(widget, "currentText") else widget.text())
@@ -138,6 +229,8 @@ class ReportDialog(_dialog_class()):
         self.model.report = report
         self.model.endResetModel()
         self.summary_label.setText(report.summary)
+        if self.detail_model is not None and report.detail is not None:
+            self.select_master_row(0)
         for control in report.controls:
             widget = self.controls.get(control.key)
             if widget is None:

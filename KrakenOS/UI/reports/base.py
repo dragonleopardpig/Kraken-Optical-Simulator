@@ -11,7 +11,7 @@ from __future__ import annotations
 import csv
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 @dataclass(frozen=True)
@@ -68,6 +68,19 @@ class ReportValue:
 
 
 @dataclass
+class DetailView:
+    """The second table of a master/detail dialog: the rows belonging to the selected one.
+
+    `rows(index)` returns already-formatted cells for master row ``index`` -- the model owns that
+    formatting, as it does for `Report.display_rows`.
+    """
+
+    columns: tuple[ReportColumn, ...] = ()
+    rows: "Callable[[int], list[tuple[str, ...]]]" = lambda _index: []
+    label: str = "Details"
+
+
+@dataclass
 class Report:
     """A report dialog's whole content."""
 
@@ -85,7 +98,9 @@ class Report:
     #: the whole report as text, for Copy, when the model can produce one
     text: str = ""
     #: controls that rebuild this report when changed (a filter, a target surface...)
-    controls: tuple[ReportChoice, ...] = ()
+    controls: tuple = ()
+    #: the detail table, for a master/detail dialog
+    detail: "DetailView | None" = None
     #: what the status line should say once it is shown
     status: str = ""
 

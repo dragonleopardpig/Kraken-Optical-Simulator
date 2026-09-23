@@ -252,6 +252,12 @@ class KrakenQtMainWindow(_main_window_class()):
         self.statusBar().showMessage(dialog.result.text())
         return dialog
 
+    def ray_inspector_action(self):
+        """Every traced ray, with the hits of the selected one beneath it."""
+        from KrakenOS.UI.reports import build_ray_inspector_report
+
+        return self.open_report(build_ray_inspector_report)
+
     def _forget_dialog(self, dialog) -> None:
         if dialog in self._open_dialogs:
             self._open_dialogs.remove(dialog)

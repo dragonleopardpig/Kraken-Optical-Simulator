@@ -36,6 +36,8 @@ ACTIONS = (
     ("paraxial_calculator", "&Analysis", "Paraxial &Calculator...", None,
      "paraxial_calculator_action",
      "Solve the conjugate relations and apply the result to the layout"),
+    ("ray_inspector", "&Analysis", "&Ray Inspector", None, "ray_inspector_action",
+     "Every traced ray, and the hits of the one selected"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 
