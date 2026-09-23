@@ -40,6 +40,8 @@ ACTIONS = (
      "Every traced ray, and the hits of the one selected"),
     ("trace_paths", "&Analysis", "&Trace Path Inspector", None, "trace_paths_action",
      "Every traced path, nested under the ray it came from, with that path's hits"),
+    ("beam_splitter", "&Edit", "&Beam Splitter Settings...", None, "beam_splitter_action",
+     "Edit the selected Beam Splitter row's split settings"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 

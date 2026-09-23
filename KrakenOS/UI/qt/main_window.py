@@ -264,6 +264,39 @@ class KrakenQtMainWindow(_main_window_class()):
 
         return self.open_report(build_trace_path_report)
 
+    def selected_row_index(self):
+        """The surface table's current row -- what a row form edits."""
+        index = self.rows_view.currentIndex()
+        return index.row() if index.isValid() else None
+
+    def open_row_form(self, builder, row_index=None):
+        """Open a row-editing dialog on the selected row (docs/design_qt_migration.md phase 3)."""
+        from KrakenOS.UI.qt.dialogs.row_form_dialog import RowFormDialog
+        from KrakenOS.UI.row_forms import FormRefused
+
+        if row_index is None:
+            row_index = self.selected_row_index()
+        title = getattr(builder, "TITLE", "Row settings")
+        try:
+            form = builder(self.editor, row_index)
+        except FormRefused as exc:
+            host_of(self).showinfo(title, str(exc))
+            self.statusBar().showMessage(f"{title}: {exc}")
+            return None
+
+        dialog = RowFormDialog(form, parent=self, host=host_of(self))
+        dialog.finished.connect(lambda _result, d=dialog: self._forget_dialog(d))
+        self._open_dialogs.append(dialog)
+        dialog.show()
+        self.statusBar().showMessage(form.summary or form.title)
+        return dialog
+
+    def beam_splitter_action(self):
+        """Edit the selected Beam Splitter row."""
+        from KrakenOS.UI.row_forms import build_beam_splitter_form
+
+        return self.open_row_form(build_beam_splitter_form)
+
     def _forget_dialog(self, dialog) -> None:
         if dialog in self._open_dialogs:
             self._open_dialogs.remove(dialog)

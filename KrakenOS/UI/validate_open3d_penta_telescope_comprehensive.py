@@ -16549,6 +16549,10 @@ phase_646_trace_path_tree = _phase_from_standalone(
     646, "the Trace Path Inspector: the tree family (Qt migration phase 3): the fifth structural family, a HIERARCHY -- every traced ray is a node and the paths it split into hang underneath it, nested again when one path branched from another, which is why 0867 left this dialog alone. Report gained TreeRow (label, cells, children, detail_key) plus tree/tree_heading, and ReportDialog renders a QTreeView when a report carries a tree and a QTableView when it does not, leaving the detail half, summary, controls and export unchanged. reports/branch_tree_tables.py holds the model side: the 13 columns from the Tk branch tree, the ray and path cells, the labels, and the nesting rule (a path under its PARENT path when it has one, else under its ray). On om05a_folded.py: 226 rays, 226 paths, 452 nodes, 15 hits under ray 0's path and 9 under ray 3's. Guard: the columns under 'Ray / Path', the nesting (one node per ray, every nested node a Path, one detail-carrying node per record), the detail following the selected NODE by its record key, the Tk summary line, and the REAL Tk branch tree walked depth first digesting identically over all 452 nodes -- labels, cells and depth (0868)",
     "KrakenOS.UI.validate_open3d_0868_trace_path_tree",
     "trace_path_tree")
+phase_647_beam_splitter_row_form = _phase_from_standalone(
+    647, "the Beam Splitter row form: the sixth dialog family (Qt migration phase 3): pick a surface row, show its settings, validate them, write them back -- the shape Coating/Material, Advanced Surface, Diffuse/BRDF, Error Map and the 1902-line CAD face-roles editor all take. KrakenOS/UI/row_forms/ declares FormField and RowForm (fields, current values, summary, and the three callables the MODEL owns: validate, apply, describe), with FormRefused carrying a refusal's message; qt/dialogs/row_form_dialog.py renders any form, and the Qt shell's Edit menu opens it on the row selected in its surface table. The Tk dialog was rewired onto the same builder. Where the model lives took finding: the beam splitter's METHODS are on the editor but its three CONSTANTS are module-level (BEAM_SPLITTER_SURFACE in trace_intent, the attribute and split modes in services/beam_scatter_metadata) and were only injected into the Tk dialog shell, so the builder prefers what the owner holds and falls back to the defining module. Guard: the 11 fields are exactly the normalised settings, both refusals carry their message, validation is the model's own, apply writes the settings and regenerates the Coating, the REAL Tk dialog shows the builder's values, and the Qt form matches on values, errors and applied row state (0869)",
+    "KrakenOS.UI.validate_open3d_0869_beam_splitter_row_form",
+    "beam_splitter_row_form")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17261,6 +17265,7 @@ def main() -> int:
             phase_644_paraxial_calculator,
             phase_645_ray_inspector_master_detail,
             phase_646_trace_path_tree,
+            phase_647_beam_splitter_row_form,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
