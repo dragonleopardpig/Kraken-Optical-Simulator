@@ -21,6 +21,9 @@ ACTIONS = (
     ("paraxial_matrix", "&Analysis", "Paraxial &Matrix Report", "Ctrl+M",
      "paraxial_matrix_report_action",
      "The system's paraxial matrices, surface by surface -- the same report the Tk editor shows"),
+    ("branch_gaussian_q", "&Analysis", "Branch Gaussian &Q Report", None,
+     "branch_gaussian_q_report_action",
+     "The Gaussian q of every traced branch, from the collector the Tk dialog uses"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 

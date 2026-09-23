@@ -16517,6 +16517,10 @@ phase_638_paraxial_report_shared = _phase_from_standalone(
     638, "one report, two toolkits (Qt migration phase 3 begins): 62 functions build a tk.Toplevel, about 9000 lines, and porting them one-for-one would double the dialog code and guarantee drift. The recipe, established on the Paraxial Matrix Report: a dialog's DATA moves to a toolkit-free builder under KrakenOS/UI/reports/ returning a Report (title, summary, columns, rows), each toolkit keeps only its LAYOUT, and both render the same object -- so a number cannot differ between them and the contents become checkable WITHOUT a display, which no Tk dialog's ever were. Both views ask for the export path through the UI host, so Tk gets filedialog and Qt gets QFileDialog from one call shape, and the CSV carries raw values under the column keys rather than the displayed .8g text. Guard: the builder against an independent ParaxMatrices call value by value; the REAL Tk dialog opened and its Treeview read back cell by cell; the CSV round-tripping with a rounded cell as the control; ReportFailed carrying its message; and in a subprocess the Qt dialog's table, title, summary, alignment, host-driven export and failure path -- Tk and Qt shown to agree through a common reference instead of by eye (0859)",
     "KrakenOS.UI.validate_open3d_0859_paraxial_report_shared",
     "paraxial_report_shared")
+phase_639_branch_gaussian_q_report = _phase_from_standalone(
+    639, "the Branch Gaussian Q report in the Qt shell (Qt migration phase 3, second dialog): where 0859's report had its data inside the Tk dialog, this one was already separated -- analysis_reports._collect_branch_gaussian_q_records collects and branch_gaussian_q_report.py formats -- so the Qt builder calls exactly what the Tk dialog calls and the Tk window is deliberately untouched. Report grew display_rows (cells the MODEL formats), csv_keys (33 CSV fieldnames against 15 table columns) and text (Copy, through the UI host). Adding a report is now one builder plus one menu entry. What made it work at all: the dialog came up empty because the reports read the LIVE trace state and the viewport was passing update_state=False -- a flag copied from a validator, not from the app -- so every analysis in the shell had nothing to report on; the Qt redraw IS the app tracing and the flag is back at its default, taking the report from 0 to 2670 records. Guard: the empty state, the action/builder registry, the live trace state after a redraw, all 2670x15 cells against branch_gaussian_q_table_values (the tuple the Tk Treeview inserts), the collector's summary, the raw-record CSV, and Copy (0860)",
+    "KrakenOS.UI.validate_open3d_0860_branch_gaussian_q_report",
+    "branch_gaussian_q_report")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17221,6 +17225,7 @@ def main() -> int:
             phase_636_qt_view_draws_elements,
             phase_637_qt_view_draws_rays,
             phase_638_paraxial_report_shared,
+            phase_639_branch_gaussian_q_report,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

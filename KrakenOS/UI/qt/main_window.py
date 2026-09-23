@@ -166,29 +166,45 @@ class KrakenQtMainWindow(_main_window_class()):
             self.viewport.reset_camera()
             self.viewport.render()
 
-    def paraxial_matrix_report_action(self) -> None:
-        """Open the Paraxial Matrix Report -- the Tk editor's dialog, rendered by Qt.
+    def open_report(self, builder):
+        """Open a report dialog: build the data, show it, say what happened.
 
-        Both views render the same `Report`: the builder is toolkit-free, so the numbers here
-        cannot drift from the numbers there.
+        This is the whole Qt side of a report dialog -- a port is a builder under
+        `KrakenOS/UI/reports/` plus a menu entry (docs/design_qt_migration.md phase 3).
         """
         from KrakenOS.UI.qt.dialogs.report_dialog import ReportDialog
-        from KrakenOS.UI.reports import ReportFailed, build_paraxial_matrix_report
+        from KrakenOS.UI.reports import ReportFailed
 
         try:
-            report = build_paraxial_matrix_report(self.editor)
+            report = builder(self.editor)
         except ReportFailed as exc:
-            host_of(self).showerror(
-                "Paraxial Matrix Report", f"Could not build paraxial matrix report:\n\n{exc}")
-            self.statusBar().showMessage(f"Paraxial matrix report failed: {exc}")
-            return
+            title = getattr(builder, "TITLE", "Report")
+            host_of(self).showerror(title, f"Could not build the report:\n\n{exc}")
+            self.statusBar().showMessage(f"{title} failed: {exc}")
+            return None
 
         dialog = ReportDialog(report, parent=self, host=host_of(self))
         dialog.finished.connect(lambda _result, d=dialog: self._forget_dialog(d))
         self._open_dialogs.append(dialog)
         dialog.show()
-        self.statusBar().showMessage(report.status)
+        self.statusBar().showMessage(report.status or report.title)
         return dialog
+
+    def paraxial_matrix_report_action(self):
+        """The system's paraxial matrices -- the Tk editor's dialog, rendered by Qt.
+
+        Both views render the same `Report`: the builder is toolkit-free, so the numbers here
+        cannot drift from the numbers there.
+        """
+        from KrakenOS.UI.reports import build_paraxial_matrix_report
+
+        return self.open_report(build_paraxial_matrix_report)
+
+    def branch_gaussian_q_report_action(self):
+        """The Gaussian q of every traced branch, from the collector the Tk dialog uses."""
+        from KrakenOS.UI.reports import build_branch_gaussian_q_report
+
+        return self.open_report(build_branch_gaussian_q_report)
 
     def _forget_dialog(self, dialog) -> None:
         if dialog in self._open_dialogs:

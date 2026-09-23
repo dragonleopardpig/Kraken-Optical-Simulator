@@ -85,12 +85,23 @@ class ReportDialog(_dialog_class()):
         layout.addWidget(self.table, stretch=1)
 
         self.buttons = QDialogButtonBox()
+        self.copy_button = None
+        if report.text:
+            # the Tk dialogs of this family have a Copy button; the text comes from the model
+            self.copy_button = self.buttons.addButton(
+                "Copy", QDialogButtonBox.ButtonRole.ActionRole)
+            self.copy_button.clicked.connect(self.copy_text)
         self.export_button = self.buttons.addButton(
             "Export CSV", QDialogButtonBox.ButtonRole.ActionRole)
         self.close_button = self.buttons.addButton(QDialogButtonBox.StandardButton.Close)
         self.export_button.clicked.connect(self.export_csv)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
+
+    def copy_text(self) -> str:
+        """Put the whole report on the clipboard, through the UI host."""
+        self.host.clipboard_set(self.report.text)
+        return self.report.text
 
     def export_csv(self) -> str:
         """Ask through the UI host -- the same call the Tk dialog makes."""

@@ -89,3 +89,7 @@ def build_paraxial_matrix_report(owner) -> Report:
 
     return Report(title=TITLE, summary=summary, columns=COLUMNS, rows=rows,
                   status=f"Paraxial matrix report: {len(rows)} surfaces.")
+
+
+#: the failure path names the dialog with this
+build_paraxial_matrix_report.TITLE = TITLE

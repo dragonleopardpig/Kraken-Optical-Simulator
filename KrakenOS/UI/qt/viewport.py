@@ -106,8 +106,13 @@ class SceneViewport:
             # ONE build for the whole scene: the elements and the rays must come from the same
             # traced system, or the drawn light would belong to a different geometry than the
             # drawn glass.
+            #
+            # update_state defaults to True and stays that way: a redraw here is the APP tracing,
+            # exactly as the Tk Open 3D refresh does, so `last_system` / `last_rays` become the
+            # live trace every analysis reads. Passing update_state=False (which a validator
+            # would) left the shell's reports with nothing to report on.
             system, rays, bundle = editor._build_preview_system_rays_bundle(
-                sampling_mode=PREVIEW_SAMPLING, update_state=False)
+                sampling_mode=PREVIEW_SAMPLING)
         except Exception as exc:
             errors.append(f"display geometry: {type(exc).__name__}: {exc}")
 

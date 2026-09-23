@@ -40,7 +40,16 @@ class Report:
     title: str
     summary: str
     columns: tuple[ReportColumn, ...] = ()
+    #: the RAW records -- what the CSV writes
     rows: list[dict[str, Any]] = field(default_factory=list)
+    #: already-formatted cells, one tuple per row, when the MODEL owns the formatting (some
+    #: reports have shared value formatters the Tk dialog already uses; the two views must then
+    #: format identically by construction, not by two implementations agreeing)
+    display_rows: "list[tuple[str, ...]] | None" = None
+    #: the CSV's fieldnames when they differ from the table's columns
+    csv_keys: "tuple[str, ...] | None" = None
+    #: the whole report as text, for Copy, when the model can produce one
+    text: str = ""
     #: what the status line should say once it is shown
     status: str = ""
 
@@ -54,16 +63,19 @@ class Report:
 
     def cell(self, row_index: int, column_index: int) -> str:
         """The displayed text of one cell -- one implementation for every toolkit."""
+        if self.display_rows is not None:
+            return str(self.display_rows[row_index][column_index])
         column = self.columns[column_index]
         return column.format(self.rows[row_index].get(column.key))
 
     def write_csv(self, path) -> Path:
         """The exported file: the raw values under the column keys, not the display text."""
         path = Path(path)
+        fieldnames = list(self.csv_keys if self.csv_keys is not None else self.keys)
         with open(path, "w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=list(self.keys))
+            writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
-            writer.writerows([{key: row.get(key) for key in self.keys} for row in self.rows])
+            writer.writerows([{key: row.get(key) for key in fieldnames} for row in self.rows])
         return path
 
 
