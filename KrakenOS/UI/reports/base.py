@@ -23,6 +23,12 @@ class ReportColumn:
     numeric: bool = True
     width: int = 70
     stretch: bool = False
+    #: "l" / "c" / "r"; empty follows `numeric` (a Tk dialog may centre a count column)
+    align: str = ""
+
+    @property
+    def alignment(self) -> str:
+        return self.align or ("r" if self.numeric else "l")
 
     def format(self, value) -> str:
         if not self.numeric:

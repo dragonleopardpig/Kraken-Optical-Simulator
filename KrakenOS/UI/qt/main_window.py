@@ -206,6 +206,24 @@ class KrakenQtMainWindow(_main_window_class()):
 
         return self.open_report(build_branch_gaussian_q_report)
 
+    def detector_aperture_report_action(self):
+        """Which rays reach each detector, and which miss."""
+        from KrakenOS.UI.reports import build_detector_aperture_report
+
+        return self.open_report(build_detector_aperture_report)
+
+    def branch_throughput_report_action(self):
+        """Power delivered along every traced path (every path: the Tk filter is phase 3b)."""
+        from KrakenOS.UI.reports import build_branch_throughput_report
+
+        return self.open_report(build_branch_throughput_report)
+
+    def source_illumination_report_action(self):
+        """What each source puts onto the target surface the editor resolves."""
+        from KrakenOS.UI.reports import build_source_illumination_report
+
+        return self.open_report(build_source_illumination_report)
+
     def _forget_dialog(self, dialog) -> None:
         if dialog in self._open_dialogs:
             self._open_dialogs.remove(dialog)

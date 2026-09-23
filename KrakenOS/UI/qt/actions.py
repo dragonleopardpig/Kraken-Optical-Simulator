@@ -24,6 +24,12 @@ ACTIONS = (
     ("branch_gaussian_q", "&Analysis", "Branch Gaussian &Q Report", None,
      "branch_gaussian_q_report_action",
      "The Gaussian q of every traced branch, from the collector the Tk dialog uses"),
+    ("detector_aperture", "&Analysis", "&Detector Aperture Report", None,
+     "detector_aperture_report_action", "Which rays reach each detector, and which miss"),
+    ("branch_throughput", "&Analysis", "Path &Throughput Report", None,
+     "branch_throughput_report_action", "Power delivered along every traced path"),
+    ("source_illumination", "&Analysis", "Source &Illumination Report", None,
+     "source_illumination_report_action", "What each source puts onto the target surface"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 

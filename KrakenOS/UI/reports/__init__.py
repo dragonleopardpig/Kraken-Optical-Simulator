@@ -8,13 +8,21 @@ from __future__ import annotations
 
 from KrakenOS.UI.reports.base import Report, ReportColumn, ReportFailed
 from KrakenOS.UI.reports.branch_gaussian_q import build_branch_gaussian_q_report
+from KrakenOS.UI.reports.branch_throughput import build_branch_throughput_report
+from KrakenOS.UI.reports.detector_aperture import build_detector_aperture_report
 from KrakenOS.UI.reports.paraxial_matrix import build_paraxial_matrix_report
+from KrakenOS.UI.reports.source_illumination import build_source_illumination_report
 
 #: name -> builder, for a shell that opens reports by name
 REPORT_BUILDERS = {
     "paraxial_matrix": build_paraxial_matrix_report,
     "branch_gaussian_q": build_branch_gaussian_q_report,
+    "detector_aperture": build_detector_aperture_report,
+    "branch_throughput": build_branch_throughput_report,
+    "source_illumination": build_source_illumination_report,
 }
 
-__all__ = ["Report", "ReportColumn", "ReportFailed", "build_paraxial_matrix_report",
-           "build_branch_gaussian_q_report", "REPORT_BUILDERS"]
+__all__ = ["Report", "ReportColumn", "ReportFailed", "REPORT_BUILDERS",
+           "build_paraxial_matrix_report", "build_branch_gaussian_q_report",
+           "build_detector_aperture_report", "build_branch_throughput_report",
+           "build_source_illumination_report"]

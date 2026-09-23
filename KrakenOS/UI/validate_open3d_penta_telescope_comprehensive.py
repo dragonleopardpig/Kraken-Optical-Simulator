@@ -16521,6 +16521,10 @@ phase_639_branch_gaussian_q_report = _phase_from_standalone(
     639, "the Branch Gaussian Q report in the Qt shell (Qt migration phase 3, second dialog): where 0859's report had its data inside the Tk dialog, this one was already separated -- analysis_reports._collect_branch_gaussian_q_records collects and branch_gaussian_q_report.py formats -- so the Qt builder calls exactly what the Tk dialog calls and the Tk window is deliberately untouched. Report grew display_rows (cells the MODEL formats), csv_keys (33 CSV fieldnames against 15 table columns) and text (Copy, through the UI host). Adding a report is now one builder plus one menu entry. What made it work at all: the dialog came up empty because the reports read the LIVE trace state and the viewport was passing update_state=False -- a flag copied from a validator, not from the app -- so every analysis in the shell had nothing to report on; the Qt redraw IS the app tracing and the flag is back at its default, taking the report from 0 to 2670 records. Guard: the empty state, the action/builder registry, the live trace state after a redraw, all 2670x15 cells against branch_gaussian_q_table_values (the tuple the Tk Treeview inserts), the collector's summary, the raw-record CSV, and Copy (0860)",
     "KrakenOS.UI.validate_open3d_0860_branch_gaussian_q_report",
     "branch_gaussian_q_report")
+phase_640_analysis_reports_qt = _phase_from_standalone(
+    640, "three more analysis reports in the Qt shell (Qt migration phase 3): Detector Aperture, Path Throughput and Source Illumination, all the shape of 0860 -- their data layers were already shared, so each port is a builder calling exactly what the Tk dialog calls plus a menu entry. The Analysis menu now holds five reports; on om05a_folded.py they read 25 surfaces / 2670 q records / 1 detector with 106 of 226 rays / 2 paths / 2 sources at 39.43% throughput. ReportColumn gained align because these tables CENTRE their count columns where the earlier two only had left or right, so the Qt table reads the analysis module's own anchors instead of inventing alignment. Not ported on purpose: the Tk path filter and target selector -- the Qt views show the defaults each Tk dialog opens on, and controls are the next family. Guard: every builder has an action of its own name, a window method and a title; the columns are the module's own layout including centred columns; and per report every cell equals its *_table_values, the summary its *_summary_text, the CSV its *_CSV_COLUMNS and Copy its *_report_text (0861)",
+    "KrakenOS.UI.validate_open3d_0861_analysis_reports_qt",
+    "analysis_reports_qt")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17226,6 +17230,7 @@ def main() -> int:
             phase_637_qt_view_draws_rays,
             phase_638_paraxial_report_shared,
             phase_639_branch_gaussian_q_report,
+            phase_640_analysis_reports_qt,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

@@ -31,8 +31,9 @@ def make_report_model(report):
                 return self.report.cell(index.row(), index.column())
             if role == Qt.ItemDataRole.TextAlignmentRole:
                 column = self.report.columns[index.column()]
-                flag = (Qt.AlignmentFlag.AlignRight if column.numeric
-                        else Qt.AlignmentFlag.AlignLeft)
+                flag = {"r": Qt.AlignmentFlag.AlignRight,
+                        "c": Qt.AlignmentFlag.AlignHCenter,
+                        "l": Qt.AlignmentFlag.AlignLeft}[column.alignment]
                 return int(flag | Qt.AlignmentFlag.AlignVCenter)
             return None
 
