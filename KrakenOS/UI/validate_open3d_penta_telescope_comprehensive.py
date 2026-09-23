@@ -16501,6 +16501,10 @@ phase_634_qt_shell = _phase_from_standalone(
     634, "the Qt shell (Qt migration phase 2 part 2): KrakenOS/UI/qt/ is the Qt-side VIEW layer over the existing model -- a KrakenLayoutEditor reached through the 0851 seam with a QtUiHost answering its dialogs, so File -> Open Layout runs the model's OWN open_layout() and the chooser that appears is Qt's. Action registry and dock factory follow optiland_gui's (MIT) structure; the surface table is a QAbstractTableModel reading editor.rows with no copy in between; the status bar binds to status_var through the trace a tk.StringVar and an ObservableValue both have; the viewport is built AFTER show() into a stable container, because the VTK widget hands VTK its window id in its constructor and Qt recreates a native window on reparenting. Guard (its Qt half in a subprocess on xcb, needing a DISPLAY): the package imports no Qt binding, every declared action names a real window method, the window's menus/docks/central container, the table read back against editor.rows, the model's status write reaching the bar, an OpenGL render window with a TRACKBALL style and bodies drawn with scalar colouring off, File -> Open triggered as an ACTION driving the model end to end, a Qt drag rotating the camera, and the close dropping the trace -- last, because closing finalizes the VTK widget (0855)",
     "KrakenOS.UI.validate_open3d_0855_qt_shell",
     "qt_shell")
+phase_635_qt_platform = _phase_from_standalone(
+    635, "the Qt shell picks a platform the VTK viewport can live on (Qt migration phase 2): the user's own launch died with 'X Error of failed request: BadWindow, X_ConfigureWindow' and NO traceback, because Xlib's default error handler exits the process. QVTKRenderWindowInteractor gives VTK the Qt widget's window id and VTK draws on X11, so under Wayland's platform plugin that id is a Wayland surface and VTK asked the X server to configure a window it had never heard of. app.choose_qt_platform() now resolves the platform before the QApplication exists -- Wayland plus an X server means xcb (XWayland), an explicit QT_QPA_PLATFORM is never overridden, and a Wayland session with no DISPLAY is refused with a sentence instead of aborting later -- and SceneViewport calls require_viewport_platform() before the widget exists so a wrong platform raises an explained RuntimeError. Guard: the decision table display-free, the refusal naming the variable to set, and a SUBPROCESS in the environment that aborted (WAYLAND_DISPLAY set, QT_QPA_PLATFORM unset) where the REAL build() comes up on xcb with a vtkXOpenGLRenderWindow (0856)",
+    "KrakenOS.UI.validate_open3d_0856_qt_platform",
+    "qt_platform")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17201,6 +17205,7 @@ def main() -> int:
             phase_632_editor_owns_its_root,
             phase_633_qt_ui_host,
             phase_634_qt_shell,
+            phase_635_qt_platform,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

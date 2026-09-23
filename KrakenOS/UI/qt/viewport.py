@@ -32,6 +32,16 @@ class SceneViewport:
     """
 
     def __init__(self, parent) -> None:
+        from PySide6.QtWidgets import QApplication
+
+        from KrakenOS.UI.qt.app import require_viewport_platform
+
+        # Before the widget exists: on the wrong platform VTK is handed a window id the X server
+        # does not know, and Xlib aborts the whole process instead of raising (bugs/0856).
+        application = QApplication.instance()
+        if application is not None:
+            require_viewport_platform(application.platformName())
+
         from vtkmodules.qt import QVTKRenderWindowInteractor as _module
         from vtkmodules.vtkInteractionStyle import vtkInteractorStyleTrackballCamera
         from vtkmodules.vtkRenderingCore import vtkRenderer

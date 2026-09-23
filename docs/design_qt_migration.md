@@ -10,6 +10,7 @@ Status (2026-09-23): **the seam is in place on `tk`; phase 2 has begun on `qt`.*
 | found on the way: two `@staticmethod` slips (Optimize, Paraxial Matrix Report) | bugs/0850 |
 | 2 (part 1) PySide6 in devenv, `QtUiHost`, and a spike proving the VTK viewport under Qt | bugs/0854 |
 | 2 (part 2) the Qt shell: `KrakenOS/UI/qt/` -- menus, docks, surface table, viewport, status line | bugs/0855 |
+| 2 (fix) the shell must run on XWayland: Qt on Wayland gives VTK a surface id and Xlib aborts | bugs/0856 |
 
 Deferred on purpose: moving seven self-contained dialog functions out of services (reached only
 from menu actions; a Qt build calls Qt dialogs instead, so their location does not block Qt), and
@@ -53,9 +54,12 @@ Four traps, each of which cost a debugging round and each of which will bite aga
    Otherwise VTK's object factory has no OpenGL override and `vtkRenderWindow()` returns the
    ABSTRACT base: `Render()` silently draws nothing, pixel readback returns 0 pixels, and
    `vtkWindowToImageFilter` SEGFAULTS. `GetClassName()` must say `vtkXOpenGLRenderWindow`.
-2. **Qt's platform and VTK's display must be the same window system.** In this shell
-   `WAYLAND_DISPLAY` is set, so Qt goes to the compositor and ignores the `DISPLAY` that
-   `xvfb-run` just set, while VTK opens on the Xvfb server. Headless Qt runs need
+2. **Qt's platform and VTK's display must be the same window system** -- a constraint on the
+   APPLICATION, not just on test runs, which is what bugs/0856 was: the shell shipped without it
+   and the user's launch died with `BadWindow (X_ConfigureWindow)` and no traceback, because
+   Xlib's default error handler exits the process. `app.choose_qt_platform()` now puts Qt on
+   `xcb` before the QApplication exists whenever a Wayland session has an X server, and
+   `SceneViewport` refuses a wrong platform with an explained error. Headless runs still need
    `unset WAYLAND_DISPLAY; QT_QPA_PLATFORM=xcb` (or `offscreen` where no GL window is needed).
 3. **Build the viewport only once its parent chain reaches a shown top-level.** The widget hands
    VTK its window id in `__init__` (`SetWindowInfo(winId())`), and Qt destroys and recreates a
