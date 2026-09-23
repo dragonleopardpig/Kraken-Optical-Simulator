@@ -16525,6 +16525,10 @@ phase_640_analysis_reports_qt = _phase_from_standalone(
     640, "three more analysis reports in the Qt shell (Qt migration phase 3): Detector Aperture, Path Throughput and Source Illumination, all the shape of 0860 -- their data layers were already shared, so each port is a builder calling exactly what the Tk dialog calls plus a menu entry. The Analysis menu now holds five reports; on om05a_folded.py they read 25 surfaces / 2670 q records / 1 detector with 106 of 226 rays / 2 paths / 2 sources at 39.43% throughput. ReportColumn gained align because these tables CENTRE their count columns where the earlier two only had left or right, so the Qt table reads the analysis module's own anchors instead of inventing alignment. Not ported on purpose: the Tk path filter and target selector -- the Qt views show the defaults each Tk dialog opens on, and controls are the next family. Guard: every builder has an action of its own name, a window method and a title; the columns are the module's own layout including centred columns; and per report every cell equals its *_table_values, the summary its *_summary_text, the CSV its *_CSV_COLUMNS and Copy its *_report_text (0861)",
     "KrakenOS.UI.validate_open3d_0861_analysis_reports_qt",
     "analysis_reports_qt")
+phase_641_qt_tk_report_parity = _phase_from_standalone(
+    641, "the Qt reports show what the Tk dialogs show, cell for cell (Qt migration phase 3): the user opened all five and said the values could not be verified, and fairly -- the 0859-0861 guards compared the Qt tables against the FORMATTERS the Tk dialogs use, which is an argument rather than a demonstration. This loads om05a_folded.py, runs the same trace the Qt redraw runs, opens all five TK dialogs through the editor's own menu methods and reads every Treeview back, opens all five QT dialogs in a subprocess and reads every table model back, and compares headings, shape and a SHA-256 over every cell: 25x17, 2670x15, 1x12, 2x11 and 2x13, all identical. The Qt reports are therefore the same numbers the Tk editor has always shown. The Tk half replaces messagebox.showinfo/showerror/showwarning for its duration and fails if any fired -- a report with nothing to show raises a MODAL box that would otherwise hang the guard (0862)",
+    "KrakenOS.UI.validate_open3d_0862_qt_tk_report_parity",
+    "qt_tk_report_parity")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17231,6 +17235,7 @@ def main() -> int:
             phase_638_paraxial_report_shared,
             phase_639_branch_gaussian_q_report,
             phase_640_analysis_reports_qt,
+            phase_641_qt_tk_report_parity,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
