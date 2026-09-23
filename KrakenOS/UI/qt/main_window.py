@@ -226,6 +226,17 @@ class KrakenQtMainWindow(_main_window_class()):
 
         return self.open_report(build_source_illumination_report)
 
+    def gaussian_beam_report_action(self):
+        """The input beam through the system's paraxial matrices, step by step.
+
+        The four inputs are report controls: typing one rebuilds through the same builder the Tk
+        dialog uses. Its "Use Cavity Eigenmode" button is not here yet -- the model side exists
+        (`reports.gaussian_cavity_eigenmode`), the Qt control does not.
+        """
+        from KrakenOS.UI.reports import build_gaussian_beam_report
+
+        return self.open_report(build_gaussian_beam_report)
+
     def _forget_dialog(self, dialog) -> None:
         if dialog in self._open_dialogs:
             self._open_dialogs.remove(dialog)

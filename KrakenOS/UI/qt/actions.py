@@ -30,6 +30,9 @@ ACTIONS = (
      "branch_throughput_report_action", "Power delivered along every traced path"),
     ("source_illumination", "&Analysis", "Source &Illumination Report", None,
      "source_illumination_report_action", "What each source puts onto the target surface"),
+    ("gaussian_beam", "&Analysis", "&Gaussian Beam Report", None,
+     "gaussian_beam_report_action",
+     "Propagate an input beam through the system's paraxial matrices, step by step"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 

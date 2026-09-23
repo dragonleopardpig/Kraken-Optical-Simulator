@@ -58,7 +58,7 @@ class ReportDialog(_dialog_class()):
 
     def __init__(self, report, parent=None, host=None, rebuild=None) -> None:
         from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialogButtonBox, QHBoxLayout,
-                                       QLabel, QTableView, QVBoxLayout)
+                                       QLabel, QLineEdit, QTableView, QVBoxLayout)
 
         super().__init__(parent)
         self.report = report
@@ -81,14 +81,20 @@ class ReportDialog(_dialog_class()):
         if report.controls:
             row = QHBoxLayout()
             for control in report.controls:
-                box = QComboBox()
-                box.addItems(list(control.choices))
-                if control.value and control.value in control.choices:
-                    box.setCurrentText(control.value)
-                box.currentTextChanged.connect(self._on_control_changed)
-                self.controls[control.key] = box
+                if hasattr(control, "choices"):
+                    widget = QComboBox()
+                    widget.addItems(list(control.choices))
+                    if control.value and control.value in control.choices:
+                        widget.setCurrentText(control.value)
+                    widget.currentTextChanged.connect(self._on_control_changed)
+                else:
+                    # a typed-in value: rebuild when the field is committed, not per keystroke
+                    widget = QLineEdit(str(control.value))
+                    widget.setMaximumWidth(12 * max(control.width, 6))
+                    widget.editingFinished.connect(self._on_control_changed)
+                self.controls[control.key] = widget
                 row.addWidget(QLabel(control.label))
-                row.addWidget(box)
+                row.addWidget(widget)
             row.addStretch(1)
             layout.addLayout(row)
 
@@ -117,7 +123,8 @@ class ReportDialog(_dialog_class()):
         layout.addWidget(self.buttons)
 
     def control_values(self) -> dict:
-        return {key: box.currentText() for key, box in self.controls.items()}
+        return {key: (widget.currentText() if hasattr(widget, "currentText") else widget.text())
+                for key, widget in self.controls.items()}
 
     def _on_control_changed(self, _text=None) -> None:
         if self.rebuild is None:
@@ -132,19 +139,22 @@ class ReportDialog(_dialog_class()):
         self.model.endResetModel()
         self.summary_label.setText(report.summary)
         for control in report.controls:
-            box = self.controls.get(control.key)
-            if box is None:
+            widget = self.controls.get(control.key)
+            if widget is None:
                 continue
-            # the choices can change with the data; refresh them without re-entering the rebuild
-            box.blockSignals(True)
+            # a control's own state can change with the data; refresh it without re-entering
+            widget.blockSignals(True)
             try:
-                if [box.itemText(i) for i in range(box.count())] != list(control.choices):
-                    box.clear()
-                    box.addItems(list(control.choices))
-                if control.value and control.value in control.choices:
-                    box.setCurrentText(control.value)
+                if hasattr(control, "choices"):
+                    if [widget.itemText(i) for i in range(widget.count())] != list(control.choices):
+                        widget.clear()
+                        widget.addItems(list(control.choices))
+                    if control.value and control.value in control.choices:
+                        widget.setCurrentText(control.value)
+                elif widget.text() != str(control.value):
+                    widget.setText(str(control.value))
             finally:
-                box.blockSignals(False)
+                widget.blockSignals(False)
         if self.copy_button is not None:
             self.copy_button.setEnabled(bool(report.text))
 

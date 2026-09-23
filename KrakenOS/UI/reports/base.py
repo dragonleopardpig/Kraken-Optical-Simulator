@@ -53,6 +53,20 @@ class ReportChoice:
     value: str = ""
 
 
+@dataclass(frozen=True)
+class ReportValue:
+    """A typed-in value that rebuilds the report -- a Tk dialog's entry box.
+
+    Like :class:`ReportChoice`, ``key`` is the builder's keyword; the builder is what parses the
+    text, so a bad entry is the model's problem to report, not the view's.
+    """
+
+    key: str
+    label: str
+    value: str = ""
+    width: int = 10
+
+
 @dataclass
 class Report:
     """A report dialog's whole content."""

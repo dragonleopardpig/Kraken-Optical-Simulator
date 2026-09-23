@@ -16533,6 +16533,10 @@ phase_642_report_controls = _phase_from_standalone(
     642, "report controls in the Qt shell (Qt migration phase 3): the first ports showed each Tk dialog's default and nothing else -- Path Throughput could not be filtered and Source Illumination always reported on the target the editor resolves as Auto. A Report may now declare ReportChoice controls (key = the builder's keyword, label, choices, value); the dialog renders a combo per control and on a change collects every value and calls THE BUILDER again, so a control needs no Qt-side logic, the filtering stays in the model, and every builder remains callable with no arguments. Choices come from the model: branch_throughput_filter_choices and the editor's _source_illumination_target_choices. On om05a_folded.py, filtering to 'Terminal: S10 Aperture: Aperture Stop' narrows 2 paths to 1, and re-aiming illumination from Auto (S24, 106/226) to S1 gives 113/226. Guard: every controlled builder takes its control as a keyword with a default; the controls are the model's own lists with the Tk defaults; a filter change rebuilds to exactly filtered_branch_throughput_records cell for cell; a target change re-aims to the model's summary; ONE change rebuilds ONCE (refreshing a combo's own choices inside the refresh must not re-enter -- the classic Qt signal loop); and an unknown filter value is kept rather than dropped (0863)",
     "KrakenOS.UI.validate_open3d_0863_report_controls",
     "report_controls")
+phase_643_gaussian_beam_report = _phase_from_standalone(
+    643, "the Gaussian Beam Report in both toolkits (Qt migration phase 3): the first report with INPUTS. reports/gaussian_beam.py now owns the propagation over the paraxial matrices, the 20 columns, the infinity-aware formatter a beam trace needs (inf/-inf/- for a collimated waist), the summary, the defaults and gaussian_cavity_eigenmode -- the model side of the Use Cavity Eigenmode button. The Tk dialog was rewired onto it and the Qt dialog renders the same builder. The four inputs are ReportValue controls, the second control kind: a line edit that rebuilds ON COMMIT rather than per keystroke, with the BUILDER parsing the text so a half-typed field falls back to the default instead of raising. Guard: the defaults are the model's over 50 steps, a non-numeric input falls back, the cavity helper answers from the model (this scene is no resonator: stable=False, g=17.4246), and the REAL Tk dialog and the Qt dialog produce the SAME SHA-256 over all 50x20 cells; typing waist=2.5 rebuilds to the builder's own report and the summary follows (0864)",
+    "KrakenOS.UI.validate_open3d_0864_gaussian_beam_report",
+    "gaussian_beam_report")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17241,6 +17245,7 @@ def main() -> int:
             phase_640_analysis_reports_qt,
             phase_641_qt_tk_report_parity,
             phase_642_report_controls,
+            phase_643_gaussian_beam_report,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

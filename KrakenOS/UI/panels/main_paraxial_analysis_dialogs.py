@@ -12,7 +12,10 @@ import numpy as np
 
 import KrakenOS as Kos
 from KrakenOS.UI.reports import ReportFailed
+from KrakenOS.UI.reports.gaussian_beam import COLUMNS as GAUSSIAN_BEAM_COLUMNS
 from KrakenOS.UI.reports.paraxial_matrix import build_paraxial_matrix_report
+
+GAUSSIAN_BEAM_COLUMN_KEYS = tuple(column.key for column in GAUSSIAN_BEAM_COLUMNS)
 
 
 class MainParaxialAnalysisDialogs:
@@ -771,14 +774,19 @@ class MainParaxialAnalysisDialogs:
 
 
     def open_gaussian_beam_report(self) -> None:
+        # docs/design_qt_migration.md phase 3: the beam propagation, the columns, the formatting
+        # and the cavity eigenmode live in KrakenOS/UI/reports/gaussian_beam.py, which the Qt
+        # dialog renders too. This function is layout and input plumbing.
+        from KrakenOS.UI.reports.gaussian_beam import (
+            build_gaussian_beam_report, default_inputs, format_value, gaussian_cavity_eigenmode)
+
         try:
-            system = self.build_system(force_rebuild=True)
-            wavelength = self._current_wavelength()
-            paraxial_trace = system.ParaxMatrices(wavelength)
-            source_beam = self._current_gaussian_beam_input(wavelength) if self._current_source_model() == "Gaussian beam" else None
+            defaults = default_inputs(self)
         except Exception as exc:
             message = self.short_error_message(exc)
-            messagebox.showerror("Gaussian Beam Report", f"Could not build Gaussian beam report:\n\n{message}", parent=self.editor)
+            messagebox.showerror("Gaussian Beam Report",
+                                 f"Could not build Gaussian beam report:\n\n{message}",
+                                 parent=self.editor)
             self.status_var.set(f"Gaussian beam report failed: {message}")
             return
 
@@ -792,17 +800,18 @@ class MainParaxialAnalysisDialogs:
         window.rowconfigure(3, weight=1)
 
         summary_var = tk.StringVar(master=window, value="")
-        ttk.Label(window, textvariable=summary_var, padding=(8, 8, 8, 4), anchor="w").grid(row=0, column=0, sticky="ew")
+        ttk.Label(window, textvariable=summary_var, padding=(8, 8, 8, 4), anchor="w").grid(
+            row=0, column=0, sticky="ew")
 
         controls = ttk.LabelFrame(window, text="Input beam", padding=8)
         controls.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 6))
         for column in range(10):
             controls.columnconfigure(column, weight=1 if column % 2 else 0)
 
-        wavelength_var = tk.StringVar(master=window, value=f"{float(wavelength):.6g}")
-        waist_var = tk.StringVar(master=window, value=f"{float(source_beam.waist_radius_mm):.6g}" if source_beam is not None else "1.0")
-        offset_var = tk.StringVar(master=window, value=f"{float(source_beam.waist_offset_mm):.6g}" if source_beam is not None else "0.0")
-        m2_var = tk.StringVar(master=window, value=f"{float(source_beam.m2):.6g}" if source_beam is not None else "1.0")
+        wavelength_var = tk.StringVar(master=window, value=f"{defaults['wavelength']:.6g}")
+        waist_var = tk.StringVar(master=window, value=f"{defaults['waist']:.6g}")
+        offset_var = tk.StringVar(master=window, value=f"{defaults['offset']:.6g}")
+        m2_var = tk.StringVar(master=window, value=f"{defaults['m2']:.6g}")
 
         for col, (label, var, width) in enumerate(
             (
@@ -819,65 +828,15 @@ class MainParaxialAnalysisDialogs:
         toolbar.grid(row=2, column=0, sticky="ew")
         cavity_status_var = tk.StringVar(master=window, value="")
 
-        columns = (
-            "step",
-            "surface",
-            "name",
-            "kind",
-            "n",
-            "A",
-            "B",
-            "C",
-            "D",
-            "q_real",
-            "q_imag",
-            "w_radius",
-            "w_diameter",
-            "R",
-            "waist_radius",
-            "waist_offset",
-            "z_rayleigh",
-            "divergence_mrad",
-            "gouy_rad",
-            "stable",
-        )
         frame = ttk.Frame(window, padding=8)
         frame.grid(row=3, column=0, sticky="nsew")
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
-        tree = ttk.Treeview(frame, columns=columns, show="headings")
-        headings = {
-            "step": "Step",
-            "surface": "Surf",
-            "name": "Name",
-            "kind": "Kind",
-            "n": "n",
-            "A": "A",
-            "B": "B",
-            "C": "C",
-            "D": "D",
-            "q_real": "Re(q) [mm]",
-            "q_imag": "Im(q) [mm]",
-            "w_radius": "w [mm]",
-            "w_diameter": "2w [mm]",
-            "R": "Rwf [mm]",
-            "waist_radius": "w0 [mm]",
-            "waist_offset": "Waist offset [mm]",
-            "z_rayleigh": "zR [mm]",
-            "divergence_mrad": "Div [mrad]",
-            "gouy_rad": "Gouy [rad]",
-            "stable": "Stable",
-        }
-        for column in columns:
-            tree.heading(column, text=headings[column])
-            width = 76
-            if column in {"name"}:
-                width = 150
-            elif column in {"kind"}:
-                width = 105
-            elif column in {"q_real", "q_imag", "waist_offset", "divergence_mrad"}:
-                width = 110
-            tree.column(column, width=width, anchor=("w" if column in {"name", "kind"} else "e"), stretch=column in {"name", "kind"})
+        tree = ttk.Treeview(frame, columns=GAUSSIAN_BEAM_COLUMN_KEYS, show="headings")
+        for column in GAUSSIAN_BEAM_COLUMNS:
+            tree.heading(column.key, text=column.heading)
+            tree.column(column.key, width=column.width,
+                        anchor=("e" if column.numeric else "w"), stretch=column.stretch)
         tree.grid(row=0, column=0, sticky="nsew")
         yscroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
         yscroll.grid(row=0, column=1, sticky="ns")
@@ -885,93 +844,35 @@ class MainParaxialAnalysisDialogs:
         xscroll.grid(row=1, column=0, sticky="ew")
         tree.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
 
-        export_rows: list[dict[str, object]] = []
-
-        def _fmt(value) -> str:
-            try:
-                numeric = float(value)
-            except Exception:
-                return str(value)
-            if np.isposinf(numeric):
-                return "inf"
-            if np.isneginf(numeric):
-                return "-inf"
-            if not np.isfinite(numeric):
-                return "-"
-            return f"{numeric:.8g}"
+        held: dict[str, object] = {}
 
         def recompute() -> None:
-            nonlocal paraxial_trace
             try:
-                input_beam = Kos.GaussianBeamInput(
-                    wavelength_um=float(wavelength_var.get()),
-                    waist_radius_mm=float(waist_var.get()),
-                    waist_offset_mm=float(offset_var.get()),
-                    m2=float(m2_var.get()),
-                )
-                if abs(float(input_beam.wavelength_um) - float(paraxial_trace.wavelength)) > 1e-15:
-                    paraxial_trace = system.ParaxMatrices(float(input_beam.wavelength_um))
-                beam_trace = Kos.propagate_gaussian_beam(paraxial_trace, input_beam)
-            except Exception as exc:
-                message = self.short_error_message(exc)
-                summary_var.set(f"Gaussian beam report failed: {message}")
-                self.status_var.set(f"Gaussian beam report failed: {message}")
+                report = build_gaussian_beam_report(
+                    self,
+                    wavelength=wavelength_var.get(), waist=waist_var.get(),
+                    offset=offset_var.get(), m2=m2_var.get())
+            except ReportFailed as exc:
+                summary_var.set(f"Gaussian beam report failed: {exc}")
+                self.status_var.set(f"Gaussian beam report failed: {exc}")
                 return
-
+            held["report"] = report
             children = tree.get_children()
             if children:
                 tree.delete(*children)
-            export_rows.clear()
-            for step in beam_trace.steps:
-                row = {
-                    "step": step.step_index,
-                    "surface": step.surface_index,
-                    "name": step.surface_name,
-                    "kind": step.kind,
-                    "n": step.n_after,
-                    "A": step.A,
-                    "B": step.B,
-                    "C": step.C,
-                    "D": step.D,
-                    "q_real": step.q_real_mm,
-                    "q_imag": step.q_imag_mm,
-                    "w_radius": step.beam_radius_mm,
-                    "w_diameter": step.beam_diameter_mm,
-                    "R": step.wavefront_radius_mm,
-                    "waist_radius": step.waist_radius_mm,
-                    "waist_offset": step.waist_offset_mm,
-                    "z_rayleigh": step.rayleigh_range_mm,
-                    "divergence_mrad": step.divergence_mrad,
-                    "gouy_rad": step.gouy_phase_rad,
-                    "stable": step.stable,
-                }
-                export_rows.append(row)
-                tree.insert(
-                    "",
-                    "end",
-                    values=tuple(row[column] if column in {"name", "kind", "stable"} else _fmt(row[column]) for column in columns),
-                )
-            final = beam_trace.final
-            if final is None:
-                summary_var.set("No paraxial steps available.")
-            else:
-                summary_var.set(
-                    "Gaussian beam | lambda={wl:.6g} um | input w0={w0:.6g} mm | M2={m2:.6g} | "
-                    "final w={wf} mm | final waist offset={offset} mm | final zR={zr} mm".format(
-                        wl=float(input_beam.wavelength_um),
-                        w0=float(input_beam.waist_radius_mm),
-                        m2=float(input_beam.m2),
-                        wf=_fmt(final.beam_radius_mm),
-                        offset=_fmt(final.waist_offset_mm),
-                        zr=_fmt(final.rayleigh_range_mm),
-                    )
-                )
-            self.status_var.set("Gaussian beam report refreshed.")
+            for index in range(len(report.rows)):
+                tree.insert("", "end", values=tuple(
+                    report.cell(index, column_index)
+                    for column_index in range(len(report.columns))))
+            summary_var.set(report.summary)
+            self.status_var.set(report.status)
 
         def export_csv() -> None:
-            if not export_rows:
+            report = held.get("report")
+            if report is None:
                 recompute()
-            if not export_rows:
+                report = held.get("report")
+            if report is None or not report.rows:
                 return
             path = filedialog.asksaveasfilename(
                 title="Export Gaussian Beam CSV",
@@ -981,39 +882,28 @@ class MainParaxialAnalysisDialogs:
             )
             if not path:
                 return
-            with open(path, "w", newline="", encoding="utf-8") as handle:
-                writer = csv.DictWriter(handle, fieldnames=list(columns))
-                writer.writeheader()
-                writer.writerows(export_rows)
+            report.write_csv(path)
             self.status_var.set(f"Gaussian beam CSV exported: {Path(path).name}")
 
         def apply_cavity_eigenmode() -> None:
-            nonlocal paraxial_trace
             try:
-                wavelength_value = float(wavelength_var.get())
-                if abs(wavelength_value - float(paraxial_trace.wavelength)) > 1e-15:
-                    paraxial_trace = system.ParaxMatrices(wavelength_value)
-                eigenmode = Kos.solve_gaussian_cavity_eigenmode(
-                    paraxial_trace,
-                    wavelength_um=wavelength_value,
-                    m2=float(m2_var.get()),
-                )
+                eigenmode = gaussian_cavity_eigenmode(self, wavelength_var.get(), m2_var.get())
                 if not eigenmode.stable:
                     message = (
                         f"Cavity eigenmode unavailable: {eigenmode.message}; "
-                        f"g={_fmt(eigenmode.stability_parameter)}"
+                        f"g={format_value(eigenmode.stability_parameter)}"
                     )
                     cavity_status_var.set(message)
                     self.status_var.set(message)
                     return
-                waist_var.set(_fmt(eigenmode.waist_radius_mm))
-                offset_var.set(_fmt(eigenmode.q_real_mm))
+                waist_var.set(format_value(eigenmode.waist_radius_mm))
+                offset_var.set(format_value(eigenmode.q_real_mm))
                 cavity_status_var.set(
                     "Cavity eigenmode applied: "
-                    f"q={_fmt(eigenmode.q_real_mm)}+i{_fmt(eigenmode.q_imag_mm)} mm, "
-                    f"w0={_fmt(eigenmode.waist_radius_mm)} mm, "
-                    f"g={_fmt(eigenmode.stability_parameter)}, "
-                    f"Gouy/RT={_fmt(eigenmode.round_trip_gouy_rad)} rad."
+                    f"q={format_value(eigenmode.q_real_mm)}+i{format_value(eigenmode.q_imag_mm)} mm, "
+                    f"w0={format_value(eigenmode.waist_radius_mm)} mm, "
+                    f"g={format_value(eigenmode.stability_parameter)}, "
+                    f"Gouy/RT={format_value(eigenmode.round_trip_gouy_rad)} rad."
                 )
                 recompute()
             except Exception as exc:

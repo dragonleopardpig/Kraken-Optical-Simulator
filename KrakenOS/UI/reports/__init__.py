@@ -6,10 +6,13 @@ The migration recipe for a report dialog: move its DATA here as a function retur
 """
 from __future__ import annotations
 
-from KrakenOS.UI.reports.base import Report, ReportChoice, ReportColumn, ReportFailed
+from KrakenOS.UI.reports.base import (Report, ReportChoice, ReportColumn, ReportFailed,
+                                      ReportValue)
 from KrakenOS.UI.reports.branch_gaussian_q import build_branch_gaussian_q_report
 from KrakenOS.UI.reports.branch_throughput import build_branch_throughput_report
 from KrakenOS.UI.reports.detector_aperture import build_detector_aperture_report
+from KrakenOS.UI.reports.gaussian_beam import (build_gaussian_beam_report,
+                                               gaussian_cavity_eigenmode)
 from KrakenOS.UI.reports.paraxial_matrix import build_paraxial_matrix_report
 from KrakenOS.UI.reports.source_illumination import build_source_illumination_report
 
@@ -20,9 +23,11 @@ REPORT_BUILDERS = {
     "detector_aperture": build_detector_aperture_report,
     "branch_throughput": build_branch_throughput_report,
     "source_illumination": build_source_illumination_report,
+    "gaussian_beam": build_gaussian_beam_report,
 }
 
-__all__ = ["Report", "ReportChoice", "ReportColumn", "ReportFailed", "REPORT_BUILDERS",
+__all__ = ["Report", "ReportChoice", "ReportColumn", "ReportFailed", "ReportValue",
+           "REPORT_BUILDERS", "gaussian_cavity_eigenmode",
            "build_paraxial_matrix_report", "build_branch_gaussian_q_report",
            "build_detector_aperture_report", "build_branch_throughput_report",
-           "build_source_illumination_report"]
+           "build_source_illumination_report", "build_gaussian_beam_report"]
