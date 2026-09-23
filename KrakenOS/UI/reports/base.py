@@ -39,6 +39,20 @@ class ReportColumn:
             return str(value)
 
 
+@dataclass(frozen=True)
+class ReportChoice:
+    """A choice that REBUILDS the report when changed -- a Tk dialog's combobox.
+
+    ``key`` is the builder's keyword argument, so a view needs to know nothing about what the
+    choice means: it collects the current value of every control and calls the builder again.
+    """
+
+    key: str
+    label: str
+    choices: tuple[str, ...] = ()
+    value: str = ""
+
+
 @dataclass
 class Report:
     """A report dialog's whole content."""
@@ -56,6 +70,8 @@ class Report:
     csv_keys: "tuple[str, ...] | None" = None
     #: the whole report as text, for Copy, when the model can produce one
     text: str = ""
+    #: controls that rebuild this report when changed (a filter, a target surface...)
+    controls: tuple[ReportChoice, ...] = ()
     #: what the status line should say once it is shown
     status: str = ""
 

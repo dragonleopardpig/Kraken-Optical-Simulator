@@ -183,7 +183,9 @@ class KrakenQtMainWindow(_main_window_class()):
             self.statusBar().showMessage(f"{title} failed: {exc}")
             return None
 
-        dialog = ReportDialog(report, parent=self, host=host_of(self))
+        # the dialog rebuilds through the same builder when one of its controls changes
+        dialog = ReportDialog(report, parent=self, host=host_of(self),
+                              rebuild=lambda **values: builder(self.editor, **values))
         dialog.finished.connect(lambda _result, d=dialog: self._forget_dialog(d))
         self._open_dialogs.append(dialog)
         dialog.show()

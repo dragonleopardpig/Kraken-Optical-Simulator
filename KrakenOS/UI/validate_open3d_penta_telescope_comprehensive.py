@@ -16529,6 +16529,10 @@ phase_641_qt_tk_report_parity = _phase_from_standalone(
     641, "the Qt reports show what the Tk dialogs show, cell for cell (Qt migration phase 3): the user opened all five and said the values could not be verified, and fairly -- the 0859-0861 guards compared the Qt tables against the FORMATTERS the Tk dialogs use, which is an argument rather than a demonstration. This loads om05a_folded.py, runs the same trace the Qt redraw runs, opens all five TK dialogs through the editor's own menu methods and reads every Treeview back, opens all five QT dialogs in a subprocess and reads every table model back, and compares headings, shape and a SHA-256 over every cell: 25x17, 2670x15, 1x12, 2x11 and 2x13, all identical. The Qt reports are therefore the same numbers the Tk editor has always shown. The Tk half replaces messagebox.showinfo/showerror/showwarning for its duration and fails if any fired -- a report with nothing to show raises a MODAL box that would otherwise hang the guard (0862)",
     "KrakenOS.UI.validate_open3d_0862_qt_tk_report_parity",
     "qt_tk_report_parity")
+phase_642_report_controls = _phase_from_standalone(
+    642, "report controls in the Qt shell (Qt migration phase 3): the first ports showed each Tk dialog's default and nothing else -- Path Throughput could not be filtered and Source Illumination always reported on the target the editor resolves as Auto. A Report may now declare ReportChoice controls (key = the builder's keyword, label, choices, value); the dialog renders a combo per control and on a change collects every value and calls THE BUILDER again, so a control needs no Qt-side logic, the filtering stays in the model, and every builder remains callable with no arguments. Choices come from the model: branch_throughput_filter_choices and the editor's _source_illumination_target_choices. On om05a_folded.py, filtering to 'Terminal: S10 Aperture: Aperture Stop' narrows 2 paths to 1, and re-aiming illumination from Auto (S24, 106/226) to S1 gives 113/226. Guard: every controlled builder takes its control as a keyword with a default; the controls are the model's own lists with the Tk defaults; a filter change rebuilds to exactly filtered_branch_throughput_records cell for cell; a target change re-aims to the model's summary; ONE change rebuilds ONCE (refreshing a combo's own choices inside the refresh must not re-enter -- the classic Qt signal loop); and an unknown filter value is kept rather than dropped (0863)",
+    "KrakenOS.UI.validate_open3d_0863_report_controls",
+    "report_controls")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17236,6 +17240,7 @@ def main() -> int:
             phase_639_branch_gaussian_q_report,
             phase_640_analysis_reports_qt,
             phase_641_qt_tk_report_parity,
+            phase_642_report_controls,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

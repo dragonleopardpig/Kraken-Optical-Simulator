@@ -1,14 +1,15 @@
 """The Path Throughput Report's data (docs/design_qt_migration.md phase 3).
 
 `branch_throughput_analysis.py` owns the columns, formatting, filtering and text; the collector
-lives on the editor. The Tk dialog also offers a path FILTER -- the Qt view shows the default,
-every path, until phase 3 gives this family its controls.
+lives on the editor. The path FILTER is a report control: its choices come from the module's own
+`branch_throughput_filter_choices`, and picking one rebuilds the report through this builder.
 """
 from __future__ import annotations
 
 from KrakenOS.UI.branch_throughput_analysis import (
     BRANCH_THROUGHPUT_CSV_COLUMNS,
     BRANCH_THROUGHPUT_FILTER_DEFAULT,
+    branch_throughput_filter_choices,
     BRANCH_THROUGHPUT_TABLE_HEADINGS,
     BRANCH_THROUGHPUT_TABLE_LAYOUT,
     branch_throughput_report_text,
@@ -16,7 +17,7 @@ from KrakenOS.UI.branch_throughput_analysis import (
     branch_throughput_table_values,
     filtered_branch_throughput_records,
 )
-from KrakenOS.UI.reports.base import Report, ReportColumn, ReportFailed
+from KrakenOS.UI.reports.base import Report, ReportChoice, ReportColumn, ReportFailed
 
 TITLE = "Path Throughput Report"
 EMPTY = "No path throughput data. Click Update first."
@@ -35,6 +36,9 @@ def build_branch_throughput_report(owner, filter_text: str = BRANCH_THROUGHPUT_F
             ray_records=owner._active_ray_analysis_records()))
     except Exception as exc:
         raise ReportFailed(str(exc)) from exc
+    choices = tuple(branch_throughput_filter_choices(all_records))
+    if filter_text not in choices:
+        choices = (filter_text, *choices)
     records = list(filtered_branch_throughput_records(all_records, filter_text))
     return Report(
         title=TITLE,
@@ -46,6 +50,7 @@ def build_branch_throughput_report(owner, filter_text: str = BRANCH_THROUGHPUT_F
                       for record in records],
         csv_keys=tuple(BRANCH_THROUGHPUT_CSV_COLUMNS),
         text=branch_throughput_report_text(records, all_records, filter_text),
+        controls=(ReportChoice("filter_text", "Path filter", choices, filter_text),),
         status=(f"Path throughput report: {len(records)} paths." if records else EMPTY),
     )
 

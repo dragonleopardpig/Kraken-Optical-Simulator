@@ -56,13 +56,16 @@ def _dialog_class():
 class ReportDialog(_dialog_class()):
     """A summary line, the table, and Export CSV / Close."""
 
-    def __init__(self, report, parent=None, host=None) -> None:
-        from PySide6.QtWidgets import (QAbstractItemView, QDialogButtonBox, QLabel, QTableView,
-                                       QVBoxLayout)
+    def __init__(self, report, parent=None, host=None, rebuild=None) -> None:
+        from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialogButtonBox, QHBoxLayout,
+                                       QLabel, QTableView, QVBoxLayout)
 
         super().__init__(parent)
         self.report = report
         self.host = host if host is not None else host_of(parent)
+        #: called with every control's current value to produce a fresh Report
+        self.rebuild = rebuild
+        self.controls: dict[str, QComboBox] = {}
 
         self.setWindowTitle(report.title)
         self.resize(1180, 620)
@@ -74,6 +77,20 @@ class ReportDialog(_dialog_class()):
         self.summary_label.setTextInteractionFlags(
             self.summary_label.textInteractionFlags().TextSelectableByMouse)
         layout.addWidget(self.summary_label)
+
+        if report.controls:
+            row = QHBoxLayout()
+            for control in report.controls:
+                box = QComboBox()
+                box.addItems(list(control.choices))
+                if control.value and control.value in control.choices:
+                    box.setCurrentText(control.value)
+                box.currentTextChanged.connect(self._on_control_changed)
+                self.controls[control.key] = box
+                row.addWidget(QLabel(control.label))
+                row.addWidget(box)
+            row.addStretch(1)
+            layout.addLayout(row)
 
         self.model = make_report_model(report)
         self.table = QTableView()
@@ -98,6 +115,38 @@ class ReportDialog(_dialog_class()):
         self.export_button.clicked.connect(self.export_csv)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
+
+    def control_values(self) -> dict:
+        return {key: box.currentText() for key, box in self.controls.items()}
+
+    def _on_control_changed(self, _text=None) -> None:
+        if self.rebuild is None:
+            return
+        self.set_report(self.rebuild(**self.control_values()))
+
+    def set_report(self, report) -> None:
+        """Show a freshly built report: the table, the summary, and the controls' own choices."""
+        self.report = report
+        self.model.beginResetModel()
+        self.model.report = report
+        self.model.endResetModel()
+        self.summary_label.setText(report.summary)
+        for control in report.controls:
+            box = self.controls.get(control.key)
+            if box is None:
+                continue
+            # the choices can change with the data; refresh them without re-entering the rebuild
+            box.blockSignals(True)
+            try:
+                if [box.itemText(i) for i in range(box.count())] != list(control.choices):
+                    box.clear()
+                    box.addItems(list(control.choices))
+                if control.value and control.value in control.choices:
+                    box.setCurrentText(control.value)
+            finally:
+                box.blockSignals(False)
+        if self.copy_button is not None:
+            self.copy_button.setEnabled(bool(report.text))
 
     def copy_text(self) -> str:
         """Put the whole report on the clipboard, through the UI host."""
