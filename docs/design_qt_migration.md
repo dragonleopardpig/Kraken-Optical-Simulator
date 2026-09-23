@@ -9,13 +9,35 @@ Status (2026-09-23): **the seam is in place on `tk`; phase 2 has begun on `qt`.*
 | 1d the editor OWNS its Tk root instead of BEING one (forwarding) | bugs/0853 |
 | found on the way: two `@staticmethod` slips (Optimize, Paraxial Matrix Report) | bugs/0850 |
 | 2 (part 1) PySide6 in devenv, `QtUiHost`, and a spike proving the VTK viewport under Qt | bugs/0854 |
+| 2 (part 2) the Qt shell: `KrakenOS/UI/qt/` -- menus, docks, surface table, viewport, status line | bugs/0855 |
 
 Deferred on purpose: moving seven self-contained dialog functions out of services (reached only
 from menu actions; a Qt build calls Qt dialogs instead, so their location does not block Qt), and
 the inspector's own 1d (it IS the 3D view; it becomes a Qt widget in phase 5).
 
-**Now on branch `qt`, phase 2.** Next in it: the lifted optiland shell (main window, docks, action
-registry) around the viewport the spike proved.
+**Now on branch `qt`, phase 2.** The shell exists and runs:
+`python -m KrakenOS.UI.qt.app attachment/om05a_folded.py`.
+
+## The shell (bugs/0855)
+
+`KrakenQtMainWindow` owns no optics. It holds a `KrakenLayoutEditor` built with
+`ui=QtUiHost(...)`, so **`File -> Open Layout` calls the model's own `editor.open_layout()`** --
+the method the Tk File menu calls -- and the chooser that appears is Qt's, because that is what
+the host behind `host_of(self)` puts up. No Qt-specific load path was written. The surface table
+is a `QAbstractTableModel` over `editor.rows` with no copy in between, and the status bar binds
+once to `status_var` through the `trace_add` a `tk.StringVar` and an `ObservableValue` both have
+-- which is what step 1c was for.
+
+`qt/actions.py` and `qt/docks.py` follow the structure of `optiland_gui/action_manager.py` and
+`panel_manager.py` (MIT, (c) 2024 Kramer Harrison), attributed in each module. optiland's own
+panels are not lifted: they are optiland's model's views.
+
+Still transitional: that editor builds a Tk widget tree behind the scenes (0853 freed it from
+BEING a root, not from having one), so the shell passes `headless=True` and withdraws the root.
+Phase 5 removes it.
+
+**Next: the dialogs (phase 3).** 42 of them, and the seam means each one is a Qt implementation
+behind a call the model already makes.
 
 ## Phase 2 findings (2026-09-23, bugs/0854 + `bugs/spike_0854_qt_viewport.py`)
 

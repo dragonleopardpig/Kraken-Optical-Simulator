@@ -52,6 +52,15 @@ class QtUiHost(UiHost):
         self._timers: dict[str, Any] = {}
         self._counter = itertools.count()
 
+    def set_parent(self, parent) -> None:
+        """Adopt the window dialogs should centre on, once it exists -- the model is built before
+        the window that displays it, so the host starts parentless."""
+        self._parent = parent
+
+    @property
+    def parent_widget(self):
+        return self._parent
+
     # ---- event loop -------------------------------------------------------------------------------
     def after(self, ms, func=None, *args):
         """Like ``tk.Misc.after``: with a callback, schedule it and return a cancellable handle;

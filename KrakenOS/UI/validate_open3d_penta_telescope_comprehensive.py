@@ -16497,6 +16497,10 @@ phase_633_qt_ui_host = _phase_from_standalone(
     633, "the Qt implementation of the UI host (Qt migration phase 2): QtUiHost serves the same calls model code already makes through host_of -- QTimer scheduling, QMessageBox/QFileDialog/QInputDialog dialogs, the Qt clipboard, ObservableValue state variables -- and imports PySide6 lazily inside its methods so a Tk run never pulls in Qt. Two behaviours had to be built rather than mapped: a fired timer keeps a local reference and deleteLater()s itself (dropping a QObject's last reference inside its own signal deletes it mid-emission), and update_idletasks delivers the POSTED event queue instead of calling processEvents -- measured, processEvents runs pending after() callbacks, which would re-enter model code where Tk's update_idletasks runs idle work only. Guard (its Qt half in a subprocess on the offscreen platform, because the penta harness already holds a Tk interpreter and a live VTK window): interface completeness, no Qt binding imported by the uihost package, qt_filter over the 47 real filetypes literals, timers/cancel/nested/self-freeing, the blocking after(ms), the idle flush, every message button mapped to its tkinter value, the arguments Qt receives from the file and input dialogs, the clipboard, and REAL model code (_autosave_plot) reading a declared model variable and replacing its own timer on a Qt host (0854)",
     "KrakenOS.UI.validate_open3d_0854_qt_ui_host",
     "qt_ui_host")
+phase_634_qt_shell = _phase_from_standalone(
+    634, "the Qt shell (Qt migration phase 2 part 2): KrakenOS/UI/qt/ is the Qt-side VIEW layer over the existing model -- a KrakenLayoutEditor reached through the 0851 seam with a QtUiHost answering its dialogs, so File -> Open Layout runs the model's OWN open_layout() and the chooser that appears is Qt's. Action registry and dock factory follow optiland_gui's (MIT) structure; the surface table is a QAbstractTableModel reading editor.rows with no copy in between; the status bar binds to status_var through the trace a tk.StringVar and an ObservableValue both have; the viewport is built AFTER show() into a stable container, because the VTK widget hands VTK its window id in its constructor and Qt recreates a native window on reparenting. Guard (its Qt half in a subprocess on xcb, needing a DISPLAY): the package imports no Qt binding, every declared action names a real window method, the window's menus/docks/central container, the table read back against editor.rows, the model's status write reaching the bar, an OpenGL render window with a TRACKBALL style and bodies drawn with scalar colouring off, File -> Open triggered as an ACTION driving the model end to end, a Qt drag rotating the camera, and the close dropping the trace -- last, because closing finalizes the VTK widget (0855)",
+    "KrakenOS.UI.validate_open3d_0855_qt_shell",
+    "qt_shell")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17196,6 +17200,7 @@ def main() -> int:
             phase_631_model_variables,
             phase_632_editor_owns_its_root,
             phase_633_qt_ui_host,
+            phase_634_qt_shell,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
