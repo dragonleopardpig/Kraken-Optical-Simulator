@@ -52,3 +52,15 @@ arguments Qt actually receives from the file and input dialogs, the clipboard, a
 on a Qt host -- the 64 declared model variables come up working, and
 `layout_analysis_display._autosave_plot` reads one, cancels its previous timer and schedules the
 next, firing exactly once.
+
+
+## The viewport spike
+
+`bugs/spike_0854_qt_viewport.py` answers the other half of phase 2: a PySide6 window whose
+`QVTKRenderWindowInteractor` draws the real `om05a_folded.py` bodies from a headless editor, and a
+Qt mouse drag that rotates VTK's camera. Its docstring lists the four traps that cost a round each
+(missing `vtkRenderingOpenGL2` import -> an abstract render window that draws nothing and
+segfaults on capture; Qt on Wayland while VTK is on Xvfb; a viewport built before its parent chain
+is live; and the STEP bodies' active `kraken_step_selection_face_index` cell scalars hiding them
+unless the mapper has `ScalarVisibilityOff()`), plus the joystick-by-default interactor style that
+makes a drag do nothing. docs/design_qt_migration.md keeps the same list for phase 5.

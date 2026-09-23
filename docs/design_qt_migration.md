@@ -1,6 +1,6 @@
 # Qt migration -- design and plan
 
-Status (2026-09-22): **the seam on `tk` is in place.**
+Status (2026-09-23): **the seam is in place on `tk`; phase 2 has begun on `qt`.**
 
 | step | landed |
 |---|---|
@@ -8,12 +8,46 @@ Status (2026-09-22): **the seam on `tk` is in place.**
 | 1c the model declares its 64 state variables; hosts make variables; `ObservableValue` | bugs/0852 |
 | 1d the editor OWNS its Tk root instead of BEING one (forwarding) | bugs/0853 |
 | found on the way: two `@staticmethod` slips (Optimize, Paraxial Matrix Report) | bugs/0850 |
+| 2 (part 1) PySide6 in devenv, `QtUiHost`, and a spike proving the VTK viewport under Qt | bugs/0854 |
 
 Deferred on purpose: moving seven self-contained dialog functions out of services (reached only
 from menu actions; a Qt build calls Qt dialogs instead, so their location does not block Qt), and
 the inspector's own 1d (it IS the 3D view; it becomes a Qt widget in phase 5).
 
-**Next: the Qt branch, phase 2** -- per the user, the branch is created now that the seam exists.
+**Now on branch `qt`, phase 2.** Next in it: the lifted optiland shell (main window, docks, action
+registry) around the viewport the spike proved.
+
+## Phase 2 findings (2026-09-23, bugs/0854 + `bugs/spike_0854_qt_viewport.py`)
+
+Proved end to end, headless: a PySide6 window whose `QVTKRenderWindowInteractor` draws the REAL
+`om05a_folded.py` bodies (optical 32 311 points, lens 27 656, camera 112 916) from a headless
+editor, a first frame in ~0.7 s, and a Qt mouse drag that rotates VTK's camera (407 mm of camera
+travel; the second capture is a 3/4 view). A Tk root and a QApplication coexisted in that process,
+which is what "one codebase, both toolkits" needs during the transition.
+
+Four traps, each of which cost a debugging round and each of which will bite again in phase 5:
+
+1. **`vtkmodules.vtkRenderingOpenGL2` must be imported before the render window is created.**
+   Otherwise VTK's object factory has no OpenGL override and `vtkRenderWindow()` returns the
+   ABSTRACT base: `Render()` silently draws nothing, pixel readback returns 0 pixels, and
+   `vtkWindowToImageFilter` SEGFAULTS. `GetClassName()` must say `vtkXOpenGLRenderWindow`.
+2. **Qt's platform and VTK's display must be the same window system.** In this shell
+   `WAYLAND_DISPLAY` is set, so Qt goes to the compositor and ignores the `DISPLAY` that
+   `xvfb-run` just set, while VTK opens on the Xvfb server. Headless Qt runs need
+   `unset WAYLAND_DISPLAY; QT_QPA_PLATFORM=xcb` (or `offscreen` where no GL window is needed).
+3. **Build the viewport only once its parent chain reaches a shown top-level.** The widget hands
+   VTK its window id in `__init__` (`SetWindowInfo(winId())`), and Qt destroys and recreates a
+   native window on reparenting -- a viewport built into a not-yet-parented container leaves VTK
+   drawing into a dead handle: blank, and no mouse events.
+4. **An imported STEP body's ACTIVE cell scalars are `kraken_step_selection_face_index`** (what
+   face picking reads), so a mapper colours by that array through the default lookup table and
+   ignores the actor colour -- the bodies rendered invisible on white, only their few line cells
+   showing as specks. Every Qt-side mapper needs `ScalarVisibilityOff()` unless it means to colour
+   by data.
+
+And one that shapes phase 5: **`vtkInteractorStyleSwitch` starts in JOYSTICK mode**, where the
+camera moves on timer ticks rather than move deltas, so a press-drag-release does nothing at all.
+The style has to be set explicitly.
 
 ## Decisions (user, 2026-09-22)
 
