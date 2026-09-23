@@ -45,8 +45,28 @@ record's colour and opacity -- and the traced rays through that view's ray pipel
 included, so a ray that misses the detector visibly misses. One system build feeds both passes.
 `View -> Show Rays` switches the light. On `om05a_folded.py`: 20 elements, 106 rays, 3 bodies.
 
-**Next: the dialogs (phase 3).** 42 of them, and the seam means each one is a Qt implementation
-behind a call the model already makes.
+## Phase 3, the dialogs -- the recipe (bugs/0859)
+
+Measured 2026-09-23: **62 functions build a `tk.Toplevel`, about 9 000 lines** (validators and
+archive excluded); the largest are the CAD/STL face-roles editor (1 902), the Scene Source Manager
+(680) and the Paraxial Calculator (459).
+
+Porting one-for-one would double the dialog code and guarantee drift. Instead, for every dialog
+that is *a summary, a table and an export* -- a large share of the 62 -- the DATA moves out into a
+toolkit-free builder under `KrakenOS/UI/reports/` returning a `Report`, each toolkit keeps only
+its layout, and both render the same object. A number then cannot differ between the two views,
+and the contents become checkable **without a display**, which no Tk dialog's ever were.
+
+| piece | what |
+|---|---|
+| `reports/base.py` | `ReportColumn` (heading, numeric -> format + alignment), `Report` (`cell()`, `write_csv()`), `ReportFailed` |
+| `reports/<name>.py` | one builder per dialog |
+| `qt/dialogs/report_dialog.py` | the Qt layout for the whole family |
+
+First port: the **Paraxial Matrix Report** (Analysis menu, Ctrl+M). Both views ask for the export
+path through the UI host, so each gets its own file chooser from one call shape.
+
+**Next: the rest of phase 3**, dialog by dialog, each one a builder plus a menu entry.
 
 ## Phase 2 findings (2026-09-23, bugs/0854 + `bugs/spike_0854_qt_viewport.py`)
 

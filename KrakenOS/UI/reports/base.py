@@ -1,0 +1,71 @@
+"""Toolkit-free report records (docs/design_qt_migration.md phase 3).
+
+A report dialog is a summary line, a table and an export. None of that needs a toolkit -- only
+the LAYOUT does. Each dialog's data therefore becomes a :class:`Report` built by a plain
+function, and each toolkit gets a thin view over it: the Tk dialog and the Qt dialog render the
+same object, so a number can never differ between them, and the data can be checked by a
+display-free guard.
+"""
+from __future__ import annotations
+
+import csv
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+
+@dataclass(frozen=True)
+class ReportColumn:
+    """One table column. ``numeric`` drives both the format and the alignment."""
+
+    key: str
+    heading: str
+    numeric: bool = True
+    width: int = 70
+    stretch: bool = False
+
+    def format(self, value) -> str:
+        if not self.numeric:
+            return "" if value is None else str(value)
+        try:
+            return f"{float(value):.8g}"
+        except (TypeError, ValueError):
+            return str(value)
+
+
+@dataclass
+class Report:
+    """A report dialog's whole content."""
+
+    title: str
+    summary: str
+    columns: tuple[ReportColumn, ...] = ()
+    rows: list[dict[str, Any]] = field(default_factory=list)
+    #: what the status line should say once it is shown
+    status: str = ""
+
+    @property
+    def keys(self) -> tuple[str, ...]:
+        return tuple(column.key for column in self.columns)
+
+    @property
+    def headings(self) -> tuple[str, ...]:
+        return tuple(column.heading for column in self.columns)
+
+    def cell(self, row_index: int, column_index: int) -> str:
+        """The displayed text of one cell -- one implementation for every toolkit."""
+        column = self.columns[column_index]
+        return column.format(self.rows[row_index].get(column.key))
+
+    def write_csv(self, path) -> Path:
+        """The exported file: the raw values under the column keys, not the display text."""
+        path = Path(path)
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(self.keys))
+            writer.writeheader()
+            writer.writerows([{key: row.get(key) for key in self.keys} for row in self.rows])
+        return path
+
+
+class ReportFailed(Exception):
+    """The model could not produce the report. Carries the message a dialog should show."""

@@ -16513,6 +16513,10 @@ phase_637_qt_view_draws_rays = _phase_from_standalone(
     637, "the Qt 3D view draws the traced light (Qt migration phase 2): glass without light is a CAD view. The viewport walks the model's OWN ray-display pipeline, the one the Tk 3D view walks -- _iter_3d_scene_ray_records for the per-ray record, _bounded_3d_ray_points_for_display so a ray that MISSES the detector visibly misses instead of stopping short or teleporting, _ray_vertex_display_inset to keep segment ends off the glass, and _ray_terminal_3d_style because colour carries the terminal status and is physics, not decoration -- and draws each polyline unlit. show_editor_scene builds the preview system ONCE for both the element and ray passes, so drawn light belongs to the drawn glass and a redraw does not pay twice; View -> Show Rays hides and shows them and a redraw honours the menu. On om05a_folded.py that is 106 rays, all hit_detector. Guard: one actor per record recomputed independently, each polyline equal to the model's BOUNDED display polyline point-for-point (a raw-points regression passes a count check and silently breaks the missed-ray invariant -- this is what catches it), styles from the terminal style, one build per redraw, and the toggle (0858)",
     "KrakenOS.UI.validate_open3d_0858_qt_view_draws_rays",
     "qt_view_draws_rays")
+phase_638_paraxial_report_shared = _phase_from_standalone(
+    638, "one report, two toolkits (Qt migration phase 3 begins): 62 functions build a tk.Toplevel, about 9000 lines, and porting them one-for-one would double the dialog code and guarantee drift. The recipe, established on the Paraxial Matrix Report: a dialog's DATA moves to a toolkit-free builder under KrakenOS/UI/reports/ returning a Report (title, summary, columns, rows), each toolkit keeps only its LAYOUT, and both render the same object -- so a number cannot differ between them and the contents become checkable WITHOUT a display, which no Tk dialog's ever were. Both views ask for the export path through the UI host, so Tk gets filedialog and Qt gets QFileDialog from one call shape, and the CSV carries raw values under the column keys rather than the displayed .8g text. Guard: the builder against an independent ParaxMatrices call value by value; the REAL Tk dialog opened and its Treeview read back cell by cell; the CSV round-tripping with a rounded cell as the control; ReportFailed carrying its message; and in a subprocess the Qt dialog's table, title, summary, alignment, host-driven export and failure path -- Tk and Qt shown to agree through a common reference instead of by eye (0859)",
+    "KrakenOS.UI.validate_open3d_0859_paraxial_report_shared",
+    "paraxial_report_shared")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17216,6 +17220,7 @@ def main() -> int:
             phase_635_qt_platform,
             phase_636_qt_view_draws_elements,
             phase_637_qt_view_draws_rays,
+            phase_638_paraxial_report_shared,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

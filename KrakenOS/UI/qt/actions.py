@@ -18,6 +18,9 @@ ACTIONS = (
     ("redraw", "&View", "&Redraw", "F5", "redraw_action", "Rebuild the scene from the model"),
     ("show_rays", "&View", "Show &Rays", "Ctrl+L", "toggle_rays_action",
      "Show or hide the traced light"),
+    ("paraxial_matrix", "&Analysis", "Paraxial &Matrix Report", "Ctrl+M",
+     "paraxial_matrix_report_action",
+     "The system's paraxial matrices, surface by surface -- the same report the Tk editor shows"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 

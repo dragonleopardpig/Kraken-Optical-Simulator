@@ -65,6 +65,7 @@ class KrakenQtMainWindow(_main_window_class()):
                                       Qt.DockWidgetArea.LeftDockWidgetArea)
         self.dock_manager.setup_default_layout()
 
+        self._open_dialogs: list = []  # a modeless dialog must outlive the call that opened it
         self._status_trace = None
         self._bind_status_line()
         self.statusBar().showMessage(self._model_status() or "KrakenOS Qt shell ready.")
@@ -164,6 +165,34 @@ class KrakenQtMainWindow(_main_window_class()):
         if self.viewport is not None:
             self.viewport.reset_camera()
             self.viewport.render()
+
+    def paraxial_matrix_report_action(self) -> None:
+        """Open the Paraxial Matrix Report -- the Tk editor's dialog, rendered by Qt.
+
+        Both views render the same `Report`: the builder is toolkit-free, so the numbers here
+        cannot drift from the numbers there.
+        """
+        from KrakenOS.UI.qt.dialogs.report_dialog import ReportDialog
+        from KrakenOS.UI.reports import ReportFailed, build_paraxial_matrix_report
+
+        try:
+            report = build_paraxial_matrix_report(self.editor)
+        except ReportFailed as exc:
+            host_of(self).showerror(
+                "Paraxial Matrix Report", f"Could not build paraxial matrix report:\n\n{exc}")
+            self.statusBar().showMessage(f"Paraxial matrix report failed: {exc}")
+            return
+
+        dialog = ReportDialog(report, parent=self, host=host_of(self))
+        dialog.finished.connect(lambda _result, d=dialog: self._forget_dialog(d))
+        self._open_dialogs.append(dialog)
+        dialog.show()
+        self.statusBar().showMessage(report.status)
+        return dialog
+
+    def _forget_dialog(self, dialog) -> None:
+        if dialog in self._open_dialogs:
+            self._open_dialogs.remove(dialog)
 
     def about_action(self) -> None:
         host_of(self).showinfo(
