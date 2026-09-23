@@ -16,8 +16,14 @@ ACTIONS = (
     ("reset_camera", "&View", "&Fit Scene", "Ctrl+0", "reset_camera_action",
      "Frame every drawn body"),
     ("redraw", "&View", "&Redraw", "F5", "redraw_action", "Rebuild the scene from the model"),
+    ("show_rays", "&View", "Show &Rays", "Ctrl+L", "toggle_rays_action",
+     "Show or hide the traced light"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
+
+
+#: checkable actions -> their state at start-up
+CHECKABLE = {"show_rays": True}
 
 
 class ActionManager:
@@ -32,6 +38,9 @@ class ActionManager:
 
         for name, _menu, text, shortcut, method, tooltip in ACTIONS:
             action = QAction(text, self.main_window)
+            if name in CHECKABLE:
+                action.setCheckable(True)
+                action.setChecked(bool(CHECKABLE[name]))
             if shortcut:
                 action.setShortcut(QKeySequence(shortcut))
             action.setToolTip(tooltip)

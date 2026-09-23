@@ -81,29 +81,54 @@ class SceneViewport:
             vtkInteractorStyleTrackballCamera())
         self.body_actors: dict[str, object] = {}
         self.element_actors: list[object] = []
+        self.ray_actors: list[object] = []
 
     @property
     def interactor_style(self):
         return self.render_window.GetInteractor().GetInteractorStyle()
 
     def clear(self) -> None:
-        for actor in list(self.body_actors.values()) + self.element_actors:
+        for actor in list(self.body_actors.values()) + self.element_actors + self.ray_actors:
             self.renderer.RemoveActor(actor)
         self.body_actors.clear()
         self.element_actors.clear()
+        self.ray_actors.clear()
 
     def show_editor_scene(self, editor) -> dict:
-        """Draw the scene: the model's optical elements AND the imported STEP bodies.
+        """Draw the scene: the model's optical elements, its traced rays, and the STEP bodies.
 
-        Returns ``{"elements": [...], "bodies": [...], "error": str | None}``.
+        Returns ``{"elements": [...], "rays": int, "bodies": [...], "error": str | None}``.
         """
         self.clear()
-        elements, error = self._draw_optical_elements(editor)
+        errors: list[str] = []
+        system = rays = bundle = None
+        try:
+            # ONE build for the whole scene: the elements and the rays must come from the same
+            # traced system, or the drawn light would belong to a different geometry than the
+            # drawn glass.
+            system, rays, bundle = editor._build_preview_system_rays_bundle(
+                sampling_mode=PREVIEW_SAMPLING, update_state=False)
+        except Exception as exc:
+            errors.append(f"display geometry: {type(exc).__name__}: {exc}")
+
+        elements: list[tuple[int, str, int]] = []
+        ray_count = 0
+        if system is not None:
+            try:
+                elements = self._draw_optical_elements(editor, system, bundle)
+            except Exception as exc:
+                errors.append(f"optical elements: {type(exc).__name__}: {exc}")
+            try:
+                ray_count = self._draw_rays(editor, rays, bundle)
+            except Exception as exc:
+                errors.append(f"rays: {type(exc).__name__}: {exc}")
+
         bodies = self._draw_step_bodies(editor)
         self.reset_camera()
-        return {"elements": elements, "bodies": bodies, "error": error}
+        return {"elements": elements, "rays": ray_count, "bodies": bodies,
+                "error": "; ".join(errors) or None}
 
-    def _draw_optical_elements(self, editor) -> tuple[list[tuple[int, str, int]], "str | None"]:
+    def _draw_optical_elements(self, editor, system, bundle) -> list[tuple[int, str, int]]:
         """The mirrors, prisms, lenses, stop and panels -- from the model's own display geometry.
 
         `_scene_surface_meshes` is what the Tk 3D view draws, built from the system the trace
@@ -113,13 +138,7 @@ class SceneViewport:
         """
         from vtkmodules.vtkRenderingCore import vtkActor, vtkDataSetMapper
 
-        try:
-            system, _rays, bundle = editor._build_preview_system_rays_bundle(
-                sampling_mode=PREVIEW_SAMPLING, update_state=False)
-            items = editor._scene_surface_meshes(system, bundle, include_reference_surfaces=False)
-        except Exception as exc:  # a scene the model cannot build must not take the window with it
-            return [], f"{type(exc).__name__}: {exc}"
-
+        items = editor._scene_surface_meshes(system, bundle, include_reference_surfaces=False)
         drawn: list[tuple[int, str, int]] = []
         for item in items:
             mesh = item.mesh
@@ -144,7 +163,57 @@ class SceneViewport:
             self.element_actors.append(actor)
             drawn.append((int(item.row_index), str(getattr(item.row, "name", "")),
                           int(mesh.GetNumberOfPoints())))
-        return drawn, None
+        return drawn
+
+    def _draw_rays(self, editor, rays, bundle) -> int:
+        """The traced light, through the model's own display pipeline.
+
+        Every step here is the one the Tk 3D view takes, and for a reason: the points are BOUNDED
+        for display (`_bounded_3d_ray_points_for_display`) so a ray that misses the detector
+        visibly misses instead of stopping short or teleporting, the vertex inset keeps segment
+        ends off the glass, and the per-ray style carries the terminal status -- colour is
+        physics, not decoration.
+        """
+        from vtkmodules.vtkRenderingCore import vtkActor, vtkPolyDataMapper
+
+        from KrakenOS.UI.scene_projector import scene_display_center_radius
+
+        if rays is None or bundle is None:
+            return 0
+        centre, radius = scene_display_center_radius(bundle)
+        paths = editor._scene_ray_path_by_index(bundle)
+        inset = editor._ray_vertex_display_inset(radius)
+        drawn = 0
+        for ray_index, colour, points, terminal_status in editor._iter_3d_scene_ray_records(
+                rays, bundle):
+            path = paths.get(int(ray_index))
+            display_points, _bounded = editor._bounded_3d_ray_points_for_display(
+                points, centre, radius,
+                terminal_status=terminal_status,
+                terminal_target=editor._missed_detector_target_for_path(bundle, path),
+                terminal_direction=editor._terminal_display_direction_for_path(path))
+            line = editor._ray_segment_mesh_for_3d_display(display_points, vertex_inset=inset)
+            if line is None or int(getattr(line, "n_points", 0)) < 2:
+                continue
+            style = editor._ray_terminal_3d_style(colour, terminal_status)
+            mapper = vtkPolyDataMapper()
+            mapper.SetInputData(line)
+            mapper.ScalarVisibilityOff()
+            actor = vtkActor()
+            actor.SetMapper(mapper)
+            prop = actor.GetProperty()
+            prop.SetColor(*_rgb(style["line_color"]))
+            prop.SetOpacity(float(style["line_opacity"]))
+            prop.SetLineWidth(float(style["line_width"]))
+            prop.SetLighting(False)  # a ray is light, not a lit surface
+            self.renderer.AddActor(actor)
+            self.ray_actors.append(actor)
+            drawn += 1
+        return drawn
+
+    def set_rays_visible(self, visible: bool) -> None:
+        for actor in self.ray_actors:
+            actor.SetVisibility(bool(visible))
 
     def _draw_step_bodies(self, editor) -> list[tuple[str, int]]:
         """The imported STEP hardware: the camera, the lens barrel, the stage, the LED."""

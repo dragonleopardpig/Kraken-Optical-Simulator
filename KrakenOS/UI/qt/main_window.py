@@ -120,8 +120,10 @@ class KrakenQtMainWindow(_main_window_class()):
             self.statusBar().showMessage(
                 f"3D view: the optical elements could not be built -- {drawn['error']}")
         elif self.viewport is not None:
+            # a freshly drawn scene honours the View menu's current ray state
+            self.viewport.set_rays_visible(bool(self.action_manager["show_rays"].isChecked()))
             self.statusBar().showMessage(
-                f"3D view: {len(drawn['elements'])} optical elements, "
+                f"3D view: {len(drawn['elements'])} optical elements, {drawn['rays']} rays, "
                 f"{len(drawn['bodies'])} imported bodies.")
         return drawn
 
@@ -148,6 +150,15 @@ class KrakenQtMainWindow(_main_window_class()):
 
     def redraw_action(self) -> None:
         self.refresh_from_model()
+
+    def toggle_rays_action(self, checked: bool = True) -> None:
+        """Show or hide the traced light -- the Tk 3D view has the same switch."""
+        if self.viewport is not None:
+            self.viewport.set_rays_visible(bool(checked))
+            self.viewport.render()
+        self.statusBar().showMessage(
+            f"Rays {'shown' if checked else 'hidden'} "
+            f"({len(self.viewport.ray_actors) if self.viewport else 0} traced).")
 
     def reset_camera_action(self) -> None:
         if self.viewport is not None:
