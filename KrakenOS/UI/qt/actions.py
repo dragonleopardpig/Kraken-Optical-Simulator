@@ -33,6 +33,9 @@ ACTIONS = (
     ("gaussian_beam", "&Analysis", "&Gaussian Beam Report", None,
      "gaussian_beam_report_action",
      "Propagate an input beam through the system's paraxial matrices, step by step"),
+    ("paraxial_calculator", "&Analysis", "Paraxial &Calculator...", None,
+     "paraxial_calculator_action",
+     "Solve the conjugate relations and apply the result to the layout"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 

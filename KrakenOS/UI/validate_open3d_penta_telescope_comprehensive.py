@@ -16537,6 +16537,10 @@ phase_643_gaussian_beam_report = _phase_from_standalone(
     643, "the Gaussian Beam Report in both toolkits (Qt migration phase 3): the first report with INPUTS. reports/gaussian_beam.py now owns the propagation over the paraxial matrices, the 20 columns, the infinity-aware formatter a beam trace needs (inf/-inf/- for a collimated waist), the summary, the defaults and gaussian_cavity_eigenmode -- the model side of the Use Cavity Eigenmode button. The Tk dialog was rewired onto it and the Qt dialog renders the same builder. The four inputs are ReportValue controls, the second control kind: a line edit that rebuilds ON COMMIT rather than per keystroke, with the BUILDER parsing the text so a half-typed field falls back to the default instead of raising. Guard: the defaults are the model's over 50 steps, a non-numeric input falls back, the cavity helper answers from the model (this scene is no resonator: stable=False, g=17.4246), and the REAL Tk dialog and the Qt dialog produce the SAME SHA-256 over all 50x20 cells; typing waist=2.5 rebuilds to the builder's own report and the summary follows (0864)",
     "KrakenOS.UI.validate_open3d_0864_gaussian_beam_report",
     "gaussian_beam_report")
+phase_644_paraxial_calculator = _phase_from_standalone(
+    644, "the Paraxial Calculator in both toolkits (Qt migration phase 3): the first FORM dialog -- fields, a solve, and an apply that writes back into the layout -- so all three phase-3 families now exist (report, report with controls, form that changes the model). About 200 lines of paraxial arithmetic lived inside a Tk closure; it is physics, not layout, and is now KrakenOS/UI/paraxial_calculator.py: initial_inputs (both forms open identically), load_from_layout, solve (four targets including the matrix-solution path), field_states (both forms enable the same fields), apply_solution (writes row 0 or the second-to-last row), CalculatorFailed for a refusal and NothingToApply for a magnification solve, which has no layout cell and was never an error box. The Tk dialog was rewired onto all of it and qt/dialogs/calculator_dialog.py is the Qt form. Two notes: setting a combo's text in the constructor fired currentTextChanged into the field-state refresh before the distance fields existed (KeyError -- the combos are connected last), and the opening magnification is 0, which the last target rightly refuses, so the guard gives it a usable value on both sides. Guard: both forms open on the model's values, the module solves all four targets (f=100, m=0.5 -> object 300 mm image 150 mm), the REAL Tk dialog shows the module's own result, the Tk entries follow field_states, apply writes row 23 (8.82 -> -5.6524), a magnification apply refuses with NothingToApply, and the Qt form matches on all of it (0865)",
+    "KrakenOS.UI.validate_open3d_0865_paraxial_calculator",
+    "paraxial_calculator")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17246,6 +17250,7 @@ def main() -> int:
             phase_641_qt_tk_report_parity,
             phase_642_report_controls,
             phase_643_gaussian_beam_report,
+            phase_644_paraxial_calculator,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

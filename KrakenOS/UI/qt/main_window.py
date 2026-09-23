@@ -237,6 +237,21 @@ class KrakenQtMainWindow(_main_window_class()):
 
         return self.open_report(build_gaussian_beam_report)
 
+    def paraxial_calculator_action(self):
+        """The Paraxial Calculator -- a form dialog, not a report: it can write back.
+
+        The solve and the apply live in `KrakenOS/UI/paraxial_calculator.py`, which the Tk dialog
+        was rewired onto, so both toolkits compute and apply the same way.
+        """
+        from KrakenOS.UI.qt.dialogs.calculator_dialog import ParaxialCalculatorDialog
+
+        dialog = ParaxialCalculatorDialog(self.editor, parent=self, host=host_of(self))
+        dialog.finished.connect(lambda _result, d=dialog: self._forget_dialog(d))
+        self._open_dialogs.append(dialog)
+        dialog.show()
+        self.statusBar().showMessage(dialog.result.text())
+        return dialog
+
     def _forget_dialog(self, dialog) -> None:
         if dialog in self._open_dialogs:
             self._open_dialogs.remove(dialog)

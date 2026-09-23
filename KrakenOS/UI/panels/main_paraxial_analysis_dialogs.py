@@ -11,6 +11,12 @@ from typing import Any, Callable
 import numpy as np
 
 import KrakenOS as Kos
+from KrakenOS.UI.paraxial_calculator import (
+    CalculatorFailed, CalculatorInputs, NothingToApply,
+    apply_solution as apply_paraxial_solution,
+    PROMPT as PARAXIAL_PROMPT, field_states as paraxial_field_states, format_calc,
+    initial_inputs as paraxial_initial_inputs,
+    load_from_layout as load_paraxial_from_layout, solve as solve_paraxial)
 from KrakenOS.UI.reports import ReportFailed
 from KrakenOS.UI.reports.gaussian_beam import COLUMNS as GAUSSIAN_BEAM_COLUMNS
 from KrakenOS.UI.reports.paraxial_matrix import build_paraxial_matrix_report
@@ -43,81 +49,47 @@ class MainParaxialAnalysisDialogs:
         dialog.resizable(False, False)
         dialog.columnconfigure(1, weight=1)
 
-        object_default = float(self.rows[0].thickness) if self.rows else 0.0
-        image_row = max(0, len(self.rows) - 2)
-        image_default = float(self.rows[image_row].thickness) if self.rows else 0.0
-        object_mode_default = self._current_object_mode()
+        # docs/design_qt_migration.md phase 3: the opening values come from the shared model, so
+        # the Qt form starts on exactly the same ones.
+        opening = paraxial_initial_inputs(self)
 
-        effl_var = tk.StringVar(value=f"{self._current_effl_estimate():.6g}")
-        ppa_var = tk.StringVar(value="0")
-        ppp_var = tk.StringVar(value="0")
-        ep_z_var = tk.StringVar(value="n/a")
-        xp_z_var = tk.StringVar(value="n/a")
-        magnification_var = tk.StringVar(value="0")
-        solve_for_var = tk.StringVar(value="Image distance")
-        object_mode_var = tk.StringVar(value=object_mode_default)
-        object_distance_var = tk.StringVar(value=f"{object_default:.6g}")
-        image_distance_var = tk.StringVar(value=f"{image_default:.6g}")
-        load_note_var = tk.StringVar(value="Set known values, then click Solve.")
-        result_var = tk.StringVar(value="Set known values, then click Solve.")
-        detail_var = tk.StringVar(value="")
+        # master=dialog on purpose: an unmastered tk.StringVar attaches to the DEFAULT root, which
+        # is a different interpreter as soon as a second one exists (a guard building its own
+        # editor) -- the variable then lives where its widgets do not.
+        effl_var = tk.StringVar(master=dialog, value=opening.effl)
+        ppa_var = tk.StringVar(master=dialog, value=opening.ppa)
+        ppp_var = tk.StringVar(master=dialog, value=opening.ppp)
+        ep_z_var = tk.StringVar(master=dialog, value="n/a")
+        xp_z_var = tk.StringVar(master=dialog, value="n/a")
+        magnification_var = tk.StringVar(master=dialog, value=opening.magnification)
+        solve_for_var = tk.StringVar(master=dialog, value=opening.solve_for)
+        object_mode_var = tk.StringVar(master=dialog, value=opening.object_mode)
+        object_distance_var = tk.StringVar(master=dialog, value=opening.object_distance)
+        image_distance_var = tk.StringVar(master=dialog, value=opening.image_distance)
+        load_note_var = tk.StringVar(master=dialog, value=PARAXIAL_PROMPT)
+        result_var = tk.StringVar(master=dialog, value=PARAXIAL_PROMPT)
+        detail_var = tk.StringVar(master=dialog, value="")
         solved_payload: dict[str, object] = {}
         loaded_paraxial_solution: dict[str, float] | None = None
 
-        def _format_calc(value: float) -> str:
-            if not np.isfinite(value):
-                return "Infinity"
-            return f"{float(value):.6g}"
-
-        def _loaded_solution_matches_ui() -> bool:
-            if loaded_paraxial_solution is None:
-                return False
-            try:
-                return (
-                    abs(_read_float(effl_var, "EFL") - float(loaded_paraxial_solution["effl_display"])) <= 1e-6
-                    and abs(_read_float(ppa_var, "H1 offset") - float(loaded_paraxial_solution["ppa"])) <= 1e-6
-                    and abs(_read_float(ppp_var, "H2 offset") - float(loaded_paraxial_solution["ppp"])) <= 1e-6
-                )
-            except Exception:
-                return False
+        def _calculator_inputs() -> CalculatorInputs:
+            return CalculatorInputs(
+                solve_for=solve_for_var.get(), effl=effl_var.get(), ppa=ppa_var.get(),
+                ppp=ppp_var.get(), object_mode=object_mode_var.get(),
+                object_distance=object_distance_var.get(),
+                image_distance=image_distance_var.get(),
+                magnification=magnification_var.get())
 
         def _try_load_from_layout() -> None:
-            note_parts: list[str] = []
             nonlocal loaded_paraxial_solution
-            loaded_paraxial_solution = None
-            try:
-                a, b, c, d, effl_display, ppa, ppp = self._exact_paraxial_solution_for_rows(self.rows)
-                effl_var.set(f"{effl_display:.6g}")
-                ppa_var.set(f"{float(ppa):.6g}")
-                ppp_var.set(f"{float(ppp):.6g}")
-                loaded_paraxial_solution = {
-                    "a": float(a),
-                    "b": float(b),
-                    "c": float(c),
-                    "d": float(d),
-                    "effl_display": float(effl_display),
-                    "ppa": float(ppa),
-                    "ppp": float(ppp),
-                }
-                note_parts.append("Loaded EFL/H1/H2 from layout.")
-            except Exception as exc:
-                note_parts.append(f"Cardinal extraction unavailable ({self.short_error_message(exc)}).")
-            try:
-                system = self.build_system()
-                pupil = Kos.PupilCalc(
-                    system,
-                    self._analysis_surface_index(),
-                    self._current_wavelength(),
-                    self._current_aperture_type(),
-                    self._current_aperture_value(),
-                )
-                ep_z_var.set(_format_calc(float(pupil.PosPupInp[2])))
-                xp_z_var.set(_format_calc(float(pupil.PosPupOut[2])))
-                note_parts.append("Loaded EP/XP from current aperture settings.")
-            except Exception:
-                ep_z_var.set("n/a")
-                xp_z_var.set("n/a")
-            load_note_var.set(" ".join(note_parts) if note_parts else "Using manual values.")
+            values, note, loaded_paraxial_solution = load_paraxial_from_layout(self)
+            if "effl" in values:
+                effl_var.set(values["effl"])
+                ppa_var.set(values["ppa"])
+                ppp_var.set(values["ppp"])
+            ep_z_var.set(values.get("ep_z", "n/a"))
+            xp_z_var.set(values.get("xp_z", "n/a"))
+            load_note_var.set(note)
 
         ttk.Label(dialog, text="Solve for").grid(row=0, column=0, padx=(12, 8), pady=(12, 4), sticky="w")
         solve_for_menu = ttk.Combobox(
@@ -186,273 +158,52 @@ class MainParaxialAnalysisDialogs:
             row=12, column=0, columnspan=2, padx=12, pady=(2, 0), sticky="w"
         )
 
-        def _read_float(var: tk.StringVar, label: str) -> float:
-            text = var.get().strip()
-            if not text:
-                raise RuntimeError(f"{label} is required")
-            try:
-                value = float(text)
-            except ValueError as exc:
-                raise RuntimeError(f"{label} must be numeric") from exc
-            if not np.isfinite(value):
-                raise RuntimeError(f"{label} must be finite")
-            return float(value)
-
         def _refresh_mode_state(_event=None) -> None:
-            target = solve_for_var.get().strip()
-            mode = object_mode_var.get().strip()
-            if target == "Image distance":
-                if mode == "Infinity":
-                    object_distance_entry.configure(state="disabled")
-                else:
-                    object_distance_entry.configure(state="normal")
-                image_distance_entry.configure(state="disabled")
-                magnification_entry.configure(state="readonly")
-            elif target == "Object distance":
-                object_distance_entry.configure(state="disabled")
-                image_distance_entry.configure(state="normal")
-                magnification_entry.configure(state="readonly")
-            elif target == "Magnification":
-                if mode == "Infinity":
-                    object_distance_entry.configure(state="disabled")
-                else:
-                    object_distance_entry.configure(state="normal")
-                image_distance_entry.configure(state="normal")
-                magnification_entry.configure(state="disabled")
-            else:
-                object_distance_entry.configure(state="disabled")
-                image_distance_entry.configure(state="disabled")
-                magnification_entry.configure(state="normal")
+            states = paraxial_field_states(solve_for_var.get(), object_mode_var.get())
+            object_distance_entry.configure(state=states["object_distance"])
+            image_distance_entry.configure(state=states["image_distance"])
+            magnification_entry.configure(state=states["magnification"])
             solved_payload.clear()
 
         def _solve(_event=None) -> None:
+            solved_payload.clear()
             try:
-                f = _read_float(effl_var, "EFL")
-                if abs(f) <= 1e-12:
-                    raise RuntimeError("EFL must be non-zero")
-                h1 = _read_float(ppa_var, "H1 offset")
-                h2 = _read_float(ppp_var, "H2 offset")
-                target = solve_for_var.get().strip()
-                mode = object_mode_var.get().strip()
-                solved_payload.clear()
-                use_matrix_solution = _loaded_solution_matches_ui()
-                matrix_solution = loaded_paraxial_solution if use_matrix_solution else None
-
-                if target == "Image distance":
-                    if matrix_solution is not None:
-                        object_distance = 0.0 if mode == "Infinity" else _read_float(object_distance_var, "Object distance")
-                        image_distance = self._compute_image_gap_from_paraxial_solution(
-                            float(matrix_solution["a"]),
-                            float(matrix_solution["b"]),
-                            float(matrix_solution["c"]),
-                            float(matrix_solution["d"]),
-                            object_distance,
-                            mode,
-                        )
-                        object_principal = float("inf") if mode == "Infinity" else object_distance + h1
-                        image_principal = image_distance - h2
-                        magnification = 0.0 if mode == "Infinity" else (
-                            float(image_principal / object_principal)
-                            if np.isfinite(object_principal) and abs(object_principal) > 1e-12
-                            else float("inf")
-                        )
-                    else:
-                        if mode == "Infinity":
-                            image_distance = f + h2
-                            object_principal = float("inf")
-                            image_principal = float(f)
-                            magnification = 0.0
-                        else:
-                            object_distance = _read_float(object_distance_var, "Object distance")
-                            object_principal = object_distance + h1
-                            if abs(object_principal) <= 1e-12:
-                                raise RuntimeError("Object is on H1; cannot solve image distance")
-                            balance = (1.0 / f) - (1.0 / object_principal)
-                            if abs(balance) <= 1e-12:
-                                image_distance = float("inf")
-                                image_principal = float("inf")
-                                magnification = float("inf")
-                            else:
-                                image_principal = 1.0 / balance
-                                image_distance = image_principal + h2
-                                magnification = image_principal / object_principal
-                    solved_payload.update(
-                        {
-                            "target": "image",
-                            "value": image_distance,
-                            "object_mode_after": mode,
-                        }
-                    )
-                    magnification_var.set(_format_calc(magnification))
-                    result_var.set(f"Image distance = {self._format_paraxial_value(image_distance)} mm")
-                    detail_var.set(
-                        "s={obj}, s'={img}, m={mag}".format(
-                            obj=self._format_paraxial_value(object_principal),
-                            img=self._format_paraxial_value(image_principal),
-                            mag=self._format_paraxial_value(magnification),
-                        )
-                    )
-                elif target == "Object distance":
-                    image_distance = _read_float(image_distance_var, "Image distance")
-                    if matrix_solution is not None:
-                        object_distance = self._compute_object_gap_from_paraxial_solution(
-                            float(matrix_solution["a"]),
-                            float(matrix_solution["b"]),
-                            float(matrix_solution["c"]),
-                            float(matrix_solution["d"]),
-                            image_distance,
-                        )
-                        if not np.isfinite(object_distance) or abs(object_distance) > 1e9:
-                            object_principal = float("inf")
-                            object_distance = float("inf")
-                            mode_after = "Infinity"
-                        else:
-                            object_principal = object_distance + h1
-                            mode_after = "Finite"
-                        image_principal = image_distance - h2
-                    else:
-                        image_principal = image_distance - h2
-                        if abs(image_principal) <= 1e-12:
-                            raise RuntimeError("Image is on H2; cannot solve object distance")
-                        balance = (1.0 / f) - (1.0 / image_principal)
-                        if abs(balance) <= 1e-12:
-                            object_principal = float("inf")
-                            object_distance = float("inf")
-                            mode_after = "Infinity"
-                        else:
-                            object_principal = 1.0 / balance
-                            object_distance = object_principal - h1
-                            mode_after = "Infinity" if (not np.isfinite(object_distance) or abs(object_distance) > 1e9) else "Finite"
-                    magnification = image_principal / object_principal if np.isfinite(object_principal) and abs(object_principal) > 1e-12 else float("inf")
-                    solved_payload.update(
-                        {
-                            "target": "object",
-                            "value": object_distance,
-                            "object_mode_after": mode_after,
-                        }
-                    )
-                    magnification_var.set(_format_calc(magnification))
-                    result_var.set(f"Object distance = {self._format_paraxial_value(object_distance)} mm")
-                    detail_var.set(
-                        "s={obj}, s'={img}, m={mag}".format(
-                            obj=self._format_paraxial_value(object_principal),
-                            img=self._format_paraxial_value(image_principal),
-                            mag=self._format_paraxial_value(magnification),
-                        )
-                    )
-                elif target == "Magnification":
-                    if mode == "Infinity":
-                        object_principal = float("inf")
-                        image_principal = _read_float(image_distance_var, "Image distance") - h2
-                        magnification = 0.0
-                    else:
-                        object_distance = _read_float(object_distance_var, "Object distance")
-                        image_distance = _read_float(image_distance_var, "Image distance")
-                        object_principal = object_distance + h1
-                        image_principal = image_distance - h2
-                        if abs(object_principal) <= 1e-12:
-                            raise RuntimeError("Object is on H1; cannot solve magnification")
-                        magnification = image_principal / object_principal
-                    solved_payload.update({"target": "magnification", "value": magnification, "object_mode_after": mode})
-                    magnification_var.set(_format_calc(magnification))
-                    result_var.set(f"Magnification = {self._format_paraxial_value(magnification)}")
-                    detail_var.set(
-                        "s={obj}, s'={img} from H1/H2".format(
-                            obj=self._format_paraxial_value(object_principal),
-                            img=self._format_paraxial_value(image_principal),
-                        )
-                    )
-                else:
-                    magnification = _read_float(magnification_var, "Magnification")
-                    if abs(magnification) <= 1e-12:
-                        raise RuntimeError("Magnification too close to zero; object distance goes to infinity")
-                    if abs(1.0 + magnification) <= 1e-12:
-                        raise RuntimeError("Magnification of -1 makes object/image distance singular")
-                    object_principal = f * (1.0 + (1.0 / magnification))
-                    image_principal = f * (1.0 + magnification)
-                    object_distance = object_principal - h1
-                    image_distance = image_principal + h2
-                    mode_after = "Infinity" if (not np.isfinite(object_distance) or abs(object_distance) > 1e9) else "Finite"
-                    object_distance_var.set(_format_calc(object_distance))
-                    image_distance_var.set(_format_calc(image_distance))
-                    solved_payload.update(
-                        {
-                            "target": "pair",
-                            "object_value": object_distance,
-                            "image_value": image_distance,
-                            "object_mode_after": mode_after,
-                        }
-                    )
-                    result_var.set(
-                        f"Object={self._format_paraxial_value(object_distance)} mm, Image={self._format_paraxial_value(image_distance)} mm"
-                    )
-                    detail_var.set(
-                        "From m={mag}: s={obj}, s'={img}".format(
-                            mag=self._format_paraxial_value(magnification),
-                            obj=self._format_paraxial_value(object_principal),
-                            img=self._format_paraxial_value(image_principal),
-                        )
-                    )
+                solution = solve_paraxial(self, _calculator_inputs(), loaded_paraxial_solution)
             except Exception as exc:
-                solved_payload.clear()
-                result_var.set(f"Solve failed: {self.short_error_message(exc)}")
+                message = (str(exc) if isinstance(exc, CalculatorFailed)
+                           else self.short_error_message(exc))
+                result_var.set(f"Solve failed: {message}")
                 detail_var.set("")
+                return
+            solved_payload.update(solution.payload)
+            if solution.magnification is not None:
+                magnification_var.set(format_calc(solution.magnification))
+            if solution.object_distance is not None:
+                object_distance_var.set(format_calc(solution.object_distance))
+            if solution.image_distance is not None:
+                image_distance_var.set(format_calc(solution.image_distance))
+            result_var.set(solution.result)
+            detail_var.set(solution.detail)
 
         def _apply_to_layout() -> bool:
-            try:
+            if not solved_payload:
+                _solve()
                 if not solved_payload:
-                    _solve()
-                    if not solved_payload:
-                        return False
-                target = str(solved_payload.get("target", ""))
-                solved_value = float(solved_payload.get("value", 0.0))
-                mode_after = str(solved_payload.get("object_mode_after", self._current_object_mode()))
-
-                if target == "image":
-                    if not np.isfinite(solved_value):
-                        raise RuntimeError("Solved image distance is infinity and cannot be applied")
-                    row_index = max(0, len(self.rows) - 2)
-                    self.rows[row_index].thickness = solved_value
-                    self._select_table_row(row_index)
-                elif target == "object":
-                    self.object_mode_var.set(mode_after)
-                    if mode_after == "Finite":
-                        if not np.isfinite(solved_value):
-                            raise RuntimeError("Solved object distance is infinity and cannot be applied in Finite mode")
-                        self.rows[0].thickness = solved_value
-                    self._select_table_row(0)
-                elif target == "pair":
-                    object_value = float(solved_payload.get("object_value", float("nan")))
-                    image_value = float(solved_payload.get("image_value", float("nan")))
-                    self.object_mode_var.set(mode_after)
-                    if mode_after == "Finite":
-                        if not np.isfinite(object_value):
-                            raise RuntimeError("Solved object distance is infinity and cannot be applied in Finite mode")
-                        self.rows[0].thickness = object_value
-                    if not np.isfinite(image_value):
-                        raise RuntimeError("Solved image distance is infinity and cannot be applied")
-                    row_index = max(0, len(self.rows) - 2)
-                    self.rows[row_index].thickness = image_value
-                    self._select_table_row(row_index)
-                elif target == "magnification":
-                    self.status_var.set("Magnification computed. No layout cell to apply.")
                     return False
-                else:
-                    raise RuntimeError("No solved target to apply")
-
-                self._normalize_special_rows()
-                self._sync_table()
-                self._sync_object_controls()
-                self._mark_plot_update_pending()
-                self.append_progress(f"Paraxial calculator applied: {result_var.get()}")
-                self.status_var.set(f"{result_var.get()}  |  Click Update.")
-                return True
+            try:
+                status = apply_paraxial_solution(self, dict(solved_payload), result_var.get())
+            except NothingToApply as exc:
+                self.status_var.set(str(exc))
+                return False
             except Exception as exc:
-                message = self.short_error_message(exc)
+                message = (str(exc) if isinstance(exc, CalculatorFailed)
+                           else self.short_error_message(exc))
                 self.append_debug(f"Paraxial calculator apply failed: {exc}")
                 messagebox.showerror("Paraxial Calculator", message)
                 self.status_var.set(f"Paraxial calculator apply failed: {message}")
                 return False
+            self.status_var.set(status)
+            return True
 
         def _apply_and_close() -> None:
             if _apply_to_layout():
