@@ -103,17 +103,26 @@ class KrakenQtMainWindow(_main_window_class()):
             self.viewport_layout.addWidget(self.viewport.widget)
         return self.viewport
 
-    def refresh_from_model(self) -> list[tuple[str, int]]:
+    def refresh_from_model(self) -> dict:
         """Rebuild every view from the editor: the table, the scene, the window title."""
         self.rows_model.refresh()
         self.rows_view.resizeColumnsToContents()
-        drawn: list[tuple[str, int]] = []
+        drawn: dict = {"elements": [], "bodies": [], "error": None}
         if self.viewport is not None:
             drawn = self.viewport.show_editor_scene(self.editor)
             self.viewport.render()
         current = getattr(self.editor, "current_layout_file", None)
         self.setWindowTitle(f"KrakenOS -- Qt shell -- {Path(current).name}" if current
                             else "KrakenOS -- Qt shell")
+        if drawn.get("error"):
+            # The model could not build its display geometry: say so rather than showing a
+            # viewport that is quietly missing every optical element.
+            self.statusBar().showMessage(
+                f"3D view: the optical elements could not be built -- {drawn['error']}")
+        elif self.viewport is not None:
+            self.statusBar().showMessage(
+                f"3D view: {len(drawn['elements'])} optical elements, "
+                f"{len(drawn['bodies'])} imported bodies.")
         return drawn
 
     def load_layout_path(self, path) -> None:

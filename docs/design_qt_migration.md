@@ -11,6 +11,7 @@ Status (2026-09-23): **the seam is in place on `tk`; phase 2 has begun on `qt`.*
 | 2 (part 1) PySide6 in devenv, `QtUiHost`, and a spike proving the VTK viewport under Qt | bugs/0854 |
 | 2 (part 2) the Qt shell: `KrakenOS/UI/qt/` -- menus, docks, surface table, viewport, status line | bugs/0855 |
 | 2 (fix) the shell must run on XWayland: Qt on Wayland gives VTK a surface id and Xlib aborts | bugs/0856 |
+| 2 (fix) the 3D view draws the model's optical elements, not only the imported STEP bodies | bugs/0857 |
 
 Deferred on purpose: moving seven self-contained dialog functions out of services (reached only
 from menu actions; a Qt build calls Qt dialogs instead, so their location does not block Qt), and
@@ -36,6 +37,10 @@ panels are not lifted: they are optiland's model's views.
 Still transitional: that editor builds a Tk widget tree behind the scenes (0853 freed it from
 BEING a root, not from having one), so the shell passes `headless=True` and withdraws the root.
 Phase 5 removes it.
+
+The viewport draws the model's own display geometry -- `_scene_surface_meshes` over the system
+from `_build_preview_system_rays_bundle`, which is exactly what the Tk 3D view draws, with each
+record's colour and opacity. Rays are not drawn yet.
 
 **Next: the dialogs (phase 3).** 42 of them, and the seam means each one is a Qt implementation
 behind a call the model already makes.

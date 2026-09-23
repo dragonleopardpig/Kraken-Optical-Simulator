@@ -16505,6 +16505,10 @@ phase_635_qt_platform = _phase_from_standalone(
     635, "the Qt shell picks a platform the VTK viewport can live on (Qt migration phase 2): the user's own launch died with 'X Error of failed request: BadWindow, X_ConfigureWindow' and NO traceback, because Xlib's default error handler exits the process. QVTKRenderWindowInteractor gives VTK the Qt widget's window id and VTK draws on X11, so under Wayland's platform plugin that id is a Wayland surface and VTK asked the X server to configure a window it had never heard of. app.choose_qt_platform() now resolves the platform before the QApplication exists -- Wayland plus an X server means xcb (XWayland), an explicit QT_QPA_PLATFORM is never overridden, and a Wayland session with no DISPLAY is refused with a sentence instead of aborting later -- and SceneViewport calls require_viewport_platform() before the widget exists so a wrong platform raises an explained RuntimeError. Guard: the decision table display-free, the refusal naming the variable to set, and a SUBPROCESS in the environment that aborted (WAYLAND_DISPLAY set, QT_QPA_PLATFORM unset) where the REAL build() comes up on xcb with a vtkXOpenGLRenderWindow (0856)",
     "KrakenOS.UI.validate_open3d_0856_qt_platform",
     "qt_platform")
+phase_636_qt_view_draws_elements = _phase_from_standalone(
+    636, "the Qt 3D view draws the model's optical elements (Qt migration phase 2): the shipped shell drew only the imported STEP bodies, so the user's om05a scene was missing all six right-angle fold mirrors, both BS cubes and their far halves, the thin-lens groups, the vertex datums, the filter, the stop and the LED panels -- 20 mesh records in all. The viewport now draws _scene_surface_meshes over the system from _build_preview_system_rays_bundle, the SAME display geometry the Tk 3D view draws, using each record's own colour and opacity; the aperture stop goes through the model's _legacy_3d_stop_ring_mesh so it is a RING as in Tk; records are handled positionally because a row can yield more than one (the filter yields a disc AND a solid body); and a scene whose geometry cannot be built reports the failure in the status line and still draws the STEP bodies instead of showing a silently empty viewport. Guard: every record drawn (by row, so the RA mirror rows are named), actor bounds equal to record mesh bounds, colour/opacity from the record, the stop drawn as the ring not the disc, and the reported-failure path (0857)",
+    "KrakenOS.UI.validate_open3d_0857_qt_view_draws_elements",
+    "qt_view_draws_elements")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17206,6 +17210,7 @@ def main() -> int:
             phase_633_qt_ui_host,
             phase_634_qt_shell,
             phase_635_qt_platform,
+            phase_636_qt_view_draws_elements,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

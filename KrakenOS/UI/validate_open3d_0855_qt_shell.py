@@ -120,9 +120,11 @@ def qt_runtime_checks() -> list[list]:
     bounds = window.viewport.renderer.ComputeVisiblePropBounds()
     row("Q4", window.viewport.render_window.IsA("vtkOpenGLRenderWindow")
         and type(window.viewport.interactor_style).__name__ == "vtkInteractorStyleTrackballCamera"
-        and len(drawn) >= 3 and scalars_off and bounds[1] > bounds[0],
+        and len(drawn["bodies"]) >= 3 and drawn["elements"] and drawn["error"] is None
+        and scalars_off and bounds[1] > bounds[0],
         f"{window.viewport.render_window.GetClassName()} with a "
-        f"{type(window.viewport.interactor_style).__name__}; drew {drawn} with scalar colouring "
+        f"{type(window.viewport.interactor_style).__name__}; drew {len(drawn['elements'])} "
+        f"optical elements and bodies {[b[0] for b in drawn['bodies']]} with scalar colouring "
         f"off ({scalars_off}); visible bounds span {bounds[1] - bounds[0]:.0f} mm")
 
     # ---- Q5 File -> Open, as an action, through the Qt host ----------------------------------
