@@ -38,6 +38,8 @@ ACTIONS = (
      "Solve the conjugate relations and apply the result to the layout"),
     ("ray_inspector", "&Analysis", "&Ray Inspector", None, "ray_inspector_action",
      "Every traced ray, and the hits of the one selected"),
+    ("trace_paths", "&Analysis", "&Trace Path Inspector", None, "trace_paths_action",
+     "Every traced path, nested under the ray it came from, with that path's hits"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 

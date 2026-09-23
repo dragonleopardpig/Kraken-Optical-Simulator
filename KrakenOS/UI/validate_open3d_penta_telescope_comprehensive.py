@@ -16545,6 +16545,10 @@ phase_645_ray_inspector_master_detail = _phase_from_standalone(
     645, "the Ray Inspector: the master/detail family (Qt migration phase 3): a master table of every traced ray with the hits of the selected one beneath it. The detail side was already shared (_ray_hit_table_specs / _ray_hit_table_values); the master rows were formatted inline in the Tk refresh and are now reports/ray_tables.py. Report gained a DetailView (columns plus rows(master_index)) and ReportDialog shows it in a vertical splitter, refilling on selection -- so the family costs one builder and no new dialog class. On om05a_folded.py: 226 rays x 22 columns, 15 hits for ray 0 and 9 for ray 3, which stops at S10 and bypasses the sensor. The Trace Path Inspector is deliberately NOT ported: its records are branch-tree records and its Tk view is a HIERARCHY a table cannot show -- reusing the ray columns raised KeyError('source_ray_index'), the right answer to the wrong question, so the port was removed rather than bent into shape. ray_tables.py also had to move INSIDE the reports package: declaring ReportColumns from outside it made a cycle that only bit when a guard imported the module before the package. Guard: the detail columns are the editor's own 59 specs, all 226x22 master cells equal ray_table_values, the detail follows the selection, the summary is the Tk line, and the REAL Tk ray inspector's Treeview digests identically over all 226 rows (0867)",
     "KrakenOS.UI.validate_open3d_0867_ray_inspector_master_detail",
     "ray_inspector_master_detail")
+phase_646_trace_path_tree = _phase_from_standalone(
+    646, "the Trace Path Inspector: the tree family (Qt migration phase 3): the fifth structural family, a HIERARCHY -- every traced ray is a node and the paths it split into hang underneath it, nested again when one path branched from another, which is why 0867 left this dialog alone. Report gained TreeRow (label, cells, children, detail_key) plus tree/tree_heading, and ReportDialog renders a QTreeView when a report carries a tree and a QTableView when it does not, leaving the detail half, summary, controls and export unchanged. reports/branch_tree_tables.py holds the model side: the 13 columns from the Tk branch tree, the ray and path cells, the labels, and the nesting rule (a path under its PARENT path when it has one, else under its ray). On om05a_folded.py: 226 rays, 226 paths, 452 nodes, 15 hits under ray 0's path and 9 under ray 3's. Guard: the columns under 'Ray / Path', the nesting (one node per ray, every nested node a Path, one detail-carrying node per record), the detail following the selected NODE by its record key, the Tk summary line, and the REAL Tk branch tree walked depth first digesting identically over all 452 nodes -- labels, cells and depth (0868)",
+    "KrakenOS.UI.validate_open3d_0868_trace_path_tree",
+    "trace_path_tree")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17256,6 +17260,7 @@ def main() -> int:
             phase_643_gaussian_beam_report,
             phase_644_paraxial_calculator,
             phase_645_ray_inspector_master_detail,
+            phase_646_trace_path_tree,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

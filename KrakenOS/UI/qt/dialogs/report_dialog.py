@@ -106,10 +106,11 @@ class ReportDialog(_dialog_class()):
     """A summary line, the table, and Export CSV / Close."""
 
     def __init__(self, report, parent=None, host=None, rebuild=None) -> None:
-        from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialogButtonBox, QHBoxLayout,
-                                       QLabel, QLineEdit, QSplitter, QTableView, QVBoxLayout,
-                                       QWidget)
         from PySide6.QtCore import Qt as _Qt
+        from PySide6.QtGui import QStandardItem, QStandardItemModel
+        from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialogButtonBox, QHBoxLayout,
+                                       QLabel, QLineEdit, QSplitter, QTableView, QTreeView,
+                                       QVBoxLayout, QWidget)
 
         super().__init__(parent)
         self.report = report
@@ -149,14 +150,50 @@ class ReportDialog(_dialog_class()):
             row.addStretch(1)
             layout.addLayout(row)
 
-        self.model = make_report_model(report)
-        self.table = QTableView()
-        self.table.setModel(self.model)
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.verticalHeader().setVisible(False)
-        for index, column in enumerate(report.columns):
-            self.table.setColumnWidth(index, column.width)
+        self.model = None
+        self.table = None
+        self.tree_model = None
+        self.tree_view = None
+        if report.tree is not None:
+            # a master TREE: rays with their paths nested underneath (bugs/0868)
+            self.tree_model = QStandardItemModel()
+            self.tree_model.setHorizontalHeaderLabels(
+                [report.tree_heading, *[column.heading for column in report.columns]])
+
+            def add(parent_item, rows):
+                for row in rows:
+                    label = QStandardItem(str(row.label))
+                    label.setEditable(False)
+                    label.setData(row.detail_key, _Qt.ItemDataRole.UserRole)
+                    items = [label]
+                    for cell in row.cells:
+                        item = QStandardItem(str(cell))
+                        item.setEditable(False)
+                        items.append(item)
+                    parent_item.appendRow(items)
+                    if row.children:
+                        add(label, row.children)
+
+            add(self.tree_model.invisibleRootItem(), report.tree)
+            self.tree_view = QTreeView()
+            self.tree_view.setModel(self.tree_model)
+            self.tree_view.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+            self.tree_view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+            self.tree_view.setColumnWidth(0, 200)
+            for index, column in enumerate(report.columns):
+                self.tree_view.setColumnWidth(index + 1, column.width)
+            self.tree_view.expandAll()
+            master_view = self.tree_view
+        else:
+            self.model = make_report_model(report)
+            self.table = QTableView()
+            self.table.setModel(self.model)
+            self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+            self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+            self.table.verticalHeader().setVisible(False)
+            for index, column in enumerate(report.columns):
+                self.table.setColumnWidth(index, column.width)
+            master_view = self.table
 
         self.detail_model = None
         self.detail_table = None
@@ -170,7 +207,7 @@ class ReportDialog(_dialog_class()):
             for index, column in enumerate(report.detail.columns):
                 self.detail_table.setColumnWidth(index, column.width)
             splitter = QSplitter(_Qt.Orientation.Vertical)
-            splitter.addWidget(self.table)
+            splitter.addWidget(master_view)
             detail_box = QWidget()
             detail_layout = QVBoxLayout(detail_box)
             detail_layout.setContentsMargins(0, 0, 0, 0)
@@ -181,10 +218,10 @@ class ReportDialog(_dialog_class()):
             splitter.setStretchFactor(0, 3)
             splitter.setStretchFactor(1, 2)
             layout.addWidget(splitter, stretch=1)
-            self.table.selectionModel().currentRowChanged.connect(self._on_master_row)
+            master_view.selectionModel().currentRowChanged.connect(self._on_master_row)
             self.select_master_row(0)
         else:
-            layout.addWidget(self.table, stretch=1)
+            layout.addWidget(master_view, stretch=1)
 
         self.buttons = QDialogButtonBox()
         self.copy_button = None
@@ -202,14 +239,56 @@ class ReportDialog(_dialog_class()):
 
     # ---- master/detail ---------------------------------------------------------------------------
     def select_master_row(self, index: int) -> None:
-        if self.detail_model is None or not self.report.rows:
+        """Select master row `index` (a table row, or the index-th node that HAS detail)."""
+        if self.detail_model is None:
+            return
+        if self.tree_model is not None:
+            keys = self.detail_nodes()
+            if not keys:
+                return
+            index = max(0, min(int(index), len(keys) - 1))
+            item = keys[index]
+            self.tree_view.setCurrentIndex(item.index())
+            self.detail_model.set_rows(self.report.detail.rows(
+                item.data(self._user_role())))
+            return
+        if not self.report.rows:
             return
         index = max(0, min(int(index), len(self.report.rows) - 1))
         self.table.selectRow(index)
         self.detail_model.set_rows(self.report.detail.rows(index))
 
+    @staticmethod
+    def _user_role():
+        from PySide6.QtCore import Qt
+
+        return Qt.ItemDataRole.UserRole
+
+    def detail_nodes(self) -> list:
+        """Every tree item that carries a detail key, depth first -- the Tk dialog's own order."""
+        if self.tree_model is None:
+            return []
+        found: list = []
+
+        def walk(item):
+            for row in range(item.rowCount()):
+                child = item.child(row, 0)
+                if child is None:
+                    continue
+                if child.data(self._user_role()) is not None:
+                    found.append(child)
+                walk(child)
+
+        walk(self.tree_model.invisibleRootItem())
+        return found
+
     def _on_master_row(self, current, _previous=None) -> None:
         if self.detail_model is None or current is None or not current.isValid():
+            return
+        if self.tree_model is not None:
+            item = self.tree_model.itemFromIndex(current.siblingAtColumn(0))
+            key = item.data(self._user_role()) if item is not None else None
+            self.detail_model.set_rows(self.report.detail.rows(key))
             return
         self.detail_model.set_rows(self.report.detail.rows(current.row()))
 

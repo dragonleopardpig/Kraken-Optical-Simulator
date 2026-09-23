@@ -81,6 +81,21 @@ class DetailView:
 
 
 @dataclass
+class TreeRow:
+    """One node of a master TREE: its own label, its cells, and the rows beneath it.
+
+    `detail_key` is what the detail view is asked for when this node is selected -- a record
+    index for a leaf, None for a grouping node that has no detail of its own.
+    """
+
+    label: str = ""
+    cells: tuple[str, ...] = ()
+    children: list = field(default_factory=list)
+    detail_key: Any = None
+    expanded: bool = True
+
+
+@dataclass
 class Report:
     """A report dialog's whole content."""
 
@@ -101,6 +116,10 @@ class Report:
     controls: tuple = ()
     #: the detail table, for a master/detail dialog
     detail: "DetailView | None" = None
+    #: a master TREE instead of a flat table (rays with their paths nested underneath)
+    tree: "tuple[TreeRow, ...] | None" = None
+    #: the heading of a tree's own label column
+    tree_heading: str = "Name"
     #: what the status line should say once it is shown
     status: str = ""
 

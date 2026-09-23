@@ -258,6 +258,12 @@ class KrakenQtMainWindow(_main_window_class()):
 
         return self.open_report(build_ray_inspector_report)
 
+    def trace_paths_action(self):
+        """Every traced path, nested under the ray it came from."""
+        from KrakenOS.UI.reports import build_trace_path_report
+
+        return self.open_report(build_trace_path_report)
+
     def _forget_dialog(self, dialog) -> None:
         if dialog in self._open_dialogs:
             self._open_dialogs.remove(dialog)
