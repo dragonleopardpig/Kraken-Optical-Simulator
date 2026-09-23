@@ -188,19 +188,45 @@ def validate_perf_caches() -> list[Check]:
         ((-50.0, 20.0, 0.0), (50.0, 20.0, 0.0)),   # tangent/near-miss
         ((100.0, 100.0, 100.0), (200.0, 200.0, 200.0)),  # full miss
     ]
+    def _along_ray(points, cells, start):
+        """Hits ordered by distance from the ray's origin -- ORDER is not a result.
+
+        bugs/0866: this check used to demand bit-exact equality with pyvista, including the order
+        the hits came back in. That held only while both tracers used the same (now deprecated)
+        obbTree; pyvista 0.49 returns the same intersections in a different order, and on a ray
+        that strikes an exact facet EDGE it names the adjacent triangle. Neither is a defect.
+        """
+        points = np.asarray(points, dtype=float).reshape(-1, 3)
+        cells = np.asarray(cells).ravel()
+        if points.size == 0:
+            return points, cells
+        order = np.argsort(np.linalg.norm(points - np.asarray(start, dtype=float), axis=1))
+        return points[order], (cells[order] if cells.size == points.shape[0] else cells)
+
+    def _shares_an_edge(mesh, one, other) -> bool:
+        """Two facets that share two vertices are the pair an edge hit may pick between."""
+        try:
+            first = set(np.asarray(mesh.get_cell(int(one)).point_ids).tolist())
+            second = set(np.asarray(mesh.get_cell(int(other)).point_ids).tolist())
+        except Exception:
+            return False
+        return len(first & second) >= 2
+
     trace_bad = []
     for start, stop in rays:
         fp, fc = _fast_scene_ray_trace(sphere, np.asarray(start), np.asarray(stop))
         rp, rc = sphere.ray_trace(np.asarray(start), np.asarray(stop))
-        fp = np.asarray(fp, dtype=float)
-        rp = np.asarray(rp, dtype=float)
-        same_pts = fp.shape == rp.shape and np.array_equal(fp, rp)
-        same_cells = np.array_equal(np.asarray(fc).ravel(), np.asarray(rc).ravel())
+        fp, fc = _along_ray(fp, fc, start)
+        rp, rc = _along_ray(rp, rc, start)
+        same_pts = fp.shape == rp.shape and np.allclose(fp, rp, rtol=0.0, atol=1e-9)
+        same_cells = fc.shape == rc.shape and all(
+            int(a) == int(b) or _shares_an_edge(sphere, a, b) for a, b in zip(fc, rc))
         if not (same_pts and same_cells):
             trace_bad.append((start, stop, fp.shape, rp.shape, same_pts, same_cells))
     checks.append(Check(
-        "OBBTREE FAST TRACE: _fast_scene_ray_trace returns the SAME points+cells as "
-        "pyvista tracer.ray_trace for a battery of hit/tangent/miss rays",
+        "OBBTREE FAST TRACE: _fast_scene_ray_trace finds the SAME intersections as pyvista "
+        "tracer.ray_trace for a battery of hit/tangent/miss rays -- same points along the ray, "
+        "and the same facet or one sharing its edge",
         not trace_bad,
         f"rays={len(rays)} mismatches={trace_bad}",
     ))

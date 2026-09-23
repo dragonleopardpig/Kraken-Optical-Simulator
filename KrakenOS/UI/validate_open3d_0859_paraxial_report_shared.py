@@ -130,7 +130,8 @@ def qt_runtime_checks() -> list[list]:
         written = dialog.export_csv()
     finally:
         dialog.host.asksaveasfilename = saved_ask
-    same = target.exists() and target.read_text() == reference.read_text()
+    same = (target.exists()
+            and target.read_text(encoding="utf-8") == reference.read_text(encoding="utf-8"))
     row("Q3", written == str(target) and same
         and asked.get("title") == f"Export {expected.title} CSV"
         and asked.get("defaultextension") == ".csv",
