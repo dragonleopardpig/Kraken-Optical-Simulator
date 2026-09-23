@@ -28,6 +28,18 @@ let
     xorg.libXtst
     xorg.libXrender
     xorg.libxcb
+    # docs/design_qt_migration.md phase 2: what Qt 6's xcb platform plugin loads beyond the
+    # libraries VTK/Tk already needed. Without these a PySide6 QApplication dies with
+    # "could not load the Qt platform plugin xcb".
+    xorg.xcbutil
+    xorg.xcbutilcursor
+    xorg.xcbutilimage
+    xorg.xcbutilkeysyms
+    xorg.xcbutilrenderutil
+    xorg.xcbutilwm
+    xorg.libSM
+    xorg.libICE
+    xorg.libXinerama
   ];
   bootstrapVenv = ''
     VENV_DIR="$PWD/.devenv/state/venv"
@@ -69,6 +81,8 @@ in
   env = {
     GREET = "KrakenOS devenv";
     KRAKEN_VTK_TK_LIB_DIR = vtkTkLibDir;
+    # Qt finds its platform plugins through this; a bare `import PySide6` has no wrapper to set it.
+    QT_PLUGIN_PATH = "${pkgs.qt6.qtbase}/lib/qt-6/plugins";
     LD_LIBRARY_PATH = (lib.makeLibraryPath (runtimeLibs ++ [ vtkPackage ])) + ":/run/opengl-driver/lib:/run/opengl-driver-32/lib";
   };
 
@@ -82,6 +96,10 @@ in
       ps.meshio
       ps.sphinx
       ps.sphinx-rtd-theme
+      # docs/design_qt_migration.md phase 2: the Qt binding the migration targets. From nixpkgs
+      # (not pip) so it matches the Qt libraries above, and visible to the venv through
+      # --system-site-packages, like vtk and pythonocc-core.
+      ps.pyside6
     ]);
     uv.enable = true;
   };

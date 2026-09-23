@@ -16493,6 +16493,10 @@ phase_632_editor_owns_its_root = _phase_from_standalone(
     632, "the editor OWNS its Tk root instead of BEING one (Qt seam step 1d): KrakenLayoutEditor(18 mixins, tk.Tk) was the Tk root, so the model could only live inside a Tk application. tk.Tk left the bases; the constructor makes self.root = tk.Tk(); __getattr__ forwards to the root whatever the editor does not define -- the semantics a tk.Tk subclass had -- and __str__ is the root path '.'; tkinter's per-master naming counter is a property onto the root's so an editor-parented and a root-parented widget can never both be '.!frame'; a raising callback still reaches the editor's report_callback_exception (tkinter walks .master up, which now ends at the editor) and the root's handler is the editor's; destroy() ends by destroying the root. A spike showed tkinter accepts a root-owning forwarder as a master, so panels and the 171 editor-instantiating validators keep working unchanged, and an editor built with __new__ now raises a clean AttributeError -- the bugs/0223 recursion class is gone by construction (0853)",
     "KrakenOS.UI.validate_open3d_0853_editor_owns_its_root",
     "editor_owns_its_root")
+phase_633_qt_ui_host = _phase_from_standalone(
+    633, "the Qt implementation of the UI host (Qt migration phase 2): QtUiHost serves the same calls model code already makes through host_of -- QTimer scheduling, QMessageBox/QFileDialog/QInputDialog dialogs, the Qt clipboard, ObservableValue state variables -- and imports PySide6 lazily inside its methods so a Tk run never pulls in Qt. Two behaviours had to be built rather than mapped: a fired timer keeps a local reference and deleteLater()s itself (dropping a QObject's last reference inside its own signal deletes it mid-emission), and update_idletasks delivers the POSTED event queue instead of calling processEvents -- measured, processEvents runs pending after() callbacks, which would re-enter model code where Tk's update_idletasks runs idle work only. Guard (its Qt half in a subprocess on the offscreen platform, because the penta harness already holds a Tk interpreter and a live VTK window): interface completeness, no Qt binding imported by the uihost package, qt_filter over the 47 real filetypes literals, timers/cancel/nested/self-freeing, the blocking after(ms), the idle flush, every message button mapped to its tkinter value, the arguments Qt receives from the file and input dialogs, the clipboard, and REAL model code (_autosave_plot) reading a declared model variable and replacing its own timer on a Qt host (0854)",
+    "KrakenOS.UI.validate_open3d_0854_qt_ui_host",
+    "qt_ui_host")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17191,6 +17195,7 @@ def main() -> int:
             phase_630_ui_host_seam,
             phase_631_model_variables,
             phase_632_editor_owns_its_root,
+            phase_633_qt_ui_host,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

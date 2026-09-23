@@ -7,11 +7,15 @@ toolkit-specific and get a counterpart per toolkit instead of an abstraction.
 from __future__ import annotations
 
 from KrakenOS.UI.uihost.base import UiHost
+# qt_host imports no Qt at module level (PySide6 is pulled in inside its methods), so a Tk
+# run and the display-free guards can import this package exactly as before.
+from KrakenOS.UI.uihost.qt_host import QtUiHost, qt_filter
 from KrakenOS.UI.uihost.scripted import ScriptedUiHost
 from KrakenOS.UI.uihost.tk_host import TkUiHost
 from KrakenOS.UI.uihost.values import ObservableValue
 
-__all__ = ["UiHost", "TkUiHost", "ScriptedUiHost", "ObservableValue", "host_of"]
+__all__ = ["UiHost", "TkUiHost", "QtUiHost", "ScriptedUiHost", "ObservableValue", "host_of",
+           "qt_filter"]
 
 
 def host_of(owner) -> UiHost:
