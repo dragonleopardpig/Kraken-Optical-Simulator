@@ -128,6 +128,100 @@ def _check_grid_inscribed(
         )
 
 
+def _check_field_grid_lands_on_sensor(
+    app: KrakenLayoutEditor,
+    *,
+    half: tuple[float, float],
+    failures: list[str],
+) -> None:
+    """The point of the whole exercise: corner fields must land on the sensor CORNERS.
+
+    bugs/0880. Sampling the object-FOV rectangle is only meaningful if the ray that leaves a
+    corner of the field actually arrives at the corresponding corner of the sensor -- that is
+    what makes the 3x3 preview tell you whether the lens covers the format. Everything else in
+    this file checks where the rays START; this checks where they LAND.
+
+    Only rays that reach the detector count. Each field launches Ray Count pupil samples and
+    some are vignetted at the stop; averaging those in drags the centroid inward and makes a
+    correct mapping look like a 79%-of-format one (measured, and mis-reported once).
+    """
+    from KrakenOS.UI.scene_geometry import ray_path_terminal_status_from_events
+
+    sensor = app._current_camera_sensor_active_mm()
+    if not sensor:
+        failures.append("[sensor-landing] no registered camera sensor to land on")
+        return
+    half_sensor = (abs(float(sensor[0])) * 0.5, abs(float(sensor[1])) * 0.5)
+    pairs = app._sample_imaging_field_grid_pairs()
+
+    bundle = app._build_preview_system_rays_bundle(sampling_mode="world_envelope")
+    holder = next(
+        (item for item in (bundle if isinstance(bundle, tuple) else (bundle,))
+         if hasattr(item, "ray_paths")),
+        None,
+    )
+    paths = list(getattr(holder, "ray_paths", []) or []) if holder is not None else []
+    if not paths:
+        failures.append("[sensor-landing] the world-envelope preview traced no rays")
+        return
+
+    landed: dict[int, list] = {}
+    for path in paths:
+        if ray_path_terminal_status_from_events(path) != "hit_detector":
+            continue
+        points = np.asarray(getattr(path, "points_world", []), dtype=float)
+        if points.ndim == 2 and points.shape[0] >= 1 and points.shape[1] >= 3:
+            landed.setdefault(int(getattr(path, "field_index", -1)), []).append(points[-1][:2])
+
+    # field_index is NOT guaranteed to start at 0: a second trace in the same process keeps
+    # counting (9..17), which made the first version of this check IndexError. Pair the field
+    # indices with the launch pairs IN ORDER, which is the order the bundles were built.
+    field_indices = sorted(landed)
+    _assert(
+        len(field_indices) == len(pairs),
+        f"[sensor-landing] expected all {len(pairs)} field points to reach the detector, "
+        f"got {len(field_indices)} (fields {field_indices})",
+        failures,
+    )
+    if len(field_indices) != len(pairs):
+        return
+
+    # Orientation is a convention (an odd number of folds flips it), so derive the sign from
+    # the field that is furthest off-axis instead of hard-coding one.
+    tolerance = 0.02 * max(half_sensor)
+    signs: dict[str, set] = {"x": set(), "y": set()}
+    for slot, index in enumerate(field_indices):
+        field_x, field_y = (float(pairs[slot][0]), float(pairs[slot][1]))
+        centre = np.asarray(landed[index], dtype=float).mean(axis=0)
+        expected = (
+            abs(field_x) / float(half[0]) * half_sensor[0] if float(half[0]) > 1e-12 else 0.0,
+            abs(field_y) / float(half[1]) * half_sensor[1] if float(half[1]) > 1e-12 else 0.0,
+        )
+        _assert(
+            abs(abs(float(centre[0])) - expected[0]) <= tolerance
+            and abs(abs(float(centre[1])) - expected[1]) <= tolerance,
+            f"[sensor-landing] field {slot} launched from ({field_x:+.4g}, {field_y:+.4g}) "
+            f"landed at ({float(centre[0]):+.4g}, {float(centre[1]):+.4g}); expected "
+            f"|x|={expected[0]:.4g}, |y|={expected[1]:.4g} (+/-{tolerance:.4g})",
+            failures,
+        )
+        if abs(field_x) > 1e-9 and abs(float(centre[0])) > tolerance:
+            signs["x"].add(float(np.sign(centre[0]) * np.sign(field_x)))
+        if abs(field_y) > 1e-9 and abs(float(centre[1])) > tolerance:
+            signs["y"].add(float(np.sign(centre[1]) * np.sign(field_y)))
+    for axis, observed in signs.items():
+        _assert(
+            len(observed) == 1,
+            f"[sensor-landing] the {axis} field mapping is not consistent across the grid "
+            f"(signs {sorted(observed)}) -- the image is neither erect nor inverted",
+            failures,
+        )
+    print(
+        f"NOTE: all 9 field points reach the detector; corners land on "
+        f"(+/-{half_sensor[0]:.6g}, +/-{half_sensor[1]:.6g}) mm -- the sensor corners"
+    )
+
+
 def main() -> int:
     failures: list[str] = []
     le._load_3d_backends()
@@ -205,6 +299,11 @@ def main() -> int:
                 f"{object_radius:.6g} mm -> corner overhang "
                 f"{max(diagonal - object_radius, 0.0):.6g} mm"
             )
+
+            # ...and the reason the rectangle is sampled at all: the corner fields must ARRIVE
+            # at the sensor corners. Run this before the radial cases below, which mutate the
+            # editor (they hide the FOV rectangle and shrink the object row).
+            _check_field_grid_lands_on_sensor(app, half=(half_x, half_y), failures=failures)
 
         # Case 2: the radial path, reached when no object-FOV rectangle is known. Hide the
         # rectangle so the inscribed-disc contract is exercised on the same scene.
