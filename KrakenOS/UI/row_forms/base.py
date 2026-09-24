@@ -24,10 +24,12 @@ class FormField:
 
     key: str
     label: str
-    kind: str = "number"  # number | int | choice | text
+    kind: str = "number"  # number | int | choice | text | textarea
     choices: tuple[str, ...] = ()
     hint: str = ""
     width: int = 14
+    #: rows of a textarea; ignored by the other kinds
+    height: int = 8
 
 
 @dataclass

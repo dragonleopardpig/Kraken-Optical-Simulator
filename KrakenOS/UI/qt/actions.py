@@ -42,6 +42,8 @@ ACTIONS = (
      "Every traced path, nested under the ray it came from, with that path's hits"),
     ("beam_splitter", "&Edit", "&Beam Splitter Settings...", None, "beam_splitter_action",
      "Edit the selected Beam Splitter row's split settings"),
+    ("diffuse_scatter", "&Edit", "&Diffuse / BRDF Settings...", None, "diffuse_scatter_action",
+     "Edit the selected Diffuse Object row's scatter settings"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 

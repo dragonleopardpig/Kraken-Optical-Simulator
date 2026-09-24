@@ -19,7 +19,7 @@ def _dialog_class():
 class RowFormDialog(_dialog_class()):
     def __init__(self, form, parent=None, host=None) -> None:
         from PySide6.QtWidgets import (QComboBox, QDialogButtonBox, QFormLayout, QLabel,
-                                       QLineEdit, QVBoxLayout)
+                                       QLineEdit, QPlainTextEdit, QVBoxLayout)
 
         super().__init__(parent)
         self.form = form
@@ -43,6 +43,9 @@ class RowFormDialog(_dialog_class()):
                 current = str(form.values.get(field.key, ""))
                 if current in field.choices:
                     widget.setCurrentText(current)
+            elif field.kind == "textarea":
+                widget = QPlainTextEdit(str(form.values.get(field.key, "")))
+                widget.setMinimumHeight(18 * max(field.height, 3))
             else:
                 widget = QLineEdit(str(form.values.get(field.key, "")))
                 widget.setMaximumWidth(14 * max(field.width, 8))
@@ -67,9 +70,16 @@ class RowFormDialog(_dialog_class()):
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
 
+    @staticmethod
+    def _widget_text(widget) -> str:
+        if hasattr(widget, "currentText"):
+            return widget.currentText()
+        if hasattr(widget, "toPlainText"):
+            return widget.toPlainText()
+        return widget.text()
+
     def values(self) -> dict:
-        return {key: (widget.currentText() if hasattr(widget, "currentText") else widget.text())
-                for key, widget in self.widgets.items()}
+        return {key: self._widget_text(widget) for key, widget in self.widgets.items()}
 
     def validate(self) -> list:
         errors = list(self.form.validate(self.values()))
