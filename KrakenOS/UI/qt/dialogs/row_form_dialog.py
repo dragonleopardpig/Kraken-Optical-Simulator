@@ -42,10 +42,13 @@ class RowFormDialog(_dialog_class()):
         for field in form.fields:
             if field.kind == "choice":
                 widget = QComboBox()
-                widget.addItems(list(field.choices))
+                widget.addItems(list(form.choices_for(field.key)))
                 current = str(form.values.get(field.key, ""))
-                if current in field.choices:
+                if current in form.choices_for(field.key):
                     widget.setCurrentText(current)
+                if field.on_change is not None:
+                    widget.currentTextChanged.connect(
+                        lambda text, f=field: self.on_field_changed(f, text))
             elif field.kind == "static":
                 widget = QLabel(str(form.values.get(field.key, "")))
                 widget.setWordWrap(True)
@@ -96,6 +99,21 @@ class RowFormDialog(_dialog_class()):
         return {key: self._widget_text(widget) for key, widget in self.widgets.items()
                 if not hasattr(widget, "setWordWrap")}
 
+    def on_field_changed(self, field, text: str) -> str:
+        """A field that rewrites another one -- the model decides what changes."""
+        if field.on_change is None:
+            return ""
+        self.form.values[field.key] = text
+        try:
+            message = field.on_change(self.form, text)
+        except FormRefused as exc:
+            self.host.showerror(self.form.title, str(exc))
+            return ""
+        self.refresh_from_form()
+        if message:
+            self.summary.setText(message)
+        return message
+
     def run_action(self, action) -> str:
         """Run a form action, then show whatever it changed."""
         try:
@@ -115,8 +133,20 @@ class RowFormDialog(_dialog_class()):
             if hasattr(widget, "setWordWrap"):
                 widget.setText(value)
             elif hasattr(widget, "setCurrentText"):
-                if value:
-                    widget.setCurrentText(value)
+                wanted = list(self.form.choices_for(key))
+                if [widget.itemText(i) for i in range(widget.count())] != wanted:
+                    widget.blockSignals(True)
+                    try:
+                        widget.clear()
+                        widget.addItems(wanted)
+                    finally:
+                        widget.blockSignals(False)
+                if value and value in wanted:
+                    widget.blockSignals(True)
+                    try:
+                        widget.setCurrentText(value)
+                    finally:
+                        widget.blockSignals(False)
             elif hasattr(widget, "setPlainText"):
                 if widget.toPlainText() != value:
                     widget.setPlainText(value)

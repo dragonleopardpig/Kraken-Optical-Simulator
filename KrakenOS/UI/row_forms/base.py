@@ -30,6 +30,10 @@ class FormField:
     width: int = 14
     #: rows of a textarea; ignored by the other kinds
     height: int = 8
+    #: called with (form, new value) when this field changes, for a field that rewrites ANOTHER
+    #: one -- a coating preset filling the table, a catalog choice setting the metal index.
+    #: Returns the message to show; the view refreshes from the form afterwards.
+    on_change: "Callable[[Any, str], str] | None" = None
 
 
 @dataclass(frozen=True)
@@ -68,7 +72,16 @@ class RowForm:
     actions: tuple = ()
     #: whatever the actions need to carry between themselves and apply (a loaded file's data)
     state: dict = field(default_factory=dict)
+    #: live choice lists, when an action grows one (a metal catalog just loaded)
+    choices: dict = field(default_factory=dict)
     note: str = ""
 
     def field(self, key: str) -> "FormField | None":
         return next((item for item in self.fields if item.key == key), None)
+
+    def choices_for(self, key: str) -> tuple:
+        """The choices a view should offer NOW -- an action may have grown the list."""
+        if key in self.choices:
+            return tuple(self.choices[key])
+        found = self.field(key)
+        return tuple(found.choices) if found is not None else ()

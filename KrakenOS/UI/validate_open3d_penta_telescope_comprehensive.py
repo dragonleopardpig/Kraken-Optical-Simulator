@@ -16561,6 +16561,10 @@ phase_649_error_map_row_form = _phase_from_standalone(
     649, "the Error Map row form and two freezes it exposed (Qt migration phase 3): a row form with NO editable fields -- it carries a candidate error map and offers ACTIONS. FormAction(key, label, run) is the framework's answer: run(form, host) returns the message to show, may rewrite the form's values/summary/state, and asks for what it needs through the UI HOST, so one implementation drives filedialog and QFileDialog; FormField also gained kind='static'. Two real freezes found: (1) a Qt dialog reporting a refusal through host_of(self) falls through to TkUiHost(dialog) -- a MODAL TKINTER box inside the Qt app that never returns, with nothing visible in the Qt window -- so every dialog now uses self.host; (2) refresh_from_model() resets the table model, which clears the view's current index, so the moment a form applied the next Edit action found no row and refused with 'Select a surface row first' -- the selection is restored now. Both were invisible until an action-bearing form existed. Guard: the two refusals, Import asking the host and updating source/summary/state, Clear, apply storing the model's literal (4 parts) and an empty form removing it, the REAL Tk dialog's source and contents, the Qt Import/Apply, the selection surviving the apply, and a refusal reaching the dialog's own host (0871)",
     "KrakenOS.UI.validate_open3d_0871_error_map_row_form",
     "error_map_row_form")
+phase_650_coating_material_row_form = _phase_from_standalone(
+    650, "the Coating / Material row form finishes the framework (Qt migration phase 3): the most tangled row dialog needed a Python LITERAL edited as text (a coating that is not a literal shows as <non-literal coating object> and refuses rather than being mangled), a choice that REWRITES another field (a preset replaces the whole table; a metal catalogue sets the index it is listed under -- FormField.on_change(form, value), with the model deciding what changes), a choice list that GROWS (Load CSV adds a catalogue, so RowForm.choices holds live overrides and views read choices_for(key)), and WARNINGS from the shared advanced-surface validator, shown as warnings where only errors refuse. Two rules pinned: zero means default (CoatingMet 0 REMOVES the key, as an empty table removes Coating), and the catalogue LIST is not the catalogue SPECS (_metal_catalog_entries prepends the built-in metals, so one loaded CSV shows two entries) -- two assertions conflated them and were wrong, not the code. Guard: the preset rewrite, the host-driven load, the linked index, a warning staying a warning, an unparseable table refusing, apply writing and removing the keys, the REAL Tk dialog, and the Qt form's per-kind widgets and applied state (0872)",
+    "KrakenOS.UI.validate_open3d_0872_coating_material_row_form",
+    "coating_material_row_form")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17276,6 +17280,7 @@ def main() -> int:
             phase_647_beam_splitter_row_form,
             phase_648_diffuse_scatter_row_form,
             phase_649_error_map_row_form,
+            phase_650_coating_material_row_form,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

@@ -315,6 +315,12 @@ class KrakenQtMainWindow(_main_window_class()):
 
         return self.open_row_form(build_error_map_form)
 
+    def coating_material_action(self):
+        """Edit the selected surface's coating table and metal index."""
+        from KrakenOS.UI.row_forms import build_coating_material_form
+
+        return self.open_row_form(build_coating_material_form)
+
     def _forget_dialog(self, dialog) -> None:
         if dialog in self._open_dialogs:
             self._open_dialogs.remove(dialog)

@@ -46,6 +46,8 @@ ACTIONS = (
      "Edit the selected Diffuse Object row's scatter settings"),
     ("error_map", "&Edit", "&Error Map...", None, "error_map_action",
      "Import or clear the selected surface's measured error map"),
+    ("coating_material", "&Edit", "&Coating / Material...", None, "coating_material_action",
+     "Edit the selected surface's coating table and metal index"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 
