@@ -66,7 +66,47 @@ and the contents become checkable **without a display**, which no Tk dialog's ev
 First port: the **Paraxial Matrix Report** (Analysis menu, Ctrl+M). Both views ask for the export
 path through the UI host, so each gets its own file chooser from one call shape.
 
-**Next: the rest of phase 3**, dialog by dialog, each one a builder plus a menu entry.
+### The six families
+
+One dialog shape per family; a new dialog of a known shape is a builder plus a menu entry.
+
+| family | model | Qt view |
+|---|---|---|
+| report | `reports/<name>.py` -> `Report` | `qt/dialogs/report_dialog.py` |
+| report + controls | `Report` + `ReportChoice` | the same dialog, with a control strip |
+| report + inputs | `Report` + `ReportValue` | the same dialog, with entry fields |
+| form that writes back | `row_forms/<name>.py` -> `RowForm` | `qt/dialogs/row_form_dialog.py` |
+| master / detail | `Report` + `DetailView` | the same dialog, split |
+| tree | `TreeRow` | `qt/dialogs/report_dialog.py` (tree mode) |
+
+### Ported so far
+
+| bug | dialog | family |
+|---|---|---|
+| 0859 | Paraxial Matrix Report | report |
+| 0860 | Surface/Element/Ray census reports (5) | report |
+| 0861 | Non-sequential Path Report | report + controls |
+| 0862 | Tk <-> Qt parity proven by SHA-256 over every displayed cell | -- |
+| 0863 | Optical Invariants | report |
+| 0864 | System Selection Calculator | report + inputs |
+| 0865 | Paraxial Calculator (`UI/paraxial_calculator.py`) | report + inputs |
+| 0867 | Ray Inspector (226 rows) | master / detail |
+| 0868 | Trace Path Inspector (452 nodes) | tree |
+| 0869 | Beam Splitter row form | row form |
+| 0870 | Diffuse / Scatter row form | row form |
+| 0871 | Error Map row form | row form |
+| 0872 | Coating / Material row form | row form |
+| 0873 | Advanced Surface row form (53 fields, 6 tabs) | row form |
+| 0874 | Detector Settings row form | row form |
+
+The row-form framework is finished: `FormField` kinds (number, int, bool, choice, text, textarea,
+static), `choices` that grow at runtime, `on_change` fields that rewrite other fields, `group`
+tabs, `enabled` locks, and `FormAction`s. 0874 was the first dialog it absorbed with nothing new.
+
+**Next: the rest of phase 3**, dialog by dialog, each one a builder plus a menu entry. The
+CAD/STL face-roles editor is deliberately **not** phase 3 -- it embeds a VTK preview with
+click-picking, camera drag and gizmos, so it belongs to phase 5 with the rest of the interaction
+layer.
 
 ## Phase 2 findings (2026-09-23, bugs/0854 + `bugs/spike_0854_qt_viewport.py`)
 

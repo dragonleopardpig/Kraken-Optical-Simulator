@@ -50,6 +50,8 @@ ACTIONS = (
      "Edit the selected surface's coating table and metal index"),
     ("advanced_surface", "&Edit", "&Advanced Surface...", None, "advanced_surface_action",
      "Every KrakenOS attribute of the selected surface, in tabs"),
+    ("detector_settings", "&Edit", "Detec&tor Settings...", None, "detector_settings_action",
+     "Mark the selected row as a terminal detector and size it"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 

@@ -6,6 +6,10 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from typing import Any, Callable
 
+from KrakenOS.UI.row_forms import FormRefused
+from KrakenOS.UI.row_forms.detector_settings import build_detector_settings_form
+from KrakenOS.UI.uihost import host_of
+
 import numpy as np
 
 
@@ -64,137 +68,84 @@ class MainSceneElementDialogs:
         setattr(self.editor, name, value)
 
     def open_detector_settings(self, row_index: int) -> None:
+        # docs/design_qt_migration.md phase 3: the fields, the validation, Apply and Clear live in
+        # KrakenOS/UI/row_forms/detector_settings.py, which the Qt dialog uses too.
         self._commit_pending_table_edit()
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Detector Settings", f"Could not read the surface table:\n\n{exc}", parent=self.editor)
+            messagebox.showerror("Detector Settings",
+                                 f"Could not read the surface table:\n\n{exc}",
+                                 parent=self.editor)
             return
-        if not (0 <= row_index < len(self.rows)):
+        try:
+            form = build_detector_settings_form(self, row_index)
+        except FormRefused as exc:
+            messagebox.showinfo("Detector Settings", str(exc), parent=self.editor)
             return
-        row = self.rows[row_index]
-        if row.surface == "Object":
-            messagebox.showinfo("Detector Settings", "Object rows cannot be detector planes.", parent=self.editor)
-            return
-        settings = self._detector_settings(row)
-        diameter = self._safe_positive_float(getattr(row, "diameter", 0.0), 0.0)
-        width_default = float(settings.get("active_width_mm", 0.0)) or diameter
-        height_default = float(settings.get("active_height_mm", 0.0)) or diameter
 
         window = tk.Toplevel(self.editor)
         window.withdraw()
-        window.title(f"Detector Settings - S{row_index}")
+        window.title(form.title)
         window.transient(self.editor)
         frame = ttk.Frame(window, padding=12)
         frame.grid(row=0, column=0, sticky="nsew")
         frame.columnconfigure(1, weight=1)
 
-        width_var = tk.StringVar(master=window, value=self._format_table_float(width_default))
-        height_var = tk.StringVar(master=window, value=self._format_table_float(height_default))
-        bins_var = tk.StringVar(master=window, value=str(settings.get("bins", "") or ""))
-        pitch_var = tk.StringVar(master=window, value=self._format_table_float(float(settings.get("pixel_pitch_um", 0.0))))
-        ttk.Label(
-            frame,
-            text=(
-                "Detector settings mark this row as a terminal detector for path analyses. "
-                "Active size controls DetMap/CohDet extents in detector-local coordinates; "
-                "Bins overrides the global Detector bins field when set."
-            ),
-            wraplength=520,
-            foreground="#475569",
-        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
-        field_specs = [
-            ("Active width [mm]", width_var),
-            ("Active height [mm]", height_var),
-            ("Detector bins (blank = global)", bins_var),
-            ("Pixel pitch [um] (metadata)", pitch_var),
-        ]
-        for grid_row, (label, var) in enumerate(field_specs, start=1):
-            ttk.Label(frame, text=label).grid(row=grid_row, column=0, sticky="w", padx=(0, 10), pady=3)
-            ttk.Entry(frame, textvariable=var, width=18).grid(row=grid_row, column=1, sticky="ew", pady=3)
+        ttk.Label(frame, text=form.note, wraplength=520, foreground="#475569").grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
-        validation_var = tk.StringVar(value="Use blank bins for global Auto/manual Detector bins.")
-        ttk.Label(frame, textvariable=validation_var, foreground="#475569", wraplength=520).grid(
-            row=len(field_specs) + 1,
-            column=0,
-            columnspan=2,
-            sticky="w",
-            pady=(10, 0),
-        )
+        variables: dict[str, tk.StringVar] = {}
+        for grid_row, field in enumerate(form.fields, start=1):
+            ttk.Label(frame, text=field.label).grid(row=grid_row, column=0, sticky="w",
+                                                    padx=(0, 10), pady=3)
+            variable = tk.StringVar(master=window, value=form.values.get(field.key, ""))
+            variables[field.key] = variable
+            ttk.Entry(frame, textvariable=variable, width=field.width).grid(
+                row=grid_row, column=1, sticky="ew", pady=3)
 
-        def collect_settings() -> dict[str, object] | None:
-            try:
-                active_width = float(width_var.get().strip() or "0")
-                active_height = float(height_var.get().strip() or "0")
-                pixel_pitch = float(pitch_var.get().strip() or "0")
-            except ValueError:
-                validation_var.set("Active size and pixel pitch must be numbers.")
-                return None
-            if active_width < 0.0 or active_height < 0.0 or pixel_pitch < 0.0:
-                validation_var.set("Active size and pixel pitch must be non-negative.")
-                return None
-            bins = bins_var.get().strip()
-            if bins and bins.lower() not in {"auto", "default"}:
-                try:
-                    bins_value = int(float(bins))
-                except ValueError:
-                    validation_var.set("Detector bins must be blank, Auto, or an integer from 4 to 512.")
-                    return None
-                if not 4 <= bins_value <= 512:
-                    validation_var.set("Detector bins must be between 4 and 512.")
-                    return None
-                bins = str(bins_value)
-            else:
-                bins = ""
-            return self.normalize_detector_settings(
-                {
-                    "active_width_mm": active_width,
-                    "active_height_mm": active_height,
-                    "bins": bins,
-                    "pixel_pitch_um": pixel_pitch,
-                }
-            )
+        validation_var = tk.StringVar(master=window, value=form.summary)
+        ttk.Label(frame, textvariable=validation_var, foreground="#475569",
+                  wraplength=520).grid(row=len(form.fields) + 1, column=0, columnspan=2,
+                                       sticky="w", pady=(10, 0))
 
-        def validate_settings() -> dict[str, object] | None:
-            data = collect_settings()
-            if data is not None:
-                validation_var.set(
-                    "Validation passed: "
-                    f"{float(data['active_width_mm']):.6g} x {float(data['active_height_mm']):.6g} mm, "
-                    f"bins={data.get('bins') or 'global'}, pitch={float(data['pixel_pitch_um']):.6g} um"
-                )
-            return data
+        def current_values() -> dict[str, str]:
+            return {key: variable.get() for key, variable in variables.items()}
+
+        def validate_settings() -> bool:
+            values = current_values()
+            errors = list(form.validate(values))
+            if errors:
+                validation_var.set(errors[0])
+                return False
+            validation_var.set(form.describe(values))
+            return True
 
         def apply_settings() -> None:
-            data = validate_settings()
-            if data is None:
+            try:
+                form.apply(current_values())
+            except FormRefused as exc:
+                validation_var.set(str(exc))
                 return
-            self._begin_history_capture()
-            self._set_detector_settings(self.rows[row_index], data)
-            self._sync_table()
-            self._select_table_row(row_index)
-            self._commit_history_capture()
-            self._mark_plot_update_pending()
-            self.status_var.set(f"Updated detector settings for S{row_index}. Click Update to retrace analyses.")
             window.destroy()
             self._cleanup_current_popup_menu()
 
-        def clear_settings() -> None:
-            self._begin_history_capture()
-            self._set_detector_settings(self.rows[row_index], {})
-            self._sync_table()
-            self._select_table_row(row_index)
-            self._commit_history_capture()
-            self._mark_plot_update_pending()
-            self.status_var.set(f"Cleared detector settings for S{row_index}.")
+        def run_action(action) -> None:
+            try:
+                action.run(form, host_of(self))
+            except FormRefused as exc:
+                validation_var.set(str(exc))
+                return
             window.destroy()
             self._cleanup_current_popup_menu()
 
         footer = ttk.Frame(frame)
-        footer.grid(row=len(field_specs) + 2, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        footer.grid(row=len(form.fields) + 2, column=0, columnspan=2, sticky="e", pady=(12, 0))
         ttk.Button(footer, text="Validate", command=validate_settings).pack(side="right", padx=(0, 8))
         ttk.Button(footer, text="Apply", command=apply_settings).pack(side="right")
-        ttk.Button(footer, text="Clear", command=clear_settings).pack(side="right", padx=(0, 8))
+        for action in form.actions:
+            ttk.Button(footer, text=action.label,
+                       command=lambda a=action: run_action(a)).pack(side="right", padx=(0, 8))
         ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
         self._show_centered_dialog(window)
 

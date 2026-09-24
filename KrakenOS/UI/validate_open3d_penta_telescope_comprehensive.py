@@ -16569,6 +16569,10 @@ phase_651_advanced_surface_row_form = _phase_from_standalone(
     651, "the Advanced Surface row form (Qt migration phase 3): every KrakenOS surface attribute the main table does not show -- 53 fields across 6 tabs, the shape parameters with the conic-k optimisation switch, one tab per attribute group, and the custom sag/UDA pair. Three more framework properties: FormField.group (a tab; QTabWidget in Qt, the existing scrolling ttk.Notebook in Tk), kind='bool' (the optimise switch) and FormField.enabled -- which carries real meaning here: a value the literal reader cannot read back is SHOWN BUT LOCKED so a round trip cannot mangle it, the shape parameters are locked on Object/Image rows, and the conic switch is locked where the variable registry does not support k. Measured, not assumed: _parse_literal_editor_text NEVER raises -- text it cannot read as a literal is kept as a STRING, because an attribute may legitimately be one -- so a broken-looking override is stored rather than refused, while a shape value that is not a number IS refused. Guard: the tabs with no loose field, the locked shape parameters on the Image row, the conic switch following the registry and its bounds refusing anything but two increasing numbers, the string-keeping, apply writing the shape value, the REAL Tk dialog opening with the same 6 tabs and 53 values, and the Qt form's tabs, checkbox, applied value and exactly-matching locked set (0873)",
     "KrakenOS.UI.validate_open3d_0873_advanced_surface_row_form",
     "advanced_surface_row_form")
+phase_652_detector_settings_row_form = _phase_from_standalone(
+    652, "the Detector Settings row form (Qt migration phase 3): the first dialog the framework absorbed with NOTHING new -- four fields, one Clear action and the model's own normaliser, which is what a finished framework is supposed to feel like. The model is split in two places and neither is the obvious one: _detector_settings is a workbench method on the editor while normalize_detector_settings reaches the Tk shell as a constructor kwarg, so the builder reads each off the owner and falls back to the defining module. The normaliser owns the rules the dialog only reports: bins outside 4-512 clamp, Auto/default/none mean blank (use the global Detector bins), and a settings dict that is all-default REMOVES the Detector key rather than storing zeros -- which is what Clear does. Guard: the refusals for no row and an Object row, the messages for a non-number, a negative size and bins out of range, the description, apply writing through the editor's own setter, Clear removing the key, the REAL Tk dialog showing the builder's values, and the Qt form opening with the same fields and applying the same (0874)",
+    "KrakenOS.UI.validate_open3d_0874_detector_settings_row_form",
+    "detector_settings_row_form")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17286,6 +17290,7 @@ def main() -> int:
             phase_649_error_map_row_form,
             phase_650_coating_material_row_form,
             phase_651_advanced_surface_row_form,
+            phase_652_detector_settings_row_form,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

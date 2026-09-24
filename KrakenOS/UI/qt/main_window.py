@@ -327,6 +327,12 @@ class KrakenQtMainWindow(_main_window_class()):
 
         return self.open_row_form(build_advanced_surface_form)
 
+    def detector_settings_action(self):
+        """Mark the selected row as a terminal detector and size it."""
+        from KrakenOS.UI.row_forms import build_detector_settings_form
+
+        return self.open_row_form(build_detector_settings_form)
+
     def _forget_dialog(self, dialog) -> None:
         if dialog in self._open_dialogs:
             self._open_dialogs.remove(dialog)
