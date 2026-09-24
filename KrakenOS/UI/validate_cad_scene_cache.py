@@ -125,9 +125,20 @@ def _validate_open3d_wiring() -> list[str]:
         for token in ("_step_face_ray_pick_for_display_xy", "_row_face_ray_pick_for_display_xy", "_picked_feature_info_cached"):
             if token in passive_hover_source:
                 failures.append(f"Open 3D passive CAD hover must not call heavy face lookup: {token}")
-        for token in ("_actor_step_map.get(actor_key)", "_actor_row_map.get(actor_key)", '"step-passive"', '"row-passive"'):
-            if token in passive_hover_source:
-                failures.append(f"Open 3D passive CAD hover must not pick dense CAD body actors: {token}")
+        # bugs/0878: this used to forbid `_actor_step_map.get(actor_key)` anywhere in the
+        # hover branch, but mapping the pick RESULT to a label is an O(1) dict read -- the
+        # cost the contract cares about is which actors the PICKER considers. Assert that
+        # instead: the passive pick runs on the prop picker over a bounded handle list and
+        # never puts dense CAD body actors in it.
+        passive_pick_source = interaction_source.split(
+            "def _passive_hover_pick_rotation_handle", 1)[-1].split("\n    def ", 1)[0]
+        if "_prop_picker" not in passive_pick_source or "pick_from_list" not in passive_pick_source:
+            failures.append(
+                "Open 3D passive CAD hover must use the prop picker over a bounded pick list.")
+        for token in ("_actor_step_map", "_actor_row_map"):
+            if token in passive_pick_source:
+                failures.append(
+                    f"Open 3D passive hover picker must not consider dense CAD body actors: {token}")
         if "_passive_hover_pick_rotation_handle" not in passive_hover_source:
             failures.append("Open 3D passive hover must pick only the lightweight rotation-handle actor list.")
         if "PickFromListOn" not in interaction_source or "AddPickList" not in interaction_source:
@@ -148,6 +159,27 @@ def _validate_open3d_wiring() -> list[str]:
         if "if step_label is None and not persistent_file_backed" not in right_click_source:
             failures.append("Open 3D right-click context must skip feature scans for file-backed CAD rows and imported STEP overlays.")
     return failures
+
+
+def run_checks() -> tuple[bool, list[str]]:
+    """Penta-harness entry point (bugs/0878): this guard is a registered phase now."""
+    import contextlib
+    import io
+
+    stream = io.StringIO()
+    with contextlib.redirect_stdout(stream):
+        code = main()
+    notes = []
+    for line in stream.getvalue().splitlines():
+        if not line.strip():
+            continue
+        if line.startswith("SKIP"):
+            notes.append(line)
+        elif line.startswith("- ") or line.startswith("FAIL"):
+            notes.append("FAIL " + line.lstrip("- ").removeprefix("FAIL: "))
+        else:
+            notes.append("= " + line)
+    return code == 0, notes
 
 
 def main() -> int:

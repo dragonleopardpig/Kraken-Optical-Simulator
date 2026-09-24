@@ -53,9 +53,15 @@ def validate_step_analytic_import() -> list[StepAnalyticImportCheck]:
     try:
         app = KrakenLayoutEditor(headless=True)
         try:
-            app.imported_lens_step_path = ASPHERIZED_ACHROMAT_STEP
-            app.lens_step_largest_component_only = True
-            app_metadata = app._step_overlay_face_metadata("lens")
+            # bugs/0878: this used the "lens" label, which is one of the three DISPLAY-ONLY
+            # overlays (`_DISPLAY_ONLY_STEP_LABELS_NO_ANALYTIC = {"camera", "led", "lens"}`) --
+            # a vendor lens/camera/LED body is decoration, so it deliberately skips the analytic
+            # path and plane-clusters the tessellation (160 facets here, no grouping, no
+            # interior-duplicate count). Analytic optical faces belong to the "optical" label,
+            # the one that Import Optical STEP -> Promote to Optical Element uses, so that is
+            # what this check must exercise.
+            app.imported_optical_step_path = ASPHERIZED_ACHROMAT_STEP
+            app_metadata = app._step_overlay_face_metadata("optical")
         finally:
             try:
                 app.destroy()
@@ -148,6 +154,27 @@ def validate_step_analytic_import() -> list[StepAnalyticImportCheck]:
         ),
     ]
     return checks
+
+
+def run_checks() -> tuple[bool, list[str]]:
+    """Penta-harness entry point (bugs/0878): this guard is a registered phase now."""
+    import contextlib
+    import io
+
+    stream = io.StringIO()
+    with contextlib.redirect_stdout(stream):
+        code = main()
+    notes = []
+    for line in stream.getvalue().splitlines():
+        if not line.strip():
+            continue
+        if line.startswith("SKIP"):
+            notes.append(line)
+        elif line.startswith("- ") or line.startswith("FAIL"):
+            notes.append("FAIL " + line.lstrip("- ").removeprefix("FAIL: "))
+        else:
+            notes.append("= " + line)
+    return code == 0, notes
 
 
 def main() -> int:

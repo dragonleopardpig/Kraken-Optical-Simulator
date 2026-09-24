@@ -1,26 +1,35 @@
-"""Validate that finite-object launches keep the 3x3 field grid inscribed
-within the achievable field disc.
+"""Validate where a finite-object launch puts its 3x3 field grid.
 
 North Star #4: ambiguous geometry must produce diagnostics, not silent paths.
 The square-grid field sampler historically placed per-axis samples at the
 configured field maximum and pushed grid CORNERS to sqrt(2) x max, which both
 oversampled past the user's configured field and -- for finite-object
-launches -- emitted rays from outside the object aperture.
+launches -- emitted rays from outside the object aperture. That is what the
+radial-inscribed contract below fixed.
 
-The current contract is:
+**bugs/0523 then changed the answer for any scene with a known object-FOV
+rectangle**, on the user's flag ("all the outer 3 rays should relocate to the 4
+corner and 4 edges, simulating rays launching from maximum FOV"). A camera
+sees a RECTANGLE, not a disc, so when `_imaging_fov_half_extents()` is known the
+grid spans it: 4 corners exactly on (+/-half_x, +/-half_y), 4 edge midpoints,
+1 centre. Scenes with no rectangle keep the radial inscribed layout.
 
-* The launch radial maximum is ``min(configured_field_height, object_radius,
-  camera_fov_inscribed_radius)`` -- the last term present only when a vendor
-  camera is registered (its sensor maps back to an object-plane FOV of inscribed
-  radius ``min(sensor_half_w, sensor_half_h) / |m|``; bugs/0162).
-* The 3x3 grid corners land exactly on that radial maximum.
-* Per-axis samples sit at ``radial_max / sqrt(2)``.
-* All 9 grid points launch successfully -- nothing is silently dropped.
+So there are two contracts, and this validator checks both:
 
-MV150 stock registers the hr25MCX camera at a magnifying conjugate, so its
-binding limiter is the camera FOV (bugs/0162). This validator enforces that
-camera-FOV-limited bound and a shrunk-aperture variant so a regression in either
-case is caught.
+* **rectangle path** (`_sample_imaging_field_grid_pairs`): the outer ring lands
+  exactly ON the FOV rectangle; every one of the 9 bundles launches.
+* **radial path** (`_sample_field_grid_pairs`, reached when no rectangle is
+  known): the launch radial maximum is
+  ``min(configured_field_height, object_radius, camera_fov_inscribed_radius)``,
+  the corners land on it, and per-axis samples sit at ``radial_max/sqrt(2)``.
+
+It also measures how the FOV rectangle sits inside the object's own clear
+aperture. On MV150 the FOV is square (half = 10.046 mm) and the object row is a
+disc of radius 12.5 mm, so the EDGE midpoints are inside it but the CORNERS
+reach r = 14.21 mm -- 1.71 mm outside. The inscribed circle must fit; the
+diagonal overhang is reported, not asserted, because whether the object
+aperture should cover the FOV diagonal is a prescription question
+(bugs/0878).
 
 Run from the repository root:
 
@@ -127,38 +136,99 @@ def main() -> int:
         app.load_layouts()
         app.load_layout_by_name("Machine Vision 150Mm Measured", refresh=False)
 
-        # Case 1: camera-FOV-limited. MV150 stock registers the hr25MCX at a
-        # magnifying conjugate, so the object-plane FOV inscribed radius is
-        # smaller than both the field height and the object aperture and becomes
-        # the binding launch limiter (bugs/0162). The launch maximum equals the
-        # FOV inscribed radius.
         field_height = float(app._current_field_height())
         object_radius = float(app.rows[0].diameter) * 0.5
         fov_inscribed = app._camera_fov_inscribed_object_radius()
+        half = app._imaging_fov_half_extents()
+
+        # Case 1: the rectangle path (bugs/0523). MV150 registers the hr25MCX, so the
+        # object-FOV rectangle is known and the grid must span it.
         _assert(
-            fov_inscribed is not None and fov_inscribed < min(field_height, object_radius),
-            f"MV150 stock config no longer camera-FOV-limited "
-            f"(fov_inscribed={fov_inscribed}, field_height={field_height:.4g}, "
-            f"object_radius={object_radius:.4g}). Update the fixture so this case "
-            f"is exercised.",
+            half is not None,
+            f"MV150 stock config no longer reports an object-FOV rectangle "
+            f"(half={half}); the bugs/0523 rectangle path is not being exercised.",
             failures,
         )
+        if half is not None:
+            half_x, half_y = float(half[0]), float(half[1])
+            pairs = app._sample_imaging_field_grid_pairs()
+            _assert(
+                len(pairs) == 9,
+                f"[fov-rectangle] expected 9 grid pairs for field_count=3, got {len(pairs)}",
+                failures,
+            )
+            expected = {
+                (round(x, 9), round(y, 9))
+                for x in (-half_x, 0.0, half_x)
+                for y in (-half_y, 0.0, half_y)
+            }
+            actual = {(round(float(x), 9), round(float(y), 9)) for x, y in pairs}
+            _assert(
+                actual == expected,
+                f"[fov-rectangle] the outer ring must land ON the FOV rectangle; "
+                f"got {sorted(actual)}, expected {sorted(expected)}",
+                failures,
+            )
+
+            pupil_points = np.array([[0.0, 0.0]], dtype=float)
+            bundles, _ = app._build_world_bundles_from_pupil_points(pupil_points)
+            _assert(
+                len(bundles) == 9,
+                f"[fov-rectangle] expected 9 launch bundles, got {len(bundles)}",
+                failures,
+            )
+            origins = {
+                (round(float(bundle[0][0]), 9), round(float(bundle[1][0]), 9))
+                for bundle in bundles
+            }
+            _assert(
+                origins == expected,
+                f"[fov-rectangle] every bundle must launch from a grid point; "
+                f"got {sorted(origins)}",
+                failures,
+            )
+
+            # The FOV's inscribed circle must fit inside the object's clear aperture. The
+            # DIAGONAL overhang is measured and reported, not asserted -- see the module
+            # docstring.
+            inscribed = min(half_x, half_y)
+            diagonal = float(np.hypot(half_x, half_y))
+            _assert(
+                inscribed <= object_radius + 1e-6,
+                f"[fov-rectangle] the FOV inscribed radius {inscribed:.6g} mm does not fit "
+                f"inside the object aperture radius {object_radius:.6g} mm",
+                failures,
+            )
+            print(
+                f"NOTE: FOV half extents ({half_x:.6g}, {half_y:.6g}) mm, inscribed "
+                f"{inscribed:.6g} mm, diagonal {diagonal:.6g} mm; object aperture radius "
+                f"{object_radius:.6g} mm -> corner overhang "
+                f"{max(diagonal - object_radius, 0.0):.6g} mm"
+            )
+
+        # Case 2: the radial path, reached when no object-FOV rectangle is known. Hide the
+        # rectangle so the inscribed-disc contract is exercised on the same scene.
+        app._imaging_fov_half_extents = lambda: None
         _check_grid_inscribed(
             app,
-            case="camera-fov-limited",
-            expected_radial_max=float(fov_inscribed) if fov_inscribed is not None else field_height,
+            case="radial-no-rectangle",
+            expected_radial_max=min(
+                field_height,
+                object_radius,
+                float(fov_inscribed) if fov_inscribed is not None else field_height,
+            ),
             failures=failures,
         )
 
-        # Case 2: aperture-limited. Shrink the object diameter below the camera
-        # FOV inscribed radius so the aperture clamp drives the launch maximum.
-        # This simulates an inserted optic that constrains the achievable object
-        # FOV more tightly than the camera sees.
-        smaller_object_radius = float(fov_inscribed) * 0.5 if fov_inscribed is not None else field_height * 0.5
+        # Case 3: still the radial path, now aperture-limited -- shrink the object below the
+        # camera FOV so the aperture clamp drives the launch maximum.
+        smaller_object_radius = (
+            float(fov_inscribed) * 0.5 if fov_inscribed is not None else field_height * 0.5
+        )
         app.rows[0].diameter = smaller_object_radius * 2.0
         _check_grid_inscribed(
             app,
-            case="aperture-limited",
+            case="radial-aperture-limited",
             expected_radial_max=smaller_object_radius,
             failures=failures,
         )
@@ -169,8 +239,24 @@ def main() -> int:
         for failure in failures:
             print(f"FAIL: {failure}")
         return 1
-    print("Launch-origin grid-inscribed contract validation passed.")
+    print("Launch-origin field-grid contract validation passed.")
     return 0
+
+
+def run_checks() -> tuple[bool, list[str]]:
+    """Penta-harness entry point (bugs/0878)."""
+    import contextlib
+    import io
+
+    stream = io.StringIO()
+    with contextlib.redirect_stdout(stream):
+        code = main()
+    notes = []
+    for line in stream.getvalue().splitlines():
+        if not line.strip():
+            continue
+        notes.append(("FAIL " + line[6:]) if line.startswith("FAIL: ") else ("= " + line))
+    return code == 0, notes
 
 
 if __name__ == "__main__":

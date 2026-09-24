@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from KrakenOS.UI.layout_editor import Kraken3DInspector, KrakenLayoutEditor
 from KrakenOS.UI.panels.open3d_live_controls import Open3DLiveControlsPanel
+from KrakenOS.UI.panels.open3d_step_admin import Open3DStepAdminPanel
 from KrakenOS.UI.services.open3d_live_refresh import Open3DLiveRefreshService
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 
@@ -30,6 +31,7 @@ def validate_open3d_live_mode() -> list[Open3DLiveModeCheck]:
     inspector_source = inspect.getsource(Kraken3DInspector)
     editor_source = _editor_contract_source()
     open3d_live_controls_panel_source = inspect.getsource(Open3DLiveControlsPanel)
+    open3d_step_admin_panel_source = inspect.getsource(Open3DStepAdminPanel)
     open3d_live_refresh_service = inspect.getsource(Open3DLiveRefreshService)
     open3d_refresh_service = inspect.getsource(Open3DTraceRefreshService)
     checks = [
@@ -43,11 +45,13 @@ def validate_open3d_live_mode() -> list[Open3DLiveModeCheck]:
             "Live Controls panel mirrors Source, Field, and Trace / Display controls.",
         ),
         Open3DLiveModeCheck(
-            "Live Controls expose explicit STEP placement acceptance",
-            "def _build_live_step_controls" in inspector_source
-            and "Accept STEP Placement" in open3d_live_controls_panel_source
-            and "accept_selected_step_placement" in open3d_live_controls_panel_source,
-            "Transient STEP placement can be committed from the left Live Controls panel.",
+            # bugs/0878: the STEP verbs moved out of the left Live Controls into the right
+            # Scene Components panel (the same move 0877 found for Promote). The claim is
+            # that a transient placement can be COMMITTED without leaving the 3D window.
+            "Explicit STEP placement acceptance is one click away in the 3D window",
+            "Accept STEP Placement" in open3d_step_admin_panel_source
+            and "accept_selected_step_placement" in open3d_step_admin_panel_source,
+            "Transient STEP placement can be committed from the Scene Components panel.",
         ),
         Open3DLiveModeCheck(
             "Live Controls are resizable and hideable beside the 3D viewport",
@@ -108,6 +112,27 @@ def validate_open3d_live_mode() -> list[Open3DLiveModeCheck]:
         ),
     ]
     return checks
+
+
+def run_checks() -> tuple[bool, list[str]]:
+    """Penta-harness entry point (bugs/0878): this guard is a registered phase now."""
+    import contextlib
+    import io
+
+    stream = io.StringIO()
+    with contextlib.redirect_stdout(stream):
+        code = main()
+    notes = []
+    for line in stream.getvalue().splitlines():
+        if not line.strip():
+            continue
+        if line.startswith("SKIP"):
+            notes.append(line)
+        elif line.startswith("- ") or line.startswith("FAIL"):
+            notes.append("FAIL " + line.lstrip("- ").removeprefix("FAIL: "))
+        else:
+            notes.append("= " + line)
+    return code == 0, notes
 
 
 def main() -> int:

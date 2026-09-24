@@ -40,8 +40,11 @@ def _load_layout_module():
 def main() -> int:
     failures: list[str] = []
     if not LAYOUT_PATH.exists():
-        print(f"missing saved layout: {LAYOUT_PATH}")
-        return 1
+        # bugs/0878: this guard needs a saved scene that lives under attachment/, which is
+        # Filen-synced and gitignored -- it is not in the repo, so a checkout without it must
+        # SKIP rather than report a failure it cannot possibly fix.
+        print(f"SKIP: missing saved layout: {LAYOUT_PATH}")
+        return 0
 
     try:
         module = _load_layout_module()

@@ -44,6 +44,27 @@ def _cell_normal(data, cell_id: int) -> np.ndarray | None:
     return normal / norm
 
 
+def run_checks() -> tuple[bool, list[str]]:
+    """Penta-harness entry point (bugs/0878): this guard is a registered phase now."""
+    import contextlib
+    import io
+
+    stream = io.StringIO()
+    with contextlib.redirect_stdout(stream):
+        code = main()
+    notes = []
+    for line in stream.getvalue().splitlines():
+        if not line.strip():
+            continue
+        if line.startswith("SKIP"):
+            notes.append(line)
+        elif line.startswith("- ") or line.startswith("FAIL"):
+            notes.append("FAIL " + line.lstrip("- ").removeprefix("FAIL: "))
+        else:
+            notes.append("= " + line)
+    return code == 0, notes
+
+
 def main() -> int:
     try:
         import pyvista as pv
@@ -185,14 +206,39 @@ def main() -> int:
     if "_step_feature_pick_for_display_xy" not in inspector_source:
         failures.append("STEP face hover/click code must share the display-safe STEP feature picker.")
     face_index_source = __import__("inspect").getsource(open3d_face_index_edges)
-    if "_display_feature_edges_mesh" not in inspector_source or "face_boundary_edges_from_face_index" not in face_index_source:
+    # bugs/0878: `_display_feature_edges_mesh` is a module-level import ALIAS, so it was never
+    # in the class source; the drawing goes through cached_display_feature_edges.
+    if "cached_display_feature_edges" not in inspector_source or "face_boundary_edges_from_face_index" not in face_index_source:
         failures.append("Open 3D feature-edge drawing must prefer analytic face-index boundaries.")
     if "face_outline_from_face_indices" not in inspector_source:
         failures.append("Open 3D STEP hover outlines must use displayed analytic face-index boundaries.")
     if "face_pick_from_display_mesh" not in inspector_source or "triangle_array_and_face_index" not in face_index_source:
         failures.append("Open 3D STEP ray picking must use displayed analytic face-index triangles before STL fallback.")
-    if "camera.Azimuth(-dx_f * degrees_per_pixel)" not in inspector_source or "camera.Elevation(dy_f * degrees_per_pixel)" not in inspector_source:
-        failures.append("Open 3D fixed left-drag camera rotation must use the grab-the-scene sign convention (drag right rotates scene right).")
+    # bugs/0878: this pinned the pre-0206 VTK Azimuth/Elevation call, which a rigid Rodrigues
+    # orbit replaced on purpose. MEASURE the convention instead.
+    #
+    # The camera sits on +Z looking at the origin with view-up +Y, so screen-right is +X and
+    # screen-up is +Y. "Grab the scene" means the SCENE follows the cursor, which puts the
+    # CAMERA on the opposite side: drag right (+dx) swings the camera to -X so the scene moves
+    # right, and drag up (dy < 0, because Tk's y grows downward) swings the camera to -Y so the
+    # scene tilts up toward the cursor. Getting that second sign backwards is easy -- it cost a
+    # false failure here before the drag was measured rather than matched (see bugs/0877).
+    orbit = Kraken3DInspector._orbit_camera_pose
+    focal = np.zeros(3, dtype=float)
+    start = np.asarray((0.0, 0.0, 100.0), dtype=float)
+    up = np.asarray((0.0, 1.0, 0.0), dtype=float)
+    drag_right = np.asarray(orbit(start, focal, up, 100.0, 0.0)[0], dtype=float)
+    drag_up = np.asarray(orbit(start, focal, up, 0.0, -100.0)[0], dtype=float)
+    if float(drag_right[0]) >= -1.0e-9:
+        failures.append(
+            "Open 3D fixed left-drag camera rotation must use the grab-the-scene sign convention "
+            f"(drag right rotates scene right); camera went to x={float(drag_right[0]):.6g}"
+        )
+    if float(drag_up[1]) >= -1.0e-9:
+        failures.append(
+            "Open 3D fixed left-drag camera rotation must tilt the scene up toward the cursor on "
+            f"an upward drag; camera went to y={float(drag_up[1]):.6g}"
+        )
     refresh_source = __import__("inspect").getsource(open3d_step_overlay_refresh)
     if "boundary_edges=not round_lens_like" not in refresh_source:
         failures.append("Round lens-like STEP rendering must suppress tessellation patch-boundary edge overlays.")

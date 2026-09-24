@@ -16617,6 +16617,26 @@ phase_663_gaussian_detector_recombination = _phase_from_standalone(
     663, "detector-side Gaussian q coherent recombination is a GATED phase (0877): the q-weighted recombination reproduces the plain coherent sum's structure on the two-arm layouts. Same stale-records call site as phase 659",
     "KrakenOS.UI.validate_gaussian_detector_recombination",
     "gaussian_detector_recombination")
+phase_664_open3d_live_mode = _phase_from_standalone(
+    664, "Open 3D Live Mode is a GATED phase (0878): the docked Live Controls, their binding to the main editor state, the debounced retrace scheduler and Trace Now preserving the displayed sampling mode. One claim was stale because the STEP verbs moved OUT of the left Live Controls into the right Scene Components panel (the same move 0877 found for Promote), so the check now asserts what it actually cares about -- a transient placement can be committed without leaving the 3D window",
+    "KrakenOS.UI.validate_open3d_live_mode",
+    "open3d_live_mode")
+phase_665_open3d_lens_step_face_pick = _phase_from_standalone(
+    665, "Open 3D lens STEP face picking is a GATED phase (0878): round-lens cap selection, the display-safe feature picker, analytic face-index edges and the camera drag convention. Two stale claims: `_display_feature_edges_mesh` is a module-level import ALIAS so it was never in the class source (the drawing goes through cached_display_feature_edges), and the drag check pinned the pre-0206 VTK Azimuth/Elevation call. The drag is MEASURED now -- camera on +Z, view-up +Y: drag right swings the camera to -X so the scene follows the cursor, and an upward drag (Tk dy < 0) swings it to -Y so the scene tilts up toward the cursor. Getting that second sign backwards cost a false failure before it was measured",
+    "KrakenOS.UI.validate_open3d_lens_step_face_pick",
+    "open3d_lens_step_face_pick")
+phase_666_cad_scene_cache = _phase_from_standalone(
+    666, "the CAD scene cache is a GATED phase (0878): the cache survives full actor rebuilds, the face-metadata reset clears it, and passive hover stays cheap. The passive-hover claim used to forbid `_actor_step_map.get(actor_key)` anywhere in the hover branch, but mapping the pick RESULT to a label is an O(1) dict read -- what the contract cares about is which actors the PICKER considers, so it now asserts the picker runs on the prop picker over a bounded handle list and never puts dense CAD body actors in it",
+    "KrakenOS.UI.validate_cad_scene_cache",
+    "cad_scene_cache")
+phase_667_step_analytic_import = _phase_from_standalone(
+    667, "native analytic STEP import is a GATED phase (0878): multi-solid B-Rep topology, solid-qualified face IDs, cemented interior-face detection, curved analytic descriptors, face-aware tessellation and grouped optical faces. Its last check pointed at the 'lens' label -- one of the three DISPLAY-ONLY overlays (_DISPLAY_ONLY_STEP_LABELS_NO_ANALYTIC = {camera, led, lens}), where a vendor body is decoration and deliberately plane-clusters the tessellation (160 facets, no grouping). Analytic optical faces belong to the 'optical' label, the one Import Optical STEP -> Promote to Optical Element uses; pointed there it reports 6 faces with the split asphere grouped as S002/F001+S002/F005",
+    "KrakenOS.UI.validate_step_analytic_import",
+    "step_analytic_import")
+phase_668_launch_origin_field_grid = _phase_from_standalone(
+    668, "the finite-object launch field grid is a GATED phase (0878): TWO contracts, because bugs/0523 changed the answer on the user's flag ('all the outer 3 rays should relocate to the 4 corner and 4 edges'). A camera sees a RECTANGLE, so when the object-FOV rectangle is known the 3x3 grid spans it -- 4 corners exactly on (+/-half_x, +/-half_y), 4 edge midpoints, 1 centre, all 9 launching -- while a scene with no rectangle keeps the radial inscribed layout (min of field height, object radius and camera-FOV inscribed radius, corners on it, axis samples at max/sqrt(2)). The validator still asserted the radial contract against the rectangle path, which is why it reported 'radius 14.21 exceeds launch maximum 10.05'. MEASURED and reported, not asserted: on MV150 the FOV is square (half 10.046 mm) inside a 12.5 mm object aperture, so the edge midpoints fit but the CORNERS reach 14.21 mm -- a 1.71 mm overhang whose rightness is a prescription question",
+    "KrakenOS.UI.validate_launch_origin_within_object_aperture",
+    "launch_origin_field_grid")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17346,6 +17366,11 @@ def main() -> int:
             phase_661_diffraction_detector,
             phase_662_detector_sampling_stability,
             phase_663_gaussian_detector_recombination,
+            phase_664_open3d_live_mode,
+            phase_665_open3d_lens_step_face_pick,
+            phase_666_cad_scene_cache,
+            phase_667_step_analytic_import,
+            phase_668_launch_origin_field_grid,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
