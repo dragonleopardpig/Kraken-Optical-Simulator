@@ -103,6 +103,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0876 | Path-Local Pose + Element Settings (element BLOCKS, editable choices) | row form |
 | 0881 | Scene Source Manager (`RecordList`: a form that edits a COLLECTION) | record list |
 | 0882 | Glass Catalog Browser + Stock Lens Importer (live text filters) | record list |
+| 0883 | Inspection Cell (six faces as records; host file choosers) | record list |
 
 The row-form framework: `FormField` kinds (number, int, bool, choice, text, textarea, static),
 `choices` that grow at runtime, `editable` choices the user may type into, `on_change` fields that
