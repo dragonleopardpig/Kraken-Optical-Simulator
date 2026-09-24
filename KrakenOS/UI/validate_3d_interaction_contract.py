@@ -14,6 +14,17 @@ from KrakenOS.UI.layout_editor import (
     _dotted_axis_records_from_ray_path,
 )
 from KrakenOS.UI.panels.main_advanced_surface_dialog import MainAdvancedSurfaceDialog
+from KrakenOS.UI.services.open3d_interaction_event import PickClassifier, PickTarget
+from KrakenOS.UI.services.open3d_selection_representation import SelectionRepresentation
+from KrakenOS.UI.services.open3d_thickness_widget import ThicknessDimensionWidget
+from KrakenOS.UI.row_forms import advanced_surface as advanced_surface_row_form_module
+from KrakenOS.UI.row_forms import beam_splitter as beam_splitter_row_form_module
+from KrakenOS.UI.row_forms import coating_material as coating_material_row_form_module
+from KrakenOS.UI.row_forms import detector_settings as detector_settings_row_form_module
+from KrakenOS.UI.row_forms import diffuse_scatter as diffuse_scatter_row_form_module
+from KrakenOS.UI.row_forms import element_forms as element_row_forms_module
+from KrakenOS.UI.row_forms import error_map as error_map_row_form_module
+from KrakenOS.UI.row_forms import scene_target as scene_target_row_form_module
 from KrakenOS.UI.panels.main_analysis_controls import MainAnalysisToolbarPanel, MainInformationPanel
 from KrakenOS.UI.panels.main_branch_gaussian_q_dialog import MainBranchGaussianQDialog
 from KrakenOS.UI.panels.main_branch_throughput_report_dialog import MainBranchThroughputReportDialog
@@ -205,7 +216,64 @@ def _traced_axis_records_bound_long_escaped_tail() -> tuple[bool, str]:
     return max_abs < 250.0, f"axis_points={axis_points.tolist()}, max_abs={max_abs:.6g}"
 
 
-def main() -> int:
+def _fixed_drag_orbit_behaviour() -> dict:
+    """MEASURE the trackball orbit instead of pinning its source (bugs/0877).
+
+    The three assertions that used to live here described the pre-0206 implementation: VTK's own
+    ``camera.Azimuth``/``Elevation`` about a focal point re-set every frame. That was replaced on
+    purpose by a rigid Rodrigues orbit which carries the view-up THROUGH the pole (flag
+    20260702_152020 -- the old path flipped 90 deg mid-drag and clamped at +/-79 deg), so the
+    strings they looked for had not existed for many commits and the checks were quietly dead.
+    These measure what the contract actually claims now.
+    """
+    orbit = Kraken3DInspector._orbit_camera_pose
+    focal = np.array([0.0, 0.0, 0.0])
+    position = np.array([0.0, 0.0, 100.0])
+    view_up = np.array([0.0, 1.0, 0.0])
+    radius = float(np.linalg.norm(position - focal))
+
+    def moved(dx, dy):
+        new_pos, new_up = orbit(position, focal, view_up, dx, dy)
+        new_pos = np.asarray(new_pos, dtype=float)
+        new_up = np.asarray(new_up, dtype=float)
+        before = position - focal
+        after = new_pos - focal
+        cos = float(np.dot(before, after)
+                    / (np.linalg.norm(before) * np.linalg.norm(after)))
+        return {
+            "degrees": float(np.degrees(np.arccos(np.clip(cos, -1.0, 1.0)))),
+            "radius": float(np.linalg.norm(after)),
+            "up_norm": float(np.linalg.norm(new_up)),
+            "up_angle": float(np.degrees(np.arccos(np.clip(
+                float(np.dot(-after / np.linalg.norm(after), new_up / np.linalg.norm(new_up))),
+                -1.0, 1.0)))),
+        }
+
+    hundred = moved(100.0, 0.0)
+    two_hundred = moved(200.0, 0.0)
+    over_the_pole = moved(0.0, 1200.0)
+    return {
+        # 0.10 deg/px, and linear in the pixels dragged
+        "constant_rate": (abs(hundred["degrees"] - 10.0) < 1e-6
+                          and abs(two_hundred["degrees"] - 20.0) < 1e-6),
+        # a RIGID orbit: the camera offset keeps its length, so the focal point cannot drift
+        "rigid": (abs(hundred["radius"] - radius) < 1e-9
+                  and abs(over_the_pole["radius"] - radius) < 1e-9),
+        # 120 deg of vertical drag really turns 120 deg -- the old +/-79 deg clamp is gone -- and
+        # the view-up is carried rigidly, staying unit and square to the view direction
+        "through_the_pole": (abs(over_the_pole["degrees"] - 120.0) < 1e-6
+                             and abs(over_the_pole["up_norm"] - 1.0) < 1e-9
+                             and abs(over_the_pole["up_angle"] - 90.0) < 1e-6),
+        "detail": {"100px": hundred, "200px": two_hundred, "1200px_vertical": over_the_pole},
+    }
+
+
+#: an unmistakable colour, so "kept the source colour" cannot be confused with a default
+RAY_STYLE_PROBE_COLOR = (0.13, 0.77, 0.31)
+
+
+def _evaluate_checks() -> tuple[list, dict]:
+    """Every contract check, as (name, passed), plus the diagnostics worth printing."""
     bindings = inspect.getsource(Open3DMouseBindingsService._install_pick_only_left_click_bindings)
     try:
         step_carry_drag_branch = bindings.split("elif self._step_carry_drag_state is not None:", 1)[1].split(
@@ -215,6 +283,7 @@ def main() -> int:
     except Exception:
         step_carry_drag_branch = ""
     rotation = inspect.getsource(Kraken3DInspector._rotate_camera_fixed_drag)
+    orbit_behaviour = _fixed_drag_orbit_behaviour()
     camera_pan = inspect.getsource(Kraken3DInspector._pan_camera_fixed_drag)
     # _on_left_button_press is timing-decorated, so inspecting the bound
     # method sees the wrapper. Use the service class source for interaction
@@ -245,7 +314,10 @@ def main() -> int:
     face_assignment_factory = inspect.getsource(Kraken3DInspector._face_assignment_service)
     right_click_context = inspect.getsource(Kraken3DInspector._right_click_pick_context)
     right_click_face_ray_context = inspect.getsource(Kraken3DInspector._right_click_face_ray_context)
-    hover_status = inspect.getsource(Kraken3DInspector._update_hover_status)
+    # _update_hover_status is timing-decorated (KRAKEN_OPEN3D_TRACE); the real body is
+    # the _impl it delegates to, so inspect BOTH or every assertion here reads a wrapper
+    hover_status = (inspect.getsource(Kraken3DInspector._update_hover_status)
+                    + inspect.getsource(Kraken3DInspector._update_hover_status_impl))
     face_hover_status = inspect.getsource(Kraken3DInspector._face_hover_status_text)
     step_rotate_pick = inspect.getsource(Open3DStepRotationHandleService.apply_handle)
     step_import = inspect.getsource(Kraken3DInspector.import_step_overlay)
@@ -291,7 +363,11 @@ def main() -> int:
     step_surface_center_pick = inspect.getsource(Kraken3DInspector._surface_center_from_face_ray_pick)
     optical_axis_records = inspect.getsource(Kraken3DInspector._optical_axis_records_for_3d)
     optical_axis_overlays = inspect.getsource(Kraken3DInspector._add_optical_axis_pick_overlays)
-    optical_axis_highlight = inspect.getsource(Kraken3DInspector._set_optical_axis_highlight)
+    # _set_optical_axis_highlight is a one-line delegation now: the overlay itself lives
+    # in SelectionRepresentation, so inspect the pair
+    optical_axis_highlight = (
+        inspect.getsource(Kraken3DInspector._set_optical_axis_highlight)
+        + inspect.getsource(SelectionRepresentation.apply_optical_axis_selection))
     optical_axis_frame = inspect.getsource(Kraken3DInspector._optical_axis_frame_from_pick)
     optical_axis_screen_pick = inspect.getsource(Kraken3DInspector._optical_axis_info_near_display_xy)
     picked_step_feature = inspect.getsource(Kraken3DInspector._picked_feature_info)
@@ -339,6 +415,17 @@ def main() -> int:
     main_error_map_factory = inspect.getsource(KrakenLayoutEditor._main_error_map_dialog)
     open_error_map_dialog = inspect.getsource(KrakenLayoutEditor.open_error_map_editor)
     main_advanced_surface_dialog = inspect.getsource(MainAdvancedSurfaceDialog)
+    # docs/design_qt_migration.md phase 3: a row dialog's FIELDS, validation and apply
+    # live in a toolkit-free builder under row_forms/; the panel keeps only Tk layout.
+    advanced_surface_row_form = inspect.getsource(advanced_surface_row_form_module)
+    beam_splitter_row_form = inspect.getsource(beam_splitter_row_form_module)
+    coating_material_row_form = inspect.getsource(coating_material_row_form_module)
+    detector_settings_row_form = inspect.getsource(detector_settings_row_form_module)
+    diffuse_scatter_row_form = inspect.getsource(diffuse_scatter_row_form_module)
+    element_row_forms = inspect.getsource(element_row_forms_module)
+    error_map_row_form = inspect.getsource(error_map_row_form_module)
+    scene_target_row_form = inspect.getsource(scene_target_row_form_module)
+    scene_element_dialogs = inspect.getsource(MainSceneElementDialogs)
     main_advanced_surface_factory = inspect.getsource(KrakenLayoutEditor._main_advanced_surface_dialog)
     open_advanced_surface_dialog = inspect.getsource(KrakenLayoutEditor.open_advanced_surface_editor)
     main_surface_settings_dialogs = inspect.getsource(MainSurfaceSettingsDialogs)
@@ -435,6 +522,9 @@ def main() -> int:
     thickness_drag_motion = inspect.getsource(Open3DThicknessDimensionService.apply_drag_motion)
     thickness_drag_finish = inspect.getsource(Open3DThicknessDimensionService.finish_drag)
     thickness_service_source = inspect.getsource(Open3DThicknessDimensionService)
+    # a dimension click is now classified, then handled by a Slicer-style widget
+    pick_classifier = inspect.getsource(PickClassifier)
+    thickness_widget = inspect.getsource(ThicknessDimensionWidget)
     step_admin_source = inspect.getsource(Open3DStepAdminPanel).replace("self.inspector.", "self.")
     step_admin_overlay_select = inspect.getsource(Kraken3DInspector.select_step_overlay_from_admin)
     step_admin_promoted_select = inspect.getsource(Kraken3DInspector.select_promoted_step_row_from_admin)
@@ -491,6 +581,7 @@ def main() -> int:
     placement_rotate_pick = inspect.getsource(Kraken3DInspector._apply_scene_placement_rotate_handle)
     placement_drag_start = inspect.getsource(Kraken3DInspector._placement_drag_state_from_current_pick)
     placement_drag = inspect.getsource(Kraken3DInspector._apply_placement_drag_motion)
+    placement_drag_finish = inspect.getsource(Kraken3DInspector._finish_placement_drag)
     placement_target_start = inspect.getsource(Kraken3DInspector.start_placement_target_pick)
     placement_target_apply = inspect.getsource(Kraken3DInspector._apply_placement_target_pick)
     center_row_axis_start = inspect.getsource(Kraken3DInspector.start_center_row_to_ray)
@@ -588,6 +679,12 @@ def main() -> int:
     scene_ray_records = inspect.getsource(KrakenLayoutEditor._iter_3d_scene_ray_records)
     transient_step_tail_trim = inspect.getsource(KrakenLayoutEditor._trim_transient_step_terminal_tail_for_display)
     ray_terminal_style = inspect.getsource(KrakenLayoutEditor._ray_terminal_3d_style)
+    ray_escaped_style = KrakenLayoutEditor._ray_terminal_3d_style(
+        RAY_STYLE_PROBE_COLOR, "escaped")
+    ray_absorbed_style = KrakenLayoutEditor._ray_terminal_3d_style(
+        RAY_STYLE_PROBE_COLOR, "absorbed")
+    ray_stopped_style = KrakenLayoutEditor._ray_terminal_3d_style(
+        RAY_STYLE_PROBE_COLOR, "stopped")
     should_draw_endpoint = inspect.getsource(KrakenLayoutEditor._should_draw_3d_terminal_endpoint)
     bounded_ray_display = inspect.getsource(KrakenLayoutEditor._bounded_3d_ray_points_for_display)
     shared_bounded_ray_display = inspect.getsource(bounded_ray_points_for_scene_display)
@@ -619,9 +716,15 @@ def main() -> int:
         ("plain left press no longer performs immediate pick", "_on_left_button_press(None, None)" not in bindings.split("def left_motion", 1)[0]),
         ("release without drag performs selection", "should_pick" in bindings and "_on_left_button_press(None, None)" in bindings),
         ("drag threshold prevents accidental rotation", "drag_threshold_px" in bindings),
-        ("fixed drag method uses constant sensitivity", "degrees_per_pixel" in rotation),
-        ("fixed drag preserves focal point", "camera.SetFocalPoint(*focal)" in rotation),
-        ("fixed drag uses azimuth/elevation only", "camera.Azimuth" in rotation and "camera.Elevation" in rotation),
+        ("fixed drag turns 0.10 deg per pixel, linearly", orbit_behaviour["constant_rate"]),
+        (
+            "fixed drag orbits RIGIDLY, so the focal point cannot drift",
+            orbit_behaviour["rigid"] and "SetFocalPoint" not in rotation,
+        ),
+        (
+            "fixed drag carries the view-up THROUGH the pole (no 79 deg clamp, no flip)",
+            orbit_behaviour["through_the_pole"] and "camera.SetViewUp(*new_up)" in rotation,
+        ),
         (
             "middle or Shift+Left drag pans camera in the view plane",
             '"<ButtonPress-2>"' in bindings
@@ -650,9 +753,16 @@ def main() -> int:
             and "handle_count_for_label(label)" in ensure_step_handles,
         ),
         (
-            "plain STEP face click keeps rotation handles usable",
+            # bugs/0338 made this a selection-MODE switch, and with it the wording: a plain
+            # click pins a FACE unless "Move/Rotate whole body" is checked, in which case it
+            # selects the body and shows its handles. Either way it never arms the axis pick.
+            "plain STEP click picks a face, or shows Move/Rotate handles in whole-body mode",
             "start_step_normal_axis_pick(step_label)" not in plain_step_select_block
-            and "Rotation handles remain active" in plain_step_select_block,
+            and "self._select_step_face_from_feature(step_label, feature_pick)"
+            in plain_step_select_block
+            and "self.show_step_rotation_handler(step_label, additive=shift_additive)"
+            in plain_step_select_block
+            and "Move/Rotate handles active" in plain_step_select_block,
         ),
         ("STEP rotation handler is not a popup", "tk.Toplevel" not in handler and "_step_rotation_active_label" in handler),
         ("STEP rotation handles expose X/Y/Z axes", '("x",' in step_rotate_handles and '("y",' in step_rotate_handles and '("z",' in step_rotate_handles),
@@ -717,7 +827,10 @@ def main() -> int:
             and "_step_carry_ray_target(state" not in step_carry_plane_motion,
         ),
         (
-            "Open 3D STEP normal snap defaults to surface-center anchoring",
+            # The default anchor evolved on purpose: surface_center -> pick_point ->
+            # body_center, so the BODY lands where the user clicked rather than sitting to one
+            # side of the click. The two earlier anchors survive as their own menu entries.
+            "Open 3D STEP normal snap defaults to body-center anchoring",
             "Snap STEP Surface-Center Normal->Optical Axis" in init_with_top_controls
             and "Snap STEP Pick-Point Normal->Optical Axis" in init_with_top_controls
             and "Center Normal->Axis" in step_admin_source
@@ -727,10 +840,12 @@ def main() -> int:
             and "step_feature_selection(" in remember_step_feature
             and "selected_feature_action(" in step_feature_action_selection
             and "normal_world" in open3d_step_state_service
-            and 'anchor_mode="surface_center"' in step_normal_snap
+            and 'anchor_mode="body_center"' in step_normal_snap
             and 'anchor_mode="pick_point"' in step_pick_normal_snap
-            and "selection.surface_center_world" in step_normal_axis_apply
-            and "selection.pick_point_world if anchor_mode == \"pick_point\" else selection.surface_center_world" in step_normal_axis_apply
+            and 'anchor_mode = "body_center"' in step_normal_axis_apply
+            and "center = self._step_body_center_world(label)" in step_normal_axis_apply
+            and "center = selection.pick_point_world" in step_normal_axis_apply
+            and "center = selection.surface_center_world" in step_normal_axis_apply
             and "_step_normal_axis_anchor_mode = anchor_mode" in step_normal_axis_start
             and "_step_normal_axis_pick_mode = True" in step_normal_axis_start
             and "_actor_optical_axis_map" in pick
@@ -872,13 +987,16 @@ def main() -> int:
             "Snap ray" not in init and "Snap target" not in init,
         ),
         (
+            # both moved out of the top-controls strip into the STEP admin panel, and the
+            # promote button is now labelled "Promote STEP Row"
             "Open 3D exposes STEP promotion to optical solid rows",
-            "Promote STEP to Optical Solid Row" in init_with_top_controls and "promote_selected_step_to_optical_solid_row" in init_with_top_controls,
+            "Promote STEP Row" in step_admin_source
+            and "promote_selected_step_to_optical_solid_row" in step_admin_source,
         ),
         (
             "Open 3D exposes explicit STEP placement acceptance",
-            "Accept STEP Placement" in init_with_top_controls
-            and "accept_selected_step_placement" in init_with_top_controls
+            "Accept STEP Placement" in step_admin_source
+            and "accept_selected_step_placement" in step_admin_source
             and "def accept_selected_step_placement" in inspect.getsource(Kraken3DInspector.accept_selected_step_placement),
         ),
         (
@@ -1087,9 +1205,8 @@ def main() -> int:
             and "validate_advanced_surface_inputs=_validate_advanced_surface_inputs" in main_coating_dialog_factory
             and "self._main_coating_material_dialog().open(row_index)" in open_coating_dialog
             and "Coating / Material" in main_coating_dialog
-            and "Load CSV..." in main_coating_dialog
-            and "CoatingMet" in main_coating_dialog
-            and "Validation passed." in main_coating_dialog,
+            and "Load CSV..." in coating_material_row_form
+            and "CoatingMet" in coating_material_row_form,
         ),
         (
             "Diffuse/BRDF dialog lives outside layout_editor",
@@ -1099,8 +1216,8 @@ def main() -> int:
             and "validate_diffuse_scatter_settings=_validate_diffuse_scatter_settings" in main_diffuse_dialog_factory
             and "self._main_diffuse_scatter_dialog().open(row_index)" in open_diffuse_dialog
             and "Diffuse / BRDF" in main_diffuse_dialog
-            and "pySCATMECH BRDF" in main_diffuse_dialog
-            and "Guided target surface" in main_diffuse_dialog
+            and "pySCATMECH BRDF" in diffuse_scatter_row_form
+            and "Guided target surface" in diffuse_scatter_row_form
             and "Validation passed." in main_diffuse_dialog,
         ),
         (
@@ -1122,8 +1239,8 @@ def main() -> int:
             and "beam_splitter_split_modes=BEAM_SPLITTER_SPLIT_MODES" in main_beam_splitter_factory
             and "beam_splitter_coating_for_settings=_beam_splitter_coating_for_settings" in main_beam_splitter_factory
             and "self._main_beam_splitter_dialog().open(row_index)" in open_beam_splitter_dialog
-            and "Beam Splitter can spawn deterministic" in main_beam_splitter_dialog
-            and "Fresnel P/S mode" in main_beam_splitter_dialog
+            and "Beam Splitter can spawn deterministic" in beam_splitter_row_form
+            and "Fresnel P/S mode" in beam_splitter_row_form
             and "Validation passed:" in main_beam_splitter_dialog,
         ),
         (
@@ -1133,8 +1250,8 @@ def main() -> int:
             and "load_error_map_file=_load_error_map_file" in main_error_map_factory
             and "validate_error_map=_validate_error_map" in main_error_map_factory
             and "self._main_error_map_dialog().open(row_index)" in open_error_map_dialog
-            and "Error_map = [X, Y, Z, SPACE]" in main_error_map_dialog
-            and "Import..." in main_error_map_dialog
+            and "Error_map = [X, Y, Z, SPACE]" in error_map_row_form
+            and "Import..." in error_map_row_form
             and "Validation passed: no error map." in main_error_map_dialog,
         ),
         (
@@ -1144,8 +1261,8 @@ def main() -> int:
             and "advanced_surface_field_groups=ADVANCED_SURFACE_FIELD_GROUPS" in main_advanced_surface_factory
             and "validate_advanced_surface_inputs=_validate_advanced_surface_inputs" in main_advanced_surface_factory
             and "self._main_advanced_surface_dialog().open(row_index)" in open_advanced_surface_dialog
-            and "Shape Params" in main_advanced_surface_dialog
-            and "Optimize conic k" in main_advanced_surface_dialog
+            and "Shape Params" in advanced_surface_row_form
+            and "Optimize conic k" in advanced_surface_row_form
             and "Advanced Surface Validation" in main_advanced_surface_dialog,
         ),
         (
@@ -1220,7 +1337,7 @@ def main() -> int:
             and "show_physical_distances_var" in thickness_dimensions
             and "_surface_reference_world_point(row_index" in thickness_dimensions
             and "_surface_reference_world_point(row_index + 1" in thickness_dimensions
-            and "self.arrow_mesh(" in thickness_dimensions
+            and "self.arrow_mesh(" in thickness_service_source
             and "pv.Cone" in thickness_arrow
             and "billboard_text_actor_cls" in inspect.getsource(Open3DThicknessDimensionService.__init__)
             and "_register_thickness_dimension_actor" in thickness_label
@@ -1243,17 +1360,23 @@ def main() -> int:
             and "wm_attributes(\"-type\", \"tooltip\")" in widget_tooltip,
         ),
         (
+            # the click is CLASSIFIED (PickTarget.THICKNESS_DIMENSION) and handled by
+            # ThicknessDimensionWidget, rather than being another branch in the click handler
             "Open 3D Thickness dimension clicks open an inline row-scoped editor",
-            "_actor_thickness_dimension_map.get(actor_key)" in pick
+            "_actor_thickness_dimension_map.get(actor_key)" in pick_classifier
+            and "PickTarget.THICKNESS_DIMENSION" in pick_classifier
+            and PickTarget.THICKNESS_DIMENSION.value == "thickness_dimension"
             and "GetViewProp" in pick
-            and "_edit_open3d_thickness_dimension" in pick
+            and "inspector._edit_open3d_thickness_dimension(int(row_index))" in thickness_widget
             and "tk.Toplevel" in thickness_service_source
             and "ttk.Entry" in thickness_edit
             and "<FocusOut>" in thickness_edit
             and "<Return>" in thickness_edit
             and "<Escape>" in thickness_edit
             and "simpledialog.askfloat" not in thickness_service_source
-            and "grab_set" not in thickness_service_source
+            # it DOES grab now, on purpose: the embedded VTK canvas took focus-follows-mouse
+            # focus while the user was typing, which is what made the editor vanish
+            and "window.grab_set()" in thickness_service_source
             and "self.apply_dimension_value(row_index, next_value)" in thickness_edit
             and "has_inline_editor" in thickness_service_source
             and "thickness edit" in active_operation_labels
@@ -1354,7 +1477,8 @@ def main() -> int:
             and "_selected_step_feature_label" in clear_selection
             and "_set_step_highlight(None, render=False)" in clear_selection
             and "_remove_step_rotation_handle_actors()" in clear_selection
-            and "RemoveActor(actor)" in remove_step_handles,
+            # one helper now drops the actor from EVERY renderer, not just the main one
+            and "_remove_actor_from_renderers(actor)" in remove_step_handles,
         ),
         (
             "Transparent imported STEP faces have display-ray pick fallback",
@@ -1529,10 +1653,11 @@ def main() -> int:
             and "_display_to_world_3d(display_xy, 1.0)" in display_pick_ray
             and "pick_face_from_ray(" in row_face_ray_pick
             and "pick_face_from_ray(" in step_face_ray_pick
-            and (
-                "prefer_internal=True" in row_face_ray_pick
-                or "prefer_internal=not self._row_face_metadata_uses_saved_mesh(row)" in row_face_ray_pick
-            )
+            # a saved-mesh row turns the internal preference back ON when the solid carries a
+            # Beam Splitter face, so the promoted cube's 45 deg diagonal still hovers
+            and "prefer_internal=(" in row_face_ray_pick
+            and "not self._row_face_metadata_uses_saved_mesh(row)" in row_face_ray_pick
+            and "_optical_solid_faces_have_beam_splitter(metadata)" in row_face_ray_pick
             and "prefer_internal=True" in step_face_ray_pick
             and "Toolkit pickers" in face_ray_pick_service
             and "internal" in face_ray_pick_service,
@@ -1717,7 +1842,7 @@ def main() -> int:
             "has_promoted_step_optical_solid_rows" in open3d_refresh_service
             and "requires_open3d_retrace = include_live_step_overlays or self.has_promoted_step_optical_solid_rows()"
             in open3d_refresh_service
-            and "if requires_open3d_retrace:" in open3d_refresh_service
+            and "if requires_open3d_retrace and not explicit_products:" in open3d_refresh_service
             and "if not requires_open3d_retrace and self._active_trace_can_feed_open3d():" in open3d_refresh_service
             and "current = self.editor._current_preview_scene_trace()" in open3d_refresh_service,
         ),
@@ -1827,7 +1952,10 @@ def main() -> int:
             and "and not live_step_preview" in scene_ray_records
             and "self._trim_transient_step_terminal_tail_for_display(" in scene_ray_records
             and "KrakenLayoutEditor._trim_transient_step_terminal_tail_for_display" not in scene_ray_records
-            and "ray_path_reaches_image_from_events(path)" in scene_ray_records,
+            # bugs/0737 replaced "reaches the image" with "visible without clipping" here, so
+            # the Clipped toggle is actually honoured; a live STEP preview still skips the
+            # filter entirely, which is what keeps the whole launch family on screen
+            and "ray_path_visible_without_clipping_from_events(path)" in scene_ray_records,
         ),
         (
             "Open 3D transient STEP previews suppress long missed/escaped terminal tails when clipped rays are hidden",
@@ -1858,9 +1986,14 @@ def main() -> int:
             and "event_type" in trace_terminal_face_summary,
         ),
         (
-            "Open 3D optical-axis guides include only traced chief-ray exit segments",
+            # one chief ray is not enough: a beam splitter fans the central ray into an on-axis
+            # transmit branch AND a folded reflect branch, so the guides walk the traced paths
+            # in centrality order and keep one representative per distinct FOLD DIRECTION
+            "Open 3D optical-axis guides are traced exit segments, one per fold direction",
             "physical_paths" in optical_axis_records
-            and "_dotted_axis_records_from_ray_path(chief, bounds)" in optical_axis_records
+            and "for path in sorted(physical_paths, key=_path_score):" in optical_axis_records
+            and "_dotted_axis_records_from_ray_path(path, bounds)" in optical_axis_records
+            and "_segment_is_genuine_fold(" in optical_axis_records
             and "_dotted_axis_mesh_from_points(points[:, :3])" in optical_axis_overlays
         ),
         (
@@ -1872,7 +2005,17 @@ def main() -> int:
             and '"axis_role"' in editor_step_overlay_axis_snap,
         ),
         ("Open 3D missed detector lines use status styling", "missed_detector" in ray_terminal_style and "line_opacity" in ray_terminal_style),
-        ("Open 3D escaped rays preserve source/wavelength line color", '"escaped" else 0.74' in ray_terminal_style and '{"absorbed", "stopped"}' in ray_terminal_style),
+        (
+            # MEASURED, not matched: the opacity ladder gained a missed_detector rung, which
+            # broke the old string match without touching the claim. Escaped rays are ordinary
+            # physical exits, so they keep the source/wavelength colour; only absorption and
+            # true stops are recoloured as diagnostics.
+            "Open 3D escaped rays preserve source/wavelength line color",
+            ray_escaped_style["line_color"] == RAY_STYLE_PROBE_COLOR
+            and ray_absorbed_style["line_color"] != RAY_STYLE_PROBE_COLOR
+            and ray_stopped_style["line_color"] != RAY_STYLE_PROBE_COLOR
+            and '{"absorbed", "stopped"}' in ray_terminal_style,
+        ),
         (
             "Open 3D refresh gates terminal endpoint disks behind terminal diagnostics",
             "_should_draw_3d_terminal_endpoint(" in refresh
@@ -1941,7 +2084,19 @@ def main() -> int:
         ("placement rotate service writes Tilt and ScenePlacement metadata", "tilt_x" in editor_rotate and "SCENE_PLACEMENT_ADVANCED_ATTR" in editor_rotate),
         ("Open 3D placement drag starts from picked handle actors", "_placement_drag_state_from_current_pick()" in bindings and "_placement_handle_info_for_actor_key" in placement_drag_start),
         ("Open 3D placement drag suppresses camera drag while active", "_apply_placement_drag_motion(dx, dy)" in bindings and "_rotate_camera_fixed_drag(dx, dy)" in bindings),
-        ("Open 3D placement drag writes through row pose services", "translate_scene_row_pose" not in placement_drag and "_apply_scene_placement_translate_handle" in placement_drag and "_apply_scene_placement_rotate_handle" in placement_drag),
+        (
+            # bugs/0012: a promoted optical-solid row retraces on every refresh, so a per-step
+            # model commit made the axial slide "compute hard but never move". A TRANSLATE now
+            # previews with cheap actor transforms and commits ONCE at release; a ROTATE still
+            # commits per step. (The old "translate_scene_row_pose not in ..." clause matched
+            # the COMMENT that explains why it is not called here -- guards must not pin their
+            # own prose.)
+            "Open 3D placement drag previews with actors and commits through row pose services",
+            "_apply_scene_placement_rotate_handle(row_index, axis, delta)" in placement_drag
+            and "_translate_placement_handle_actors(row_index," in placement_drag
+            and "_translate_row_actors(row_index," in placement_drag
+            and "_apply_scene_placement_translate_handle(" in placement_drag_finish,
+        ),
         (
             "Open 3D toolbar exposes Center Row->Optical Axis",
             "Center Row->Optical Axis" in init_with_top_controls
@@ -2048,17 +2203,40 @@ def main() -> int:
             and 'row_surface == "Object"' in refresh,
         ),
     ]
+    return checks, {
+        "continuation": None if continuation_sync_ok else continuation_sync_diag,
+        "exit_axis": None if exit_axis_ok else exit_axis_diag,
+        "fixed_drag_orbit": orbit_behaviour["detail"],
+    }
+
+
+def run_checks() -> tuple[bool, list[str]]:
+    """The penta-harness entry point (bugs/0877): this contract is a registered phase now.
+
+    It was never one, which is why 23 of its assertions could rot unnoticed while every dialog
+    they described moved into reports/ and row_forms/ and the drag was rewritten twice.
+    """
+    checks, diagnostics = _evaluate_checks()
+    notes = [("= " if ok else "FAIL ") + str(name) for name, ok in checks]
+    for key in ("continuation", "exit_axis"):
+        if diagnostics.get(key):
+            notes.append(f"FAIL {key} diagnostic: {diagnostics[key]}")
+    return all(bool(ok) for _name, ok in checks), notes
+
+
+def main() -> int:
+    checks, diagnostics = _evaluate_checks()
     failed = [name for name, ok in checks if not ok]
     if failed:
         print("Embedded 3D interaction contract failed:")
         for name in failed:
             print(f"- {name}")
-        if not continuation_sync_ok:
-            print(f"  continuation diagnostic: {continuation_sync_diag}")
-        if not exit_axis_ok:
-            print(f"  exit-axis diagnostic: {exit_axis_diag}")
+        if diagnostics.get("continuation"):
+            print(f"  continuation diagnostic: {diagnostics['continuation']}")
+        if diagnostics.get("exit_axis"):
+            print(f"  exit-axis diagnostic: {diagnostics['exit_axis']}")
         return 1
-    print("Embedded 3D interaction contract validation passed.")
+    print(f"Embedded 3D interaction contract validation passed ({len(checks)} checks).")
     return 0
 
 
