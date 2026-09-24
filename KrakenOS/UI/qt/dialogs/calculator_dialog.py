@@ -185,7 +185,7 @@ class ParaxialCalculatorDialog(_dialog_class()):
         except Exception as exc:
             message = (str(exc) if isinstance(exc, CalculatorFailed)
                        else getattr(self.editor, "short_error_message", str)(exc))
-            host_of(self).showerror(TITLE, message)
+            self.host.showerror(TITLE, message)
             self.note.setText(f"Apply failed: {message}")
             return False
         self.note.setText(status)

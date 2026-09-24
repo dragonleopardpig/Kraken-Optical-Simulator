@@ -7,6 +7,10 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from typing import Any, Callable
 
+from KrakenOS.UI.row_forms import FormRefused
+from KrakenOS.UI.row_forms.error_map import build_error_map_form
+from KrakenOS.UI.uihost import host_of
+
 
 class MainErrorMapDialog:
     """Build the error-map dialog while keeping row state on the editor."""
@@ -48,36 +52,26 @@ class MainErrorMapDialog:
         setattr(self.editor, name, value)
 
     def open(self, row_index: int | None = None) -> None:
+        # docs/design_qt_migration.md phase 3: the candidate map, the import, the clear, the
+        # validation and what Apply writes live in KrakenOS/UI/row_forms/error_map.py, which the
+        # Qt dialog uses too. This function is layout.
         self._commit_pending_table_edit()
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Error Map", f"Could not read the surface table:\n\n{exc}", parent=self.editor)
+            messagebox.showerror("Error Map", f"Could not read the surface table:\n\n{exc}",
+                                 parent=self.editor)
             return
 
-        if row_index is None:
-            row_index = self._selected_surface_row_index()
-        if row_index is None or row_index < 0 or row_index >= len(self.rows):
-            messagebox.showinfo("Error Map", "Select a surface row first.", parent=self.editor)
+        try:
+            form = build_error_map_form(self, row_index)
+        except FormRefused as exc:
+            messagebox.showinfo("Error Map", str(exc), parent=self.editor)
             return
-
-        row = self.rows[row_index]
-        if row.surface in {"Object", "Image"}:
-            messagebox.showinfo("Error Map", "Measured error maps apply to physical surfaces, not Object/Image rows.", parent=self.editor)
-            return
-
-        advanced = dict(row.advanced or {})
-        current_error_map = advanced.get("Error_map")
-        candidate_error_map = None
-        if current_error_map is not None:
-            try:
-                candidate_error_map = self.error_map_literal(current_error_map)
-            except Exception:
-                candidate_error_map = current_error_map
 
         window = tk.Toplevel(self.editor)
         window.withdraw()
-        window.title(f"Error Map - S{row_index}: {row.name}")
+        window.title(form.title)
         window.geometry("760x360")
         window.minsize(660, 300)
         window.transient(self.editor)
@@ -88,144 +82,73 @@ class MainErrorMapDialog:
         header.grid(row=0, column=0, sticky="ew")
         header.columnconfigure(1, weight=1)
         ttk.Label(header, text="Surface").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=3)
-        ttk.Label(header, text=f"S{row_index}: {row.name}").grid(row=0, column=1, sticky="w", pady=3)
-        ttk.Label(
-            header,
-            text="Imports measured sag/departure as KrakenOS Error_map = [X, Y, Z, SPACE].",
-            foreground="#5f6b7a",
-        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(5, 0))
+        ttk.Label(header, text=form.values["surface"]).grid(row=0, column=1, sticky="w", pady=3)
+        ttk.Label(header, text=form.note, foreground="#5f6b7a", wraplength=660,
+                  justify="left").grid(row=1, column=0, columnspan=3, sticky="w", pady=(5, 0))
 
         body = ttk.Frame(window, padding=(10, 4, 10, 8))
         body.grid(row=1, column=0, sticky="nsew")
         body.columnconfigure(1, weight=1)
         body.rowconfigure(1, weight=1)
 
-        source_var = tk.StringVar(master=window, value="Current row" if candidate_error_map is not None else "None")
+        source_var = tk.StringVar(master=window, value=form.values["source"])
         ttk.Label(body, text="Source").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=3)
         ttk.Label(body, textvariable=source_var).grid(row=0, column=1, sticky="ew", pady=3)
 
-        ttk.Label(body, text="Summary").grid(row=1, column=0, sticky="nw", padx=(0, 8), pady=3)
+        ttk.Label(body, text="Contents").grid(row=1, column=0, sticky="nw", padx=(0, 8), pady=3)
         summary_text = tk.Text(body, height=8, wrap="word")
         summary_text.grid(row=1, column=1, sticky="nsew", pady=3)
         summary_scroll = ttk.Scrollbar(body, orient="vertical", command=summary_text.yview)
         summary_scroll.grid(row=1, column=2, sticky="ns")
         summary_text.configure(yscrollcommand=summary_scroll.set)
 
-        ttk.Label(
-            body,
-            text=(
-                "CSV/TXT: x,y,z columns or a rectangular Z matrix. "
-                "NPZ: X, Y, Z arrays plus optional SPACE. NPY: x/y/z columns, stacked X/Y/Z grids, or a Z matrix."
-            ),
-            foreground="#5f6b7a",
-            wraplength=660,
-            justify="left",
-        ).grid(row=2, column=1, sticky="ew", pady=(4, 0))
-
         footer = ttk.Frame(window, padding=(10, 0, 10, 10))
         footer.grid(row=2, column=0, sticky="ew")
         footer.columnconfigure(0, weight=1)
         validation_var = tk.StringVar(master=window, value="Validation has not been run.")
-        ttk.Label(footer, textvariable=validation_var, foreground="#5f6b7a").pack(side="left", fill="x", expand=True)
+        ttk.Label(footer, textvariable=validation_var, foreground="#5f6b7a").pack(
+            side="left", fill="x", expand=True)
 
-        def update_summary() -> None:
+        def refresh_from_form() -> None:
+            source_var.set(form.values["source"])
             summary_text.configure(state="normal")
             summary_text.delete("1.0", "end")
-            if candidate_error_map is None:
-                summary_text.insert(
-                    "1.0",
-                    "No Error_map will be stored on this surface.\n\n"
-                    "Click Import... to load measured data, or Apply to clear the current surface error map.",
-                )
-            else:
-                summary_text.insert(
-                    "1.0",
-                    self.error_map_summary(candidate_error_map)
-                    + "\n\nStored form: flattened X, Y, and Z sample lists plus one scalar SPACE pitch.",
-                )
+            summary_text.insert("1.0", form.summary)
             summary_text.configure(state="disabled")
 
-        def import_error_map() -> None:
-            nonlocal candidate_error_map
-            path_text = filedialog.askopenfilename(
-                title="Import Error Map",
-                initialdir=str(self.attachment_dir if self.attachment_dir.exists() else self.project_root),
-                filetypes=[
-                    ("Error map files", "*.csv *.txt *.dat *.tsv *.npy *.npz"),
-                    ("Text files", "*.csv *.txt *.dat *.tsv"),
-                    ("NumPy files", "*.npy *.npz"),
-                    ("All files", "*"),
-                ],
-                parent=window,
-            )
-            if not path_text:
-                return
-            path = Path(path_text).expanduser()
+        def run_action(action) -> None:
             try:
-                loaded = self.load_error_map_file(path)
-                errors = self.validate_error_map(loaded)
-                if errors:
-                    raise ValueError(errors[0])
-            except Exception as exc:
-                messagebox.showerror("Import Error Map", f"Could not import {path.name}:\n\n{exc}", parent=window)
+                message = action.run(form, host_of(self))
+            except FormRefused as exc:
+                messagebox.showerror(f"{action.label} {form.title}", str(exc), parent=window)
                 return
-            candidate_error_map = loaded
-            source_var.set(str(path))
-            update_summary()
-            validation_var.set(f"Loaded {path.name}. Validation passed.")
-
-        def clear_error_map() -> None:
-            nonlocal candidate_error_map
-            candidate_error_map = None
-            source_var.set("None")
-            update_summary()
-            validation_var.set("Error map will be cleared on Apply.")
+            refresh_from_form()
+            validation_var.set(message or "")
 
         def validate_values(*, show_success: bool = True) -> list[str]:
-            if candidate_error_map is None:
-                if show_success:
-                    validation_var.set("Validation passed: no error map.")
-                return []
-            errors = self.validate_error_map(candidate_error_map)
+            errors = list(form.validate(form.values))
             if errors:
                 validation_var.set(f"Validation failed: {errors[0]}")
             elif show_success:
-                validation_var.set("Validation passed.")
+                validation_var.set("Validation passed."
+                                   if form.state.get("error_map") is not None
+                                   else "Validation passed: no error map.")
             return errors
 
         def apply_values() -> None:
-            errors = validate_values(show_success=False)
-            if errors:
-                messagebox.showerror(
-                    "Error Map Validation",
-                    "Fix this error map before applying:\n\n" + "\n".join(f"- {error}" for error in errors),
-                    parent=window,
-                )
+            try:
+                form.apply(form.values)
+            except FormRefused as exc:
+                messagebox.showerror("Error Map Validation", str(exc), parent=window)
                 return
-
-            self._begin_history_capture()
-            new_advanced = dict(self.rows[row_index].advanced or {})
-            if candidate_error_map is None:
-                new_advanced.pop("Error_map", None)
-                status_message = f"Cleared error map for S{row_index}: {self.rows[row_index].name}. Click Update."
-            else:
-                normalized = self.error_map_literal(candidate_error_map)
-                new_advanced["Error_map"] = normalized
-                status_message = (
-                    f"Updated error map for S{row_index}: {self.rows[row_index].name} "
-                    f"({self.error_map_summary(normalized)}). Click Update."
-                )
-            self.rows[row_index].advanced = new_advanced
-            self._sync_table()
-            self._commit_history_capture()
-            self._mark_plot_update_pending()
-            self.status_var.set(status_message)
             window.destroy()
 
-        update_summary()
-        ttk.Button(footer, text="Import...", command=import_error_map).pack(side="right", padx=(0, 8))
-        ttk.Button(footer, text="Clear", command=clear_error_map).pack(side="right", padx=(0, 8))
-        ttk.Button(footer, text="Validate", command=lambda: validate_values(show_success=True)).pack(side="right", padx=(0, 8))
+        refresh_from_form()
+        for action in form.actions:
+            ttk.Button(footer, text=action.label,
+                       command=lambda a=action: run_action(a)).pack(side="right", padx=(0, 8))
+        ttk.Button(footer, text="Validate",
+                   command=lambda: validate_values(show_success=True)).pack(side="right", padx=(0, 8))
         ttk.Button(footer, text="Apply", command=apply_values).pack(side="right")
         ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
         self._show_centered_dialog(window)

@@ -23,6 +23,9 @@ class RowFormDialog(_dialog_class()):
 
         super().__init__(parent)
         self.form = form
+        # Always message through THIS host. host_of(dialog) would find no `ui` on a QDialog and
+        # fall back to TkUiHost(dialog) -- a modal TKINTER box inside the Qt app, which never
+        # returns (bugs/0871).
         self.host = host if host is not None else host_of(parent)
 
         self.setWindowTitle(form.title)
@@ -43,6 +46,11 @@ class RowFormDialog(_dialog_class()):
                 current = str(form.values.get(field.key, ""))
                 if current in field.choices:
                     widget.setCurrentText(current)
+            elif field.kind == "static":
+                widget = QLabel(str(form.values.get(field.key, "")))
+                widget.setWordWrap(True)
+                widget.setTextInteractionFlags(
+                    widget.textInteractionFlags().TextSelectableByMouse)
             elif field.kind == "textarea":
                 widget = QPlainTextEdit(str(form.values.get(field.key, "")))
                 widget.setMinimumHeight(18 * max(field.height, 3))
@@ -62,6 +70,11 @@ class RowFormDialog(_dialog_class()):
 
         self.buttons = QDialogButtonBox()
         role = QDialogButtonBox.ButtonRole.ActionRole
+        self.action_buttons: dict = {}
+        for action in form.actions:
+            button = self.buttons.addButton(action.label, role)
+            button.clicked.connect(lambda _checked=False, a=action: self.run_action(a))
+            self.action_buttons[action.key] = button
         self.validate_button = self.buttons.addButton("Validate", role)
         self.apply_button = self.buttons.addButton("Apply", role)
         self.cancel_button = self.buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
@@ -79,7 +92,36 @@ class RowFormDialog(_dialog_class()):
         return widget.text()
 
     def values(self) -> dict:
-        return {key: self._widget_text(widget) for key, widget in self.widgets.items()}
+        """Only the EDITABLE fields; a static one is shown, never collected back."""
+        return {key: self._widget_text(widget) for key, widget in self.widgets.items()
+                if not hasattr(widget, "setWordWrap")}
+
+    def run_action(self, action) -> str:
+        """Run a form action, then show whatever it changed."""
+        try:
+            message = action.run(self.form, self.host)
+        except FormRefused as exc:
+            self.host.showerror(self.form.title, str(exc))
+            self.summary.setText(f"{action.label}: {str(exc).splitlines()[0]}")
+            return ""
+        self.refresh_from_form()
+        self.summary.setText(message or self.form.summary)
+        return message
+
+    def refresh_from_form(self) -> None:
+        """Re-read every widget from the form -- an action may have rewritten its values."""
+        for key, widget in self.widgets.items():
+            value = str(self.form.values.get(key, ""))
+            if hasattr(widget, "setWordWrap"):
+                widget.setText(value)
+            elif hasattr(widget, "setCurrentText"):
+                if value:
+                    widget.setCurrentText(value)
+            elif hasattr(widget, "setPlainText"):
+                if widget.toPlainText() != value:
+                    widget.setPlainText(value)
+            elif widget.text() != value:
+                widget.setText(value)
 
     def validate(self) -> list:
         errors = list(self.form.validate(self.values()))
@@ -96,7 +138,7 @@ class RowFormDialog(_dialog_class()):
         try:
             status = self.form.apply(self.values())
         except FormRefused as exc:
-            host_of(self).showerror(self.form.title, str(exc))
+            self.host.showerror(self.form.title, str(exc))
             self.summary.setText(f"Apply refused: {str(exc).splitlines()[0]}")
             return False
         self.summary.setText(status)

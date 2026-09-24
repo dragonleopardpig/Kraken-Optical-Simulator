@@ -44,6 +44,8 @@ ACTIONS = (
      "Edit the selected Beam Splitter row's split settings"),
     ("diffuse_scatter", "&Edit", "&Diffuse / BRDF Settings...", None, "diffuse_scatter_action",
      "Edit the selected Diffuse Object row's scatter settings"),
+    ("error_map", "&Edit", "&Error Map...", None, "error_map_action",
+     "Import or clear the selected surface's measured error map"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 

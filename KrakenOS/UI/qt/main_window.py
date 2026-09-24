@@ -106,7 +106,13 @@ class KrakenQtMainWindow(_main_window_class()):
 
     def refresh_from_model(self) -> dict:
         """Rebuild every view from the editor: the table, the scene, the window title."""
+        # A model reset clears the view's current index, and the row forms open on whatever is
+        # selected -- so applying one would leave the next Edit action with no row and a "Select
+        # a surface row first" refusal (bugs/0871). Put the selection back.
+        selected = self.selected_row_index()
         self.rows_model.refresh()
+        if selected is not None and 0 <= selected < self.rows_model.rowCount():
+            self.rows_view.selectRow(selected)
         self.rows_view.resizeColumnsToContents()
         drawn: dict = {"elements": [], "bodies": [], "error": None}
         if self.viewport is not None:
@@ -302,6 +308,12 @@ class KrakenQtMainWindow(_main_window_class()):
         from KrakenOS.UI.row_forms import build_diffuse_scatter_form
 
         return self.open_row_form(build_diffuse_scatter_form)
+
+    def error_map_action(self):
+        """Import or clear the selected surface's measured error map."""
+        from KrakenOS.UI.row_forms import build_error_map_form
+
+        return self.open_row_form(build_error_map_form)
 
     def _forget_dialog(self, dialog) -> None:
         if dialog in self._open_dialogs:

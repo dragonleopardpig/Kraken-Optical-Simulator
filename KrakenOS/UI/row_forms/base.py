@@ -24,12 +24,27 @@ class FormField:
 
     key: str
     label: str
-    kind: str = "number"  # number | int | choice | text | textarea
+    kind: str = "number"  # number | int | choice | text | textarea | static
     choices: tuple[str, ...] = ()
     hint: str = ""
     width: int = 14
     #: rows of a textarea; ignored by the other kinds
     height: int = 8
+
+
+@dataclass(frozen=True)
+class FormAction:
+    """A button that runs model code and may change what the form shows.
+
+    `run(form, host)` returns the message to display. It may rewrite `form.values`, `form.summary`
+    and `form.state` -- the view refreshes from them afterwards -- and asks the user for anything
+    it needs (a file, a confirmation) through the UI HOST, so the same action works in both
+    toolkits. It raises `FormRefused` when it will not proceed.
+    """
+
+    key: str
+    label: str
+    run: Callable[[Any, Any], str] = lambda _form, _host: ""
 
 
 @dataclass
@@ -49,6 +64,10 @@ class RowForm:
     apply: Callable[[dict[str, str]], str] = lambda _values: ""
     #: what a view should say when validation passes
     describe: Callable[[dict[str, str]], str] = lambda _values: ""
+    #: buttons beyond Validate / Apply / Cancel -- Import, Clear, Browse...
+    actions: tuple = ()
+    #: whatever the actions need to carry between themselves and apply (a loaded file's data)
+    state: dict = field(default_factory=dict)
     note: str = ""
 
     def field(self, key: str) -> "FormField | None":
