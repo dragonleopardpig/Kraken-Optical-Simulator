@@ -98,10 +98,21 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0872 | Coating / Material row form | row form |
 | 0873 | Advanced Surface row form (53 fields, 6 tabs) | row form |
 | 0874 | Detector Settings row form | row form |
+| 0875 | Scene Target row form (+ live `locked` / `is_enabled`) | row form |
+| 0876 | Path-Local Pose + Element Settings (element BLOCKS, editable choices) | row form |
 
-The row-form framework is finished: `FormField` kinds (number, int, bool, choice, text, textarea,
-static), `choices` that grow at runtime, `on_change` fields that rewrite other fields, `group`
-tabs, `enabled` locks, and `FormAction`s. 0874 was the first dialog it absorbed with nothing new.
+The row-form framework: `FormField` kinds (number, int, bool, choice, text, textarea, static),
+`choices` that grow at runtime, `editable` choices the user may type into, `on_change` fields that
+rewrite other fields, `group` tabs, `enabled` (static) and `RowForm.locked` / `is_enabled` (live)
+locks, `FormAction`s, and a `row_index` that may stand for a whole element BLOCK. 0874 was the
+first dialog it absorbed with nothing new.
+
+`panels/main_scene_element_dialogs.py` is finished (0874-0876) and its four Tk dialogs share one
+renderer, `_run_row_form_dialog(form)` -- 616 lines down to 242.
+
+`validate_3d_interaction_contract.py` is **stale** and not a penta phase: ~25 of its source-text
+assertions name strings that moved into `reports/` and `row_forms/` during 0869-0873. Re-pointing
+it is its own task.
 
 **Next: the rest of phase 3**, dialog by dialog, each one a builder plus a menu entry. The
 CAD/STL face-roles editor is deliberately **not** phase 3 -- it embeds a VTK preview with
