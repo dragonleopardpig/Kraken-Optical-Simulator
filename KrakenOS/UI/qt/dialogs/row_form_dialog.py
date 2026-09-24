@@ -96,8 +96,9 @@ class RowFormDialog(_dialog_class()):
         value = str(self.form.values.get(field.key, ""))
         if field.kind == "choice":
             widget = QComboBox()
+            widget.setEditable(field.editable)
             widget.addItems(list(self.form.choices_for(field.key)))
-            if value in self.form.choices_for(field.key):
+            if value in self.form.choices_for(field.key) or field.editable:
                 widget.setCurrentText(value)
             if field.on_change is not None:
                 widget.currentTextChanged.connect(
@@ -173,7 +174,7 @@ class RowFormDialog(_dialog_class()):
                         widget.addItems(wanted)
                     finally:
                         widget.blockSignals(False)
-                if value and value in wanted:
+                if value and (value in wanted or self.form.field(key).editable):
                     widget.blockSignals(True)
                     try:
                         widget.setCurrentText(value)

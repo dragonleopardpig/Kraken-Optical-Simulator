@@ -339,6 +339,18 @@ class KrakenQtMainWindow(_main_window_class()):
 
         return self.open_row_form(build_scene_target_form)
 
+    def path_local_pose_action(self):
+        """Edit the selected placed element's pose in its own path frame."""
+        from KrakenOS.UI.row_forms import build_path_local_pose_form
+
+        return self.open_row_form(build_path_local_pose_form)
+
+    def element_settings_action(self):
+        """Edit the selected element block's path metadata."""
+        from KrakenOS.UI.row_forms import build_element_settings_form
+
+        return self.open_row_form(build_element_settings_form)
+
     def _forget_dialog(self, dialog) -> None:
         if dialog in self._open_dialogs:
             self._open_dialogs.remove(dialog)

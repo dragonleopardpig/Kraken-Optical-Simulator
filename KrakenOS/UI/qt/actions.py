@@ -54,6 +54,10 @@ ACTIONS = (
      "Mark the selected row as a terminal detector and size it"),
     ("scene_target", "&Edit", "&Scene Target...", None, "scene_target_action",
      "Edit the selected row's scene-target role, name and detector metadata"),
+    ("path_local_pose", "&Edit", "&Path-Local Pose...", None, "path_local_pose_action",
+     "Edit the selected placed element's pose in its own path frame"),
+    ("element_settings", "&Edit", "Element Se&ttings...", None, "element_settings_action",
+     "Edit the selected element block's path metadata"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 

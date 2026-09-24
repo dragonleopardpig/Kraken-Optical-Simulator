@@ -7,6 +7,8 @@ from KrakenOS.UI.row_forms.beam_splitter import build_beam_splitter_form
 from KrakenOS.UI.row_forms.coating_material import build_coating_material_form
 from KrakenOS.UI.row_forms.detector_settings import build_detector_settings_form
 from KrakenOS.UI.row_forms.diffuse_scatter import build_diffuse_scatter_form
+from KrakenOS.UI.row_forms.element_forms import (build_element_settings_form,
+                                                 build_path_local_pose_form)
 from KrakenOS.UI.row_forms.error_map import build_error_map_form
 from KrakenOS.UI.row_forms.scene_target import build_scene_target_form
 
@@ -19,10 +21,13 @@ ROW_FORM_BUILDERS = {
     "advanced_surface": build_advanced_surface_form,
     "detector_settings": build_detector_settings_form,
     "scene_target": build_scene_target_form,
+    "path_local_pose": build_path_local_pose_form,
+    "element_settings": build_element_settings_form,
 }
 
 __all__ = ["FormAction", "FormField", "FormRefused", "RowForm", "build_beam_splitter_form",
            "build_diffuse_scatter_form", "build_error_map_form",
            "build_coating_material_form", "build_advanced_surface_form",
            "build_detector_settings_form", "build_scene_target_form",
+           "build_path_local_pose_form", "build_element_settings_form",
            "ROW_FORM_BUILDERS"]

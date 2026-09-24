@@ -8,10 +8,11 @@ from typing import Any, Callable
 
 from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.detector_settings import build_detector_settings_form
+from KrakenOS.UI.row_forms.element_forms import (build_element_settings_form,
+                                                 build_path_local_pose_form)
 from KrakenOS.UI.row_forms.scene_target import build_scene_target_form
 from KrakenOS.UI.uihost import host_of
 
-import numpy as np
 
 
 class MainSceneElementDialogs:
@@ -68,23 +69,14 @@ class MainSceneElementDialogs:
             return
         setattr(self.editor, name, value)
 
-    def open_detector_settings(self, row_index: int) -> None:
-        # docs/design_qt_migration.md phase 3: the fields, the validation, Apply and Clear live in
-        # KrakenOS/UI/row_forms/detector_settings.py, which the Qt dialog uses too.
-        self._commit_pending_table_edit()
-        try:
-            self._read_rows_from_table()
-        except Exception as exc:
-            messagebox.showerror("Detector Settings",
-                                 f"Could not read the surface table:\n\n{exc}",
-                                 parent=self.editor)
-            return
-        try:
-            form = build_detector_settings_form(self, row_index)
-        except FormRefused as exc:
-            messagebox.showinfo("Detector Settings", str(exc), parent=self.editor)
-            return
+    # ---- one renderer for every row form in this file ------------------------------------
+    def _run_row_form_dialog(self, form, *, wraplength: int = 520) -> tk.Toplevel:
+        """Lay out a `RowForm` in Tk (docs/design_qt_migration.md phase 3).
 
+        The fields, their kinds, their locks, the validation and Apply all belong to the form;
+        this is the Tk half of what `qt/dialogs/row_form_dialog.py` does for Qt, and it is the
+        only place in this file that knows about widgets.
+        """
         window = tk.Toplevel(self.editor)
         window.withdraw()
         window.title(form.title)
@@ -93,90 +85,9 @@ class MainSceneElementDialogs:
         frame.grid(row=0, column=0, sticky="nsew")
         frame.columnconfigure(1, weight=1)
 
-        ttk.Label(frame, text=form.note, wraplength=520, foreground="#475569").grid(
-            row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
-
-        variables: dict[str, tk.StringVar] = {}
-        for grid_row, field in enumerate(form.fields, start=1):
-            ttk.Label(frame, text=field.label).grid(row=grid_row, column=0, sticky="w",
-                                                    padx=(0, 10), pady=3)
-            variable = tk.StringVar(master=window, value=form.values.get(field.key, ""))
-            variables[field.key] = variable
-            ttk.Entry(frame, textvariable=variable, width=field.width).grid(
-                row=grid_row, column=1, sticky="ew", pady=3)
-
-        validation_var = tk.StringVar(master=window, value=form.summary)
-        ttk.Label(frame, textvariable=validation_var, foreground="#475569",
-                  wraplength=520).grid(row=len(form.fields) + 1, column=0, columnspan=2,
-                                       sticky="w", pady=(10, 0))
-
-        def current_values() -> dict[str, str]:
-            return {key: variable.get() for key, variable in variables.items()}
-
-        def validate_settings() -> bool:
-            values = current_values()
-            errors = list(form.validate(values))
-            if errors:
-                validation_var.set(errors[0])
-                return False
-            validation_var.set(form.describe(values))
-            return True
-
-        def apply_settings() -> None:
-            try:
-                form.apply(current_values())
-            except FormRefused as exc:
-                validation_var.set(str(exc))
-                return
-            window.destroy()
-            self._cleanup_current_popup_menu()
-
-        def run_action(action) -> None:
-            try:
-                action.run(form, host_of(self))
-            except FormRefused as exc:
-                validation_var.set(str(exc))
-                return
-            window.destroy()
-            self._cleanup_current_popup_menu()
-
-        footer = ttk.Frame(frame)
-        footer.grid(row=len(form.fields) + 2, column=0, columnspan=2, sticky="e", pady=(12, 0))
-        ttk.Button(footer, text="Validate", command=validate_settings).pack(side="right", padx=(0, 8))
-        ttk.Button(footer, text="Apply", command=apply_settings).pack(side="right")
-        for action in form.actions:
-            ttk.Button(footer, text=action.label,
-                       command=lambda a=action: run_action(a)).pack(side="right", padx=(0, 8))
-        ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
-        self._show_centered_dialog(window)
-
-    def open_scene_target_editor(self, row_index: int | None = None) -> None:
-        # docs/design_qt_migration.md phase 3: the fields, the role-follows-detector locking,
-        # Apply and Clear Target live in KrakenOS/UI/row_forms/scene_target.py, which the Qt
-        # dialog uses too.
-        self._commit_pending_table_edit()
-        try:
-            self._read_rows_from_table()
-        except Exception as exc:
-            messagebox.showerror("Scene Target", f"Could not read the surface table:\n\n{exc}",
-                                 parent=self.editor)
-            return
-        try:
-            form = build_scene_target_form(self, row_index)
-        except FormRefused as exc:
-            messagebox.showinfo("Scene Target", str(exc), parent=self.editor)
-            return
-
-        window = tk.Toplevel(self.editor)
-        window.withdraw()
-        window.title(form.title)
-        window.transient(self.editor)
-        frame = ttk.Frame(window, padding=12)
-        frame.grid(row=0, column=0, sticky="nsew")
-        frame.columnconfigure(1, weight=1)
-
-        ttk.Label(frame, text=form.note, wraplength=560, foreground="#475569").grid(
-            row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        ttk.Label(frame, text=form.note, wraplength=wraplength + 40,
+                  foreground="#475569").grid(row=0, column=0, columnspan=2, sticky="w",
+                                             pady=(0, 10))
 
         variables: dict[str, tk.Variable] = {}
         widgets: dict[str, ttk.Widget] = {}
@@ -185,67 +96,93 @@ class MainSceneElementDialogs:
             if field.kind == "static":
                 ttk.Label(frame, text=field.label).grid(row=grid_row, column=0, sticky="w",
                                                         padx=(0, 10), pady=3)
-                ttk.Label(frame, text=value, wraplength=360).grid(row=grid_row, column=1,
-                                                                  sticky="w", pady=3)
+                ttk.Label(frame, text=value, foreground="#334155",
+                          wraplength=wraplength - 160).grid(row=grid_row, column=1, sticky="w",
+                                                            pady=3)
                 continue
             if field.kind == "bool":
-                variable = tk.BooleanVar(master=window,
-                                         value=str(value).strip().lower() in ("1", "true", "yes"))
+                variable = tk.BooleanVar(
+                    master=window, value=str(value).strip().lower() in ("1", "true", "yes", "on"))
                 widget = ttk.Checkbutton(frame, text=field.label, variable=variable)
                 widget.grid(row=grid_row, column=0, columnspan=2, sticky="w", pady=(6, 8))
-                variables[field.key] = variable
-                widgets[field.key] = widget
-                continue
-            ttk.Label(frame, text=field.label).grid(row=grid_row, column=0, sticky="w",
-                                                    padx=(0, 10), pady=3)
-            variable = tk.StringVar(master=window, value=str(value))
-            if field.kind == "choice":
-                widget = ttk.Combobox(frame, textvariable=variable,
-                                      values=list(form.choices_for(field.key)),
-                                      state="readonly", width=24)
             else:
-                widget = ttk.Entry(frame, textvariable=variable, width=field.width)
-            widget.grid(row=grid_row, column=1, sticky="ew", pady=3)
+                ttk.Label(frame, text=field.label).grid(row=grid_row, column=0, sticky="w",
+                                                        padx=(0, 10), pady=3)
+                variable = tk.StringVar(master=window, value=str(value))
+                if field.kind == "choice":
+                    widget = ttk.Combobox(frame, textvariable=variable,
+                                          values=list(form.choices_for(field.key)),
+                                          state="normal" if field.editable else "readonly",
+                                          width=max(field.width, 24))
+                else:
+                    widget = ttk.Entry(frame, textvariable=variable, width=field.width)
+                widget.grid(row=grid_row, column=1, sticky="ew", pady=3)
             variables[field.key] = variable
             widgets[field.key] = widget
 
         validation_var = tk.StringVar(master=window, value=form.summary)
         ttk.Label(frame, textvariable=validation_var, foreground="#475569",
-                  wraplength=560).grid(row=len(form.fields) + 1, column=0, columnspan=2,
-                                       sticky="w", pady=(10, 0))
+                  wraplength=wraplength + 40).grid(row=len(form.fields) + 1, column=0,
+                                                   columnspan=2, sticky="w", pady=(10, 0))
 
         def sync_enabled() -> None:
-            """Follow form.locked -- the role choice turns the detector fields on and off."""
+            """Follow `form.locked` -- a choice may turn other fields off while we are open."""
             for key, widget in widgets.items():
-                if key in variables and form.field(key).kind != "choice":
+                field = form.field(key)
+                if field is not None and field.kind not in ("choice", "bool"):
                     widget.configure(state="normal" if form.is_enabled(key) else "disabled")
 
-        def on_role_changed(*_args) -> None:
-            field = form.field("role")
-            if field is not None and field.on_change is not None:
-                field.on_change(form, variables["role"].get())
+        def refresh_from_form() -> None:
+            for key, variable in variables.items():
+                value = str(form.values.get(key, ""))
+                if isinstance(variable, tk.BooleanVar):
+                    variable.set(value.strip().lower() in ("1", "true", "yes", "on"))
+                elif variable.get() != value:
+                    variable.set(value)
             sync_enabled()
 
-        if "role" in widgets:
-            widgets["role"].bind("<<ComboboxSelected>>", on_role_changed, add="+")
+        def on_choice_changed(field) -> None:
+            if field.on_change is None:
+                return
+            try:
+                message = field.on_change(form, variables[field.key].get())
+            except FormRefused as exc:
+                messagebox.showerror(form.title, str(exc), parent=self.editor)
+                return
+            refresh_from_form()
+            if message:
+                validation_var.set(message)
+
+        for field in form.fields:
+            if field.kind == "choice" and field.on_change is not None:
+                widgets[field.key].bind(
+                    "<<ComboboxSelected>>", lambda _event, f=field: on_choice_changed(f),
+                    add="+")
         sync_enabled()
 
         def current_values() -> dict[str, str]:
-            return {key: ("true" if isinstance(variable, tk.BooleanVar) and variable.get()
-                          else "false" if isinstance(variable, tk.BooleanVar)
-                          else variable.get())
-                    for key, variable in variables.items()}
+            collected: dict[str, str] = {}
+            for key, variable in variables.items():
+                if isinstance(variable, tk.BooleanVar):
+                    collected[key] = "true" if variable.get() else "false"
+                else:
+                    collected[key] = variable.get()
+            return collected
 
-        def validate_target() -> bool:
+        def validate_form() -> bool:
             values = current_values()
             errors = list(form.validate(values))
             if errors:
                 validation_var.set(errors[0])
                 return False
-            validation_var.set("Validation passed: " + form.describe(values))
+            try:
+                validation_var.set("Validation passed: " + form.describe(values))
+            except FormRefused as exc:
+                validation_var.set(str(exc))
+                return False
             return True
 
-        def apply_target() -> None:
+        def apply_form() -> None:
             try:
                 form.apply(current_values())
             except FormRefused as exc:
@@ -265,281 +202,40 @@ class MainSceneElementDialogs:
 
         footer = ttk.Frame(frame)
         footer.grid(row=len(form.fields) + 2, column=0, columnspan=2, sticky="e", pady=(12, 0))
-        ttk.Button(footer, text="Validate", command=validate_target).pack(side="right",
-                                                                          padx=(0, 8))
-        ttk.Button(footer, text="Apply", command=apply_target).pack(side="right")
+        ttk.Button(footer, text="Validate", command=validate_form).pack(side="right",
+                                                                        padx=(0, 8))
+        ttk.Button(footer, text="Apply", command=apply_form).pack(side="right")
         for action in form.actions:
             ttk.Button(footer, text=action.label,
                        command=lambda a=action: run_action(a)).pack(side="right", padx=(0, 8))
         ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
         self._show_centered_dialog(window)
+        return window
+
+    def _open_row_form(self, title: str, builder, *args, wraplength: int = 520):
+        """Read the table, build the form, show it -- what all four of these dialogs do."""
+        self._commit_pending_table_edit()
+        try:
+            self._read_rows_from_table()
+        except Exception as exc:
+            messagebox.showerror(title, f"Could not read the surface table:\n\n{exc}",
+                                 parent=self.editor)
+            return None
+        try:
+            form = builder(self, *args)
+        except FormRefused as exc:
+            messagebox.showinfo(title, str(exc), parent=self.editor)
+            return None
+        return self._run_row_form_dialog(form, wraplength=wraplength)
+
+    def open_detector_settings(self, row_index: int) -> None:
+        self._open_row_form("Detector Settings", build_detector_settings_form, row_index)
+
+    def open_scene_target_editor(self, row_index: int | None = None) -> None:
+        self._open_row_form("Scene Target", build_scene_target_form, row_index, wraplength=560)
 
     def open_selected_path_local_pose_editor(self) -> None:
-        self._commit_pending_table_edit()
-        try:
-            self._read_rows_from_table()
-        except Exception as exc:
-            messagebox.showerror("Path-Local Pose", f"Could not read the surface table:\n\n{exc}", parent=self.editor)
-            return
-        blocks = self._selected_element_blocks()
-        if len(blocks) != 1:
-            messagebox.showinfo("Path-Local Pose", "Select one placed path element or stock-lens block first.", parent=self.editor)
-            return
-        indices = blocks[0]
-        metadata = self._element_metadata(self.rows[indices[0]])
-        if not self._metadata_has_path_pose(metadata):
-            messagebox.showinfo(
-                "Path-Local Pose",
-                "The selected element has no path-placement metadata. Insert it with a path-component/stock-lens command first.",
-                parent=self,
-            )
-            return
-
-        window = tk.Toplevel(self.editor)
-        window.withdraw()
-        window.title(f"Path-Local Pose - rows {indices[0]}-{indices[-1]}")
-        window.transient(self.editor)
-        frame = ttk.Frame(window, padding=12)
-        frame.grid(row=0, column=0, sticky="nsew")
-        frame.columnconfigure(1, weight=1)
-
-        label = self._element_key(self.rows[indices[0]]) or str(metadata.get("element_name", "") or "Path element")
-        branch_path = str(metadata.get("branch_path", "") or "").strip()
-        frame_text = (
-            self._branch_path_compact_detail(branch_path)
-            if branch_path
-            else self.element_metadata_summary(metadata)
-        )
-        ttk.Label(
-            frame,
-            text=(
-                f"Edit the local pose of {label}. The UI recomputes global Tilt/Decenter values "
-                "from the current path frame; for traced BRANCH_PATH elements, click Update first."
-            ),
-            wraplength=520,
-            foreground="#475569",
-        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
-        ttk.Label(frame, text="Path frame").grid(row=1, column=0, sticky="w", padx=(0, 10), pady=3)
-        ttk.Label(frame, text=frame_text, foreground="#334155", wraplength=360).grid(row=1, column=1, sticky="w", pady=3)
-
-        numeric_vars = {
-            key: tk.StringVar(value=self._format_table_float(float(metadata.get(key, 0.0))))
-            for key in self.element_metadata_numeric_fields
-        }
-        field_specs = [
-            ("Path distance [mm]", "arm_distance"),
-            ("Local X offset [mm]", "local_decenter_x"),
-            ("Local Y offset [mm]", "local_decenter_y"),
-            ("Local tilt X [deg]", "local_tilt_x"),
-            ("Local tilt Y [deg]", "local_tilt_y"),
-            ("Local tilt Z [deg]", "local_tilt_z"),
-        ]
-        for grid_row, (label_text, key) in enumerate(field_specs, start=2):
-            ttk.Label(frame, text=label_text).grid(row=grid_row, column=0, sticky="w", padx=(0, 10), pady=3)
-            ttk.Entry(frame, textvariable=numeric_vars[key], width=16).grid(row=grid_row, column=1, sticky="ew", pady=3)
-
-        validation_var = tk.StringVar(value="Validate checks that the saved path frame can still be resolved.")
-        ttk.Label(frame, textvariable=validation_var, foreground="#475569", wraplength=520).grid(
-            row=len(field_specs) + 2,
-            column=0,
-            columnspan=2,
-            sticky="w",
-            pady=(10, 0),
-        )
-
-        def collect_metadata() -> dict[str, object] | None:
-            data = dict(metadata)
-            for key, var in numeric_vars.items():
-                try:
-                    value = float(var.get().strip())
-                except ValueError:
-                    validation_var.set(f"{key.replace('_', ' ')} expects a number.")
-                    return None
-                if not np.isfinite(value):
-                    validation_var.set(f"{key.replace('_', ' ')} must be finite.")
-                    return None
-                data[key] = value
-            return self.normalize_element_metadata(data)
-
-        def validate_values() -> dict[str, object] | None:
-            data = collect_metadata()
-            if data is None:
-                return None
-            try:
-                self._path_frame_for_element_metadata(data)
-            except Exception as exc:
-                validation_var.set(self.short_error_message(exc))
-                return None
-            validation_var.set("Validation passed: path frame resolved and pose values are finite.")
-            return data
-
-        def apply_values() -> None:
-            data = validate_values()
-            if data is None:
-                return
-            self._begin_history_capture()
-            try:
-                updated_indices = self._apply_path_local_pose_to_indices(indices, data)
-            except Exception as exc:
-                self._history_pending_state = None
-                validation_var.set(self.short_error_message(exc))
-                return
-            self._normalize_special_rows()
-            self._sync_table()
-            self._select_table_indices(updated_indices, focus_index=updated_indices[0])
-            self._commit_history_capture()
-            self._mark_plot_update_pending()
-            self.status_var.set(f"Updated path-local pose for {label}. Click Update to retrace.")
-            window.destroy()
-            self._cleanup_current_popup_menu()
-
-        footer = ttk.Frame(frame)
-        footer.grid(row=len(field_specs) + 3, column=0, columnspan=2, sticky="e", pady=(12, 0))
-        ttk.Button(footer, text="Validate", command=validate_values).pack(side="right", padx=(0, 8))
-        ttk.Button(footer, text="Apply", command=apply_values).pack(side="right")
-        ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
-        self._show_centered_dialog(window)
+        self._open_row_form("Path-Local Pose", build_path_local_pose_form)
 
     def open_element_settings(self) -> None:
-        self._commit_pending_table_edit()
-        try:
-            self._read_rows_from_table()
-        except Exception as exc:
-            messagebox.showerror("Element Settings", f"Could not read the surface table:\n\n{exc}", parent=self.editor)
-            return
-        blocks = self._selected_element_blocks()
-        if not blocks:
-            messagebox.showinfo("Element Settings", "Select a non-Object/non-Image row or element group first.", parent=self.editor)
-            return
-        if len(blocks) > 1:
-            messagebox.showinfo("Element Settings", "Open Element Settings for one element at a time.", parent=self.editor)
-            return
-        indices = blocks[0]
-        row = self.rows[indices[0]]
-        metadata = self._element_metadata(row)
-        element_label = self._element_key(row) or str(row.name or self._next_manual_element_label()).strip()
-        window = tk.Toplevel(self.editor)
-        window.withdraw()
-        window.title(f"Element Settings - rows {indices[0]}-{indices[-1]}")
-        window.transient(self.editor)
-        window.columnconfigure(0, weight=1)
-        frame = ttk.Frame(window, padding=12)
-        frame.grid(row=0, column=0, sticky="nsew")
-        frame.columnconfigure(1, weight=1)
-
-        name_var = tk.StringVar(value=element_label)
-        id_var = tk.StringVar(value=str(metadata.get("element_id", "") or self._element_id_from_label(element_label)))
-        role_var = tk.StringVar(value=str(metadata.get("arm_role", self.element_arm_role_default)))
-        parent_var = tk.StringVar(value=str(metadata.get("parent_splitter", "") or ""))
-        selector_value = str(metadata.get("branch_selector", "") or "")
-        selector_var = tk.StringVar(value=selector_value if selector_value else "Auto")
-        branch_path_var = tk.StringVar(value=str(metadata.get("branch_path", "") or ""))
-        numeric_vars = {
-            key: tk.StringVar(value=self._format_table_float(float(metadata.get(key, 0.0))))
-            for key in self.element_metadata_numeric_fields
-        }
-
-        rows = [
-            ("Element name", ttk.Entry(frame, textvariable=name_var)),
-            ("Element ID", ttk.Entry(frame, textvariable=id_var)),
-            ("Path role", ttk.Combobox(frame, textvariable=role_var, values=self.element_arm_role_values, state="readonly")),
-            ("Parent splitter", ttk.Combobox(frame, textvariable=parent_var, values=self._beam_splitter_element_choices())),
-            ("Split selector", ttk.Combobox(frame, textvariable=selector_var, values=self.element_branch_selector_values)),
-            ("Traced branch path", ttk.Entry(frame, textvariable=branch_path_var)),
-            ("Path distance [mm]", ttk.Entry(frame, textvariable=numeric_vars["arm_distance"])),
-            ("Local decenter X [mm]", ttk.Entry(frame, textvariable=numeric_vars["local_decenter_x"])),
-            ("Local decenter Y [mm]", ttk.Entry(frame, textvariable=numeric_vars["local_decenter_y"])),
-            ("Local tilt X [deg]", ttk.Entry(frame, textvariable=numeric_vars["local_tilt_x"])),
-            ("Local tilt Y [deg]", ttk.Entry(frame, textvariable=numeric_vars["local_tilt_y"])),
-            ("Local tilt Z [deg]", ttk.Entry(frame, textvariable=numeric_vars["local_tilt_z"])),
-        ]
-        ttk.Label(
-            frame,
-            text="Element metadata is saved with each surface row. It is used by path-aware UI tools and future placement/analysis helpers.",
-            wraplength=520,
-            foreground="#475569",
-        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
-        for grid_row, (label, widget) in enumerate(rows, start=1):
-            ttk.Label(frame, text=label).grid(row=grid_row, column=0, sticky="w", padx=(0, 10), pady=3)
-            widget.grid(row=grid_row, column=1, sticky="ew", pady=3)
-
-        validation_var = tk.StringVar(value="Set Common/Transmit/Reflect/Detector path metadata for this element.")
-        ttk.Label(frame, textvariable=validation_var, foreground="#475569", wraplength=520).grid(
-            row=len(rows) + 1,
-            column=0,
-            columnspan=2,
-            sticky="w",
-            pady=(10, 0),
-        )
-
-        def collect_metadata() -> dict[str, object] | None:
-            label = name_var.get().strip()
-            if not label:
-                validation_var.set("Element name cannot be empty.")
-                return None
-            role = str(role_var.get()).strip()
-            if role not in self.element_arm_role_values:
-                validation_var.set("Choose a valid path role.")
-                return None
-            data: dict[str, object] = dict(metadata)
-            data.update({
-                "element_id": id_var.get().strip(),
-                "element_name": label,
-                "arm_role": role,
-                "parent_splitter": parent_var.get().strip(),
-                "branch_selector": "" if selector_var.get().strip() == "Auto" else selector_var.get().strip(),
-                "branch_path": branch_path_var.get().strip(),
-            })
-            for key, var in numeric_vars.items():
-                try:
-                    value = float(var.get().strip())
-                except ValueError:
-                    validation_var.set(f"{key.replace('_', ' ')} expects a number.")
-                    return None
-                if not np.isfinite(value):
-                    validation_var.set(f"{key.replace('_', ' ')} must be finite.")
-                    return None
-                data[key] = value
-            if not data["branch_selector"]:
-                data["branch_selector"] = self._branch_selector_for_arm_role(role)
-            return self.normalize_element_metadata(data)
-
-        def validate_values() -> dict[str, object] | None:
-            data = collect_metadata()
-            if data is not None:
-                validation_var.set("Validation passed: " + self.element_metadata_summary(data))
-            return data
-
-        def apply_values() -> None:
-            data = validate_values()
-            if data is None:
-                return
-            label = str(data.get("element_name", "") or "").strip()
-            self._begin_history_capture()
-            if self._metadata_has_path_pose(data):
-                try:
-                    self._apply_path_local_pose_to_indices(indices, data)
-                except Exception as exc:
-                    self._history_pending_state = None
-                    validation_var.set(self.short_error_message(exc))
-                    return
-            else:
-                for index in indices:
-                    self.rows[index].element = label
-                    self._set_element_metadata(self.rows[index], data)
-            self._normalize_special_rows()
-            self._sync_table()
-            self._select_table_indices(indices, focus_index=indices[0])
-            self._commit_history_capture()
-            self._mark_plot_update_pending()
-            self.status_var.set(f"Updated element settings for {label}: {self.element_metadata_summary(data)}.")
-            window.destroy()
-            self._cleanup_current_popup_menu()
-
-        footer = ttk.Frame(frame)
-        footer.grid(row=len(rows) + 2, column=0, columnspan=2, sticky="e", pady=(12, 0))
-        ttk.Button(footer, text="Validate", command=validate_values).pack(side="right", padx=(0, 8))
-        ttk.Button(footer, text="Apply", command=apply_values).pack(side="right")
-        ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
-        self._show_centered_dialog(window)
-
+        self._open_row_form("Element Settings", build_element_settings_form)

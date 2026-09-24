@@ -16577,6 +16577,10 @@ phase_653_scene_target_row_form = _phase_from_standalone(
     653, "the Scene Target row form (Qt migration phase 3): a row's scene-target name, role and active non-sequential TargSurf, plus the detector metadata that only a Detector role may edit. That last 'only when' is what `FormField.enabled` could not express -- it is fixed when the form is BUILT, while the role choice turns the four detector fields on and off while the dialog is open. `RowForm.locked` + `form.is_enabled(key)` + `form.lock(*keys, locked=...)` hold the live answer, an `on_change` follows the choice, and BOTH views ask is_enabled rather than field.enabled (the Tk advanced-surface dialog was switched over too, where the two agree). All four of this dialog's model pieces reach the Tk shell as CONSTRUCTOR KWARGS rather than editor attributes, so the builder falls back to element_scene_metadata. Guard: the refusals, the lock opening on / unlocking under Detector / locking again under Auto while FormField.enabled stays True, the model's validation messages, apply writing role + name + active TargSurf, Clear Target removing them, the REAL Tk dialog showing the values with its four detector entries DISABLED, and the Qt dialog's widgets disabled at open and enabled live by the combo (0875)",
     "KrakenOS.UI.validate_open3d_0875_scene_target_row_form",
     "scene_target_row_form")
+phase_654_element_row_forms = _phase_from_standalone(
+    654, "the Path-Local Pose and Element Settings row forms (Qt migration phase 3): both edit an element BLOCK -- the run of consecutive rows sharing one element key -- which every earlier row form's one-row assumption could not express. RowForm.row_index is the block's FIRST row (the row a view selects, and the row whose metadata the block reads) and the block itself rides in form.state; resolve_block() grows a caller's row exactly as _selected_element_blocks grows one, and a selection spanning two elements refuses. One more field property: a `choice` may be EDITABLE (the parent-splitter list is a convenience, not the whole domain -- an element may name a splitter this scene does not hold yet, as the Tk combobox always allowed). The four Tk dialogs in main_scene_element_dialogs.py now share ONE renderer, taking the file from 616 lines to 242. Guard: the block growth and the two-block refusal, the pose editor refusing an element with no path-placement metadata, the messages for a non-number / a non-finite tilt / an empty name / a bad role, the pose apply writing through _apply_path_local_pose_to_indices, Element Settings writing name + role + an Auto selector resolved to 'reflect' to EVERY row of the block, both REAL Tk dialogs, and the Qt pair with its editable parent combo (0876)",
+    "KrakenOS.UI.validate_open3d_0876_element_row_forms",
+    "element_row_forms")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17296,6 +17300,7 @@ def main() -> int:
             phase_651_advanced_surface_row_form,
             phase_652_detector_settings_row_form,
             phase_653_scene_target_row_form,
+            phase_654_element_row_forms,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

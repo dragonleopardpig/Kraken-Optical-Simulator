@@ -35,6 +35,9 @@ class FormField:
     #: a field the model will not accept edits to (a literal it cannot parse back, a shape
     #: parameter on an Object/Image row) is shown but not editable
     enabled: bool = True
+    #: a `choice` the user may also TYPE into -- the list is a convenience, not the whole domain
+    #: (a parent splitter may name an element the current scene does not hold yet)
+    editable: bool = False
     #: called with (form, new value) when this field changes, for a field that rewrites ANOTHER
     #: one -- a coating preset filling the table, a catalog choice setting the metal index.
     #: Returns the message to show; the view refreshes from the form afterwards.
