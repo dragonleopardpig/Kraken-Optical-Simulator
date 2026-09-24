@@ -48,6 +48,8 @@ ACTIONS = (
      "Import or clear the selected surface's measured error map"),
     ("coating_material", "&Edit", "&Coating / Material...", None, "coating_material_action",
      "Edit the selected surface's coating table and metal index"),
+    ("advanced_surface", "&Edit", "&Advanced Surface...", None, "advanced_surface_action",
+     "Every KrakenOS attribute of the selected surface, in tabs"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 

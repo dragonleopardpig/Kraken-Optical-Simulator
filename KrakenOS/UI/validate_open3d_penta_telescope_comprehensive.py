@@ -16565,6 +16565,10 @@ phase_650_coating_material_row_form = _phase_from_standalone(
     650, "the Coating / Material row form finishes the framework (Qt migration phase 3): the most tangled row dialog needed a Python LITERAL edited as text (a coating that is not a literal shows as <non-literal coating object> and refuses rather than being mangled), a choice that REWRITES another field (a preset replaces the whole table; a metal catalogue sets the index it is listed under -- FormField.on_change(form, value), with the model deciding what changes), a choice list that GROWS (Load CSV adds a catalogue, so RowForm.choices holds live overrides and views read choices_for(key)), and WARNINGS from the shared advanced-surface validator, shown as warnings where only errors refuse. Two rules pinned: zero means default (CoatingMet 0 REMOVES the key, as an empty table removes Coating), and the catalogue LIST is not the catalogue SPECS (_metal_catalog_entries prepends the built-in metals, so one loaded CSV shows two entries) -- two assertions conflated them and were wrong, not the code. Guard: the preset rewrite, the host-driven load, the linked index, a warning staying a warning, an unparseable table refusing, apply writing and removing the keys, the REAL Tk dialog, and the Qt form's per-kind widgets and applied state (0872)",
     "KrakenOS.UI.validate_open3d_0872_coating_material_row_form",
     "coating_material_row_form")
+phase_651_advanced_surface_row_form = _phase_from_standalone(
+    651, "the Advanced Surface row form (Qt migration phase 3): every KrakenOS surface attribute the main table does not show -- 53 fields across 6 tabs, the shape parameters with the conic-k optimisation switch, one tab per attribute group, and the custom sag/UDA pair. Three more framework properties: FormField.group (a tab; QTabWidget in Qt, the existing scrolling ttk.Notebook in Tk), kind='bool' (the optimise switch) and FormField.enabled -- which carries real meaning here: a value the literal reader cannot read back is SHOWN BUT LOCKED so a round trip cannot mangle it, the shape parameters are locked on Object/Image rows, and the conic switch is locked where the variable registry does not support k. Measured, not assumed: _parse_literal_editor_text NEVER raises -- text it cannot read as a literal is kept as a STRING, because an attribute may legitimately be one -- so a broken-looking override is stored rather than refused, while a shape value that is not a number IS refused. Guard: the tabs with no loose field, the locked shape parameters on the Image row, the conic switch following the registry and its bounds refusing anything but two increasing numbers, the string-keeping, apply writing the shape value, the REAL Tk dialog opening with the same 6 tabs and 53 values, and the Qt form's tabs, checkbox, applied value and exactly-matching locked set (0873)",
+    "KrakenOS.UI.validate_open3d_0873_advanced_surface_row_form",
+    "advanced_surface_row_form")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17281,6 +17285,7 @@ def main() -> int:
             phase_648_diffuse_scatter_row_form,
             phase_649_error_map_row_form,
             phase_650_coating_material_row_form,
+            phase_651_advanced_surface_row_form,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

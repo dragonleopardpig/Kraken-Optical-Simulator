@@ -18,8 +18,9 @@ def _dialog_class():
 
 class RowFormDialog(_dialog_class()):
     def __init__(self, form, parent=None, host=None) -> None:
-        from PySide6.QtWidgets import (QComboBox, QDialogButtonBox, QFormLayout, QLabel,
-                                       QLineEdit, QPlainTextEdit, QVBoxLayout)
+        from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialogButtonBox, QFormLayout,
+                                       QLabel, QLineEdit, QPlainTextEdit, QTabWidget,
+                                       QVBoxLayout, QWidget)
 
         super().__init__(parent)
         self.form = form
@@ -37,35 +38,27 @@ class RowFormDialog(_dialog_class()):
             note.setWordWrap(True)
             layout.addWidget(note)
 
-        grid = QFormLayout()
         self.widgets: dict = {}
-        for field in form.fields:
-            if field.kind == "choice":
-                widget = QComboBox()
-                widget.addItems(list(form.choices_for(field.key)))
-                current = str(form.values.get(field.key, ""))
-                if current in form.choices_for(field.key):
-                    widget.setCurrentText(current)
-                if field.on_change is not None:
-                    widget.currentTextChanged.connect(
-                        lambda text, f=field: self.on_field_changed(f, text))
-            elif field.kind == "static":
-                widget = QLabel(str(form.values.get(field.key, "")))
-                widget.setWordWrap(True)
-                widget.setTextInteractionFlags(
-                    widget.textInteractionFlags().TextSelectableByMouse)
-            elif field.kind == "textarea":
-                widget = QPlainTextEdit(str(form.values.get(field.key, "")))
-                widget.setMinimumHeight(18 * max(field.height, 3))
-            else:
-                widget = QLineEdit(str(form.values.get(field.key, "")))
-                widget.setMaximumWidth(14 * max(field.width, 8))
-            widget.setToolTip(field.hint)
-            self.widgets[field.key] = widget
-            label = QLabel(field.label)
-            label.setToolTip(field.hint)
+        self.tabs = None
+        if form.groups:
+            # one tab per group, in field order -- Shape Params, each attribute group, Custom
+            self.tabs = QTabWidget()
+            for group in form.groups:
+                page = QWidget()
+                page_layout = QFormLayout(page)
+                for field in form.fields_in(group):
+                    label, widget = self._build_field(field)
+                    page_layout.addRow(label, widget)
+                self.tabs.addTab(page, group)
+            layout.addWidget(self.tabs, stretch=1)
+            grid = None
+        else:
+            grid = QFormLayout()
+        for field in (() if form.groups else form.fields):
+            label, widget = self._build_field(field)
             grid.addRow(label, widget)
-        layout.addLayout(grid)
+        if grid is not None:
+            layout.addLayout(grid)
 
         self.summary = QLabel(form.summary)
         self.summary.setWordWrap(True)
@@ -92,12 +85,48 @@ class RowFormDialog(_dialog_class()):
             return widget.currentText()
         if hasattr(widget, "toPlainText"):
             return widget.toPlainText()
+        if hasattr(widget, "isChecked"):
+            return "true" if widget.isChecked() else "false"
         return widget.text()
 
+    def _build_field(self, field):
+        """One label and one widget for a field, whatever its kind. Returns (label, widget)."""
+        from PySide6.QtWidgets import QCheckBox, QComboBox, QLabel, QLineEdit, QPlainTextEdit
+
+        value = str(self.form.values.get(field.key, ""))
+        if field.kind == "choice":
+            widget = QComboBox()
+            widget.addItems(list(self.form.choices_for(field.key)))
+            if value in self.form.choices_for(field.key):
+                widget.setCurrentText(value)
+            if field.on_change is not None:
+                widget.currentTextChanged.connect(
+                    lambda text, f=field: self.on_field_changed(f, text))
+        elif field.kind == "bool":
+            widget = QCheckBox()
+            widget.setChecked(value.strip().lower() in ("1", "true", "yes", "on"))
+        elif field.kind == "static":
+            widget = QLabel(value)
+            widget.setWordWrap(True)
+            widget.setTextInteractionFlags(widget.textInteractionFlags().TextSelectableByMouse)
+        elif field.kind == "textarea":
+            widget = QPlainTextEdit(value)
+            widget.setMinimumHeight(18 * max(field.height, 3))
+        else:
+            widget = QLineEdit(value)
+            widget.setMaximumWidth(14 * max(field.width, 8))
+        widget.setToolTip(field.hint)
+        if not field.enabled:
+            widget.setEnabled(False)
+        self.widgets[field.key] = widget
+        label = QLabel(field.label)
+        label.setToolTip(field.hint)
+        return label, widget
+
     def values(self) -> dict:
-        """Only the EDITABLE fields; a static one is shown, never collected back."""
+        """Every field's text. A static label is shown, never collected back."""
         return {key: self._widget_text(widget) for key, widget in self.widgets.items()
-                if not hasattr(widget, "setWordWrap")}
+                if not (hasattr(widget, "setWordWrap") and not hasattr(widget, "isChecked"))}
 
     def on_field_changed(self, field, text: str) -> str:
         """A field that rewrites another one -- the model decides what changes."""
@@ -130,7 +159,9 @@ class RowFormDialog(_dialog_class()):
         """Re-read every widget from the form -- an action may have rewritten its values."""
         for key, widget in self.widgets.items():
             value = str(self.form.values.get(key, ""))
-            if hasattr(widget, "setWordWrap"):
+            if hasattr(widget, "isChecked"):
+                widget.setChecked(value.strip().lower() in ("1", "true", "yes", "on"))
+            elif hasattr(widget, "setWordWrap"):
                 widget.setText(value)
             elif hasattr(widget, "setCurrentText"):
                 wanted = list(self.form.choices_for(key))

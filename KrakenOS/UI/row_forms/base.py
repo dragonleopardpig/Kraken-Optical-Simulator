@@ -24,12 +24,17 @@ class FormField:
 
     key: str
     label: str
-    kind: str = "number"  # number | int | choice | text | textarea | static
+    kind: str = "number"  # number | int | bool | choice | text | textarea | static
     choices: tuple[str, ...] = ()
     hint: str = ""
     width: int = 14
     #: rows of a textarea; ignored by the other kinds
     height: int = 8
+    #: the tab this field belongs to; a form whose fields carry groups is laid out in tabs
+    group: str = ""
+    #: a field the model will not accept edits to (a literal it cannot parse back, a shape
+    #: parameter on an Object/Image row) is shown but not editable
+    enabled: bool = True
     #: called with (form, new value) when this field changes, for a field that rewrites ANOTHER
     #: one -- a coating preset filling the table, a catalog choice setting the metal index.
     #: Returns the message to show; the view refreshes from the form afterwards.
@@ -78,6 +83,18 @@ class RowForm:
 
     def field(self, key: str) -> "FormField | None":
         return next((item for item in self.fields if item.key == key), None)
+
+    @property
+    def groups(self) -> tuple:
+        """The tabs this form wants, in field order; empty when it is a single page."""
+        seen: list = []
+        for item in self.fields:
+            if item.group and item.group not in seen:
+                seen.append(item.group)
+        return tuple(seen)
+
+    def fields_in(self, group: str) -> tuple:
+        return tuple(item for item in self.fields if item.group == group)
 
     def choices_for(self, key: str) -> tuple:
         """The choices a view should offer NOW -- an action may have grown the list."""
