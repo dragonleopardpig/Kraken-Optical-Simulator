@@ -71,53 +71,97 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None) -
         fields_host.grid(row=0, column=0, sticky="nsew")
         body.columnconfigure(0, weight=1)
 
-    two_column = len(form.fields) > _TWO_COLUMN_THRESHOLD
-    for column in range(4 if two_column else 2):
-        fields_host.columnconfigure(column, weight=1 if column % 2 else 0)
-
     variables: dict[str, tk.Variable] = {}
     widgets: dict[str, ttk.Widget] = {}
-    for position, field in enumerate(form.fields):
-        grid_row = position // 2 if two_column else position
-        base = 2 * (position % 2) if two_column else 0
-        value = form.values.get(field.key, "")
-        if field.kind == "static":
-            ttk.Label(fields_host, text=field.label).grid(row=grid_row, column=base, sticky="w",
-                                                          padx=(0 if base == 0 else 8, 10),
-                                                          pady=3)
-            ttk.Label(fields_host, text=value, foreground="#334155",
-                      wraplength=wraplength - 160).grid(row=grid_row, column=base + 1,
-                                                        sticky="w", pady=3)
-            continue
-        if field.kind == "bool":
-            variable = tk.BooleanVar(
-                master=window, value=str(value).strip().lower() in ("1", "true", "yes", "on"))
-            widget = ttk.Checkbutton(fields_host, text=field.label, variable=variable)
-            widget.grid(row=grid_row, column=base, columnspan=2, sticky="w",
-                        padx=(0 if base == 0 else 8, 0), pady=3)
-        else:
-            ttk.Label(fields_host, text=field.label).grid(row=grid_row, column=base, sticky="w",
-                                                          padx=(0 if base == 0 else 8, 10),
-                                                          pady=3)
-            variable = tk.StringVar(master=window, value=str(value))
-            if field.kind == "choice":
-                widget = ttk.Combobox(fields_host, textvariable=variable,
-                                      values=list(form.choices_for(field.key)),
-                                      state="normal" if field.editable else "readonly",
-                                      width=max(field.width, 20))
+    texts: dict[str, tk.Text] = {}
+
+    def build_fields(parent, fields) -> None:
+        """One label and one widget per field, two columns once the page gets long."""
+        two_column = len(fields) > _TWO_COLUMN_THRESHOLD
+        for column in range(4 if two_column else 2):
+            parent.columnconfigure(column, weight=1 if column % 2 else 0)
+        for position, field in enumerate(fields):
+            grid_row = position // 2 if two_column else position
+            base = 2 * (position % 2) if two_column else 0
+            value = form.values.get(field.key, "")
+            if field.kind == "static":
+                ttk.Label(parent, text=field.label).grid(
+                    row=grid_row, column=base, sticky="w",
+                    padx=(0 if base == 0 else 8, 10), pady=3)
+                ttk.Label(parent, text=value, foreground="#334155",
+                          wraplength=wraplength - 160).grid(row=grid_row, column=base + 1,
+                                                            sticky="w", pady=3)
+                continue
+            if field.kind == "textarea":
+                ttk.Label(parent, text=field.label).grid(
+                    row=grid_row, column=base, sticky="nw",
+                    padx=(0 if base == 0 else 8, 10), pady=3)
+                text = tk.Text(parent, height=max(field.height, 3),
+                               width=max(field.width, 40), wrap="word")
+                text.insert("1.0", str(value))
+                text.grid(row=grid_row, column=base + 1, sticky="ew", pady=3)
+                texts[field.key] = text
+                widgets[field.key] = text
+                continue
+            if field.kind == "bool":
+                variable = tk.BooleanVar(
+                    master=window,
+                    value=str(value).strip().lower() in ("1", "true", "yes", "on"))
+                widget = ttk.Checkbutton(parent, text=field.label, variable=variable)
+                widget.grid(row=grid_row, column=base, columnspan=2, sticky="w",
+                            padx=(0 if base == 0 else 8, 0), pady=3)
             else:
-                widget = ttk.Entry(fields_host, textvariable=variable, width=field.width)
-            widget.grid(row=grid_row, column=base + 1, sticky="ew", pady=3)
-        if field.hint:
-            widget_hint = field.hint
-            try:
-                widget.configure(cursor="question_arrow")
-            except Exception:
-                pass
-            widget.bind("<Enter>", lambda _e, text=widget_hint: validation_var.set(text),
-                        add="+")
-        variables[field.key] = variable
-        widgets[field.key] = widget
+                ttk.Label(parent, text=field.label).grid(
+                    row=grid_row, column=base, sticky="w",
+                    padx=(0 if base == 0 else 8, 10), pady=3)
+                variable = tk.StringVar(master=window, value=str(value))
+                if field.kind == "choice":
+                    widget = ttk.Combobox(parent, textvariable=variable,
+                                          values=list(form.choices_for(field.key)),
+                                          state="normal" if field.editable else "readonly",
+                                          width=max(field.width, 20))
+                else:
+                    widget = ttk.Entry(parent, textvariable=variable, width=field.width)
+                widget.grid(row=grid_row, column=base + 1, sticky="ew", pady=3)
+            if not field.enabled or not form.is_enabled(field.key):
+                try:
+                    widget.configure(state="disabled")
+                except Exception:
+                    pass
+            if field.hint:
+                widget_hint = field.hint
+                widget.bind("<Enter>", lambda _e, text=widget_hint: validation_var.set(text),
+                            add="+")
+            variables[field.key] = variable
+            widgets[field.key] = widget
+
+    if form.groups:
+        # one tab per group. A canvas+scrollbar per tab keeps a 53-field page usable on a
+        # laptop, which is what the hand-written Advanced Surface dialog did (bugs/0884).
+        notebook = ttk.Notebook(fields_host)
+        notebook.grid(row=0, column=0, sticky="nsew")
+        fields_host.rowconfigure(0, weight=1)
+        fields_host.columnconfigure(0, weight=1)
+        for group in form.groups:
+            host = ttk.Frame(notebook)
+            host.rowconfigure(0, weight=1)
+            host.columnconfigure(0, weight=1)
+            notebook.add(host, text=group)
+            canvas = tk.Canvas(host, highlightthickness=0)
+            vscroll = ttk.Scrollbar(host, orient="vertical", command=canvas.yview)
+            canvas.configure(yscrollcommand=vscroll.set)
+            canvas.grid(row=0, column=0, sticky="nsew")
+            vscroll.grid(row=0, column=1, sticky="ns")
+            inner = ttk.Frame(canvas, padding=(0, 8, 0, 8))
+            window_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+            inner.bind("<Configure>",
+                       lambda _e, c=canvas: c.configure(scrollregion=c.bbox("all")), add="+")
+            canvas.bind("<Configure>",
+                        lambda event, c=canvas, i=window_id: c.itemconfigure(
+                            i, width=event.width), add="+")
+            build_fields(inner, form.fields_in(group))
+    else:
+        build_fields(fields_host, form.fields)
 
     validation_var = tk.StringVar(master=window, value=form.summary)
     ttk.Label(frame, textvariable=validation_var, foreground="#475569",
@@ -132,6 +176,11 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None) -
                 widget.configure(state="normal" if form.is_enabled(key) else "disabled")
 
     def refresh_from_form() -> None:
+        for key, text in texts.items():
+            value = str(form.values.get(key, ""))
+            if text.get("1.0", "end-1c") != value:
+                text.delete("1.0", "end")
+                text.insert("1.0", value)
         for key, variable in variables.items():
             value = str(form.values.get(key, ""))
             if isinstance(variable, tk.BooleanVar):
@@ -212,7 +261,8 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None) -
         refresh_records()
 
     def current_values() -> dict[str, str]:
-        collected: dict[str, str] = {}
+        collected: dict[str, str] = {key: text.get("1.0", "end-1c")
+                                    for key, text in texts.items()}
         for key, variable in variables.items():
             if isinstance(variable, tk.BooleanVar):
                 collected[key] = "true" if variable.get() else "false"

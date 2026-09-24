@@ -10,6 +10,7 @@ from typing import Any, Callable
 from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.error_map import build_error_map_form
 from KrakenOS.UI.uihost import host_of
+from KrakenOS.UI.panels.row_form_view import render_row_form
 
 
 class MainErrorMapDialog:
@@ -68,87 +69,6 @@ class MainErrorMapDialog:
         except FormRefused as exc:
             messagebox.showinfo("Error Map", str(exc), parent=self.editor)
             return
-
-        window = tk.Toplevel(self.editor)
-        window.withdraw()
-        window.title(form.title)
-        window.geometry("760x360")
-        window.minsize(660, 300)
-        window.transient(self.editor)
-        window.columnconfigure(0, weight=1)
-        window.rowconfigure(1, weight=1)
-
-        header = ttk.Frame(window, padding=(10, 10, 10, 4))
-        header.grid(row=0, column=0, sticky="ew")
-        header.columnconfigure(1, weight=1)
-        ttk.Label(header, text="Surface").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=3)
-        ttk.Label(header, text=form.values["surface"]).grid(row=0, column=1, sticky="w", pady=3)
-        ttk.Label(header, text=form.note, foreground="#5f6b7a", wraplength=660,
-                  justify="left").grid(row=1, column=0, columnspan=3, sticky="w", pady=(5, 0))
-
-        body = ttk.Frame(window, padding=(10, 4, 10, 8))
-        body.grid(row=1, column=0, sticky="nsew")
-        body.columnconfigure(1, weight=1)
-        body.rowconfigure(1, weight=1)
-
-        source_var = tk.StringVar(master=window, value=form.values["source"])
-        ttk.Label(body, text="Source").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=3)
-        ttk.Label(body, textvariable=source_var).grid(row=0, column=1, sticky="ew", pady=3)
-
-        ttk.Label(body, text="Contents").grid(row=1, column=0, sticky="nw", padx=(0, 8), pady=3)
-        summary_text = tk.Text(body, height=8, wrap="word")
-        summary_text.grid(row=1, column=1, sticky="nsew", pady=3)
-        summary_scroll = ttk.Scrollbar(body, orient="vertical", command=summary_text.yview)
-        summary_scroll.grid(row=1, column=2, sticky="ns")
-        summary_text.configure(yscrollcommand=summary_scroll.set)
-
-        footer = ttk.Frame(window, padding=(10, 0, 10, 10))
-        footer.grid(row=2, column=0, sticky="ew")
-        footer.columnconfigure(0, weight=1)
-        validation_var = tk.StringVar(master=window, value="Validation has not been run.")
-        ttk.Label(footer, textvariable=validation_var, foreground="#5f6b7a").pack(
-            side="left", fill="x", expand=True)
-
-        def refresh_from_form() -> None:
-            source_var.set(form.values["source"])
-            summary_text.configure(state="normal")
-            summary_text.delete("1.0", "end")
-            summary_text.insert("1.0", form.summary)
-            summary_text.configure(state="disabled")
-
-        def run_action(action) -> None:
-            try:
-                message = action.run(form, host_of(self))
-            except FormRefused as exc:
-                messagebox.showerror(f"{action.label} {form.title}", str(exc), parent=window)
-                return
-            refresh_from_form()
-            validation_var.set(message or "")
-
-        def validate_values(*, show_success: bool = True) -> list[str]:
-            errors = list(form.validate(form.values))
-            if errors:
-                validation_var.set(f"Validation failed: {errors[0]}")
-            elif show_success:
-                validation_var.set("Validation passed."
-                                   if form.state.get("error_map") is not None
-                                   else "Validation passed: no error map.")
-            return errors
-
-        def apply_values() -> None:
-            try:
-                form.apply(form.values)
-            except FormRefused as exc:
-                messagebox.showerror("Error Map Validation", str(exc), parent=window)
-                return
-            window.destroy()
-
-        refresh_from_form()
-        for action in form.actions:
-            ttk.Button(footer, text=action.label,
-                       command=lambda a=action: run_action(a)).pack(side="right", padx=(0, 8))
-        ttk.Button(footer, text="Validate",
-                   command=lambda: validate_values(show_success=True)).pack(side="right", padx=(0, 8))
-        ttk.Button(footer, text="Apply", command=apply_values).pack(side="right")
-        ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
-        self._show_centered_dialog(window)
+        # bugs/0884: the Tk layout is the SHARED renderer now -- this file keeps only the
+        # read-the-table prologue and the builder call.
+        render_row_form(self, form, wraplength=560)

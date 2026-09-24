@@ -16649,6 +16649,10 @@ phase_671_inspection_cell_form = _phase_from_standalone(
     671, "the Inspection Cell record-list form (Qt migration phase 3): six faces of one part, each slotted with its own station layout, plus the part dimensions, the cell-level solve and the verbs that compose them -- cell view, interference report, cell STEP, save and load. The six FACES are the record list, and that is what makes this a record-list form rather than twelve loose fields: select a face and ONE 'Browse Layout...' verb acts on it, replacing six per-face Browse buttons, and every file chooser asks through the UI HOST so the same verb works in both toolkits. The embedded cell VIEW (panels/inspection_cell_window.py) is a VTK plotter and stays in phase 5 -- the form only asks it to open. Guard: the six faces under the builder's columns with its eight verbs, selecting a face loading that station and the edit folding back into it, apply writing editor.inspection_cell_spec, Browse Layout asking the host for the SELECTED face and a cancel leaving the spec alone, the REAL Tk dialog's six-face tree, and the Qt dialog opening on Front and loading Top when row 4 is picked (0883)",
     "KrakenOS.UI.validate_open3d_0883_inspection_cell_form",
     "inspection_cell_form")
+phase_672_shared_tk_row_form_view = _phase_from_standalone(
+    672, "the five row dialogs that still drew their own Tk page now share the renderer (Qt migration phase 3, 0884): 0869-0873 moved Coating/Material, Diffuse/BRDF, Beam Splitter, Error Map and Advanced Surface into row_forms/ but left each panel a hand-written Tk layout -- 898 lines the shared panels/row_form_view.py already knew how to draw. Finishing it needed the two kinds the renderer lacked: kind='textarea' (a tk.Text, which has NO textvariable, so it is read and written by hand in current_values/refresh_from_form) and form.groups as a ttk.Notebook with a canvas+scrollbar per tab, which is exactly what the hand-written Advanced Surface page did for its 53 fields. The five panels are the read-the-table prologue plus one call now (74-87 lines each, from 144-246), and the Tk and Qt renderers are finally feature-equal. The interaction contract went red on four of them because the 'Validation passed:' line now belongs to the RENDERER, not each page -- re-pointed. Guard: the renderer draws every kind the builders use, the panels build no widgets of their own, and each REAL Tk dialog opens on the builder's fields (a textarea for the coating table, a 6-tab notebook with 52 entries for Advanced Surface, a real splitter row for Beam Splitter) or refuses with the builder's message (0884)",
+    "KrakenOS.UI.validate_open3d_0884_shared_tk_row_form_view",
+    "shared_tk_row_form_view")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17386,6 +17390,7 @@ def main() -> int:
             phase_669_scene_source_manager_form,
             phase_670_catalog_record_forms,
             phase_671_inspection_cell_form,
+            phase_672_shared_tk_row_form_view,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

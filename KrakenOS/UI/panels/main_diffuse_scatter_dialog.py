@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.diffuse_scatter import build_diffuse_scatter_form
+from KrakenOS.UI.panels.row_form_view import render_row_form
 
 
 class MainDiffuseScatterDialog:
@@ -69,76 +70,6 @@ class MainDiffuseScatterDialog:
         except FormRefused as exc:
             messagebox.showinfo("Diffuse / BRDF", str(exc), parent=self.editor)
             return
-
-        window = tk.Toplevel(self.editor)
-        window.withdraw()
-        window.title(form.title)
-        window.geometry("860x680")
-        window.minsize(760, 600)
-        window.transient(self.editor)
-        window.columnconfigure(0, weight=1)
-
-        body = ttk.Frame(window, padding=(12, 10, 12, 8))
-        body.grid(row=0, column=0, sticky="nsew")
-        body.columnconfigure(1, weight=1)
-        ttk.Label(body, text=form.note, foreground="#5f6b7a", wraplength=720).grid(
-            row=0, column=0, columnspan=3, sticky="ew", pady=(0, 6))
-
-        variables: dict[str, tk.StringVar] = {}
-        text_widgets: dict[str, tk.Text] = {}
-        for grid_row, field in enumerate(form.fields, start=1):
-            ttk.Label(body, text=field.label).grid(row=grid_row, column=0, sticky="nw" if
-                                                   field.kind == "textarea" else "w",
-                                                   padx=(0, 8), pady=4)
-            if field.kind == "textarea":
-                widget = tk.Text(body, width=52, height=field.height, wrap="word")
-                widget.insert("1.0", form.values.get(field.key, ""))
-                widget.grid(row=grid_row, column=1, sticky="ew", pady=4)
-                text_widgets[field.key] = widget
-            else:
-                variable = tk.StringVar(master=window, value=form.values.get(field.key, ""))
-                variables[field.key] = variable
-                if field.kind == "choice":
-                    ttk.Combobox(body, textvariable=variable, values=list(field.choices),
-                                 state="readonly", width=field.width).grid(
-                        row=grid_row, column=1, sticky="w", pady=4)
-                else:
-                    ttk.Entry(body, textvariable=variable, width=field.width).grid(
-                        row=grid_row, column=1, sticky="w", pady=4)
-            ttk.Label(body, text=field.hint, foreground="#6b7280", wraplength=320,
-                      justify="left").grid(row=grid_row, column=2, sticky="nw", pady=4)
-
-        footer = ttk.Frame(window, padding=(12, 0, 12, 10))
-        footer.grid(row=1, column=0, sticky="ew")
-        footer.columnconfigure(0, weight=1)
-        validation_var = tk.StringVar(master=window, value="Validation has not been run.")
-        ttk.Label(footer, textvariable=validation_var, foreground="#5f6b7a").pack(
-            side="left", fill="x", expand=True)
-
-        def current_values() -> dict[str, str]:
-            values = {key: variable.get() for key, variable in variables.items()}
-            values.update({key: widget.get("1.0", "end-1c")
-                           for key, widget in text_widgets.items()})
-            return values
-
-        def validate_values(*, show_success: bool = True) -> list[str]:
-            errors = list(form.validate(current_values()))
-            if errors:
-                validation_var.set(f"Validation failed: {errors[0]}")
-            elif show_success:
-                validation_var.set("Validation passed.")
-            return errors
-
-        def apply_values() -> None:
-            try:
-                form.apply(current_values())
-            except FormRefused as exc:
-                messagebox.showerror("Diffuse / BRDF Validation", str(exc), parent=window)
-                return
-            window.destroy()
-
-        ttk.Button(footer, text="Validate",
-                   command=lambda: validate_values(show_success=True)).pack(side="right", padx=(0, 8))
-        ttk.Button(footer, text="Apply", command=apply_values).pack(side="right")
-        ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
-        self._show_centered_dialog(window)
+        # bugs/0884: the Tk layout is the SHARED renderer now -- this file keeps only the
+        # read-the-table prologue and the builder call.
+        render_row_form(self, form, wraplength=560)

@@ -142,8 +142,14 @@ def _run_qt_subprocess() -> tuple[str, object]:
 
 
 def _tk_shown(editor, row_index):
-    """Open the REAL Tk dialog and read back its source label and contents box."""
+    """Open the REAL Tk dialog and read back its source label and contents.
+
+    bugs/0884 moved this dialog onto the shared Tk renderer, where a `static` field is a wrapped
+    Label rather than the hand-written page's `tk.Text`. The CLAIM is that the dialog shows what
+    the builder put in the form, so read both -- a Text if one is drawn, and every Label.
+    """
     import tkinter as tk
+    from tkinter import ttk
 
     before = {str(child) for child in editor.root.winfo_children()}
     editor.open_error_map_editor(row_index)
@@ -160,6 +166,13 @@ def _tk_shown(editor, row_index):
             for child in widget.winfo_children():
                 if isinstance(child, tk.Text):
                     texts.append(child.get("1.0", "end-1c"))
+                elif isinstance(child, ttk.Label):
+                    try:
+                        label = str(child.cget("text"))
+                    except Exception:
+                        label = ""
+                    if label:
+                        texts.append(label)
                 try:
                     name = str(child.cget("textvariable"))
                 except Exception:
@@ -254,7 +267,7 @@ def run_checks() -> tuple[bool, list[str]]:
         ok(shown is not None and texts and any("No Error_map" in text or "samples" in text
                                                for text in texts) and not boxes,
            f"T: the REAL Tk dialog shows the builder's source and contents "
-           f"({len(shown or [])} bound variables, {len(texts or [])} text boxes)"
+           f"({len(shown or [])} bound variables, {len(texts or [])} shown strings)"
            + (f" -- boxes {boxes}" if boxes else ""))
     finally:
         tk_messagebox.showinfo, tk_messagebox.showerror = saved

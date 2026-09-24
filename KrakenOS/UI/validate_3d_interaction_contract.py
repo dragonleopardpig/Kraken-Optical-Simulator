@@ -28,6 +28,7 @@ from KrakenOS.UI.row_forms import scene_target as scene_target_row_form_module
 from KrakenOS.UI.row_forms import scene_sources as scene_sources_row_form_module
 from KrakenOS.UI.row_forms import glass_catalog as glass_catalog_row_form_module
 from KrakenOS.UI.row_forms import stock_lens as stock_lens_row_form_module
+from KrakenOS.UI.panels import row_form_view as row_form_view_module
 from KrakenOS.UI.panels.main_analysis_controls import MainAnalysisToolbarPanel, MainInformationPanel
 from KrakenOS.UI.panels.main_branch_gaussian_q_dialog import MainBranchGaussianQDialog
 from KrakenOS.UI.panels.main_branch_throughput_report_dialog import MainBranchThroughputReportDialog
@@ -429,6 +430,9 @@ def _evaluate_checks() -> tuple[list, dict]:
     error_map_row_form = inspect.getsource(error_map_row_form_module)
     scene_target_row_form = inspect.getsource(scene_target_row_form_module)
     scene_sources_row_form = inspect.getsource(scene_sources_row_form_module)
+    # bugs/0884: the five row dialogs that still drew their own Tk page now share
+    # panels/row_form_view.py, so the Validate/Apply line belongs to the RENDERER
+    row_form_view_source = inspect.getsource(row_form_view_module)
     glass_catalog_row_form = inspect.getsource(glass_catalog_row_form_module)
     stock_lens_row_form = inspect.getsource(stock_lens_row_form_module)
     scene_element_dialogs = inspect.getsource(MainSceneElementDialogs)
@@ -1230,7 +1234,9 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "Diffuse / BRDF" in main_diffuse_dialog
             and "pySCATMECH BRDF" in diffuse_scatter_row_form
             and "Guided target surface" in diffuse_scatter_row_form
-            and "Validation passed." in main_diffuse_dialog,
+            and "build_diffuse_scatter_form(" in main_diffuse_dialog
+            and "render_row_form(" in main_diffuse_dialog
+            and '"Validation passed: "' in row_form_view_source,
         ),
         (
             "Surface Shape Builder dialog lives outside layout_editor",
@@ -1253,7 +1259,9 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "self._main_beam_splitter_dialog().open(row_index)" in open_beam_splitter_dialog
             and "Beam Splitter can spawn deterministic" in beam_splitter_row_form
             and "Fresnel P/S mode" in beam_splitter_row_form
-            and "Validation passed:" in main_beam_splitter_dialog,
+            and "build_beam_splitter_form(" in main_beam_splitter_dialog
+            and "render_row_form(" in main_beam_splitter_dialog
+            and '"Validation passed: "' in row_form_view_source,
         ),
         (
             "Error Map dialog lives outside layout_editor",
@@ -1264,7 +1272,9 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "self._main_error_map_dialog().open(row_index)" in open_error_map_dialog
             and "Error_map = [X, Y, Z, SPACE]" in error_map_row_form
             and "Import..." in error_map_row_form
-            and "Validation passed: no error map." in main_error_map_dialog,
+            and "build_error_map_form(" in main_error_map_dialog
+            and "render_row_form(" in main_error_map_dialog
+            and "No Error_map will be stored on this surface." in error_map_row_form,
         ),
         (
             "Advanced Surface dialog lives outside layout_editor",
@@ -1275,7 +1285,9 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "self._main_advanced_surface_dialog().open(row_index)" in open_advanced_surface_dialog
             and "Shape Params" in advanced_surface_row_form
             and "Optimize conic k" in advanced_surface_row_form
-            and "Advanced Surface Validation" in main_advanced_surface_dialog,
+            and "build_advanced_surface_form(" in main_advanced_surface_dialog
+            and "render_row_form(" in main_advanced_surface_dialog
+            and "ttk.Notebook(" in row_form_view_source,
         ),
         (
             "Specialized surface settings dialogs live outside layout_editor",
