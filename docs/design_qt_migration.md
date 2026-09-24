@@ -66,7 +66,7 @@ and the contents become checkable **without a display**, which no Tk dialog's ev
 First port: the **Paraxial Matrix Report** (Analysis menu, Ctrl+M). Both views ask for the export
 path through the UI host, so each gets its own file chooser from one call shape.
 
-### The six families
+### The seven families
 
 One dialog shape per family; a new dialog of a known shape is a builder plus a menu entry.
 
@@ -78,6 +78,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | form that writes back | `row_forms/<name>.py` -> `RowForm` | `qt/dialogs/row_form_dialog.py` |
 | master / detail | `Report` + `DetailView` | the same dialog, split |
 | tree | `TreeRow` | `qt/dialogs/report_dialog.py` (tree mode) |
+| record list | `RowForm` + `RecordList` | `qt/dialogs/row_form_dialog.py` (list + form) |
 
 ### Ported so far
 
@@ -100,6 +101,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0874 | Detector Settings row form | row form |
 | 0875 | Scene Target row form (+ live `locked` / `is_enabled`) | row form |
 | 0876 | Path-Local Pose + Element Settings (element BLOCKS, editable choices) | row form |
+| 0881 | Scene Source Manager (`RecordList`: a form that edits a COLLECTION) | record list |
 
 The row-form framework: `FormField` kinds (number, int, bool, choice, text, textarea, static),
 `choices` that grow at runtime, `editable` choices the user may type into, `on_change` fields that
@@ -107,8 +109,10 @@ rewrite other fields, `group` tabs, `enabled` (static) and `RowForm.locked` / `i
 locks, `FormAction`s, and a `row_index` that may stand for a whole element BLOCK. 0874 was the
 first dialog it absorbed with nothing new.
 
-`panels/main_scene_element_dialogs.py` is finished (0874-0876) and its four Tk dialogs share one
-renderer, `_run_row_form_dialog(form)` -- 616 lines down to 242.
+The Tk view of every row form is `panels/row_form_view.py`, the counterpart of
+`qt/dialogs/row_form_dialog.py`. The five dialogs that use it shrank hard:
+`main_scene_element_dialogs.py` 616 -> 103 lines, `main_scene_source_manager_dialog.py`
+770 -> 108. Both are now the factory's kwargs and one call.
 
 `validate_3d_interaction_contract.py` is **stale** and not a penta phase: ~25 of its source-text
 assertions name strings that moved into `reports/` and `row_forms/` during 0869-0873. Re-pointing
