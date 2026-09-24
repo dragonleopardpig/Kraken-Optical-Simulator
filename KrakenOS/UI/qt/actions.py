@@ -60,6 +60,10 @@ ACTIONS = (
      "Edit the selected element block's path metadata"),
     ("scene_sources", "&Edit", "Scene Source &Manager...", None, "scene_sources_action",
      "Add, edit and apply the scene's source records"),
+    ("glass_catalog", "&Edit", "&Glass Catalog Browser...", None, "glass_catalog_action",
+     "Pick a catalogue glass and apply it to the selected row"),
+    ("stock_lens", "&Edit", "Import &Stock Lens...", None, "stock_lens_action",
+     "Search a .ZMF catalog and insert a stock lens as surface rows"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 

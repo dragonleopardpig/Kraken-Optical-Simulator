@@ -176,7 +176,8 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None) -
         if message:
             validation_var.set(message)
 
-    def on_choice_changed(field) -> None:
+    def on_field_changed(field) -> None:
+        """A field that rewrites others -- and, for a filter, the record list itself."""
         if field.on_change is None:
             return
         form.values[field.key] = variables[field.key].get()
@@ -185,14 +186,21 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None) -
         except FormRefused as exc:
             messagebox.showerror(form.title, str(exc), parent=editor)
             return
+        refresh_records()
         refresh_from_form()
         if message:
             validation_var.set(message)
 
     for field in form.fields:
-        if field.kind == "choice" and field.on_change is not None:
+        if field.on_change is None:
+            continue
+        if field.kind == "choice":
             widgets[field.key].bind("<<ComboboxSelected>>",
-                                    lambda _event, f=field: on_choice_changed(f), add="+")
+                                    lambda _event, f=field: on_field_changed(f), add="+")
+        elif field.kind in ("text", "number", "int"):
+            # a live filter: every keystroke re-asks the model for the rows
+            widgets[field.key].bind("<KeyRelease>",
+                                    lambda _event, f=field: on_field_changed(f), add="+")
     sync_enabled()
     if tree is not None:
         tree.bind("<<TreeviewSelect>>", on_record_selected, add="+")

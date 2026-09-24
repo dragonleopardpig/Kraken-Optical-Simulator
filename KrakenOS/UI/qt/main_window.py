@@ -359,6 +359,18 @@ class KrakenQtMainWindow(_main_window_class()):
         # a record-list form owns its own selection, so it takes no row index
         return self.open_row_form(build_scene_source_manager_form, row_index=False)
 
+    def glass_catalog_action(self):
+        """Pick a catalogue glass and apply it to the selected row."""
+        from KrakenOS.UI.row_forms import build_glass_catalog_form
+
+        return self.open_row_form(build_glass_catalog_form, row_index=False)
+
+    def stock_lens_action(self):
+        """Search a .ZMF catalog and insert a stock lens as surface rows."""
+        from KrakenOS.UI.row_forms import build_stock_lens_form
+
+        return self.open_row_form(build_stock_lens_form, row_index=False)
+
     def _forget_dialog(self, dialog) -> None:
         if dialog in self._open_dialogs:
             self._open_dialogs.remove(dialog)

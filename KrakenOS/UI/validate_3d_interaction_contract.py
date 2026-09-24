@@ -26,6 +26,8 @@ from KrakenOS.UI.row_forms import element_forms as element_row_forms_module
 from KrakenOS.UI.row_forms import error_map as error_map_row_form_module
 from KrakenOS.UI.row_forms import scene_target as scene_target_row_form_module
 from KrakenOS.UI.row_forms import scene_sources as scene_sources_row_form_module
+from KrakenOS.UI.row_forms import glass_catalog as glass_catalog_row_form_module
+from KrakenOS.UI.row_forms import stock_lens as stock_lens_row_form_module
 from KrakenOS.UI.panels.main_analysis_controls import MainAnalysisToolbarPanel, MainInformationPanel
 from KrakenOS.UI.panels.main_branch_gaussian_q_dialog import MainBranchGaussianQDialog
 from KrakenOS.UI.panels.main_branch_throughput_report_dialog import MainBranchThroughputReportDialog
@@ -427,6 +429,8 @@ def _evaluate_checks() -> tuple[list, dict]:
     error_map_row_form = inspect.getsource(error_map_row_form_module)
     scene_target_row_form = inspect.getsource(scene_target_row_form_module)
     scene_sources_row_form = inspect.getsource(scene_sources_row_form_module)
+    glass_catalog_row_form = inspect.getsource(glass_catalog_row_form_module)
+    stock_lens_row_form = inspect.getsource(stock_lens_row_form_module)
     scene_element_dialogs = inspect.getsource(MainSceneElementDialogs)
     main_advanced_surface_factory = inspect.getsource(KrakenLayoutEditor._main_advanced_surface_dialog)
     open_advanced_surface_dialog = inspect.getsource(KrakenLayoutEditor.open_advanced_surface_editor)
@@ -1156,8 +1160,14 @@ def _evaluate_checks() -> tuple[list, dict]:
             "MainGlassCatalogBrowserDialog(" in main_glass_catalog_browser_factory
             and "shared_setup=_shared_setup" in main_glass_catalog_browser_factory
             and "self._main_glass_catalog_browser_dialog().open_glass_catalog_browser()" in open_glass_catalog_browser
+            # bugs/0882: the browser became a record-list ROW FORM. "Apply to Selected Row"
+            # is now the shared renderer's Apply button, and what the browser itself owns is
+            # the catalogue records and the row it writes them to.
             and "Glass Catalog Browser" in main_glass_catalog_browser_dialog
-            and "Apply to Selected Row" in main_glass_catalog_browser_dialog,
+            and "build_glass_catalog_form(" in main_glass_catalog_browser_dialog
+            and "render_row_form(" in main_glass_catalog_browser_dialog
+            and "Select a surface row first, then apply the glass." in glass_catalog_row_form
+            and "owner.rows[row_index].glass = glass" in glass_catalog_row_form,
         ),
         (
             "Optical solid utility dialogs live outside layout_editor",
@@ -1329,9 +1339,13 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "load_stock_lens_catalog=_load_stock_lens_catalog" in main_stock_lens_factory
             and "stock_lens_summary=_stock_lens_summary" in main_stock_lens_factory
             and "self._main_stock_lens_importer_dialog().open_stock_lens_importer(" in open_stock_lens_importer
-            and "Import Stock Lens" in main_stock_lens_dialog
-            and "Add Stock Lens to Path" in main_stock_lens_dialog
-            and "Import Selected" in main_stock_lens_dialog,
+            # bugs/0882: same move -- the titles, the catalogue loading and the insert live in
+            # row_forms/stock_lens.py, and Apply is the shared renderer's button.
+            and "Import Stock Lens" in stock_lens_row_form
+            and "Add Stock Lens to Path" in stock_lens_row_form
+            and "_insert_surface_rows(rows, insert_after=insert_after)" in stock_lens_row_form
+            and "build_stock_lens_form(" in main_stock_lens_dialog
+            and "render_row_form(" in main_stock_lens_dialog,
         ),
         (
             "Open 3D renders editable table Thickness dimensions",

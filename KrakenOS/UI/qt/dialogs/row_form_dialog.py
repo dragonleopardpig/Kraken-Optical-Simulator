@@ -159,6 +159,10 @@ class RowFormDialog(_dialog_class()):
         else:
             widget = QLineEdit(value)
             widget.setMaximumWidth(14 * max(field.width, 8))
+            if field.on_change is not None:
+                # a live filter: every keystroke re-asks the model for the rows
+                widget.textEdited.connect(
+                    lambda text, f=field: self.on_field_changed(f, text))
         widget.setToolTip(field.hint)
         # is_enabled, never field.enabled -- a choice may lock a field after the form is built
         widget.setEnabled(self.form.is_enabled(field.key))
@@ -182,6 +186,7 @@ class RowFormDialog(_dialog_class()):
         except FormRefused as exc:
             self.host.showerror(self.form.title, str(exc))
             return ""
+        self.refresh_records()
         self.refresh_from_form()
         if message:
             self.summary.setText(message)
