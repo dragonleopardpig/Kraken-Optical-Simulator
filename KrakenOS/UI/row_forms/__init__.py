@@ -12,6 +12,7 @@ from KrakenOS.UI.row_forms.element_forms import (build_element_settings_form,
                                                  build_path_local_pose_form)
 from KrakenOS.UI.row_forms.error_map import build_error_map_form
 from KrakenOS.UI.row_forms.glass_catalog import build_glass_catalog_form
+from KrakenOS.UI.row_forms.inspection_cell import build_inspection_cell_form
 from KrakenOS.UI.row_forms.stock_lens import build_stock_lens_form
 from KrakenOS.UI.row_forms.scene_sources import build_scene_source_manager_form
 from KrakenOS.UI.row_forms.scene_target import build_scene_target_form
@@ -28,6 +29,7 @@ ROW_FORM_BUILDERS = {
     "scene_sources": build_scene_source_manager_form,
     "glass_catalog": build_glass_catalog_form,
     "stock_lens": build_stock_lens_form,
+    "inspection_cell": build_inspection_cell_form,
     "path_local_pose": build_path_local_pose_form,
     "element_settings": build_element_settings_form,
 }
@@ -38,5 +40,5 @@ __all__ = ["FormAction", "FormField", "FormRefused", "RecordList", "RowForm", "b
            "build_detector_settings_form", "build_scene_target_form",
            "build_path_local_pose_form", "build_element_settings_form",
            "build_scene_source_manager_form", "build_glass_catalog_form",
-           "build_stock_lens_form",
+           "build_stock_lens_form", "build_inspection_cell_form",
            "ROW_FORM_BUILDERS"]

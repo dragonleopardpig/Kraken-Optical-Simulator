@@ -64,6 +64,8 @@ ACTIONS = (
      "Pick a catalogue glass and apply it to the selected row"),
     ("stock_lens", "&Edit", "Import &Stock Lens...", None, "stock_lens_action",
      "Search a .ZMF catalog and insert a stock lens as surface rows"),
+    ("inspection_cell", "&Edit", "&Inspection Cell...", None, "inspection_cell_action",
+     "Slot a station layout on each of the part's six faces"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 

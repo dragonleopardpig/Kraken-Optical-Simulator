@@ -20,7 +20,12 @@ _TWO_COLUMN_THRESHOLD = 14
 
 def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None) -> tk.Toplevel:
     """Show `form` in a Tk dialog and return the window."""
-    editor = getattr(owner, "editor", owner)
+    # `or owner`, not a getattr default: the editor forwards unknown attributes to its Tk root,
+    # and `editor.editor` comes back as None rather than raising. With ONE interpreter that was
+    # invisible -- tk.Toplevel(None) picks the default root, which was the editor's anyway -- but
+    # inside the penta harness, which already owns a root, the dialog was built in the WRONG
+    # interpreter and the editor never saw it (bugs/0883).
+    editor = getattr(owner, "editor", None) or owner
     window = tk.Toplevel(editor)
     window.withdraw()
     window.title(form.title)

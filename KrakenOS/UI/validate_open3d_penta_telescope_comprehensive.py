@@ -16645,6 +16645,10 @@ phase_670_catalog_record_forms = _phase_from_standalone(
     670, "the Glass Catalog Browser and Stock Lens Importer record-list forms (Qt migration phase 3): two catalogue browsers -- a list you search and pick from -- which `RecordList` absorbed with ONE addition, an `on_change` on a TEXT field so a filter is live, after which the view re-asks the model for its rows. The glass browser edits nothing at all (a filter, 3473 records, and an Apply that writes the glass onto the selected surface row, turning a Mirror back into a Standard as the Tk browser silently did); the importer carries the placement options and inserts a rigid block of surface rows, with a catalogue choice whose on_change LOADS the .ZMF (the expensive step, so it reports what it loaded) and a 500-row display cap the Tk tree also had. Path mode adds the distance and the five local decenter/tilt fields and refuses a non-positive distance. One trap: `Setup().NAMES` is a numpy array, so `or []` raises 'truth value ... is ambiguous' -- the Tk browser tested `is not None` for exactly that reason. Guard: both record lists and their live filters, apply writing the glass and inserting the rows, the path-mode fields and refusals, both REAL Tk dialogs on their trees, and both Qt dialogs listing the same rows (0882)",
     "KrakenOS.UI.validate_open3d_0882_catalog_record_forms",
     "catalog_record_forms")
+phase_671_inspection_cell_form = _phase_from_standalone(
+    671, "the Inspection Cell record-list form (Qt migration phase 3): six faces of one part, each slotted with its own station layout, plus the part dimensions, the cell-level solve and the verbs that compose them -- cell view, interference report, cell STEP, save and load. The six FACES are the record list, and that is what makes this a record-list form rather than twelve loose fields: select a face and ONE 'Browse Layout...' verb acts on it, replacing six per-face Browse buttons, and every file chooser asks through the UI HOST so the same verb works in both toolkits. The embedded cell VIEW (panels/inspection_cell_window.py) is a VTK plotter and stays in phase 5 -- the form only asks it to open. Guard: the six faces under the builder's columns with its eight verbs, selecting a face loading that station and the edit folding back into it, apply writing editor.inspection_cell_spec, Browse Layout asking the host for the SELECTED face and a cancel leaving the spec alone, the REAL Tk dialog's six-face tree, and the Qt dialog opening on Front and loading Top when row 4 is picked (0883)",
+    "KrakenOS.UI.validate_open3d_0883_inspection_cell_form",
+    "inspection_cell_form")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17381,6 +17385,7 @@ def main() -> int:
             phase_668_launch_origin_field_grid,
             phase_669_scene_source_manager_form,
             phase_670_catalog_record_forms,
+            phase_671_inspection_cell_form,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
