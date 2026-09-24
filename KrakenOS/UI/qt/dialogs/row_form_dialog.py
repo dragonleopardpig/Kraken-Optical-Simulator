@@ -116,8 +116,8 @@ class RowFormDialog(_dialog_class()):
             widget = QLineEdit(value)
             widget.setMaximumWidth(14 * max(field.width, 8))
         widget.setToolTip(field.hint)
-        if not field.enabled:
-            widget.setEnabled(False)
+        # is_enabled, never field.enabled -- a choice may lock a field after the form is built
+        widget.setEnabled(self.form.is_enabled(field.key))
         self.widgets[field.key] = widget
         label = QLabel(field.label)
         label.setToolTip(field.hint)
@@ -158,6 +158,7 @@ class RowFormDialog(_dialog_class()):
     def refresh_from_form(self) -> None:
         """Re-read every widget from the form -- an action may have rewritten its values."""
         for key, widget in self.widgets.items():
+            widget.setEnabled(self.form.is_enabled(key))
             value = str(self.form.values.get(key, ""))
             if hasattr(widget, "isChecked"):
                 widget.setChecked(value.strip().lower() in ("1", "true", "yes", "on"))

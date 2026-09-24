@@ -52,6 +52,8 @@ ACTIONS = (
      "Every KrakenOS attribute of the selected surface, in tabs"),
     ("detector_settings", "&Edit", "Detec&tor Settings...", None, "detector_settings_action",
      "Mark the selected row as a terminal detector and size it"),
+    ("scene_target", "&Edit", "&Scene Target...", None, "scene_target_action",
+     "Edit the selected row's scene-target role, name and detector metadata"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 

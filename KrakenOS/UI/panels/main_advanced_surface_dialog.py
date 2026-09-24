@@ -162,7 +162,7 @@ class MainAdvancedSurfaceDialog:
                     variables[field.key] = variable
                     widget = ttk.Entry(frame, textvariable=variable, width=field.width)
                 widget.grid(row=offset, column=2, sticky="ew", padx=(0, 8), pady=3)
-                if not field.enabled:
+                if not form.is_enabled(field.key):
                     widget.configure(state="disabled")
                 if field.hint:
                     ttk.Label(frame, text=field.hint, foreground="#6b7280", wraplength=320,

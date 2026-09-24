@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.detector_settings import build_detector_settings_form
+from KrakenOS.UI.row_forms.scene_target import build_scene_target_form
 from KrakenOS.UI.uihost import host_of
 
 import numpy as np
@@ -150,198 +151,126 @@ class MainSceneElementDialogs:
         self._show_centered_dialog(window)
 
     def open_scene_target_editor(self, row_index: int | None = None) -> None:
+        # docs/design_qt_migration.md phase 3: the fields, the role-follows-detector locking,
+        # Apply and Clear Target live in KrakenOS/UI/row_forms/scene_target.py, which the Qt
+        # dialog uses too.
         self._commit_pending_table_edit()
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Scene Target", f"Could not read the surface table:\n\n{exc}", parent=self.editor)
+            messagebox.showerror("Scene Target", f"Could not read the surface table:\n\n{exc}",
+                                 parent=self.editor)
             return
-        if row_index is None:
-            record = self._nonseq_scene_selected_record()
-            if record is not None:
-                try:
-                    row_index = int(record.get("row_index"))
-                except Exception:
-                    row_index = None
-        if row_index is None:
-            row_index = self._selected_surface_row_index()
-        if row_index is None or not (0 <= int(row_index) < len(self.rows)):
-            messagebox.showinfo("Scene Target", "Select a surface row or scene target first.", parent=self.editor)
+        try:
+            form = build_scene_target_form(self, row_index)
+        except FormRefused as exc:
+            messagebox.showinfo("Scene Target", str(exc), parent=self.editor)
             return
-        index = int(row_index)
-        row = self.rows[index]
 
         window = tk.Toplevel(self.editor)
         window.withdraw()
-        window.title(f"Scene Target - S{index}")
+        window.title(form.title)
         window.transient(self.editor)
         frame = ttk.Frame(window, padding=12)
         frame.grid(row=0, column=0, sticky="nsew")
         frame.columnconfigure(1, weight=1)
 
-        ttk.Label(
-            frame,
-            text=(
-                "Scene target settings are stored on the surface row and feed the scene graph, "
-                "detector/path analysis, and non-sequential target selection."
-            ),
-            wraplength=560,
-            foreground="#475569",
-        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        ttk.Label(frame, text=form.note, wraplength=560, foreground="#475569").grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
-        name_var = tk.StringVar(master=window, value=str(row.name or row.surface or f"S{index}"))
-        kind_key = self._scene_target_editor_kind_for_row(index)
-        role_var = tk.StringVar(master=window, value=self.scene_target_editor_kind_labels.get(kind_key, self.scene_target_editor_kind_labels["auto"]))
-        active_var = tk.BooleanVar(master=window, value=self._current_nonseq_target_surface_index() == index)
-        detector_defaults = self._default_detector_settings_for_target_row(index)
-        width_var = tk.StringVar(master=window, value=self._format_table_float(float(detector_defaults.get("active_width_mm", 0.0))))
-        height_var = tk.StringVar(master=window, value=self._format_table_float(float(detector_defaults.get("active_height_mm", 0.0))))
-        bins_var = tk.StringVar(master=window, value=str(detector_defaults.get("bins", "") or ""))
-        pitch_var = tk.StringVar(master=window, value=self._format_table_float(float(detector_defaults.get("pixel_pitch_um", 0.0))))
-
-        ttk.Label(frame, text=f"Row S{index}").grid(row=1, column=0, sticky="w", padx=(0, 10), pady=3)
-        ttk.Label(frame, text=f"{row.surface} | {row.glass}").grid(row=1, column=1, sticky="w", pady=3)
-        ttk.Label(frame, text="Name").grid(row=2, column=0, sticky="w", padx=(0, 10), pady=3)
-        ttk.Entry(frame, textvariable=name_var, width=28).grid(row=2, column=1, sticky="ew", pady=3)
-        ttk.Label(frame, text="Target role").grid(row=3, column=0, sticky="w", padx=(0, 10), pady=3)
-        role_combo = ttk.Combobox(frame, textvariable=role_var, values=self.scene_target_editor_kind_choices, state="readonly", width=24)
-        role_combo.grid(row=3, column=1, sticky="ew", pady=3)
-        ttk.Checkbutton(frame, text="Set as active non-sequential TargSurf", variable=active_var).grid(
-            row=4,
-            column=0,
-            columnspan=2,
-            sticky="w",
-            pady=(6, 8),
-        )
-
-        detector_frame = ttk.LabelFrame(frame, text="Detector metadata", padding=8)
-        detector_frame.grid(row=5, column=0, columnspan=2, sticky="ew")
-        detector_frame.columnconfigure(1, weight=1)
-        detector_widgets: list[ttk.Widget] = []
-        for grid_row, (label, var) in enumerate(
-            (
-                ("Active width [mm]", width_var),
-                ("Active height [mm]", height_var),
-                ("Detector bins (blank = global)", bins_var),
-                ("Pixel pitch [um]", pitch_var),
-            )
-        ):
-            ttk.Label(detector_frame, text=label).grid(row=grid_row, column=0, sticky="w", padx=(0, 10), pady=3)
-            entry = ttk.Entry(detector_frame, textvariable=var, width=18)
-            entry.grid(row=grid_row, column=1, sticky="ew", pady=3)
-            detector_widgets.append(entry)
-
-        validation_var = tk.StringVar(master=window, value="Scene target metadata is row-backed; click Apply to update the table state.")
-        ttk.Label(frame, textvariable=validation_var, foreground="#475569", wraplength=560).grid(
-            row=6,
-            column=0,
-            columnspan=2,
-            sticky="w",
-            pady=(10, 0),
-        )
-
-        def collect_detector_settings() -> dict[str, object] | None:
-            try:
-                active_width = float(width_var.get().strip() or "0")
-                active_height = float(height_var.get().strip() or "0")
-                pixel_pitch = float(pitch_var.get().strip() or "0")
-            except ValueError:
-                validation_var.set("Detector active size and pixel pitch must be numbers.")
-                return None
-            if active_width < 0.0 or active_height < 0.0 or pixel_pitch < 0.0:
-                validation_var.set("Detector active size and pixel pitch must be non-negative.")
-                return None
-            bins = bins_var.get().strip()
-            if bins and bins.lower() not in {"auto", "default"}:
-                try:
-                    bins_value = int(float(bins))
-                except ValueError:
-                    validation_var.set("Detector bins must be blank, Auto, or an integer from 4 to 512.")
-                    return None
-                if not 4 <= bins_value <= 512:
-                    validation_var.set("Detector bins must be between 4 and 512.")
-                    return None
-                bins = str(bins_value)
+        variables: dict[str, tk.Variable] = {}
+        widgets: dict[str, ttk.Widget] = {}
+        for grid_row, field in enumerate(form.fields, start=1):
+            value = form.values.get(field.key, "")
+            if field.kind == "static":
+                ttk.Label(frame, text=field.label).grid(row=grid_row, column=0, sticky="w",
+                                                        padx=(0, 10), pady=3)
+                ttk.Label(frame, text=value, wraplength=360).grid(row=grid_row, column=1,
+                                                                  sticky="w", pady=3)
+                continue
+            if field.kind == "bool":
+                variable = tk.BooleanVar(master=window,
+                                         value=str(value).strip().lower() in ("1", "true", "yes"))
+                widget = ttk.Checkbutton(frame, text=field.label, variable=variable)
+                widget.grid(row=grid_row, column=0, columnspan=2, sticky="w", pady=(6, 8))
+                variables[field.key] = variable
+                widgets[field.key] = widget
+                continue
+            ttk.Label(frame, text=field.label).grid(row=grid_row, column=0, sticky="w",
+                                                    padx=(0, 10), pady=3)
+            variable = tk.StringVar(master=window, value=str(value))
+            if field.kind == "choice":
+                widget = ttk.Combobox(frame, textvariable=variable,
+                                      values=list(form.choices_for(field.key)),
+                                      state="readonly", width=24)
             else:
-                bins = ""
-            return self.normalize_detector_settings(
-                {
-                    "active_width_mm": active_width,
-                    "active_height_mm": active_height,
-                    "bins": bins,
-                    "pixel_pitch_um": pixel_pitch,
-                }
-            )
+                widget = ttk.Entry(frame, textvariable=variable, width=field.width)
+            widget.grid(row=grid_row, column=1, sticky="ew", pady=3)
+            variables[field.key] = variable
+            widgets[field.key] = widget
 
-        def sync_detector_state(*_args) -> None:
-            detector_enabled = self.normalize_scene_target_editor_kind(role_var.get()) == "detector"
-            state = "normal" if detector_enabled else "disabled"
-            for widget in detector_widgets:
-                widget.configure(state=state)
+        validation_var = tk.StringVar(master=window, value=form.summary)
+        ttk.Label(frame, textvariable=validation_var, foreground="#475569",
+                  wraplength=560).grid(row=len(form.fields) + 1, column=0, columnspan=2,
+                                       sticky="w", pady=(10, 0))
 
-        def validate_target() -> tuple[str, dict[str, object] | None] | None:
-            kind = self.normalize_scene_target_editor_kind(role_var.get())
-            detector_data = collect_detector_settings()
-            if detector_data is None:
-                return None
-            if kind == "detector" and row.surface == "Object":
-                validation_var.set("Object rows cannot be detector planes.")
-                return None
-            validation_var.set(
-                f"Validation passed: role={self.scene_target_editor_kind_labels.get(kind, kind)}, "
-                f"active={'yes' if active_var.get() else 'no'}."
-            )
-            return kind, detector_data
+        def sync_enabled() -> None:
+            """Follow form.locked -- the role choice turns the detector fields on and off."""
+            for key, widget in widgets.items():
+                if key in variables and form.field(key).kind != "choice":
+                    widget.configure(state="normal" if form.is_enabled(key) else "disabled")
+
+        def on_role_changed(*_args) -> None:
+            field = form.field("role")
+            if field is not None and field.on_change is not None:
+                field.on_change(form, variables["role"].get())
+            sync_enabled()
+
+        if "role" in widgets:
+            widgets["role"].bind("<<ComboboxSelected>>", on_role_changed, add="+")
+        sync_enabled()
+
+        def current_values() -> dict[str, str]:
+            return {key: ("true" if isinstance(variable, tk.BooleanVar) and variable.get()
+                          else "false" if isinstance(variable, tk.BooleanVar)
+                          else variable.get())
+                    for key, variable in variables.items()}
+
+        def validate_target() -> bool:
+            values = current_values()
+            errors = list(form.validate(values))
+            if errors:
+                validation_var.set(errors[0])
+                return False
+            validation_var.set("Validation passed: " + form.describe(values))
+            return True
 
         def apply_target() -> None:
-            validated = validate_target()
-            if validated is None:
-                return
-            kind, detector_data = validated
-            self._begin_history_capture()
             try:
-                result = self._apply_scene_target_editor_update(
-                    index,
-                    target_kind=kind,
-                    detector_settings=detector_data,
-                    active_target=bool(active_var.get()),
-                    row_name=name_var.get(),
-                )
-            except Exception as exc:
-                self._history_pending_state = None
+                form.apply(current_values())
+            except FormRefused as exc:
                 validation_var.set(str(exc))
                 return
-            self._sync_table()
-            self._select_table_row(index)
-            self._commit_history_capture()
-            self._mark_plot_update_pending()
-            self._refresh_nonseq_scene_graph_if_open()
-            self.status_var.set(
-                f"Updated scene target S{index}: {result['surface']} / {result['target_kind']}. Click Update to trace."
-            )
             window.destroy()
             self._cleanup_current_popup_menu()
 
-        def clear_target() -> None:
-            self._begin_history_capture()
-            self._clear_scene_target_editor_metadata(index)
-            self._sync_table()
-            self._select_table_row(index)
-            self._commit_history_capture()
-            self._mark_plot_update_pending()
-            self._refresh_nonseq_scene_graph_if_open()
-            self.status_var.set(f"Cleared scene-target metadata for S{index}.")
+        def run_action(action) -> None:
+            try:
+                action.run(form, host_of(self))
+            except FormRefused as exc:
+                validation_var.set(str(exc))
+                return
             window.destroy()
             self._cleanup_current_popup_menu()
-
-        role_combo.bind("<<ComboboxSelected>>", sync_detector_state, add="+")
-        sync_detector_state()
 
         footer = ttk.Frame(frame)
-        footer.grid(row=7, column=0, columnspan=2, sticky="e", pady=(12, 0))
-        ttk.Button(footer, text="Validate", command=validate_target).pack(side="right", padx=(0, 8))
+        footer.grid(row=len(form.fields) + 2, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        ttk.Button(footer, text="Validate", command=validate_target).pack(side="right",
+                                                                          padx=(0, 8))
         ttk.Button(footer, text="Apply", command=apply_target).pack(side="right")
-        ttk.Button(footer, text="Clear Target", command=clear_target).pack(side="right", padx=(0, 8))
+        for action in form.actions:
+            ttk.Button(footer, text=action.label,
+                       command=lambda a=action: run_action(a)).pack(side="right", padx=(0, 8))
         ttk.Button(footer, text="Cancel", command=window.destroy).pack(side="right", padx=(0, 8))
         self._show_centered_dialog(window)
 

@@ -333,6 +333,12 @@ class KrakenQtMainWindow(_main_window_class()):
 
         return self.open_row_form(build_detector_settings_form)
 
+    def scene_target_action(self):
+        """Edit the selected row's scene-target role, name and detector metadata."""
+        from KrakenOS.UI.row_forms import build_scene_target_form
+
+        return self.open_row_form(build_scene_target_form)
+
     def _forget_dialog(self, dialog) -> None:
         if dialog in self._open_dialogs:
             self._open_dialogs.remove(dialog)

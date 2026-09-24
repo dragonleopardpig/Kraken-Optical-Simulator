@@ -79,6 +79,10 @@ class RowForm:
     state: dict = field(default_factory=dict)
     #: live choice lists, when an action grows one (a metal catalog just loaded)
     choices: dict = field(default_factory=dict)
+    #: fields the form has locked SINCE it was built -- `FormField.enabled` is the static answer
+    #: (a value the model will never take edits to), this is the live one (a role choice that
+    #: turns the detector fields off). Views ask `is_enabled(key)`, never `field.enabled`.
+    locked: set = field(default_factory=set)
     note: str = ""
 
     def field(self, key: str) -> "FormField | None":
@@ -95,6 +99,19 @@ class RowForm:
 
     def fields_in(self, group: str) -> tuple:
         return tuple(item for item in self.fields if item.group == group)
+
+    def is_enabled(self, key: str) -> bool:
+        """Whether a view should accept edits to this field NOW."""
+        found = self.field(key)
+        return bool(found is not None and found.enabled) and key not in self.locked
+
+    def lock(self, *keys: str, locked: bool = True) -> None:
+        """Lock or unlock fields -- what an `on_change` calls to follow its own choice."""
+        for key in keys:
+            if locked:
+                self.locked.add(key)
+            else:
+                self.locked.discard(key)
 
     def choices_for(self, key: str) -> tuple:
         """The choices a view should offer NOW -- an action may have grown the list."""

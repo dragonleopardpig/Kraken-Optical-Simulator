@@ -16573,6 +16573,10 @@ phase_652_detector_settings_row_form = _phase_from_standalone(
     652, "the Detector Settings row form (Qt migration phase 3): the first dialog the framework absorbed with NOTHING new -- four fields, one Clear action and the model's own normaliser, which is what a finished framework is supposed to feel like. The model is split in two places and neither is the obvious one: _detector_settings is a workbench method on the editor while normalize_detector_settings reaches the Tk shell as a constructor kwarg, so the builder reads each off the owner and falls back to the defining module. The normaliser owns the rules the dialog only reports: bins outside 4-512 clamp, Auto/default/none mean blank (use the global Detector bins), and a settings dict that is all-default REMOVES the Detector key rather than storing zeros -- which is what Clear does. Guard: the refusals for no row and an Object row, the messages for a non-number, a negative size and bins out of range, the description, apply writing through the editor's own setter, Clear removing the key, the REAL Tk dialog showing the builder's values, and the Qt form opening with the same fields and applying the same (0874)",
     "KrakenOS.UI.validate_open3d_0874_detector_settings_row_form",
     "detector_settings_row_form")
+phase_653_scene_target_row_form = _phase_from_standalone(
+    653, "the Scene Target row form (Qt migration phase 3): a row's scene-target name, role and active non-sequential TargSurf, plus the detector metadata that only a Detector role may edit. That last 'only when' is what `FormField.enabled` could not express -- it is fixed when the form is BUILT, while the role choice turns the four detector fields on and off while the dialog is open. `RowForm.locked` + `form.is_enabled(key)` + `form.lock(*keys, locked=...)` hold the live answer, an `on_change` follows the choice, and BOTH views ask is_enabled rather than field.enabled (the Tk advanced-surface dialog was switched over too, where the two agree). All four of this dialog's model pieces reach the Tk shell as CONSTRUCTOR KWARGS rather than editor attributes, so the builder falls back to element_scene_metadata. Guard: the refusals, the lock opening on / unlocking under Detector / locking again under Auto while FormField.enabled stays True, the model's validation messages, apply writing role + name + active TargSurf, Clear Target removing them, the REAL Tk dialog showing the values with its four detector entries DISABLED, and the Qt dialog's widgets disabled at open and enabled live by the combo (0875)",
+    "KrakenOS.UI.validate_open3d_0875_scene_target_row_form",
+    "scene_target_row_form")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17291,6 +17295,7 @@ def main() -> int:
             phase_650_coating_material_row_form,
             phase_651_advanced_surface_row_form,
             phase_652_detector_settings_row_form,
+            phase_653_scene_target_row_form,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
