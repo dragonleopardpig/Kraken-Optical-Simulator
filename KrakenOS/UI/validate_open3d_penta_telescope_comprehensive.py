@@ -16653,6 +16653,10 @@ phase_672_shared_tk_row_form_view = _phase_from_standalone(
     672, "the five row dialogs that still drew their own Tk page now share the renderer (Qt migration phase 3, 0884): 0869-0873 moved Coating/Material, Diffuse/BRDF, Beam Splitter, Error Map and Advanced Surface into row_forms/ but left each panel a hand-written Tk layout -- 898 lines the shared panels/row_form_view.py already knew how to draw. Finishing it needed the two kinds the renderer lacked: kind='textarea' (a tk.Text, which has NO textvariable, so it is read and written by hand in current_values/refresh_from_form) and form.groups as a ttk.Notebook with a canvas+scrollbar per tab, which is exactly what the hand-written Advanced Surface page did for its 53 fields. The five panels are the read-the-table prologue plus one call now (74-87 lines each, from 144-246), and the Tk and Qt renderers are finally feature-equal. The interaction contract went red on four of them because the 'Validation passed:' line now belongs to the RENDERER, not each page -- re-pointed. Guard: the renderer draws every kind the builders use, the panels build no widgets of their own, and each REAL Tk dialog opens on the builder's fields (a textarea for the coating table, a 6-tab notebook with 52 entries for Advanced Surface, a real splitter row for Beam Splitter) or refuses with the builder's message (0884)",
     "KrakenOS.UI.validate_open3d_0884_shared_tk_row_form_view",
     "shared_tk_row_form_view")
+phase_673_scene_source_edit_form = _phase_from_standalone(
+    673, "the scene-source edit row form (Qt migration phase 3, 0885): bugs/0363's 'general 3D source element' popup -- name, origin, emit direction, emitting size, cone half-angle, ray count and power -- applied through update_scene_source_spec, the SAME path the seat-on-face glue uses, so the glyph, the illumination volume and the trace all follow. A coaxial illuminator gets two more fields (bugs/0401) and that is the MODEL deciding what the dialog CONTAINS: the builder reads the spec and adds them or does not, which no view can do for both toolkits. The renderer grew one option, modal=True, because the inspector's popups grab -- a click in the viewport behind must not retrace under a half-filled form. Guard: the fields and the two refusals (an unknown source, and no source at all), the messages for a zero direction / a zero size / non-numeric text, apply HALVING the entered size into radius_x/radius_y, a coaxial spec adding exactly the two edge fields where a plain one does not, the REAL Tk popup drawing 12 entries and grabbing, and the Qt dialog applying 14 x 6 mm as radii 7 and 3 (0885)",
+    "KrakenOS.UI.validate_open3d_0885_scene_source_edit_form",
+    "scene_source_edit_form")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17391,6 +17395,7 @@ def main() -> int:
             phase_670_catalog_record_forms,
             phase_671_inspection_cell_form,
             phase_672_shared_tk_row_form_view,
+            phase_673_scene_source_edit_form,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

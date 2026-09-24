@@ -377,6 +377,20 @@ class KrakenQtMainWindow(_main_window_class()):
 
         return self.open_row_form(build_inspection_cell_form, row_index=False)
 
+    def source_edit_action(self):
+        """Edit a scene source's origin, direction and emitting size."""
+        from KrakenOS.UI.row_forms import build_scene_source_edit_form
+
+        specs = self.editor._normalize_scene_source_specs(
+            getattr(self.editor, "layout_scene_source_specs", []) or [])
+        source_id = str(specs[0].get("source_id", "")) if specs else ""
+
+        def builder(editor, _row=None):
+            return build_scene_source_edit_form(editor, source_id)
+
+        builder.TITLE = build_scene_source_edit_form.TITLE
+        return self.open_row_form(builder, row_index=False)
+
     def _forget_dialog(self, dialog) -> None:
         if dialog in self._open_dialogs:
             self._open_dialogs.remove(dialog)

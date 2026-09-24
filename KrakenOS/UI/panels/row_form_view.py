@@ -18,7 +18,8 @@ from KrakenOS.UI.uihost import host_of
 _TWO_COLUMN_THRESHOLD = 14
 
 
-def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None) -> tk.Toplevel:
+def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None,
+                    modal: bool = False) -> tk.Toplevel:
     """Show `form` in a Tk dialog and return the window."""
     # `or owner`, not a getattr default: the editor forwards unknown attributes to its Tk root,
     # and `editor.editor` comes back as None rather than raising. With ONE interpreter that was
@@ -323,4 +324,11 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None) -
                    command=lambda a=action: run_action(a)).pack(side="right", padx=(0, 8))
     ttk.Button(footer, text="Cancel", command=close).pack(side="right", padx=(0, 8))
     owner._show_centered_dialog(window)
+    if modal:
+        # the 3D inspector's popups grab, so a click in the viewport behind cannot retrace
+        # under a half-filled form
+        try:
+            window.grab_set()
+        except Exception:
+            pass
     return window
