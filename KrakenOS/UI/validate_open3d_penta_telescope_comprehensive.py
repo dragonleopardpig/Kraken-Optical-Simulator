@@ -16585,6 +16585,38 @@ phase_655_embedded_3d_interaction_contract = _phase_from_standalone(
     655, "the embedded 3D interaction contract is a GATED phase (0877): 258 checks covering the mouse bindings, the STEP pick/carry/rotate/snap paths, the placement gizmos, the thickness dimensions, the optical-axis guides and where every dialog lives. It had never been registered, so nothing ran it -- and 23 of its assertions had quietly rotted while the code they described moved or was deliberately replaced: the fixed-drag camera (pinned to VTK Azimuth/Elevation about a re-set focal point, replaced by a rigid Rodrigues orbit that carries the view-up THROUGH the pole), the five row dialogs whose fields moved into row_forms/ during 0869-0873, the STEP normal snap (default anchor evolved surface_center -> pick_point -> body_center), the thickness click (now classified as PickTarget.THICKNESS_DIMENSION and handled by ThicknessDimensionWidget, and it DOES grab_set on purpose -- the VTK canvas was stealing focus), the placement drag (previews with actor transforms, commits at release), the axis guides (one per fold direction, not one chief), the launch family (visible-without-clipping, not reaches-image), and a timing-decorated _update_hover_status whose real body is the _impl. Two assertions were matching the code's OWN COMMENTS. Where the implementation was superseded the check is now MEASURED, not matched: the orbit's rate, rigidity and pole crossing are computed, and the escaped-ray line colour is read from a real _ray_terminal_3d_style call (0877)",
     "KrakenOS.UI.validate_3d_interaction_contract",
     "embedded_3d_interaction_contract")
+phase_656_open3d_toolbar_layout = _phase_from_standalone(
+    656, "the Open 3D toolbar layout contract is a GATED phase (0877): the direct-control budgets, the category menus and where each control lives. Three claims were stale because the controls MOVED and the checks did not: bugs/0093 deleted the toolbar's Ray count on purpose (it duplicated the Live Controls entry and both bound ray_count_var, so the check now asserts the Live Controls panel owns it with sync_fields=True AND that the toolbar keeps no duplicate); the side panels are collapsed from their OWN headers now, with an edge arrow to restore each, not from two toolbar checkbuttons; 'Import Lens STEP...' is 'Import Imaging Lens STEP...'; and 'Accept STEP Placement' moved into the Scene Components panel, where the check now looks for it",
+    "KrakenOS.UI.validate_open3d_toolbar_layout",
+    "open3d_toolbar_layout")
+phase_657_open3d_row_actions_parity = _phase_from_standalone(
+    657, "the Open 3D row-actions parity contract is a GATED phase (0877): every spatially-meaningful 2D row action (Flip, Move Up/Down, Group/Ungroup, Copy/Paste, Delete, Element Settings) stays reachable from the 3D right-click on a promoted body, plus the flip_rows behaviour on a synthetic 3-row achromat. It failed only because bugs/0619 consolidated every CAD/Place/Orient verb into ONE shared builder (append_element_context_actions, called by BOTH the right-click menu and the Scene Components tree), so the contract now spans the handler and the builder it delegates to",
+    "KrakenOS.UI.validate_open3d_row_actions_parity",
+    "open3d_row_actions_parity")
+phase_658_projection_sync_2d_3d = _phase_from_standalone(
+    658, "2D views are projections of the Open 3D display rays, on a real vendor penta prism (0877): same bounding, same event vertices, in YZ/XZ/XY. Its three penta assertions had rotted into pinning conventions rather than physics -- the exact face tuple (the two INTERNAL reflection faces swapped labels when the planar-face clustering renumbered them, which says nothing about the light), 'escaped' vs 'missed_detector' (the detector-miss work made a miss VISIBLE instead of silently leaving the scene; a 1 mm image cannot catch a 10 mm collimated beam, so 30 of 31 rays miss by design), and an exit along -Y (the port-anchored pose solution faces +Y, and validate_vendor_prism_42779 independently agrees). They now assert the SHAPE -- one path for every ray, entry face then two distinct internal reflections then exit face -- and the physics: collimation preserved and a constant 90 deg deviation, whichever way the solved pose faces",
+    "KrakenOS.UI.validate_2d_3d_projection_sync",
+    "projection_sync_2d_3d")
+phase_659_phase8_field_contract = _phase_from_standalone(
+    659, "the Phase 8 branch-field data contract is a GATED phase (0877): synthetic Gaussian TEM00 fields, mode overlap, and a real Michelson detector field propagated 10 mm. It raised RuntimeError('No detector output or terminal path filter found') on a scene whose detector works perfectly -- the call site asked for the path filter BEFORE handing over the dense retrace's records, so the helper read the editor's stale single-arm records where the recombined detector path does not exist yet. Five validators shared that bug; the two that already passed ray_records were the two that worked",
+    "KrakenOS.UI.validate_phase8_field_contract",
+    "phase8_field_contract")
+phase_660_coherent_detector_modes = _phase_from_standalone(
+    660, "coherent detector sum modes are a GATED phase (0877): By source ray / All rays coherent / Incoherent power only each report detector samples, >= 4 bins and a positive peak on the Michelson interferogram. Same stale-records call site as phase 659",
+    "KrakenOS.UI.validate_coherent_detector_modes",
+    "coherent_detector_modes")
+phase_661_diffraction_detector = _phase_from_standalone(
+    661, "detector angular-spectrum diffraction analysis is a GATED phase (0877): the detector field, its propagation and the diffraction observables on the interferometer layouts. Same stale-records call site as phase 659",
+    "KrakenOS.UI.validate_diffraction_detector",
+    "diffraction_detector")
+phase_662_detector_sampling_stability = _phase_from_standalone(
+    662, "detector sampling stability is a GATED phase (0877): the coherent and diffraction detector results stay stable across detector-bin counts and coherence modes. Same stale-records call site as phase 659",
+    "KrakenOS.UI.validate_detector_sampling_stability",
+    "detector_sampling_stability")
+phase_663_gaussian_detector_recombination = _phase_from_standalone(
+    663, "detector-side Gaussian q coherent recombination is a GATED phase (0877): the q-weighted recombination reproduces the plain coherent sum's structure on the two-arm layouts. Same stale-records call site as phase 659",
+    "KrakenOS.UI.validate_gaussian_detector_recombination",
+    "gaussian_detector_recombination")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17306,6 +17338,14 @@ def main() -> int:
             phase_653_scene_target_row_form,
             phase_654_element_row_forms,
             phase_655_embedded_3d_interaction_contract,
+            phase_656_open3d_toolbar_layout,
+            phase_657_open3d_row_actions_parity,
+            phase_658_projection_sync_2d_3d,
+            phase_659_phase8_field_contract,
+            phase_660_coherent_detector_modes,
+            phase_661_diffraction_detector,
+            phase_662_detector_sampling_stability,
+            phase_663_gaussian_detector_recombination,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

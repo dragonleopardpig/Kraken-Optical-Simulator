@@ -228,14 +228,31 @@ def _validate_penta_physics(bundle: object) -> list[str]:
     paths = list(getattr(bundle, "ray_paths", []) or [])
     if len(paths) != 31:
         failures.append(f"penta ray count={len(paths)}, expected 31")
+    # bugs/0877: this used to pin the exact tuple ("F005", "F003", "F004", "F006"). The two
+    # INTERNAL reflection faces swapped labels when the planar-face clustering renumbered them,
+    # which says nothing about the light -- a ray must strike them in a fixed geometric order
+    # whatever they are called. Pin the SHAPE instead: one path for every ray, in through the
+    # entry face, two distinct internal reflections, out through the exit face.
     sequences = Counter(_surface_face_sequence(path) for path in paths)
-    expected_sequence = ("F005", "F003", "F004", "F006")
-    if set(sequences) != {expected_sequence}:
-        failures.append(f"penta face sequences={dict(sequences)}, expected only {expected_sequence}")
+    if len(sequences) != 1:
+        failures.append(f"penta rays take more than one path: {dict(sequences)}")
+    else:
+        sequence = next(iter(sequences))
+        if (len(sequence) != 4 or sequence[0] != "F005" or sequence[-1] != "F006"
+                or sequence[1] == sequence[2]):
+            failures.append(
+                f"penta face sequence={sequence}, expected entry F005, two distinct internal "
+                "reflections, exit F006")
+    # A 1 mm image diameter cannot catch a 10 mm collimated beam, so only the central ray lands.
+    # The other 30 now report missed_detector rather than escaped -- the detector-miss work made
+    # a miss VISIBLE instead of silently leaving the scene. What must not happen is a ray being
+    # absorbed or stopped inside the prism.
     statuses = Counter(ray_path_terminal_status_from_events(path) for path in paths)
-    unexpected_statuses = set(statuses) - {"escaped", "hit_detector"}
+    unexpected_statuses = set(statuses) - {"escaped", "hit_detector", "missed_detector"}
     if unexpected_statuses:
         failures.append(f"unexpected penta terminal statuses={dict(statuses)}")
+    if not statuses.get("hit_detector"):
+        failures.append(f"no penta ray reached the detector: {dict(statuses)}")
     exit_directions: list[np.ndarray] = []
     for path in paths:
         points = np.asarray(getattr(path, "points_world", []), dtype=float)
@@ -249,14 +266,25 @@ def _validate_penta_physics(bundle: object) -> list[str]:
             continue
         exit_directions.append(segment / norm)
     if exit_directions:
+        # bugs/0877: this used to demand the exit run along -Y. The port-anchored pose solution
+        # puts it along +Y, and validate_vendor_prism_42779 independently agrees (its runtime
+        # trace lands at y=+52.5), so the old assertion pinned a sign, not the physics. What a
+        # penta prism actually guarantees is a CONSTANT 90 deg deviation with collimation
+        # preserved, whichever way the solved pose faces -- assert that.
         directions = np.asarray(exit_directions, dtype=float)
-        lateral = float(np.nanmax(np.linalg.norm(directions[:, [0, 2]], axis=1)))
-        y_min = float(np.nanmin(directions[:, 1]))
-        y_max = float(np.nanmax(directions[:, 1]))
-        if lateral > 1.0e-4 or y_max > -0.9999:
+        mean_direction = directions[0]
+        spread = float(np.nanmax(np.linalg.norm(directions - mean_direction, axis=1)))
+        launch = np.asarray((0.0, 0.0, 1.0), dtype=float)
+        deviation_cos = float(abs(np.dot(mean_direction, launch)))
+        if spread > 1.0e-4:
             failures.append(
-                "penta final exit directions are not collimated along -Y: "
-                f"max_lateral={lateral:.3e}, y_range=({y_min:.6f}, {y_max:.6f})"
+                f"penta exit is not collimated: direction spread={spread:.3e}, "
+                f"exit={mean_direction.tolist()}"
+            )
+        if deviation_cos > 1.0e-4:
+            failures.append(
+                "penta prism must deviate the beam by 90 deg: "
+                f"|exit . launch|={deviation_cos:.3e}, exit={mean_direction.tolist()}"
             )
     return failures
 
@@ -349,6 +377,28 @@ def _validate_3d_ray_renderer_segments() -> list[str]:
         if np.any(np.all(np.isclose(points, event_vertex, rtol=0.0, atol=1.0e-12), axis=1)):
             failures.append("3D ray segment mesh keeps an exact interior event vertex")
     return failures
+
+
+def run_checks() -> tuple[bool, list[str]]:
+    """Penta-harness entry point (bugs/0877): this guard is a registered phase now."""
+    editor, rays, bundle = _penta_bundle()
+    groups = (
+        ("2D views are projections of the Open 3D display rays",
+         _validate_projection_sync(editor, rays, bundle)),
+        ("the penta prism deviates the collimated beam by 90 deg",
+         _validate_penta_physics(bundle)),
+        ("the 2D renderer stops segments at event vertices",
+         _validate_2d_ray_renderer_segments()),
+        ("the 3D renderer stops segments at event vertices",
+         _validate_3d_ray_renderer_segments()),
+    )
+    notes = []
+    for title, failures in groups:
+        if failures:
+            notes.extend("FAIL " + str(failure) for failure in failures)
+        else:
+            notes.append("= " + title)
+    return not any(failures for _title, failures in groups), notes
 
 
 def main() -> int:

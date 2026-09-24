@@ -12,6 +12,8 @@ import re
 
 from KrakenOS.UI.layout_editor import Kraken3DInspector
 from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
+from KrakenOS.UI.panels.open3d_live_controls import Open3DLiveControlsPanel
+from KrakenOS.UI.panels.open3d_step_admin import Open3DStepAdminPanel
 from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService
 
 
@@ -22,12 +24,11 @@ _MAX_DIRECT_CARRY_CONTROLS = 7
 _MENU_EXPECTATIONS: dict[str, tuple[str, ...]] = {
     "CAD / target": (
         "Import Optical STEP...",
-        "Import Lens STEP...",
+        "Import Imaging Lens STEP...",
         "Import Camera STEP...",
         "Import LED STEP...",
         "Clear STEP Imports",
         "Arm Selected STEP Carry",
-        "Accept STEP Placement",
         "Promote to Optical Element",
         "Center STEP Axis",
         "Snap STEP Surface-Center Normal->Optical Axis",
@@ -88,11 +89,33 @@ def _contains_menu_label(source: str, label: str) -> bool:
     )
 
 
+def run_checks() -> tuple[bool, list[str]]:
+    """Penta-harness entry point (bugs/0877): this guard is a registered phase now."""
+    import contextlib
+    import io
+
+    stream = io.StringIO()
+    with contextlib.redirect_stdout(stream):
+        code = main()
+    lines = [line for line in stream.getvalue().splitlines() if line.strip()]
+    notes = [("FAIL " + line.lstrip("- ")) if line.startswith("- ") else ("= " + line)
+             for line in lines]
+    return code == 0, notes
+
+
 def main() -> int:
     init_source = inspect.getsource(Kraken3DInspector.__init__)
     top_controls_source = inspect.getsource(Open3DTopControlsPanel)
     normalized_top_controls_source = top_controls_source.replace("self.inspector.", "self.")
     toolbar_source = init_source + "\n" + normalized_top_controls_source
+    # bugs/0877: three of this file's claims were pinned to the TOP strip after the
+    # controls moved into the two side panels, so inspect those too.
+    live_controls_source = inspect.getsource(Open3DLiveControlsPanel)
+    step_admin_source = inspect.getsource(Open3DStepAdminPanel)
+    panel_toggle_source = (
+        inspect.getsource(Kraken3DInspector._set_open3d_side_panel_visible)
+        + inspect.getsource(Kraken3DInspector.toggle_live_controls_panel)
+        + inspect.getsource(Kraken3DInspector.toggle_scene_components_panel))
     import_step_source = inspect.getsource(Kraken3DInspector.import_step_overlay)
     import_optical_source = inspect.getsource(Kraken3DInspector.import_optical_step_overlay)
     view_direct = _direct_widget_count(toolbar_source, "view_toolbar")
@@ -174,20 +197,27 @@ def main() -> int:
             "ray clicks should not open Ray Inspector unless the user enables the Pick rays toggle",
         ),
         (
-            "Open 3D view row exposes a Ray count synced to the 2D ray_count_var",
-            '"Ray count"' in toolbar_source
-            and '_editor_var("ray_count_var")' in toolbar_source
-            and "_commit_live_control_update(sync_fields=True)" in toolbar_source,
-            "the always-visible View row should set ray count via the shared 2D ray_count_var so 2D and 3D stay in sync",
+            # bugs/0093 REMOVED the toolbar's Ray count entry on purpose -- it duplicated the
+            # Live Controls one and both bound ray_count_var. One source, still the shared 2D
+            # variable, so 2D and 3D stay in sync.
+            "Open 3D Live Controls own the Ray count, synced to the 2D ray_count_var",
+            '"Ray count", "ray_count_var"' in live_controls_source
+            and "sync_fields=True" in live_controls_source
+            and "_open3d_toolbar_ray_count_entry = None" in toolbar_source,
+            "Ray count belongs to the Live Controls panel, bound to the shared 2D ray_count_var",
         ),
         (
-            "Open 3D view row can hide side panels",
-            '"Live panel"' in toolbar_source
-            and "show_live_controls_panel_var" in toolbar_source
-            and '"Components"' in toolbar_source
+            # they are collapsed from the panels' own headers now, with an edge arrow to bring
+            # each one back -- the toolbar no longer carries the two checkbuttons
+            "Open 3D side panels collapse and restore from the 3D window",
+            "show_live_controls_panel_var" in toolbar_source
             and "show_scene_components_panel_var" in toolbar_source
-            and "_on_open3d_panel_visibility_changed" in toolbar_source,
-            "3D side panels should be hideable from the same always-visible toolbar as 2D sidebars.",
+            and "toggle_live_controls_panel" in live_controls_source
+            and "toggle_scene_components_panel" in step_admin_source
+            and "_open3d_live_panel_host" in panel_toggle_source
+            and "_open3d_step_admin_panel_host" in panel_toggle_source
+            and "paned.forget(widget)" in panel_toggle_source,
+            "3D side panels must be collapsible, with an edge control that restores them.",
         ),
         (
             "Open 3D carry row avoids explicit Lift/Drop buttons",
@@ -234,6 +264,15 @@ def main() -> int:
                     f"missing menu item {action_label!r}",
                 )
             )
+
+    checks.append(
+        (
+            "Accept STEP Placement is reachable from the Scene Components panel",
+            "Accept STEP Placement" in step_admin_source
+            and "accept_selected_step_placement" in step_admin_source,
+            "missing 'Accept STEP Placement' in the STEP admin panel",
+        )
+    )
 
     for label in _DENSE_ACTION_LABELS:
         direct_button = _contains_widget_text(

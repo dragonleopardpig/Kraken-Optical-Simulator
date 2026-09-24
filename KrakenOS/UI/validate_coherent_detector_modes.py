@@ -19,10 +19,35 @@ class _Var:
         self._value = value
 
 
+def run_checks() -> tuple[bool, list[str]]:
+    """Penta-harness entry point (bugs/0877): this guard is a registered phase now.
+
+    `main()` asserts rather than collecting, so turn the first failed assertion into the note.
+    """
+    import contextlib
+    import io
+
+    stream = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(stream):
+            main()
+    except AssertionError as exc:
+        return False, [f"FAIL coherent detector modes: {exc}"]
+    notes = [("= " + line) for line in stream.getvalue().splitlines() if line.strip()]
+    return True, notes or ["= every coherent sum mode reports detector samples"]
+
+
 def main() -> None:
-    editor, system, _rays, wavelength = _load_traced_editor("Michelson Interferometer (Interferogram)")
+    editor, system, rays, wavelength = _load_traced_editor("Michelson Interferometer (Interferogram)")
     editor.coherent_sum_mode_var = _Var("By source ray")
-    filter_text = _preferred_output_or_terminal_filter(editor)
+    # bugs/0877: derive the filter from the DENSE retrace's records. Without them the
+    # helper reads the editor's stale single-arm records, where the recombined detector
+    # path does not exist yet, and refuses with "No detector output or terminal path
+    # filter found" on a scene whose detector is working perfectly.
+    filter_text = _preferred_output_or_terminal_filter(
+        editor,
+        ray_records=editor._ray_analysis_records_for_trace(system=system, rays=rays),
+    )
     results = {}
     for mode in COHERENT_SUM_MODE_VALUES:
         editor.coherent_sum_mode_var.set(mode)

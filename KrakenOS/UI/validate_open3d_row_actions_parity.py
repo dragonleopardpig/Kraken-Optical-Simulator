@@ -55,7 +55,12 @@ def _check_source_contracts() -> list[str]:
             "optical-solid row (Tier 2 STL or Tier 3 native), not just file-backed STL"
         )
 
-    menu_src = inspect.getsource(Open3DFaceAssignmentService._show_surface_function_context_menu)
+    # bugs/0619 consolidated every CAD/Place/Orient verb into ONE shared builder, which the
+    # right-click menu AND the Scene Components tree both call -- so the menu contract now
+    # spans the handler plus the builder it delegates to (bugs/0877).
+    menu_src = (
+        inspect.getsource(Open3DFaceAssignmentService._show_surface_function_context_menu)
+        + inspect.getsource(Open3DFaceAssignmentService.append_element_context_actions))
     cascade_src = inspect.getsource(Open3DFaceAssignmentService._build_row_actions_cascade)
     if "_build_row_actions_cascade" not in menu_src:
         failures.append("right-click menu must invoke _build_row_actions_cascade")
@@ -151,6 +156,15 @@ def _check_flip_rows_behaviour() -> list[str]:
     finally:
         app.destroy()
     return failures
+
+
+def run_checks() -> tuple[bool, list[str]]:
+    """Penta-harness entry point (bugs/0877): this guard is a registered phase now."""
+    failures = list(_check_source_contracts()) + list(_check_flip_rows_behaviour())
+    notes = ["FAIL " + failure for failure in failures]
+    if not failures:
+        notes.append("= the 3D right-click menu mirrors every core 2D row action")
+    return not failures, notes
 
 
 def main() -> int:

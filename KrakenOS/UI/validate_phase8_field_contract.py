@@ -96,8 +96,12 @@ def _detector_field_checks() -> list[Phase8FieldContractCheck]:
         ray_count=21,
         source_radius=10.0,
     )
-    filter_text = _preferred_output_or_terminal_filter(editor)
+    # bugs/0877: derive the filter from the DENSE retrace's records. Without them the
+    # helper reads the editor's stale single-arm records, where the recombined detector
+    # path does not exist yet, and refuses with "No detector output or terminal path
+    # filter found" on a scene whose detector is working perfectly.
     ray_records = editor._ray_analysis_records_for_trace(system=system, rays=rays)
+    filter_text = _preferred_output_or_terminal_filter(editor, ray_records=ray_records)
     data = editor._coherent_detector_field_data(system, wavelength, filter_text, ray_records=ray_records)
     data = dict(data)
     data["wavelength_um"] = float(wavelength)
@@ -224,6 +228,17 @@ def _print_table(checks: list[Phase8FieldContractCheck]) -> None:
     print("--- | --- | ---")
     for check in checks:
         print(f"{check.check} | {'PASS' if check.ok else 'FAIL'} | {check.detail}")
+
+
+def run_checks() -> tuple[bool, list[str]]:
+    """Penta-harness entry point (bugs/0877): this guard is a registered phase now."""
+    checks = validate_phase8_field_contract()
+    notes = []
+    for check in checks:
+        label = ""
+        notes.append(("= " if check.ok else "FAIL ") + label + str(check.check)
+                     + ": " + str(check.detail))
+    return all(check.ok for check in checks), notes
 
 
 def main() -> int:
