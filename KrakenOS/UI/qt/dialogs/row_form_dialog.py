@@ -40,6 +40,34 @@ class RowFormDialog(_dialog_class()):
 
         self.widgets: dict = {}
         self.tabs = None
+        self.records_view = None
+        # A record-list form (the Scene Source Manager) edits ONE item of a collection it also
+        # owns, so the list goes beside the fields and the selection is model state, not view
+        # state: picking a row calls form.records.select(form, index) and the form rewrites
+        # itself (bugs/0881).
+        host_widget = self
+        if form.records is not None:
+            from PySide6.QtWidgets import QSplitter, QTableWidget, QTableWidgetItem
+            from PySide6.QtCore import Qt
+
+            splitter = QSplitter(Qt.Orientation.Horizontal)
+            self.records_view = QTableWidget(0, len(form.records.columns))
+            self.records_view.setHorizontalHeaderLabels(list(form.records.columns))
+            self.records_view.setSelectionBehavior(
+                QTableWidget.SelectionBehavior.SelectRows)
+            self.records_view.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+            self.records_view.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+            self.records_view.verticalHeader().setVisible(False)
+            splitter.addWidget(self.records_view)
+            fields_host = QWidget()
+            splitter.addWidget(fields_host)
+            splitter.setStretchFactor(1, 2)
+            layout.addWidget(splitter, stretch=1)
+            host_layout = QVBoxLayout(fields_host)
+            host_layout.setContentsMargins(0, 0, 0, 0)
+            host_widget = fields_host
+            self._records_item = QTableWidgetItem
+            self.setMinimumSize(1120, 720)
         if form.groups:
             # one tab per group, in field order -- Shape Params, each attribute group, Custom
             self.tabs = QTabWidget()
@@ -50,7 +78,8 @@ class RowFormDialog(_dialog_class()):
                     label, widget = self._build_field(field)
                     page_layout.addRow(label, widget)
                 self.tabs.addTab(page, group)
-            layout.addWidget(self.tabs, stretch=1)
+            (host_layout if host_widget is not self else layout).addWidget(self.tabs,
+                                                                            stretch=1)
             grid = None
         else:
             grid = QFormLayout()
@@ -58,7 +87,21 @@ class RowFormDialog(_dialog_class()):
             label, widget = self._build_field(field)
             grid.addRow(label, widget)
         if grid is not None:
-            layout.addLayout(grid)
+            if host_widget is not self:
+                # ~30 fields is taller than a laptop screen: give the form its own scroll area
+                from PySide6.QtWidgets import QScrollArea
+
+                page = QWidget()
+                page.setLayout(grid)
+                scroller = QScrollArea()
+                scroller.setWidgetResizable(True)
+                scroller.setWidget(page)
+                host_layout.addWidget(scroller)
+            else:
+                layout.addLayout(grid)
+        if self.records_view is not None:
+            self.records_view.itemSelectionChanged.connect(self.on_record_selected)
+            self.refresh_records()
 
         self.summary = QLabel(form.summary)
         self.summary.setWordWrap(True)
@@ -144,14 +187,58 @@ class RowFormDialog(_dialog_class()):
             self.summary.setText(message)
         return message
 
+    def refresh_records(self) -> None:
+        """Redraw the master list from the model and re-select what the form is editing."""
+        if self.records_view is None:
+            return
+        rows = list(self.form.records.rows(self.form))
+        self.records_view.blockSignals(True)
+        try:
+            self.records_view.setRowCount(len(rows))
+            for position, row in enumerate(rows):
+                for column, text in enumerate(row):
+                    self.records_view.setItem(position, column,
+                                              self._records_item(str(text)))
+            if rows:
+                self.records_view.selectRow(
+                    min(max(0, self.form.selected_index), len(rows) - 1))
+            self.records_view.resizeColumnsToContents()
+        finally:
+            self.records_view.blockSignals(False)
+
+    def on_record_selected(self) -> str:
+        rows = self.records_view.selectionModel().selectedRows()
+        if not rows:
+            return ""
+        index = int(rows[0].row())
+        if index == self.form.selected_index:
+            return ""
+        try:
+            message = self.form.records.select(self.form, index)
+        except FormRefused as exc:
+            self.summary.setText(str(exc))
+            return ""
+        self.refresh_from_form()
+        if message:
+            self.summary.setText(message)
+        return message
+
     def run_action(self, action) -> str:
         """Run a form action, then show whatever it changed."""
+        if self.form.records is not None:
+            self.form.values.update(self.values())
         try:
             message = action.run(self.form, self.host)
         except FormRefused as exc:
             self.host.showerror(self.form.title, str(exc))
             self.summary.setText(f"{action.label}: {str(exc).splitlines()[0]}")
             return ""
+        if self.form.records is not None and self.form.state.pop("close_after", False):
+            self.refresh_from_form()
+            self.summary.setText(message or self.form.summary)
+            self.accept()
+            return message
+        self.refresh_records()
         self.refresh_from_form()
         self.summary.setText(message or self.form.summary)
         return message

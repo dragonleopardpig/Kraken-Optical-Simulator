@@ -25,6 +25,7 @@ from KrakenOS.UI.row_forms import diffuse_scatter as diffuse_scatter_row_form_mo
 from KrakenOS.UI.row_forms import element_forms as element_row_forms_module
 from KrakenOS.UI.row_forms import error_map as error_map_row_form_module
 from KrakenOS.UI.row_forms import scene_target as scene_target_row_form_module
+from KrakenOS.UI.row_forms import scene_sources as scene_sources_row_form_module
 from KrakenOS.UI.panels.main_analysis_controls import MainAnalysisToolbarPanel, MainInformationPanel
 from KrakenOS.UI.panels.main_branch_gaussian_q_dialog import MainBranchGaussianQDialog
 from KrakenOS.UI.panels.main_branch_throughput_report_dialog import MainBranchThroughputReportDialog
@@ -425,6 +426,7 @@ def _evaluate_checks() -> tuple[list, dict]:
     element_row_forms = inspect.getsource(element_row_forms_module)
     error_map_row_form = inspect.getsource(error_map_row_form_module)
     scene_target_row_form = inspect.getsource(scene_target_row_form_module)
+    scene_sources_row_form = inspect.getsource(scene_sources_row_form_module)
     scene_element_dialogs = inspect.getsource(MainSceneElementDialogs)
     main_advanced_surface_factory = inspect.getsource(KrakenLayoutEditor._main_advanced_surface_dialog)
     open_advanced_surface_dialog = inspect.getsource(KrakenLayoutEditor.open_advanced_surface_editor)
@@ -1312,8 +1314,13 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "normalize_source_row_order=normalize_source_row_order" in main_scene_source_factory
             and "self._main_scene_source_manager_dialog().open_scene_source_manager(" in open_scene_source_manager
             and "Scene Source Manager" in main_scene_source_dialog
-            and "Add From Source Panel" in main_scene_source_dialog
-            and "Use Source Panel Only" in main_scene_source_dialog,
+            # bugs/0881: the manager became a record-list ROW FORM, so its collection verbs
+            # are FormActions in row_forms/scene_sources.py and its Tk layout is the shared
+            # panels/row_form_view.py -- the panel keeps only the factory's kwargs.
+            and "Add From Source Panel" in scene_sources_row_form
+            and "Use Source Panel Only" in scene_sources_row_form
+            and "build_scene_source_manager_form(" in main_scene_source_dialog
+            and "render_row_form(" in main_scene_source_dialog,
         ),
         (
             "Stock lens importer dialog lives outside layout_editor",

@@ -1,0 +1,263 @@
+"""The Tk view of a `RowForm` (docs/design_qt_migration.md phase 3).
+
+The Tk half of what `qt/dialogs/row_form_dialog.py` does for Qt, and the only place in the Tk
+tree that knows which widget a `FormField` becomes. Everything it draws -- the fields, their
+kinds, their live locks, the master record list, the actions, the validation line -- belongs to
+the form; this decides nothing.
+"""
+from __future__ import annotations
+
+import tkinter as tk
+from tkinter import messagebox, ttk
+from typing import Any
+
+from KrakenOS.UI.row_forms import FormRefused
+from KrakenOS.UI.uihost import host_of
+
+#: beyond this many fields a single column is taller than a screen, so pair them up
+_TWO_COLUMN_THRESHOLD = 14
+
+
+def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None) -> tk.Toplevel:
+    """Show `form` in a Tk dialog and return the window."""
+    editor = getattr(owner, "editor", owner)
+    window = tk.Toplevel(editor)
+    window.withdraw()
+    window.title(form.title)
+    window.transient(editor)
+    window.columnconfigure(0, weight=1)
+    window.rowconfigure(0, weight=1)
+
+    frame = ttk.Frame(window, padding=12)
+    frame.grid(row=0, column=0, sticky="nsew")
+    frame.columnconfigure(0, weight=1)
+    frame.rowconfigure(1, weight=1)
+
+    ttk.Label(frame, text=form.note, wraplength=wraplength + 40,
+              foreground="#475569").grid(row=0, column=0, columnspan=2, sticky="w",
+                                         pady=(0, 10))
+
+    body = ttk.Frame(frame)
+    body.grid(row=1, column=0, columnspan=2, sticky="nsew")
+    body.rowconfigure(0, weight=1)
+
+    tree = None
+    if form.records is not None:
+        left = ttk.Frame(body)
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        left.rowconfigure(0, weight=1)
+        left.columnconfigure(0, weight=1)
+        body.columnconfigure(0, weight=1)
+        columns = tuple(form.records.columns)
+        tree = ttk.Treeview(left, columns=columns, show="headings", selectmode="browse",
+                            height=12)
+        for column in columns:
+            tree.heading(column, text=column)
+            tree.column(column, width=130, anchor="w", stretch=True)
+        tree.grid(row=0, column=0, sticky="nsew")
+        scroll = ttk.Scrollbar(left, orient="vertical", command=tree.yview)
+        scroll.grid(row=0, column=1, sticky="ns")
+        tree.configure(yscrollcommand=scroll.set)
+        fields_host = ttk.LabelFrame(body, text="Selected record", padding=10)
+        fields_host.grid(row=0, column=1, sticky="nsew")
+        body.columnconfigure(1, weight=2)
+    else:
+        fields_host = ttk.Frame(body)
+        fields_host.grid(row=0, column=0, sticky="nsew")
+        body.columnconfigure(0, weight=1)
+
+    two_column = len(form.fields) > _TWO_COLUMN_THRESHOLD
+    for column in range(4 if two_column else 2):
+        fields_host.columnconfigure(column, weight=1 if column % 2 else 0)
+
+    variables: dict[str, tk.Variable] = {}
+    widgets: dict[str, ttk.Widget] = {}
+    for position, field in enumerate(form.fields):
+        grid_row = position // 2 if two_column else position
+        base = 2 * (position % 2) if two_column else 0
+        value = form.values.get(field.key, "")
+        if field.kind == "static":
+            ttk.Label(fields_host, text=field.label).grid(row=grid_row, column=base, sticky="w",
+                                                          padx=(0 if base == 0 else 8, 10),
+                                                          pady=3)
+            ttk.Label(fields_host, text=value, foreground="#334155",
+                      wraplength=wraplength - 160).grid(row=grid_row, column=base + 1,
+                                                        sticky="w", pady=3)
+            continue
+        if field.kind == "bool":
+            variable = tk.BooleanVar(
+                master=window, value=str(value).strip().lower() in ("1", "true", "yes", "on"))
+            widget = ttk.Checkbutton(fields_host, text=field.label, variable=variable)
+            widget.grid(row=grid_row, column=base, columnspan=2, sticky="w",
+                        padx=(0 if base == 0 else 8, 0), pady=3)
+        else:
+            ttk.Label(fields_host, text=field.label).grid(row=grid_row, column=base, sticky="w",
+                                                          padx=(0 if base == 0 else 8, 10),
+                                                          pady=3)
+            variable = tk.StringVar(master=window, value=str(value))
+            if field.kind == "choice":
+                widget = ttk.Combobox(fields_host, textvariable=variable,
+                                      values=list(form.choices_for(field.key)),
+                                      state="normal" if field.editable else "readonly",
+                                      width=max(field.width, 20))
+            else:
+                widget = ttk.Entry(fields_host, textvariable=variable, width=field.width)
+            widget.grid(row=grid_row, column=base + 1, sticky="ew", pady=3)
+        if field.hint:
+            widget_hint = field.hint
+            try:
+                widget.configure(cursor="question_arrow")
+            except Exception:
+                pass
+            widget.bind("<Enter>", lambda _e, text=widget_hint: validation_var.set(text),
+                        add="+")
+        variables[field.key] = variable
+        widgets[field.key] = widget
+
+    validation_var = tk.StringVar(master=window, value=form.summary)
+    ttk.Label(frame, textvariable=validation_var, foreground="#475569",
+              wraplength=wraplength + 40).grid(row=2, column=0, columnspan=2, sticky="w",
+                                               pady=(10, 0))
+
+    def sync_enabled() -> None:
+        """Follow `form.locked` -- a choice may turn other fields off while we are open."""
+        for key, widget in widgets.items():
+            field = form.field(key)
+            if field is not None and field.kind not in ("choice", "bool"):
+                widget.configure(state="normal" if form.is_enabled(key) else "disabled")
+
+    def refresh_from_form() -> None:
+        for key, variable in variables.items():
+            value = str(form.values.get(key, ""))
+            if isinstance(variable, tk.BooleanVar):
+                variable.set(value.strip().lower() in ("1", "true", "yes", "on"))
+            elif variable.get() != value:
+                variable.set(value)
+        for key, widget in widgets.items():
+            field = form.field(key)
+            if field is not None and field.kind == "choice":
+                wanted = list(form.choices_for(key))
+                if list(widget.cget("values")) != wanted:
+                    widget.configure(values=wanted)
+        sync_enabled()
+
+    def refresh_records(select_index: "int | None" = None) -> None:
+        if tree is None:
+            return
+        tree.delete(*tree.get_children())
+        rows = list(form.records.rows(form))
+        for position, row in enumerate(rows):
+            tree.insert("", "end", iid=f"record_{position}", values=tuple(row))
+        if not rows:
+            return
+        index = min(max(0, int(select_index if select_index is not None
+                               else form.selected_index)), len(rows) - 1)
+        iid = f"record_{index}"
+        tree.selection_set(iid)
+        tree.focus(iid)
+        tree.see(iid)
+
+    def on_record_selected(_event=None) -> None:
+        selected = tree.selection() if tree is not None else ()
+        if not selected:
+            return
+        try:
+            index = int(str(selected[0]).split("_", 1)[1])
+        except Exception:
+            return
+        if index == form.selected_index:
+            return
+        try:
+            message = form.records.select(form, index)
+        except FormRefused as exc:
+            validation_var.set(str(exc))
+            return
+        refresh_from_form()
+        if message:
+            validation_var.set(message)
+
+    def on_choice_changed(field) -> None:
+        if field.on_change is None:
+            return
+        form.values[field.key] = variables[field.key].get()
+        try:
+            message = field.on_change(form, variables[field.key].get())
+        except FormRefused as exc:
+            messagebox.showerror(form.title, str(exc), parent=editor)
+            return
+        refresh_from_form()
+        if message:
+            validation_var.set(message)
+
+    for field in form.fields:
+        if field.kind == "choice" and field.on_change is not None:
+            widgets[field.key].bind("<<ComboboxSelected>>",
+                                    lambda _event, f=field: on_choice_changed(f), add="+")
+    sync_enabled()
+    if tree is not None:
+        tree.bind("<<TreeviewSelect>>", on_record_selected, add="+")
+        refresh_records()
+
+    def current_values() -> dict[str, str]:
+        collected: dict[str, str] = {}
+        for key, variable in variables.items():
+            if isinstance(variable, tk.BooleanVar):
+                collected[key] = "true" if variable.get() else "false"
+            else:
+                collected[key] = variable.get()
+        return collected
+
+    def close() -> None:
+        window.destroy()
+        if on_close is not None:
+            on_close()
+
+    def validate_form() -> bool:
+        values = current_values()
+        errors = list(form.validate(values))
+        if errors:
+            validation_var.set(errors[0])
+            return False
+        try:
+            validation_var.set("Validation passed: " + form.describe(values))
+        except FormRefused as exc:
+            validation_var.set(str(exc))
+            return False
+        return True
+
+    def apply_form() -> None:
+        try:
+            form.apply(current_values())
+        except FormRefused as exc:
+            validation_var.set(str(exc))
+            return
+        close()
+
+    def run_action(action) -> None:
+        # a record-list action edits the collection and stays open; a terminal one closes
+        form.values.update(current_values())
+        try:
+            message = action.run(form, host_of(owner))
+        except FormRefused as exc:
+            validation_var.set(str(exc))
+            return
+        # A row form's action is terminal (Import, Clear) and closes; a record-list action
+        # edits the collection and stays open -- unless it says otherwise by setting
+        # form.state["close_after"], which is how "Use Source Panel Only" leaves.
+        if form.records is None or form.state.pop("close_after", False):
+            close()
+            return
+        refresh_records()
+        refresh_from_form()
+        validation_var.set(message or form.summary)
+
+    footer = ttk.Frame(frame)
+    footer.grid(row=3, column=0, columnspan=2, sticky="e", pady=(12, 0))
+    ttk.Button(footer, text="Validate", command=validate_form).pack(side="right", padx=(0, 8))
+    ttk.Button(footer, text="Apply", command=apply_form).pack(side="right")
+    for action in form.actions:
+        ttk.Button(footer, text=action.label,
+                   command=lambda a=action: run_action(a)).pack(side="right", padx=(0, 8))
+    ttk.Button(footer, text="Cancel", command=close).pack(side="right", padx=(0, 8))
+    owner._show_centered_dialog(window)
+    return window

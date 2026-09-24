@@ -58,6 +58,8 @@ ACTIONS = (
      "Edit the selected placed element's pose in its own path frame"),
     ("element_settings", "&Edit", "Element Se&ttings...", None, "element_settings_action",
      "Edit the selected element block's path metadata"),
+    ("scene_sources", "&Edit", "Scene Source &Manager...", None, "scene_sources_action",
+     "Add, edit and apply the scene's source records"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 

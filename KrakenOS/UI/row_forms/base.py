@@ -59,6 +59,26 @@ class FormAction:
     run: Callable[[Any, Any], str] = lambda _form, _host: ""
 
 
+@dataclass(frozen=True)
+class RecordList:
+    """A master list whose selected item the form edits (docs/design_qt_migration.md phase 3).
+
+    The seventh dialog family. A row form edits ONE record; a record-list form also owns the
+    collection it comes from -- add, duplicate, delete, reorder -- and applies the whole list at
+    once. The list itself is model data: the view draws `columns` and `rows(form)`, and tells the
+    model which item the user picked by calling `select(form, index)`, which rewrites
+    `form.values` and returns the line to show.
+    """
+
+    columns: tuple[str, ...]
+    #: form -> one tuple of display strings per record, in list order
+    rows: Callable[[Any], tuple] = lambda _form: ()
+    #: form, index -> the message to show; rewrites form.values for the newly selected record
+    select: Callable[[Any, int], str] = lambda _form, _index: ""
+    #: the `form.state` key holding the selected index
+    selected_key: str = "index"
+
+
 @dataclass
 class RowForm:
     """Everything a row-editing dialog shows and does."""
@@ -82,6 +102,8 @@ class RowForm:
     state: dict = field(default_factory=dict)
     #: live choice lists, when an action grows one (a metal catalog just loaded)
     choices: dict = field(default_factory=dict)
+    #: the collection this form edits one item of, when it edits a list rather than a row
+    records: "RecordList | None" = None
     #: fields the form has locked SINCE it was built -- `FormField.enabled` is the static answer
     #: (a value the model will never take edits to), this is the live one (a role choice that
     #: turns the detector fields off). Views ask `is_enabled(key)`, never `field.enabled`.
@@ -115,6 +137,16 @@ class RowForm:
                 self.locked.add(key)
             else:
                 self.locked.discard(key)
+
+    @property
+    def selected_index(self) -> int:
+        """Which record the form is editing; 0 for a form that edits a single row."""
+        if self.records is None:
+            return 0
+        try:
+            return int(self.state.get(self.records.selected_key, 0))
+        except Exception:
+            return 0
 
     def choices_for(self, key: str) -> tuple:
         """The choices a view should offer NOW -- an action may have grown the list."""
