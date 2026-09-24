@@ -104,6 +104,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0881 | Scene Source Manager (`RecordList`: a form that edits a COLLECTION) | record list |
 | 0882 | Glass Catalog Browser + Stock Lens Importer (live text filters) | record list |
 | 0883 | Inspection Cell (six faces as records; host file choosers) | record list |
+| 0884 | the five half-done ports finished on the shared Tk renderer (textarea + tabs) | -- |
 
 The row-form framework: `FormField` kinds (number, int, bool, choice, text, textarea, static),
 `choices` that grow at runtime, `editable` choices the user may type into, `on_change` fields that
@@ -112,7 +113,8 @@ locks, `FormAction`s, and a `row_index` that may stand for a whole element BLOCK
 first dialog it absorbed with nothing new.
 
 The Tk view of every row form is `panels/row_form_view.py`, the counterpart of
-`qt/dialogs/row_form_dialog.py`. The five dialogs that use it shrank hard:
+`qt/dialogs/row_form_dialog.py`, and since 0884 the two are feature-equal -- every `FormField`
+kind and every `RowForm` property draws in both. The five dialogs that use it shrank hard:
 `main_scene_element_dialogs.py` 616 -> 103 lines, `main_scene_source_manager_dialog.py`
 770 -> 108. Both are now the factory's kwargs and one call.
 
