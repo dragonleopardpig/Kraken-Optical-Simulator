@@ -1,8 +1,9 @@
-"""The system inputs in Qt (docs/design_qt_migration.md phase 6).
+"""The system and source inputs in Qt (docs/design_qt_migration.md phase 6).
 
 Object mode, wavelength, ray fan count, aperture and field -- the controls that decide what is
-traced. `KrakenOS/UI/system_controls.py` says which model variable each one edits and what to
-call after a change, so this is layout and binding only (bugs/0900).
+traced (bugs/0900) -- and the 23 that decide what LAUNCHES the light (bugs/0901).
+`KrakenOS/UI/system_controls.py` says which model variable each one edits and what to call after
+a change, so this is layout and binding only, and one class renders any group.
 
 Binding is the same trick the status bar uses: every one of these variables carries `trace_add`
 whether a Tk panel or a UI host made it, so the model writing a value repaints the widget, and
@@ -14,12 +15,13 @@ from KrakenOS.UI.system_controls import SYSTEM_CONTROLS
 
 
 class SystemPanel:
-    """A form over the model's own system variables."""
+    """A form over one group of the model's own variables."""
 
-    def __init__(self, editor) -> None:
+    def __init__(self, editor, controls=SYSTEM_CONTROLS) -> None:
         from PySide6.QtWidgets import (QComboBox, QFormLayout, QLabel, QLineEdit, QWidget)
 
         self.editor = editor
+        self.controls = tuple(controls)
         self.widgets: dict = {}
         self.labels: dict = {}
         self._traces: list = []
@@ -27,7 +29,7 @@ class SystemPanel:
 
         self.widget = QWidget()
         layout = QFormLayout(self.widget)
-        for control in SYSTEM_CONTROLS:
+        for control in self.controls:
             variable = getattr(editor, control.key, None)
             if control.kind == "choice":
                 field = QComboBox()

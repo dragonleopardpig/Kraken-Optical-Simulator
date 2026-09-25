@@ -13,7 +13,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from KrakenOS.UI.source_trace_helpers import RAY_FAN_COUNT_VALUES
+from KrakenOS.UI.source_trace_helpers import (GAUSSIAN_INPUT_MODE_VALUES,
+                                              GAUSSIAN_WAIST_SIDE_VALUES, PUPIL_PATTERN_VALUES,
+                                              RAY_FAN_COUNT_VALUES,
+                                              SOURCE_ANGULAR_WEIGHT_VALUES,
+                                              SOURCE_DIRECTION_PRESET_VALUES,
+                                              SOURCE_MODEL_VALUES)
 
 #: the field types a system can be specified in, and how the UI names each. They lived in
 #: `layout_editor` with a second copy in `open3d_inspector`; both import them from here now, so
@@ -79,5 +84,51 @@ SYSTEM_CONTROLS = (
 )
 
 
+#: the SOURCE: what launches the light, as opposed to the system it goes through (bugs/0901)
+SOURCE_CONTROLS = (
+    SystemControl("source_model_var", "Source model", "choice", SOURCE_MODEL_VALUES,
+                  commit="_on_source_model_changed"),
+    SystemControl("pupil_pattern_var", "Pupil pattern", "choice", PUPIL_PATTERN_VALUES,
+                  commit="_on_source_model_changed"),
+    SystemControl("source_radius_var", "Source radius [mm]", commit="commit_source_controls"),
+    SystemControl("source_cone_angle_var", "Cone half-angle [deg]",
+                  commit="commit_source_controls"),
+    SystemControl("gaussian_input_mode_var", "GB input mode", "choice",
+                  GAUSSIAN_INPUT_MODE_VALUES, commit="_on_source_model_changed"),
+    SystemControl("gaussian_waist_radius_var", "GB waist [mm]", commit="commit_source_controls"),
+    SystemControl("gaussian_waist_offset_var", "GB waist offset [mm]",
+                  commit="commit_source_controls"),
+    SystemControl("gaussian_beam_diameter_var", "GB diameter [mm]",
+                  commit="commit_source_controls"),
+    SystemControl("gaussian_full_divergence_var", "GB full div [mrad]",
+                  commit="commit_source_controls"),
+    SystemControl("gaussian_m2_var", "GB M2", commit="commit_source_controls"),
+    SystemControl("gaussian_waist_side_var", "GB waist side", "choice",
+                  GAUSSIAN_WAIST_SIDE_VALUES, commit="_on_source_model_changed"),
+    SystemControl("pupil_rad_var", "Pupil r [0..1]", commit="commit_source_controls"),
+    SystemControl("pupil_theta_var", "Pupil theta [deg]", commit="commit_source_controls"),
+    SystemControl("source_power_var", "Source power [arb]", commit="commit_source_controls"),
+    SystemControl("source_seed_var", "Random seed", commit="commit_source_controls"),
+    SystemControl("source_x_var", "Source X [mm]", commit="commit_source_controls"),
+    SystemControl("source_y_var", "Source Y [mm]", commit="commit_source_controls"),
+    SystemControl("source_z_var", "Source Z [mm]", commit="commit_source_controls"),
+    SystemControl("source_l_var", "Source L", commit="commit_source_controls"),
+    SystemControl("source_m_var", "Source M", commit="commit_source_controls"),
+    SystemControl("source_n_var", "Source N", commit="commit_source_controls"),
+    SystemControl("source_direction_preset_var", "Direction preset", "choice",
+                  SOURCE_DIRECTION_PRESET_VALUES,
+                  commit="_on_source_direction_preset_changed"),
+    SystemControl("source_angular_weight_var", "SourceRnd angular weight", "choice",
+                  SOURCE_ANGULAR_WEIGHT_VALUES, commit="_on_source_model_changed"),
+)
+
+#: every group a shell can render, in the order the Tk panels stack them
+CONTROL_GROUPS = (("System", SYSTEM_CONTROLS), ("Source", SOURCE_CONTROLS))
+
+
 def control_for(key: str) -> "SystemControl | None":
-    return next((control for control in SYSTEM_CONTROLS if control.key == key), None)
+    for _title, group in CONTROL_GROUPS:
+        for control in group:
+            if control.key == key:
+                return control
+    return None

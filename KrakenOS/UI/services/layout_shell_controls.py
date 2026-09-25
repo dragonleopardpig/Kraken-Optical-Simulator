@@ -1379,6 +1379,11 @@ class LayoutShellControlsMixin:
             self.status_var.set(f"Analysis selection set to {label}. Click Update.")
         self.append_progress(f"Analysis selection updated: {label} (pending update).")
 
+    def commit_source_controls(self, _event=None) -> None:
+        """A source input was committed: resync and mark the plot stale (bugs/0901)."""
+        self._sync_left_mode_controls()
+        self._mark_plot_update_pending()
+
     def commit_trace_controls(self, _event=None) -> None:
         """A trace/display input was committed: resync and mark the plot stale (bugs/0900)."""
         self._sync_left_mode_controls()

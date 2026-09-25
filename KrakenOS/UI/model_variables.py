@@ -70,6 +70,9 @@ MODEL_VARIABLES: dict[str, tuple[str, Any]] = {
     'show_physical_distances_var': ('boolean', False),
     'source_angular_weight_var': ('string', 'Uniform solid angle'),
     'source_cone_angle_var': ('string', '0.0'),
+    # model code reads this one through ``self.__dict__.get(...)`` rather than an
+    # attribute, which is why the 0852 scan never saw it was missing (bugs/0901)
+    'source_direction_preset_var': ('string', 'Horizontal +Z (right)'),
     'source_l_var': ('string', '0.0'),
     'source_m_var': ('string', '0.0'),
     'source_model_var': ('string', 'Pupil / field'),

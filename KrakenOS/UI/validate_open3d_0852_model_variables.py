@@ -114,7 +114,9 @@ def run_checks() -> tuple[bool, list[str]]:
     wrong = [n for n, (kind, value) in MODEL_VARIABLES.items()
              if not isinstance(getattr(owner, n), ObservableValue) or getattr(owner, n).kind != kind
              or getattr(owner, n).get() != value]
-    ok(len(created) == len(MODEL_VARIABLES) == 64 and not wrong,
+    # 65 since bugs/0901 added source_direction_preset_var, which model code reads through
+    # self.__dict__.get(...) so the C scan below never saw it was missing
+    ok(len(created) == len(MODEL_VARIABLES) == 65 and not wrong,
        f"R1: a toolkit-free owner gets all {len(created)} declared variables with their kinds and "
        f"start-up values ({wrong or 'all right'})")
     keep = ObservableValue("string", "user text")

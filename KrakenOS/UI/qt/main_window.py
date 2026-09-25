@@ -17,6 +17,7 @@ from KrakenOS.UI.qt.docks import DockManager
 from KrakenOS.UI.qt.analysis_toolbar import AnalysisToolbar
 from KrakenOS.UI.qt.results_panel import ResultsPanel
 from KrakenOS.UI.qt.system_panel import SystemPanel
+from KrakenOS.UI.system_controls import SOURCE_CONTROLS
 from KrakenOS.UI.qt.rows_table import make_rows_model
 from KrakenOS.UI.uihost import host_of
 
@@ -83,6 +84,10 @@ class KrakenQtMainWindow(_main_window_class()):
         # change what was traced (bugs/0900)
         self.system_panel = SystemPanel(editor)
         self.dock_manager.create_dock(self.system_panel.widget, "SystemDock", "System",
+                                      Qt.DockWidgetArea.RightDockWidgetArea)
+        # and what launches the light (bugs/0901) -- the same class over the other group
+        self.source_panel = SystemPanel(editor, SOURCE_CONTROLS)
+        self.dock_manager.create_dock(self.source_panel.widget, "SourceDock", "Source",
                                       Qt.DockWidgetArea.RightDockWidgetArea)
 
         self._open_dialogs: list = []  # a modeless dialog must outlive the call that opened it
