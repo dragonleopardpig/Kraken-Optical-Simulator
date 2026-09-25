@@ -109,6 +109,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0886 | Inspection Part + `FormPreview` (the model draws the picture) | row form |
 | 0887 | Surface Shape Builder + `FormFigure` (the matplotlib seam; most of phase 6) | row form |
 | 0888 | Path Component placement + `RowForm.labels` (a choice renames a field) | row form |
+| 0889 | Camera + Lens Matcher + `RowForm.read_only` (inputs and verbs, nothing to apply) | record list |
 
 The row-form framework: `FormField` kinds (number, int, bool, choice, text, textarea, static),
 `choices` that grow at runtime, `editable` choices the user may type into, `on_change` fields that
