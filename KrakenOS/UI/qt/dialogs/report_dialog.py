@@ -345,7 +345,11 @@ class ReportDialog(_dialog_class()):
         return index.row() if index.isValid() else None
 
     def run_action(self, action) -> str:
-        """Run a `ReportAction`, asking through the UI host for anything a toolkit must supply."""
+        """Run a `ReportAction`, asking through the UI host for anything a toolkit must supply.
+
+        A verb that also changes the controls returns a `ReportUpdate`; adopting those values
+        and rebuilding is this method's other job, exactly as the Tk view does it.
+        """
         arguments: tuple = ()
         if action.save_title:
             path = self.host.asksaveasfilename(
@@ -354,9 +358,29 @@ class ReportDialog(_dialog_class()):
             if not path:
                 return ""
             arguments += (path,)
+        if action.needs_controls:
+            arguments += (self.control_values(),)
         if action.needs_selection:
             arguments += (self.selected_key(),)
-        return str(action.run(*arguments) or "")
+        result = action.run(*arguments)
+        controls = getattr(result, "controls", None)
+        if controls is None:
+            return str(result or "")
+        for key, value in controls.items():
+            widget = self.controls.get(key)
+            if widget is None:
+                continue
+            widget.blockSignals(True)
+            try:
+                if hasattr(widget, "setCurrentText"):
+                    widget.setCurrentText(str(value))
+                else:
+                    widget.setText(str(value))
+            finally:
+                widget.blockSignals(False)
+        if result.rebuild and self.rebuild is not None:
+            self.set_report(self.rebuild(**self.control_values()))
+        return str(result.status or "")
 
     def control_values(self) -> dict:
         return {key: (widget.currentText() if hasattr(widget, "currentText") else widget.text())

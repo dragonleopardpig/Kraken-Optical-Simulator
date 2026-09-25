@@ -81,19 +81,40 @@ class DetailView:
 
 
 @dataclass(frozen=True)
+class ReportUpdate:
+    """What a verb did: a status line, and control values it wants the view to adopt.
+
+    "Use Cavity Eigenmode" computes the resonator's own mode and WRITES IT BACK into the waist
+    and offset boxes, then recomputes. Returning that as data keeps the arithmetic in the model
+    and leaves each toolkit one job: put these values in those widgets.
+    """
+
+    status: str = ""
+    #: control key -> its new value
+    controls: dict = field(default_factory=dict)
+    #: rebuild the report once the controls are adopted
+    rebuild: bool = True
+
+
+@dataclass(frozen=True)
 class ReportAction:
     """A toolbar verb beyond Refresh / Copy / Export CSV / Close.
 
-    The model owns what the verb DOES; the view owns only the two things a toolkit must supply:
-    a file chooser (`save_title`) and which row is selected (`needs_selection`). A view therefore
-    renders any action it has never heard of, and both toolkits offer the same verbs -- before
-    this, "Export Events CSV" and "Open Ray" were Tk buttons and Qt simply did not have them.
+    The model owns what the verb DOES; the view owns only what a toolkit must supply: a file
+    chooser (`save_title`), the current control values (`needs_controls`) and which row is
+    selected (`needs_selection`), passed in that order. A view therefore renders any action it
+    has never heard of, and both toolkits offer the same verbs -- before this, "Export Events
+    CSV", "Open Ray" and "Use Cavity Eigenmode" were Tk buttons Qt simply did not have.
+
+    `run` returns a status line, or a :class:`ReportUpdate` when it also changes the controls.
     """
 
     label: str
-    run: "Callable[..., str]" = lambda *_args: ""
+    run: "Callable[..., Any]" = lambda *_args: ""
     #: when set, the view asks for a save path with this title and passes it as the FIRST argument
     save_title: str = ""
+    #: pass the current control values, as a dict, after the path
+    needs_controls: bool = False
     #: pass the selected master key (a row index, or a tree node's key) as the LAST argument
     needs_selection: bool = False
 

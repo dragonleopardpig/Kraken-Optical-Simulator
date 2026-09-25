@@ -39,6 +39,8 @@ from KrakenOS.UI.panels import report_view
 from KrakenOS.UI.reports import branch_gaussian_q as reports_branch_gaussian_q
 from KrakenOS.UI.reports import branch_throughput as reports_branch_throughput
 from KrakenOS.UI.reports import detector_aperture as reports_detector_aperture
+from KrakenOS.UI.reports import gaussian_beam as reports_gaussian_beam
+from KrakenOS.UI.reports import paraxial_matrix as reports_paraxial_matrix
 from KrakenOS.UI.reports import ray_inspector as reports_ray_inspector
 from KrakenOS.UI.reports import source_illumination as reports_source_illumination
 from KrakenOS.UI.reports import trace_paths as reports_trace_paths
@@ -495,6 +497,8 @@ def _evaluate_checks() -> tuple[list, dict]:
     detector_aperture_builder = inspect.getsource(reports_detector_aperture)
     branch_gaussian_q_builder = inspect.getsource(reports_branch_gaussian_q)
     ray_inspector_builder = inspect.getsource(reports_ray_inspector)
+    paraxial_matrix_builder = inspect.getsource(reports_paraxial_matrix)
+    gaussian_beam_builder = inspect.getsource(reports_gaussian_beam)
     trace_paths_builder = inspect.getsource(reports_trace_paths)
     open_branch_gaussian_q_report = inspect.getsource(KrakenLayoutEditor.open_branch_gaussian_q_report)
     refresh_branch_gaussian_q_report = inspect.getsource(KrakenLayoutEditor._refresh_branch_gaussian_q_report)
@@ -1127,11 +1131,15 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "self._main_paraxial_analysis_dialogs()._show_folded_mirror_solve_dialog(result)" in show_folded_mirror_solve_dialog
             and "self._main_paraxial_analysis_dialogs()._show_best_focus_dialog(result)" in show_best_focus_dialog
             and "Paraxial Calculator" in main_paraxial_analysis_dialogs
-            and "Paraxial Matrix Report" in main_paraxial_analysis_dialogs
-            and "Gaussian Beam Report" in main_paraxial_analysis_dialogs
+            # the two REPORTS are their builders' now (bugs/0896); the calculator and the three
+            # solve prompts are still this panel's own pages
+            and "Paraxial Matrix Report" in paraxial_matrix_builder
+            and "Gaussian Beam Report" in gaussian_beam_builder
+            and "Use Cavity Eigenmode" in gaussian_beam_builder
+            and main_paraxial_analysis_dialogs.count("ReportWindow(") == 2
+            and "ttk.Treeview(" not in main_paraxial_analysis_dialogs
             and "Folded Mirror Solve" in main_paraxial_analysis_dialogs
-            and "Best Image Solve" in main_paraxial_analysis_dialogs
-            and "Use Cavity Eigenmode" in main_paraxial_analysis_dialogs,
+            and "Best Image Solve" in main_paraxial_analysis_dialogs,
         ),
         (
             "Lens drawing dialogs live outside layout_editor",

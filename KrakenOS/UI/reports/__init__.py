@@ -7,8 +7,8 @@ The migration recipe for a report dialog: move its DATA here as a function retur
 from __future__ import annotations
 
 from KrakenOS.UI.reports.base import (DetailText, DetailView, Report, ReportAction,
-                                      ReportChoice, ReportColumn, ReportFailed, ReportValue,
-                                      TreeRow)
+                                      ReportChoice, ReportColumn, ReportFailed, ReportUpdate,
+                                      ReportValue, TreeRow)
 from KrakenOS.UI.reports.branch_gaussian_q import build_branch_gaussian_q_report
 from KrakenOS.UI.reports.branch_throughput import build_branch_throughput_report
 from KrakenOS.UI.reports.detector_aperture import build_detector_aperture_report
@@ -32,7 +32,7 @@ REPORT_BUILDERS = {
 }
 
 __all__ = ["Report", "ReportChoice", "ReportColumn", "ReportFailed", "ReportValue",
-           "DetailText", "DetailView", "ReportAction", "TreeRow",
+           "DetailText", "DetailView", "ReportAction", "ReportUpdate", "TreeRow",
            "REPORT_BUILDERS", "gaussian_cavity_eigenmode",
            "build_paraxial_matrix_report", "build_branch_gaussian_q_report",
            "build_detector_aperture_report", "build_branch_throughput_report",

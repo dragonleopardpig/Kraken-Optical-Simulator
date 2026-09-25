@@ -12,7 +12,8 @@ from __future__ import annotations
 import numpy as np
 
 import KrakenOS as Kos
-from KrakenOS.UI.reports.base import Report, ReportColumn, ReportFailed, ReportValue
+from KrakenOS.UI.reports.base import (Report, ReportAction, ReportColumn, ReportFailed,
+                                      ReportUpdate, ReportValue)
 
 TITLE = "Gaussian Beam Report"
 
@@ -131,6 +132,8 @@ def build_gaussian_beam_report(owner, wavelength=None, waist=None, offset=None, 
             ReportValue("offset", "Waist offset [mm]", f"{values['offset']:.6g}"),
             ReportValue("m2", "M2", f"{values['m2']:.6g}"),
         ),
+        actions=(ReportAction("Use Cavity Eigenmode", lambda controls: cavity_eigenmode_update(
+            owner, controls), needs_controls=True),),
         status="Gaussian beam report refreshed.",
     )
 
@@ -143,6 +146,33 @@ def gaussian_cavity_eigenmode(owner, wavelength, m2):
     return Kos.solve_gaussian_cavity_eigenmode(
         paraxial, wavelength_um=wavelength_value,
         m2=_number(m2, default_inputs(owner)["m2"]))
+
+
+def cavity_eigenmode_update(owner, controls) -> ReportUpdate:
+    """"Use Cavity Eigenmode" as data: the waist and offset to adopt, or why the cavity cannot.
+
+    An unstable resonator has no eigenmode, so nothing is written back and the message says what
+    g was -- the Tk dialog has always reported that, and now Qt does too.
+    """
+    try:
+        eigenmode = gaussian_cavity_eigenmode(owner, controls.get("wavelength"),
+                                              controls.get("m2"))
+    except Exception as exc:
+        message = getattr(owner, "short_error_message", lambda e: str(e))(exc)
+        return ReportUpdate(status=f"Cavity eigenmode failed: {message}", rebuild=False)
+    if not eigenmode.stable:
+        return ReportUpdate(
+            status=(f"Cavity eigenmode unavailable: {eigenmode.message}; "
+                    f"g={format_value(eigenmode.stability_parameter)}"),
+            rebuild=False)
+    return ReportUpdate(
+        status=("Cavity eigenmode applied: "
+                f"q={format_value(eigenmode.q_real_mm)}+i{format_value(eigenmode.q_imag_mm)} mm, "
+                f"w0={format_value(eigenmode.waist_radius_mm)} mm, "
+                f"g={format_value(eigenmode.stability_parameter)}, "
+                f"Gouy/RT={format_value(eigenmode.round_trip_gouy_rad)} rad."),
+        controls={"waist": format_value(eigenmode.waist_radius_mm),
+                  "offset": format_value(eigenmode.q_real_mm)})
 
 
 build_gaussian_beam_report.TITLE = TITLE

@@ -385,7 +385,12 @@ class ReportWindow:
         return text
 
     def run_action(self, action) -> str:
-        """A toolbar verb the MODEL defines: the view supplies only a path and the selection."""
+        """A toolbar verb the MODEL defines.
+
+        The view supplies only what a toolkit must: a save path, the current control values and
+        which row is selected. A verb that also changes the controls returns a `ReportUpdate`,
+        and adopting those values is this method's other job.
+        """
         arguments: tuple = ()
         if action.save_title:
             path = filedialog.asksaveasfilename(
@@ -394,9 +399,22 @@ class ReportWindow:
             if not path:
                 return ""
             arguments += (path,)
+        if action.needs_controls:
+            arguments += (self.control_values(),)
         if action.needs_selection:
             arguments += (self.selected_key(),)
-        status = str(action.run(*arguments) or "")
+        result = action.run(*arguments)
+        controls = getattr(result, "controls", None)
+        if controls is None:
+            status = str(result or "")
+        else:
+            for key, value in controls.items():
+                variable = self.controls.get(key)
+                if variable is not None:
+                    variable.set(str(value))
+            if result.rebuild:
+                self.refresh()
+            status = str(result.status or "")
         self._set_status(status)
         return status
 
@@ -417,5 +435,5 @@ class ReportWindow:
         if not path:
             return ""
         report.write_csv(path)
-        self._set_status(f"{report.title} CSV exported: {Path(path).name}")
+        self._set_status(f"{self.csv_title or report.title} CSV exported: {Path(path).name}")
         return str(path)

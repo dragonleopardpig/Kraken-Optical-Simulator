@@ -1,27 +1,27 @@
-"""Main paraxial and Gaussian analysis dialogs."""
+"""Main paraxial and Gaussian analysis dialogs (docs/design_qt_migration.md phase 4).
+
+The Paraxial Calculator is a form the user solves and applies, so it keeps its own page. The two
+REPORTS are widgets over `reports/paraxial_matrix.py` and `reports/gaussian_beam.py` -- the same
+builders the Qt shell renders -- through the shared `ReportWindow`.
+"""
 
 from __future__ import annotations
 
-import csv
-from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import messagebox, ttk
 from typing import Any, Callable
 
 import numpy as np
 
-import KrakenOS as Kos
 from KrakenOS.UI.paraxial_calculator import (
     CalculatorFailed, CalculatorInputs, NothingToApply,
     apply_solution as apply_paraxial_solution,
     PROMPT as PARAXIAL_PROMPT, field_states as paraxial_field_states, format_calc,
     initial_inputs as paraxial_initial_inputs,
     load_from_layout as load_paraxial_from_layout, solve as solve_paraxial)
-from KrakenOS.UI.reports import ReportFailed
-from KrakenOS.UI.reports.gaussian_beam import COLUMNS as GAUSSIAN_BEAM_COLUMNS
+from KrakenOS.UI.panels.report_view import ReportWindow
+from KrakenOS.UI.reports.gaussian_beam import build_gaussian_beam_report
 from KrakenOS.UI.reports.paraxial_matrix import build_paraxial_matrix_report
-
-GAUSSIAN_BEAM_COLUMN_KEYS = tuple(column.key for column in GAUSSIAN_BEAM_COLUMNS)
 
 
 class MainParaxialAnalysisDialogs:
@@ -30,6 +30,12 @@ class MainParaxialAnalysisDialogs:
     def __init__(self, editor: Any, *, short_error_message: Callable[[BaseException], str]) -> None:
         object.__setattr__(self, "editor", editor)
         object.__setattr__(self, "short_error_message", short_error_message)
+        object.__setattr__(self, "_matrix_window", ReportWindow(
+            self, lambda: build_paraxial_matrix_report(self), geometry="1180x620",
+            minsize=(860, 420), csv_title="Paraxial Matrix"))
+        object.__setattr__(self, "_gaussian_window", ReportWindow(
+            self, lambda **values: build_gaussian_beam_report(self, **values),
+            geometry="1240x660", minsize=(900, 460), csv_title="Gaussian Beam"))
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.editor, name)
@@ -459,214 +465,7 @@ class MainParaxialAnalysisDialogs:
         return float(arr[row, column])
 
     def open_paraxial_matrix_report(self) -> None:
-        # docs/design_qt_migration.md phase 3: the NUMBERS come from the toolkit-free report
-        # builder, which the Qt dialog renders too -- one source of truth, so a value can never
-        # differ between the two views. This function is now layout only.
-        try:
-            report = build_paraxial_matrix_report(self)
-        except ReportFailed as exc:
-            messagebox.showerror(
-                "Paraxial Matrix Report",
-                f"Could not build paraxial matrix report:\n\n{exc}", parent=self.editor)
-            self.status_var.set(f"Paraxial matrix report failed: {exc}")
-            return
-
-        window = tk.Toplevel(self.editor)
-        window.withdraw()
-        window.title(report.title)
-        window.geometry("1180x620")
-        window.minsize(860, 420)
-        window.transient(self.editor)
-        window.columnconfigure(0, weight=1)
-        window.rowconfigure(2, weight=1)
-
-        ttk.Label(window, text=report.summary, padding=(8, 8, 8, 4), anchor="w").grid(
-            row=0, column=0, sticky="ew")
-
-        toolbar = ttk.Frame(window, padding=(8, 0, 8, 4))
-        toolbar.grid(row=1, column=0, sticky="ew")
-
-        frame = ttk.Frame(window, padding=8)
-        frame.grid(row=2, column=0, sticky="nsew")
-        frame.columnconfigure(0, weight=1)
-        frame.rowconfigure(0, weight=1)
-        tree = ttk.Treeview(frame, columns=report.keys, show="headings")
-        for column in report.columns:
-            tree.heading(column.key, text=column.heading)
-            tree.column(column.key, width=column.width,
-                        anchor=("e" if column.numeric else "w"), stretch=column.stretch)
-        tree.grid(row=0, column=0, sticky="nsew")
-        yscroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
-        yscroll.grid(row=0, column=1, sticky="ns")
-        xscroll = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
-        xscroll.grid(row=1, column=0, sticky="ew")
-        tree.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
-
-        for index in range(len(report.rows)):
-            tree.insert("", "end", values=tuple(
-                report.cell(index, column_index) for column_index in range(len(report.columns))))
-
-        def export_csv() -> None:
-            path = filedialog.asksaveasfilename(
-                title="Export Paraxial Matrix CSV",
-                defaultextension=".csv",
-                filetypes=[("CSV files", "*.csv"), ("All files", "*")],
-                parent=window,
-            )
-            if not path:
-                return
-            report.write_csv(path)
-            self.status_var.set(f"Paraxial matrix CSV exported: {Path(path).name}")
-
-        ttk.Button(toolbar, text="Export CSV", command=export_csv).pack(side="left")
-        ttk.Button(toolbar, text="Close", command=window.destroy).pack(side="left", padx=(6, 0))
-
-        self._show_centered_dialog(window)
-
+        self._matrix_window.open()
 
     def open_gaussian_beam_report(self) -> None:
-        # docs/design_qt_migration.md phase 3: the beam propagation, the columns, the formatting
-        # and the cavity eigenmode live in KrakenOS/UI/reports/gaussian_beam.py, which the Qt
-        # dialog renders too. This function is layout and input plumbing.
-        from KrakenOS.UI.reports.gaussian_beam import (
-            build_gaussian_beam_report, default_inputs, format_value, gaussian_cavity_eigenmode)
-
-        try:
-            defaults = default_inputs(self)
-        except Exception as exc:
-            message = self.short_error_message(exc)
-            messagebox.showerror("Gaussian Beam Report",
-                                 f"Could not build Gaussian beam report:\n\n{message}",
-                                 parent=self.editor)
-            self.status_var.set(f"Gaussian beam report failed: {message}")
-            return
-
-        window = tk.Toplevel(self.editor)
-        window.withdraw()
-        window.title("Gaussian Beam Report")
-        window.geometry("1240x660")
-        window.minsize(900, 460)
-        window.transient(self.editor)
-        window.columnconfigure(0, weight=1)
-        window.rowconfigure(3, weight=1)
-
-        summary_var = tk.StringVar(master=window, value="")
-        ttk.Label(window, textvariable=summary_var, padding=(8, 8, 8, 4), anchor="w").grid(
-            row=0, column=0, sticky="ew")
-
-        controls = ttk.LabelFrame(window, text="Input beam", padding=8)
-        controls.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 6))
-        for column in range(10):
-            controls.columnconfigure(column, weight=1 if column % 2 else 0)
-
-        wavelength_var = tk.StringVar(master=window, value=f"{defaults['wavelength']:.6g}")
-        waist_var = tk.StringVar(master=window, value=f"{defaults['waist']:.6g}")
-        offset_var = tk.StringVar(master=window, value=f"{defaults['offset']:.6g}")
-        m2_var = tk.StringVar(master=window, value=f"{defaults['m2']:.6g}")
-
-        for col, (label, var, width) in enumerate(
-            (
-                ("Wavelength [um]", wavelength_var, 10),
-                ("Waist radius [mm]", waist_var, 10),
-                ("Waist offset [mm]", offset_var, 10),
-                ("M2", m2_var, 8),
-            )
-        ):
-            ttk.Label(controls, text=label).grid(row=0, column=2 * col, sticky="w", padx=(0 if col == 0 else 10, 4))
-            ttk.Entry(controls, textvariable=var, width=width).grid(row=0, column=2 * col + 1, sticky="ew")
-
-        toolbar = ttk.Frame(window, padding=(8, 0, 8, 4))
-        toolbar.grid(row=2, column=0, sticky="ew")
-        cavity_status_var = tk.StringVar(master=window, value="")
-
-        frame = ttk.Frame(window, padding=8)
-        frame.grid(row=3, column=0, sticky="nsew")
-        frame.columnconfigure(0, weight=1)
-        frame.rowconfigure(0, weight=1)
-        tree = ttk.Treeview(frame, columns=GAUSSIAN_BEAM_COLUMN_KEYS, show="headings")
-        for column in GAUSSIAN_BEAM_COLUMNS:
-            tree.heading(column.key, text=column.heading)
-            tree.column(column.key, width=column.width,
-                        anchor=("e" if column.numeric else "w"), stretch=column.stretch)
-        tree.grid(row=0, column=0, sticky="nsew")
-        yscroll = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
-        yscroll.grid(row=0, column=1, sticky="ns")
-        xscroll = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
-        xscroll.grid(row=1, column=0, sticky="ew")
-        tree.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
-
-        held: dict[str, object] = {}
-
-        def recompute() -> None:
-            try:
-                report = build_gaussian_beam_report(
-                    self,
-                    wavelength=wavelength_var.get(), waist=waist_var.get(),
-                    offset=offset_var.get(), m2=m2_var.get())
-            except ReportFailed as exc:
-                summary_var.set(f"Gaussian beam report failed: {exc}")
-                self.status_var.set(f"Gaussian beam report failed: {exc}")
-                return
-            held["report"] = report
-            children = tree.get_children()
-            if children:
-                tree.delete(*children)
-            for index in range(len(report.rows)):
-                tree.insert("", "end", values=tuple(
-                    report.cell(index, column_index)
-                    for column_index in range(len(report.columns))))
-            summary_var.set(report.summary)
-            self.status_var.set(report.status)
-
-        def export_csv() -> None:
-            report = held.get("report")
-            if report is None:
-                recompute()
-                report = held.get("report")
-            if report is None or not report.rows:
-                return
-            path = filedialog.asksaveasfilename(
-                title="Export Gaussian Beam CSV",
-                defaultextension=".csv",
-                filetypes=[("CSV files", "*.csv"), ("All files", "*")],
-                parent=window,
-            )
-            if not path:
-                return
-            report.write_csv(path)
-            self.status_var.set(f"Gaussian beam CSV exported: {Path(path).name}")
-
-        def apply_cavity_eigenmode() -> None:
-            try:
-                eigenmode = gaussian_cavity_eigenmode(self, wavelength_var.get(), m2_var.get())
-                if not eigenmode.stable:
-                    message = (
-                        f"Cavity eigenmode unavailable: {eigenmode.message}; "
-                        f"g={format_value(eigenmode.stability_parameter)}"
-                    )
-                    cavity_status_var.set(message)
-                    self.status_var.set(message)
-                    return
-                waist_var.set(format_value(eigenmode.waist_radius_mm))
-                offset_var.set(format_value(eigenmode.q_real_mm))
-                cavity_status_var.set(
-                    "Cavity eigenmode applied: "
-                    f"q={format_value(eigenmode.q_real_mm)}+i{format_value(eigenmode.q_imag_mm)} mm, "
-                    f"w0={format_value(eigenmode.waist_radius_mm)} mm, "
-                    f"g={format_value(eigenmode.stability_parameter)}, "
-                    f"Gouy/RT={format_value(eigenmode.round_trip_gouy_rad)} rad."
-                )
-                recompute()
-            except Exception as exc:
-                message = f"Cavity eigenmode failed: {self.short_error_message(exc)}"
-                cavity_status_var.set(message)
-                self.status_var.set(message)
-
-        ttk.Button(toolbar, text="Recompute", command=recompute).pack(side="left")
-        ttk.Button(toolbar, text="Use Cavity Eigenmode", command=apply_cavity_eigenmode).pack(side="left", padx=(6, 0))
-        ttk.Button(toolbar, text="Export CSV", command=export_csv).pack(side="left", padx=(6, 0))
-        ttk.Button(toolbar, text="Close", command=window.destroy).pack(side="left", padx=(6, 0))
-        ttk.Label(toolbar, textvariable=cavity_status_var, foreground="#5f6b7a").pack(side="left", padx=(12, 0), fill="x", expand=True)
-
-        self._show_centered_dialog(window)
-        recompute()
+        self._gaussian_window.open()
