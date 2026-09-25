@@ -403,6 +403,12 @@ class KrakenQtMainWindow(_main_window_class()):
 
         return self.open_row_form(build_surface_shape_form)
 
+    def catalog_matcher_action(self):
+        """List every registered camera x catalog lens combination that meets a requirement."""
+        from KrakenOS.UI.row_forms import build_catalog_matcher_form
+
+        return self.open_row_form(build_catalog_matcher_form, row_index=False)
+
     def _forget_dialog(self, dialog) -> None:
         if dialog in self._open_dialogs:
             self._open_dialogs.remove(dialog)

@@ -72,6 +72,9 @@ ACTIONS = (
      "Size the 3D part at the object plane and solve the FOV to its face"),
     ("surface_shape", "&Edit", "Surface S&hape Builder...", None, "surface_shape_action",
      "Asphere, Zernike, ExtraData, UDA and mask, with a live sag plot"),
+    ("catalog_matcher", "&Analysis", "Camera + Lens &Matcher...", None,
+     "catalog_matcher_action",
+     "List every registered camera x catalog lens combination that meets a requirement"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 

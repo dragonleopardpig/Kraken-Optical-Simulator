@@ -5,6 +5,7 @@ from KrakenOS.UI.row_forms.base import (FormAction, FormField, FormFigure, FormP
                                         FormRefused, RecordList, RowForm)
 from KrakenOS.UI.row_forms.advanced_surface import build_advanced_surface_form
 from KrakenOS.UI.row_forms.beam_splitter import build_beam_splitter_form
+from KrakenOS.UI.row_forms.catalog_matcher import build_catalog_matcher_form
 from KrakenOS.UI.row_forms.coating_material import build_coating_material_form
 from KrakenOS.UI.row_forms.detector_settings import build_detector_settings_form
 from KrakenOS.UI.row_forms.diffuse_scatter import build_diffuse_scatter_form
@@ -38,6 +39,7 @@ ROW_FORM_BUILDERS = {
     "inspection_part": build_inspection_part_form,
     "surface_shape": build_surface_shape_form,
     "path_component": build_path_component_form,
+    "catalog_matcher": build_catalog_matcher_form,
     "path_local_pose": build_path_local_pose_form,
     "element_settings": build_element_settings_form,
 }
@@ -52,4 +54,5 @@ __all__ = ["FormAction", "FormField", "FormFigure", "FormPreview", "FormRefused"
            "build_stock_lens_form", "build_inspection_cell_form",
            "build_scene_source_edit_form", "build_inspection_part_form",
            "build_surface_shape_form", "build_path_component_form",
+           "build_catalog_matcher_form",
            "ROW_FORM_BUILDERS"]

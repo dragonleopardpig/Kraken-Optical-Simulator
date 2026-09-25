@@ -153,6 +153,9 @@ class RowForm:
     preview: "FormPreview | None" = None
     #: a matplotlib figure the model draws into, when a plot is what explains the values
     figure: "FormFigure | None" = None
+    #: a form that REPORTS rather than edits -- it has inputs and verbs but nothing to write
+    #: back, so a view shows neither Validate nor Apply and calls its Cancel button Close
+    read_only: bool = False
     #: fields the form has locked SINCE it was built -- `FormField.enabled` is the static answer
     #: (a value the model will never take edits to), this is the live one (a role choice that
     #: turns the detector fields off). Views ask `is_enabled(key)`, never `field.enabled`.

@@ -317,138 +317,23 @@ def match_catalog(req: MatchRequirement, cameras, lenses) -> list[MatchResult]:
 
 
 def open_catalog_matcher_dialog(editor):
-    """Camera + Lens Matcher: enter the requirement, then list every registered camera ×
-    catalog lens combination that meets it (passing first). bugs/0634."""
-    import tkinter as tk
-    from tkinter import ttk
+    """Camera + Lens Matcher: enter the requirement, then list every registered camera x
+    catalog lens combination that meets it (passing first). bugs/0634.
 
-    from KrakenOS.UI.services.system_selection import gather_system_selection_prefill
-
-    parent = editor.winfo_toplevel() if hasattr(editor, "winfo_toplevel") else editor
-    dialog = tk.Toplevel(parent)
-    dialog.title("Camera + Lens Matcher")
-    try:
-        dialog.transient(parent)
-    except Exception:
-        pass
-
-    fov, _sensor, _pix = gather_system_selection_prefill(editor)
-
-    def _pf(v):
-        return f"{float(v):.6g}" if v else ""
-
-    fov_w = tk.StringVar(value=_pf(fov[0] if fov else None))
-    fov_h = tk.StringVar(value=_pf(fov[1] if fov else None))
-    res_v = tk.StringVar(value="")
-    wd_v = tk.StringVar(value="")
-    wl_v = tk.StringVar(value="0.55")
-    status = tk.StringVar(value="Enter the requirement and click Match.")
-
-    top = ttk.Frame(dialog, padding=8)
-    top.grid(row=0, column=0, sticky="ew")
-    for i, (label, var) in enumerate([
-        ("FOV W (mm):", fov_w), ("FOV H (mm):", fov_h), ("Res (µm/px):", res_v),
-        ("Min WD (mm):", wd_v), ("λ (µm):", wl_v),
-    ]):
-        ttk.Label(top, text=label).grid(row=0, column=2 * i, padx=(6, 2), sticky="e")
-        ttk.Entry(top, textvariable=var, width=8).grid(row=0, column=2 * i + 1, padx=(0, 4))
-
-    cols = ("camera", "lens", "mag", "wd", "circle", "fno", "result")
-    headers = {"camera": "Camera", "lens": "Lens", "mag": "|m|", "wd": "WD mm",
-               "circle": "Img circle", "fno": "f/#", "result": "Result"}
-    widths = {"camera": 160, "lens": 220, "mag": 60, "wd": 70, "circle": 80, "fno": 90, "result": 90}
-    tree = ttk.Treeview(dialog, columns=cols, show="headings", height=14)
-    for c in cols:
-        tree.heading(c, text=headers[c])
-        tree.column(c, width=widths[c], anchor="w")
-    tree.grid(row=1, column=0, sticky="nsew", padx=8)
-    vsb = ttk.Scrollbar(dialog, orient="vertical", command=tree.yview)
-    vsb.grid(row=1, column=1, sticky="ns")
-    tree.configure(yscrollcommand=vsb.set)
-    dialog.rowconfigure(1, weight=1)
-    dialog.columnconfigure(0, weight=1)
-    tree.tag_configure("pass", background="#e6f5e6")
-    tree.tag_configure("fail", foreground="#888888")
-
-    detail = ttk.Label(dialog, textvariable=status, wraplength=760, justify="left")
-    detail.grid(row=2, column=0, columnspan=2, sticky="ew", padx=8, pady=(4, 8))
-    detail.bind(  # bugs/0636: reflow the status text to the live width
-        "<Configure>", lambda e: detail.configure(wraplength=max(int(e.width) - 12, 120))
-    )
-
-    results_state: dict[int, MatchResult] = {}
-
-    def _num(var):
-        raw = (var.get() or "").strip()
-        if not raw:
-            return None
-        try:
-            v = float(raw)
-        except ValueError:
-            return "error"
-        return v if v > 0 else "error"
-
-    def _fmt(v, d=4):
-        return "—" if v is None else f"{float(v):.{d}g}"
-
-    def do_match():
-        fw, fh, r = _num(fov_w), _num(fov_h), _num(res_v)
-        wd, wl = _num(wd_v), _num(wl_v)
-        if "error" in (fw, fh, r, wd, wl) or fw is None or fh is None or r is None:
-            status.set("Enter a positive FOV width, height and resolution (WD/λ optional).")
-            return
-        status.set("Matching… (first run scrapes the lens datasheets, ~10–20 s)")
-        dialog.update_idletasks()
-        try:
-            req = MatchRequirement(fw, fh, r, wd_min_mm=wd, wavelength_um=(wl or 0.55))
-            cams = enumerate_cameras()
-            lenses = enumerate_lenses()
-            results = match_catalog(req, cams, lenses)
-        except Exception as exc:  # noqa: BLE001
-            status.set(f"Match failed: {exc}")
-            return
-        tree.delete(*tree.get_children())
-        results_state.clear()
-        n_pass = 0
-        for idx, rr in enumerate(results):
-            fno = ("—" if rr.lens_fnumber is None
-                   else f"f/{_fmt(rr.lens_fnumber, 3)}≤f/{_fmt(rr.max_nominal_fnumber, 3)}"
-                   if rr.max_nominal_fnumber is not None else f"f/{_fmt(rr.lens_fnumber, 3)}")
-            tag = "pass" if rr.passes else "fail"
-            if rr.passes:
-                n_pass += 1
-            iid = tree.insert("", "end", values=(
-                rr.camera, rr.lens, _fmt(rr.magnification, 3), _fmt(rr.working_distance_mm, 4),
-                _fmt(rr.image_circle_mm, 4), fno,
-                "✓ match" if rr.passes else "✗",
-            ), tags=(tag,))
-            results_state[iid] = rr
-        status.set(
-            f"{n_pass} of {len(results)} combinations match "
-            f"({len(cams)} cameras × {len(lenses)} lenses). Select a row for details."
-        )
-
-    def on_select(_e=None):
-        sel = tree.selection()
-        if not sel:
-            return
-        rr = results_state.get(sel[0])
-        if rr is None:
-            return
-        if rr.passes:
-            status.set(
-                f"✓ {rr.camera} + {rr.lens}: |m|={rr.magnification:.3g}, "
-                f"WD≈{_fmt(rr.working_distance_mm)} mm, image circle {_fmt(rr.image_circle_mm)} mm."
-                + ("" if rr.fnumber_ok is not False else "  Note: lens f/# slower than the diffraction budget (advisory).")
-            )
-        else:
-            status.set(f"✗ {rr.camera} + {rr.lens}: " + "; ".join(rr.reasons))
-
-    tree.bind("<<TreeviewSelect>>", on_select)
-    ttk.Button(top, text="Match", command=do_match).grid(row=0, column=10, padx=(8, 0))
+    docs/design_qt_migration.md phase 3 (bugs/0889): the inputs, the Match verb, the result
+    rows and the per-row explanation live in ``KrakenOS/UI/row_forms/catalog_matcher.py``,
+    which the Qt dialog uses too. It REPORTS -- RowForm.read_only drops Validate and Apply.
+    """
+    from KrakenOS.UI.panels.row_form_view import render_row_form
+    from KrakenOS.UI.row_forms import FormRefused
+    from KrakenOS.UI.row_forms.catalog_matcher import build_catalog_matcher_form
+    from KrakenOS.UI.uihost import host_of
 
     try:
-        editor._show_centered_dialog(dialog)
-    except Exception:
-        pass
-    return dialog
+        form = build_catalog_matcher_form(editor)
+    except FormRefused as exc:
+        host_of(editor).showinfo("Camera + Lens Matcher", str(exc))
+        return None
+    window = render_row_form(editor, form, wraplength=760)
+    window.geometry("1080x620")
+    return window

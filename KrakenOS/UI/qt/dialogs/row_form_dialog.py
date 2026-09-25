@@ -149,11 +149,16 @@ class RowFormDialog(_dialog_class()):
             button = self.buttons.addButton(action.label, role)
             button.clicked.connect(lambda _checked=False, a=action: self.run_action(a))
             self.action_buttons[action.key] = button
-        self.validate_button = self.buttons.addButton("Validate", role)
-        self.apply_button = self.buttons.addButton("Apply", role)
-        self.cancel_button = self.buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
-        self.validate_button.clicked.connect(self.validate)
-        self.apply_button.clicked.connect(self.apply_to_row)
+        self.validate_button = None
+        self.apply_button = None
+        if not form.read_only:
+            self.validate_button = self.buttons.addButton("Validate", role)
+            self.apply_button = self.buttons.addButton("Apply", role)
+            self.validate_button.clicked.connect(self.validate)
+            self.apply_button.clicked.connect(self.apply_to_row)
+        self.cancel_button = self.buttons.addButton(
+            QDialogButtonBox.StandardButton.Close if form.read_only
+            else QDialogButtonBox.StandardButton.Cancel)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
 

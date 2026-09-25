@@ -420,12 +420,15 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None,
 
     footer = ttk.Frame(frame)
     footer.grid(row=4, column=0, columnspan=2, sticky="e", pady=(12, 0))
-    ttk.Button(footer, text="Validate", command=validate_form).pack(side="right", padx=(0, 8))
-    ttk.Button(footer, text="Apply", command=apply_form).pack(side="right")
+    if not form.read_only:
+        ttk.Button(footer, text="Validate", command=validate_form).pack(side="right",
+                                                                        padx=(0, 8))
+        ttk.Button(footer, text="Apply", command=apply_form).pack(side="right")
     for action in form.actions:
         ttk.Button(footer, text=action.label,
                    command=lambda a=action: run_action(a)).pack(side="right", padx=(0, 8))
-    ttk.Button(footer, text="Cancel", command=close).pack(side="right", padx=(0, 8))
+    ttk.Button(footer, text="Close" if form.read_only else "Cancel",
+               command=close).pack(side="right", padx=(0, 8))
     owner._show_centered_dialog(window)
     if modal:
         # the 3D inspector's popups grab, so a click in the viewport behind cannot retrace

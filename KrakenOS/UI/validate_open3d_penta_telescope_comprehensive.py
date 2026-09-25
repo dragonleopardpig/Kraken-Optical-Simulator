@@ -16669,6 +16669,10 @@ phase_676_path_component_form = _phase_from_standalone(
     676, "the Path Component placement row form and RowForm.labels (Qt migration phase 3, 0888): insert a component into a beam-splitter arm or onto a traced BRANCH_PATH. The component choice does not just pick a type -- it CHANGES WHAT THE NEXT FIELD MEANS: a focal length for a thin lens, a radius of curvature for a refracting surface, a mirror radius for a mirror, and nothing at all for a detector or an aperture, whose glass is fixed too. FormField.label is frozen when the form is built, so RowForm.labels is the live half -- the fourth live property after values, choices and locked -- and BOTH views ask form.label_for(key) and re-read it on every refresh. The Tk renderer also had to start locking CHOICE and textarea widgets, not just entries, because a choice may now turn any kind off. Guard: the fields and the two refusals (a non-splitter row, an unknown path), each component relabelling the parameter and locking what it does not use, the model's messages including the thin lens's zero focal length and the f=100 it seeds, apply inserting one row on the arm, the REAL Tk dialog RELABELLING when the combo changes, and the Qt dialog doing the same with the glass field following (0888)",
     "KrakenOS.UI.validate_open3d_0888_path_component_form",
     "path_component_form")
+phase_677_catalog_matcher_form = _phase_from_standalone(
+    677, "the Camera + Lens Matcher form and RowForm.read_only (Qt migration phase 3, 0889): bugs/0634's matcher -- enter the FOV, the resolution you need on it, an optional minimum working distance and a wavelength, and every registered camera x catalog lens combination is listed with the passing ones first and the reasons the others fail. It REPORTS, so RowForm.read_only drops Validate and Apply and renames Cancel to Close; what it keeps is a VERB, because the first Match scrapes the lens datasheets and takes 10-20 s, which is not something to do on every keystroke -- that is why this is a record-list form with a FormAction rather than a rebuild-on-change report. Guard: five inputs prefilled from the scene with an empty list, Match refusing on a missing height / a missing resolution / a negative width with the model's own message, Match listing 252 combinations of which 88 pass, selecting one explaining it (why it passes, or every reason it does not), the REAL Tk dialog showing exactly ['Match', 'Close'] over its result list, and the Qt dialog the same with neither Validate nor Apply (0889)",
+    "KrakenOS.UI.validate_open3d_0889_catalog_matcher_form",
+    "catalog_matcher_form")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17411,6 +17415,7 @@ def main() -> int:
             phase_674_inspection_part_preview,
             phase_675_surface_shape_figure,
             phase_676_path_component_form,
+            phase_677_catalog_matcher_form,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
