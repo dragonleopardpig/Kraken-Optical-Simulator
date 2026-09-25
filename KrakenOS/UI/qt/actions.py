@@ -75,6 +75,10 @@ ACTIONS = (
     ("catalog_matcher", "&Analysis", "Camera + Lens &Matcher...", None,
      "catalog_matcher_action",
      "List every registered camera x catalog lens combination that meets a requirement"),
+    ("galvo_scan", "&Edit", "&Galvo Scan Overlay...", None, "galvo_scan_action",
+     "The TiltX angles the selected mirror is drawn at"),
+    ("grating_settings", "&Edit", "G&rating Settings...", None, "grating_settings_action",
+     "Diffraction order, pitch and line angle for the selected row"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 

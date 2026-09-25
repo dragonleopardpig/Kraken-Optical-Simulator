@@ -409,6 +409,18 @@ class KrakenQtMainWindow(_main_window_class()):
 
         return self.open_row_form(build_catalog_matcher_form, row_index=False)
 
+    def galvo_scan_action(self):
+        """The TiltX angles the selected mirror is drawn at."""
+        from KrakenOS.UI.row_forms import build_galvo_scan_form
+
+        return self.open_row_form(build_galvo_scan_form)
+
+    def grating_settings_action(self):
+        """Diffraction order, pitch and line angle for the selected row."""
+        from KrakenOS.UI.row_forms import build_grating_settings_form
+
+        return self.open_row_form(build_grating_settings_form)
+
     def _forget_dialog(self, dialog) -> None:
         if dialog in self._open_dialogs:
             self._open_dialogs.remove(dialog)

@@ -30,6 +30,7 @@ from KrakenOS.UI.row_forms import glass_catalog as glass_catalog_row_form_module
 from KrakenOS.UI.row_forms import stock_lens as stock_lens_row_form_module
 from KrakenOS.UI.row_forms import surface_shape as surface_shape_row_form_module
 from KrakenOS.UI.row_forms import path_component as path_component_row_form_module
+from KrakenOS.UI.row_forms import surface_settings as surface_settings_row_form_module
 from KrakenOS.UI.panels import row_form_view as row_form_view_module
 from KrakenOS.UI.panels.main_analysis_controls import MainAnalysisToolbarPanel, MainInformationPanel
 from KrakenOS.UI.panels.main_branch_gaussian_q_dialog import MainBranchGaussianQDialog
@@ -439,6 +440,7 @@ def _evaluate_checks() -> tuple[list, dict]:
     stock_lens_row_form = inspect.getsource(stock_lens_row_form_module)
     surface_shape_row_form = inspect.getsource(surface_shape_row_form_module)
     path_component_row_form = inspect.getsource(path_component_row_form_module)
+    surface_settings_row_form = inspect.getsource(surface_settings_row_form_module)
     scene_element_dialogs = inspect.getsource(MainSceneElementDialogs)
     main_advanced_surface_factory = inspect.getsource(KrakenLayoutEditor._main_advanced_surface_dialog)
     open_advanced_surface_dialog = inspect.getsource(KrakenLayoutEditor.open_advanced_surface_editor)
@@ -1312,9 +1314,15 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "self._main_surface_settings_dialogs().open_galvo_scan_overlay_settings(index)" in open_galvo_settings
             and "self._main_surface_settings_dialogs().open_surface_additional_settings(index)" in open_surface_additional_settings
             and "self._main_surface_settings_dialogs().open_grating_settings_editor(row_index)" in open_grating_settings
-            and "Galvo Scan Overlay" in main_surface_settings_dialogs
-            and "Grating Settings" in main_surface_settings_dialogs
-            and "Pitch [um] must be non-zero." in main_surface_settings_dialogs,
+            # bugs/0890: both dialogs became row forms, so the titles, the 25-angle limit,
+            # the middle-angle nominal rule and the messages live in
+            # row_forms/surface_settings.py; the panel keeps the factory kwargs and two calls.
+            and "Galvo Scan Overlay" in surface_settings_row_form
+            and "Grating Settings" in surface_settings_row_form
+            and "Pitch [um] must be non-zero." in surface_settings_row_form
+            and "build_galvo_scan_form(" in main_surface_settings_dialogs
+            and "build_grating_settings_form(" in main_surface_settings_dialogs
+            and "render_row_form(" in main_surface_settings_dialogs,
         ),
         (
             "Main table context menu lives outside layout_editor",
