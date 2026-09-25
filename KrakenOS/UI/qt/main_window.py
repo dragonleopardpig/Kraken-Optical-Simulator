@@ -14,6 +14,7 @@ from pathlib import Path
 
 from KrakenOS.UI.qt.actions import ActionManager
 from KrakenOS.UI.qt.docks import DockManager
+from KrakenOS.UI.qt.results_panel import ResultsPanel
 from KrakenOS.UI.qt.rows_table import make_rows_model
 from KrakenOS.UI.uihost import host_of
 
@@ -64,6 +65,14 @@ class KrakenQtMainWindow(_main_window_class()):
         self.dock_manager = DockManager(self)
         self.dock_manager.create_dock(self.rows_view, "SurfaceTableDock", "Surface Table",
                                       Qt.DockWidgetArea.LeftDockWidgetArea)
+        # the two panels the model used to write into Tk widgets directly (bugs/0898)
+        self.results_panel = ResultsPanel(editor)
+        self.dock_manager.create_dock(self.results_panel.table, "ResultsDock", "Results",
+                                      Qt.DockWidgetArea.RightDockWidgetArea)
+        self.dock_manager.create_dock(self.results_panel.log, "DebugDock", "Debug",
+                                      Qt.DockWidgetArea.BottomDockWidgetArea)
+        self.dock_manager.create_dock(self.results_panel.progress, "ProgressDock", "Progress",
+                                      Qt.DockWidgetArea.BottomDockWidgetArea)
         self.dock_manager.setup_default_layout()
 
         self._open_dialogs: list = []  # a modeless dialog must outlive the call that opened it

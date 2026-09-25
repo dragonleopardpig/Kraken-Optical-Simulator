@@ -16,7 +16,6 @@ import signal
 import subprocess
 import time
 import tkinter as tk
-import tkinter.font as tkfont
 from tkinter import filedialog, messagebox
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing as mp
@@ -76,22 +75,28 @@ def _run_optimization_job(*args, **kwargs):
 
 class AnalysisComputeWorkflowMixin:
     def _set_results(self, items) -> None:
-        self.results_table.delete(*self.results_table.get_children())
-        measure = tkfont.nametofont("TkDefaultFont").measure
-        property_width = measure("Property") + 18
-        for key, value in items:
-            self.results_table.insert("", "end", values=(key, value))
-            property_width = max(property_width, measure(str(key)) + 18)
-        self.results_table.column("property", width=min(property_width, 150), anchor="w", stretch=False)
+        """Publish the analysis results: the MODEL keeps them, a shell shows them.
+
+        These 98 property/value pairs were written straight into a ttk.Treeview, which is why
+        the Qt shell had no results panel at all (bugs/0898). `results_items` is the data; a
+        shell implements `show_results` to draw it, and a headless editor simply has none.
+        """
+        self.results_items = [(str(key), str(value)) for key, value in items]
+        show = getattr(self, "show_results", None)
+        if show is not None:
+            show(self.results_items)
 
     def append_debug(self, message: str) -> None:
+        """Add one line to the debug log: the MODEL keeps it, a shell shows it."""
         if not message:
             return
         line = message.rstrip()
-        self.debug_text.insert("end", line + "\n")
-        self.debug_text.see("end")
+        self.debug_lines.append(line)
         self._append_debug_log(line)
-        host_of(self).update_idletasks()
+        show = getattr(self, "show_debug_line", None)
+        if show is not None:
+            show(line)
+            host_of(self).update_idletasks()
 
     def _bind_text_copy_shortcuts(self, widget: tk.Text) -> None:
         for sequence in ("<Control-c>", "<Control-C>", "<Control-Insert>", "<<Copy>>", "<Control-KeyPress-c>", "<Control-KeyPress-C>"):
@@ -217,8 +222,15 @@ class AnalysisComputeWorkflowMixin:
             return False, "none"
 
     def copy_debug_to_clipboard(self) -> None:
+        """Copy the debug log -- from `debug_lines`, not from a widget (bugs/0898)."""
         try:
-            self._copy_all_from_text_widget(self.debug_text)
+            text = "\n".join(self.debug_lines)
+            if not text:
+                self.status_var.set("No text to copy")
+                return
+            ok, backend = self._copy_text_to_clipboard(text)
+            self.status_var.set(f"All text copied to clipboard ({backend})" if ok
+                                else "Copy failed")
         except Exception as exc:
             self.append_debug(f"Copy debug failed: {exc}")
 
@@ -360,11 +372,15 @@ class AnalysisComputeWorkflowMixin:
             pass
 
     def append_progress(self, message: str) -> None:
+        """Add one line to the progress log: the MODEL keeps it, a shell shows it (bugs/0898)."""
         if not message:
             return
-        self.progress_text.insert("end", message.rstrip() + "\n")
-        self.progress_text.see("end")
-        host_of(self).update_idletasks()
+        line = message.rstrip()
+        self.progress_lines.append(line)
+        show = getattr(self, "show_progress_line", None)
+        if show is not None:
+            show(line)
+            host_of(self).update_idletasks()
 
     def _begin_analysis_progress(self, label: str) -> None:
         if self.optimization_running:

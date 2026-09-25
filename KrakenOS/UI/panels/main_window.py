@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 import tkinter as tk
-from tkinter import ttk
+from tkinter import font as tkfont, ttk
 
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
@@ -227,6 +227,36 @@ class MainWindowBuilder:
 
         self._menubar = menubar
         self.config(menu=menubar)
+
+    def _show_tk_results(self, items) -> None:
+        """The Tk half of the results seam (bugs/0898): the model publishes property/value
+        pairs and the view is the only thing that knows what a Treeview is."""
+        table = getattr(self, "results_table", None)
+        if table is None:
+            return
+        table.delete(*table.get_children())
+        measure = tkfont.nametofont("TkDefaultFont").measure
+        property_width = measure("Property") + 18
+        for key, value in items:
+            table.insert("", "end", values=(key, value))
+            property_width = max(property_width, measure(str(key)) + 18)
+        table.column("property", width=min(property_width, 150), anchor="w", stretch=False)
+
+    def _show_tk_debug_line(self, line: str) -> None:
+        """The Tk half of the debug seam (bugs/0898)."""
+        widget = getattr(self, "debug_text", None)
+        if widget is None:
+            return
+        widget.insert("end", str(line) + "\n")
+        widget.see("end")
+
+    def _show_tk_progress_line(self, line: str) -> None:
+        """The Tk half of the progress seam (bugs/0898)."""
+        widget = getattr(self, "progress_text", None)
+        if widget is None:
+            return
+        widget.insert("end", str(line) + "\n")
+        widget.see("end")
 
     def _set_tk_plot_cursor(self, cursor: str) -> None:
         """The Tk half of the plot-cursor seam (bugs/0893): the model asks for a cursor by
@@ -646,6 +676,9 @@ class MainWindowBuilder:
         self.canvas.mpl_connect("button_press_event", self._on_plot_widget_click)
         # __setattr__ forwards to the editor, which is where the model looks for it
         self.set_plot_cursor = self._set_tk_plot_cursor
+        self.show_results = self._show_tk_results
+        self.show_debug_line = self._show_tk_debug_line
+        self.show_progress_line = self._show_tk_progress_line
 
         self.debug_text = tk.Text(debug_frame, wrap="word", height=8, width=24)
         self.debug_text.grid(row=0, column=0, sticky="nsew")

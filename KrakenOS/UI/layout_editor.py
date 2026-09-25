@@ -2934,6 +2934,11 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         self._hover_hint_artists: dict = {}
         self._hover_axis = None
         self._last_viewer_open_time = 0.0
+        # what the analysis produced, as data (bugs/0898): a shell draws these, and a headless
+        # editor keeps them without one
+        self.results_items: list[tuple[str, str]] = []
+        self.debug_lines: list[str] = []
+        self.progress_lines: list[str] = []
         self._three_d_inspector: Kraken3DInspector | None = None
         # the report dialogs and the two inspectors own their own widgets now (bugs/0894, 0895);
         # only the records the results panel and the snapshot helpers read stay on the editor
