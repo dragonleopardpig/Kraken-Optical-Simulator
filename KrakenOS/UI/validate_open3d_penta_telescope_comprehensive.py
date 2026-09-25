@@ -16677,6 +16677,10 @@ phase_678_surface_settings_forms = _phase_from_standalone(
     678, "the galvo scan overlay and grating settings row forms (Qt migration phase 3, 0890): two small per-surface dialogs and the first pair in the phase-3 tail that needed NOTHING new from the framework, which is what the tail is supposed to look like. The galvo overlay is seeded from the mirror's OWN displayed angle (nominal-5, nominal, nominal+5), capped at 25 angles so the plot stays readable, and its MIDDLE value becomes the nominal pose while the whole list goes to the display-only overlay -- a rule that lives in the model now instead of in a Tk callback. Its two refusals (no row selected, a row that is not a Mirror) still go to the STATUS LINE rather than a message box, as they always did. The grating form is the three fields that no longer occupy main-table columns, with the model's own messages including a non-zero pitch. All four of the galvo model's pieces reach the Tk shell as CONSTRUCTOR KWARGS, so the builder falls back to layout_editor/surface_value_parsing. Guard: the seeding and the two limits, the middle-angle nominal rule and the 3-entry overlay, Clear emptying it, both refusals, the grating messages and what Apply writes, both REAL Tk dialogs' buttons and entry counts, and both Qt dialogs (0890)",
     "KrakenOS.UI.validate_open3d_0890_surface_settings_forms",
     "surface_settings_forms")
+phase_679_preset_and_bounds_forms = _phase_from_standalone(
+    679, "the tolerance-solve preset and optimisation-bounds row forms (Qt migration phase 3, 0891): two more tail dialogs that needed nothing new from the framework. What they DID need was care about WHERE AN ERROR GOES -- the bounds dialog has never shown a message box, it writes to the DEBUG LOG and leaves the dialog open, and the preset dialog reports through append_debug as well as the status line -- so the builders raise FormRefused with the model's own wording and the panels decide where it lands. The preset's compare-view list is one more CONSTRUCTOR KWARG with a module fallback. Guard: the preset's seven fields and its refusals ('Give the preset a name.', 'Monte Carlo samples must be at least 1.') with Save writing a named preset, the bounds rule (lower below upper) and both of the model's own messages, a bounds refusal reaching the DEBUG LOG and opening NO message box (driven through the REAL panel method with a refusing builder -- the first version passed the row id as None, returned before the builder and proved nothing), the REAL Tk preset dialog drawing 6 entries and a combo and GRABBING, and the Qt preset dialog refusing a blank name and saving (0891)",
+    "KrakenOS.UI.validate_open3d_0891_preset_and_bounds_forms",
+    "preset_and_bounds_forms")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17421,6 +17425,7 @@ def main() -> int:
             phase_676_path_component_form,
             phase_677_catalog_matcher_form,
             phase_678_surface_settings_forms,
+            phase_679_preset_and_bounds_forms,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

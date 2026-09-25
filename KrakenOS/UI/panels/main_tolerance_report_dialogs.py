@@ -9,6 +9,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 import traceback
 from typing import Any
+from KrakenOS.UI.panels.row_form_view import render_row_form
+from KrakenOS.UI.row_forms import FormRefused
+from KrakenOS.UI.row_forms.presets import build_save_tolerance_preset_form
 
 
 class MainToleranceReportDialogs:
@@ -99,95 +102,22 @@ class MainToleranceReportDialogs:
         self.status_var.set(f"Tolerance Monte Carlo CSV exported: {Path(path).name}")
 
     def open_save_tolerance_solve_preset_dialog(self) -> None:
+        # docs/design_qt_migration.md phase 3 (bugs/0891): the fields, the validation and what
+        # Save writes live in KrakenOS/UI/row_forms/presets.py, which the Qt dialog uses too.
         self._commit_pending_table_edit()
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Save Tolerance Solve Preset", f"Could not read the surface table:\n\n{exc}", parent=self.editor)
+            messagebox.showerror("Save Tolerance Solve Preset",
+                                 f"Could not read the surface table:\n\n{exc}",
+                                 parent=self.editor)
             return
-        active = self._active_tolerance_solve_preset()
-        default_name = str(active.get("name", "") or "Nominal tolerance solve")
-        dialog = tk.Toplevel(self.editor)
-        dialog.withdraw()
-        dialog.title("Save Tolerance Solve Preset")
-        dialog.transient(self.editor)
-        dialog.grab_set()
-        dialog.resizable(False, False)
-
-        vars_by_key = {
-            "name": tk.StringVar(master=dialog, value=default_name),
-            "sample_count": tk.StringVar(master=dialog, value=str(active.get("sample_count", 25))),
-            "seed": tk.StringVar(master=dialog, value=str(active.get("seed", 12345))),
-            "compensator_steps": tk.StringVar(master=dialog, value=str(active.get("compensator_steps", 9))),
-            "multi_steps": tk.StringVar(master=dialog, value=str(active.get("multi_steps", 5))),
-            "multi_passes": tk.StringVar(master=dialog, value=str(active.get("multi_passes", 2))),
-            "tolerance_compare_view": tk.StringVar(
-                master=dialog,
-                value=str(active.get("tolerance_compare_view", self._current_tolerance_compare_view())),
-            ),
-        }
-        fields = (
-            ("Preset name", "name"),
-            ("Monte Carlo samples", "sample_count"),
-            ("Random seed", "seed"),
-            ("Single-compensator steps", "compensator_steps"),
-            ("Multi-compensator steps", "multi_steps"),
-            ("Multi-compensator passes", "multi_passes"),
-        )
-        for row_index, (label, key) in enumerate(fields):
-            ttk.Label(dialog, text=label).grid(row=row_index, column=0, sticky="w", padx=12, pady=(10 if row_index == 0 else 4, 2))
-            ttk.Entry(dialog, textvariable=vars_by_key[key], width=30).grid(
-                row=row_index,
-                column=1,
-                sticky="ew",
-                padx=12,
-                pady=(10 if row_index == 0 else 4, 2),
-            )
-        compare_row = len(fields)
-        ttk.Label(dialog, text="Tolerance compare view").grid(row=compare_row, column=0, sticky="w", padx=12, pady=(4, 2))
-        ttk.Combobox(
-            dialog,
-            textvariable=vars_by_key["tolerance_compare_view"],
-            values=self.tolerance_compare_view_values,
-            state="readonly",
-            width=28,
-        ).grid(row=compare_row, column=1, sticky="ew", padx=12, pady=(4, 2))
-        role_count = len(self._current_tolerance_compensator_preset_payload())
-        ttk.Label(
-            dialog,
-            text=f"Saves merit operands and {role_count} tolerance variable role(s).",
-        ).grid(row=compare_row + 1, column=0, columnspan=2, sticky="w", padx=12, pady=(8, 4))
-
-        buttons = ttk.Frame(dialog)
-        buttons.grid(row=compare_row + 2, column=0, columnspan=2, sticky="e", padx=12, pady=(8, 12))
-
-        def accept() -> None:
-            try:
-                self._begin_history_capture()
-                preset = self.save_tolerance_solve_preset(
-                    vars_by_key["name"].get(),
-                    sample_count=int(vars_by_key["sample_count"].get()),
-                    seed=int(vars_by_key["seed"].get()),
-                    compensator_steps=int(vars_by_key["compensator_steps"].get()),
-                    multi_steps=int(vars_by_key["multi_steps"].get()),
-                    multi_passes=int(vars_by_key["multi_passes"].get()),
-                    tolerance_compare_view=vars_by_key["tolerance_compare_view"].get(),
-                )
-                self._commit_history_capture()
-            except Exception as exc:
-                self._history_pending_state = None
-                messagebox.showerror("Save Tolerance Solve Preset", str(exc), parent=dialog)
-                return
-            self.append_debug(self.tolerance_solve_preset_report_text(preset))
-            self.status_var.set(f"Saved tolerance solve preset '{preset.get('name')}'. Save layout to persist it.")
-            dialog.destroy()
-
-        ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="right", padx=(6, 0))
-        ttk.Button(buttons, text="Save Preset", command=accept).pack(side="right")
-        dialog.columnconfigure(1, weight=1)
-        dialog.update_idletasks()
-        self._show_centered_dialog(dialog)
-        dialog.wait_window()
+        try:
+            form = build_save_tolerance_preset_form(self)
+        except FormRefused as exc:
+            messagebox.showinfo("Save Tolerance Solve Preset", str(exc), parent=self.editor)
+            return
+        render_row_form(self, form, wraplength=460, modal=True)
 
     def open_apply_tolerance_solve_preset_dialog(self) -> None:
         presets = self._normalize_tolerance_solve_presets(getattr(self, "tolerance_solve_presets", []))

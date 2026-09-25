@@ -17,6 +17,8 @@ from KrakenOS.UI.row_forms.inspection_cell import build_inspection_cell_form
 from KrakenOS.UI.row_forms.inspection_part import build_inspection_part_form
 from KrakenOS.UI.row_forms.stock_lens import build_stock_lens_form
 from KrakenOS.UI.row_forms.path_component import build_path_component_form
+from KrakenOS.UI.row_forms.presets import (build_optimization_bounds_form,
+                                           build_save_tolerance_preset_form)
 from KrakenOS.UI.row_forms.scene_sources import build_scene_source_manager_form
 from KrakenOS.UI.row_forms.scene_target import build_scene_target_form
 from KrakenOS.UI.row_forms.source_edit import build_scene_source_edit_form
@@ -44,6 +46,8 @@ ROW_FORM_BUILDERS = {
     "catalog_matcher": build_catalog_matcher_form,
     "galvo_scan": build_galvo_scan_form,
     "grating_settings": build_grating_settings_form,
+    "tolerance_preset": build_save_tolerance_preset_form,
+    "optimization_bounds": build_optimization_bounds_form,
     "path_local_pose": build_path_local_pose_form,
     "element_settings": build_element_settings_form,
 }
@@ -60,4 +64,5 @@ __all__ = ["FormAction", "FormField", "FormFigure", "FormPreview", "FormRefused"
            "build_surface_shape_form", "build_path_component_form",
            "build_catalog_matcher_form", "build_galvo_scan_form",
            "build_grating_settings_form",
+           "build_save_tolerance_preset_form", "build_optimization_bounds_form",
            "ROW_FORM_BUILDERS"]

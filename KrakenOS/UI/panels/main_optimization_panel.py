@@ -7,6 +7,9 @@ import tkinter as tk
 from collections.abc import Iterable
 from tkinter import ttk
 from typing import Any
+from KrakenOS.UI.panels.row_form_view import render_row_form
+from KrakenOS.UI.row_forms import FormRefused
+from KrakenOS.UI.row_forms.presets import build_optimization_bounds_form
 
 
 class MainOptimizationPanel:
@@ -26,61 +29,24 @@ class MainOptimizationPanel:
         setattr(self.editor, name, value)
 
     def edit_current_bounds(self) -> None:
+        # docs/design_qt_migration.md phase 3 (bugs/0891): the bounds, their one rule (lower
+        # below upper) and what Save writes live in KrakenOS/UI/row_forms/presets.py. A bad
+        # entry goes to the DEBUG LOG and leaves the dialog open, as it always did -- this
+        # dialog has never shown a message box.
         if self.current_menu_row_id is None or self.current_menu_field is None:
             return
         index = self._table_item_row_index(self.current_menu_row_id)
-        if index is None:
-            return
-        row = self.rows[index]
         spec = self._variable_spec_for_field(self.current_menu_field)
-        if spec is None:
+        if index is None or spec is None:
             return
-        current = spec.get_bounds(row)
-        current_value = spec.value_from_row(row)
-        default_bounds = current or spec.default_bounds(current_value)
-
-        dialog = tk.Toplevel(self)
-        dialog.withdraw()
-        dialog.title(f"Bounds for {row.name} {spec.label}")
-        dialog.transient(self)
-        dialog.grab_set()
-        dialog.resizable(False, False)
-
-        ttk.Label(dialog, text="Lower").grid(row=0, column=0, padx=12, pady=(12, 4), sticky="w")
-        lower_var = tk.StringVar(value=f"{default_bounds[0]:g}")
-        ttk.Entry(dialog, textvariable=lower_var, width=16).grid(row=1, column=0, padx=12, pady=(0, 8))
-
-        ttk.Label(dialog, text="Upper").grid(row=2, column=0, padx=12, pady=(0, 4), sticky="w")
-        upper_var = tk.StringVar(value=f"{default_bounds[1]:g}")
-        ttk.Entry(dialog, textvariable=upper_var, width=16).grid(row=3, column=0, padx=12, pady=(0, 12))
-
-        def accept():
-            try:
-                lower = float(lower_var.get())
-                upper = float(upper_var.get())
-            except ValueError:
-                self.append_debug("Invalid optimization bounds entry.")
-                return
-            if lower >= upper:
-                self.append_debug("Optimization bounds rejected: lower must be less than upper.")
-                return
-            self._begin_history_capture()
-            spec.set_bounds(row, (lower, upper))
-            self._commit_history_capture()
-            self.append_progress(
-                f"Bounds set for row {index} {spec.label}: [{lower:g}, {upper:g}]"
-            )
-            dialog.destroy()
-
-        buttons = ttk.Frame(dialog)
-        buttons.grid(row=4, column=0, padx=12, pady=(0, 12), sticky="w")
-        ttk.Button(buttons, text="Save", command=accept).pack(side="left")
-        ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="left", padx=(8, 0))
-
-        self._show_centered_dialog(dialog)
-        self.wait_window(dialog)
-        self._cleanup_current_popup_menu()
-
+        try:
+            form = build_optimization_bounds_form(self, index, spec=spec)
+        except FormRefused as exc:
+            self.append_debug(str(exc))
+            return
+        window = render_row_form(self, form, wraplength=320, modal=True,
+                                 on_close=self._cleanup_current_popup_menu)
+        self.wait_window(window)
 
     def build(self, parent: tk.Widget) -> None:
         specs = self.operand_specs

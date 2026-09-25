@@ -79,6 +79,9 @@ ACTIONS = (
      "The TiltX angles the selected mirror is drawn at"),
     ("grating_settings", "&Edit", "G&rating Settings...", None, "grating_settings_action",
      "Diffraction order, pitch and line angle for the selected row"),
+    ("tolerance_preset", "&Analysis", "Save &Tolerance Solve Preset...", None,
+     "tolerance_preset_action",
+     "Save the Monte Carlo settings, merit operands and tolerance roles as a preset"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 

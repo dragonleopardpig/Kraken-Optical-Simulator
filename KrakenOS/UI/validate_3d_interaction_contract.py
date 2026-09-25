@@ -31,6 +31,7 @@ from KrakenOS.UI.row_forms import stock_lens as stock_lens_row_form_module
 from KrakenOS.UI.row_forms import surface_shape as surface_shape_row_form_module
 from KrakenOS.UI.row_forms import path_component as path_component_row_form_module
 from KrakenOS.UI.row_forms import surface_settings as surface_settings_row_form_module
+from KrakenOS.UI.row_forms import presets as presets_row_form_module
 from KrakenOS.UI.panels import row_form_view as row_form_view_module
 from KrakenOS.UI.panels.main_analysis_controls import MainAnalysisToolbarPanel, MainInformationPanel
 from KrakenOS.UI.panels.main_branch_gaussian_q_dialog import MainBranchGaussianQDialog
@@ -441,6 +442,7 @@ def _evaluate_checks() -> tuple[list, dict]:
     surface_shape_row_form = inspect.getsource(surface_shape_row_form_module)
     path_component_row_form = inspect.getsource(path_component_row_form_module)
     surface_settings_row_form = inspect.getsource(surface_settings_row_form_module)
+    presets_row_form = inspect.getsource(presets_row_form_module)
     scene_element_dialogs = inspect.getsource(MainSceneElementDialogs)
     main_advanced_surface_factory = inspect.getsource(KrakenLayoutEditor._main_advanced_surface_dialog)
     open_advanced_surface_dialog = inspect.getsource(KrakenLayoutEditor.open_advanced_surface_editor)
@@ -1088,7 +1090,12 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "Check Backend" not in main_optimization_panel
             and "Stop Optimization" in analysis_compute_workflow
             and "_update_optimization_button_state" in analysis_compute_workflow
-            and "Bounds for" in main_optimization_panel
+            # bugs/0891: the bounds dialog became a row form, so its title and its one rule
+            # live in row_forms/presets.py; the panel keeps the menu plumbing and one call
+            and "Bounds for" in presets_row_form
+            and "lower must be less than upper" in presets_row_form
+            and "build_optimization_bounds_form(" in main_optimization_panel
+            and "render_row_form(" in main_optimization_panel
             and "optimization_workers_var" in main_optimization_panel
             and "merit_mode_list" in main_optimization_panel
             and "operand_weight_vars" in main_optimization_panel
