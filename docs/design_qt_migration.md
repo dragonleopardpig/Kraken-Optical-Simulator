@@ -60,7 +60,7 @@ and the contents become checkable **without a display**, which no Tk dialog's ev
 | piece | what |
 |---|---|
 | `reports/base.py` | `ReportColumn` (heading, numeric -> format + alignment), `Report` (`cell()`, `write_csv()`), `ReportFailed` |
-| | + `ReportChoice` / `ReportValue` (controls), `DetailView` / `DetailText` / `TreeRow` (detail and hierarchy), `ReportAction` (a verb), `Report.csv_writer` (an export that is not the table) |
+| | + `ReportChoice` / `ReportValue` (controls), `DetailView` / `DetailText` / `TreeRow` (detail and hierarchy), `ReportAction` + `ReportUpdate` (a verb, and one that writes back), `Report.csv_writer` (an export that is not the table) |
 | `reports/<name>.py` | one builder per dialog |
 | `qt/dialogs/report_dialog.py` | the Qt layout for the whole family |
 
@@ -80,6 +80,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | master / detail | `Report` + `DetailView` | the same dialog, split |
 | master / detail (prose) | `Report` + `DetailText` | the same dialog, split |
 | a verb, or an export that is not the table | `ReportAction`, `Report.csv_writer` | the same dialog's button box |
+| a verb that changes the inputs | `ReportAction` -> `ReportUpdate` | the same, then a rebuild |
 | tree | `TreeRow` | `qt/dialogs/report_dialog.py` (tree mode) |
 | record list | `RowForm` + `RecordList` | `qt/dialogs/row_form_dialog.py` (list + form) |
 
@@ -119,6 +120,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0893 | The 2D layout plot in Qt; the last Tk leaks out of the model | phase 6 |
 | 0894 | The four report dialogs onto the shared Tk renderer; `DetailText` in both shells | report |
 | 0895 | Ray + Trace Path inspectors onto it; `ReportAction` and `csv_writer` in both shells | master / detail, tree |
+| 0896 | Paraxial Matrix + Gaussian Beam onto it; `ReportUpdate` (a verb that writes back) | report + inputs |
 
 The row-form framework: `FormField` kinds (number, int, bool, choice, text, textarea, static),
 `choices` that grow at runtime, `editable` choices the user may type into, `on_change` fields that
