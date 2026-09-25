@@ -68,6 +68,49 @@ test("axes can sweep a defined variable without implicitly solving its equation"
     assert.equal(engine.plan(model, "y", "a").dependsOnX, false);
 });
 
+test("one-argument definitions and expression axes support parametric plots", () => {
+    const source = String.raw`I(\theta)=I_{0}\frac{\sin^{2}\left(2\pi\sin\theta\right)}{\sin^{2}\left(\frac{1}{2}\pi\sin\theta\right)}
+I_0=1`;
+    const model = engine.parse(source);
+    assert.equal(model.functions.get("I"), "theta");
+    assert.equal(model.definitions.get("I").lhsLatex, String.raw`I(\theta)`);
+    const calculation = engine.planAxes(
+        model,
+        "theta",
+        String.raw`\sin(\theta)`,
+        String.raw`I(\theta)`,
+        "rad",
+    );
+    const point = calculation.evaluatePoint(Math.asin(0.25));
+    close(point.x.re, 0.25);
+    close(point.y.re, 1 / Math.sin(Math.PI / 8) ** 2);
+    assert.equal(calculation.xLabel, String.raw`\sin(\theta)`);
+    assert.equal(calculation.yLabel, String.raw`I(\theta)`);
+    assert.throws(
+        () => engine.planAxes(model, "theta", "I_0", String.raw`I(\theta)`),
+        /X-axis expression must depend/,
+    );
+    assert.throws(
+        () => engine.planAxes(model, "theta", String.raw`\sin(\theta)`, String.raw`I(\phi)`),
+        /expects \\theta, not \\phi/,
+    );
+    assert.throws(
+        () => engine.planAxes(model, "theta", String.raw`\sin(\theta)`, "missing"),
+        /not present in the equations/,
+    );
+    assert.throws(
+        () => engine.planAxes(model, "theta", String.raw`\sin(\theta)`, String.raw`I(2\theta)`),
+        /declared single-variable argument/,
+    );
+});
+
+test("one-argument definition references follow dependency order", () => {
+    const model = engine.parse("g(x)=f(x)+1\nf(x)=x^2");
+    const calculation = engine.plan(model, "x", "g");
+    assert.deepEqual(calculation.order.map((definition) => definition.symbol), ["f", "g"]);
+    close(calculation.evaluate(3).re, 10);
+});
+
 test("missing inputs are exposed but never silently assigned a value", () => {
     const calculation = engine.plan(engine.parse("y = a x + b\nb = 2"), "x", "y");
     assert.equal(calculation.parameters.get("a"), null);
@@ -115,7 +158,7 @@ test("cycles, duplicate definitions, reserved constants and implicit equations a
     assert.throws(() => engine.parse("y=x\ny=x^2"), /more than once/);
     assert.throws(() => engine.parse("i=2"), /reserved/);
     assert.throws(() => engine.parse("x^2+y^2=1"), /left side/);
-    assert.throws(() => engine.parse("f(x)=x^2"), /left side/);
+    assert.throws(() => engine.parse("f(x,y)=x^2"), /left side/);
 });
 
 test("malformed and unsupported expressions fail with line numbers", () => {

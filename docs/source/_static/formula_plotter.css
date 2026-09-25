@@ -22,6 +22,7 @@
 
 .formula-plotter textarea,
 .formula-plotter select,
+.formula-plotter input[type="text"],
 .formula-plotter input[type="number"] {
     width: 100%;
     min-width: 0;
@@ -98,7 +99,7 @@
 .formula-plotter__axes,
 .formula-plotter__range {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 16px;
     margin: 20px 0;
 }

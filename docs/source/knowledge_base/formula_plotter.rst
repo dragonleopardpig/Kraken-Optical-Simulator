@@ -20,20 +20,24 @@ Using the plotter
    ``a = 2``. The **Rendered equations** panel directly below the editor
    updates as you type, so you can check fractions, powers, and symbols.
    Select **Build plot** once the equations look correct.
-2. Choose the **X-axis variable** to sweep and the **Y-axis variable** to
-   calculate. All variables found in the equations are available. Selecting
-   a defined variable for X temporarily replaces its definition with the sweep;
-   this does not invert its equation.
+2. Choose the **Sweep variable**, then enter a LaTeX **X-axis expression** and
+   **Y-axis expression**. For an ordinary plot these can be ``x`` and ``y``.
+   For a parametric plot they can be expressions such as ``\sin(\theta)`` and
+   ``I(\theta)`` while :math:`\theta` is swept. Selecting a defined variable
+   to sweep temporarily replaces its definition; this does not invert its
+   equation.
 3. Enter a value for every remaining independent input. Constant definitions
    supply initial values automatically. Undefined inputs get empty fields;
    the plot waits until you provide their values. Derived quantities are
    computed from their equations.
-4. Adjust **X domain minimum/maximum**, then drag **Visible start/end** to
-   select the plotted interval. Each parameter has a slider, editable slider
-   bounds, and a numeric field for precise values. Numeric fields can also
-   hold values outside the slider bounds.
-5. Use **Inspect X** to read sampled coordinates, or **Download CSV** to save
-   the current curve.
+4. Adjust the **sweep minimum/maximum**, then drag **Visible start/end** to
+   select the sampled interval. The displayed horizontal coordinates come
+   from the X-axis expression, so they need not equal the sweep values. Each
+   parameter has a slider, editable slider bounds, and a numeric field for
+   precise values. Numeric fields can also hold values outside the slider
+   bounds.
+5. Use **Inspect sample** to read the sweep, X, and Y coordinates, or
+   **Download CSV** to save the current curve.
 
 The preview shows your current input even before a plot can be built, for
 example while parameter definitions are missing. Rendering an equation does
@@ -44,6 +48,24 @@ appears if the documentation's MathJax renderer cannot load.
 Sliders update the graph immediately. Rebuilding after editing resets
 parameter values to the definitions in the editor. Changing the axes keeps
 values you have entered for parameters.
+
+Parametric diffraction example
+-------------------------------
+
+The plotter accepts a one-argument left side as descriptive notation. For
+example, enter
+
+.. code-block:: latex
+
+   I(\theta)=I_{0}\frac{\sin^{2}\left(2\pi\sin\theta\right)}{\sin^{2}\left(\frac{1}{2}\pi\sin\theta\right)}
+   I_0=1
+
+Then choose :math:`\theta` as the **Sweep variable**, enter
+``\sin(\theta)`` for **X-axis expression**, and enter ``I(\theta)`` for
+**Y-axis expression**. Use radians for this formula because its outer sine
+arguments contain the dimensionless quantities :math:`2\pi\sin\theta` and
+:math:`\frac{1}{2}\pi\sin\theta`. A sweep from 0 to approximately 1.5708
+then displays the curve against :math:`\sin\theta` from 0 to 1.
 
 Reflection example
 ------------------
@@ -96,8 +118,11 @@ Supported input
 ---------------
 
 This is an evaluator for **explicit scalar equations**, rather than a solver
-for every possible mathematical statement. Each left side must be a single
-variable; for example, enter ``y = x^2`` instead of ``f(x) = x^2``.
+for every possible mathematical statement. A left side can be a single
+variable such as ``I`` or one-argument notation such as ``I(\theta)``. The
+latter declares that the explicit expression depends on :math:`\theta`; it
+does not turn the plotter into a general symbolic function solver. References
+must use the same declared argument.
 
 .. list-table::
    :header-rows: 1
@@ -109,6 +134,9 @@ variable; for example, enter ``y = x^2`` instead of ``f(x) = x^2``.
      - ``x``, ``R_n``, ``n_{ti}``, ``\theta_i``, ``r_{\perp}``,
        ``r_{\parallel}``; use ``\mathrm{gain}`` for a multi-letter name.
        Bare ``ab`` means multiplication, not one name.
+   * - Definition and axis notation
+     - ``y=x^2``, ``I(\theta)=I_0\sin^2\theta``; axis expressions can use
+       any supported arithmetic or function, such as ``\sin(\theta)``.
    * - Arithmetic
      - ``+``, ``-``, ``*``, ``\cdot``, ``\times``, ``/``,
        ``\frac{a}{b}``, ``x^2``, ``x^{1/2}``, ``2x``,
@@ -134,19 +162,19 @@ variable; for example, enter ``y = x^2`` instead of ``f(x) = x^2``.
 **Angle mode applies to every trigonometric function**, and inverse
 trigonometric functions return values in the selected unit. Hyperbolic
 functions are unaffected. Changing angle mode does not convert the numbers
-in the editor or the X domain; change those bounds explicitly when needed.
+in the editor or the sweep domain; change those bounds explicitly when needed.
 The plotter does not infer physical units or dimensional consistency.
 
 Implicit or circular systems, derivatives, integrals, sums, matrices,
-piecewise definitions, and user-defined functions are not supported. They
-produce a diagnostic instead of an invented calculation. Duplicate
-definitions, syntax errors, and missing parameter values also prevent a
-plot from being shown.
+piecewise definitions, multi-argument functions, and function calls with a
+different argument are not supported. They produce a diagnostic instead of
+an invented calculation. Duplicate definitions, syntax errors, and missing
+parameter values also prevent a plot from being shown.
 
-Only finite real Y values are plotted. Undefined and non-real results leave
+Only finite real X/Y pairs are plotted. Undefined and non-real results leave
 gaps, with counts shown above the controls. The plot uses 501 uniformly
-spaced samples; narrow resonances or singularities between samples may be
-missed. Reduce the plotted interval to inspect rapid changes. This is not
+spaced sweep samples; narrow resonances or singularities between samples may
+be missed. Reduce the plotted interval to inspect rapid changes. This is not
 an adaptive sampler or a proof of continuity.
 
 How the calculation is built
@@ -154,10 +182,10 @@ How the calculation is built
 
 The browser parses LaTeX into an expression tree, checks the supported
 operations, and orders definitions so each dependency is evaluated before
-it is used. At each sampled X value, it inserts the parameter values and
-evaluates that ordered graph. The plotted result is determined by the
-equations, rather than a hard-coded reflection algorithm; the Gaussian
-example uses the same engine.
+it is used. At each sampled sweep value, it inserts the parameter values,
+evaluates that ordered graph, and then evaluates both axis expressions. The
+plotted result is determined by the equations, rather than a hard-coded
+reflection algorithm; the Gaussian example uses the same engine.
 
 Parsing uses `CortexJS LaTeX Syntax
 <https://mathlive.io/compute-engine/guides/latex-syntax/>`_, and numerical

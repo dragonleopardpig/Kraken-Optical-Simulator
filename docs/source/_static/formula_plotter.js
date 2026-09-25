@@ -3,7 +3,15 @@
 
     const engine = window.KrakenFormula;
     const format = (value) => Number(value.toPrecision(5)).toString();
-    const display = (symbol) => symbol.replace(/theta/g, "θ").replace(/_perp/g, "⊥").replace(/_parallel/g, "∥");
+    const display = (source) => source
+        .replace(/\\left|\\right/g, "")
+        .replace(/\\theta|theta/g, "θ")
+        .replace(/\\phi|phi/g, "φ")
+        .replace(/\\pi|Pi/g, "π")
+        .replace(/\\(sin|cos|tan|cot|sec|csc|ln|log|exp)/g, "$1")
+        .replace(/_\{?\\?perp\}?|_perp/g, "⊥")
+        .replace(/_\{?\\?parallel\}?|_parallel/g, "∥")
+        .replace(/_\{([^{}]+)\}/g, "_$1");
     const svgNode = (tag, attributes = {}, content = "") => {
         const element = document.createElementNS("http://www.w3.org/2000/svg", tag);
         Object.entries(attributes).forEach(([name, value]) => element.setAttribute(name, value));
@@ -27,7 +35,7 @@
             <button type="button" data-role="load">Load example</button>
           </div>
           <label for="${prefix}-source">LaTeX equations</label>
-          <p class="formula-plotter__hint" id="${prefix}-help">One complete equation per line, in any order. Define constants here or enter their values below. The selected X variable is swept over its range.</p>
+          <p class="formula-plotter__hint" id="${prefix}-help">One complete equation per line, in any order. Define constants here or enter their values below. A left side such as I(\\theta) is accepted as notation for a quantity I that depends on \\theta.</p>
           <textarea id="${prefix}-source" data-role="source" rows="9" spellcheck="false" autocapitalize="off" aria-describedby="${prefix}-help"></textarea>
           <section class="formula-plotter__preview-panel" aria-labelledby="${prefix}-preview-heading">
             <strong id="${prefix}-preview-heading">Rendered equations</strong>
@@ -42,26 +50,28 @@
           <p class="formula-plotter__status" data-role="status" role="status" aria-live="polite"></p>
           <div data-role="workspace" hidden>
             <div class="formula-plotter__axes">
-              <label>X-axis variable<select data-role="x"></select></label>
-              <label>Y-axis variable<select data-role="y"></select></label>
+              <label>Sweep variable<select data-role="sweep"></select></label>
+              <label>X-axis expression<input data-role="x" type="text" spellcheck="false" autocapitalize="off"></label>
+              <label>Y-axis expression<input data-role="y" type="text" spellcheck="false" autocapitalize="off"></label>
               <label>Trig angles<select data-role="angles"><option value="deg">Degrees</option><option value="rad">Radians</option></select></label>
             </div>
+            <p class="formula-plotter__hint">Enter LaTeX expressions for both axes. For example, sweep <strong>\\theta</strong>, use <strong>\\sin(\\theta)</strong> for X, and <strong>I(\\theta)</strong> for Y.</p>
             <div class="formula-plotter__range">
-              <label>X domain minimum<input data-role="minimum" type="number" step="any" value="0"></label>
-              <label>X domain maximum<input data-role="maximum" type="number" step="any" value="90"></label>
+              <label><span data-role="minimum-label">Sweep domain minimum</span><input data-role="minimum" type="number" step="any" value="0"></label>
+              <label><span data-role="maximum-label">Sweep domain maximum</span><input data-role="maximum" type="number" step="any" value="90"></label>
               <label>Visible start <output data-role="start-label"></output><input data-role="start" type="range" min="0" max="1000" value="0"></label>
               <label>Visible end <output data-role="end-label"></output><input data-role="end" type="range" min="0" max="1000" value="1000"></label>
             </div>
             <div class="formula-plotter__parameters" data-role="parameters"></div>
             <p class="formula-plotter__hint" data-role="dependency"></p>
             <svg class="formula-plotter__chart" data-role="chart" viewBox="0 0 800 370" role="img" aria-label="Equation plot"></svg>
-            <label class="formula-plotter__probe">Inspect X <input data-role="probe" type="range" min="0" max="500" value="0"><output data-role="probe-value" aria-live="polite"></output></label>
+            <label class="formula-plotter__probe">Inspect sample <input data-role="probe" type="range" min="0" max="500" value="0"><output data-role="probe-value" aria-live="polite"></output></label>
             <div class="formula-plotter__actions"><button type="button" data-role="csv">Download CSV</button><span class="formula-plotter__hint">501 samples · drag sliders to update</span></div>
           </div>`;
         const find = (name) => root.querySelector(`[data-role="${name}"]`);
         const controls = Object.fromEntries([
             "source", "example", "load", "build", "edit-state", "status", "workspace", "preview", "preview-status",
-            "x", "y", "angles", "minimum", "maximum", "start", "end", "start-label", "end-label",
+            "sweep", "x", "y", "angles", "minimum", "maximum", "minimum-label", "maximum-label", "start", "end", "start-label", "end-label",
             "parameters", "dependency", "chart", "probe", "probe-value", "csv",
         ].map((name) => [name, find(name)]));
         let model = null;
@@ -144,27 +154,39 @@
 
         function selectAxes() {
             try {
-                calculation = engine.plan(model, controls.x.value, controls.y.value, controls.angles.value);
+                calculation = engine.planAxes(
+                    model,
+                    controls.sweep.value,
+                    controls.x.value,
+                    controls.y.value,
+                    controls.angles.value,
+                );
                 parameterInputs.clear();
                 controls.parameters.replaceChildren();
                 calculation.parameters.forEach((initial, symbol) => addParameter(symbol, initial));
                 const order = calculation.order.map((definition) => display(definition.symbol));
-                controls.dependency.textContent = `Evaluation: ${[display(calculation.xSymbol), ...calculation.parameters.keys()].map(display).join(", ")}${order.length ? ` → ${order.join(" → ")}` : ""}.` +
-                    (model.definitions.has(calculation.xSymbol) ? " The X variable's definition is replaced by the sweep." : "") +
-                    (!calculation.dependsOnX ? " Y does not depend on X; this is a constant curve." : "");
+                const parameters = [...calculation.parameters.keys()].map(display);
+                controls.dependency.textContent = `Sweep ${display(calculation.sweepSymbol)}${parameters.length ? `; parameters ${parameters.join(", ")}` : ""}${order.length ? ` → ${order.join(" → ")}` : ""}. X = ${display(calculation.xLabel)}; Y = ${display(calculation.yLabel)}.` +
+                    (model.definitions.has(calculation.sweepSymbol) ? " The sweep variable's definition is temporarily replaced by the sampled value." : "") +
+                    (!calculation.yDependsOnSweep ? " Y does not depend on the sweep variable; this is a constant curve." : "");
+                controls["minimum-label"].textContent = `${display(calculation.sweepSymbol)} sweep minimum`;
+                controls["maximum-label"].textContent = `${display(calculation.sweepSymbol)} sweep maximum`;
                 render();
+                return true;
             } catch (error) {
                 calculation = null;
                 invalidate(error.message);
+                return false;
             }
         }
 
         function inspect() {
             if (!result) return;
             const point = result.points[Number(controls.probe.value)];
-            controls["probe-value"].textContent = `${display(calculation.xSymbol)} = ${format(point.x)}; ${display(calculation.ySymbol)} = ${point.y === null ? "undefined or non-real" : format(point.y)}`;
-            probePoint.setAttribute("visibility", point.y === null ? "hidden" : "visible");
-            if (point.y !== null) {
+            const unavailable = "undefined or non-real";
+            controls["probe-value"].textContent = `${display(calculation.sweepSymbol)} = ${format(point.sweep)}; ${display(calculation.xLabel)} = ${point.x === null ? unavailable : format(point.x)}; ${display(calculation.yLabel)} = ${point.y === null ? unavailable : format(point.y)}`;
+            probePoint.setAttribute("visibility", (point.x === null || point.y === null) ? "hidden" : "visible");
+            if (point.x !== null && point.y !== null) {
                 probePoint.setAttribute("cx", graphPosition.x(point.x));
                 probePoint.setAttribute("cy", graphPosition.y(point.y));
             }
@@ -174,12 +196,15 @@
             const chart = controls.chart;
             chart.replaceChildren();
             const points = result.points;
-            const finite = points.filter((point) => point.y !== null);
-            if (!finite.length) throw new Error("No finite real Y values in this interval. Check the equations, parameters, and domain; use |z| for a complex magnitude.");
-            const minimum = points[0].x;
-            const maximum = points[points.length - 1].x;
+            const finite = points.filter((point) => point.x !== null && point.y !== null);
+            if (!finite.length) throw new Error("No finite real X/Y pairs in this interval. Check the equations, parameters, and sweep domain; use |z| for a complex magnitude.");
+            let minimum = Math.min(...finite.map((point) => point.x));
+            let maximum = Math.max(...finite.map((point) => point.x));
             let bottom = Math.min(...finite.map((point) => point.y));
             let top = Math.max(...finite.map((point) => point.y));
+            const xPadding = maximum === minimum ? Math.max(0.05, Math.abs(maximum) * 0.08) : 0;
+            minimum -= xPadding;
+            maximum += xPadding;
             const padding = top === bottom ? Math.max(0.05, Math.abs(top) * 0.08) : (top - bottom) * 0.08;
             bottom -= padding;
             top += padding;
@@ -188,10 +213,10 @@
                 x: (value) => 85 + 685 * ((value - minimum) / (maximum - minimum)),
                 y: (value) => 315 - 290 * ((value - bottom) / (top - bottom)),
             };
-            const title = `${display(calculation.ySymbol)} versus ${display(calculation.xSymbol)}`;
+            const title = `${display(calculation.yLabel)} versus ${display(calculation.xLabel)}`;
             chart.setAttribute("aria-label", title);
             chart.append(svgNode("title", {}, title));
-            chart.append(svgNode("desc", {}, `X from ${format(minimum)} to ${format(maximum)}. ${finite.length} finite real samples. Use the Inspect X slider for values.`));
+            chart.append(svgNode("desc", {}, `X from ${format(minimum)} to ${format(maximum)}. ${finite.length} finite real samples. Use the Inspect sample slider for values.`));
             for (let index = 0; index <= 5; index += 1) {
                 const xValue = minimum + (maximum - minimum) * index / 5;
                 const yValue = bottom + (top - bottom) * index / 5;
@@ -202,12 +227,12 @@
                 chart.append(svgNode("text", { x: xPosition, y: 337, "text-anchor": "middle" }, format(xValue)));
                 chart.append(svgNode("text", { x: 76, y: yPosition + 4, "text-anchor": "end" }, format(yValue)));
             }
-            chart.append(svgNode("text", { x: 425, y: 365, "text-anchor": "middle", class: "formula-plotter__axis" }, display(calculation.xSymbol)));
-            chart.append(svgNode("text", { x: 85, y: 16, class: "formula-plotter__axis" }, display(calculation.ySymbol)));
+            chart.append(svgNode("text", { x: 425, y: 365, "text-anchor": "middle", class: "formula-plotter__axis" }, display(calculation.xLabel)));
+            chart.append(svgNode("text", { x: 85, y: 16, class: "formula-plotter__axis" }, display(calculation.yLabel)));
             let path = "";
             let previous = null;
             for (const point of points) {
-                if (point.y === null) {
+                if (point.x === null || point.y === null) {
                     previous = null;
                     continue;
                 }
@@ -240,8 +265,10 @@
                 controls.csv.disabled = false;
                 controls.probe.disabled = false;
                 draw();
-                const missing = result.nonreal + result.undefinedCount;
-                status(missing ? `${501 - missing}/501 points plotted; ${result.nonreal} non-real and ${result.undefinedCount} undefined values omitted. Gaps are not joined.` : "501/501 points plotted. Change any parameter or range to update the curve.");
+                const plotted = result.points.filter((point) => point.x !== null && point.y !== null).length;
+                const xMissing = result.xNonreal + result.xUndefinedCount;
+                const yMissing = result.nonreal + result.undefinedCount;
+                status((xMissing || yMissing) ? `${plotted}/501 points plotted; ${xMissing} invalid X and ${yMissing} invalid Y values encountered. Gaps are not joined.` : "501/501 points plotted. Change any parameter, expression, or range to update the curve.");
             } catch (error) {
                 invalidate(error.message);
             }
@@ -311,20 +338,26 @@
             schedulePreview(0);
             try {
                 const nextModel = engine.parse(controls.source.value);
-                const oldX = controls.x.value;
-                const oldY = controls.y.value;
+                const oldSweep = controls.sweep.value;
+                const oldX = controls.x.value.trim();
+                const oldY = controls.y.value.trim();
                 model = nextModel;
                 parameterValues.clear();
                 activeSource = controls.source.value;
                 controls["edit-state"].textContent = "";
                 controls.workspace.hidden = false;
-                [controls.x, controls.y].forEach((select) => {
-                    select.replaceChildren(...model.variables.map((symbol) => new Option(display(symbol), symbol)));
-                });
+                controls.sweep.replaceChildren(...model.variables.map((symbol) => new Option(display(symbol), symbol)));
                 const free = model.variables.find((symbol) => !model.definitions.has(symbol));
-                controls.x.value = preferred.x || (model.variables.includes(oldX) ? oldX : free || model.variables[1] || model.variables[0]);
-                controls.y.value = preferred.y || (model.variables.includes(oldY) ? oldY : model.definitions.keys().next().value);
-                selectAxes();
+                const preserveAxes = !preferred.sweep && model.variables.includes(oldSweep);
+                controls.sweep.value = preferred.sweep || (preserveAxes ? oldSweep : free || model.variables[1] || model.variables[0]);
+                const firstDefinition = model.definitions.values().next().value;
+                controls.x.value = preferred.x || (preserveAxes ? oldX : "") || engine.label(controls.sweep.value);
+                controls.y.value = preferred.y || (preserveAxes ? oldY : "") || firstDefinition.lhsLatex;
+                if (!selectAxes() && preserveAxes) {
+                    controls.x.value = engine.label(controls.sweep.value);
+                    controls.y.value = firstDefinition.lhsLatex;
+                    selectAxes();
+                }
             } catch (error) {
                 model = null;
                 calculation = null;
@@ -341,7 +374,9 @@
             controls.start.value = "0";
             controls.end.value = "1000";
             controls.angles.value = reflection ? "deg" : "rad";
-            build(reflection ? { x: "theta_i", y: "R_n" } : { x: "r", y: "I" });
+            build(reflection
+                ? { sweep: "theta_i", x: "\\theta_i", y: "R_n" }
+                : { sweep: "r", x: "r", y: "I" });
         }
 
         controls.load.addEventListener("click", loadExample);
@@ -356,12 +391,16 @@
                 schedule();
             }
         });
-        [controls.x, controls.y, controls.angles].forEach((input) => input.addEventListener("change", selectAxes));
+        [controls.sweep, controls.x, controls.y, controls.angles].forEach((input) => input.addEventListener("change", selectAxes));
         [controls.minimum, controls.maximum, controls.start, controls.end].forEach((input) => input.addEventListener("input", schedule));
         controls.probe.addEventListener("input", inspect);
         controls.csv.addEventListener("click", () => {
             if (!result) return;
-            const rows = [`${calculation.xSymbol},${calculation.ySymbol}`, ...result.points.map((point) => `${point.x},${point.y ?? ""}`)];
+            const csvCell = (value) => `"${String(value).replaceAll('"', '""')}"`;
+            const rows = [
+                `${csvCell(calculation.xLabel)},${csvCell(calculation.yLabel)}`,
+                ...result.points.map((point) => `${point.x ?? ""},${point.y ?? ""}`),
+            ];
             const url = URL.createObjectURL(new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" }));
             const link = document.createElement("a");
             link.href = url;
