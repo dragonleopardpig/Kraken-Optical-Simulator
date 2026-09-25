@@ -698,18 +698,8 @@ PATH_LOCAL_COLUMN_LABELS = {
     "desp_y": "Local Y [mm]",
     "desp_z": "Path Dist [mm]",
 }
-FIELD_TYPE_CANONICAL_VALUES = (
-    "Angle",
-    "Object Height",
-    "Paraxial Image Height",
-    "Real Image Height",
-)
-FIELD_TYPE_DISPLAY_LABELS = {
-    "Angle": "Field Half-Angle",
-    "Object Height": "Object Semi-Height",
-    "Paraxial Image Height": "Paraxial Image Semi-Height",
-    "Real Image Height": "Real Image Semi-Height",
-}
+from KrakenOS.UI.system_controls import (FIELD_TYPE_CANONICAL_VALUES,  # noqa: F401  re-export
+                                         FIELD_TYPE_DISPLAY_LABELS)
 FIELD_TYPE_ALIASES = {
     "Angle": "Angle",
     "Field Angle": "Angle",

@@ -7,6 +7,7 @@ from collections.abc import Callable, Sequence
 from tkinter import ttk
 from typing import Any
 
+from KrakenOS.UI.system_controls import control_for
 from KrakenOS.UI.widgets import grid_labeled_commit_combobox, grid_labeled_commit_entry
 
 
@@ -44,7 +45,7 @@ class MainFieldControlsPanel:
             parent,
             0,
             0,
-            "Field type",
+            control_for("field_type_var").label,
             self.field_type_var,
             values=[self._field_type_display_label(value) for value in self.field_type_values],
             on_commit=self._on_field_type_changed,
@@ -74,7 +75,7 @@ class MainFieldControlsPanel:
             parent,
             2,
             0,
-            "Field samples",
+            control_for("field_count_var").label,
             self.field_count_var,
             on_commit=self._commit_field_controls,
             on_focus_in=self._begin_history_capture,
@@ -116,5 +117,5 @@ class MainFieldControlsPanel:
         self._sync_field_mode_ui()
 
     def _commit_field_controls(self, _event=None) -> None:
-        self._sync_object_controls()
-        self._mark_plot_update_pending()
+        # the model owns what a commit does (bugs/0900); this is the Tk callback shape
+        self.commit_field_controls(_event)

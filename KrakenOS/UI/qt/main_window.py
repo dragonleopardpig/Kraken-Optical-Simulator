@@ -16,6 +16,7 @@ from KrakenOS.UI.qt.actions import ActionManager
 from KrakenOS.UI.qt.docks import DockManager
 from KrakenOS.UI.qt.analysis_toolbar import AnalysisToolbar
 from KrakenOS.UI.qt.results_panel import ResultsPanel
+from KrakenOS.UI.qt.system_panel import SystemPanel
 from KrakenOS.UI.qt.rows_table import make_rows_model
 from KrakenOS.UI.uihost import host_of
 
@@ -78,6 +79,11 @@ class KrakenQtMainWindow(_main_window_class()):
         # the analysis picker and Update: the Qt shell could open every dialog and show every
         # result, but could not set an analysis up (bugs/0899)
         self.analysis_toolbar = AnalysisToolbar(self)
+        # the inputs that define the system: the Qt shell could analyse a loaded layout but not
+        # change what was traced (bugs/0900)
+        self.system_panel = SystemPanel(editor)
+        self.dock_manager.create_dock(self.system_panel.widget, "SystemDock", "System",
+                                      Qt.DockWidgetArea.RightDockWidgetArea)
 
         self._open_dialogs: list = []  # a modeless dialog must outlive the call that opened it
         self._status_trace = None

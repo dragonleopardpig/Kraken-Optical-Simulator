@@ -11,6 +11,7 @@ from KrakenOS.UI.source_trace_helpers import (
     RAY_FAN_COUNT_DEFAULT,
     RAY_FAN_COUNT_VALUES,
 )
+from KrakenOS.UI.system_controls import control_for
 from KrakenOS.UI.widgets import (
     grid_commit_checkbutton,
     grid_labeled_commit_combobox,
@@ -68,8 +69,8 @@ class MainTraceDisplayControlsPanel:
         setattr(self.editor, name, value)
 
     def _commit_trace_controls(self, _event=None) -> None:
-        self._sync_left_mode_controls()
-        self._mark_plot_update_pending()
+        # the model owns what a commit does (bugs/0900); this is the Tk callback shape
+        self.commit_trace_controls(_event)
 
     def build(self, parent: tk.Widget) -> None:
         cfg = self._config
@@ -94,9 +95,9 @@ class MainTraceDisplayControlsPanel:
             parent,
             0,
             0,
-            "Object mode",
+            control_for("object_mode_var").label,
             self.object_mode_var,
-            values=["Finite", "Infinity"],
+            values=list(control_for("object_mode_var").choices),
             on_commit=self._on_object_mode_changed,
             on_focus_in=self._begin_history_capture,
             width=12,
@@ -107,7 +108,7 @@ class MainTraceDisplayControlsPanel:
             parent,
             0,
             1,
-            "Wavelength [um]",
+            control_for("wavelength_var").label,
             self.wavelength_var,
             on_commit=self._commit_trace_controls,
             on_focus_in=self._begin_history_capture,
@@ -119,9 +120,9 @@ class MainTraceDisplayControlsPanel:
             parent,
             2,
             0,
-            "Ray fan count",
+            control_for("ray_count_var").label,
             self.ray_count_var,
-            values=RAY_FAN_COUNT_VALUES,
+            values=list(control_for("ray_count_var").choices),
             on_commit=self._commit_trace_controls,
             on_focus_in=self._begin_history_capture,
             width=12,
@@ -157,9 +158,9 @@ class MainTraceDisplayControlsPanel:
             parent,
             6,
             0,
-            "Aperture type",
+            control_for("aperture_type_var").label,
             self.aperture_type_var,
-            values=["STOP", "EPD", "FNO"],
+            values=list(control_for("aperture_type_var").choices),
             on_commit=self._mark_plot_update_pending,
             on_focus_in=self._begin_history_capture,
             width=12,
@@ -171,7 +172,7 @@ class MainTraceDisplayControlsPanel:
             parent,
             6,
             1,
-            "Aperture value",
+            control_for("aperture_value_var").label,
             self.aperture_value_var,
             on_commit=self._commit_trace_controls,
             on_focus_in=self._begin_history_capture,

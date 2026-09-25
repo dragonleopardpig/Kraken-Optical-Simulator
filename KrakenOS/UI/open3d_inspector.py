@@ -148,12 +148,7 @@ STEP_CARRY_GRID_FREE = "Free"
 # guide may reach before it is clamped -- just enough to visually meet the mirror
 # body, not the ~300 mm the folded scene's X-width otherwise inflated it by.
 _AXIS_FOLD_POINT_GUIDE_MARGIN_MM = 5.0
-FIELD_TYPE_CANONICAL_VALUES = (
-    "Angle",
-    "Object Height",
-    "Paraxial Image Height",
-    "Real Image Height",
-)
+from KrakenOS.UI.system_controls import FIELD_TYPE_CANONICAL_VALUES  # noqa: F401  re-export
 
 pv = None
 vtkTkRenderWindowInteractor = None
