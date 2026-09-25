@@ -109,8 +109,8 @@ class ReportDialog(_dialog_class()):
         from PySide6.QtCore import Qt as _Qt
         from PySide6.QtGui import QStandardItem, QStandardItemModel
         from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDialogButtonBox, QHBoxLayout,
-                                       QLabel, QLineEdit, QSplitter, QTableView, QTreeView,
-                                       QVBoxLayout, QWidget)
+                                       QLabel, QLineEdit, QSplitter, QTableView, QTextEdit,
+                                       QTreeView, QVBoxLayout, QWidget)
 
         super().__init__(parent)
         self.report = report
@@ -197,6 +197,7 @@ class ReportDialog(_dialog_class()):
 
         self.detail_model = None
         self.detail_table = None
+        self.detail_text = None
         if report.detail is not None:
             # master/detail: the hits of whichever row is selected, under the list itself
             self.detail_model = make_detail_model(report.detail.columns)
@@ -220,6 +221,25 @@ class ReportDialog(_dialog_class()):
             layout.addWidget(splitter, stretch=1)
             master_view.selectionModel().currentRowChanged.connect(self._on_master_row)
             self.select_master_row(0)
+        elif report.detail_text is not None:
+            # prose detail: the selected source's loss budget reads as a paragraph, not a table
+            self.detail_text = QTextEdit()
+            self.detail_text.setReadOnly(True)
+            self.detail_text.setMaximumHeight(24 * max(report.detail_text.height, 3))
+            splitter = QSplitter(_Qt.Orientation.Vertical)
+            splitter.addWidget(master_view)
+            detail_box = QWidget()
+            detail_layout = QVBoxLayout(detail_box)
+            detail_layout.setContentsMargins(0, 0, 0, 0)
+            self.detail_label = QLabel(report.detail_text.label)
+            detail_layout.addWidget(self.detail_label)
+            detail_layout.addWidget(self.detail_text)
+            splitter.addWidget(detail_box)
+            splitter.setStretchFactor(0, 3)
+            splitter.setStretchFactor(1, 1)
+            layout.addWidget(splitter, stretch=1)
+            master_view.selectionModel().currentRowChanged.connect(self._on_master_row)
+            self.select_master_row(0)
         else:
             layout.addWidget(master_view, stretch=1)
 
@@ -238,25 +258,38 @@ class ReportDialog(_dialog_class()):
         layout.addWidget(self.buttons)
 
     # ---- master/detail ---------------------------------------------------------------------------
+    def _apply_detail(self, key) -> None:
+        """Show the detail of master key `key` -- a table of rows, or a paragraph."""
+        if self.detail_model is not None:
+            self.detail_model.set_rows([] if key is None else self.report.detail.rows(key))
+        elif self.detail_text is not None:
+            detail = self.report.detail_text
+            self.detail_text.setPlainText(
+                detail.empty if key is None else str(detail.text(key)))
+
+    def has_detail(self) -> bool:
+        return self.detail_model is not None or self.detail_text is not None
+
     def select_master_row(self, index: int) -> None:
         """Select master row `index` (a table row, or the index-th node that HAS detail)."""
-        if self.detail_model is None:
+        if not self.has_detail():
             return
         if self.tree_model is not None:
             keys = self.detail_nodes()
             if not keys:
+                self._apply_detail(None)
                 return
             index = max(0, min(int(index), len(keys) - 1))
             item = keys[index]
             self.tree_view.setCurrentIndex(item.index())
-            self.detail_model.set_rows(self.report.detail.rows(
-                item.data(self._user_role())))
+            self._apply_detail(item.data(self._user_role()))
             return
         if not self.report.rows:
+            self._apply_detail(None)
             return
         index = max(0, min(int(index), len(self.report.rows) - 1))
         self.table.selectRow(index)
-        self.detail_model.set_rows(self.report.detail.rows(index))
+        self._apply_detail(index)
 
     @staticmethod
     def _user_role():
@@ -283,14 +316,14 @@ class ReportDialog(_dialog_class()):
         return found
 
     def _on_master_row(self, current, _previous=None) -> None:
-        if self.detail_model is None or current is None or not current.isValid():
+        if not self.has_detail() or current is None or not current.isValid():
             return
         if self.tree_model is not None:
             item = self.tree_model.itemFromIndex(current.siblingAtColumn(0))
             key = item.data(self._user_role()) if item is not None else None
-            self.detail_model.set_rows(self.report.detail.rows(key))
+            self._apply_detail(key)
             return
-        self.detail_model.set_rows(self.report.detail.rows(current.row()))
+        self._apply_detail(current.row())
 
     def control_values(self) -> dict:
         return {key: (widget.currentText() if hasattr(widget, "currentText") else widget.text())
@@ -304,11 +337,12 @@ class ReportDialog(_dialog_class()):
     def set_report(self, report) -> None:
         """Show a freshly built report: the table, the summary, and the controls' own choices."""
         self.report = report
-        self.model.beginResetModel()
-        self.model.report = report
-        self.model.endResetModel()
+        if self.model is not None:
+            self.model.beginResetModel()
+            self.model.report = report
+            self.model.endResetModel()
         self.summary_label.setText(report.summary)
-        if self.detail_model is not None and report.detail is not None:
+        if self.has_detail():
             self.select_master_row(0)
         for control in report.controls:
             widget = self.controls.get(control.key)

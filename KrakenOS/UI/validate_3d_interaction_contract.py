@@ -35,6 +35,11 @@ from KrakenOS.UI.row_forms import presets as presets_row_form_module
 from KrakenOS.UI.panels import row_form_view as row_form_view_module
 from KrakenOS.UI.panels.main_analysis_controls import MainAnalysisToolbarPanel, MainInformationPanel
 from KrakenOS.UI.panels.main_branch_gaussian_q_dialog import MainBranchGaussianQDialog
+from KrakenOS.UI.panels import report_view
+from KrakenOS.UI.reports import branch_gaussian_q as reports_branch_gaussian_q
+from KrakenOS.UI.reports import branch_throughput as reports_branch_throughput
+from KrakenOS.UI.reports import detector_aperture as reports_detector_aperture
+from KrakenOS.UI.reports import source_illumination as reports_source_illumination
 from KrakenOS.UI.panels.main_branch_throughput_report_dialog import MainBranchThroughputReportDialog
 from KrakenOS.UI.panels.main_atmosphere_panel import MainAtmospherePanel
 from KrakenOS.UI.panels.main_beam_splitter_dialog import MainBeamSplitterDialog
@@ -480,6 +485,13 @@ def _evaluate_checks() -> tuple[list, dict]:
     refresh_detector_aperture_report = inspect.getsource(KrakenLayoutEditor._refresh_detector_aperture_report)
     main_branch_gaussian_q_dialog = inspect.getsource(MainBranchGaussianQDialog)
     main_branch_gaussian_q_factory = inspect.getsource(KrakenLayoutEditor._main_branch_gaussian_q_dialog)
+    # the four report panels are widgets over `reports/` builders and the shared Tk renderer
+    # (bugs/0894), so what each report SHOWS is asserted against its builder, not its dialog
+    report_view_source = inspect.getsource(report_view)
+    branch_throughput_builder = inspect.getsource(reports_branch_throughput)
+    source_illumination_builder = inspect.getsource(reports_source_illumination)
+    detector_aperture_builder = inspect.getsource(reports_detector_aperture)
+    branch_gaussian_q_builder = inspect.getsource(reports_branch_gaussian_q)
     open_branch_gaussian_q_report = inspect.getsource(KrakenLayoutEditor.open_branch_gaussian_q_report)
     refresh_branch_gaussian_q_report = inspect.getsource(KrakenLayoutEditor._refresh_branch_gaussian_q_report)
     main_lens_drawing_dialogs = inspect.getsource(MainLensDrawingDialogs)
@@ -1131,27 +1143,27 @@ def _evaluate_checks() -> tuple[list, dict]:
             "MainBranchGaussianQDialog(self)" in main_branch_gaussian_q_factory
             and "self._main_branch_gaussian_q_dialog().open_branch_gaussian_q_report()" in open_branch_gaussian_q_report
             and "self._main_branch_gaussian_q_dialog()._refresh_branch_gaussian_q_report()" in refresh_branch_gaussian_q_report
-            and "Branch Gaussian Q Report" in main_branch_gaussian_q_dialog
-            and "Export Branch Gaussian Q CSV" in main_branch_gaussian_q_dialog
-            and "branch_gaussian_q_table_values" in main_branch_gaussian_q_dialog,
+            and "Branch Gaussian Q Report" in branch_gaussian_q_builder
+            and 'csv_title="Branch Gaussian Q"' in main_branch_gaussian_q_dialog
+            and "branch_gaussian_q_table_values" in branch_gaussian_q_builder,
         ),
         (
             "Detector Aperture Report dialog lives outside layout_editor",
             "MainDetectorApertureReportDialog(self)" in main_detector_aperture_factory
             and "self._main_detector_aperture_report_dialog().open_detector_aperture_report()" in open_detector_aperture_report
             and "self._main_detector_aperture_report_dialog()._refresh_detector_aperture_report()" in refresh_detector_aperture_report
-            and "Detector Aperture Report" in main_detector_aperture_report_dialog
-            and "Export Detector Aperture CSV" in main_detector_aperture_report_dialog
-            and "detector_aperture_table_values" in main_detector_aperture_report_dialog,
+            and "Detector Aperture Report" in detector_aperture_builder
+            and 'csv_title="Detector Aperture"' in main_detector_aperture_report_dialog
+            and "detector_aperture_table_values" in detector_aperture_builder,
         ),
         (
             "Source Illumination Report dialog lives outside layout_editor",
             "MainSourceIlluminationReportDialog(self)" in main_source_illumination_factory
             and "self._main_source_illumination_report_dialog().open_source_illumination_report()" in open_source_illumination_report
             and "self._main_source_illumination_report_dialog()._refresh_source_illumination_report()" in refresh_source_illumination_report
-            and "Source Illumination Report" in main_source_illumination_report_dialog
-            and "Export Source Illumination CSV" in main_source_illumination_report_dialog
-            and "source_illumination_table_values" in main_source_illumination_report_dialog,
+            and "Source Illumination Report" in source_illumination_builder
+            and 'csv_title="Source Illumination"' in main_source_illumination_report_dialog
+            and "source_illumination_table_values" in source_illumination_builder,
         ),
         (
             "Path Throughput Report dialog lives outside layout_editor",
@@ -1159,9 +1171,25 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "analysis_path_filter_default=ANALYSIS_PATH_FILTER_DEFAULT" in main_branch_throughput_factory
             and "self._main_branch_throughput_report_dialog().open_branch_throughput_report()" in open_branch_throughput_report
             and "self._main_branch_throughput_report_dialog()._refresh_branch_throughput_report()" in refresh_branch_throughput_report
-            and "Path Throughput Report" in main_branch_throughput_report_dialog
-            and "Export Path Throughput CSV" in main_branch_throughput_report_dialog
-            and "branch_throughput_table_values" in main_branch_throughput_report_dialog,
+            and "Path Throughput Report" in branch_throughput_builder
+            and 'csv_title="Path Throughput"' in main_branch_throughput_report_dialog
+            and "branch_throughput_table_values" in branch_throughput_builder,
+        ),
+        (
+            "the four report dialogs share one Tk renderer over their builders",
+            all("ReportWindow(" in source and "build_" in source
+                for source in (main_branch_throughput_report_dialog,
+                               main_source_illumination_report_dialog,
+                               main_detector_aperture_report_dialog,
+                               main_branch_gaussian_q_dialog))
+            # one place decides what the toolbar and the export are called, for all four
+            and 'f"Export {self.csv_title or report.title} CSV"' in report_view_source
+            and report_view_source.count('text="Export CSV"') == 1
+            and not any("ttk.Treeview(" in source
+                        for source in (main_branch_throughput_report_dialog,
+                                       main_source_illumination_report_dialog,
+                                       main_detector_aperture_report_dialog,
+                                       main_branch_gaussian_q_dialog)),
         ),
         (
             "Path detector analysis orchestration lives outside layout_editor",

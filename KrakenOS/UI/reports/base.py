@@ -81,6 +81,23 @@ class DetailView:
 
 
 @dataclass
+class DetailText:
+    """A text PANE describing the selected master row, where a table would not read well.
+
+    The source illumination report explains one source's loss budget in prose; that is detail
+    just as much as a table of hits is, so it belongs on the `Report` rather than in one
+    toolkit's dialog -- otherwise only Tk ever shows it.
+    """
+
+    text: "Callable[[Any], str]" = lambda _key: ""
+    label: str = "Details"
+    #: what to show when nothing is selected
+    empty: str = ""
+    #: rows of text, for the toolkits that size a text pane in them
+    height: int = 6
+
+
+@dataclass
 class TreeRow:
     """One node of a master TREE: its own label, its cells, and the rows beneath it.
 
@@ -116,6 +133,8 @@ class Report:
     controls: tuple = ()
     #: the detail table, for a master/detail dialog
     detail: "DetailView | None" = None
+    #: a detail text pane, for a master/detail dialog whose detail is prose
+    detail_text: "DetailText | None" = None
     #: a master TREE instead of a flat table (rays with their paths nested underneath)
     tree: "tuple[TreeRow, ...] | None" = None
     #: the heading of a tree's own label column

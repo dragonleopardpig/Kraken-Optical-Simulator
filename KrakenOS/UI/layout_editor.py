@@ -2940,9 +2940,8 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         self._ray_inspector_ray_table: ttk.Treeview | None = None
         self._ray_inspector_hit_table: ttk.Treeview | None = None
         self._ray_inspector_records: list[dict[str, object]] = []
-        self._branch_gaussian_q_window: tk.Toplevel | None = None
-        self._branch_gaussian_q_summary_var: tk.StringVar | None = None
-        self._branch_gaussian_q_table: ttk.Treeview | None = None
+        # the four report dialogs own their own widgets now (bugs/0894); only the records the
+        # results panel and the snapshot helpers read stay on the editor
         self._branch_gaussian_q_records: list[dict[str, object]] = []
         self._branch_gaussian_q_summary: dict[str, object] = {}
         self._branch_tree_window: tk.Toplevel | None = None
@@ -2950,22 +2949,8 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         self._branch_tree_table: ttk.Treeview | None = None
         self._branch_tree_hit_table: ttk.Treeview | None = None
         self._branch_tree_records: list[dict[str, object]] = []
-        self._branch_throughput_window: tk.Toplevel | None = None
-        self._branch_throughput_summary_var: tk.StringVar | None = None
-        self._branch_throughput_filter_var: tk.StringVar | None = None
-        self._branch_throughput_filter_menu: ttk.Combobox | None = None
-        self._branch_throughput_table: ttk.Treeview | None = None
         self._branch_throughput_records: list[dict[str, object]] = []
-        self._detector_aperture_window: tk.Toplevel | None = None
-        self._detector_aperture_summary_var: tk.StringVar | None = None
-        self._detector_aperture_table: ttk.Treeview | None = None
         self._detector_aperture_records: list[dict[str, object]] = []
-        self._source_illumination_window: tk.Toplevel | None = None
-        self._source_illumination_summary_var: tk.StringVar | None = None
-        self._source_illumination_target_var: tk.StringVar | None = None
-        self._source_illumination_target_menu: ttk.Combobox | None = None
-        self._source_illumination_table: ttk.Treeview | None = None
-        self._source_illumination_detail_text: tk.Text | None = None
         self._source_illumination_records: list[dict[str, object]] = []
         self._last_tolerance_monte_carlo_records: list[dict[str, object]] = []
         self._last_tolerance_monte_carlo_summary: dict[str, object] = {}
@@ -3168,30 +3153,23 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
             except Exception:
                 pass
             self._ray_inspector_window = None
-        if self._branch_gaussian_q_window is not None:
-            try:
-                self._branch_gaussian_q_window.destroy()
-            except Exception:
-                pass
-            self._branch_gaussian_q_window = None
         if self._branch_tree_window is not None:
             try:
                 self._branch_tree_window.destroy()
             except Exception:
                 pass
             self._branch_tree_window = None
-        if self._branch_throughput_window is not None:
-            try:
-                self._branch_throughput_window.destroy()
-            except Exception:
-                pass
-            self._branch_throughput_window = None
-        if self._detector_aperture_window is not None:
-            try:
-                self._detector_aperture_window.destroy()
-            except Exception:
-                pass
-            self._detector_aperture_window = None
+        # the four report dialogs own their windows (bugs/0894); ask each panel that was ever
+        # built to close its own, rather than reaching for a handle the editor no longer keeps
+        for factory in ("_main_branch_gaussian_q_dialog", "_main_branch_throughput_report_dialog",
+                        "_main_detector_aperture_report_dialog",
+                        "_main_source_illumination_report_dialog"):
+            dialog = self.__dict__.get(f"{factory}_instance")
+            if dialog is not None:
+                try:
+                    dialog._report_window.close()
+                except Exception:
+                    pass
         if self._nonseq_scene_window is not None:
             try:
                 self._nonseq_scene_window.destroy()

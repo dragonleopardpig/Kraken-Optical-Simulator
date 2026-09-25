@@ -11,6 +11,7 @@ import numpy as np
 from KrakenOS.UI.detector_aperture_analysis import (
     DETECTOR_APERTURE_CSV_COLUMNS,
     DETECTOR_APERTURE_RECORD_STATUS_COLUMNS,
+    DETECTOR_APERTURE_TABLE_LAYOUT,
     collect_detector_aperture_records,
     detector_aperture_record_status,
     detector_aperture_report_text,
@@ -20,6 +21,7 @@ from KrakenOS.UI.detector_aperture_analysis import (
 )
 from KrakenOS.UI.layout_editor import KrakenLayoutEditor
 from KrakenOS.UI.panels.main_detector_aperture_report_dialog import MainDetectorApertureReportDialog
+from KrakenOS.UI.reports import detector_aperture as reports_detector_aperture
 from KrakenOS.UI.panels.main_ray_trace_inspectors import MainRayTraceInspectorDialogs
 from KrakenOS.UI.services.results_display import ResultsDisplayService
 from KrakenOS.UI.validate_branch_analysis import _load_traced_editor
@@ -125,8 +127,11 @@ def validate_detector_aperture_analysis() -> list[DetectorApertureValidationResu
     )
 
     editor_collect_source = inspect.getsource(KrakenLayoutEditor._collect_detector_aperture_records)
-    refresh_source = inspect.getsource(MainDetectorApertureReportDialog._refresh_detector_aperture_report)
-    menu_source = inspect.getsource(MainDetectorApertureReportDialog.open_detector_aperture_report)
+    # the dialog is widgets over `reports/detector_aperture.py` now (bugs/0894): what the report
+    # collects and which columns it shows are the BUILDER's, so that is what to read
+    refresh_source = inspect.getsource(reports_detector_aperture)
+    menu_source = inspect.getsource(reports_detector_aperture)
+    dialog_source = inspect.getsource(MainDetectorApertureReportDialog)
     ray_table_source = inspect.getsource(MainRayTraceInspectorDialogs.open_ray_inspector)
     ray_export_source = inspect.getsource(MainRayTraceInspectorDialogs.export_ray_inspector_csv)
     results_source = inspect.getsource(ResultsDisplayService._update_results)
@@ -188,7 +193,10 @@ def validate_detector_aperture_analysis() -> list[DetectorApertureValidationResu
             "layout editor routes detector aperture report through scene ray records",
             "collect_detector_aperture_records" in editor_collect_source
             and "_active_ray_analysis_records" in refresh_source
-            and "DETECTOR_APERTURE_TABLE_COLUMNS" in menu_source,
+            and tuple(reports_detector_aperture.COLUMNS and
+                       [column.key for column in reports_detector_aperture.COLUMNS]) == tuple(
+                          key for key, _width, _anchor in DETECTOR_APERTURE_TABLE_LAYOUT)
+            and "build_detector_aperture_report" in dialog_source,
             "editor hooks present",
         ),
         _result(

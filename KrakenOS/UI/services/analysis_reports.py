@@ -1499,14 +1499,10 @@ class AnalysisReportsMixin:
         return choices
 
     def _source_illumination_target_index(self) -> int | None:
-        target_var = self.__dict__.get("_source_illumination_target_var")
-        if target_var is None:
-            dialog = self.__dict__.get("_main_source_illumination_report_dialog_instance")
-            target_var = (
-                object.__getattribute__(dialog, "__dict__").get("_source_illumination_target_var")
-                if dialog is not None
-                else None
-            )
+        # the target lives in the report window's own control (bugs/0894); with no window open
+        # there is nothing to read and the report falls back to its own Auto choice
+        dialog = self.__dict__.get("_main_source_illumination_report_dialog_instance")
+        target_var = dialog._source_illumination_target_var if dialog is not None else None
         value = (
             str(target_var.get()).strip()
             if target_var is not None
@@ -1631,12 +1627,10 @@ class AnalysisReportsMixin:
         return branch_throughput_filter_matches(record, filter_text)
 
     def _filtered_branch_throughput_records(self, records: list[dict[str, object]]) -> list[dict[str, object]]:
-        filter_var = self.__dict__.get("_branch_throughput_filter_var")
-        filter_text = (
-            filter_var.get()
-            if filter_var is not None
-            else ANALYSIS_PATH_FILTER_DEFAULT
-        )
+        # the filter lives in the report window's own control (bugs/0894)
+        dialog = self.__dict__.get("_main_branch_throughput_report_dialog_instance")
+        filter_text = (dialog._current_branch_throughput_filter() if dialog is not None
+                       else ANALYSIS_PATH_FILTER_DEFAULT)
         return filtered_branch_throughput_records(records, filter_text)
 
     def _current_analysis_branch_filter(self) -> str:

@@ -7,12 +7,14 @@ choice is one of `_source_illumination_target_choices()`, parsed the way the edi
 """
 from __future__ import annotations
 
-from KrakenOS.UI.reports.base import Report, ReportChoice, ReportColumn, ReportFailed
+from KrakenOS.UI.reports.base import (DetailText, Report, ReportChoice, ReportColumn,
+                                      ReportFailed)
 from KrakenOS.UI.source_illumination_analysis import (
     SOURCE_ILLUMINATION_CSV_COLUMNS,
     SOURCE_ILLUMINATION_TABLE_COLUMNS,
     SOURCE_ILLUMINATION_TABLE_HEADINGS,
     SOURCE_ILLUMINATION_TABLE_WIDTHS,
+    source_illumination_record_detail_text,
     source_illumination_report_text,
     source_illumination_summary_text,
     source_illumination_table_values,
@@ -73,6 +75,10 @@ def build_source_illumination_report(owner, target: str = AUTO) -> Report:
                       for record in records],
         csv_keys=tuple(SOURCE_ILLUMINATION_CSV_COLUMNS),
         text=source_illumination_report_text(records, label),
+        detail_text=DetailText(
+            text=lambda index: source_illumination_record_detail_text(records[index]),
+            label="Selected source details",
+            empty="Select a source row to inspect loss and footprint diagnostics."),
         controls=(ReportChoice("target", "Target surface",
                                tuple(owner._source_illumination_target_choices()),
                                str(target or AUTO)),),
