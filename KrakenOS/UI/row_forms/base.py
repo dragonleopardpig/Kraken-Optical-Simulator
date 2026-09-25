@@ -143,6 +143,10 @@ class RowForm:
     state: dict = field(default_factory=dict)
     #: live choice lists, when an action grows one (a metal catalog just loaded)
     choices: dict = field(default_factory=dict)
+    #: live LABEL overrides -- the same field means a different number under a different choice
+    #: ("Focal length [mm]" for a thin lens, "Radius of curvature [mm]" for a refracting one).
+    #: Views read `label_for(key)`, never `field.label`.
+    labels: dict = field(default_factory=dict)
     #: the collection this form edits one item of, when it edits a list rather than a row
     records: "RecordList | None" = None
     #: a picture the model draws from the values as they are typed
@@ -169,6 +173,13 @@ class RowForm:
 
     def fields_in(self, group: str) -> tuple:
         return tuple(item for item in self.fields if item.group == group)
+
+    def label_for(self, key: str) -> str:
+        """The label a view should show NOW -- a choice may have renamed the field."""
+        if key in self.labels:
+            return str(self.labels[key])
+        found = self.field(key)
+        return str(found.label) if found is not None else key
 
     def is_enabled(self, key: str) -> bool:
         """Whether a view should accept edits to this field NOW."""

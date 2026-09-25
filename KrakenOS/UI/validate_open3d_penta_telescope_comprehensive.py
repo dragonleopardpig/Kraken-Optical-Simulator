@@ -16665,6 +16665,10 @@ phase_675_surface_shape_figure = _phase_from_standalone(
     675, "the Surface Shape Builder and FormFigure (Qt migration phase 3, with the phase-6 matplotlib seam, 0887): asphere and Zernike coefficients, an ExtraData preset, a UDA preset, a mask preset and an optical CAD/STL path -- everything that makes a surface a SHAPE rather than a radius. Its explanation is a real PLOT (an imshow of the sag/departure map with a colorbar beside the aperture/UDA/mask footprint), which FormPreview could not carry because that draws polygons and text. FormFigure is the ninth family property: the MODEL draws into a figure the VIEW supplies -- the view owns the canvas and its lifecycle, Tk embedding FigureCanvasTkAgg and Qt FigureCanvasQTAgg -- and `draw` returns the STATUS LINE, which is where a validation warning about the drawn candidate belongs. Only four dialogs in the tree embed matplotlib, so this one seam is most of phase 6; the other two (the CAD face-roles editor, MTF-from-image) also need PICKING and stay in phase 5. Guard: the fields and the Image-row refusal, draw filling 3 axes and reporting the model's own verdict, the plot FOLLOWING the values (a Ronchi preset drew 24 mask patches where None drew 0, before any Apply), the messages for a non-list and a non-finite coefficient, apply writing advanced + extra_data + uda together, the REAL Tk dialog embedding a 720 px matplotlib canvas, and the Qt dialog embedding one on the same builder (0887)",
     "KrakenOS.UI.validate_open3d_0887_surface_shape_figure",
     "surface_shape_figure")
+phase_676_path_component_form = _phase_from_standalone(
+    676, "the Path Component placement row form and RowForm.labels (Qt migration phase 3, 0888): insert a component into a beam-splitter arm or onto a traced BRANCH_PATH. The component choice does not just pick a type -- it CHANGES WHAT THE NEXT FIELD MEANS: a focal length for a thin lens, a radius of curvature for a refracting surface, a mirror radius for a mirror, and nothing at all for a detector or an aperture, whose glass is fixed too. FormField.label is frozen when the form is built, so RowForm.labels is the live half -- the fourth live property after values, choices and locked -- and BOTH views ask form.label_for(key) and re-read it on every refresh. The Tk renderer also had to start locking CHOICE and textarea widgets, not just entries, because a choice may now turn any kind off. Guard: the fields and the two refusals (a non-splitter row, an unknown path), each component relabelling the parameter and locking what it does not use, the model's messages including the thin lens's zero focal length and the f=100 it seeds, apply inserting one row on the arm, the REAL Tk dialog RELABELLING when the combo changes, and the Qt dialog doing the same with the glass field following (0888)",
+    "KrakenOS.UI.validate_open3d_0888_path_component_form",
+    "path_component_form")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17406,6 +17410,7 @@ def main() -> int:
             phase_673_scene_source_edit_form,
             phase_674_inspection_part_preview,
             phase_675_surface_shape_figure,
+            phase_676_path_component_form,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

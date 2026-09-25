@@ -75,6 +75,7 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None,
     variables: dict[str, tk.Variable] = {}
     widgets: dict[str, ttk.Widget] = {}
     texts: dict[str, tk.Text] = {}
+    labels: dict[str, ttk.Label] = {}
 
     def build_fields(parent, fields) -> None:
         """One label and one widget per field, two columns once the page gets long."""
@@ -86,17 +87,17 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None,
             base = 2 * (position % 2) if two_column else 0
             value = form.values.get(field.key, "")
             if field.kind == "static":
-                ttk.Label(parent, text=field.label).grid(
-                    row=grid_row, column=base, sticky="w",
-                    padx=(0 if base == 0 else 8, 10), pady=3)
+                labels[field.key] = ttk.Label(parent, text=form.label_for(field.key))
+                labels[field.key].grid(row=grid_row, column=base, sticky="w",
+                                       padx=(0 if base == 0 else 8, 10), pady=3)
                 ttk.Label(parent, text=value, foreground="#334155",
                           wraplength=wraplength - 160).grid(row=grid_row, column=base + 1,
                                                             sticky="w", pady=3)
                 continue
             if field.kind == "textarea":
-                ttk.Label(parent, text=field.label).grid(
-                    row=grid_row, column=base, sticky="nw",
-                    padx=(0 if base == 0 else 8, 10), pady=3)
+                labels[field.key] = ttk.Label(parent, text=form.label_for(field.key))
+                labels[field.key].grid(row=grid_row, column=base, sticky="nw",
+                                       padx=(0 if base == 0 else 8, 10), pady=3)
                 text = tk.Text(parent, height=max(field.height, 3),
                                width=max(field.width, 40), wrap="word")
                 text.insert("1.0", str(value))
@@ -108,13 +109,14 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None,
                 variable = tk.BooleanVar(
                     master=window,
                     value=str(value).strip().lower() in ("1", "true", "yes", "on"))
-                widget = ttk.Checkbutton(parent, text=field.label, variable=variable)
+                widget = ttk.Checkbutton(parent, text=form.label_for(field.key),
+                                         variable=variable)
                 widget.grid(row=grid_row, column=base, columnspan=2, sticky="w",
                             padx=(0 if base == 0 else 8, 0), pady=3)
             else:
-                ttk.Label(parent, text=field.label).grid(
-                    row=grid_row, column=base, sticky="w",
-                    padx=(0 if base == 0 else 8, 10), pady=3)
+                labels[field.key] = ttk.Label(parent, text=form.label_for(field.key))
+                labels[field.key].grid(row=grid_row, column=base, sticky="w",
+                                       padx=(0 if base == 0 else 8, 10), pady=3)
                 variable = tk.StringVar(master=window, value=str(value))
                 if field.kind == "choice":
                     widget = ttk.Combobox(parent, textvariable=variable,
@@ -199,8 +201,17 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None,
         """Follow `form.locked` -- a choice may turn other fields off while we are open."""
         for key, widget in widgets.items():
             field = form.field(key)
-            if field is not None and field.kind not in ("choice", "bool"):
-                widget.configure(state="normal" if form.is_enabled(key) else "disabled")
+            if field is None or field.kind == "static":
+                continue
+            if field.kind == "choice":
+                state = ("normal" if field.editable else "readonly") if form.is_enabled(key) \
+                    else "disabled"
+            else:
+                state = "normal" if form.is_enabled(key) else "disabled"
+            try:
+                widget.configure(state=state)
+            except Exception:
+                pass
 
     def refresh_from_form() -> None:
         for key, text in texts.items():
@@ -220,6 +231,10 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None,
                 wanted = list(form.choices_for(key))
                 if list(widget.cget("values")) != wanted:
                     widget.configure(values=wanted)
+        for key, label in labels.items():
+            wanted = form.label_for(key)
+            if str(label.cget("text")) != wanted:
+                label.configure(text=wanted)
         sync_enabled()
         redraw_preview()
         redraw_figure()

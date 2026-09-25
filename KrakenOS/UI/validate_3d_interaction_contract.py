@@ -29,6 +29,7 @@ from KrakenOS.UI.row_forms import scene_sources as scene_sources_row_form_module
 from KrakenOS.UI.row_forms import glass_catalog as glass_catalog_row_form_module
 from KrakenOS.UI.row_forms import stock_lens as stock_lens_row_form_module
 from KrakenOS.UI.row_forms import surface_shape as surface_shape_row_form_module
+from KrakenOS.UI.row_forms import path_component as path_component_row_form_module
 from KrakenOS.UI.panels import row_form_view as row_form_view_module
 from KrakenOS.UI.panels.main_analysis_controls import MainAnalysisToolbarPanel, MainInformationPanel
 from KrakenOS.UI.panels.main_branch_gaussian_q_dialog import MainBranchGaussianQDialog
@@ -437,6 +438,7 @@ def _evaluate_checks() -> tuple[list, dict]:
     glass_catalog_row_form = inspect.getsource(glass_catalog_row_form_module)
     stock_lens_row_form = inspect.getsource(stock_lens_row_form_module)
     surface_shape_row_form = inspect.getsource(surface_shape_row_form_module)
+    path_component_row_form = inspect.getsource(path_component_row_form_module)
     scene_element_dialogs = inspect.getsource(MainSceneElementDialogs)
     main_advanced_surface_factory = inspect.getsource(KrakenLayoutEditor._main_advanced_surface_dialog)
     open_advanced_surface_dialog = inspect.getsource(KrakenLayoutEditor.open_advanced_surface_editor)
@@ -1199,10 +1201,15 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "short_error_message=_short_error_message" in main_path_component_placement_factory
             and "self._main_path_component_placement_dialog().open_arm_path_component_placement(" in open_arm_path_component_placement
             and "self._main_path_component_placement_dialog().open_current_path_component_placement()" in open_current_path_component_placement
-            and "Add Traced Path Component" in main_path_component_placement_dialog
-            and "Distance from splitter [mm]" in main_path_component_placement_dialog
-            and "PATH_COMPONENT_TYPES" in main_path_component_placement_dialog
-            and "_path_component_row_for_branch_path" in main_path_component_placement_dialog,
+            # bugs/0888: the component types, the field that changes MEANING with the choice
+            # (RowForm.labels) and the insert live in row_forms/path_component.py now
+            and "Add Traced Path Component" in path_component_row_form
+            and "Distance from splitter [mm]" in path_component_row_form
+            and "PATH_COMPONENT_TYPES" in path_component_row_form
+            and "_path_component_row_for_branch_path" in path_component_row_form
+            and 'form.labels["parameter"]' in path_component_row_form
+            and "build_path_component_form(" in main_path_component_placement_dialog
+            and "render_row_form(" in main_path_component_placement_dialog,
         ),
         (
             "Atmosphere controls and dialog live outside layout_editor",

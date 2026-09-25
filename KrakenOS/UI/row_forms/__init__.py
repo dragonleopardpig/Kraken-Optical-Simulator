@@ -15,6 +15,7 @@ from KrakenOS.UI.row_forms.glass_catalog import build_glass_catalog_form
 from KrakenOS.UI.row_forms.inspection_cell import build_inspection_cell_form
 from KrakenOS.UI.row_forms.inspection_part import build_inspection_part_form
 from KrakenOS.UI.row_forms.stock_lens import build_stock_lens_form
+from KrakenOS.UI.row_forms.path_component import build_path_component_form
 from KrakenOS.UI.row_forms.scene_sources import build_scene_source_manager_form
 from KrakenOS.UI.row_forms.scene_target import build_scene_target_form
 from KrakenOS.UI.row_forms.source_edit import build_scene_source_edit_form
@@ -36,6 +37,7 @@ ROW_FORM_BUILDERS = {
     "source_edit": build_scene_source_edit_form,
     "inspection_part": build_inspection_part_form,
     "surface_shape": build_surface_shape_form,
+    "path_component": build_path_component_form,
     "path_local_pose": build_path_local_pose_form,
     "element_settings": build_element_settings_form,
 }
@@ -49,5 +51,5 @@ __all__ = ["FormAction", "FormField", "FormFigure", "FormPreview", "FormRefused"
            "build_scene_source_manager_form", "build_glass_catalog_form",
            "build_stock_lens_form", "build_inspection_cell_form",
            "build_scene_source_edit_form", "build_inspection_part_form",
-           "build_surface_shape_form",
+           "build_surface_shape_form", "build_path_component_form",
            "ROW_FORM_BUILDERS"]

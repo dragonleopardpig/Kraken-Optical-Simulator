@@ -40,6 +40,7 @@ class RowFormDialog(_dialog_class()):
             layout.addWidget(note)
 
         self.widgets: dict = {}
+        self.labels: dict = {}
         self.tabs = None
         self.records_view = None
         # A record-list form (the Scene Source Manager) edits ONE item of a collection it also
@@ -269,8 +270,9 @@ class RowFormDialog(_dialog_class()):
         # is_enabled, never field.enabled -- a choice may lock a field after the form is built
         widget.setEnabled(self.form.is_enabled(field.key))
         self.widgets[field.key] = widget
-        label = QLabel(field.label)
+        label = QLabel(self.form.label_for(field.key))
         label.setToolTip(field.hint)
+        self.labels[field.key] = label
         return label, widget
 
     def values(self) -> dict:
@@ -353,6 +355,10 @@ class RowFormDialog(_dialog_class()):
 
     def refresh_from_form(self) -> None:
         """Re-read every widget from the form -- an action may have rewritten its values."""
+        for key, label in self.labels.items():
+            wanted = self.form.label_for(key)
+            if label.text() != wanted:
+                label.setText(wanted)
         for key, widget in self.widgets.items():
             widget.setEnabled(self.form.is_enabled(key))
             value = str(self.form.values.get(key, ""))
