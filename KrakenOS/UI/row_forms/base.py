@@ -83,6 +83,24 @@ class FormPreview:
 
 
 @dataclass(frozen=True)
+class FormFigure:
+    """A matplotlib figure the MODEL draws into (docs/design_qt_migration.md phase 3/6).
+
+    `FormPreview` covers a picture with no dependencies -- polygons and text. A few dialogs need
+    a real plot instead (an imshow of the sag map with a colorbar, an aperture footprint), and
+    matplotlib already has a canvas for both toolkits. So the model draws INTO a figure the view
+    supplies -- the view owns the canvas and its lifecycle -- and `draw` returns the status line
+    to show, which is where a validation warning about the drawn candidate belongs.
+    """
+
+    width: float = 7.2
+    height: float = 5.4
+    dpi: int = 100
+    #: form, values, figure -> the status line; the view clears the figure first
+    draw: Callable[[Any, dict, Any], str] = lambda _form, _values, _figure: ""
+
+
+@dataclass(frozen=True)
 class RecordList:
     """A master list whose selected item the form edits (docs/design_qt_migration.md phase 3).
 
@@ -129,6 +147,8 @@ class RowForm:
     records: "RecordList | None" = None
     #: a picture the model draws from the values as they are typed
     preview: "FormPreview | None" = None
+    #: a matplotlib figure the model draws into, when a plot is what explains the values
+    figure: "FormFigure | None" = None
     #: fields the form has locked SINCE it was built -- `FormField.enabled` is the static answer
     #: (a value the model will never take edits to), this is the live one (a role choice that
     #: turns the detector fields off). Views ask `is_enabled(key)`, never `field.enabled`.

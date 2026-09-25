@@ -70,6 +70,8 @@ ACTIONS = (
      "Edit the first scene source's origin, direction and emitting size"),
     ("inspection_part", "&Edit", "Inspection &Part...", None, "inspection_part_action",
      "Size the 3D part at the object plane and solve the FOV to its face"),
+    ("surface_shape", "&Edit", "Surface S&hape Builder...", None, "surface_shape_action",
+     "Asphere, Zernike, ExtraData, UDA and mask, with a live sag plot"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 

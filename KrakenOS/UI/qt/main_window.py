@@ -397,6 +397,12 @@ class KrakenQtMainWindow(_main_window_class()):
 
         return self.open_row_form(build_inspection_part_form, row_index=False)
 
+    def surface_shape_action(self):
+        """Asphere, Zernike, ExtraData, UDA and mask, with a live sag plot."""
+        from KrakenOS.UI.row_forms import build_surface_shape_form
+
+        return self.open_row_form(build_surface_shape_form)
+
     def _forget_dialog(self, dialog) -> None:
         if dialog in self._open_dialogs:
             self._open_dialogs.remove(dialog)

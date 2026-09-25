@@ -104,6 +104,18 @@ class RowFormDialog(_dialog_class()):
             self.records_view.itemSelectionChanged.connect(self.on_record_selected)
             self.refresh_records()
 
+        self.figure_canvas = None
+        self.figure_object = None
+        if form.figure is not None:
+            from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+            from matplotlib.figure import Figure
+
+            self.figure_object = Figure(figsize=(form.figure.width, form.figure.height),
+                                        dpi=form.figure.dpi)
+            self.figure_canvas = FigureCanvasQTAgg(self.figure_object)
+            layout.addWidget(self.figure_canvas, stretch=1)
+            self.setMinimumSize(1180, 760)
+
         self.preview_label = None
         self.preview_caption = None
         if form.preview is not None:
@@ -144,15 +156,37 @@ class RowFormDialog(_dialog_class()):
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
 
-        if self.preview_label is not None:
+        if self.preview_label is not None or self.figure_canvas is not None:
             for key, widget in self.widgets.items():
                 if hasattr(widget, "textEdited"):
-                    widget.textEdited.connect(lambda _text: self.redraw_preview())
+                    widget.textEdited.connect(lambda _text: self.redraw_visuals())
                 elif hasattr(widget, "currentTextChanged"):
-                    widget.currentTextChanged.connect(lambda _text: self.redraw_preview())
+                    widget.currentTextChanged.connect(lambda _text: self.redraw_visuals())
                 elif hasattr(widget, "toggled"):
-                    widget.toggled.connect(lambda _checked: self.redraw_preview())
+                    widget.toggled.connect(lambda _checked: self.redraw_visuals())
             self.redraw_preview()
+            self.redraw_figure()
+
+    def redraw_visuals(self) -> None:
+        """Whatever this form shows beside its fields -- a drawn picture, a plot, or both."""
+        self.redraw_preview()
+        self.redraw_figure()
+
+    def redraw_figure(self) -> None:
+        """Hand the MODEL a cleared figure and show whatever it says about the candidate."""
+        if self.figure_canvas is None:
+            return
+        values = self.values()
+        self.figure_object.clear()
+        try:
+            message = str(self.form.figure.draw(self.form, values, self.figure_object))
+        except Exception as exc:
+            self.summary.setText(f"Preview failed: {exc}")
+            self.figure_canvas.draw_idle()
+            return
+        self.figure_canvas.draw_idle()
+        if message:
+            self.summary.setText(message)
 
     def redraw_preview(self) -> None:
         """Ask the MODEL what to draw, then paint it -- the same shapes Tk draws."""
@@ -256,7 +290,7 @@ class RowFormDialog(_dialog_class()):
             return ""
         self.refresh_records()
         self.refresh_from_form()
-        self.redraw_preview()
+        self.redraw_visuals()
         if message:
             self.summary.setText(message)
         return message

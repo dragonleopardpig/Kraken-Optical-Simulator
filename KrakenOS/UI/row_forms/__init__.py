@@ -1,8 +1,8 @@
 """Row forms -- dialogs that edit one surface row (docs/design_qt_migration.md phase 3)."""
 from __future__ import annotations
 
-from KrakenOS.UI.row_forms.base import (FormAction, FormField, FormPreview, FormRefused,
-                                        RecordList, RowForm)
+from KrakenOS.UI.row_forms.base import (FormAction, FormField, FormFigure, FormPreview,
+                                        FormRefused, RecordList, RowForm)
 from KrakenOS.UI.row_forms.advanced_surface import build_advanced_surface_form
 from KrakenOS.UI.row_forms.beam_splitter import build_beam_splitter_form
 from KrakenOS.UI.row_forms.coating_material import build_coating_material_form
@@ -18,6 +18,7 @@ from KrakenOS.UI.row_forms.stock_lens import build_stock_lens_form
 from KrakenOS.UI.row_forms.scene_sources import build_scene_source_manager_form
 from KrakenOS.UI.row_forms.scene_target import build_scene_target_form
 from KrakenOS.UI.row_forms.source_edit import build_scene_source_edit_form
+from KrakenOS.UI.row_forms.surface_shape import build_surface_shape_form
 
 #: name -> builder, for a shell that opens row forms by name
 ROW_FORM_BUILDERS = {
@@ -34,11 +35,12 @@ ROW_FORM_BUILDERS = {
     "inspection_cell": build_inspection_cell_form,
     "source_edit": build_scene_source_edit_form,
     "inspection_part": build_inspection_part_form,
+    "surface_shape": build_surface_shape_form,
     "path_local_pose": build_path_local_pose_form,
     "element_settings": build_element_settings_form,
 }
 
-__all__ = ["FormAction", "FormField", "FormPreview", "FormRefused",
+__all__ = ["FormAction", "FormField", "FormFigure", "FormPreview", "FormRefused",
            "RecordList", "RowForm", "build_beam_splitter_form",
            "build_diffuse_scatter_form", "build_error_map_form",
            "build_coating_material_form", "build_advanced_surface_form",
@@ -47,4 +49,5 @@ __all__ = ["FormAction", "FormField", "FormPreview", "FormRefused",
            "build_scene_source_manager_form", "build_glass_catalog_form",
            "build_stock_lens_form", "build_inspection_cell_form",
            "build_scene_source_edit_form", "build_inspection_part_form",
+           "build_surface_shape_form",
            "ROW_FORM_BUILDERS"]

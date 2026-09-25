@@ -164,6 +164,18 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None,
     else:
         build_fields(fields_host, form.fields)
 
+    figure_canvas = None
+    figure_object = None
+    if form.figure is not None:
+        from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+        from matplotlib.figure import Figure
+
+        figure_object = Figure(figsize=(form.figure.width, form.figure.height),
+                               dpi=form.figure.dpi)
+        figure_canvas = FigureCanvasTkAgg(figure_object, master=body)
+        figure_canvas.get_tk_widget().grid(row=0, column=2, sticky="nsew", padx=(10, 0))
+        body.columnconfigure(2, weight=3)
+
     preview_canvas = None
     caption_var = None
     if form.preview is not None:
@@ -210,6 +222,7 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None,
                     widget.configure(values=wanted)
         sync_enabled()
         redraw_preview()
+        redraw_figure()
 
     def redraw_preview() -> None:
         """Ask the MODEL what to draw from the values as they stand right now."""
@@ -235,6 +248,22 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None,
                                            fill=shape.get("fill", "#000000"),
                                            font=("TkDefaultFont", int(shape.get("size", 7))))
         caption_var.set(caption)
+
+    def redraw_figure() -> None:
+        """Hand the MODEL a cleared figure and show whatever it says about the candidate."""
+        if figure_canvas is None:
+            return
+        values = current_values()
+        figure_object.clear()
+        try:
+            message = str(form.figure.draw(form, values, figure_object))
+        except Exception as exc:
+            validation_var.set(f"Preview failed: {exc}")
+            figure_canvas.draw_idle()
+            return
+        figure_canvas.draw_idle()
+        if message:
+            validation_var.set(message)
 
     def refresh_records(select_index: "int | None" = None) -> None:
         if tree is None:
@@ -286,13 +315,17 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None,
         if message:
             validation_var.set(message)
 
-    if preview_canvas is not None:
+    if preview_canvas is not None or figure_canvas is not None:
+        def redraw_all(*_args) -> None:
+            redraw_preview()
+            redraw_figure()
+
         for key, widget in widgets.items():
             if form.field(key) is not None and form.field(key).kind != "static":
-                widget.bind("<KeyRelease>", lambda _event: redraw_preview(), add="+")
-                widget.bind("<<ComboboxSelected>>", lambda _event: redraw_preview(), add="+")
+                widget.bind("<KeyRelease>", lambda _event: redraw_all(), add="+")
+                widget.bind("<<ComboboxSelected>>", lambda _event: redraw_all(), add="+")
                 try:
-                    widget.configure(command=redraw_preview)   # a checkbutton
+                    widget.configure(command=redraw_all)   # a checkbutton
                 except Exception:
                     pass
 
@@ -324,6 +357,7 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None,
     # after current_values exists: the picture is drawn from the values, so it cannot be
     # painted any earlier than this
     redraw_preview()
+    redraw_figure()
 
     def close() -> None:
         window.destroy()

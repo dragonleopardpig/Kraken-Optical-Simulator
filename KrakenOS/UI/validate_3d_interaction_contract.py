@@ -28,6 +28,7 @@ from KrakenOS.UI.row_forms import scene_target as scene_target_row_form_module
 from KrakenOS.UI.row_forms import scene_sources as scene_sources_row_form_module
 from KrakenOS.UI.row_forms import glass_catalog as glass_catalog_row_form_module
 from KrakenOS.UI.row_forms import stock_lens as stock_lens_row_form_module
+from KrakenOS.UI.row_forms import surface_shape as surface_shape_row_form_module
 from KrakenOS.UI.panels import row_form_view as row_form_view_module
 from KrakenOS.UI.panels.main_analysis_controls import MainAnalysisToolbarPanel, MainInformationPanel
 from KrakenOS.UI.panels.main_branch_gaussian_q_dialog import MainBranchGaussianQDialog
@@ -435,6 +436,7 @@ def _evaluate_checks() -> tuple[list, dict]:
     row_form_view_source = inspect.getsource(row_form_view_module)
     glass_catalog_row_form = inspect.getsource(glass_catalog_row_form_module)
     stock_lens_row_form = inspect.getsource(stock_lens_row_form_module)
+    surface_shape_row_form = inspect.getsource(surface_shape_row_form_module)
     scene_element_dialogs = inspect.getsource(MainSceneElementDialogs)
     main_advanced_surface_factory = inspect.getsource(KrakenLayoutEditor._main_advanced_surface_dialog)
     open_advanced_surface_dialog = inspect.getsource(KrakenLayoutEditor.open_advanced_surface_editor)
@@ -1245,10 +1247,16 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "optical_solid_filetypes=OPTICAL_SOLID_FILETYPES" in main_surface_shape_factory
             and "validate_advanced_surface_inputs=_validate_advanced_surface_inputs" in main_surface_shape_factory
             and "self._main_surface_shape_builder_dialog().open(row_index)" in open_surface_shape_builder
+            # bugs/0887: the builder became a row form whose PLOT is a FormFigure, so the
+            # axes titles and the field labels live in row_forms/surface_shape.py and the
+            # canvas is the shared renderer's. "Refresh Preview" is gone on purpose: the plot
+            # follows every keystroke, so there is nothing left to press.
             and "Surface Shape Builder" in main_surface_shape_dialog
-            and "Aperture / UDA / Mask" in main_surface_shape_dialog
-            and "Optical CAD/STL" in main_surface_shape_dialog
-            and "Refresh Preview" in main_surface_shape_dialog,
+            and "Aperture / UDA / Mask" in surface_shape_row_form
+            and "Optical CAD/STL" in surface_shape_row_form
+            and "FormFigure(" in surface_shape_row_form
+            and "build_surface_shape_form(" in main_surface_shape_dialog
+            and "render_row_form(" in main_surface_shape_dialog,
         ),
         (
             "Beam Splitter settings dialog lives outside layout_editor",
