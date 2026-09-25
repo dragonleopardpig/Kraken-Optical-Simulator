@@ -113,6 +113,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0890 | Galvo scan overlay + grating settings — the first tail pair needing nothing new | row form |
 | 0891 | Tolerance preset + optimisation bounds (the panel decides where a refusal lands) | row form |
 | 0892 | Tolerance preset chooser + beam-splitter resize — phase 3's dialog tail done | row form |
+| 0893 | The 2D layout plot in Qt; the last Tk leaks out of the model | phase 6 |
 
 The row-form framework: `FormField` kinds (number, int, bool, choice, text, textarea, static),
 `choices` that grow at runtime, `editable` choices the user may type into, `on_change` fields that
