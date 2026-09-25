@@ -391,6 +391,12 @@ class KrakenQtMainWindow(_main_window_class()):
         builder.TITLE = build_scene_source_edit_form.TITLE
         return self.open_row_form(builder, row_index=False)
 
+    def inspection_part_action(self):
+        """Size the 3D part at the object plane and solve the FOV to its face."""
+        from KrakenOS.UI.row_forms import build_inspection_part_form
+
+        return self.open_row_form(build_inspection_part_form, row_index=False)
+
     def _forget_dialog(self, dialog) -> None:
         if dialog in self._open_dialogs:
             self._open_dialogs.remove(dialog)

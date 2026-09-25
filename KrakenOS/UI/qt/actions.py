@@ -68,6 +68,8 @@ ACTIONS = (
      "Slot a station layout on each of the part's six faces"),
     ("source_edit", "&Edit", "Edit Scene Sou&rce...", None, "source_edit_action",
      "Edit the first scene source's origin, direction and emitting size"),
+    ("inspection_part", "&Edit", "Inspection &Part...", None, "inspection_part_action",
+     "Size the 3D part at the object plane and solve the FOV to its face"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 

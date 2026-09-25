@@ -164,9 +164,23 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None,
     else:
         build_fields(fields_host, form.fields)
 
+    preview_canvas = None
+    caption_var = None
+    if form.preview is not None:
+        preview_row = ttk.Frame(frame)
+        preview_row.grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        preview_canvas = tk.Canvas(preview_row, width=form.preview.width,
+                                   height=form.preview.height, highlightthickness=1,
+                                   highlightbackground="#bbbbbb", background="#fafafa")
+        preview_canvas.grid(row=0, column=0, sticky="w")
+        caption_var = tk.StringVar(master=window, value="")
+        ttk.Label(preview_row, textvariable=caption_var, justify="left",
+                  font=("TkFixedFont", 8), wraplength=wraplength - 140).grid(
+                      row=0, column=1, sticky="nw", padx=(10, 0))
+
     validation_var = tk.StringVar(master=window, value=form.summary)
     ttk.Label(frame, textvariable=validation_var, foreground="#475569",
-              wraplength=wraplength + 40).grid(row=2, column=0, columnspan=2, sticky="w",
+              wraplength=wraplength + 40).grid(row=3, column=0, columnspan=2, sticky="w",
                                                pady=(10, 0))
 
     def sync_enabled() -> None:
@@ -195,6 +209,32 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None,
                 if list(widget.cget("values")) != wanted:
                     widget.configure(values=wanted)
         sync_enabled()
+        redraw_preview()
+
+    def redraw_preview() -> None:
+        """Ask the MODEL what to draw from the values as they stand right now."""
+        if preview_canvas is None:
+            return
+        values = current_values()
+        try:
+            shapes = list(form.preview.shapes(form, values))
+            caption = str(form.preview.caption(form, values))
+        except Exception:
+            return  # a half-typed number is not an error, it is just not drawable yet
+        preview_canvas.delete("all")
+        for shape in shapes:
+            if shape.get("kind") == "polygon":
+                points = [coordinate for point in shape.get("points", ()) for coordinate in point]
+                if len(points) >= 6:
+                    preview_canvas.create_polygon(*points, fill=shape.get("fill", ""),
+                                                  outline=shape.get("outline", "#000000"),
+                                                  width=1)
+            elif shape.get("kind") == "text":
+                preview_canvas.create_text(shape.get("x", 0), shape.get("y", 0),
+                                           text=str(shape.get("text", "")),
+                                           fill=shape.get("fill", "#000000"),
+                                           font=("TkDefaultFont", int(shape.get("size", 7))))
+        caption_var.set(caption)
 
     def refresh_records(select_index: "int | None" = None) -> None:
         if tree is None:
@@ -246,6 +286,16 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None,
         if message:
             validation_var.set(message)
 
+    if preview_canvas is not None:
+        for key, widget in widgets.items():
+            if form.field(key) is not None and form.field(key).kind != "static":
+                widget.bind("<KeyRelease>", lambda _event: redraw_preview(), add="+")
+                widget.bind("<<ComboboxSelected>>", lambda _event: redraw_preview(), add="+")
+                try:
+                    widget.configure(command=redraw_preview)   # a checkbutton
+                except Exception:
+                    pass
+
     for field in form.fields:
         if field.on_change is None:
             continue
@@ -270,6 +320,10 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None,
             else:
                 collected[key] = variable.get()
         return collected
+
+    # after current_values exists: the picture is drawn from the values, so it cannot be
+    # painted any earlier than this
+    redraw_preview()
 
     def close() -> None:
         window.destroy()
@@ -316,7 +370,7 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None,
         validation_var.set(message or form.summary)
 
     footer = ttk.Frame(frame)
-    footer.grid(row=3, column=0, columnspan=2, sticky="e", pady=(12, 0))
+    footer.grid(row=4, column=0, columnspan=2, sticky="e", pady=(12, 0))
     ttk.Button(footer, text="Validate", command=validate_form).pack(side="right", padx=(0, 8))
     ttk.Button(footer, text="Apply", command=apply_form).pack(side="right")
     for action in form.actions:

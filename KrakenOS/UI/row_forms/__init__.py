@@ -1,8 +1,8 @@
 """Row forms -- dialogs that edit one surface row (docs/design_qt_migration.md phase 3)."""
 from __future__ import annotations
 
-from KrakenOS.UI.row_forms.base import (FormAction, FormField, FormRefused, RecordList,
-                                        RowForm)
+from KrakenOS.UI.row_forms.base import (FormAction, FormField, FormPreview, FormRefused,
+                                        RecordList, RowForm)
 from KrakenOS.UI.row_forms.advanced_surface import build_advanced_surface_form
 from KrakenOS.UI.row_forms.beam_splitter import build_beam_splitter_form
 from KrakenOS.UI.row_forms.coating_material import build_coating_material_form
@@ -13,6 +13,7 @@ from KrakenOS.UI.row_forms.element_forms import (build_element_settings_form,
 from KrakenOS.UI.row_forms.error_map import build_error_map_form
 from KrakenOS.UI.row_forms.glass_catalog import build_glass_catalog_form
 from KrakenOS.UI.row_forms.inspection_cell import build_inspection_cell_form
+from KrakenOS.UI.row_forms.inspection_part import build_inspection_part_form
 from KrakenOS.UI.row_forms.stock_lens import build_stock_lens_form
 from KrakenOS.UI.row_forms.scene_sources import build_scene_source_manager_form
 from KrakenOS.UI.row_forms.scene_target import build_scene_target_form
@@ -32,16 +33,18 @@ ROW_FORM_BUILDERS = {
     "stock_lens": build_stock_lens_form,
     "inspection_cell": build_inspection_cell_form,
     "source_edit": build_scene_source_edit_form,
+    "inspection_part": build_inspection_part_form,
     "path_local_pose": build_path_local_pose_form,
     "element_settings": build_element_settings_form,
 }
 
-__all__ = ["FormAction", "FormField", "FormRefused", "RecordList", "RowForm", "build_beam_splitter_form",
+__all__ = ["FormAction", "FormField", "FormPreview", "FormRefused",
+           "RecordList", "RowForm", "build_beam_splitter_form",
            "build_diffuse_scatter_form", "build_error_map_form",
            "build_coating_material_form", "build_advanced_surface_form",
            "build_detector_settings_form", "build_scene_target_form",
            "build_path_local_pose_form", "build_element_settings_form",
            "build_scene_source_manager_form", "build_glass_catalog_form",
            "build_stock_lens_form", "build_inspection_cell_form",
-           "build_scene_source_edit_form",
+           "build_scene_source_edit_form", "build_inspection_part_form",
            "ROW_FORM_BUILDERS"]

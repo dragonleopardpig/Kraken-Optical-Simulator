@@ -296,199 +296,21 @@ def axis_records(spec: dict[str, Any], object_point, object_axis) -> list[dict[s
 # Tk dialog
 # ---------------------------------------------------------------------------------
 def open_inspection_part_dialog(editor):
-    """Modeless dialog: enable the part, size it, pick the inspected face, solve the
-    FOV to that face."""
-    import tkinter as tk
-    from tkinter import ttk
+    """Modeless dialog: enable the part, size it, and solve the FOV to the inspected face.
 
-    parent = editor.winfo_toplevel() if hasattr(editor, "winfo_toplevel") else editor
-    dialog = tk.Toplevel(parent)
-    dialog.title("Inspection Part (3D object)")
+    docs/design_qt_migration.md phase 3 (bugs/0886): the fields, the verbs AND the picture live
+    in ``KrakenOS/UI/row_forms/inspection_part.py``. The drawing is a `FormPreview` -- the model
+    says what polygons to draw and both toolkits draw them -- which is what kept this dialog off
+    the framework until now.
+    """
+    from KrakenOS.UI.panels.row_form_view import render_row_form
+    from KrakenOS.UI.row_forms import FormRefused
+    from KrakenOS.UI.row_forms.inspection_part import build_inspection_part_form
+    from KrakenOS.UI.uihost import host_of
+
     try:
-        dialog.transient(parent)
-    except Exception:
-        pass
-    spec = normalize_inspection_part_spec(getattr(editor, "inspection_part_spec", None))
-    enabled_var = tk.BooleanVar(value=bool(spec["enabled"]))
-    w_var = tk.StringVar(value=f"{spec['width_mm']:g}")
-    h_var = tk.StringVar(value=f"{spec['height_mm']:g}")
-    d_var = tk.StringVar(value=f"{spec['depth_mm']:g}")
-    step_var = tk.StringVar(value=str(spec.get("step_path", "") or ""))
-    status_var = tk.StringVar(value="")
-
-    body = ttk.Frame(dialog, padding=12)
-    body.grid(row=0, column=0, sticky="nsew")
-    ttk.Checkbutton(body, text="Show the 3D part at the object plane", variable=enabled_var).grid(
-        row=0, column=0, columnspan=2, sticky="w", pady=(0, 6)
-    )
-    # bugs/0708 (flag 133247 "better to put FOV in the change device size pop up
-    # dialog so that user can input both values"): the required FOV rides along;
-    # blank keeps the default face-size + 5% solve target.
-    fov_var = tk.StringVar(value="")
-    # bugs/0764 (user: "can you rearrange the dialog to W, D then H?"), then bugs/0766
-    # (user: "Can we change the wording to Length x Width x Thickness?"). The stored keys are
-    # unchanged so no scene migrates -- only what the user reads:
-    #
-    #     Length    L  = width_mm   (local x)  -- along the top prism's LONGEST dimension
-    #     Width     W  = depth_mm   (local z)  -- along the top prism GAP (face to face)
-    #     Thickness T  = height_mm  (local y)  -- the top prism's SHORT dimension
-    #
-    # The old W/H/D names were the box's own axes and said nothing about the bench, so
-    # "30x30 with 1 mm thickness" was entered three different ways in one conversation. These
-    # names are the machine's, which is the only frame the user is holding.
-    # bugs/0768 (user: "can we remove the offset text input box? Uneccessary for user to
-    # input." / of Axis reach: "user need to input?"). Neither is the user's to type:
-    #
-    #   axis_offset_mm  is DERIVED -- it is what keeps the part centred in the prism gap as
-    #       its Width changes (the gap centre is hardware, fixed for the life of the scene),
-    #       so the app owns it. It was also a live bug source: the field showed the value from
-    #       the PREVIOUS Apply, and re-submitting that stale number fought the auto-centring.
-    #   axis_reach_mm   only sets how far the six dashed blow-out guides are DRAWN
-    #       (0 = auto = max(80, 2.5 x the largest dimension)). Nothing optical.
-    #
-    # Both keys stay in the spec -- scenes carry them and _read() passes the live values
-    # straight through, which is exactly what lets the auto-centring keep telescoping.
-    for r, (label, var) in enumerate(
-        (("Length L (mm)", w_var), ("Width W (mm)", d_var), ("Thickness T (mm)", h_var),
-         ("Required FOV (mm, blank = face +5%)", fov_var)),
-        start=1,
-    ):
-        ttk.Label(body, text=label).grid(row=r, column=0, sticky="w", pady=2)
-        ttk.Entry(body, textvariable=var, width=12).grid(row=r, column=1, sticky="w", pady=2)
-    # bugs/0666: the real part's STEP -- bounds size the box, the mesh replaces it.
-    ttk.Label(body, text="Part STEP (optional)").grid(row=5, column=0, sticky="w", pady=(6, 2))
-    step_row = ttk.Frame(body)
-    step_row.grid(row=5, column=1, sticky="w", pady=(6, 2))
-    ttk.Entry(step_row, textvariable=step_var, width=34).grid(row=0, column=0)
-
-    def _browse_step():
-        from tkinter import filedialog
-
-        path = filedialog.askopenfilename(
-            title="Part STEP", filetypes=[("STEP", "*.step *.stp *.STEP *.STP"), ("All files", "*")], parent=dialog,
-        )
-        if not path:
-            return
-        step_var.set(path)
-        try:
-            mesh = editor._load_step_mesh(Path(path), largest_component=False)
-            sized = apply_step_bounds({"width_mm": w_var.get(), "height_mm": h_var.get(), "depth_mm": d_var.get()}, mesh)
-            w_var.set(f"{sized['width_mm']:g}"); h_var.set(f"{sized['height_mm']:g}"); d_var.set(f"{sized['depth_mm']:g}")
-            enabled_var.set(True)
-            status_var.set(
-                f"Dims from the STEP bounds: L {sized['width_mm']:g} x W {sized['depth_mm']:g} "
-                f"x T {sized['height_mm']:g} mm (STEP x=Length, z=Width, y=Thickness; "
-                f"+z = Front face)"
-            )
-        except Exception as exc:
-            status_var.set(f"Part STEP set, but its bounds could not be read: {exc}")
-
-    ttk.Button(step_row, text="Browse...", command=_browse_step).grid(row=0, column=1, padx=(4, 0))
-    # bugs/0768 (user: "even the Inspected Face (on the object plane) dropdown, I don't think
-    # we need this as well. We need to specify the geometry and the required FOV."): the split
-    # field images the FRONT face and its mirror image on the BACK, so the choice was never the
-    # user's to make here. ``active_face`` stays in the spec (scenes carry it, and the six
-    # blow-out axes still need it) -- it is just not a control any more.
-    # bugs/0828: the paragraph above said "the two inspected faces are L x T" and the user
-    # still could not connect it to the numbers -- a dense sentence does not attach to the
-    # fields above it. Replaced by a PICTURE of the part at true proportions with the two
-    # inspected faces lit, plus a derivation chain where every line names its parent.
-    # No face selector: bugs/0768 removed that deliberately and it stays removed.
-    from KrakenOS.UI.services.inspection_field_chain import (
-        chain_text, face_polygons, field_chain, inspected_faces, unreachable_faces,
-    )
-
-    illo = tk.Canvas(body, width=210, height=150, highlightthickness=1,
-                     highlightbackground="#bbbbbb", background="#fafafa")
-    illo.grid(row=7, column=0, sticky="w", pady=(8, 4))
-    chain_var = tk.StringVar(value="")
-    ttk.Label(body, textvariable=chain_var, justify="left", font=("TkFixedFont", 8),
-              wraplength=380).grid(row=7, column=1, sticky="nw", pady=(8, 4), padx=(10, 0))
-
-    def _redraw(*_args):
-        """Picture + chain from whatever is typed RIGHT NOW, so the consequence of a
-        number is visible before Apply rather than after a minutes-long retrace."""
-        try:
-            live = normalize_inspection_part_spec(dict(
-                spec, width_mm=float(w_var.get() or 0), depth_mm=float(d_var.get() or 0),
-                height_mm=float(h_var.get() or 0)))
-        except Exception:
-            return
-        folded = bool(getattr(editor, "_folded_display_enabled", None) or
-                      len(getattr(editor, "rows", []) or []) > 12)
-        lit = inspected_faces(live, folded=folded)
-        dead = unreachable_faces(live, folded=folded)
-        illo.delete("all")
-        polys = face_polygons(live, width_px=210, height_px=150)
-        for name in ("back", "bottom", "left", "right", "top", "front"):
-            pts = [c for xy in polys[name] for c in xy]
-            if name in lit:
-                fill, outline = "#2f7f3f", "#1d5f2a"      # inspected
-            elif name in dead:
-                fill, outline = "#d8d8d8", "#bbbbbb"      # greyed: unreachable
-            else:
-                fill, outline = "#e9eef2", "#9fb0bd"
-            illo.create_polygon(*pts, fill=fill, outline=outline, width=1)
-        illo.create_text(105, 140, text="green = inspected   grey = unreachable",
-                         fill="#666666", font=("TkDefaultFont", 7))
-        try:
-            fov = float(fov_var.get()) if str(fov_var.get()).strip() else None
-        except Exception:
-            fov = None
-        chain_var.set(chain_text(field_chain(live, face_dims_fn=face_dims, required_fov=fov)))
-
-    for _v in (w_var, d_var, h_var, fov_var):
-        try:
-            _v.trace_add("write", _redraw)
-        except Exception:
-            pass
-    _redraw()
-
-    def _read() -> dict[str, Any]:
-        # bugs/0768: the two derived keys come from the LIVE spec, never from a widget --
-        # re-submitting a stale offset is what fought the auto-centring.
-        live = normalize_inspection_part_spec(getattr(editor, "inspection_part_spec", None))
-        raw = {
-            "enabled": bool(enabled_var.get()),
-            "width_mm": w_var.get(),
-            "height_mm": h_var.get(),
-            "depth_mm": d_var.get(),
-            "axis_reach_mm": live["axis_reach_mm"],
-            "axis_offset_mm": live["axis_offset_mm"],
-            "active_face": live["active_face"],
-            "step_path": step_var.get(),
-        }
-        return normalize_inspection_part_spec(raw)
-
-    def _apply():
-        editor.set_inspection_part_spec(_read())
-        w, h = face_dims(editor.inspection_part_spec, editor.inspection_part_spec["active_face"])
-        status_var.set(
-            f"Applied. Inspected face {editor.inspection_part_spec['active_face']}: "
-            f"{w:g} x {h:g} mm."
-        )
-
-    def _solve():
-        editor.set_inspection_part_spec(_read())
-        fov = None
-        try:
-            raw = str(fov_var.get() or "").strip()
-            fov = float(raw) if raw else None
-        except Exception:
-            fov = None
-        ok, msg = editor.solve_fov_to_inspection_face(fov=fov)
-        status_var.set(msg)
-
-    buttons = ttk.Frame(body)
-    buttons.grid(row=12, column=0, columnspan=2, sticky="w")
-    ttk.Button(buttons, text="Apply", command=_apply).grid(row=0, column=0, padx=(0, 6))
-    ttk.Button(buttons, text="Apply + Solve FOV to this face", command=_solve).grid(row=0, column=1, padx=(0, 6))
-    ttk.Button(buttons, text="Close", command=dialog.destroy).grid(row=0, column=2)
-    ttk.Label(body, textvariable=status_var, wraplength=420, justify="left").grid(
-        row=13, column=0, columnspan=2, sticky="w", pady=(8, 0)
-    )
-    try:
-        editor._show_centered_dialog(dialog)
-    except Exception:
-        pass
-    return dialog
+        form = build_inspection_part_form(editor)
+    except FormRefused as exc:
+        host_of(editor).showinfo("Inspection Part", str(exc))
+        return None
+    return render_row_form(editor, form, wraplength=560)

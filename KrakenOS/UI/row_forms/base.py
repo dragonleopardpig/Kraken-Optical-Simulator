@@ -60,6 +60,29 @@ class FormAction:
 
 
 @dataclass(frozen=True)
+class FormPreview:
+    """A small picture the MODEL draws from its own numbers (docs/design_qt_migration.md).
+
+    bugs/0828 replaced a dense explanatory paragraph in the Inspection Part dialog with a picture
+    of the part at true proportions, because "a dense sentence does not attach to the fields above
+    it". The picture is model data -- polygons and a derivation chain computed from the typed
+    dimensions -- so it belongs here rather than in either toolkit: `shapes(form, values)` returns
+    what to draw and `caption(form, values)` the text beside it, and both views redraw on every
+    keystroke so the consequence of a number is visible BEFORE Apply.
+
+    A shape is a dict: {"kind": "polygon", "points": [(x, y), ...], "fill": "#rrggbb",
+    "outline": "#rrggbb"} or {"kind": "text", "x": .., "y": .., "text": "..", "fill": "#rrggbb",
+    "size": 7}. Coordinates are pixels inside (width, height), so the model decides the layout
+    and neither view has to.
+    """
+
+    width: int = 210
+    height: int = 150
+    shapes: Callable[[Any, dict], tuple] = lambda _form, _values: ()
+    caption: Callable[[Any, dict], str] = lambda _form, _values: ""
+
+
+@dataclass(frozen=True)
 class RecordList:
     """A master list whose selected item the form edits (docs/design_qt_migration.md phase 3).
 
@@ -104,6 +127,8 @@ class RowForm:
     choices: dict = field(default_factory=dict)
     #: the collection this form edits one item of, when it edits a list rather than a row
     records: "RecordList | None" = None
+    #: a picture the model draws from the values as they are typed
+    preview: "FormPreview | None" = None
     #: fields the form has locked SINCE it was built -- `FormField.enabled` is the static answer
     #: (a value the model will never take edits to), this is the live one (a role choice that
     #: turns the detector fields off). Views ask `is_enabled(key)`, never `field.enabled`.

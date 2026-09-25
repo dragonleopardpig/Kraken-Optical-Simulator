@@ -16657,6 +16657,10 @@ phase_673_scene_source_edit_form = _phase_from_standalone(
     673, "the scene-source edit row form (Qt migration phase 3, 0885): bugs/0363's 'general 3D source element' popup -- name, origin, emit direction, emitting size, cone half-angle, ray count and power -- applied through update_scene_source_spec, the SAME path the seat-on-face glue uses, so the glyph, the illumination volume and the trace all follow. A coaxial illuminator gets two more fields (bugs/0401) and that is the MODEL deciding what the dialog CONTAINS: the builder reads the spec and adds them or does not, which no view can do for both toolkits. The renderer grew one option, modal=True, because the inspector's popups grab -- a click in the viewport behind must not retrace under a half-filled form. Guard: the fields and the two refusals (an unknown source, and no source at all), the messages for a zero direction / a zero size / non-numeric text, apply HALVING the entered size into radius_x/radius_y, a coaxial spec adding exactly the two edge fields where a plain one does not, the REAL Tk popup drawing 12 entries and grabbing, and the Qt dialog applying 14 x 6 mm as radii 7 and 3 (0885)",
     "KrakenOS.UI.validate_open3d_0885_scene_source_edit_form",
     "scene_source_edit_form")
+phase_674_inspection_part_preview = _phase_from_standalone(
+    674, "the Inspection Part row form and FormPreview (Qt migration phase 3, 0886): the eighth family property, and the one thing that kept this dialog off the framework. bugs/0828 had replaced an explanatory paragraph with a PICTURE of the part at true proportions -- the two inspected faces lit, the unreachable ones greyed -- plus a derivation chain where every line names its parent, because 'a dense sentence does not attach to the fields above it'. That picture is MODEL data (face_polygons / inspected_faces / unreachable_faces / field_chain), so FormPreview carries it: shapes(form, values) says what to draw as dicts of polygons and text in pixel coordinates, caption(form, values) what to write beside it, and BOTH views redraw on every keystroke -- Tk onto a tk.Canvas, Qt onto a QPixmap painted with QPainter -- so the consequence of a number is visible BEFORE Apply rather than after a minutes-long retrace. bugs/0768 still holds: the two DERIVED keys (axis_reach_mm, axis_offset_mm) come from the live spec and never from a widget, because re-submitting a stale offset is what fought the auto-centring. Guard: the fields and the two verbs, six faces with exactly two lit and a four-line chain that FOLLOW a typed 90 before any Apply, the model's messages, apply writing through set_inspection_part_spec with the derived keys untouched, the REAL Tk canvas carrying the same 7 shapes the model returned, and the Qt dialog painting a 210x150 picture and re-captioning as the number is typed (0886)",
+    "KrakenOS.UI.validate_open3d_0886_inspection_part_preview",
+    "inspection_part_preview")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17396,6 +17400,7 @@ def main() -> int:
             phase_671_inspection_cell_form,
             phase_672_shared_tk_row_form_view,
             phase_673_scene_source_edit_form,
+            phase_674_inspection_part_preview,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

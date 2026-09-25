@@ -18,6 +18,7 @@ def _dialog_class():
 
 class RowFormDialog(_dialog_class()):
     def __init__(self, form, parent=None, host=None) -> None:
+        from PySide6.QtCore import Qt
         from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialogButtonBox, QFormLayout,
                                        QLabel, QLineEdit, QPlainTextEdit, QTabWidget,
                                        QVBoxLayout, QWidget)
@@ -103,6 +104,27 @@ class RowFormDialog(_dialog_class()):
             self.records_view.itemSelectionChanged.connect(self.on_record_selected)
             self.refresh_records()
 
+        self.preview_label = None
+        self.preview_caption = None
+        if form.preview is not None:
+            from PySide6.QtWidgets import QHBoxLayout
+
+            preview_row = QWidget()
+            preview_layout = QHBoxLayout(preview_row)
+            preview_layout.setContentsMargins(0, 0, 0, 0)
+            self.preview_label = QLabel()
+            self.preview_label.setFixedSize(form.preview.width, form.preview.height)
+            preview_layout.addWidget(self.preview_label)
+            self.preview_caption = QLabel()
+            self.preview_caption.setWordWrap(True)
+            self.preview_caption.setTextFormat(Qt.TextFormat.PlainText)
+            font = self.preview_caption.font()
+            font.setFamily("monospace")
+            font.setPointSize(8)
+            self.preview_caption.setFont(font)
+            preview_layout.addWidget(self.preview_caption, stretch=1)
+            layout.addWidget(preview_row)
+
         self.summary = QLabel(form.summary)
         self.summary.setWordWrap(True)
         layout.addWidget(self.summary)
@@ -121,6 +143,52 @@ class RowFormDialog(_dialog_class()):
         self.apply_button.clicked.connect(self.apply_to_row)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
+
+        if self.preview_label is not None:
+            for key, widget in self.widgets.items():
+                if hasattr(widget, "textEdited"):
+                    widget.textEdited.connect(lambda _text: self.redraw_preview())
+                elif hasattr(widget, "currentTextChanged"):
+                    widget.currentTextChanged.connect(lambda _text: self.redraw_preview())
+                elif hasattr(widget, "toggled"):
+                    widget.toggled.connect(lambda _checked: self.redraw_preview())
+            self.redraw_preview()
+
+    def redraw_preview(self) -> None:
+        """Ask the MODEL what to draw, then paint it -- the same shapes Tk draws."""
+        if self.preview_label is None:
+            return
+        from PySide6.QtGui import QColor, QPainter, QPen, QPixmap, QPolygon
+        from PySide6.QtCore import QPoint
+
+        values = self.values()
+        try:
+            shapes = list(self.form.preview.shapes(self.form, values))
+            caption = str(self.form.preview.caption(self.form, values))
+        except Exception:
+            return  # a half-typed number is not an error, it is just not drawable yet
+        pixmap = QPixmap(self.form.preview.width, self.form.preview.height)
+        pixmap.fill(QColor("#fafafa"))
+        painter = QPainter(pixmap)
+        try:
+            for shape in shapes:
+                if shape.get("kind") == "polygon":
+                    points = [QPoint(int(x), int(y)) for x, y in shape.get("points", ())]
+                    if len(points) >= 3:
+                        painter.setBrush(QColor(shape.get("fill", "#ffffff")))
+                        painter.setPen(QPen(QColor(shape.get("outline", "#000000")), 1))
+                        painter.drawPolygon(QPolygon(points))
+                elif shape.get("kind") == "text":
+                    painter.setPen(QPen(QColor(shape.get("fill", "#000000"))))
+                    font = painter.font()
+                    font.setPointSize(int(shape.get("size", 7)))
+                    painter.setFont(font)
+                    painter.drawText(int(shape.get("x", 0)) - 60, int(shape.get("y", 0)),
+                                     str(shape.get("text", "")))
+        finally:
+            painter.end()
+        self.preview_label.setPixmap(pixmap)
+        self.preview_caption.setText(caption)
 
     @staticmethod
     def _widget_text(widget) -> str:
@@ -188,6 +256,7 @@ class RowFormDialog(_dialog_class()):
             return ""
         self.refresh_records()
         self.refresh_from_form()
+        self.redraw_preview()
         if message:
             self.summary.setText(message)
         return message
