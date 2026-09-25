@@ -11,10 +11,10 @@ Under Tk the panels have already created every one, so it creates nothing and Tk
 change; without Tk panels (a Qt shell, a scripted guard) it creates all of them -- a real
 ``tk.*Var`` from ``TkUiHost``, an ``ObservableValue`` otherwise.
 
-Not here, on purpose: the 3 dialog-scoped summary variables (``_ray_inspector_summary_var`` ...)
-that exist only while their inspector is open -- they are that dialog's view state and go with it
--- and the 20 view-only variables no model code touches. The four report dialogs used to add six
-more; since 0894 their window makes its own unnamed variables, so the model never sees them. Guard 0852 keeps this table
+Not here, on purpose: ``_nonseq_scene_summary_var``, which exists only while the scene-graph
+dialog is open -- it is that dialog's view state and goes with it -- and the 20 view-only
+variables no model code touches. The report dialogs used to add eight more; since 0894/0895
+their window makes its own unnamed variables, so the model never sees them. Guard 0852 keeps this table
 honest: every panel-made variable model code uses must be here or in that dialog-scoped list, and
 every default here must equal what a real editor holds after start-up.
 """
@@ -94,7 +94,7 @@ MODEL_VARIABLES: dict[str, tuple[str, Any]] = {
 
 #: Created by report / inspector dialogs while they are open -- view state of those dialogs.
 DIALOG_SCOPED_VARIABLES: frozenset[str] = frozenset({
-    "_branch_tree_summary_var", "_nonseq_scene_summary_var", "_ray_inspector_summary_var",
+    "_nonseq_scene_summary_var",
 })
 
 

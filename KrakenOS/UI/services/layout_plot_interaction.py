@@ -127,26 +127,16 @@ class LayoutPlotInteractionMixin:
         )
 
     def _select_ray_inspector_ray(self, ray_index: int) -> None:
+        # the Ray Inspector owns its own widgets (bugs/0895): this asks the panel to show the
+        # ray and keeps the parts that are the model's -- the overlay and the status line
         try:
             index = int(ray_index)
         except Exception:
             return
-        if self._ray_inspector_window is None or not self._ray_inspector_window.winfo_exists():
-            self.open_ray_inspector()
-        else:
-            self._refresh_ray_inspector()
-        table = self._ray_inspector_ray_table
-        if table is None:
-            return
-        iid = str(index)
-        if not table.exists(iid):
+        if not self._main_ray_trace_inspector_dialogs().select_ray_inspector_row(index):
             self.status_var.set(f"Ray {index} is not available in the current Ray Inspector data.")
             return
         self._layout_selected_ray_index = index
-        table.selection_set(iid)
-        table.focus(iid)
-        table.see(iid)
-        self._populate_ray_inspector_hits()
         self._update_layout_selection_overlay()
         self.status_var.set(self._ray_terminal_hint_text(index, label=f"Selected ray {index} in Ray Inspector"))
 

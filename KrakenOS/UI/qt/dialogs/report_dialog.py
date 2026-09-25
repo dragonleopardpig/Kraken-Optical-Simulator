@@ -252,6 +252,12 @@ class ReportDialog(_dialog_class()):
             self.copy_button.clicked.connect(self.copy_text)
         self.export_button = self.buttons.addButton(
             "Export CSV", QDialogButtonBox.ButtonRole.ActionRole)
+        self.action_buttons = {}
+        for action in report.actions:
+            # a verb the MODEL defines: this supplies only a path and which row is selected
+            button = self.buttons.addButton(action.label, QDialogButtonBox.ButtonRole.ActionRole)
+            button.clicked.connect(lambda _checked=False, action=action: self.run_action(action))
+            self.action_buttons[action.label] = button
         self.close_button = self.buttons.addButton(QDialogButtonBox.StandardButton.Close)
         self.export_button.clicked.connect(self.export_csv)
         self.buttons.rejected.connect(self.reject)
@@ -324,6 +330,33 @@ class ReportDialog(_dialog_class()):
             self._apply_detail(key)
             return
         self._apply_detail(current.row())
+
+    def selected_key(self):
+        """The detail key of the selected row: its index in a table, its node key in a tree."""
+        if self.tree_model is not None:
+            index = self.tree_view.currentIndex()
+            if not index.isValid():
+                return None
+            item = self.tree_model.itemFromIndex(index.siblingAtColumn(0))
+            return item.data(self._user_role()) if item is not None else None
+        if self.table is None:
+            return None
+        index = self.table.currentIndex()
+        return index.row() if index.isValid() else None
+
+    def run_action(self, action) -> str:
+        """Run a `ReportAction`, asking through the UI host for anything a toolkit must supply."""
+        arguments: tuple = ()
+        if action.save_title:
+            path = self.host.asksaveasfilename(
+                title=action.save_title, defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*")], parent=self)
+            if not path:
+                return ""
+            arguments += (path,)
+        if action.needs_selection:
+            arguments += (self.selected_key(),)
+        return str(action.run(*arguments) or "")
 
     def control_values(self) -> dict:
         return {key: (widget.currentText() if hasattr(widget, "currentText") else widget.text())

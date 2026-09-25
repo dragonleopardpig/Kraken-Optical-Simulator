@@ -37,6 +37,7 @@ def qt_runtime_checks() -> list:
     from PySide6.QtCore import Qt
 
     from KrakenOS.UI.qt.app import build
+    from KrakenOS.UI.reports.trace_paths import selected_ray_index
     from KrakenOS.UI.reports.branch_tree_tables import COLUMNS, TREE_HEADING, summary_text
 
     from KrakenOS.UI.validate_open3d_0868_trace_path_tree import digest
@@ -76,8 +77,9 @@ def qt_runtime_checks() -> list:
                 continue
             cells = [item.child(index, c).text() if item.child(index, c) is not None else ""
                      for c in range(1, model.columnCount())]
+            key = child.data(Qt.ItemDataRole.UserRole)
             walked.append([depth, child.text(), cells,
-                           child.data(Qt.ItemDataRole.UserRole) is not None])
+                           key is not None and selected_ray_index(key) is None])
             walk(child, depth + 1)
 
     walk(model.invisibleRootItem(), 0)
@@ -101,22 +103,39 @@ def qt_runtime_checks() -> list:
         hits = records[int(key)].get("hits", []) or []
         return [[str(v) for v in editor._ray_hit_table_values(hit)] for hit in hits]
 
+    # since 0895 a RAY node carries a key too ("ray:<index>"), so every node has detail: a path
+    # node its own record's hits, a ray node every hit of every path beneath it
     nodes = dialog.detail_nodes()
-    dialog.select_master_row(0)
+    keys = [node.data(Qt.ItemDataRole.UserRole) for node in nodes]
+    path_positions = [i for i, key in enumerate(keys) if selected_ray_index(key) is None]
+    ray_positions = [i for i, key in enumerate(keys) if selected_ray_index(key) is not None]
+    first_position = path_positions[0]
+    dialog.select_master_row(first_position)
     app.processEvents()
-    first_key = nodes[0].data(Qt.ItemDataRole.UserRole)
+    first_key = keys[first_position]
     first = shown_hits()
-    other = next((i for i, node in enumerate(nodes)
-                  if len(records[int(node.data(Qt.ItemDataRole.UserRole))].get("hits", []) or [])
-                  != len(first)), min(3, len(nodes) - 1))
+    other = next((i for i in path_positions
+                  if len(records[int(keys[i])].get("hits", []) or []) != len(first)),
+                 path_positions[min(3, len(path_positions) - 1)])
     dialog.select_master_row(other)
     app.processEvents()
-    other_key = nodes[other].data(Qt.ItemDataRole.UserRole)
+    other_key = keys[other]
     second = shown_hits()
+    dialog.select_master_row(ray_positions[0])
+    app.processEvents()
+    ray_key = keys[ray_positions[0]]
+    ray_shown = shown_hits()
+    ray_expected = []
+    for record in records:
+        if int(record.get("ray_index", -1)) == selected_ray_index(ray_key):
+            ray_expected.extend([[str(v) for v in editor._ray_hit_table_values(hit)]
+                                 for hit in (record.get("hits", []) or [])])
+    expected_nodes = len(records) + len({int(record["ray_index"]) for record in records})
     row("D", first == expected_hits(first_key) and second == expected_hits(other_key)
-        and len(nodes) == len(records),
-        f"the detail follows the node: record {first_key} shows {len(first)} hits and record "
-        f"{other_key} shows {len(second)}, each by _ray_hit_table_values")
+        and ray_shown == ray_expected and len(nodes) == expected_nodes,
+        f"the detail follows the node: record {first_key} shows {len(first)} hits, record "
+        f"{other_key} shows {len(second)}, and ray node {ray_key!r} shows every hit of every "
+        f"path beneath it ({len(ray_shown)}), each by _ray_hit_table_values")
 
     # ---- S the summary ---------------------------------------------------------------------------
     row("S", report.summary == summary_text(editor, len(records)) and "paths=" in report.summary,

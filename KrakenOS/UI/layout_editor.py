@@ -2935,20 +2935,10 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         self._hover_axis = None
         self._last_viewer_open_time = 0.0
         self._three_d_inspector: Kraken3DInspector | None = None
-        self._ray_inspector_window: tk.Toplevel | None = None
-        self._ray_inspector_summary_var: tk.StringVar | None = None
-        self._ray_inspector_ray_table: ttk.Treeview | None = None
-        self._ray_inspector_hit_table: ttk.Treeview | None = None
-        self._ray_inspector_records: list[dict[str, object]] = []
-        # the four report dialogs own their own widgets now (bugs/0894); only the records the
-        # results panel and the snapshot helpers read stay on the editor
+        # the report dialogs and the two inspectors own their own widgets now (bugs/0894, 0895);
+        # only the records the results panel and the snapshot helpers read stay on the editor
         self._branch_gaussian_q_records: list[dict[str, object]] = []
         self._branch_gaussian_q_summary: dict[str, object] = {}
-        self._branch_tree_window: tk.Toplevel | None = None
-        self._branch_tree_summary_var: tk.StringVar | None = None
-        self._branch_tree_table: ttk.Treeview | None = None
-        self._branch_tree_hit_table: ttk.Treeview | None = None
-        self._branch_tree_records: list[dict[str, object]] = []
         self._branch_throughput_records: list[dict[str, object]] = []
         self._detector_aperture_records: list[dict[str, object]] = []
         self._source_illumination_records: list[dict[str, object]] = []
@@ -3147,27 +3137,20 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
             except Exception:
                 pass
             self._three_d_inspector = None
-        if self._ray_inspector_window is not None:
-            try:
-                self._ray_inspector_window.destroy()
-            except Exception:
-                pass
-            self._ray_inspector_window = None
-        if self._branch_tree_window is not None:
-            try:
-                self._branch_tree_window.destroy()
-            except Exception:
-                pass
-            self._branch_tree_window = None
         # the four report dialogs own their windows (bugs/0894); ask each panel that was ever
         # built to close its own, rather than reaching for a handle the editor no longer keeps
-        for factory in ("_main_branch_gaussian_q_dialog", "_main_branch_throughput_report_dialog",
-                        "_main_detector_aperture_report_dialog",
-                        "_main_source_illumination_report_dialog"):
+        for factory, handles in (
+                ("_main_branch_gaussian_q_dialog", ("_report_window",)),
+                ("_main_branch_throughput_report_dialog", ("_report_window",)),
+                ("_main_detector_aperture_report_dialog", ("_report_window",)),
+                ("_main_source_illumination_report_dialog", ("_report_window",)),
+                ("_main_ray_trace_inspector_dialogs", ("_ray_window", "_path_window"))):
             dialog = self.__dict__.get(f"{factory}_instance")
-            if dialog is not None:
+            if dialog is None:
+                continue
+            for handle in handles:
                 try:
-                    dialog._report_window.close()
+                    getattr(dialog, handle).close()
                 except Exception:
                     pass
         if self._nonseq_scene_window is not None:

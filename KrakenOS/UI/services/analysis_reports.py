@@ -1191,9 +1191,6 @@ class AnalysisReportsMixin:
     def _refresh_branch_tree_inspector(self) -> None:
         self._main_ray_trace_inspector_dialogs()._refresh_branch_tree_inspector()
 
-    def _branch_tree_record_for_iid(self, iid: str) -> dict[str, object] | None:
-        return self._main_ray_trace_inspector_dialogs()._branch_tree_record_for_iid(iid)
-
     def _branch_tree_selected_ray_index(self) -> int | None:
         return self._main_ray_trace_inspector_dialogs()._branch_tree_selected_ray_index()
 

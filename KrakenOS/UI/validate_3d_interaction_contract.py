@@ -39,7 +39,9 @@ from KrakenOS.UI.panels import report_view
 from KrakenOS.UI.reports import branch_gaussian_q as reports_branch_gaussian_q
 from KrakenOS.UI.reports import branch_throughput as reports_branch_throughput
 from KrakenOS.UI.reports import detector_aperture as reports_detector_aperture
+from KrakenOS.UI.reports import ray_inspector as reports_ray_inspector
 from KrakenOS.UI.reports import source_illumination as reports_source_illumination
+from KrakenOS.UI.reports import trace_paths as reports_trace_paths
 from KrakenOS.UI.panels.main_branch_throughput_report_dialog import MainBranchThroughputReportDialog
 from KrakenOS.UI.panels.main_atmosphere_panel import MainAtmospherePanel
 from KrakenOS.UI.panels.main_beam_splitter_dialog import MainBeamSplitterDialog
@@ -492,6 +494,8 @@ def _evaluate_checks() -> tuple[list, dict]:
     source_illumination_builder = inspect.getsource(reports_source_illumination)
     detector_aperture_builder = inspect.getsource(reports_detector_aperture)
     branch_gaussian_q_builder = inspect.getsource(reports_branch_gaussian_q)
+    ray_inspector_builder = inspect.getsource(reports_ray_inspector)
+    trace_paths_builder = inspect.getsource(reports_trace_paths)
     open_branch_gaussian_q_report = inspect.getsource(KrakenLayoutEditor.open_branch_gaussian_q_report)
     refresh_branch_gaussian_q_report = inspect.getsource(KrakenLayoutEditor._refresh_branch_gaussian_q_report)
     main_lens_drawing_dialogs = inspect.getsource(MainLensDrawingDialogs)
@@ -1611,17 +1615,20 @@ def _evaluate_checks() -> tuple[list, dict]:
         ),
         (
             "Ray Inspector keeps wide ray fields inside a horizontally scrollable table",
-            'window.geometry("1180x660")' in ray_inspector
-            and "ray_x_scroll" in ray_inspector
-            and "xscrollcommand=ray_x_scroll.set" in ray_inspector,
+            # the geometry is the panel's, the scrollbar the shared renderer's (bugs/0895)
+            'geometry="1180x660"' in ray_inspector
+            and "x_scroll = ttk.Scrollbar(frame, orient=\"horizontal\"" in report_view_source
+            and "xscrollcommand=x_scroll.set" in report_view_source,
         ),
         (
             "Ray and Trace Path Inspector dialogs live outside layout_editor",
             "MainRayTraceInspectorDialogs(self)" in main_ray_trace_inspectors_factory
             and "self._main_ray_trace_inspector_dialogs().open_ray_inspector()" in open_ray_inspector
-            and "Trace Path Inspector" in main_ray_trace_inspectors
-            and "Export Ray Events CSV" in main_ray_trace_inspectors
-            and "Export Trace Path Tree CSV" in main_ray_trace_inspectors,
+            and "Trace Path Inspector" in trace_paths_builder
+            and "Export Ray Events CSV" in ray_inspector_builder
+            and 'csv_title="Trace Path Tree"' in main_ray_trace_inspectors
+            and "ReportWindow(" in main_ray_trace_inspectors
+            and "ttk.Treeview(" not in main_ray_trace_inspectors,
         ),
         (
             "Analysis plot dispatch lives outside layout_editor",

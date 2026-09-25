@@ -14,6 +14,8 @@ from KrakenOS.UI.reports.base import ReportColumn, TreeRow
 TITLE = "Trace Path Inspector"
 EMPTY = "No trace data. Click Update."
 TREE_HEADING = "Ray / Path"
+#: a tree key that means "every path of this ray", not one record
+RAY_KEY_PREFIX = "ray:"
 
 #: (key, heading, width, anchor) exactly as the Tk branch tree declares them
 LAYOUT = (
@@ -77,7 +79,9 @@ def branch_tree_rows(owner, records) -> list[TreeRow]:
     """Rays, with their paths nested underneath -- a path under its PARENT path when it has one.
 
     `detail_key` on a path node is that record's index in ``records``, which is what the detail
-    view is asked for; a ray node has none, because a ray has no hits of its own.
+    view is asked for. A RAY node carries ``"ray:<index>"``: it has no hits of its own, but the
+    Tk dialog has always shown every hit of every path beneath it when one is selected, so the
+    key says which ray to gather rather than leaving the detail empty.
     """
     by_ray: dict[int, list[int]] = {}
     for index, record in enumerate(records):
@@ -88,7 +92,8 @@ def branch_tree_rows(owner, records) -> list[TreeRow]:
         indices = sorted(by_ray[ray_index], key=lambda i: int(records[i].get("branch_id", 0)))
         field_index = int(records[indices[0]].get("field_index", 0)) if indices else 0
         ray_row = TreeRow(label=f"Ray {ray_index}",
-                          cells=ray_cells(len(indices), field_index))
+                          cells=ray_cells(len(indices), field_index),
+                          detail_key=f"{RAY_KEY_PREFIX}{ray_index}")
         nodes: dict[int, TreeRow] = {}
         for index in indices:
             record = records[index]

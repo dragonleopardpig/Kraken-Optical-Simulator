@@ -145,8 +145,14 @@ class ReportWindow:
         toolbar = ttk.Frame(window, padding=(8, 8, 8, 0))
         toolbar.grid(row=0, column=0, sticky="ew")
         ttk.Button(toolbar, text="Refresh", command=self.refresh).pack(side="left")
-        ttk.Button(toolbar, text="Copy", command=self.copy_text).pack(side="left", padx=(6, 0))
+        if report.text:
+            # a report the model can render as text; the others have nothing to copy
+            ttk.Button(toolbar, text="Copy", command=self.copy_text).pack(side="left", padx=(6, 0))
         ttk.Button(toolbar, text="Export CSV", command=self.export_csv).pack(side="left", padx=(6, 0))
+        for action in report.actions:
+            ttk.Button(toolbar, text=action.label,
+                       command=lambda action=action: self.run_action(action)).pack(
+                           side="left", padx=(6, 0))
         ttk.Button(toolbar, text="Close", command=self.close).pack(side="left", padx=(6, 0))
         for control in report.controls:
             ttk.Label(toolbar, text=control.label).pack(side="left", padx=(18, 4))
@@ -323,6 +329,7 @@ class ReportWindow:
                 return
             index = max(0, min(int(index), len(nodes) - 1))
             table.selection_set(nodes[index])
+            table.see(nodes[index])
             # <<TreeviewSelect>> is delivered through the event loop, so show the detail here
             # too: a caller that selects a row must not have to pump Tk to see it
             self.refresh_detail()
@@ -332,6 +339,8 @@ class ReportWindow:
             return
         index = max(0, min(int(index), len(self.report.rows) - 1))
         table.selection_set(str(index))
+        table.focus(str(index))
+        table.see(str(index))
         self.refresh_detail()
 
     def refresh_detail(self) -> None:
@@ -374,6 +383,22 @@ class ReportWindow:
         self._set_status(f"{report.title} copied to clipboard ({backend})." if ok
                          else f"{report.title} written to Debug; clipboard unavailable.")
         return text
+
+    def run_action(self, action) -> str:
+        """A toolbar verb the MODEL defines: the view supplies only a path and the selection."""
+        arguments: tuple = ()
+        if action.save_title:
+            path = filedialog.asksaveasfilename(
+                title=action.save_title, defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*")], parent=self.editor)
+            if not path:
+                return ""
+            arguments += (path,)
+        if action.needs_selection:
+            arguments += (self.selected_key(),)
+        status = str(action.run(*arguments) or "")
+        self._set_status(status)
+        return status
 
     def export_csv(self) -> str:
         report = self.report or self._build()

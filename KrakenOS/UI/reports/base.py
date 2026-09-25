@@ -80,6 +80,24 @@ class DetailView:
     label: str = "Details"
 
 
+@dataclass(frozen=True)
+class ReportAction:
+    """A toolbar verb beyond Refresh / Copy / Export CSV / Close.
+
+    The model owns what the verb DOES; the view owns only the two things a toolkit must supply:
+    a file chooser (`save_title`) and which row is selected (`needs_selection`). A view therefore
+    renders any action it has never heard of, and both toolkits offer the same verbs -- before
+    this, "Export Events CSV" and "Open Ray" were Tk buttons and Qt simply did not have them.
+    """
+
+    label: str
+    run: "Callable[..., str]" = lambda *_args: ""
+    #: when set, the view asks for a save path with this title and passes it as the FIRST argument
+    save_title: str = ""
+    #: pass the selected master key (a row index, or a tree node's key) as the LAST argument
+    needs_selection: bool = False
+
+
 @dataclass
 class DetailText:
     """A text PANE describing the selected master row, where a table would not read well.
@@ -139,6 +157,10 @@ class Report:
     tree: "tuple[TreeRow, ...] | None" = None
     #: the heading of a tree's own label column
     tree_heading: str = "Name"
+    #: extra toolbar verbs
+    actions: "tuple[ReportAction, ...]" = ()
+    #: the model's own exporter, when the CSV is not this table (one row per HIT, say)
+    csv_writer: "Callable[[Any], Any] | None" = None
     #: what the status line should say once it is shown
     status: str = ""
 
@@ -158,8 +180,15 @@ class Report:
         return column.format(self.rows[row_index].get(column.key))
 
     def write_csv(self, path) -> Path:
-        """The exported file: the raw values under the column keys, not the display text."""
+        """The exported file: the raw values under the column keys, not the display text.
+
+        A report whose CSV is not its table -- the ray inspector flattens each ray into one row
+        per hit under ~140 columns -- carries a `csv_writer` and this defers to it, so both
+        toolkits export the same file.
+        """
         path = Path(path)
+        if self.csv_writer is not None:
+            return Path(self.csv_writer(path))
         fieldnames = list(self.csv_keys if self.csv_keys is not None else self.keys)
         with open(path, "w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")

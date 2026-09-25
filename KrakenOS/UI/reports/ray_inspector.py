@@ -11,6 +11,8 @@ table cannot show. It needs a QTreeView and a tree model: the fifth dialog famil
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from KrakenOS.UI.reports.ray_tables import (
     EMPTY,
     RAY_COLUMNS,
@@ -19,7 +21,9 @@ from KrakenOS.UI.reports.ray_tables import (
     ray_table_values,
     summary_text,
 )
-from KrakenOS.UI.reports.base import DetailView, Report, ReportFailed
+from KrakenOS.UI.reports.base import DetailView, Report, ReportAction, ReportFailed
+from KrakenOS.UI.reports.ray_csv import (ray_event_records, write_ray_events_csv,
+                                         write_ray_inspector_csv)
 
 
 def _detail(owner, records) -> DetailView:
@@ -34,6 +38,19 @@ def _detail(owner, records) -> DetailView:
     return DetailView(columns=hit_columns(owner), rows=rows, label="Hits along the ray")
 
 
+def _events(owner):
+    """Export Events CSV: the canonical ray-event records, which are not this table at all."""
+
+    def run(path) -> str:
+        records = ray_event_records(owner)
+        if not records:
+            return "No canonical ray-event data to export. Click Update first."
+        write_ray_events_csv(records, path)
+        return f"Ray Events CSV exported: {Path(path).name}"
+
+    return ReportAction("Export Events CSV", run, save_title="Export Ray Events CSV")
+
+
 def _report(owner, records, title, label) -> Report:
     return Report(
         title=title,
@@ -43,6 +60,8 @@ def _report(owner, records, title, label) -> Report:
         display_rows=[tuple(str(value) for value in ray_table_values(owner, record))
                       for record in records],
         detail=_detail(owner, list(records)),
+        actions=(_events(owner),),
+        csv_writer=lambda path: write_ray_inspector_csv(owner, list(records), path),
         text="",
         status=(f"{title}: {len(records)} {label}." if records else EMPTY),
     )
