@@ -77,6 +77,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | report + inputs | `Report` + `ReportValue` | the same dialog, with entry fields |
 | form that writes back | `row_forms/<name>.py` -> `RowForm` | `qt/dialogs/row_form_dialog.py` |
 | master / detail | `Report` + `DetailView` | the same dialog, split |
+| master / detail (prose) | `Report` + `DetailText` | the same dialog, split |
 | tree | `TreeRow` | `qt/dialogs/report_dialog.py` (tree mode) |
 | record list | `RowForm` + `RecordList` | `qt/dialogs/row_form_dialog.py` (list + form) |
 
@@ -114,6 +115,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0891 | Tolerance preset + optimisation bounds (the panel decides where a refusal lands) | row form |
 | 0892 | Tolerance preset chooser + beam-splitter resize — phase 3's dialog tail done | row form |
 | 0893 | The 2D layout plot in Qt; the last Tk leaks out of the model | phase 6 |
+| 0894 | The four report dialogs onto the shared Tk renderer; `DetailText` in both shells | report |
 
 The row-form framework: `FormField` kinds (number, int, bool, choice, text, textarea, static),
 `choices` that grow at runtime, `editable` choices the user may type into, `on_change` fields that
@@ -126,6 +128,11 @@ The Tk view of every row form is `panels/row_form_view.py`, the counterpart of
 kind and every `RowForm` property draws in both. The five dialogs that use it shrank hard:
 `main_scene_element_dialogs.py` 616 -> 103 lines, `main_scene_source_manager_dialog.py`
 770 -> 108. Both are now the factory's kwargs and one call.
+
+The Tk view of every *report* is `panels/report_view.ReportWindow` (0894), the counterpart of
+`qt/dialogs/report_dialog.py`. The four windows that still hand-built a `ttk.Treeview` over an
+existing builder went onto it, and the pane only Tk had -- Source Illumination's per-source
+detail prose -- became `Report.detail_text`, so Qt shows it too.
 
 `validate_3d_interaction_contract.py` is **stale** and not a penta phase: ~25 of its source-text
 assertions name strings that moved into `reports/` and `row_forms/` during 0869-0873. Re-pointing
