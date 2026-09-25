@@ -287,6 +287,12 @@ class KrakenQtMainWindow(_main_window_class()):
 
         return self.open_report(build_trace_path_report)
 
+    def nonseq_scene_graph_action(self):
+        """The scene as the non-sequential trace sees it, with its three verbs."""
+        from KrakenOS.UI.reports import build_nonseq_scene_graph_report
+
+        return self.open_report(build_nonseq_scene_graph_report)
+
     def selected_row_index(self):
         """The surface table's current row -- what a row form edits."""
         index = self.rows_view.currentIndex()

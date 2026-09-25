@@ -117,6 +117,8 @@ class ReportAction:
     needs_controls: bool = False
     #: pass the selected master key (a row index, or a tree node's key) as the LAST argument
     needs_selection: bool = False
+    #: this verb is also what activating a row does -- a double-click in either toolkit
+    on_activate: bool = False
 
 
 @dataclass
@@ -178,6 +180,9 @@ class Report:
     tree: "tuple[TreeRow, ...] | None" = None
     #: the heading of a tree's own label column
     tree_heading: str = "Name"
+    #: the master key to select when the report is first shown; the first row when None. A
+    #: refresh keeps whatever the user had selected, so this only decides where they start
+    initial_key: "Any" = None
     #: extra toolbar verbs
     actions: "tuple[ReportAction, ...]" = ()
     #: the model's own exporter, when the CSV is not this table (one row per HIT, say)

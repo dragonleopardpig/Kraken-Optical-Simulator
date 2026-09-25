@@ -220,7 +220,7 @@ class ReportDialog(_dialog_class()):
             splitter.setStretchFactor(1, 2)
             layout.addWidget(splitter, stretch=1)
             master_view.selectionModel().currentRowChanged.connect(self._on_master_row)
-            self.select_master_row(0)
+            self.select_key(report.initial_key)
         elif report.detail_text is not None:
             # prose detail: the selected source's loss budget reads as a paragraph, not a table
             self.detail_text = QTextEdit()
@@ -239,9 +239,17 @@ class ReportDialog(_dialog_class()):
             splitter.setStretchFactor(1, 1)
             layout.addWidget(splitter, stretch=1)
             master_view.selectionModel().currentRowChanged.connect(self._on_master_row)
-            self.select_master_row(0)
+            self.select_key(report.initial_key)
         else:
             layout.addWidget(master_view, stretch=1)
+            if report.initial_key is not None:
+                self.select_key(report.initial_key)
+
+        activate = next((action for action in report.actions if action.on_activate), None)
+        if activate is not None:
+            # the same verb a double-click runs in the Tk dialog
+            master_view.doubleClicked.connect(
+                lambda _index, action=activate: self.run_action(action))
 
         self.buttons = QDialogButtonBox()
         self.copy_button = None
@@ -276,10 +284,25 @@ class ReportDialog(_dialog_class()):
     def has_detail(self) -> bool:
         return self.detail_model is not None or self.detail_text is not None
 
+    def select_key(self, key) -> None:
+        """Select the row or node carrying `key`, falling back to the first row."""
+        if key is not None:
+            if self.tree_model is not None:
+                for position, item in enumerate(self.detail_nodes()):
+                    if item.data(self._user_role()) == key:
+                        self.select_master_row(position)
+                        return
+            elif isinstance(key, int) and 0 <= key < len(self.report.rows):
+                self.select_master_row(key)
+                return
+        self.select_master_row(0)
+
     def select_master_row(self, index: int) -> None:
-        """Select master row `index` (a table row, or the index-th node that HAS detail)."""
-        if not self.has_detail():
-            return
+        """Select master row `index` (a table row, or the index-th node that carries a key).
+
+        Selecting is this method's job whether or not there IS a detail view: a report without
+        one still opens on a row, and its verbs act on whatever is selected (bugs/0897).
+        """
         if self.tree_model is not None:
             keys = self.detail_nodes()
             if not keys:
@@ -290,7 +313,7 @@ class ReportDialog(_dialog_class()):
             self.tree_view.setCurrentIndex(item.index())
             self._apply_detail(item.data(self._user_role()))
             return
-        if not self.report.rows:
+        if self.table is None or not self.report.rows:
             self._apply_detail(None)
             return
         index = max(0, min(int(index), len(self.report.rows) - 1))
@@ -393,14 +416,15 @@ class ReportDialog(_dialog_class()):
 
     def set_report(self, report) -> None:
         """Show a freshly built report: the table, the summary, and the controls' own choices."""
+        previous = self.selected_key()
         self.report = report
         if self.model is not None:
             self.model.beginResetModel()
             self.model.report = report
             self.model.endResetModel()
         self.summary_label.setText(report.summary)
-        if self.has_detail():
-            self.select_master_row(0)
+        # land where the user was, not back at the top
+        self.select_key(previous if previous is not None else report.initial_key)
         for control in report.controls:
             widget = self.controls.get(control.key)
             if widget is None:

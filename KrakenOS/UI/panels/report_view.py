@@ -229,6 +229,10 @@ class ReportWindow:
         x_scroll.grid(row=1, column=0, sticky="ew")
         table.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
         table.bind("<<TreeviewSelect>>", lambda _event: self.refresh_detail(), add="+")
+        activate = next((action for action in report.actions if action.on_activate), None)
+        if activate is not None:
+            table.bind("<Double-1>", lambda _event, action=activate: self.run_action(action),
+                       add="+")
         return table
 
     def _make_detail_table(self, parent, detail) -> ttk.Treeview:
@@ -250,6 +254,9 @@ class ReportWindow:
 
     # ---- rendering ------------------------------------------------------------------------
     def _render(self, report) -> None:
+        # a refresh must land where the user was, not back at the top: Update rebuilds these
+        # windows behind them, and the Ray Inspector's own dialog always kept its row
+        previous = self.selected_key() if self.report is not None else None
         if self.summary_var is not None:
             self.summary_var.set(report.summary)
         self._refresh_controls(report)
@@ -264,7 +271,7 @@ class ReportWindow:
                     table.insert("", "end", iid=str(index),
                                  values=[report.cell(index, column)
                                          for column in range(len(report.columns))])
-        self.select_row(0)
+        self.select_key(previous if previous is not None else report.initial_key)
         self._set_status(report.status)
 
     def _insert_tree(self, table, parent, rows) -> None:
@@ -315,12 +322,32 @@ class ReportWindow:
         except ValueError:
             return None
 
-    def select_row(self, index: int) -> None:
-        """Select master row `index` (a table row, or the index-th node that HAS detail)."""
+    def select_key(self, key) -> None:
+        """Select the row or node carrying `key`, falling back to the first row."""
         table = self.table
         if table is None or self.report is None:
             return
-        if self.report.detail is None and self.report.detail_text is None:
+        if key is not None:
+            if self.report.tree is not None:
+                for iid, node_key in self._tree_keys.items():
+                    if node_key == key:
+                        table.selection_set(iid)
+                        table.see(iid)
+                        self.refresh_detail()
+                        return
+            elif isinstance(key, int) and 0 <= key < len(self.report.rows):
+                self.select_row(key)
+                return
+        self.select_row(0)
+
+    def select_row(self, index: int) -> None:
+        """Select master row `index` (a table row, or the index-th node that carries a key).
+
+        Selecting is this method's job whether or not there IS a detail view: a report without
+        one still opens on a row, and its verbs act on whatever is selected (bugs/0897).
+        """
+        table = self.table
+        if table is None or self.report is None:
             return
         if self.report.tree is not None:
             nodes = [iid for iid, key in self._tree_keys.items() if key is not None]

@@ -2958,10 +2958,6 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         self.tolerance_solve_presets: list[dict[str, object]] = []
         self.tolerance_manufacturing_templates: list[dict[str, object]] = []
         self.active_tolerance_solve_preset_name = ""
-        self._nonseq_scene_window: tk.Toplevel | None = None
-        self._nonseq_scene_summary_var: tk.StringVar | None = None
-        self._nonseq_scene_table: ttk.Treeview | None = None
-        self._nonseq_scene_records: list[dict[str, object]] = []
         self._legacy_3d_plotter = None
         self._legacy_3d_after_id = None
         self.imported_camera_step_path: Path | None = None
@@ -3144,7 +3140,9 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
                 ("_main_branch_throughput_report_dialog", ("_report_window",)),
                 ("_main_detector_aperture_report_dialog", ("_report_window",)),
                 ("_main_source_illumination_report_dialog", ("_report_window",)),
-                ("_main_ray_trace_inspector_dialogs", ("_ray_window", "_path_window"))):
+                ("_main_ray_trace_inspector_dialogs", ("_ray_window", "_path_window")),
+                ("_main_nonseq_scene_graph_dialog", ("_report_window",)),
+                ("_main_paraxial_analysis_dialogs", ("_matrix_window", "_gaussian_window"))):
             dialog = self.__dict__.get(f"{factory}_instance")
             if dialog is None:
                 continue
@@ -3153,12 +3151,6 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
                     getattr(dialog, handle).close()
                 except Exception:
                     pass
-        if self._nonseq_scene_window is not None:
-            try:
-                self._nonseq_scene_window.destroy()
-            except Exception:
-                pass
-            self._nonseq_scene_window = None
         self._close_atmosphere_settings_dialog()
         self._close_legacy_3d_plotter()
         analysis_executor_atexit = self.__dict__.get("_analysis_executor_atexit")
