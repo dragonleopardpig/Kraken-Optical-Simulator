@@ -36,6 +36,7 @@ from KrakenOS.UI.panels import row_form_view as row_form_view_module
 from KrakenOS.UI.panels.main_analysis_controls import MainAnalysisToolbarPanel, MainInformationPanel
 from KrakenOS.UI.panels.main_branch_gaussian_q_dialog import MainBranchGaussianQDialog
 from KrakenOS.UI.panels import report_view
+from KrakenOS.UI import analysis_modes
 from KrakenOS.UI.reports import branch_gaussian_q as reports_branch_gaussian_q
 from KrakenOS.UI.reports import branch_throughput as reports_branch_throughput
 from KrakenOS.UI.reports import detector_aperture as reports_detector_aperture
@@ -1095,8 +1096,10 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "self._main_information_panel().build(parent)" in build_results_panel
             and "analysis_mode_vars" in main_analysis_toolbar_panel
             and "toggle_analysis_mode" in main_analysis_toolbar_panel
-            and "CohDet" in main_analysis_toolbar_panel
-            and "TolCmp" in main_analysis_toolbar_panel
+            # the plots themselves are the catalogue's now, so both shells offer them (0899)
+            and analysis_modes.mode_caption("coherent_detector") == "CohDet"
+            and analysis_modes.mode_caption("tolerance_compare") == "TolCmp"
+            and "MODE_GROUPS" in main_analysis_toolbar_panel
             and "results_table" in main_information_panel
             and "Property" in main_information_panel,
         ),

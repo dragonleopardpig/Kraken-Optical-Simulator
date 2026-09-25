@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tkinter as tk
 
+from KrakenOS.UI.analysis_modes import selection_label
 from KrakenOS.UI.services.open3d_live_refresh import MAIN_PANEL_LIVE_REFRESH_DELAY_MS
 from KrakenOS.UI.widgets import bind_entry_commit
 from KrakenOS.UI.uihost import host_of
@@ -1379,18 +1380,19 @@ class LayoutShellControlsMixin:
         self.append_progress(f"Analysis selection updated: {label} (pending update).")
 
     def _sync_analysis_mode_buttons(self) -> None:
+        """Push the model's selection to whichever shell is showing it (bugs/0899).
+
+        `selected_analysis_modes` is the truth; the variables are a Tk mirror and the picker's
+        caption is the model's own line, so a shell only has to draw what it is handed.
+        """
         if hasattr(self, "layout_preview_mode_var"):
             self.layout_preview_mode_var.set(self.layout_preview_mode)
         for mode, var in getattr(self, "analysis_mode_vars", {}).items():
             var.set(mode in self.selected_analysis_modes)
-        menubutton = self.__dict__.get("analysis_mode_menubutton")
-        if menubutton is not None:
-            count = len(self.selected_analysis_modes)
-            label = "Select plots ▾" if count == 0 else f"Plots: {count} ▾"
-            try:
-                menubutton.configure(text=label)
-            except Exception:
-                pass
+        show = getattr(self, "show_analysis_modes", None)
+        if show is not None:
+            show(list(self.selected_analysis_modes),
+                 selection_label(len(self.selected_analysis_modes)))
 
     def _analysis_mode_label(self, mode: str) -> str:
         return analysis_mode_label(mode)

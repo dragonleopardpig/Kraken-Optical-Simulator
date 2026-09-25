@@ -6,6 +6,9 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Any
 
+from KrakenOS.UI.analysis_modes import (MODE_GROUPS, MODE_TOOLTIPS, MODES, PICKER_HINT,
+                                        selection_label)
+
 
 class _EditorBackedPanel:
     """Delegate widget-owned state back to the layout editor."""
@@ -27,72 +30,11 @@ class MainAnalysisToolbarPanel(_EditorBackedPanel):
     """Build the 2D plot analysis toolbar."""
 
     def build(self, parent: tk.Widget) -> None:
-        mode_button_groups = (
-            (
-                ("Spot", "spot"),
-                ("RMS", "rms"),
-                ("PSF", "psf"),
-                ("MTF", "mtf"),
-            ),
-            (
-                ("Pupil", "pupil"),
-                ("Seidel", "seidel"),
-                ("WFront", "wavefront"),
-                ("Zernike", "zernike"),
-            ),
-            (
-                ("FldCurv", "field_curvature"),
-                ("Dist", "distortion"),
-                ("Illum", "relative_illumination"),
-                ("LatClr", "lateral_color"),
-                ("Pol", "polarization"),
-                ("Atmos", "atmosphere"),
-            ),
-            (
-                ("PSFMap", "psf_map"),
-                ("FldMap", "field_map"),
-                ("IllMap", "illum_map"),
-                ("WfeMap", "wavefront_map"),
-                ("DetMap", "detector_map"),
-                ("CohDet", "coherent_detector"),
-                ("BField", "branch_field"),
-                ("Diffr", "diffraction_detector"),
-            ),
-            (
-                ("Interf", "interferogram"),
-                ("TolCmp", "tolerance_compare"),
-            ),
-        )
-        mode_tooltips = {
-            "spot": "Spot Diagram: traced ray intercepts at the image or selected detector",
-            "psf": "Point Spread Function",
-            "psf_map": "Point Spread Function Map",
-            "rms": "RMS Spot Radius",
-            "field_curvature": "Field Curvature (tangential / sagittal best focus)",
-            "distortion": "Distortion (percent vs field)",
-            "relative_illumination": "Relative Illumination",
-            "polarization": "Polarization analysis",
-            "lateral_color": "Lateral Color",
-            "detector_map": "Detector Power Map",
-            "coherent_detector": "Coherent Detector Field Sum",
-            "branch_field": "Branch Field Intensity / Phase + TEM00 Overlap",
-            "diffraction_detector": "Diffraction Detector Angular Spectrum",
-            "field_map": "Field Map",
-            "illum_map": "Illumination Map",
-            "wavefront_map": "Wavefront Error Map",
-            "atmosphere": "Atmospheric Dispersion",
-            "pupil": "Pupil Diagnostic",
-            "seidel": "Seidel Aberrations",
-            "wavefront": "Wavefront Analysis",
-            "zernike": "Zernike Polynomial Fit",
-            "interferogram": "Interferogram",
-            "tolerance_compare": "Tolerance nominal-vs-worst spot overlay",
-            "mtf": "Modulation Transfer Function",
-        }
-        self.analysis_mode_vars = {}
-        for group in mode_button_groups:
-            for _text, mode in group:
-                self.analysis_mode_vars[mode] = tk.BooleanVar(value=False)
+        # the plots, their grouping and their tooltips are data now (bugs/0899), so the Qt
+        # shell can offer the same 24
+        mode_button_groups = MODE_GROUPS
+        mode_tooltips = MODE_TOOLTIPS
+        self.analysis_mode_vars = {mode: tk.BooleanVar(value=False) for mode in MODES}
         ttk.Label(parent, text="Analysis").pack(side="left", padx=(0, 4))
         # Custom multi-select dropdown instead of a tk.Menu: a tk.Menu unposts on
         # every checkbutton click, but the user wants to tick several plots in one
@@ -108,11 +50,7 @@ class MainAnalysisToolbarPanel(_EditorBackedPanel):
         self._analysis_dropdown_tooltips = mode_tooltips
         self._analysis_dropdown_popup = None
         self._analysis_dropdown_outside_bind = None
-        self._add_widget_tooltip(
-            trigger,
-            "Tick one or more analysis plots to display alongside the 2D layout. "
-            "Stays open for multi-select; Esc / click away / Close to dismiss.",
-        )
+        self._add_widget_tooltip(trigger, PICKER_HINT)
 
         # Real (z-buffered) 3D wavefront surface, alongside the 2D Zemax waterfall.
         wavefront_3d_button = ttk.Button(

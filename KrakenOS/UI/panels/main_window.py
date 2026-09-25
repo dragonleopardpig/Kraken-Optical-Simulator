@@ -250,6 +250,17 @@ class MainWindowBuilder:
         widget.insert("end", str(line) + "\n")
         widget.see("end")
 
+    def _show_tk_analysis_modes(self, _modes, caption: str) -> None:
+        """The Tk half of the analysis-picker seam (bugs/0899): the tick marks are the model's
+        own BooleanVars, so only the button's caption is left for the view."""
+        button = getattr(self, "analysis_mode_menubutton", None)
+        if button is None:
+            return
+        try:
+            button.configure(text=str(caption))
+        except Exception:
+            pass
+
     def _show_tk_progress_line(self, line: str) -> None:
         """The Tk half of the progress seam (bugs/0898)."""
         widget = getattr(self, "progress_text", None)
@@ -679,6 +690,7 @@ class MainWindowBuilder:
         self.show_results = self._show_tk_results
         self.show_debug_line = self._show_tk_debug_line
         self.show_progress_line = self._show_tk_progress_line
+        self.show_analysis_modes = self._show_tk_analysis_modes
 
         self.debug_text = tk.Text(debug_frame, wrap="word", height=8, width=24)
         self.debug_text.grid(row=0, column=0, sticky="nsew")
