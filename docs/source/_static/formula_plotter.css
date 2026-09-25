@@ -141,6 +141,11 @@
     color: #852d1a;
 }
 
+.formula-plotter__chart-frame {
+    position: relative;
+    margin: 16px 0;
+}
+
 .formula-plotter__chart {
     width: 100%;
     height: auto;
@@ -148,7 +153,6 @@
     background: white;
     border: 1px solid #d3dce1;
     border-radius: 5px;
-    margin: 16px 0;
 }
 
 .formula-plotter__chart text {
@@ -156,9 +160,31 @@
     fill: #4d6270;
 }
 
-.formula-plotter__chart .formula-plotter__axis {
+.formula-plotter__axis-label {
+    position: absolute;
+    z-index: 1;
+    color: #4d6270;
     font-weight: 700;
     font-size: 14px;
+    line-height: 1;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.formula-plotter__axis-label mjx-container {
+    margin: 0 !important;
+}
+
+.formula-plotter__axis-label--x {
+    right: 3.75%;
+    bottom: 1%;
+    left: 10.625%;
+    text-align: center;
+}
+
+.formula-plotter__axis-label--y {
+    top: 1%;
+    left: 10.625%;
 }
 
 .formula-plotter__grid {

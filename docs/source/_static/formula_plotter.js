@@ -64,7 +64,11 @@
             </div>
             <div class="formula-plotter__parameters" data-role="parameters"></div>
             <p class="formula-plotter__hint" data-role="dependency"></p>
-            <svg class="formula-plotter__chart" data-role="chart" viewBox="0 0 800 370" role="img" aria-label="Equation plot"></svg>
+            <div class="formula-plotter__chart-frame" data-role="chart-frame">
+              <svg class="formula-plotter__chart" data-role="chart" viewBox="0 0 800 370" role="img" aria-label="Equation plot"></svg>
+              <div class="formula-plotter__axis-label formula-plotter__axis-label--x" data-role="x-axis-label" aria-hidden="true"></div>
+              <div class="formula-plotter__axis-label formula-plotter__axis-label--y" data-role="y-axis-label" aria-hidden="true"></div>
+            </div>
             <label class="formula-plotter__probe">Inspect sample <input data-role="probe" type="range" min="0" max="500" value="0"><output data-role="probe-value" aria-live="polite"></output></label>
             <div class="formula-plotter__actions"><button type="button" data-role="csv">Download CSV</button><span class="formula-plotter__hint">501 samples · drag sliders to update</span></div>
           </div>`;
@@ -72,7 +76,7 @@
         const controls = Object.fromEntries([
             "source", "example", "load", "build", "edit-state", "status", "workspace", "preview", "preview-status",
             "sweep", "x", "y", "angles", "minimum", "maximum", "minimum-label", "maximum-label", "start", "end", "start-label", "end-label",
-            "parameters", "dependency", "chart", "probe", "probe-value", "csv",
+            "parameters", "dependency", "chart-frame", "chart", "x-axis-label", "y-axis-label", "probe", "probe-value", "csv",
         ].map((name) => [name, find(name)]));
         let model = null;
         let calculation = null;
@@ -83,6 +87,7 @@
         let graphPosition = null;
         let previewTimer = null;
         let previewRevision = 0;
+        let axisLabelRevision = 0;
         let previewQueue = Promise.resolve();
         const parameterInputs = new Map();
         const parameterValues = new Map();
@@ -95,6 +100,7 @@
         function invalidate(message) {
             result = null;
             controls.chart.replaceChildren();
+            controls["chart-frame"].hidden = true;
             controls.csv.disabled = true;
             controls.probe.disabled = true;
             controls["probe-value"].textContent = "";
@@ -171,6 +177,7 @@
                     (!calculation.yDependsOnSweep ? " Y does not depend on the sweep variable; this is a constant curve." : "");
                 controls["minimum-label"].textContent = `${display(calculation.sweepSymbol)} sweep minimum`;
                 controls["maximum-label"].textContent = `${display(calculation.sweepSymbol)} sweep maximum`;
+                scheduleAxisLabels();
                 render();
                 return true;
             } catch (error) {
@@ -227,8 +234,6 @@
                 chart.append(svgNode("text", { x: xPosition, y: 337, "text-anchor": "middle" }, format(xValue)));
                 chart.append(svgNode("text", { x: 76, y: yPosition + 4, "text-anchor": "end" }, format(yValue)));
             }
-            chart.append(svgNode("text", { x: 425, y: 365, "text-anchor": "middle", class: "formula-plotter__axis" }, display(calculation.xLabel)));
-            chart.append(svgNode("text", { x: 85, y: 16, class: "formula-plotter__axis" }, display(calculation.yLabel)));
             let path = "";
             let previous = null;
             for (const point of points) {
@@ -243,6 +248,7 @@
             chart.append(svgNode("path", { d: path, class: "formula-plotter__curve" }));
             probePoint = svgNode("circle", { r: 5, class: "formula-plotter__point" });
             chart.append(probePoint);
+            controls["chart-frame"].hidden = false;
             inspect();
         }
 
@@ -332,6 +338,41 @@
             previewTimer = setTimeout(() => {
                 previewQueue = previewQueue.then(() => preview(source, revision));
             }, delay);
+        }
+
+        async function renderAxisLabels(revision, labels) {
+            try {
+                const math = window.MathJax;
+                if (math?.startup?.promise) await math.startup.promise;
+                if (revision !== axisLabelRevision) return;
+                const convert = math?.tex2chtmlPromise || math?.tex2svgPromise;
+                if (!convert) return;
+                for (const [element, latex] of labels) {
+                    const metrics = math.getMetricsFor(element, true);
+                    const formula = await convert.call(math, latex, metrics);
+                    if (revision !== axisLabelRevision) return;
+                    element.replaceChildren(formula);
+                }
+                math.startup.document.reset();
+                math.startup.document.updateDocument();
+            } catch {
+                if (revision !== axisLabelRevision) return;
+                labels.forEach(([element, latex]) => {
+                    element.textContent = display(latex);
+                });
+            }
+        }
+
+        function scheduleAxisLabels() {
+            const revision = ++axisLabelRevision;
+            const labels = [
+                [controls["x-axis-label"], calculation.xLabel],
+                [controls["y-axis-label"], calculation.yLabel],
+            ];
+            labels.forEach(([element, latex]) => {
+                element.textContent = display(latex);
+            });
+            previewQueue = previewQueue.then(() => renderAxisLabels(revision, labels));
         }
 
         function build(preferred = {}) {
