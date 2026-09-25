@@ -16681,6 +16681,10 @@ phase_679_preset_and_bounds_forms = _phase_from_standalone(
     679, "the tolerance-solve preset and optimisation-bounds row forms (Qt migration phase 3, 0891): two more tail dialogs that needed nothing new from the framework. What they DID need was care about WHERE AN ERROR GOES -- the bounds dialog has never shown a message box, it writes to the DEBUG LOG and leaves the dialog open, and the preset dialog reports through append_debug as well as the status line -- so the builders raise FormRefused with the model's own wording and the panels decide where it lands. The preset's compare-view list is one more CONSTRUCTOR KWARG with a module fallback. Guard: the preset's seven fields and its refusals ('Give the preset a name.', 'Monte Carlo samples must be at least 1.') with Save writing a named preset, the bounds rule (lower below upper) and both of the model's own messages, a bounds refusal reaching the DEBUG LOG and opening NO message box (driven through the REAL panel method with a refusing builder -- the first version passed the row id as None, returned before the builder and proved nothing), the REAL Tk preset dialog drawing 6 entries and a combo and GRABBING, and the Qt preset dialog refusing a blank name and saving (0891)",
     "KrakenOS.UI.validate_open3d_0891_preset_and_bounds_forms",
     "preset_and_bounds_forms")
+phase_680_tail_forms = _phase_from_standalone(
+    680, "the apply-tolerance-preset and resize-beam-splitter row forms (Qt migration phase 3, 0892): the last two tail dialogs, and both had a decision worth keeping. The apply-preset dialog SKIPS ITSELF when the layout holds exactly one preset -- there is nothing to choose -- and that shortcut now runs through the very same apply_preset() the dialog's Apply calls, so the two cannot drift. The resize dialog's FIELDS depend on the row: a cube takes one number, a plate takes four, so the model reads beam_splitter_resize_info and builds the form to match rather than a view branching on a kind it would have to understand; a refusal still goes to the STATUS LINE. Guard: the chooser refusing with none saved and offering both when two are, the one-preset shortcut applying with NO dialog through the shared path, a cube form with 1 field and a plate with 4 (driven through stand-in owners, since om05a_folded has no parametric splitter) with the model's own 'side: enter a number.', a non-parametric row refusing, the REAL Tk chooser opening on the saved names, and the Qt chooser leaving the chosen preset active (0892)",
+    "KrakenOS.UI.validate_open3d_0892_tail_forms",
+    "tail_forms")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17426,6 +17430,7 @@ def main() -> int:
             phase_677_catalog_matcher_form,
             phase_678_surface_settings_forms,
             phase_679_preset_and_bounds_forms,
+            phase_680_tail_forms,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

@@ -11,7 +11,9 @@ import traceback
 from typing import Any
 from KrakenOS.UI.panels.row_form_view import render_row_form
 from KrakenOS.UI.row_forms import FormRefused
-from KrakenOS.UI.row_forms.presets import build_save_tolerance_preset_form
+from KrakenOS.UI.row_forms.presets import (apply_preset as apply_tolerance_preset,
+                                           build_apply_tolerance_preset_form,
+                                           build_save_tolerance_preset_form)
 
 
 class MainToleranceReportDialogs:
@@ -120,70 +122,24 @@ class MainToleranceReportDialogs:
         render_row_form(self, form, wraplength=460, modal=True)
 
     def open_apply_tolerance_solve_preset_dialog(self) -> None:
-        presets = self._normalize_tolerance_solve_presets(getattr(self, "tolerance_solve_presets", []))
-        if not presets:
-            messagebox.showinfo("Apply Tolerance Solve Preset", "No saved tolerance solve presets are available in this layout.", parent=self.editor)
+        # docs/design_qt_migration.md phase 3 (bugs/0892): the preset list and what Apply does
+        # live in KrakenOS/UI/row_forms/presets.py, which the Qt dialog uses too. The
+        # one-preset shortcut stays here -- with a single preset there is nothing to choose,
+        # so it applies through the SAME apply_preset() the dialog calls.
+        try:
+            form = build_apply_tolerance_preset_form(self)
+        except FormRefused as exc:
+            messagebox.showinfo("Apply Tolerance Solve Preset", str(exc), parent=self.editor)
             return
-        active = str(getattr(self, "active_tolerance_solve_preset_name", "") or "")
-        names = [str(preset.get("name", "")) for preset in presets]
-        selected_name = active if active in names else names[0]
+        names = list(form.state["names"])
         if len(names) == 1:
             try:
-                self._begin_history_capture()
-                preset = self.apply_tolerance_solve_preset(selected_name)
-                self._sync_table()
-                self._commit_history_capture()
-            except Exception as exc:
-                self._history_pending_state = None
-                messagebox.showerror("Apply Tolerance Solve Preset", str(exc), parent=self.editor)
-                return
-            self.append_debug(self.tolerance_solve_preset_report_text(preset))
-            self.status_var.set(f"Applied tolerance solve preset '{selected_name}'. Click Update when ready.")
+                apply_tolerance_preset(self, names[0])
+            except FormRefused as exc:
+                messagebox.showerror("Apply Tolerance Solve Preset", str(exc),
+                                     parent=self.editor)
             return
-
-        dialog = tk.Toplevel(self.editor)
-        dialog.withdraw()
-        dialog.title("Apply Tolerance Solve Preset")
-        dialog.transient(self.editor)
-        dialog.grab_set()
-        dialog.resizable(False, False)
-        preset_var = tk.StringVar(master=dialog, value=selected_name)
-        ttk.Label(dialog, text="Preset").grid(row=0, column=0, sticky="w", padx=12, pady=(12, 4))
-        ttk.Combobox(dialog, textvariable=preset_var, values=names, state="readonly", width=36).grid(
-            row=1,
-            column=0,
-            sticky="ew",
-            padx=12,
-            pady=(0, 8),
-        )
-        ttk.Label(
-            dialog,
-            text="Applies defaults, merit operands, tolerance compare view, and compensator roles without tracing.",
-        ).grid(row=2, column=0, sticky="w", padx=12, pady=(0, 8))
-        buttons = ttk.Frame(dialog)
-        buttons.grid(row=3, column=0, sticky="e", padx=12, pady=(4, 12))
-
-        def accept() -> None:
-            selected = preset_var.get().strip()
-            try:
-                self._begin_history_capture()
-                preset = self.apply_tolerance_solve_preset(selected)
-                self._sync_table()
-                self._commit_history_capture()
-            except Exception as exc:
-                self._history_pending_state = None
-                messagebox.showerror("Apply Tolerance Solve Preset", str(exc), parent=dialog)
-                return
-            self.append_debug(self.tolerance_solve_preset_report_text(preset))
-            self.status_var.set(f"Applied tolerance solve preset '{selected}'. Click Update when ready.")
-            dialog.destroy()
-
-        ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="right", padx=(6, 0))
-        ttk.Button(buttons, text="Apply Preset", command=accept).pack(side="right")
-        dialog.columnconfigure(0, weight=1)
-        dialog.update_idletasks()
-        self._show_centered_dialog(dialog)
-        dialog.wait_window()
+        render_row_form(self, form, wraplength=380, modal=True)
 
     def open_tolerance_worst_sample_comparison_report(self) -> None:
         try:

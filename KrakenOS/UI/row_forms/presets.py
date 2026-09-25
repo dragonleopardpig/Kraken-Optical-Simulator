@@ -118,6 +118,73 @@ def build_save_tolerance_preset_form(owner, *_args, **_kwargs) -> RowForm:
     return form
 
 
+APPLY_TITLE = "Apply Tolerance Solve Preset"
+APPLY_NOTE = ("Applies defaults, merit operands, tolerance compare view, and compensator roles "
+              "without tracing.")
+
+
+def saved_preset_names(owner) -> list:
+    """Every preset this layout carries, in order."""
+    presets = owner._normalize_tolerance_solve_presets(
+        getattr(owner, "tolerance_solve_presets", []) or [])
+    return [str(preset.get("name", "")) for preset in presets]
+
+
+def apply_preset(owner, name: str) -> str:
+    """Apply one preset and report it. Shared so the Tk panel's one-preset shortcut and the
+    dialog's Apply take exactly the same path."""
+    selected = str(name or "").strip()
+    if not selected:
+        raise FormRefused("Choose a preset to apply.")
+    owner._begin_history_capture()
+    try:
+        preset = owner.apply_tolerance_solve_preset(selected)
+        owner._sync_table()
+        owner._commit_history_capture()
+    except Exception as exc:
+        owner._history_pending_state = None
+        raise FormRefused(str(exc)) from exc
+    owner.append_debug(owner.tolerance_solve_preset_report_text(preset))
+    message = f"Applied tolerance solve preset '{selected}'. Click Update when ready."
+    owner.status_var.set(message)
+    return message
+
+
+def build_apply_tolerance_preset_form(owner, *_args, **_kwargs) -> RowForm:
+    """Pick one of the layout's saved presets and apply it."""
+    names = saved_preset_names(owner)
+    if not names:
+        raise FormRefused("No saved tolerance solve presets are available in this layout.")
+    active = str(getattr(owner, "active_tolerance_solve_preset_name", "") or "")
+
+    form = RowForm(
+        title=APPLY_TITLE,
+        row_index=0,
+        fields=(FormField("preset", "Preset", kind="choice", choices=tuple(names)),),
+        values={"preset": active if active in names else names[0]},
+        note=APPLY_NOTE,
+        state={"owner": owner, "names": names},
+    )
+    form.summary = f"{len(names)} preset(s) saved in this layout."
+
+    def validate(values: dict) -> list[str]:
+        selected = str(values.get("preset", "")).strip()
+        if selected not in form.state["names"]:
+            return ["Choose a preset to apply."]
+        return []
+
+    def describe(values: dict) -> str:
+        return f"Applies '{values.get('preset', '')}' without tracing."
+
+    def apply(values: dict) -> str:
+        return apply_preset(owner, str(values.get("preset", "")))
+
+    form.validate = validate
+    form.describe = describe
+    form.apply = apply
+    return form
+
+
 def build_optimization_bounds_form(owner, row_index: "int | None" = None, *,
                                    spec=None) -> RowForm:
     """The lower and upper bound of one optimisation variable."""
@@ -176,4 +243,5 @@ def build_optimization_bounds_form(owner, row_index: "int | None" = None, *,
 
 
 build_save_tolerance_preset_form.TITLE = PRESET_TITLE
+build_apply_tolerance_preset_form.TITLE = APPLY_TITLE
 build_optimization_bounds_form.TITLE = BOUNDS_TITLE

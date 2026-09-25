@@ -427,6 +427,12 @@ class KrakenQtMainWindow(_main_window_class()):
 
         return self.open_row_form(build_save_tolerance_preset_form, row_index=False)
 
+    def apply_tolerance_preset_action(self):
+        """Apply one of the layout's saved tolerance solve presets."""
+        from KrakenOS.UI.row_forms import build_apply_tolerance_preset_form
+
+        return self.open_row_form(build_apply_tolerance_preset_form, row_index=False)
+
     def _forget_dialog(self, dialog) -> None:
         if dialog in self._open_dialogs:
             self._open_dialogs.remove(dialog)

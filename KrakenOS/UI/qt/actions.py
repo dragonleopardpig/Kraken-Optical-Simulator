@@ -82,6 +82,9 @@ ACTIONS = (
     ("tolerance_preset", "&Analysis", "Save &Tolerance Solve Preset...", None,
      "tolerance_preset_action",
      "Save the Monte Carlo settings, merit operands and tolerance roles as a preset"),
+    ("apply_tolerance_preset", "&Analysis", "&Apply Tolerance Solve Preset...", None,
+     "apply_tolerance_preset_action",
+     "Apply one of the layout's saved tolerance solve presets"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
 )
 

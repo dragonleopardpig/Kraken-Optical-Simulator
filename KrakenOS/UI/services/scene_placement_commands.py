@@ -10325,61 +10325,24 @@ class ScenePlacementMixin:
         return {"kind": kind, "row_index": new_row_index, "params": dict(params)}
 
     def open_resize_beam_splitter_dialog(self, row_index) -> None:
-        """bugs/0423: numerical "Resize Beam Splitter..." dialog -- type new dimensions (cube: side;
-        plate: width / height / thickness / tilt), then regenerate + replace in place."""
-        import tkinter as tk
-        from tkinter import ttk
+        """bugs/0423: type new dimensions (cube: side; plate: width / height / thickness /
+        tilt), then regenerate + replace in place.
 
-        info = self.beam_splitter_resize_info(row_index)
-        if info is None:
-            self.status_var.set("Resize Beam Splitter: this row is not a parametric beam splitter.")
-            return
-        kind, params = info
-        fields = (
-            [("side_mm", "Side (mm)")]
-            if kind == "cube"
-            else [("width_mm", "Width (mm)"), ("height_mm", "Height (mm)"),
-                  ("thickness_mm", "Thickness (mm)"), ("tilt_deg", "Tilt (deg)")]
-        )
-        win = tk.Toplevel(self)
-        win.title(f"Resize {kind.title()} Beam Splitter")
-        win.transient(self)
-        frame = ttk.Frame(win, padding=10)
-        frame.grid(row=0, column=0, sticky="nsew")
-        entry_vars: dict[str, tk.StringVar] = {}
-        for i, (key, label) in enumerate(fields):
-            ttk.Label(frame, text=label).grid(row=i, column=0, sticky="w", pady=2)
-            var = tk.StringVar(value=f"{float(params.get(key, 0.0)):g}")
-            ttk.Entry(frame, textvariable=var, width=12).grid(row=i, column=1, sticky="e", padx=(8, 0))
-            entry_vars[key] = var
-        status = tk.StringVar(value="")
-        ttk.Label(frame, textvariable=status, foreground="#b91c1c", wraplength=220).grid(
-            row=len(fields), column=0, columnspan=2, sticky="w", pady=(4, 0)
-        )
+        docs/design_qt_migration.md phase 3 (bugs/0892): which FIELDS exist depends on the
+        kind, so the model reads `beam_splitter_resize_info` and builds the form to match --
+        see ``KrakenOS/UI/row_forms/resize_beam_splitter.py``. A refusal goes to the STATUS
+        LINE, as it always did.
+        """
+        from KrakenOS.UI.panels.row_form_view import render_row_form
+        from KrakenOS.UI.row_forms import FormRefused
+        from KrakenOS.UI.row_forms.resize_beam_splitter import build_resize_beam_splitter_form
 
-        def _apply() -> None:
-            new_dimensions: dict[str, float] = {}
-            for key, _label in fields:
-                try:
-                    new_dimensions[key] = float(entry_vars[key].get())
-                except (TypeError, ValueError):
-                    status.set(f"{key.replace('_mm', '').replace('_deg', '')}: enter a number.")
-                    return
-            if self.resize_beam_splitter(row_index, **new_dimensions) is not None:
-                win.destroy()
-            else:
-                status.set(self.status_var.get())
-
-        buttons = ttk.Frame(frame)
-        buttons.grid(row=len(fields) + 1, column=0, columnspan=2, pady=(8, 0))
-        ttk.Button(buttons, text="Resize", command=_apply).grid(row=0, column=0)
-        ttk.Button(buttons, text="Cancel", command=win.destroy).grid(row=0, column=1, padx=(6, 0))
-        win.bind("<Escape>", lambda _event: win.destroy())
-        win.protocol("WM_DELETE_WINDOW", win.destroy)
         try:
-            self._show_centered_dialog(win)
-        except Exception:
-            pass
+            form = build_resize_beam_splitter_form(self, row_index)
+        except FormRefused as exc:
+            self.status_var.set(str(exc))
+            return
+        render_row_form(self, form, wraplength=280)
 
     @staticmethod
     def _step_orientation_direction_vector(direction_label: object) -> np.ndarray | None:
