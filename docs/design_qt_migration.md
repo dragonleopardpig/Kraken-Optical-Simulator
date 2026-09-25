@@ -123,6 +123,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0895 | Ray + Trace Path inspectors onto it; `ReportAction` and `csv_writer` in both shells | master / detail, tree |
 | 0896 | Paraxial Matrix + Gaussian Beam onto it; `ReportUpdate` (a verb that writes back) | report + inputs |
 | 0897 | Non-Sequential Scene Graph -- its first builder, so Qt has it at all; `initial_key`, `on_activate` | tree |
+| 0898 | Results / Debug / Progress as model data; Qt gets all three docks | phase 6 |
 
 The row-form framework: `FormField` kinds (number, int, bool, choice, text, textarea, static),
 `choices` that grow at runtime, `editable` choices the user may type into, `on_change` fields that
