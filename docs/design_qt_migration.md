@@ -106,6 +106,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0883 | Inspection Cell (six faces as records; host file choosers) | record list |
 | 0884 | the five half-done ports finished on the shared Tk renderer (textarea + tabs) | -- |
 | 0885 | Scene-source edit popup (the model decides the fields; `modal=True`) | row form |
+| 0886 | Inspection Part + `FormPreview` (the model draws the picture) | row form |
 
 The row-form framework: `FormField` kinds (number, int, bool, choice, text, textarea, static),
 `choices` that grow at runtime, `editable` choices the user may type into, `on_change` fields that
