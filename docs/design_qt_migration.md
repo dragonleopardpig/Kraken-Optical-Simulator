@@ -81,6 +81,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | master / detail (prose) | `Report` + `DetailText` | the same dialog, split |
 | a verb, or an export that is not the table | `ReportAction`, `Report.csv_writer` | the same dialog's button box |
 | a verb that changes the inputs | `ReportAction` -> `ReportUpdate` | the same, then a rebuild |
+| where a report opens, and a double-click | `Report.initial_key`, `ReportAction.on_activate` | the same in both |
 | tree | `TreeRow` | `qt/dialogs/report_dialog.py` (tree mode) |
 | record list | `RowForm` + `RecordList` | `qt/dialogs/row_form_dialog.py` (list + form) |
 
@@ -121,6 +122,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0894 | The four report dialogs onto the shared Tk renderer; `DetailText` in both shells | report |
 | 0895 | Ray + Trace Path inspectors onto it; `ReportAction` and `csv_writer` in both shells | master / detail, tree |
 | 0896 | Paraxial Matrix + Gaussian Beam onto it; `ReportUpdate` (a verb that writes back) | report + inputs |
+| 0897 | Non-Sequential Scene Graph -- its first builder, so Qt has it at all; `initial_key`, `on_activate` | tree |
 
 The row-form framework: `FormField` kinds (number, int, bool, choice, text, textarea, static),
 `choices` that grow at runtime, `editable` choices the user may type into, `on_change` fields that
