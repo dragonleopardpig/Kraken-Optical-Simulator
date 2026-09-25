@@ -47,6 +47,7 @@ class KrakenQtMainWindow(_main_window_class()):
         # the VTK widget hands VTK its window id in its constructor and Qt recreates a native
         # window on reparenting. This container is its stable parent -- `build_viewport()` adds
         # the widget to the container's own layout, so nothing is ever reparented.
+        self.plot2d = None
         self.viewport_host = QWidget()
         self.viewport_layout = QVBoxLayout(self.viewport_host)
         self.viewport_layout.setContentsMargins(0, 0, 0, 0)
@@ -103,6 +104,22 @@ class KrakenQtMainWindow(_main_window_class()):
             self.viewport = SceneViewport(self.viewport_host)
             self.viewport_layout.addWidget(self.viewport.widget)
         return self.viewport
+
+    def build_plot2d(self):
+        """Create the 2D layout plot and hand the editor its figure (bugs/0893).
+
+        The model draws into `editor.ax`; this only supplies the canvas and connects the three
+        matplotlib events both shells use. It lives in a dock so the 3D view keeps the centre.
+        """
+        from KrakenOS.UI.qt.plot2d import LayoutPlot2D
+
+        if self.plot2d is None:
+            self.plot2d = LayoutPlot2D(self.editor)
+            from PySide6.QtCore import Qt
+
+            self.dock_manager.create_dock(self.plot2d.widget, "plot2d", "2D Layout",
+                                          area=Qt.DockWidgetArea.RightDockWidgetArea)
+        return self.plot2d
 
     def refresh_from_model(self) -> dict:
         """Rebuild every view from the editor: the table, the scene, the window title."""

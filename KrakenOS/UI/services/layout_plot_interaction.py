@@ -75,12 +75,18 @@ class LayoutPlotInteractionMixin:
         self._set_hover_axis(None)
 
     def _on_plot_widget_click(self, event) -> str | None:
+        """A click on the 2D plot: pick a ray, a row, or open the axis in its own window.
+
+        bugs/0893: `event` is a MATPLOTLIB button_press_event now, not a Tk one. Matplotlib
+        already reports display coordinates with the origin at the bottom left, which is the
+        frame `get_window_extent` uses -- so the Tk widget height flip is gone, and with it the
+        last `get_tk_widget()` call on this path. Both toolkits connect the same mpl event.
+        """
         try:
             self.canvas.draw()
             renderer = self.figure.canvas.get_renderer()
-            widget = self.canvas.get_tk_widget()
             x_display = float(event.x)
-            y_display = float(widget.winfo_height() - event.y)
+            y_display = float(event.y)
             if self.ax is not None and self.ax in self.figure.axes:
                 if self.ax.get_window_extent(renderer).contains(x_display, y_display):
                     ray_index = self._find_layout_pick_ray(x_display, y_display)
@@ -284,8 +290,7 @@ class LayoutPlotInteractionMixin:
     def _configure_plot_hover_hints(self) -> None:
         self._hover_hint_artists = {}
         self._hover_axis = None
-        if hasattr(self, "canvas"):
-            self.canvas.get_tk_widget().configure(cursor="")
+        self._set_plot_cursor("")
         candidate_axes = [self.ax]
         candidate_axes.extend([axis for axis in self._analysis_axes if axis is not None])
         if self._analysis_ax is not None and self._analysis_ax not in candidate_axes:
@@ -336,15 +341,29 @@ class LayoutPlotInteractionMixin:
         except Exception:
             pass
 
+    def _set_plot_cursor(self, cursor: str) -> None:
+        """Ask the VIEW for a cursor over the 2D plot (bugs/0893).
+
+        The names are Tk's -- "hand2", "" -- because that is what this code has always said;
+        the Qt shell maps them. A view that does not implement it simply has no cursor to set,
+        which is what a headless editor wants.
+        """
+        setter = getattr(self, "set_plot_cursor", None)
+        if setter is None:
+            return
+        try:
+            setter(str(cursor))
+        except Exception:
+            pass
+
     def _set_hover_axis(self, axis) -> None:
         self._hover_axis = axis
         for current_ax, artists in self._hover_hint_artists.items():
             active = current_ax is axis
             for artist in artists:
                 artist.set_visible(active)
+        self._set_plot_cursor("hand2" if axis is not None else "")
         if hasattr(self, "canvas"):
-            cursor = "hand2" if axis is not None else ""
-            self.canvas.get_tk_widget().configure(cursor=cursor)
             self.canvas.draw_idle()
 
     @staticmethod

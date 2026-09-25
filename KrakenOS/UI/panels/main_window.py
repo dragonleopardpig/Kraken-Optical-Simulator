@@ -228,6 +228,17 @@ class MainWindowBuilder:
         self._menubar = menubar
         self.config(menu=menubar)
 
+    def _set_tk_plot_cursor(self, cursor: str) -> None:
+        """The Tk half of the plot-cursor seam (bugs/0893): the model asks for a cursor by
+        name and the view is the only thing that knows what a widget is."""
+        canvas = getattr(self, "canvas", None)
+        if canvas is None:
+            return
+        try:
+            canvas.get_tk_widget().configure(cursor=str(cursor))
+        except Exception:
+            pass
+
     def _build_ui(self) -> None:
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
@@ -630,7 +641,11 @@ class MainWindowBuilder:
         self.canvas.get_tk_widget().grid(row=1, column=0, sticky="nsew")
         self.canvas.mpl_connect("motion_notify_event", self._on_plot_canvas_motion)
         self.canvas.mpl_connect("figure_leave_event", self._on_plot_canvas_leave)
-        self.canvas.get_tk_widget().bind("<Button-1>", self._on_plot_widget_click, add="+")
+        # bugs/0893: a MATPLOTLIB button press, not a Tk one -- the same event the Qt shell
+        # connects, and it already carries display coordinates in the frame the model uses.
+        self.canvas.mpl_connect("button_press_event", self._on_plot_widget_click)
+        # __setattr__ forwards to the editor, which is where the model looks for it
+        self.set_plot_cursor = self._set_tk_plot_cursor
 
         self.debug_text = tk.Text(debug_frame, wrap="word", height=8, width=24)
         self.debug_text.grid(row=0, column=0, sticky="nsew")

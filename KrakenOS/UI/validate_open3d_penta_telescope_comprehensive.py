@@ -16685,6 +16685,10 @@ phase_680_tail_forms = _phase_from_standalone(
     680, "the apply-tolerance-preset and resize-beam-splitter row forms (Qt migration phase 3, 0892): the last two tail dialogs, and both had a decision worth keeping. The apply-preset dialog SKIPS ITSELF when the layout holds exactly one preset -- there is nothing to choose -- and that shortcut now runs through the very same apply_preset() the dialog's Apply calls, so the two cannot drift. The resize dialog's FIELDS depend on the row: a cube takes one number, a plate takes four, so the model reads beam_splitter_resize_info and builds the form to match rather than a view branching on a kind it would have to understand; a refusal still goes to the STATUS LINE. Guard: the chooser refusing with none saved and offering both when two are, the one-preset shortcut applying with NO dialog through the shared path, a cube form with 1 field and a plate with 4 (driven through stand-in owners, since om05a_folded has no parametric splitter) with the model's own 'side: enter a number.', a non-parametric row refusing, the REAL Tk chooser opening on the saved names, and the Qt chooser leaving the chosen preset active (0892)",
     "KrakenOS.UI.validate_open3d_0892_tail_forms",
     "tail_forms")
+phase_681_qt_layout_plot = _phase_from_standalone(
+    681, "the 2D layout plot in Qt, and the last two Tk leaks out of the model (Qt migration phase 6, 0893): the plot was never view code -- the model draws into editor.ax and calls editor.canvas.draw_idle() -- but two things had leaked into services/layout_plot_interaction.py, a Tk <Button-1> binding whose event needed get_tk_widget().winfo_height() to flip y, and canvas.get_tk_widget().configure(cursor=...). Both are gone: the click is a matplotlib button_press_event, which ALREADY reports display coordinates in the frame get_window_extent uses, so the flip and the widget lookup went with it; and the cursor goes through editor.set_plot_cursor(name), which each shell implements (Tk configures the widget, Qt maps the name onto a QCursor shape) and which a headless editor silently ignores. Both shells now connect the SAME three matplotlib events. MEASURED and worth knowing: refresh_plot REPLACES editor.ax on every draw (it re-lays the figure out for the analysis panes), so a view must read the axes live and never cache the one it created -- the first version of this port cached it and saw an empty plot while the real one held 30 lines, 106 collections and 17 texts. Guard: no get_tk_widget CALL or winfo_height left in the service (the check looks for the call, not the word, because the docstring that explains the fix says it too), the cursor seam in both shells and its silence when headless, the editor's figure and canvas BEING the Qt ones with a real layout drawn into them, the axes replacement, and a matplotlib click reaching the model (0893)",
+    "KrakenOS.UI.validate_open3d_0893_qt_layout_plot",
+    "qt_layout_plot")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17431,6 +17435,7 @@ def main() -> int:
             phase_678_surface_settings_forms,
             phase_679_preset_and_bounds_forms,
             phase_680_tail_forms,
+            phase_681_qt_layout_plot,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
