@@ -111,6 +111,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0888 | Path Component placement + `RowForm.labels` (a choice renames a field) | row form |
 | 0889 | Camera + Lens Matcher + `RowForm.read_only` (inputs and verbs, nothing to apply) | record list |
 | 0890 | Galvo scan overlay + grating settings — the first tail pair needing nothing new | row form |
+| 0891 | Tolerance preset + optimisation bounds (the panel decides where a refusal lands) | row form |
 
 The row-form framework: `FormField` kinds (number, int, bool, choice, text, textarea, static),
 `choices` that grow at runtime, `editable` choices the user may type into, `on_change` fields that
