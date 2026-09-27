@@ -153,9 +153,18 @@ def validate_attachment_paths() -> list[AttachmentPathCheck]:
     # entries, not just the first one.
     names = camera_names()
     missing: list[str] = []
+    # bugs/0917: a camera defined from its components (CAM-SV25MCCXP, bugs/0691) declares no
+    # datasheet -- its specs are INLINE (sensor size, pixel size, resolution), which is what the
+    # dropdown needs. So: every file a camera DECLARES must resolve, and one without a datasheet
+    # must carry those specs itself.
+    inline_spec_keys = ("sensor_width_mm", "sensor_height_mm", "pixel_size_um", "resolution_px")
     for name in names:
         record = camera_record(name) or {}
         for key in ("step_path", "datasheet"):
+            if key == "datasheet" and not str(record.get(key, "") or "").strip():
+                if not all(record.get(spec) for spec in inline_spec_keys):
+                    missing.append(f"{name}: no datasheet and no inline specs")
+                continue
             path = Path(record.get(key, ""))
             if not (_under(path, ATTACHMENT_DIR) and path.exists()):
                 missing.append(f"{name}:{key}={path}")

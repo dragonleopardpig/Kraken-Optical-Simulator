@@ -56,6 +56,10 @@ _CONE_AZIMUTH_MIN = 16
 _CONE_AZIMUTH_MAX = 24
 
 
+
+#: surfaces that make an arm IMAGE (bugs/0917): refracting optics, not apertures and mirrors
+_IMAGING_SURFACES = frozenset({"Standard", "Thin Lens"})
+
 class TracePreviewSamplingMixin:
     def _sample_ray_heights(self, max_radius: float) -> list[float]:
         if max_radius <= 1e-9:
@@ -1948,14 +1952,25 @@ class TracePreviewSamplingMixin:
         is what gates the per-branch launch so ordinary single-axis scenes are untouched.
         """
         try:
-            from KrakenOS.UI.services.paraxial_tools import _scene_branch_selectors, _branch_leaf_rows
+            from KrakenOS.UI.services.paraxial_tools import (
+                _branch_leaf_rows,
+                _row_branch_selector,
+                _scene_branch_selectors,
+            )
         except Exception:
             return {}
         rows = list(getattr(self, "rows", None) or [])
         leaves: dict = {}
         for selector in _scene_branch_selectors(rows):
             leaf = _branch_leaf_rows(rows, selector)
-            if any(str(getattr(r, "surface", "") or "") == "Aperture" for r in leaf):
+            # bugs/0917: an IMAGING arm images -- it carries refracting optics of its own after
+            # the split. An interferometer arm (Michelson, Twyman-Green, Mach-Zehnder) is only
+            # clear-aperture clips and a return mirror, and its light RECOMBINES through the
+            # splitter, which a straight per-arm trace + display fold cannot represent: taking
+            # those arms made the Michelson trace two chief rays with no splitter events.
+            arm = [r for r in rows if _row_branch_selector(r) == selector]
+            images = any(str(getattr(r, "surface", "") or "") in _IMAGING_SURFACES for r in arm)
+            if images and any(str(getattr(r, "surface", "") or "") == "Aperture" for r in leaf):
                 leaves[selector] = leaf
         return leaves
 

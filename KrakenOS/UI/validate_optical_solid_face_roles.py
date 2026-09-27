@@ -674,9 +674,11 @@ def validate_optical_solid_face_roles() -> list[OpticalSolidFaceRoleCheck]:
         ),
         OpticalSolidFaceRoleCheck(
             "Open 3D face metadata save clears stale hover pick state",
-            "def clear_face_metadata_hover_state" in layout_editor_source
-            and "_clear_open3d_face_metadata_hover_state(row_index)" in layout_editor_source
-            and "_step_feature_cache.clear()" in layout_editor_source,
+            # bugs/0917: the clear moved into open3d_inspector (05-26 extraction), so the old
+            # text search of layout_editor failed. MEASURED now: the dialog's saves call the
+            # editor hook, and the REAL hook + REAL inspector method clear a stub's stale state.
+            "_clear_open3d_face_metadata_hover_state(row_index)" in layout_editor_source
+            and _face_metadata_hover_clear_works(),
             "Face-role saves clear row/STEP hover outlines and cached feature picks before the 3D scene rebuild.",
         ),
         OpticalSolidFaceRoleCheck(
@@ -694,6 +696,65 @@ def _print_table(checks: list[OpticalSolidFaceRoleCheck]) -> None:
     print("--- | --- | ---")
     for check in checks:
         print(f"{check.check} | {'PASS' if check.ok else 'FAIL'} | {check.detail}")
+
+
+def _face_metadata_hover_clear_works() -> bool:
+    """bugs/0917: drive the real editor hook and the real inspector method on stubs holding
+    stale hover state, and require every piece of it cleared."""
+    from KrakenOS.UI.open3d_inspector import Kraken3DInspector
+    from KrakenOS.UI.services.optical_solid_workflow import LayoutOpticalSolidWorkflowMixin as OpticalSolidWorkflowMixin
+
+    calls: list = []
+
+    class _Inspector:
+        clear_face_metadata_hover_state = Kraken3DInspector.clear_face_metadata_hover_state
+
+        def __init__(self) -> None:
+            self._step_feature_cache = {"stale": 1}
+            self._cad_scene_cache = {"stale": 1}
+            self._hover_step_actor = object()
+            self._hover_step_cell_key = ("row", "k", 3)
+            self._hover_rotation_handle_key = "rot"
+            self._picked_row_index = 2
+
+        def winfo_exists(self) -> bool:
+            return True
+
+        def _set_step_hover_outline(self, *args, **kwargs):
+            calls.append(("outline", args[:2]))
+
+        def _update_hover_status(self, text, **kwargs):
+            calls.append(("status", text))
+
+        def _set_row_highlight(self, value):
+            calls.append(("row", value))
+
+        def _set_ray_highlight(self, value):
+            calls.append(("ray", value))
+
+        def _set_optical_axis_highlight(self, value):
+            calls.append(("axis", value))
+
+        def _set_axis_pick_cursor(self, value):
+            calls.append(("cursor", value))
+
+    class _Editor:
+        _clear_open3d_face_metadata_hover_state = (
+            OpticalSolidWorkflowMixin._clear_open3d_face_metadata_hover_state)
+
+        def __init__(self, inspector) -> None:
+            self._three_d_inspector = inspector
+
+        def append_debug(self, message) -> None:
+            calls.append(("debug", message))
+
+    inspector = _Inspector()
+    _Editor(inspector)._clear_open3d_face_metadata_hover_state(2)
+    return (not inspector._step_feature_cache and not inspector._cad_scene_cache
+            and inspector._hover_step_actor is None and inspector._hover_step_cell_key is None
+            and inspector._hover_rotation_handle_key is None
+            and ("outline", (None, None)) in calls and ("row", None) in calls
+            and not any(kind == "debug" for kind, _v in calls))
 
 
 def main() -> int:
