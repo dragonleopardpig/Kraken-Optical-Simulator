@@ -18,6 +18,60 @@ from KrakenOS.UI.uihost import host_of
 _TWO_COLUMN_THRESHOLD = 14
 
 
+def _update_tab_scroll(canvas, inner, vscroll) -> None:
+    """Size a tab's scroll region, and show its scrollbar only while the tab overflows."""
+    try:
+        canvas.configure(scrollregion=canvas.bbox("all"))
+        overflow = inner.winfo_reqheight() > canvas.winfo_height()
+        if overflow and not vscroll.grid_info():
+            vscroll.grid(row=0, column=1, sticky="ns")
+        elif not overflow and vscroll.grid_info():
+            vscroll.grid_remove()
+    except tk.TclError:
+        pass
+
+
+def _on_tab_canvas_configure(event, canvas, inner, window_id, vscroll) -> None:
+    # the fields fill the canvas width (the stretch column and label wraplengths lay out) and
+    # at least its height, so a short tab is not clipped; vertical scrolling only
+    fill_height = max(int(event.height), inner.winfo_reqheight())
+    canvas.itemconfigure(window_id, width=int(event.width), height=fill_height)
+    _update_tab_scroll(canvas, inner, vscroll)
+
+
+def bind_tab_wheel(canvas, inner) -> None:
+    """Scroll a tab with the mouse wheel and the touchpad (X11 Button-4/5) from over any of its
+    widgets -- bound on each one, since the fields sit on top of the canvas and would swallow
+    the event -- and let the event through when the tab has nothing to scroll."""
+
+    def on_wheel(event):
+        if inner.winfo_reqheight() <= canvas.winfo_height():
+            return None
+        num = getattr(event, "num", 0)
+        delta = getattr(event, "delta", 0)
+        if num == 4 or delta > 0:
+            canvas.yview_scroll(-1, "units")
+        elif num == 5 or delta < 0:
+            canvas.yview_scroll(1, "units")
+        return "break"
+
+    def bind_recursive(node) -> None:
+        for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            try:
+                node.bind(sequence, on_wheel, add="+")
+            except Exception:
+                pass
+        try:
+            children = node.winfo_children()
+        except Exception:
+            children = []
+        for child in children:
+            bind_recursive(child)
+
+    bind_recursive(canvas)
+    bind_recursive(inner)
+
+
 def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None,
                     modal: bool = False) -> tk.Toplevel:
     """Show `form` in a Tk dialog and return the window."""
@@ -158,11 +212,15 @@ def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None,
             inner = ttk.Frame(canvas, padding=(0, 8, 0, 8))
             window_id = canvas.create_window((0, 0), window=inner, anchor="nw")
             inner.bind("<Configure>",
-                       lambda _e, c=canvas: c.configure(scrollregion=c.bbox("all")), add="+")
+                       lambda _e, c=canvas, i=inner, v=vscroll: _update_tab_scroll(c, i, v),
+                       add="+")
             canvas.bind("<Configure>",
-                        lambda event, c=canvas, i=window_id: c.itemconfigure(
-                            i, width=event.width), add="+")
+                        lambda event, c=canvas, i=inner, w=window_id, v=vscroll:
+                        _on_tab_canvas_configure(event, c, i, w, v), add="+")
             build_fields(inner, form.fields_in(group))
+            # bugs/0911: the wheel scrolls the tab from over ANY field -- the hand-written
+            # Advanced Surface dialog did, and the 0884 port onto this renderer dropped it
+            bind_tab_wheel(canvas, inner)
     else:
         build_fields(fields_host, form.fields)
 
