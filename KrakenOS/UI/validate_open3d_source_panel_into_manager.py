@@ -76,28 +76,80 @@ def _check_default_spec(failures, notes):
 
 
 def _check_manager(failures, notes):
-    from KrakenOS.UI.panels import main_scene_source_manager_dialog as mod
+    """bugs/0908: MEASURED against the Manager's real form. Since bugs/0881 the Manager's fields,
+    parsing and save live in `row_forms/scene_sources.py` (the Tk dialog is a thin shell and the
+    Qt shell uses the same form), so the old text checks -- `"pupil_pattern": tk.` and
+    `spec["pupil_pattern"]` in the Tk class -- read code that no longer holds the logic and
+    failed while every claim still held. These build the real field list and run the real save.
+    """
+    from types import SimpleNamespace
 
-    src = inspect.getsource(mod.MainSceneSourceManagerDialog)
-    # vars declared for every folded-in control
+    from KrakenOS.UI.panels import main_scene_source_manager_dialog as mod
+    from KrakenOS.UI.row_forms import scene_sources
+    from KrakenOS.UI.row_forms.scene_sources import _fields, _spec_from_values, model
+
+    owner = SimpleNamespace(_scene_source_setting_value=SourceModelingMixin._scene_source_setting_value)
+    parts = model(owner)
+    fields = {field.key: field for field in _fields(parts, ())}
+    # a field -- so a control -- for every folded-in key, under the labels the user reads
     for key in _FOLDED_KEYS:
-        if f'"{key}": tk.' not in src:
-            failures.append(f"MANAGER-VARS: no form var for {key!r}")
-    # visible controls (labels prove the widgets are laid out)
+        if key not in fields:
+            failures.append(f"MANAGER-VARS: the Manager form has no field for {key!r}")
+    labels = {field.label for field in fields.values()}
     for label in ("Pupil pattern", "GB input mode", "GB waist side", "Pupil radial samples"):
-        if label not in src:
-            failures.append(f"MANAGER-VARS: no widget labelled {label!r}")
-    # form_spec must persist all keys (else a save drops them)
-    for key in _FOLDED_KEYS:
-        if f'spec["{key}"]' not in src:
-            failures.append(f"FORM-PERSIST: form_spec never writes {key!r}")
+        if label not in labels:
+            failures.append(f"MANAGER-VARS: no field labelled {label!r}")
+    # the choice fields offer the real value lists (a readonly combobox needs a real value)
+    for key, offered in (("pupil_pattern", parts.pupil_pattern_values),
+                         ("gaussian_input_mode", parts.gaussian_mode_values),
+                         ("gaussian_waist_side", parts.waist_side_values)):
+        field = fields.get(key)
+        if field is not None and (field.kind != "choice" or not tuple(field.choices)
+                                  or tuple(field.choices) != tuple(offered)):
+            failures.append(f"MANAGER-VARS: {key!r} is not a choice over the real values")
+
+    # a SAVE carries every folded-in key: save NON-default values and read them back
+    chosen = {
+        "pupil_pattern": parts.pupil_pattern_values[-1],
+        "pupil_rad": "7",
+        "pupil_theta": "11",
+        "gaussian_input_mode": parts.gaussian_mode_values[-1],
+        "gaussian_beam_diameter": "2.5",
+        "gaussian_full_divergence": "1.75",
+        "gaussian_waist_side": parts.waist_side_values[-1],
+    }
+    values = {"source_id": "guard", "model": parts.model_values[-1], "enabled": "true",
+              "physical": "true", "role": "illumination", "ray_count": "10", "power": "1",
+              "wavelength": "0.55", "radius": "1", "cone_deg": "5", "seed": "0",
+              "source_x": "0", "source_y": "0", "source_z": "0", "source_l": "0",
+              "source_m": "0", "source_n": "1", "angular_weight": parts.angular_default,
+              "waist_radius": "1", "waist_offset": "0", "m2": "1", **chosen}
+    form = SimpleNamespace(state={"owner": owner, "parts": parts})
+    try:
+        spec = _spec_from_values(form, values)
+    except Exception as exc:
+        failures.append(f"FORM-PERSIST: the Manager save refused a valid source: {exc!r}")
+        spec = {}
+    expected = {"pupil_pattern": chosen["pupil_pattern"], "pupil_rad": 7, "pupil_theta": 11,
+                "gaussian_input_mode": chosen["gaussian_input_mode"],
+                "gaussian_beam_diameter": 2.5, "gaussian_full_divergence": 1.75,
+                "gaussian_waist_side": chosen["gaussian_waist_side"]}
+    for key, want in expected.items():
+        if spec and spec.get(key) != want:
+            failures.append(f"FORM-PERSIST: a save wrote {key!r} = {spec.get(key)!r}, not {want!r}")
+    if spec and any(k not in normalize_scene_source_specs([spec])[0] for k in _FOLDED_KEYS):
+        failures.append("FORM-PERSIST: a saved source loses folded-in keys on normalize")
+
     # constructor accepts the new config
     init_src = inspect.getsource(mod.MainSceneSourceManagerDialog.__init__)
     for kw in ("pupil_pattern_values", "gaussian_input_mode_values", "gaussian_waist_side_values"):
         if kw not in init_src:
             failures.append(f"CONSTRUCTOR: __init__ missing kwarg {kw!r}")
+    if scene_sources.build_scene_source_manager_form.__name__ not in inspect.getsource(mod):
+        failures.append("MANAGER-VARS: the Tk Manager dialog no longer renders the shared form")
     if not [f for f in failures if f.startswith(("MANAGER-VARS", "FORM-PERSIST"))]:
-        notes.append("manager = pupil + Gaussian controls declared, laid out, and persisted by form_spec")
+        notes.append("manager = the shared form has all 7 fields (real choice lists) and a save "
+                     "of non-default values writes all 7 back, surviving normalize")
     if not [f for f in failures if f.startswith("CONSTRUCTOR")]:
         notes.append("constructor = accepts the 6 folded-in config kwargs")
 
@@ -166,8 +218,16 @@ def _check_shortcut(failures, notes):
         failures.append("SHORTCUT: a browser menu still calls menu.tk_popup directly (must route via _popup_scene_component_menu)")
     if "def _popup_scene_component_menu" not in inspect.getsource(insp.Kraken3DInspector):
         failures.append("SHORTCUT: the inspector has no _popup_scene_component_menu robust-popup helper")
-    # bugs/0403: the Edit Source dialog must center (no top-left / AGS-bar overlap)
-    if "_show_centered_dialog" not in inspect.getsource(dlg.open_scene_source_edit_dialog):
+    # bugs/0403: the Edit Source dialog must center (no top-left / AGS-bar overlap). Since
+    # bugs/0885 it is a row form, so it centers wherever EVERY row form is placed (bugs/0908).
+    from KrakenOS.UI.panels import row_form_view
+
+    edit_src = inspect.getsource(dlg.open_scene_source_edit_dialog)
+    renders_row_form = "render_row_form(" in edit_src
+    placed = ("_show_centered_dialog" in edit_src
+              or (renders_row_form
+                  and "_show_centered_dialog(window)" in inspect.getsource(row_form_view.render_row_form)))
+    if not placed:
         failures.append("SHORTCUT: the Edit Source dialog does not center (would spawn under the top bar)")
     if not [f for f in failures if f.startswith("SHORTCUT")]:
         notes.append("shortcut = group + per-source 'Scene Source Manager...'; robust dismiss; Edit Source centers")
