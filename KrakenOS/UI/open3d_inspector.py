@@ -139,6 +139,7 @@ from KrakenOS.UI.surface_table_model import SurfaceRow, surface_row_to_spec
 from KrakenOS.UI.services.offbeam_optical_solid import offbeam_neutralized_body_transform
 from KrakenOS.UI.nonseq_output_ports import optical_solid_output_port_runtime_transform_override
 from KrakenOS.UI import optical_solid_metadata
+from KrakenOS.UI.context_menu import MenuModel, new_context_menu
 from KrakenOS.UI.uihost import host_of
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -2299,6 +2300,22 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
     def _show_surface_function_context_menu(self, event) -> str:
         return self._face_assignment_service()._show_surface_function_context_menu(event)
+
+    def _post_viewport_menu(self, menu, event) -> None:
+        """Post one of the inspector's own right-click menus (measure, thickness dimension,
+        detector camera, Quick Estimation role). Under Tk a plain popup, as these always were;
+        a menu a shell is showing goes through the shared popup, so a scene click dismisses it
+        like every other (bugs/0907)."""
+        if isinstance(menu, MenuModel):
+            self._face_assignment_service()._popup_context_menu(menu, event)
+            return
+        try:
+            menu.tk_popup(int(event.x_root), int(event.y_root))
+        finally:
+            try:
+                menu.grab_release()
+            except Exception:
+                pass
 
     def _assign_row_face_function_from_context(
         self,
@@ -21122,7 +21139,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return
         resolved = self._measure_segment_offset_endpoints(segments[int(index)])
         dist = resolved[5] if resolved is not None else 0.0
-        menu = tk.Menu(self, tearoff=False)
+        menu = new_context_menu(self, self)
         menu.add_command(label=f"Measurement {dist:.4g} mm", state="disabled")
         menu.add_separator()
         menu.add_command(
@@ -21159,13 +21176,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             state=("normal" if any_hidden else "disabled"),
             command=self.show_all_measure_segments,
         )
-        try:
-            menu.tk_popup(int(event.x_root), int(event.y_root))
-        finally:
-            try:
-                menu.grab_release()
-            except Exception:
-                pass
+        self._post_viewport_menu(menu, event)
 
     def _open_measure_value_editor(self, index: int) -> None:
         """Edit a manual measurement's value -> MOVE the downstream element so the AXIAL span
@@ -22207,7 +22218,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         return True
 
     def _show_thickness_dimension_menu(self, event, row_index: int) -> None:
-        menu = tk.Menu(self, tearoff=False)
+        menu = new_context_menu(self, self)
         # bugs/0454: special dimensions carry synthetic row keys (the amber Object -> LED
         # arrow is LED_OBJECT_EDGE_DIM_ROW = -7, branch overlays are >= 100000) -- a raw
         # "S-7 Thickness dimension" header reads wrong, so name them.
@@ -22240,7 +22251,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 ROLE_INDEPENDENT,
             )
 
-            role_menu = tk.Menu(menu, tearoff=False)
+            role_menu = new_context_menu(self, menu)
             role_menu.add_command(
                 label="Independent (drive)",
                 command=lambda: self._set_quick_estimation_role(quantity, ROLE_INDEPENDENT),
@@ -22292,13 +22303,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             state=("normal" if any_hidden else "disabled"),
             command=self.editor.show_all_thickness_dimensions,
         )
-        try:
-            menu.tk_popup(int(event.x_root), int(event.y_root))
-        finally:
-            try:
-                menu.grab_release()
-            except Exception:
-                pass
+        self._post_viewport_menu(menu, event)
 
     def _nearer_dimension_endpoint_for_event(self, event, row_index: int) -> str:
         """bugs/0150: which dimension endpoint ('start'|'end') a right-click landed
@@ -22526,12 +22531,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         assignments = dict(getattr(self.editor, "branch_detector_camera_assignments", {}) or {})
         current = assignments.get(branch_path)
         short = branch_path.split("->")[-1].strip() if "->" in branch_path else branch_path
-        menu = tk.Menu(self, tearoff=False)
+        menu = new_context_menu(self, self)
         menu.add_command(label=f"Branch detector: {short}", state="disabled")
         if current:
             menu.add_command(label=f"camera sensor: {current}", state="disabled")
         menu.add_separator()
-        cam_menu = tk.Menu(menu, tearoff=False)
+        cam_menu = new_context_menu(self, menu)
         for name in names:
             mark = "● " if name == current else "    "
             cam_menu.add_command(label=mark + name, command=lambda n=name, bp=branch_path: self._register_branch_detector_camera(bp, n))
@@ -22568,13 +22573,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     menu.add_command(label="Image plane (this arm reaches the Image)", state="disabled")
                     appended = True
                 menu.add_command(label=label, command=command)
-        try:
-            menu.tk_popup(int(event.x_root), int(event.y_root))
-        finally:
-            try:
-                menu.grab_release()
-            except Exception:
-                pass
+        self._post_viewport_menu(menu, event)
 
     def _register_branch_detector_camera(self, branch_path: str, camera_name: str | None) -> None:
         """B2: set/clear the per-branch camera registration, then retrace so the
@@ -22684,7 +22683,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if has_cam:
             menu.add_command(label=f"camera sensor: {current}", state="disabled")
         if names:
-            cam_menu = tk.Menu(menu, tearoff=False)
+            cam_menu = new_context_menu(self, menu)
             for name in names:
                 mark = "● " if name == current else "    "
                 cam_menu.add_command(label=mark + name, command=lambda n=name: self._register_image_plane_camera(n))
@@ -22761,7 +22760,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         )
 
         qe = self._quick_estimation_service()
-        menu = tk.Menu(self, tearoff=False)
+        menu = new_context_menu(self, self)
         title = plane or LABELS.get(quantity, quantity)
         menu.add_command(label=f"{title}  (role: {qe.role(quantity)})", state="disabled")
         if plane:
@@ -22793,13 +22792,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             # 3D image-plane analyses (field curvature / distortion), also on the Overlays
             # dropdown -- the user wants them reachable by right-clicking the image plane.
             self._add_image_plane_analysis_menu(menu)
-        try:
-            menu.tk_popup(int(event.x_root), int(event.y_root))
-        finally:
-            try:
-                menu.grab_release()
-            except Exception:
-                pass
+        self._post_viewport_menu(menu, event)
 
     def _add_image_plane_analysis_menu(self, menu) -> None:
         """Append the 3D image-plane analysis overlays (best-focus surface = field
@@ -22860,7 +22853,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 menu.add_command(label="Clear wavefront map (back to ideal)", command=self._clear_surrogate_wavefront_map)
             else:
                 menu.add_command(label="Attach wavefront map… (Zemax OPD → real spot)", command=self._attach_surrogate_wavefront_map)
-        exaggeration_menu = tk.Menu(menu, tearoff=False)
+        exaggeration_menu = new_context_menu(self, menu)
         current = getattr(self.editor, "_field_aberration_exaggeration", None)
 
         def _mark(value) -> str:

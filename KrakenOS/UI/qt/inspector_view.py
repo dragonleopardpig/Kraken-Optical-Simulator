@@ -13,9 +13,10 @@ delivered it:
   "hover" handler, which is the order Tk's ``add="+"`` binding ran them in;
 * the wheel is VTK's (zoom), as it is under Tk;
 * a key reaches VTK first and then the inspector's shortcut table; Alt alone flips edge hover;
-* the right button's press posts the Tk context menu, which a Qt shell cannot show -- it is held
-  back until phase 5c ports the menus. Its motion and release (swallow the drag, clear the flag)
-  are routed as usual.
+* the right button's press runs the inspector's own right-click handler. Its menu builders are
+  handed a `context_menu.MenuModel` instead of a `tk.Menu` (the inspector sees
+  `show_context_menu` installed), and `show_context_menu` renders that record as a QMenu whose
+  actions run the builders' own callables (bugs/0907).
 
 The toolkit-free rules (the cursor table, the modifier bits) are plain functions so a guard can
 check them without Qt.
@@ -34,8 +35,8 @@ QT_CURSOR_SHAPES = {
     "X_cursor": "ForbiddenCursor",
 }
 
-#: buttons whose PRESS is not routed yet, and why
-DEFERRED_PRESSES = {3: "the context menu is Tk's until phase 5c ports it"}
+#: buttons whose PRESS is not routed yet, and why -- none since the context menus came (0907)
+DEFERRED_PRESSES: dict = {}
 
 
 def qt_cursor_shape(name: str) -> str:
@@ -86,6 +87,10 @@ class InspectorView:
         self.inspector.set_viewport_cursor = self.set_cursor
         self.inspector.viewport_pointer = self.pointer
         self.inspector.show_in_shell = self.show
+        # the inspector's menu builders now fill a MenuModel, shown here (bugs/0907)
+        self.inspector.show_context_menu = self.show_context_menu
+        #: the QMenu last shown, for a guard to read and trigger
+        self.last_menu = None
         if self.inspector.available:
             editor._three_d_inspector = self.inspector
         if status is not None:
@@ -128,6 +133,30 @@ class InspectorView:
             dock.show()
             dock.raise_()
         self.widget.setFocus()
+
+    def show_context_menu(self, model, event) -> None:
+        """Show a recorded right-click menu at the pointer; its actions run the builder's own
+        callables, through `MenuModel.run`, the way a Tk entry click does."""
+        from PySide6.QtCore import QPoint
+
+        menu = build_qmenu(model, self.widget)
+        model.on_close = menu.close
+        inspector = self.inspector
+
+        def forget() -> None:
+            # the shell closed it (an entry, Escape, a click away): it is no longer live
+            if getattr(inspector, "_active_context_menu", None) is model:
+                object.__setattr__(inspector, "_active_context_menu", None)
+
+        menu.aboutToHide.connect(forget)
+        self.last_menu = menu
+        x_root, y_root = getattr(event, "x_root", None), getattr(event, "y_root", None)
+        if x_root is None or y_root is None:
+            ratio = self.pixel_ratio() or 1.0
+            point = self.widget.mapToGlobal(QPoint(int(event.x / ratio), int(event.y / ratio)))
+        else:
+            point = QPoint(int(x_root), int(y_root))
+        menu.popup(point)
 
     def status_text(self) -> str:
         return str(self.inspector.status_var.get())
@@ -212,6 +241,56 @@ class InspectorView:
             self.dispatch("focus_out", ViewportEvent())
             return False
         return False
+
+
+def qt_menu_text(label: str, accelerator: str = "") -> str:
+    """A Tk menu label as QMenu text: a literal "&" doubled (Qt reads one as a mnemonic), the
+    accelerator after a tab, where Qt shows shortcut text."""
+    text = str(label).replace("&", "&&")
+    return f"{text}\t{accelerator}" if accelerator else text
+
+
+def build_qmenu(model, parent=None):
+    """A QMenu showing `model`'s entries, in order; each action runs its entry via the model."""
+    from PySide6.QtWidgets import QMenu
+
+    menu = QMenu(parent)
+    for entry in model.entries:
+        if entry.kind == "separator":
+            menu.addSeparator()
+            continue
+        if entry.kind == "cascade":
+            if entry.submenu is None:
+                continue
+            submenu = build_qmenu(entry.submenu, menu)
+            submenu.setTitle(qt_menu_text(entry.label))
+            submenu.setEnabled(entry.enabled)
+            menu.addMenu(submenu)
+            continue
+        action = menu.addAction(qt_menu_text(entry.label, entry.accelerator))
+        action.setData(entry.kind)
+        action.setEnabled(entry.enabled)
+        if entry.kind in ("checkbutton", "radiobutton"):
+            action.setCheckable(True)
+            action.setChecked(entry.checked())
+        action.triggered.connect(lambda _checked=False, e=entry: model.run(e))
+    return menu
+
+
+def qmenu_outline(menu) -> list:
+    """A shown QMenu as the (kind, label, enabled[, children]) outline `MenuModel.outline` gives."""
+    rows = []
+    for action in menu.actions():
+        if action.isSeparator():
+            rows.append(("separator",))
+            continue
+        label = action.text().split("\t", 1)[0].replace("&&", "&")
+        submenu = action.menu()
+        if submenu is not None:
+            rows.append(("cascade", label, action.isEnabled(), qmenu_outline(submenu)))
+        else:
+            rows.append((str(action.data() or "command"), label, action.isEnabled()))
+    return rows
 
 
 def _button_number(button) -> int:

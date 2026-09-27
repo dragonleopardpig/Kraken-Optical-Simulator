@@ -132,6 +132,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0904 | Optimisation in Qt: operand seam, Start/Stop seam, cell verbs, Optimization dock | phase 6 |
 | 0905 | Phase 5a part 1: viewport handlers reachable without Tk; key table; cursor/timer/pointer seams; `_attach_vtk_core` | phase 5 |
 | 0906 | Phase 5a part 2: the Qt shell hosts the REAL inspector (3D Inspector dock); Qt input -> dispatches; three Tk-armed timers and the pointer-over test moved onto the host | phase 5 |
+| 0907 | Phase 5c: the 16 right-click menu builders fill a `MenuModel` under a shell; Qt shows it as a QMenu running the same callables | phase 5 |
 
 The row-form framework: `FormField` kinds (number, int, bool, choice, text, textarea, static),
 `choices` that grow at runtime, `editable` choices the user may type into, `on_change` fields that
@@ -307,7 +308,7 @@ main window's own panels, which turned out to hide model state in Tk widgets jus
 | 3 dialogs | **mostly done** (0859-0897; 9 report builders, row forms) | lens drawing surface properties + PDF export (353 lines); atmosphere panel (220); the three paraxial solve prompts inside `main_paraxial_analysis_dialogs` (471); missing-assets (559) -- a resolution workflow, not a report: port as its own dialog or keep Tk-only, a decision owed |
 | 4 tables -> model/view | **mostly done** (reports 0894-0897, surface table 0903) | the table's right-click menu -- 529 lines, 12 submenus, only the optimisation entries ported (0904); the Tk table is still the cell PARSER (`_read_rows_from_table`), the seam that must move before Tk can go |
 | shell parity | **done for the core workflow** (0893, 0898-0904: plot, results/logs, plot picker, system/source/trace inputs, table editing, optimisation) | 2D-plot toolbar toggles (cardinals, thickness, path view); `_refresh_operand_surface_choices` still walks every Tk widget; the `self.__dict__.get` sweep (0901) |
-| **5 interaction layer -- THE RISK** | **5a done (0905-0906)**: the real inspector runs in a Qt dock -- orbit, pan, zoom, pick, hover, keys, Alt, timers; `SceneViewport` stays central until parity | measured: `open3d_inspector.py` is 26 234 lines / 828 methods but only **30** event bindings, and VTK itself is toolkit-neutral -- so 5 is re-plumbing, not a rewrite. Four more services are Tk-bound (`three_d_scene_tools` 6 782, `scene_placement_commands` 10 385, `open3d_face_assignment` 3 059, `open3d_interaction` 1 611). Sub-steps below |
+| **5 interaction layer -- THE RISK** | **5a + 5c done (0905-0907)**: the real inspector runs in a Qt dock -- orbit, pan, zoom, pick, hover, keys, Alt, timers, and every right-click menu; `SceneViewport` stays central until parity | measured: `open3d_inspector.py` is 26 234 lines / 828 methods but only **30** event bindings, and VTK itself is toolkit-neutral -- so 5 is re-plumbing, not a rewrite. Four more services are Tk-bound (`three_d_scene_tools` 6 782, `scene_placement_commands` 10 385, `open3d_face_assignment` 3 059, `open3d_interaction` 1 611). Sub-steps below |
 | 6 matplotlib | **done except inside phase-5 dialogs** (2D plot 0893, FormFigure 0887) | the embeds in MTF-from-image and the face-roles editor move with 5g |
 | 7 validators + gate | **not started** | 226 validators build a real editor, 38 of them drive Tk widgets directly; ~165 validators are in no penta phase; then Qt as the default shell and the Tk-retirement decision |
 
@@ -317,7 +318,7 @@ main window's own panels, which turned out to hide model state in Tk widgets jus
 |---|---|---|
 | 5a | event plumbing: the 30 bindings onto `QVTKRenderWindowInteractor` -- mouse, wheel, keys, modifiers. **Part 1 done (0905)**: handlers built apart from their Tk binding, `dispatch_viewport_event`, `VIEWPORT_KEYS`, cursor/timer/pointer seams, `_attach_vtk_core`. **Part 2 done (0906)**: the Qt shell hosts the real inspector (View -> 3D Inspector) and feeds it Qt events; the right-button press is held for 5c | 30 bindings |
 | 5b | hover and pick, keeping the modifier contract (plain = face, Alt = nearest drawn edge; two event streams). The event half landed with 0906 (hover order, Alt on/off, a click picks what dispatch picks); what remains is proving the RESULTS match Tk -- face vs edge highlight, hover status text, the thickness-handle and nav-cube hovers -- and moving the inspector's hidden Tk status line into the shell | ~133 |
-| 5c | right-click contextual scene commands as Qt menus -- already model verbs behind `_popup_scene_component_menu` (0619) | ~10 + the verbs |
+| 5c | right-click contextual scene commands as Qt menus. **Done (0907)**: the builders are unchanged -- `new_context_menu` hands them a recording `MenuModel` under a shell and Qt renders it; verbs that open a Tk DIALOG run but the dialog cannot show until 5f/5g | 16 builders |
 | 5d | drag / move / rotate, snap, glue -- the densest bug arc (0433 stay-put, 0503 glue, 0693 frame) | ~62 |
 | 5e | measure tool, box select, navigation cube, banner/HUD | ~69 |
 | 5f | Scene Components tree + the 3D top/live controls | 1 639 + 374 + 559 lines |

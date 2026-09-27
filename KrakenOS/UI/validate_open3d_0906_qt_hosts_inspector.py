@@ -238,15 +238,28 @@ def qt_runtime_checks() -> list:
                  f"Alt on the Qt widget turned edge hover on ({on}) and its release off ({off})"])
 
     # ---- D ---------------------------------------------------------------------------------
+    # 0906 held the right press back (it posted a Tk menu); since 0907 it is routed and the
+    # menu it builds is shown as a QMenu -- never a Tk menu
+    from KrakenOS.UI.context_menu import MenuModel
+    from KrakenOS.UI.qt.inspector_view import DEFERRED_PRESSES
+
     view.dispatched.clear()
+    view.last_menu = None
     rb = Qt.MouseButton.RightButton
     mouse(QEvent.Type.MouseButtonPress, cx, cy, rb, rb)
     mouse(QEvent.Type.MouseButtonRelease, cx, cy, rb, NONE)
     menu = getattr(inspector, "_active_context_menu", None)
-    rows.append(["D", "right_press" not in view.dispatched and "right_release" in view.dispatched
-                 and menu is None,
-                 f"a right click dispatched {view.dispatched} -- no press, so no Tk menu "
-                 f"(menu={menu})"])
+    press_routed = "right_press" in view.dispatched
+    if 3 in DEFERRED_PRESSES:
+        right_ok = not press_routed and menu is None
+    else:
+        right_ok = press_routed and (menu is None or isinstance(menu, MenuModel))
+    rows.append(["D", right_ok and "right_release" in view.dispatched,
+                 f"a right click dispatched {view.dispatched}; the live menu is "
+                 f"{type(menu).__name__} (a Tk menu never, under Qt)"])
+    if view.last_menu is not None:
+        view.last_menu.close()
+        settle()
 
     # ---- U ---------------------------------------------------------------------------------
     inspector._set_viewport_cursor("crosshair")
@@ -372,13 +385,15 @@ def run_checks() -> tuple[bool, list[str]]:
     for button in (1, 2, 3):
         for mods in (0, SHIFT, CONTROL, ALT, SHIFT | CONTROL):
             for phase in ("press", "motion", "release"):
-                want = None if (button, phase) == (3, "press") else button_handler(button, mods, phase)
+                want = (None if phase == "press" and button in inspector_view.DEFERRED_PRESSES
+                        else button_handler(button, mods, phase))
                 got = inspector_view.routed_kind(button, mods, phase)
                 if got != want:
                     differ.append((button, mods, phase, got, want))
-    ok(not differ and inspector_view.routed_kind(3, 0, "press") is None,
-       "R: the Qt routing is button_handler for all 45 button/modifier/phase cases, bar the right "
-       "PRESS (a Tk menu, held back until 5c)" + (f" -- differ {differ}" if differ else ""))
+    ok(not differ,
+       "R: the Qt routing is button_handler for all 45 button/modifier/phase cases, bar any press "
+       f"still held back ({sorted(inspector_view.DEFERRED_PRESSES) or 'none since 0907'})"
+       + (f" -- differ {differ}" if differ else ""))
 
     # ---- C ---------------------------------------------------------------------------------
     asked = _cursor_names_asked_for()

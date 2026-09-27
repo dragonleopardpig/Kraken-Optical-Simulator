@@ -9,6 +9,7 @@ from typing import Any
 import tkinter as tk
 
 import numpy as np
+from KrakenOS.UI.context_menu import MenuModel, new_context_menu
 from KrakenOS.UI.uihost import host_of
 
 
@@ -126,7 +127,7 @@ class Open3DFaceAssignmentService:
         from KrakenOS.UI.services.inspection_part import FACE_ORDER, face_dims, normalize_inspection_part_spec
 
         spec = normalize_inspection_part_spec(getattr(self.editor, "inspection_part_spec", None))
-        menu = tk.Menu(self, tearoff=False)
+        menu = new_context_menu(self, self)
         menu.add_command(
             label=f"Inspection Part {spec['width_mm']:g} x {spec['height_mm']:g} x {spec['depth_mm']:g} mm",
             state="disabled",
@@ -201,7 +202,7 @@ class Open3DFaceAssignmentService:
                     break
         except Exception:
             pass
-        menu = tk.Menu(self, tearoff=False)
+        menu = new_context_menu(self, self)
         menu.add_command(label=f"Source {name}", state="disabled")
         menu.add_separator()
         menu.add_command(
@@ -610,7 +611,7 @@ class Open3DFaceAssignmentService:
             self.status_var.set("Could not resolve the picked CAD/STL face point.")
             return "break"
 
-        menu = tk.Menu(self, tearoff=False)
+        menu = new_context_menu(self, self)
         title = ""
         face_id = ""
         cell_id = int(context.get("cell_id", -1))
@@ -1026,7 +1027,7 @@ class Open3DFaceAssignmentService:
             normal = np.asarray([], dtype=float)
         face_id = str(getattr(self, "_selected_opening_face_id", "") or "").strip()
         display = self.editor._step_overlay_display_label(step_label).upper()
-        menu = tk.Menu(self, tearoff=False)
+        menu = new_context_menu(self, self)
         menu.add_command(label=f"{display} STEP {face_id or 'clear aperture'} (opening)", state="disabled")
         normal_finite = bool(normal.size >= 3 and np.all(np.isfinite(normal[:3])))
         if normal_finite:
@@ -1117,6 +1118,12 @@ class Open3DFaceAssignmentService:
         """
         self._dismiss_active_context_menu()
         object.__setattr__(self._inspector, "_active_context_menu", menu)
+        # bugs/0907: a shell that hosts the inspector shows the recorded menu itself; none of
+        # the Tk grab / <Unmap> / focus machinery below applies to it
+        shell = getattr(self, "show_context_menu", None)
+        if shell is not None and isinstance(menu, MenuModel):
+            shell(menu, event)
+            return
         widget = getattr(self, "_vtk_widget", None)
         bind_ids: list[tuple[object, str, str]] = []
 
@@ -1889,7 +1896,7 @@ class Open3DFaceAssignmentService:
             return False
         spec = normalize_inspection_part_spec(getattr(self.editor, "inspection_part_spec", None))
         w, h = face_dims(spec, face)
-        menu = tk.Menu(self, tearoff=False)
+        menu = new_context_menu(self, self)
         menu.add_command(label=f"Face {face.capitalize()} axis ({w:g} x {h:g} mm)", state="disabled")
         menu.add_separator()
         menu.add_command(
@@ -1965,7 +1972,7 @@ class Open3DFaceAssignmentService:
             else:
                 self.editor.open_stock_lens_importer()
 
-        menu = tk.Menu(self, tearoff=False)
+        menu = new_context_menu(self, self)
         menu.add_command(label=label, state="disabled")
         menu.add_separator()
         menu.add_command(
@@ -1999,7 +2006,7 @@ class Open3DFaceAssignmentService:
 
         In CAD software empty-space right-click offers the tools that START an
         interaction; previously this click dead-ended in a status hint."""
-        menu = tk.Menu(self, tearoff=False)
+        menu = new_context_menu(self, self)
         menu.add_command(label="— Scene —", state="disabled")
         added = False
         try:
@@ -3027,7 +3034,7 @@ class Open3DFaceAssignmentService:
                 return editor.rotate_scene_row_pose_world_axis(int(row_index), "y", 180.0)
             return editor.flip_rows(group)
 
-        actions = tk.Menu(parent_menu, tearoff=False)
+        actions = new_context_menu(self, parent_menu)
         flip_label = "Flip Lens (reverse element)" if is_group else "Flip / reverse selected element"
         flip_state = "normal" if (is_group or single_row_scene_flip) else "disabled"
         actions.add_command(
