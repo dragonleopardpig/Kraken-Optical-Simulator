@@ -128,6 +128,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0900 | The system inputs as a catalogue; Qt gets the System dock, bound to the model's variables | phase 6 |
 | 0901 | The 23 source inputs as a second group; one Qt class renders both docks | phase 6 |
 | 0902 | The 15 trace inputs; the 45 enable rules and two live lists moved from Tk layout onto the model | phase 6 |
+| 0903 | The surface table editable in Qt: selection seams, one `commit_cell`, the six verbs | phase 4 |
 
 The row-form framework: `FormField` kinds (number, int, bool, choice, text, textarea, static),
 `choices` that grow at runtime, `editable` choices the user may type into, `on_change` fields that
