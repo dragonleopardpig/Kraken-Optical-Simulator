@@ -129,6 +129,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0901 | The 23 source inputs as a second group; one Qt class renders both docks | phase 6 |
 | 0902 | The 15 trace inputs; the 45 enable rules and two live lists moved from Tk layout onto the model | phase 6 |
 | 0903 | The surface table editable in Qt: selection seams, one `commit_cell`, the six verbs | phase 4 |
+| 0904 | Optimisation in Qt: operand seam, Start/Stop seam, cell verbs, Optimization dock | phase 6 |
 
 The row-form framework: `FormField` kinds (number, int, bool, choice, text, textarea, static),
 `choices` that grow at runtime, `editable` choices the user may type into, `on_change` fields that
@@ -290,6 +291,38 @@ the same `get` / `set` / `trace_add`). The 35 view-only variables stay where the
 | 5 | Interaction layer on Qt events + re-proving the bug arc -- **the risk** | Qt | 1-2 wk+ |
 | 6 | matplotlib embeds -> `FigureCanvasQTAgg` | Qt | days |
 | 7 | editor-instantiating validators repointed; penta gate re-baselined | Qt | 1-2 wk |
+
+## Status and remaining work (measured 2026-09-27, after 0904)
+
+The phase table above is the original estimate. Where each phase stands, and what is left, measured
+against the code rather than remembered. "Shell parity" is work the table never had a row for: the
+main window's own panels, which turned out to hide model state in Tk widgets just as the dialogs did.
+
+| Phase | Status | Remaining, with sizes |
+|---|---|---|
+| 1a-1d seam | **done** (0851-0853) | -- |
+| 2 shell + viewport | **done** (0854-0858) | -- |
+| 3 dialogs | **mostly done** (0859-0897; 9 report builders, row forms) | lens drawing surface properties + PDF export (353 lines); atmosphere panel (220); the three paraxial solve prompts inside `main_paraxial_analysis_dialogs` (471); missing-assets (559) -- a resolution workflow, not a report: port as its own dialog or keep Tk-only, a decision owed |
+| 4 tables -> model/view | **mostly done** (reports 0894-0897, surface table 0903) | the table's right-click menu -- 529 lines, 12 submenus, only the optimisation entries ported (0904); the Tk table is still the cell PARSER (`_read_rows_from_table`), the seam that must move before Tk can go |
+| shell parity | **done for the core workflow** (0893, 0898-0904: plot, results/logs, plot picker, system/source/trace inputs, table editing, optimisation) | 2D-plot toolbar toggles (cardinals, thickness, path view); `_refresh_operand_surface_choices` still walks every Tk widget; the `self.__dict__.get` sweep (0901) |
+| **5 interaction layer -- THE RISK** | **not started**; the Qt viewport (254 lines) only DRAWS | measured: `open3d_inspector.py` is 26 234 lines / 828 methods but only **30** event bindings, and VTK itself is toolkit-neutral -- so 5 is re-plumbing, not a rewrite. Four more services are Tk-bound (`three_d_scene_tools` 6 782, `scene_placement_commands` 10 385, `open3d_face_assignment` 3 059, `open3d_interaction` 1 611). Sub-steps below |
+| 6 matplotlib | **done except inside phase-5 dialogs** (2D plot 0893, FormFigure 0887) | the embeds in MTF-from-image and the face-roles editor move with 5g |
+| 7 validators + gate | **not started** | 226 validators build a real editor, 38 of them drive Tk widgets directly; ~165 validators are in no penta phase; then Qt as the default shell and the Tk-retirement decision |
+
+### Phase 5, broken down
+
+| Step | What | Size (inspector methods unless noted) |
+|---|---|---|
+| 5a | event plumbing: the 30 bindings onto `QVTKRenderWindowInteractor` -- mouse, wheel, keys, modifiers | 30 bindings |
+| 5b | hover and pick, keeping the modifier contract (plain = face, Alt = nearest drawn edge; two event streams) | ~133 |
+| 5c | right-click contextual scene commands as Qt menus -- already model verbs behind `_popup_scene_component_menu` (0619) | ~10 + the verbs |
+| 5d | drag / move / rotate, snap, glue -- the densest bug arc (0433 stay-put, 0503 glue, 0693 frame) | ~62 |
+| 5e | measure tool, box select, navigation cube, banner/HUD | ~69 |
+| 5f | Scene Components tree + the 3D top/live controls | 1 639 + 374 + 559 lines |
+| 5g | **CAD handling**: the face-roles editor (VTK preview with click-picking, 2 034 lines), the optical-solid utility dialogs (273), MTF-from-image (draw-a-box, 406) | 2 713 lines |
+| 5h | re-prove the bug arc: every penta phase that drives the inspector, re-run against the Qt interactor | gate |
+
+5a is the prerequisite for everything after it; 5g needs 5a-5b (its preview picks faces).
 
 ## Verification rule
 
