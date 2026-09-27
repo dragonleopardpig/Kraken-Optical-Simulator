@@ -95,6 +95,9 @@ def _sync_layout_globals(source: dict[str, object]) -> None:
         target[name] = value
 
 
+#: the glass cell's quick choices -- both shells offer exactly these (bugs/0903)
+TABLE_GLASS_CHOICES = ("AIR", "BK7", "F2", "MIRROR")
+
 class LayoutTableWorkbenchMixin:
 
 
@@ -241,6 +244,13 @@ class LayoutTableWorkbenchMixin:
         self.status_var.set("No surface selected")
 
     def _select_table_indices(self, indices: list[int], *, focus_index: int | None = None) -> None:
+        # a shell with its own table selects there too (bugs/0903)
+        shell = getattr(self, "select_rows", None)
+        if shell is not None:
+            shell(list(indices), focus_index)
+        self._select_tk_table_indices(indices, focus_index=focus_index)
+
+    def _select_tk_table_indices(self, indices: list[int], *, focus_index: int | None = None) -> None:
         selected_items = [
             item
             for index in indices
@@ -4230,6 +4240,9 @@ class LayoutTableWorkbenchMixin:
         self._refresh_analysis_surface_choices()
         self._refresh_operand_surface_choices()
         self._schedule_table_grid_update(delay=1)
+        show = getattr(self, "show_rows", None)
+        if show is not None:
+            show()
 
     def _sync_image_row_table_value(self) -> None:
         table = self.__dict__.get("table")
@@ -5618,11 +5631,10 @@ class LayoutTableWorkbenchMixin:
         self.refresh_plot()
 
     def delete_selected(self) -> None:
-        selected = self.table.selection()
-        if not selected:
+        indices = self._selected_table_indices()
+        if not indices:
             return
         self._begin_history_capture()
-        indices = self._selected_table_indices()
         _freeze_capture = getattr(self, "_stay_put_freeze_capture", None)  # bugs/0433
         stay_put = _freeze_capture(indices) if callable(_freeze_capture) else None
         for index in reversed(indices):
@@ -5706,11 +5718,10 @@ class LayoutTableWorkbenchMixin:
         return len(targets)
 
     def duplicate_selected(self) -> None:
-        selected = self.table.selection()
-        if not selected:
+        indices = self._selected_table_indices()
+        if not indices:
             return
         self._begin_history_capture()
-        indices = self._selected_table_indices()
         insert_at = indices[-1] + 1
         duplicates = duplicate_rows_for_indices(self.rows, indices)
         for offset, row in enumerate(duplicates):
@@ -5800,6 +5811,15 @@ class LayoutTableWorkbenchMixin:
         return "break"
 
     def _selected_table_indices(self) -> list[int]:
+        """The selected surface rows -- from the shell showing the table (bugs/0903).
+
+        A shell that draws its own table installs `selected_row_indices`; otherwise this is the
+        Tk Treeview's selection, as it always was. The Qt shell keeps a hidden Tk table, so
+        reading that one would always have answered "nothing selected".
+        """
+        shell = getattr(self, "selected_row_indices", None)
+        if shell is not None:
+            return sorted({int(index) for index in shell() if 0 <= int(index) < len(self.rows)})
         indices = [
             index
             for item in self.table.selection()
@@ -7543,9 +7563,9 @@ class LayoutTableWorkbenchMixin:
 
 
     def flip_selected(self) -> None:
-        if not self.table.selection():
-            return
-        self.flip_rows(self._selected_table_indices())
+        indices = self._selected_table_indices()
+        if indices:
+            self.flip_rows(indices)
 
     def flip_rows(self, indices: list[int]) -> bool:
         cleaned = sorted({int(value) for value in indices if 0 <= int(value) < len(self.rows)})
@@ -7579,8 +7599,7 @@ class LayoutTableWorkbenchMixin:
         return True
 
     def move_up(self) -> None:
-        selected = self.table.selection()
-        if not selected:
+        if not self._selected_table_indices():
             return
         self._begin_history_capture()
         selected_indices = self._selected_table_indices()
@@ -7601,8 +7620,7 @@ class LayoutTableWorkbenchMixin:
         self.refresh_plot()
 
     def move_down(self) -> None:
-        selected = self.table.selection()
-        if not selected:
+        if not self._selected_table_indices():
             return
         self._begin_history_capture()
         selected_indices = self._selected_table_indices()
@@ -7661,7 +7679,7 @@ class LayoutTableWorkbenchMixin:
             self._show_choice_menu(
                 row_id,
                 field,
-                ("AIR", "BK7", "F2", "MIRROR"),
+                TABLE_GLASS_CHOICES,
                 event.x_root,
                 event.y_root,
             )
@@ -7679,6 +7697,9 @@ class LayoutTableWorkbenchMixin:
         self._editor_field = field
 
     def _selected_surface_row_index(self) -> int | None:
+        if getattr(self, "selected_row_indices", None) is not None:
+            indices = self._selected_table_indices()
+            return indices[0] if indices else None
         selected = self.table.selection()
         if selected:
             return self._table_item_row_index(selected[0])
@@ -8572,6 +8593,27 @@ class LayoutTableWorkbenchMixin:
         row_index = self._table_item_row_index(row_id)
         if row_index is None:
             return
+        self.commit_cell(row_index, field, value, quiet=quiet)
+
+    def commit_cell(self, row_index: int, field: str, value: str, *, quiet: bool = False) -> str:
+        """Commit one typed or chosen cell value -- the ONE path both shells take (bugs/0903).
+
+        Returns "" when the value went in, or the reason it did not. Parsing still runs through
+        the Tk table (`_read_rows_from_table`), exactly as a Tk edit always has; routing the Qt
+        table here keeps a single parse path rather than a second one that could disagree.
+        """
+        value = str(value).strip()
+        if not value:
+            return ""
+        if not (0 <= int(row_index) < len(self.rows)) or field == "label":
+            return "That cell cannot be edited."
+        row_id = self._table_iid_for_row_index(int(row_index))
+        table = getattr(self, "table", None)
+        if table is None or not table.exists(row_id):
+            return f"Row {row_index} is not in the current path view; show all paths to edit it."
+        if field in ("surface", "glass"):
+            self._apply_choice(row_id, field, value)
+            return ""
         if field in NUMERIC_FIELDS:
             accepts_pose_sequence = False
             path_local_pose_cell = self._path_local_pose_cell_enabled(row_index, field)
@@ -8587,17 +8629,18 @@ class LayoutTableWorkbenchMixin:
                 try:
                     float(value)
                 except ValueError:
+                    message = (f"{COLUMN_LABELS[field]} expects a number"
+                               + (" or comma/range tolerance values."
+                                  if field in POSE_TOLERANCE_FIELDS and not path_local_pose_cell
+                                  else "."))
                     if not quiet:
-                        host_of(self).showerror(
-                            "Invalid value",
-                            f"{COLUMN_LABELS[field]} expects a number"
-                            + (" or comma/range tolerance values." if field in POSE_TOLERANCE_FIELDS and not path_local_pose_cell else "."),
-                        )
-                    return
+                        host_of(self).showerror("Invalid value", message)
+                    return message
         if not self._table_cell_enabled(row_index, field):
+            message = self._surface_type_disabled_message(row_index, field)
             if not quiet:
-                self.status_var.set(self._surface_type_disabled_message(row_index, field))
-            return
+                self.status_var.set(message)
+            return message
         self._begin_history_capture()
         if field == "diameter" and row_index == len(self.rows) - 1:
             self._set_image_diameter_mode("Manual")
@@ -8608,6 +8651,7 @@ class LayoutTableWorkbenchMixin:
         self._sync_table()
         self._commit_history_capture()
         self._mark_plot_update_pending()
+        return ""
 
     def _couple_object_image_diameter_after_edit(self, row_index: int, field: str) -> None:
         if field != "diameter" or len(self.rows) < 2:

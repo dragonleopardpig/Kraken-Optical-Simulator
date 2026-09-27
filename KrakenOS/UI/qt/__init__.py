@@ -9,7 +9,7 @@ Nothing here is imported by the Tk application, and nothing here imports PySide6
 """
 from __future__ import annotations
 
-__all__ = ["ActionManager", "DockManager", "SceneViewport", "SurfaceRowsModel",
+__all__ = ["ActionManager", "DockManager", "SceneViewport", "make_rows_model", "make_cell_delegate",
            "KrakenQtMainWindow", "run"]
 
 
@@ -26,10 +26,12 @@ def __getattr__(name):  # lazy: importing a symbol pulls in PySide6, importing t
         from KrakenOS.UI.qt.viewport import SceneViewport
 
         return SceneViewport
-    if name == "SurfaceRowsModel":
-        from KrakenOS.UI.qt.rows_table import SurfaceRowsModel
+    if name in ("make_rows_model", "make_cell_delegate"):
+        # the table model is BUILT by a factory, so importing this package needs no Qt; there
+        # was never a module-level SurfaceRowsModel to export (that name raised since 0855)
+        from KrakenOS.UI.qt import rows_table
 
-        return SurfaceRowsModel
+        return getattr(rows_table, name)
     if name in ("KrakenQtMainWindow", "run"):
         from KrakenOS.UI.qt import app, main_window
 

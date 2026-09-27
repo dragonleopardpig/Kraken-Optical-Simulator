@@ -18,7 +18,7 @@ from KrakenOS.UI.qt.analysis_toolbar import AnalysisToolbar
 from KrakenOS.UI.qt.results_panel import ResultsPanel
 from KrakenOS.UI.qt.system_panel import SystemPanel
 from KrakenOS.UI.system_controls import SOURCE_CONTROLS, TRACE_CONTROLS
-from KrakenOS.UI.qt.rows_table import make_rows_model
+from KrakenOS.UI.qt.rows_table import make_cell_delegate, make_rows_model
 from KrakenOS.UI.uihost import host_of
 
 
@@ -61,12 +61,23 @@ class KrakenQtMainWindow(_main_window_class()):
         self.rows_view = QTableView()
         self.rows_view.setModel(self.rows_model)
         self.rows_view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.rows_view.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        # editable since bugs/0903: every edit goes through the model's own commit_cell
+        self.rows_view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.rows_view.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked
+                                       | QAbstractItemView.EditTrigger.EditKeyPressed
+                                       | QAbstractItemView.EditTrigger.AnyKeyPressed)
+        self.rows_view.setItemDelegate(make_cell_delegate(self.rows_view))
         self.rows_view.horizontalHeader().setStretchLastSection(True)
         self.rows_view.verticalHeader().setVisible(False)  # the "#" column already numbers them
+        # the model's table verbs ask the SHELL which rows are selected, and tell it what to
+        # select afterwards; a rebuilt table is news here too (bugs/0903)
+        editor.selected_row_indices = self.selected_row_indices
+        editor.select_rows = self.select_rows
+        editor.show_rows = self.show_rows
+        self.table_widget = self._build_table_widget()
 
         self.dock_manager = DockManager(self)
-        self.dock_manager.create_dock(self.rows_view, "SurfaceTableDock", "Surface Table",
+        self.dock_manager.create_dock(self.table_widget, "SurfaceTableDock", "Surface Table",
                                       Qt.DockWidgetArea.LeftDockWidgetArea)
         # the two panels the model used to write into Tk widgets directly (bugs/0898)
         self.results_panel = ResultsPanel(editor)
@@ -161,10 +172,13 @@ class KrakenQtMainWindow(_main_window_class()):
         # A model reset clears the view's current index, and the row forms open on whatever is
         # selected -- so applying one would leave the next Edit action with no row and a "Select
         # a surface row first" refusal (bugs/0871). Put the selection back.
-        selected = self.selected_row_index()
+        # The WHOLE selection, not just the current row: a table verb that just selected the
+        # two rows it duplicated must not come back with one (bugs/0903).
+        kept = self.selected_row_indices()
+        current = self.selected_row_index()
         self.rows_model.refresh()
-        if selected is not None and 0 <= selected < self.rows_model.rowCount():
-            self.rows_view.selectRow(selected)
+        if kept:
+            self.select_rows(kept, current if current in kept else kept[0])
         self.rows_view.resizeColumnsToContents()
         drawn: dict = {"elements": [], "bodies": [], "error": None}
         if self.viewport is not None:
@@ -327,6 +341,80 @@ class KrakenQtMainWindow(_main_window_class()):
         from KrakenOS.UI.reports import build_nonseq_scene_graph_report
 
         return self.open_report(build_nonseq_scene_graph_report)
+
+    # ---- the surface table: selection and the six verbs (bugs/0903) -----------------------------
+    #: (label, editor method, tooltip) -- the Tk table toolbar's editing verbs
+    TABLE_VERBS = (
+        ("Add surface", "add_surface", "Insert a surface after the selection"),
+        ("Delete", "delete_selected", "Delete the selected surfaces"),
+        ("Duplicate", "duplicate_selected", "Duplicate the selected surfaces"),
+        ("Flip", "flip_selected", "Reverse the selected surfaces (radii negated)"),
+        ("\u25b2", "move_up", "Move the selected element up"),
+        ("\u25bc", "move_down", "Move the selected element down"),
+    )
+
+    def _build_table_widget(self):
+        """The table with its verbs above it, as the Tk table toolbar has them."""
+        from PySide6.QtWidgets import QToolBar, QVBoxLayout, QWidget
+
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.table_toolbar = QToolBar("Surface table")
+        self.table_actions = {}
+        for label, method, tip in self.TABLE_VERBS:
+            action = self.table_toolbar.addAction(label)
+            action.setToolTip(tip)
+            action.triggered.connect(lambda _checked=False, method=method: self.run_table_verb(method))
+            self.table_actions[method] = action
+        layout.addWidget(self.table_toolbar)
+        layout.addWidget(self.rows_view)
+        # a refused edit says why, in the status bar rather than a Tk message box
+        self.rows_view.itemDelegate().closeEditor.connect(self._report_refused_edit)
+        return widget
+
+    def _report_refused_edit(self, *_args) -> None:
+        refusal = getattr(self.rows_model, "last_refusal", "")
+        if refusal:
+            self.statusBar().showMessage(f"Edit refused: {refusal}")
+            self.rows_model.last_refusal = ""
+
+    def run_table_verb(self, method: str) -> None:
+        """Run one of the model's table verbs on the selection, then redraw."""
+        getattr(self.editor, method)()
+        self.refresh_from_model()
+
+    def selected_row_indices(self) -> list:
+        """The model's `selected_row_indices` seam: the rows selected in THIS table."""
+        model = self.rows_view.selectionModel()
+        if model is None:
+            return []
+        return sorted({index.row() for index in model.selectedRows()})
+
+    def select_rows(self, indices, focus_index=None) -> None:
+        """The model's `select_rows` seam: select what a verb just made or moved."""
+        from PySide6.QtCore import QItemSelection, QItemSelectionModel
+
+        model = self.rows_view.selectionModel()
+        if model is None:
+            return
+        selection = QItemSelection()
+        last_column = self.rows_model.columnCount() - 1
+        for row in indices:
+            if 0 <= int(row) < self.rows_model.rowCount():
+                selection.select(self.rows_model.index(int(row), 0),
+                                 self.rows_model.index(int(row), last_column))
+        model.select(selection, QItemSelectionModel.SelectionFlag.ClearAndSelect)
+        if focus_index is not None and 0 <= int(focus_index) < self.rows_model.rowCount():
+            model.setCurrentIndex(self.rows_model.index(int(focus_index), 0),
+                                  QItemSelectionModel.SelectionFlag.NoUpdate)
+
+    def show_rows(self) -> None:
+        """The model's `show_rows` seam: the rows were rebuilt, keep the selection."""
+        kept = self.selected_row_indices()
+        self.rows_model.refresh()
+        if kept:
+            self.select_rows(kept, kept[0])
 
     def selected_row_index(self):
         """The surface table's current row -- what a row form edits."""

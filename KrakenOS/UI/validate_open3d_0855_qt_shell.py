@@ -49,7 +49,7 @@ def qt_runtime_checks() -> list[list]:
 
     from KrakenOS.UI.qt.actions import ACTIONS
     from KrakenOS.UI.qt.app import build
-    from KrakenOS.UI.qt.rows_table import COLUMNS
+    from KrakenOS.UI.qt.rows_table import table_fields
     from KrakenOS.UI.uihost import host_of
     from KrakenOS.UI.uihost.qt_host import QtUiHost
 
@@ -90,17 +90,23 @@ def qt_runtime_checks() -> list[list]:
     editor_rows = list(window.editor.rows)
     headings = [window.rows_model.headerData(i, Qt.Orientation.Horizontal)
                 for i in range(window.rows_model.columnCount())]
+    # since bugs/0903 every cell is the text the TK table shows -- the model's own
+    # _table_values_for_surface_row -- not a Qt-side formatter of the raw attribute
+    fields = table_fields()
+    name_column = [field for field, _heading in fields].index("name")
     sampled = []
     mismatched = []
     for index in (0, len(editor_rows) // 2, len(editor_rows) - 1):
-        for column, (heading, attribute, form) in enumerate(COLUMNS):
+        expected_row = window.editor._table_values_for_surface_row(index, editor_rows[index])
+        for column, (_field, heading) in enumerate(fields):
             shown = window.rows_model.data(window.rows_model.index(index, column))
-            expected = form(getattr(editor_rows[index], attribute))
+            expected = str(expected_row[column])
             if shown != expected:
                 mismatched.append((index, heading, shown, expected))
-        sampled.append((index, window.rows_model.data(window.rows_model.index(index, 1))))
+        sampled.append((index, window.rows_model.data(
+            window.rows_model.index(index, name_column))))
     row("Q2", window.rows_model.rowCount() == len(editor_rows) == 25
-        and headings == [c[0] for c in COLUMNS] and not mismatched,
+        and headings == [heading for _field, heading in fields] and not mismatched,
         f"{window.rows_model.rowCount()} rows, headings {headings}; sampled names {sampled}"
         + (f" -- MISMATCHED {mismatched[:3]}" if mismatched else ""))
 
