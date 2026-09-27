@@ -1057,7 +1057,12 @@ class Open3DSceneRefreshService:
         step_carry_active = 0
         step_carry_grid_summary = ""
         selected_step_label = str(selected_step or "").strip().lower()
-        promoted_step_source_keys = self.editor._promoted_step_source_keys_for_rows(rows)
+        # bugs/0909: "promoted" means a SAVED, editable row (95615f05 suppressed the overlay ghost
+        # of those). A live-trace row is a transient preview of the STEP itself -- counting it made
+        # a traced STEP unselectable (deselected on every refresh) and skipped its gizmo branch
+        # below, which exists precisely for the live-trace case.
+        promoted_step_source_keys = self.editor._promoted_step_source_keys_for_rows([
+            row for index, row in enumerate(rows) if index not in live_trace_step_labels_by_row])
         carry_label = self._step_carry_label()
         if (
             selected_step_label
@@ -1166,6 +1171,20 @@ class Open3DSceneRefreshService:
                     if carry_label == label:
                         step_carry_active, step_carry_grid_summary = self._add_step_carry_grid_overlay(label, cad_mesh)
                     step_rotation_handles += self._add_step_rotation_handles(label, cad_mesh)
+
+        # bugs/0909: an active carry reports itself even when its body is not the selected STEP.
+        # The branches above draw the carry status only alongside the selection's gizmo, and
+        # entering another pick mode (Center Row -> Optical Axis) clears the selection while the
+        # carry stays armed -- which left carry ACTIVE with nothing on screen saying so. The
+        # gizmo stays selection-gated; the status line follows the mode.
+        if carry_label and not step_carry_active and not self.is_step_label_hidden(carry_label):
+            try:
+                carried_mesh = self.editor._transformed_imported_step_mesh_for_label(carry_label)
+            except Exception:
+                carried_mesh = None
+            if carried_mesh is not None and int(getattr(carried_mesh, "n_points", 0)) > 0:
+                step_carry_active, step_carry_grid_summary = self._add_step_carry_grid_overlay(
+                    carry_label, carried_mesh)
 
         try:
             external_mesh = self.editor._transformed_external_camera_mesh()

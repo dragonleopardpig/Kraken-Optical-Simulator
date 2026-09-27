@@ -79,7 +79,9 @@ def _activate_hold_drag(inspector: Kraken3DInspector, label: str = "optical") ->
         raise AssertionError("STEP carry hold-drag did not create a drag state.")
     if inspector._step_carry_follow_state is not None:
         raise AssertionError("STEP carry unexpectedly entered the removed pointer-follow mode.")
-    if inspector._step_carry_grip_actor is None:
+    # the grip marker moved into Open3DCarryGripService (b1ad9eec, 2026-05-25); the old
+    # inspector attribute is never set any more, so read the service's actor (bugs/0909)
+    if getattr(inspector._open3d_carry_grip_service, "actor", None) is None:
         raise AssertionError("STEP carry hold-drag did not draw the in-scene grip cursor.")
     for key in ("drag_plane_origin", "drag_plane_normal", "drag_anchor_world", "start_center_world"):
         if key not in state:
@@ -115,8 +117,21 @@ def main() -> int:
         inspector.refresh_from_editor()
         inspector.update_idletasks()
         inspector.update()
+        # bugs/0909: the rotation gizmo is gated by the "Move/Rotate whole body" selection-MODE
+        # toggle, default OFF since bugs/0338 (a click picks a face; the user opts INTO the
+        # whole-body gizmo), and the long-press carry arms only with it ON (bugs/0425). This
+        # smoke test predates 0338 and expected handles with the toggle off. Both states now.
+        if bool(inspector.show_rotation_handles_var.get()):
+            raise AssertionError("the whole-body toggle should default OFF (bugs/0338).")
+        if getattr(inspector, "_actor_step_rotate_map", {}):
+            raise AssertionError("STEP rotation handles drew with the whole-body toggle OFF (bugs/0338).")
+        inspector.show_rotation_handles_var.set(True)
+        inspector.refresh_from_editor()
+        inspector.update_idletasks()
+        inspector.update()
         if not getattr(inspector, "_actor_step_rotate_map", {}):
-            raise AssertionError("STEP rotation handles were not present during carry mode.")
+            raise AssertionError("STEP rotation handles were not present during carry mode "
+                                 "with the whole-body toggle ON.")
         status = str(inspector.status_var.get())
         if "STEP carry active=1" not in status:
             raise AssertionError(f"3D status did not report active free STEP carry: {status!r}")
@@ -190,6 +205,15 @@ def main() -> int:
         inspector._selected_step_feature_label = "optical"
         inspector._selected_step_feature_center_world = np.asarray(center, dtype=float)
         inspector._selected_step_feature_normal_world = np.asarray((1.0, 0.0, 0.0), dtype=float)
+        # bugs/0909: the axis actions read the picked face as ONE StepFeatureSelection (pick
+        # point + surface centre + normal), which is what a real face click stores; the three
+        # loose attributes above are no longer what they consult
+        from KrakenOS.UI.services.open3d_step_state import StepFeatureSelection
+
+        center_xyz = tuple(float(v) for v in np.asarray(center, dtype=float)[:3])
+        inspector._selected_step_feature = StepFeatureSelection(
+            label="optical", face_id="smoke", pick_point_world=center_xyz,
+            surface_center_world=center_xyz, normal_world=(1.0, 0.0, 0.0))
         inspector.start_step_normal_axis_pick("optical")
         inspector.update_idletasks()
         inspector.update()
@@ -262,6 +286,14 @@ def main() -> int:
     print("Open 3D STEP carry smoke validation passed.")
     return 0
 
+
+
+def run_checks() -> "tuple[bool, list[str]]":
+    """Penta entry (bugs/0914): this smoke opens its own editor and inspector, so it runs in its
+    own process -- the harness owns the one embedded inspector of its process (bugs/0661)."""
+    from KrakenOS.UI.guard_subprocess import run_module_isolated
+
+    return run_module_isolated('KrakenOS.UI.validate_step_carry_open3d_smoke')
 
 if __name__ == "__main__":
     raise SystemExit(main())
