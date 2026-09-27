@@ -17,7 +17,7 @@ from KrakenOS.UI.qt.docks import DockManager
 from KrakenOS.UI.qt.analysis_toolbar import AnalysisToolbar
 from KrakenOS.UI.qt.results_panel import ResultsPanel
 from KrakenOS.UI.qt.system_panel import SystemPanel
-from KrakenOS.UI.system_controls import SOURCE_CONTROLS
+from KrakenOS.UI.system_controls import SOURCE_CONTROLS, TRACE_CONTROLS
 from KrakenOS.UI.qt.rows_table import make_rows_model
 from KrakenOS.UI.uihost import host_of
 
@@ -89,11 +89,22 @@ class KrakenQtMainWindow(_main_window_class()):
         self.source_panel = SystemPanel(editor, SOURCE_CONTROLS)
         self.dock_manager.create_dock(self.source_panel.widget, "SourceDock", "Source",
                                       Qt.DockWidgetArea.RightDockWidgetArea)
+        # and how the trace runs and what the plots show (bugs/0902)
+        self.trace_panel = SystemPanel(editor, TRACE_CONTROLS)
+        self.dock_manager.create_dock(self.trace_panel.widget, "TraceDock", "Trace",
+                                      Qt.DockWidgetArea.RightDockWidgetArea)
+        # the model says when relevance or a live list may have changed; every form re-reads
+        editor.show_control_state = self.refresh_control_panels
 
         self._open_dialogs: list = []  # a modeless dialog must outlive the call that opened it
         self._status_trace = None
         self._bind_status_line()
         self.statusBar().showMessage(self._model_status() or "KrakenOS Qt shell ready.")
+
+    def refresh_control_panels(self) -> None:
+        """The model's `show_control_state` seam: re-read relevance and live lists (0902)."""
+        for panel in (self.system_panel, self.source_panel, self.trace_panel):
+            panel.refresh_state()
 
     # ---- the model's status line drives ours ---------------------------------------------------
     def _model_status(self) -> str:

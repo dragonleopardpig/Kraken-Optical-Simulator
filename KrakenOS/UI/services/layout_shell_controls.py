@@ -3,6 +3,7 @@ from __future__ import annotations
 import tkinter as tk
 
 from KrakenOS.UI.analysis_modes import selection_label
+from KrakenOS.UI.system_controls import control_for
 from KrakenOS.UI.services.open3d_live_refresh import MAIN_PANEL_LIVE_REFRESH_DELAY_MS
 from KrakenOS.UI.widgets import bind_entry_commit
 from KrakenOS.UI.uihost import host_of
@@ -179,162 +180,63 @@ class LayoutShellControlsMixin:
         return managed
 
     def _register_source_mode_controls(self, **widgets) -> None:
-        if hasattr(self, "field_type_menu"):
-            self._register_left_mode_control(
-                "field_type_var",
-                self.field_type_menu,
-                lambda: self._current_source_model() == SOURCE_MODEL_DEFAULT,
-                normal_state="readonly",
-            )
-        if hasattr(self, "field_value_entry"):
-            self._register_left_mode_control(
-                "field_value_var",
-                self.field_value_entry,
-                lambda: self._current_source_model() == SOURCE_MODEL_DEFAULT,
-            )
-        if hasattr(self, "field_count_entry"):
-            self._register_left_mode_control(
-                "field_count_var",
-                self.field_count_entry,
-                lambda: self._current_source_model() == SOURCE_MODEL_DEFAULT,
-            )
+        """Register the source/field inputs with the left panel's enable-and-reflow machinery.
+
+        Which input applies is the MODEL's rule, named per input in `system_controls` (bugs/0902):
+        these registrations used to carry the rules as lambdas, so only the Tk panel knew them.
+        Order matters -- `_reflow_left_mode_controls` lays the panel out in registration order.
+        """
+        relevance = self._catalogue_relevance
+        for key, attribute in (("field_type_var", "field_type_menu"),
+                               ("field_value_var", "field_value_entry"),
+                               ("field_count_var", "field_count_entry")):
+            widget = getattr(self, attribute, None) if hasattr(self, attribute) else None
+            if widget is not None:
+                self._register_left_mode_control(
+                    key, widget, relevance(key),
+                    **({"normal_state": "readonly"} if key == "field_type_var" else {}))
         self._register_left_mode_control(
-            "pupil_pattern_var",
-            self.pupil_pattern_menu,
-            lambda: self._current_source_model() == SOURCE_MODEL_DEFAULT,
-            normal_state="readonly",
-        )
-        self._register_left_mode_control(
-            "source_radius_var",
-            widgets["source_radius_entry"],
-            lambda: self._current_source_model() in {
-                "Collimated disk source",
-                "Random circle source",
-                "Random square source",
-                "Random line source",
-            },
-        )
-        self._register_left_mode_control(
-            "source_cone_angle_var",
-            widgets["source_cone_angle_entry"],
-            lambda: self._current_source_model() in {
-                SOURCE_MODEL_DEFAULT,
-                "Collimated disk source",
-                "Random circle source",
-                "Random square source",
-                "Random line source",
-                "Random point cone",
-            },
-        )
-        self._register_left_mode_control(
-            "gaussian_input_mode_var",
-            widgets["gaussian_input_mode_menu"],
-            lambda: self._current_source_model() == "Gaussian beam",
-            normal_state="readonly",
-        )
-        self._register_left_mode_control(
-            "gaussian_waist_radius_var",
-            widgets["gaussian_waist_entry"],
-            lambda: self._current_source_model() == "Gaussian beam" and self._current_gaussian_input_mode() == GAUSSIAN_INPUT_MODE_DEFAULT,
-        )
-        self._register_left_mode_control(
-            "gaussian_waist_offset_var",
-            widgets["gaussian_offset_entry"],
-            lambda: self._current_source_model() == "Gaussian beam" and self._current_gaussian_input_mode() == GAUSSIAN_INPUT_MODE_DEFAULT,
-        )
-        self._register_left_mode_control(
-            "gaussian_beam_diameter_var",
-            widgets["gaussian_diameter_entry"],
-            lambda: self._current_source_model() == "Gaussian beam" and self._current_gaussian_input_mode() == "Diameter + divergence",
-        )
-        self._register_left_mode_control(
-            "gaussian_full_divergence_var",
-            widgets["gaussian_divergence_entry"],
-            lambda: self._current_source_model() == "Gaussian beam" and self._current_gaussian_input_mode() == "Diameter + divergence",
-        )
-        self._register_left_mode_control(
-            "gaussian_m2_var",
-            widgets["gaussian_m2_entry"],
-            lambda: self._current_source_model() == "Gaussian beam",
-        )
-        self._register_left_mode_control(
-            "gaussian_waist_side_var",
-            widgets["gaussian_waist_side_menu"],
-            lambda: self._current_source_model() == "Gaussian beam" and self._current_gaussian_input_mode() == "Diameter + divergence",
-            normal_state="readonly",
-        )
-        self._register_left_mode_control(
-            "pupil_rad_var",
-            widgets["pupil_rad_entry"],
-            lambda: self._current_source_model() == SOURCE_MODEL_DEFAULT and self._current_pupil_pattern_label() == "R-theta",
-        )
-        self._register_left_mode_control(
-            "pupil_theta_var",
-            widgets["pupil_theta_entry"],
-            lambda: self._current_source_model() == SOURCE_MODEL_DEFAULT and self._current_pupil_pattern_label() == "R-theta",
-        )
-        self._register_left_mode_control(
-            "source_power_var",
-            widgets["source_power_entry"],
-            lambda: self._current_source_model() != SOURCE_MODEL_DEFAULT,
-        )
-        self._register_left_mode_control(
-            "source_seed_var",
-            widgets["source_seed_entry"],
-            lambda: self._current_source_model() in {
-                "Random circle source",
-                "Random square source",
-                "Random line source",
-                "Random point cone",
-            } or (self._current_source_model() == SOURCE_MODEL_DEFAULT and self._current_pupil_pattern_label() == "Random disk"),
-        )
-        for var_name, widget_name in (
-            ("source_x_var", "source_x_entry"),
-            ("source_y_var", "source_y_entry"),
-            ("source_z_var", "source_z_entry"),
-            ("source_l_var", "source_l_entry"),
-            ("source_m_var", "source_m_entry"),
-            ("source_n_var", "source_n_entry"),
+            "pupil_pattern_var", self.pupil_pattern_menu, relevance("pupil_pattern_var"),
+            normal_state="readonly")
+        for key, widget_name, normal_state in (
+            ("source_radius_var", "source_radius_entry", "normal"),
+            ("source_cone_angle_var", "source_cone_angle_entry", "normal"),
+            ("gaussian_input_mode_var", "gaussian_input_mode_menu", "readonly"),
+            ("gaussian_waist_radius_var", "gaussian_waist_entry", "normal"),
+            ("gaussian_waist_offset_var", "gaussian_offset_entry", "normal"),
+            ("gaussian_beam_diameter_var", "gaussian_diameter_entry", "normal"),
+            ("gaussian_full_divergence_var", "gaussian_divergence_entry", "normal"),
+            ("gaussian_m2_var", "gaussian_m2_entry", "normal"),
+            ("gaussian_waist_side_var", "gaussian_waist_side_menu", "readonly"),
+            ("pupil_rad_var", "pupil_rad_entry", "normal"),
+            ("pupil_theta_var", "pupil_theta_entry", "normal"),
+            ("source_power_var", "source_power_entry", "normal"),
+            ("source_seed_var", "source_seed_entry", "normal"),
+            ("source_x_var", "source_x_entry", "normal"),
+            ("source_y_var", "source_y_entry", "normal"),
+            ("source_z_var", "source_z_entry", "normal"),
+            ("source_l_var", "source_l_entry", "normal"),
+            ("source_m_var", "source_m_entry", "normal"),
+            ("source_n_var", "source_n_entry", "normal"),
+            ("source_direction_preset_var", "source_direction_preset_menu", "readonly"),
+            ("source_angular_weight_var", "source_angular_weight_menu", "readonly"),
         ):
-            self._register_left_mode_control(
-                var_name,
-                widgets[widget_name],
-                lambda: self._current_source_model() != SOURCE_MODEL_DEFAULT,
-            )
-        self._register_left_mode_control(
-            "source_direction_preset_var",
-            widgets["source_direction_preset_menu"],
-            lambda: self._current_source_model() != SOURCE_MODEL_DEFAULT,
-            normal_state="readonly",
-        )
-        self._register_left_mode_control(
-            "source_angular_weight_var",
-            widgets["source_angular_weight_menu"],
-            lambda: self._current_source_model() in {"Random circle source", "Random square source"},
-            normal_state="readonly",
-        )
-        self._register_left_mode_control(
-            "",
-            widgets["source_physical_note"],
-            lambda: self._current_source_model() != SOURCE_MODEL_DEFAULT,
-            include_label=False,
-        )
-        self._register_left_mode_control(
-            "",
-            widgets["source_summary_label"],
-            lambda: True,
-            include_label=False,
-        )
-        self._register_left_mode_control(
-            "",
-            widgets["source_manager_button"],
-            lambda: True,
-            include_label=False,
-        )
+            self._register_left_mode_control(key, widgets[widget_name], relevance(key),
+                                             normal_state=normal_state)
+        # three layout-only widgets: the physical-source note follows the same rule as the
+        # inputs it explains; the summary and the manager button always show
+        self._register_left_mode_control("", widgets["source_physical_note"],
+                                         self._physical_source_selected, include_label=False)
+        self._register_left_mode_control("", widgets["source_summary_label"], lambda: True,
+                                         include_label=False)
+        self._register_left_mode_control("", widgets["source_manager_button"], lambda: True,
+                                         include_label=False)
 
     def _sync_left_mode_controls(self) -> None:
         controls = list(getattr(self, "_left_mode_controls", []) or [])
         if not controls:
+            # no Tk panel registered anything -- a shell still has to hear the new state
+            self._show_control_state()
             return
         saved = getattr(self, "_left_mode_saved_values", None)
         if saved is None:
@@ -380,6 +282,18 @@ class LayoutShellControlsMixin:
         self._sync_left_field_panel_visibility()
         self._reflow_left_mode_controls()
         self._sync_field_sample_count_state()
+        self._show_control_state()
+
+    def _show_control_state(self) -> None:
+        """Tell the shell that relevance or a live choice list may have changed (bugs/0902).
+
+        The rules and the lists are the model's (`system_controls` names each rule); a shell
+        re-reads them. The Tk panels are driven by the registrations above, so only a shell
+        that asked -- by setting `show_control_state` -- hears this.
+        """
+        show = getattr(self, "show_control_state", None)
+        if show is not None:
+            show()
 
     def _sync_left_source_panel_layout(self) -> None:
         is_default_source = self._current_source_model() == SOURCE_MODEL_DEFAULT
@@ -1224,6 +1138,76 @@ class LayoutShellControlsMixin:
         if self._current_folded_detector_policy_label() == FOLDED_DETECTOR_POLICY_DISPLAY:
             return FOLDED_TERMINAL_POLICY_DISPLAY_COMPATIBILITY
         return FOLDED_TERMINAL_POLICY_TRACE_EVENTS
+
+    # ---- which inputs apply right now (bugs/0902) ------------------------------------------
+    # These were lambdas inside the Tk trace/display panel's layout, so no other view could
+    # know them. `system_controls` names the rule for each input; both shells ask it.
+    def _default_source_selected(self) -> bool:
+        """Object mode and the pupil factor only mean something for the pupil/field source."""
+        return self._current_source_model() == SOURCE_MODEL_DEFAULT
+
+    def _source_model_in(self, *models: str) -> bool:
+        return self._current_source_model() in models
+
+    def _physical_source_selected(self) -> bool:
+        """Position, direction and power belong to a physical source, not the pupil/field one."""
+        return self._current_source_model() != SOURCE_MODEL_DEFAULT
+
+    def _gaussian_source_selected(self) -> bool:
+        return self._source_model_in("Gaussian beam")
+
+    def _gaussian_waist_inputs_apply(self) -> bool:
+        return (self._gaussian_source_selected()
+                and self._current_gaussian_input_mode() == GAUSSIAN_INPUT_MODE_DEFAULT)
+
+    def _gaussian_divergence_inputs_apply(self) -> bool:
+        return (self._gaussian_source_selected()
+                and self._current_gaussian_input_mode() == "Diameter + divergence")
+
+    def _source_radius_applies(self) -> bool:
+        return self._source_model_in("Collimated disk source", "Random circle source",
+                                     "Random square source", "Random line source")
+
+    def _source_cone_applies(self) -> bool:
+        return self._source_model_in(SOURCE_MODEL_DEFAULT, "Collimated disk source",
+                                     "Random circle source", "Random square source",
+                                     "Random line source", "Random point cone")
+
+    def _pupil_r_theta_applies(self) -> bool:
+        return (self._default_source_selected()
+                and self._current_pupil_pattern_label() == "R-theta")
+
+    def _random_seed_applies(self) -> bool:
+        return (self._source_model_in("Random circle source", "Random square source",
+                                      "Random line source", "Random point cone")
+                or (self._default_source_selected()
+                    and self._current_pupil_pattern_label() == "Random disk"))
+
+    def _angular_weight_applies(self) -> bool:
+        return self._source_model_in("Random circle source", "Random square source")
+
+    def _catalogue_relevance(self, key: str):
+        """The catalogue's rule for `key`, as the callable a Tk registration wants."""
+        control = control_for(key)
+        return lambda: control.is_relevant(self)
+
+    def _analysis_modes_selected(self, *modes: str) -> bool:
+        selected = set(getattr(self, "selected_analysis_modes", []) or [])
+        return bool(selected.intersection(modes))
+
+    def _tolerance_compare_selected(self) -> bool:
+        return self._analysis_modes_selected("tolerance_compare")
+
+    def _detector_plot_selected(self) -> bool:
+        return self._analysis_modes_selected(
+            "detector_map", "coherent_detector", "branch_field", "diffraction_detector")
+
+    def _coherent_plot_selected(self) -> bool:
+        return self._analysis_modes_selected(
+            "coherent_detector", "branch_field", "diffraction_detector")
+
+    def _branch_field_selected(self) -> bool:
+        return self._analysis_modes_selected("branch_field")
 
     def _folded_detector_policy_control_enabled(self) -> bool:
         try:

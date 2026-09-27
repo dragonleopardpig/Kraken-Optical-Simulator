@@ -68,6 +68,15 @@ class MainTraceDisplayControlsPanel:
             return
         setattr(self.editor, name, value)
 
+    def _relevance(self, key: str):
+        """The model's rule for whether `key` applies right now, as the callable Tk wants.
+
+        `system_controls` names the rule (bugs/0902); the Qt shell asks the same one, so the
+        two cannot disagree about which inputs are live.
+        """
+        control = control_for(key)
+        return lambda: control.is_relevant(self)
+
     def _commit_trace_controls(self, _event=None) -> None:
         # the model owns what a commit does (bugs/0900); this is the Tk callback shape
         self.commit_trace_controls(_event)
@@ -133,7 +142,7 @@ class MainTraceDisplayControlsPanel:
             parent,
             2,
             1,
-            "Pupil factor",
+            control_for("ray_height_factor_var").label,
             self.ray_height_factor_var,
             on_commit=self._commit_trace_controls,
             on_focus_in=self._begin_history_capture,
@@ -145,9 +154,9 @@ class MainTraceDisplayControlsPanel:
             parent,
             4,
             0,
-            "Analysis stop surface",
+            control_for("analysis_surface_var").label,
             self.analysis_surface_var,
-            values=["Auto"],
+            values=list(control_for("analysis_surface_var").choices_for(self)),
             on_commit=self._mark_plot_update_pending,
             on_focus_in=self._begin_history_capture,
             width=12,
@@ -185,9 +194,9 @@ class MainTraceDisplayControlsPanel:
             parent,
             8,
             0,
-            "Spot view",
+            control_for("spot_view_mode_var").label,
             self.spot_view_mode_var,
-            values=["Grid", "Absolute", "Centroid"],
+            values=list(control_for("spot_view_mode_var").choices),
             on_commit=self._mark_plot_update_pending,
             on_focus_in=self._begin_history_capture,
             width=12,
@@ -200,9 +209,9 @@ class MainTraceDisplayControlsPanel:
             parent,
             8,
             1,
-            "Scene trace",
+            control_for("trace_mode_var").label,
             self.trace_mode_var,
-            values=["Auto", "Non-Sequential Preview", "Sequential", "Folded Preview"],
+            values=list(control_for("trace_mode_var").choices),
             on_commit=self._on_trace_mode_changed,
             on_focus_in=self._begin_history_capture,
             width=12,
@@ -215,9 +224,9 @@ class MainTraceDisplayControlsPanel:
             parent,
             10,
             0,
-            "NS target",
+            control_for("nonseq_target_surface_var").label,
             self.nonseq_target_surface_var,
-            values=["Auto"],
+            values=list(control_for("nonseq_target_surface_var").choices_for(self)),
             on_commit=self._mark_plot_update_pending,
             on_focus_in=self._begin_history_capture,
             width=12,
@@ -230,7 +239,7 @@ class MainTraceDisplayControlsPanel:
             parent,
             10,
             1,
-            "NS hit limit",
+            control_for("nonseq_ns_limit_var").label,
             self.nonseq_ns_limit_var,
             on_commit=self._commit_trace_controls,
             on_focus_in=self._begin_history_capture,
@@ -244,9 +253,9 @@ class MainTraceDisplayControlsPanel:
             parent,
             12,
             0,
-            "Folded reach",
+            control_for("folded_detector_policy_var").label,
             self.folded_detector_policy_var,
-            values=folded_detector_policy_values,
+            values=list(control_for("folded_detector_policy_var").choices),
             on_commit=self._mark_plot_update_pending,
             on_focus_in=self._begin_history_capture,
             width=18,
@@ -260,7 +269,7 @@ class MainTraceDisplayControlsPanel:
             parent,
             14,
             0,
-            text="NS probabilistic coating split",
+            text=control_for("nonseq_energy_probability_var").label,
             variable=self.nonseq_energy_probability_var,
             command=self._mark_plot_update_pending,
             on_press=self._begin_history_capture,
@@ -273,9 +282,9 @@ class MainTraceDisplayControlsPanel:
             parent,
             15,
             0,
-            "Wavefront style",
+            control_for("wavefront_style_var").label,
             self.wavefront_style_var,
-            values=wavefront_style_values,
+            values=list(control_for("wavefront_style_var").choices),
             on_commit=self._mark_plot_update_pending,
             on_focus_in=self._begin_history_capture,
             width=18,
@@ -290,9 +299,9 @@ class MainTraceDisplayControlsPanel:
             parent,
             17,
             0,
-            "Tolerance compare",
+            control_for("tolerance_compare_view_var").label,
             self.tolerance_compare_view_var,
-            values=tolerance_compare_view_values,
+            values=list(control_for("tolerance_compare_view_var").choices),
             on_commit=self._mark_plot_update_pending,
             on_focus_in=self._begin_history_capture,
             width=18,
@@ -306,7 +315,7 @@ class MainTraceDisplayControlsPanel:
             parent,
             19,
             0,
-            text="Show clipped rays",
+            text=control_for("show_clipped_rays_var").label,
             variable=self.show_clipped_rays_var,
             command=self._mark_plot_update_pending,
             on_press=self._begin_history_capture,
@@ -319,9 +328,9 @@ class MainTraceDisplayControlsPanel:
             parent,
             20,
             0,
-            "Analysis path",
+            control_for("analysis_branch_filter_var").label,
             self.analysis_branch_filter_var,
-            values=[analysis_path_filter_default],
+            values=list(control_for("analysis_branch_filter_var").choices_for(self)),
             on_commit=self._mark_plot_update_pending,
             on_focus_in=self._begin_history_capture,
             width=18,
@@ -336,7 +345,7 @@ class MainTraceDisplayControlsPanel:
             parent,
             22,
             0,
-            "Detector bins",
+            control_for("detector_bins_var").label,
             self.detector_bins_var,
             on_commit=self._commit_trace_controls,
             on_focus_in=self._begin_history_capture,
@@ -351,9 +360,9 @@ class MainTraceDisplayControlsPanel:
             parent,
             24,
             0,
-            "Coherent sum",
+            control_for("coherent_sum_mode_var").label,
             self.coherent_sum_mode_var,
-            values=coherent_sum_mode_values,
+            values=list(control_for("coherent_sum_mode_var").choices),
             on_commit=self._mark_plot_update_pending,
             on_focus_in=self._begin_history_capture,
             width=18,
@@ -368,7 +377,7 @@ class MainTraceDisplayControlsPanel:
             parent,
             26,
             0,
-            "BField z [mm]",
+            control_for("branch_field_propagation_mm_var").label,
             self.branch_field_propagation_mm_var,
             on_commit=self._commit_trace_controls,
             on_focus_in=self._begin_history_capture,
@@ -385,122 +394,116 @@ class MainTraceDisplayControlsPanel:
         self._register_left_mode_control(
             "object_mode_var",
             self.object_mode_menu,
-            lambda: self._current_source_model() == source_model_default,
+            self._relevance("object_mode_var"),
             normal_state="readonly",
         )
         self._register_left_mode_control(
             "wavelength_var",
             wavelength_entry,
-            lambda: True,
+            self._relevance("wavelength_var"),
         )
         self._register_left_mode_control(
             "ray_count_var",
             ray_count_entry,
-            lambda: True,
+            self._relevance("ray_count_var"),
             normal_state="readonly",
         )
         self._register_left_mode_control(
             "ray_height_factor_var",
             ray_height_entry,
-            lambda: self._current_source_model() == source_model_default,
+            self._relevance("ray_height_factor_var"),
         )
         self._register_left_mode_control(
             "analysis_surface_var",
             self.analysis_surface_menu,
-            lambda: True,
+            self._relevance("analysis_surface_var"),
             normal_state="readonly",
         )
         self._register_left_mode_control(
             "aperture_type_var",
             self.aperture_type_menu,
-            lambda: True,
+            self._relevance("aperture_type_var"),
             normal_state="readonly",
         )
         self._register_left_mode_control(
             "aperture_value_var",
             aperture_value_entry,
-            lambda: True,
+            self._relevance("aperture_value_var"),
         )
         self._register_left_mode_control(
             "spot_view_mode_var",
             self.spot_view_mode_menu,
-            lambda: True,
+            self._relevance("spot_view_mode_var"),
             normal_state="readonly",
         )
         self._register_left_mode_control(
             "trace_mode_var",
             self.trace_mode_menu,
-            lambda: True,
+            self._relevance("trace_mode_var"),
             normal_state="readonly",
         )
         self._register_left_mode_control(
             "nonseq_target_surface_var",
             self.nonseq_target_surface_menu,
-            lambda: True,
+            self._relevance("nonseq_target_surface_var"),
             normal_state="readonly",
         )
         self._register_left_mode_control(
             "nonseq_ns_limit_var",
             nonseq_limit_entry,
-            lambda: True,
+            self._relevance("nonseq_ns_limit_var"),
         )
         self._register_left_mode_control(
             "folded_detector_policy_var",
             self.folded_detector_policy_menu,
-            lambda: self._folded_detector_policy_control_enabled(),
+            self._relevance("folded_detector_policy_var"),
             normal_state="readonly",
         )
         self._register_left_mode_control(
             "nonseq_energy_probability_var",
             nonseq_energy_check,
-            lambda: True,
+            self._relevance("nonseq_energy_probability_var"),
             include_label=False,
         )
         self._register_left_mode_control(
             "wavefront_style_var",
             self.wavefront_style_menu,
-            lambda: True,
+            self._relevance("wavefront_style_var"),
             normal_state="readonly",
         )
         self._register_left_mode_control(
             "tolerance_compare_view_var",
             self.tolerance_compare_view_menu,
-            lambda: "tolerance_compare" in getattr(self, "selected_analysis_modes", []),
+            self._relevance("tolerance_compare_view_var"),
             normal_state="readonly",
         )
         self._register_left_mode_control(
             "show_clipped_rays_var",
             clipped_check,
-            lambda: True,
+            self._relevance("show_clipped_rays_var"),
             include_label=False,
         )
         self._register_left_mode_control(
             "analysis_branch_filter_var",
             self.analysis_branch_filter_menu,
-            lambda: True,
+            self._relevance("analysis_branch_filter_var"),
             normal_state="readonly",
         )
         self._register_left_mode_control(
             "detector_bins_var",
             detector_bins_entry,
-            lambda: any(
-                mode in {"detector_map", "coherent_detector", "branch_field", "diffraction_detector"}
-                for mode in getattr(self, "selected_analysis_modes", [])
-            ),
+            self._relevance("detector_bins_var"),
             extra_widgets=(detector_bins_hint,),
         )
         self._register_left_mode_control(
             "coherent_sum_mode_var",
             self.coherent_sum_mode_menu,
-            lambda: any(
-                mode in {"coherent_detector", "branch_field", "diffraction_detector"}
-                for mode in getattr(self, "selected_analysis_modes", [])
-            ),
+            self._relevance("coherent_sum_mode_var"),
             normal_state="readonly",
         )
         self._register_left_mode_control(
             "branch_field_propagation_mm_var",
             branch_field_propagation_entry,
-            lambda: "branch_field" in getattr(self, "selected_analysis_modes", []),
+            self._relevance("branch_field_propagation_mm_var"),
             extra_widgets=(branch_field_propagation_hint,),
         )

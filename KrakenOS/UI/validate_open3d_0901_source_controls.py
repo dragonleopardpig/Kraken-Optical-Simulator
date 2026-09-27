@@ -127,7 +127,8 @@ def run_checks() -> tuple[bool, list[str]]:
                 if f'"{control.label}"' in panel_source]
     ok(len(SOURCE_CONTROLS) == 23 and not unregistered and not literals
        and panel_source.count("control_for(") >= 23
-       and dict(CONTROL_GROUPS).keys() == {"System", "Source"},
+       # at least these two -- 0902 added a third, and a successor may add more
+       and {"System", "Source"} <= set(dict(CONTROL_GROUPS)),
        f"C: {len(SOURCE_CONTROLS)} source inputs, every one against a registry-declared "
        f"variable, and the Tk panel reads all their labels from the catalogue"
        + (f" -- unregistered {unregistered}, still literal {literals}"

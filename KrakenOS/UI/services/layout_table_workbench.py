@@ -4252,21 +4252,33 @@ class LayoutTableWorkbenchMixin:
         )
         table.item(image_item, values=values)
 
+    def analysis_surface_options(self) -> list[str]:
+        """The surfaces an analysis or a non-sequential target can name: "Auto", then each row.
+
+        Model state (bugs/0902): the list used to exist only as a Tk combobox's "values", and
+        loading saved settings read it back OUT of that widget.
+        """
+        return ["Auto", *[f"{index}: {row.name}" for index, row in enumerate(self.rows)]]
+
     def _refresh_analysis_surface_choices(self) -> None:
-        options = ["Auto"]
-        for index, row in enumerate(self.rows):
-            options.append(f"{index}: {row.name}")
+        options = self.analysis_surface_options()
         current = self.analysis_surface_var.get()
-        self.analysis_surface_menu["values"] = options
+        menu = getattr(self, "analysis_surface_menu", None)
+        if menu is not None:
+            menu["values"] = options
         if current not in options:
             self.analysis_surface_var.set("Auto")
-        if hasattr(self, "nonseq_target_surface_menu") and hasattr(self, "nonseq_target_surface_var"):
-            target_current = self.nonseq_target_surface_var.get()
-            self.nonseq_target_surface_menu["values"] = options
+        target_var = getattr(self, "nonseq_target_surface_var", None)
+        if target_var is not None:
+            target_current = target_var.get()
+            target_menu = getattr(self, "nonseq_target_surface_menu", None)
+            if target_menu is not None:
+                target_menu["values"] = options
             if target_current not in options:
-                self.nonseq_target_surface_var.set("Auto")
+                target_var.set("Auto")
         self._schedule_table_grid_update()
         self._schedule_active_cell_border_update()
+        self._show_control_state()
 
     @staticmethod
     def _parse_numeric_display(value: str) -> float:

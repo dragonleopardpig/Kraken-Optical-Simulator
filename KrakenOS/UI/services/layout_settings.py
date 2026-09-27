@@ -920,7 +920,7 @@ class LayoutSettingsService:
             analysis_surface_text = str(analysis_surface).strip()
             if analysis_surface_text == "Auto":
                 self.analysis_surface_var.set("Auto")
-            elif analysis_surface_text in set(self.analysis_surface_menu["values"]):
+            elif analysis_surface_text in set(self.analysis_surface_options()):
                 self.analysis_surface_var.set(analysis_surface_text)
             else:
                 try:

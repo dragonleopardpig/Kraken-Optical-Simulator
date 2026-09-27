@@ -1693,19 +1693,27 @@ class AnalysisReportsMixin:
         except Exception:
             return RAY_DISPLAY_DEFAULT
 
+    def analysis_branch_options(self) -> list[str]:
+        """The analysis paths the last trace produced -- model state, not a widget's (0902)."""
+        options = self.__dict__.get("_analysis_branch_options")
+        return list(options) if options else [ANALYSIS_PATH_FILTER_DEFAULT]
+
     def _refresh_analysis_branch_choices(self) -> None:
-        menu = getattr(self, "analysis_branch_filter_menu", None)
         var = getattr(self, "analysis_branch_filter_var", None)
-        if menu is None or var is None:
+        if var is None:
             return
         records = self._collect_branch_throughput_records(ray_records=self._active_ray_analysis_records())
         choices = self._branch_throughput_filter_choices(records)
         current = self._current_analysis_branch_filter()
         if current not in choices and not records:
             choices.append(current)
-        menu["values"] = choices
+        self._analysis_branch_options = list(choices)
+        menu = getattr(self, "analysis_branch_filter_menu", None)
+        if menu is not None:
+            menu["values"] = choices
         if current not in choices:
             var.set(ANALYSIS_PATH_FILTER_DEFAULT)
+        self._show_control_state()
 
     def _ray_record_branch_filter_matches(self, record: dict[str, object], filter_text: str) -> bool:
         branch_path = str(record.get("branch_path", "") or "").strip()

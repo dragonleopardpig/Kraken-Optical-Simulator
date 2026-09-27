@@ -1380,7 +1380,7 @@ class LayoutSceneBundleDisplayMixin:
         if surf_match:
             surf_index = surf_match.group(1)
             label = None
-            for option in self.analysis_surface_menu["values"]:
+            for option in self.analysis_surface_options():
                 if option.startswith(f"{surf_index}:"):
                     label = option
                     break
