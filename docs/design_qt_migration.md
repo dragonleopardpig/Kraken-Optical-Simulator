@@ -130,6 +130,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0902 | The 15 trace inputs; the 45 enable rules and two live lists moved from Tk layout onto the model | phase 6 |
 | 0903 | The surface table editable in Qt: selection seams, one `commit_cell`, the six verbs | phase 4 |
 | 0904 | Optimisation in Qt: operand seam, Start/Stop seam, cell verbs, Optimization dock | phase 6 |
+| 0905 | Phase 5a part 1: viewport handlers reachable without Tk; key table; cursor/timer/pointer seams; `_attach_vtk_core` | phase 5 |
 
 The row-form framework: `FormField` kinds (number, int, bool, choice, text, textarea, static),
 `choices` that grow at runtime, `editable` choices the user may type into, `on_change` fields that
@@ -305,7 +306,7 @@ main window's own panels, which turned out to hide model state in Tk widgets jus
 | 3 dialogs | **mostly done** (0859-0897; 9 report builders, row forms) | lens drawing surface properties + PDF export (353 lines); atmosphere panel (220); the three paraxial solve prompts inside `main_paraxial_analysis_dialogs` (471); missing-assets (559) -- a resolution workflow, not a report: port as its own dialog or keep Tk-only, a decision owed |
 | 4 tables -> model/view | **mostly done** (reports 0894-0897, surface table 0903) | the table's right-click menu -- 529 lines, 12 submenus, only the optimisation entries ported (0904); the Tk table is still the cell PARSER (`_read_rows_from_table`), the seam that must move before Tk can go |
 | shell parity | **done for the core workflow** (0893, 0898-0904: plot, results/logs, plot picker, system/source/trace inputs, table editing, optimisation) | 2D-plot toolbar toggles (cardinals, thickness, path view); `_refresh_operand_surface_choices` still walks every Tk widget; the `self.__dict__.get` sweep (0901) |
-| **5 interaction layer -- THE RISK** | **not started**; the Qt viewport (254 lines) only DRAWS | measured: `open3d_inspector.py` is 26 234 lines / 828 methods but only **30** event bindings, and VTK itself is toolkit-neutral -- so 5 is re-plumbing, not a rewrite. Four more services are Tk-bound (`three_d_scene_tools` 6 782, `scene_placement_commands` 10 385, `open3d_face_assignment` 3 059, `open3d_interaction` 1 611). Sub-steps below |
+| **5 interaction layer -- THE RISK** | **5a part 1 done (0905)**: the seams, Tk unchanged; the Qt viewport (254 lines) still only DRAWS | measured: `open3d_inspector.py` is 26 234 lines / 828 methods but only **30** event bindings, and VTK itself is toolkit-neutral -- so 5 is re-plumbing, not a rewrite. Four more services are Tk-bound (`three_d_scene_tools` 6 782, `scene_placement_commands` 10 385, `open3d_face_assignment` 3 059, `open3d_interaction` 1 611). Sub-steps below |
 | 6 matplotlib | **done except inside phase-5 dialogs** (2D plot 0893, FormFigure 0887) | the embeds in MTF-from-image and the face-roles editor move with 5g |
 | 7 validators + gate | **not started** | 226 validators build a real editor, 38 of them drive Tk widgets directly; ~165 validators are in no penta phase; then Qt as the default shell and the Tk-retirement decision |
 
@@ -313,7 +314,7 @@ main window's own panels, which turned out to hide model state in Tk widgets jus
 
 | Step | What | Size (inspector methods unless noted) |
 |---|---|---|
-| 5a | event plumbing: the 30 bindings onto `QVTKRenderWindowInteractor` -- mouse, wheel, keys, modifiers | 30 bindings |
+| 5a | event plumbing: the 30 bindings onto `QVTKRenderWindowInteractor` -- mouse, wheel, keys, modifiers. **Part 1 done (0905)**: handlers built apart from their Tk binding, `dispatch_viewport_event`, `VIEWPORT_KEYS`, cursor/timer/pointer seams, `_attach_vtk_core`. **Part 2 (0906)**: the Qt viewport hosts the real inspector and feeds it Qt events | 30 bindings |
 | 5b | hover and pick, keeping the modifier contract (plain = face, Alt = nearest drawn edge; two event streams) | ~133 |
 | 5c | right-click contextual scene commands as Qt menus -- already model verbs behind `_popup_scene_component_menu` (0619) | ~10 + the verbs |
 | 5d | drag / move / rotate, snap, glue -- the densest bug arc (0433 stay-put, 0503 glue, 0693 frame) | ~62 |
@@ -323,6 +324,12 @@ main window's own panels, which turned out to hide model state in Tk widgets jus
 | 5h | re-prove the bug arc: every penta phase that drives the inspector, re-run against the Qt interactor | gate |
 
 5a is the prerequisite for everything after it; 5g needs 5a-5b (its preview picks faces).
+
+**Found in 5a (0905), decision owed:** the Tk VTK widget has no cursor option, so all six cursor cues
+in the Tk 3D view (hidden while carrying, crosshair while picking, resize arrow on a dimension drag)
+have never shown -- every caller swallowed the TclError. Qt widgets do take a cursor, so once 0906
+lands the shells would differ on this until Tk is fixed (set the cursor on the widget's parent frame,
+which it inherits) or the cues are dropped.
 
 ## Verification rule
 
