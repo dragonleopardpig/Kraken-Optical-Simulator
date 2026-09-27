@@ -399,6 +399,19 @@ def expand_rows_to_lens_block(row_indices, front_datum, rear_datum, excluded=())
 
 #: the 3D viewport's shortcut keys and the inspector handler each runs -- the Tk bindings and
 #: `dispatch_viewport_key` both read this, so a shell cannot bind a different set (bugs/0905)
+def inspector_construction_source() -> str:
+    """The source of everything that builds an inspector: `__init__` and the VTK core it attaches
+    (`_attach_vtk_core`, moved out of `__init__` by bugs/0905, and `_attach_shell_viewport`, the
+    shell-hosted route of bugs/0906). A guard that asks "does the inspector build X" reads this,
+    so the next split of construction does not break it (bugs/0910: phase 147 read `__init__`
+    alone and lost the navigation cube when 0905 moved it)."""
+    import inspect
+
+    cls = Kraken3DInspector
+    return "\n".join(inspect.getsource(getattr(cls, name))
+                     for name in ("__init__", "_attach_vtk_core", "_attach_shell_viewport"))
+
+
 VIEWPORT_KEYS = (
     ("Escape", "_cancel_active_3d_operation_event"),
     ("Delete", "_delete_selected_step_event"),

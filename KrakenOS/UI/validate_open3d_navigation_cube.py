@@ -92,8 +92,12 @@ def run_checks() -> "tuple[bool, list[str]]":
     except Exception as exc:  # pragma: no cover - defensive
         failures.append(f"B FAIL: defensive NavigationCube construction raised {exc!r}")
 
-    # --- C: __init__ builds + stores the cube with the three callbacks ----------
-    init_src = inspect.getsource(Kraken3DInspector.__init__)
+    # --- C: construction builds + stores the cube with the three callbacks ------
+    # bugs/0910: construction is __init__ PLUS the VTK core it attaches (0905 moved the cube into
+    # _attach_vtk_core), so read the whole construction path, not __init__ alone
+    from KrakenOS.UI.open3d_inspector import inspector_construction_source
+
+    init_src = inspector_construction_source()
     required = {
         "construct": "self._navigation_cube = NavigationCube(",
         "apply-orientation": "apply_orientation=self._apply_navigation_cube_orientation",
@@ -104,7 +108,7 @@ def run_checks() -> "tuple[bool, list[str]]":
     for tag, needle in required.items():
         if needle not in init_src:
             failures.append(
-                f"C FAIL ({tag}): Kraken3DInspector.__init__ is missing `{needle}` "
+                f"C FAIL ({tag}): the inspector's construction (__init__ + _attach_vtk_core) is missing `{needle}` "
                 "-- the navigation cube is not built/wired as specified"
             )
 
