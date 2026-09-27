@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import os
 import tkinter as tk
 from collections.abc import Iterable
 from tkinter import ttk
 from typing import Any
+from KrakenOS.UI.optimization_controls import MTF_ALGORITHMS, MTF_MODES
+from KrakenOS.UI.optimization_controls import worker_choices as optimization_worker_choices
 from KrakenOS.UI.panels.row_form_view import render_row_form
 from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.presets import build_optimization_bounds_form
@@ -67,13 +68,7 @@ class MainOptimizationPanel:
             self._update_optimization_button_state()
         except Exception:
             pass
-        cpu_total = max(1, int(os.cpu_count() or 1))
-        worker_choices = ["Auto", "1"]
-        for candidate in (2, 4, 6, 8, 12, 16, cpu_total):
-            candidate = max(1, min(cpu_total, int(candidate)))
-            text = str(candidate)
-            if text not in worker_choices:
-                worker_choices.append(text)
+        worker_choices = optimization_worker_choices()
         ttk.Label(button_row, text="Workers").pack(side="left", padx=(14, 0))
         self.optimization_workers_var = tk.StringVar(value="Auto")
         ttk.Combobox(
@@ -210,7 +205,7 @@ class MainOptimizationPanel:
                     textvariable=mtf_mode_var,
                     state="readonly",
                     width=12,
-                    values=["Average", "Tangential", "Sagittal"],
+                    values=list(MTF_MODES),
                 )
                 mtf_mode_menu.grid(row=mode_row, column=1, sticky="ew", padx=(6, 0), pady=(4, 0))
                 mtf_mode_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
@@ -226,7 +221,7 @@ class MainOptimizationPanel:
                     textvariable=mtf_algorithm_var,
                     state="readonly",
                     width=12,
-                    values=["Diffraction FFT", "PSF FFT", "LSF FFT"],
+                    values=list(MTF_ALGORITHMS),
                 )
                 mtf_algorithm_menu.grid(row=algorithm_row, column=1, sticky="ew", padx=(6, 0), pady=(4, 0))
                 mtf_algorithm_menu.bind("<FocusIn>", self._begin_history_capture, add="+")

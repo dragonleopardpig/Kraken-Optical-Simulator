@@ -467,10 +467,14 @@ class AnalysisComputeWorkflowMixin:
             self.append_debug("GPU backend: CuPy import succeeded, but no CUDA devices were detected.")
 
     def _update_optimization_button_state(self) -> None:
+        running = bool(getattr(self, "optimization_running", False))
+        # a shell with its own Start/Stop hears the state too (bugs/0904)
+        show = getattr(self, "show_optimization_state", None)
+        if show is not None:
+            show(running)
         button = getattr(self, "optimization_start_stop_button", None)
         if button is None:
             return
-        running = bool(getattr(self, "optimization_running", False))
         try:
             button.configure(
                 text="Stop Optimization" if running else "Start Optimization",
@@ -1176,11 +1180,29 @@ class AnalysisComputeWorkflowMixin:
                 return spec
         return None
 
+    def ensure_operand_variables(self) -> int:
+        """Make any per-operand setting variable no view has made yet; returns how many.
+
+        The Tk optimisation panel creates these as it builds its cards, so a shell without that
+        panel would have none (bugs/0904). Existing variables are never replaced.
+        """
+        from KrakenOS.UI.optimization_controls import controls_for, default_for
+
+        host = getattr(self, "ui", None)
+        if host is None:
+            return 0
+        made = 0
+        for spec in OPERAND_REGISTRY.values():
+            for control in controls_for(spec):
+                table = getattr(self, control.variables, None)
+                if table is None or spec.label in table:
+                    continue
+                table[spec.label] = host.string_var(value=default_for(control, spec, self))
+                made += 1
+        return made
+
     def _selected_operand_specs(self) -> list:
-        if "merit_mode_list" in self.__dict__:
-            labels = [self.merit_mode_list.get(i) for i in self.merit_mode_list.curselection()]
-        else:
-            labels = [str(label) for label in getattr(self, "_headless_selected_operand_labels", [])]
+        labels = self._selected_operand_labels()
         specs = []
         for label in labels:
             spec = self._merit_spec_for_label(label)

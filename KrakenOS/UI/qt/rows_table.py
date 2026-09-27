@@ -29,6 +29,13 @@ def choices_for(field: str) -> tuple:
     return tuple(SURFACE_TYPES) if field == "surface" else tuple(TABLE_GLASS_CHOICES)
 
 
+def marker_colour() -> str:
+    """The Tk optimisation-variable marker's background, so both tables mark alike."""
+    from KrakenOS.UI.layout_editor import OPTIMIZATION_CELL_MARKER_BG
+
+    return str(OPTIMIZATION_CELL_MARKER_BG)
+
+
 def make_rows_model(editor):
     """A QAbstractTableModel over `editor.rows` (built here so importing the module needs no Qt)."""
     from PySide6.QtCore import QAbstractTableModel, Qt
@@ -72,7 +79,27 @@ def make_rows_model(editor):
                 if self.field(index.column()) in MARKED_FIELDS:
                     text = text.replace("*", "").strip()
                 return text
+            if role in (Qt.ItemDataRole.BackgroundRole, Qt.ItemDataRole.ToolTipRole):
+                # an optimisation variable: the same rule and colour as the Tk cell marker
+                # (bugs/0904) -- the model's _optimization_marker_fields_for_row decides
+                if self.is_marked(index.row(), self.field(index.column())):
+                    if role == Qt.ItemDataRole.ToolTipRole:
+                        from KrakenOS.UI.layout_editor import OPTIMIZATION_CELL_MARKER_TEXT
+
+                        return f"{OPTIMIZATION_CELL_MARKER_TEXT}: optimization variable"
+                    from PySide6.QtGui import QColor
+
+                    return QColor(marker_colour())
             return None
+
+        def is_marked(self, row: int, field: str) -> bool:
+            rows = getattr(self.editor, "rows", ()) or ()
+            if not 0 <= row < len(rows):
+                return False
+            try:
+                return field in self.editor._optimization_marker_fields_for_row(rows[row])
+            except Exception:
+                return False
 
         def flags(self, index):
             base = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable

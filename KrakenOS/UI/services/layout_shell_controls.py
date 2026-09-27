@@ -729,7 +729,7 @@ class LayoutShellControlsMixin:
         if not hasattr(self, "merit_mode_list"):
             return
         self._commit_history_capture()
-        selected = {self.merit_mode_list.get(i) for i in self.merit_mode_list.curselection()}
+        selected = set(self._selected_operand_labels())
         for label, frame in self.operand_setup_frames.items():
             visible = label in selected
             if visible:

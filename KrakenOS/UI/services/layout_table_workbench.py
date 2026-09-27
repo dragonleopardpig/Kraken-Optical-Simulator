@@ -2914,11 +2914,23 @@ class LayoutTableWorkbenchMixin:
         return self._apply_camera_flange_distance(imported, provider)
 
     def _selected_operand_labels(self) -> list[str]:
+        """The merit operands in use -- from the shell showing the list (bugs/0904).
+
+        A shell that draws its own list installs `selected_merit_operands`; otherwise this is
+        the Tk Listbox's selection, or the headless list. The Qt shell keeps a hidden Tk
+        Listbox, so reading that one would always have answered with Tk's default.
+        """
+        shell = getattr(self, "selected_merit_operands", None)
+        if shell is not None:
+            return [str(label) for label in shell()]
         if "merit_mode_list" not in self.__dict__:
             return [str(label) for label in getattr(self, "_headless_selected_operand_labels", [])]
         return [self.merit_mode_list.get(i) for i in self.merit_mode_list.curselection()]
 
     def _set_selected_operand_labels(self, labels: list[str]) -> None:
+        shell = getattr(self, "select_merit_operands", None)
+        if shell is not None:
+            shell([str(label) for label in labels])
         if "merit_mode_list" not in self.__dict__:
             self._headless_selected_operand_labels = [str(label) for label in labels]
             return
@@ -8984,16 +8996,32 @@ class LayoutTableWorkbenchMixin:
             else:
                 row.advanced.pop("VarBounds", None)
 
-    def toggle_current_optimization_cell(self) -> None:
+    def _current_menu_cell(self):
+        """(row index, field) of the cell the Tk right-click menu was opened on, or None."""
         if self.current_menu_row_id is None or self.current_menu_field is None:
-            return
+            return None
         index = self._table_item_row_index(self.current_menu_row_id)
-        if index is None:
-            return
-        row = self.rows[index]
-        spec = self._variable_spec_for_field(self.current_menu_field)
-        if spec is None:
-            return
+        return None if index is None else (index, self.current_menu_field)
+
+    def optimization_cell_state(self, row_index: int, field: str) -> dict:
+        """What the optimisation menu offers for one cell -- the same answer in both shells.
+
+        `supported`: the field can be a variable at all; `marked`: it is one; `has_bounds`:
+        it carries explicit bounds; `label`: the variable's name for the menu (bugs/0904).
+        """
+        spec = self._variable_spec_for_field(field)
+        if spec is None or not (0 <= int(row_index) < len(self.rows)):
+            return {"supported": False, "marked": False, "has_bounds": False, "label": ""}
+        row = self.rows[int(row_index)]
+        return {"supported": True, "marked": bool(self._variable_enabled_for_row(row, spec)),
+                "has_bounds": bool(spec.get_bounds(row)), "label": str(spec.label)}
+
+    def toggle_optimization_cell(self, row_index: int, field: str) -> bool:
+        """Make a cell an optimisation variable, or stop it being one. Returns the new state."""
+        spec = self._variable_spec_for_field(field)
+        if spec is None or not (0 <= int(row_index) < len(self.rows)):
+            return False
+        row = self.rows[int(row_index)]
         self._begin_history_capture()
         enabled = self._variable_enabled_for_row(row, spec)
         spec.set_enabled(row, not enabled)
@@ -9002,6 +9030,12 @@ class LayoutTableWorkbenchMixin:
         self._sync_table()
         self._commit_history_capture()
         self.refresh_plot()
+        return not enabled
+
+    def toggle_current_optimization_cell(self) -> None:
+        cell = self._current_menu_cell()
+        if cell is not None:
+            self.toggle_optimization_cell(*cell)
         self._cleanup_current_popup_menu()
 
     def toggle_current_tolerance_compensator(self) -> None:
@@ -10178,20 +10212,21 @@ class LayoutTableWorkbenchMixin:
 
         open_catalog_matcher_dialog(self)
 
-    def clear_current_bounds(self) -> None:
-        if self.current_menu_row_id is None or self.current_menu_field is None:
-            return
-        index = self._table_item_row_index(self.current_menu_row_id)
-        if index is None:
-            return
-        row = self.rows[index]
-        spec = self._variable_spec_for_field(self.current_menu_field)
-        if spec is None:
-            return
+    def clear_bounds_for_cell(self, row_index: int, field: str) -> bool:
+        """Drop a variable's explicit bounds, so it falls back to its defaults."""
+        spec = self._variable_spec_for_field(field)
+        if spec is None or not (0 <= int(row_index) < len(self.rows)):
+            return False
         self._begin_history_capture()
-        spec.set_bounds(row, None)
+        spec.set_bounds(self.rows[int(row_index)], None)
         self._commit_history_capture()
-        self.append_progress(f"Bounds cleared for row {index} {spec.label}.")
+        self.append_progress(f"Bounds cleared for row {row_index} {spec.label}.")
+        return True
+
+    def clear_current_bounds(self) -> None:
+        cell = self._current_menu_cell()
+        if cell is not None:
+            self.clear_bounds_for_cell(*cell)
         self._cleanup_current_popup_menu()
 
 

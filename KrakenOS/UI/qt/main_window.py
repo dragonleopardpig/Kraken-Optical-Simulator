@@ -15,6 +15,7 @@ from pathlib import Path
 from KrakenOS.UI.qt.actions import ActionManager
 from KrakenOS.UI.qt.docks import DockManager
 from KrakenOS.UI.qt.analysis_toolbar import AnalysisToolbar
+from KrakenOS.UI.qt.optimization_panel import OptimizationPanel
 from KrakenOS.UI.qt.results_panel import ResultsPanel
 from KrakenOS.UI.qt.system_panel import SystemPanel
 from KrakenOS.UI.system_controls import SOURCE_CONTROLS, TRACE_CONTROLS
@@ -106,6 +107,10 @@ class KrakenQtMainWindow(_main_window_class()):
                                       Qt.DockWidgetArea.RightDockWidgetArea)
         # the model says when relevance or a live list may have changed; every form re-reads
         editor.show_control_state = self.refresh_control_panels
+        # optimisation: operands, their settings, workers and Start/Stop (bugs/0904)
+        self.optimization_panel = OptimizationPanel(editor)
+        self.dock_manager.create_dock(self.optimization_panel.widget, "OptimizationDock",
+                                      "Optimization", Qt.DockWidgetArea.RightDockWidgetArea)
 
         self._open_dialogs: list = []  # a modeless dialog must outlive the call that opened it
         self._status_trace = None
@@ -371,7 +376,57 @@ class KrakenQtMainWindow(_main_window_class()):
         layout.addWidget(self.rows_view)
         # a refused edit says why, in the status bar rather than a Tk message box
         self.rows_view.itemDelegate().closeEditor.connect(self._report_refused_edit)
+        # the optimisation entries of the Tk cell menu's Solve submenu (bugs/0904)
+        from PySide6.QtCore import Qt as _Qt
+
+        self.rows_view.setContextMenuPolicy(_Qt.ContextMenuPolicy.CustomContextMenu)
+        self.rows_view.customContextMenuRequested.connect(self._show_cell_menu)
         return widget
+
+    def cell_menu_actions(self, row: int, field: str) -> list:
+        """(label, enabled, callable) for a cell's optimisation menu -- the model decides.
+
+        A separate method so a guard can read the menu without popping one up.
+        """
+        state = self.editor.optimization_cell_state(row, field)
+        if not state["supported"]:
+            return []
+        name = state["label"]
+        return [
+            (f"{'Unselect' if state['marked'] else 'Select'} {name} for optimization", True,
+             lambda: self.editor.toggle_optimization_cell(row, field)),
+            ("Set bounds...", True, lambda: self.open_bounds_form(row, field)),
+            ("Clear bounds", state["has_bounds"],
+             lambda: self.editor.clear_bounds_for_cell(row, field)),
+        ]
+
+    def open_bounds_form(self, row: int, field: str):
+        """The same bounds form the Tk "Set bounds..." opens (row_forms/presets, bugs/0891)."""
+        from KrakenOS.UI.row_forms.presets import build_optimization_bounds_form
+
+        spec = self.editor._variable_spec_for_field(field)
+
+        def builder(owner, index):
+            return build_optimization_bounds_form(owner, index, spec=spec)
+
+        builder.TITLE = "Optimization bounds"
+        return self.open_row_form(builder, row)
+
+    def _show_cell_menu(self, position) -> None:
+        from PySide6.QtWidgets import QMenu
+
+        index = self.rows_view.indexAt(position)
+        if not index.isValid():
+            return
+        actions = self.cell_menu_actions(index.row(), self.rows_model.field(index.column()))
+        if not actions:
+            return
+        menu = QMenu(self.rows_view)
+        for label, enabled, run in actions:
+            action = menu.addAction(label)
+            action.setEnabled(bool(enabled))
+            action.triggered.connect(lambda _checked=False, run=run: (run(), self.refresh_from_model()))
+        menu.exec(self.rows_view.viewport().mapToGlobal(position))
 
     def _report_refused_edit(self, *_args) -> None:
         refusal = getattr(self.rows_model, "last_refusal", "")

@@ -1,0 +1,83 @@
+"""The optimisation panel's settings, toolkit-free (docs/design_qt_migration.md phase 6).
+
+Which settings an operand has is already data -- `OperandSpec.controls`. What each setting IS --
+its label, the per-operand model variable that holds it, and the choices a picker offers -- was
+written into the Tk panel's `build()`, so the Qt shell could not offer optimisation (bugs/0904).
+"""
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+
+MTF_MODES = ("Average", "Tangential", "Sagittal")
+MTF_ALGORITHMS = ("Diffraction FFT", "PSF FFT", "LSF FFT")
+
+
+@dataclass(frozen=True)
+class OperandControl:
+    """One per-operand setting: the editor dict of variables (keyed by operand label) it uses."""
+
+    name: str
+    label: str
+    variables: str
+    kind: str = "text"
+    choices: tuple = ()
+
+
+#: every setting an OperandSpec may name in its `controls`, in the order the Tk card lays them out
+OPERAND_CONTROLS = (
+    OperandControl("weight", "Weight", "operand_weight_vars"),
+    OperandControl("target", "Target", "operand_target_vars"),
+    OperandControl("wavelength", "Wvl", "operand_wavelength_vars"),
+    OperandControl("field", "Field", "operand_field_vars"),
+    OperandControl("surface", "Surf", "operand_surface_vars", "choice", ("Auto",)),
+    OperandControl("frequency", "Freq", "operand_frequency_vars"),
+    OperandControl("mtf_mode", "Mode", "operand_mtf_mode_vars", "choice", MTF_MODES),
+    OperandControl("mtf_algorithm", "Alg", "operand_mtf_algorithm_vars", "choice", MTF_ALGORITHMS),
+)
+#: "field_xy" is a pair of variables rather than one
+FIELD_XY_CONTROLS = (
+    OperandControl("field_x", "Field X", "operand_field_x_vars"),
+    OperandControl("field_y", "Field Y(s)", "operand_field_y_vars"),
+)
+
+
+def controls_for(spec) -> tuple:
+    """The settings an operand shows, in card order -- `spec.controls` says which."""
+    wanted = set(getattr(spec, "controls", ()) or ())
+    shown = []
+    for control in OPERAND_CONTROLS:
+        if control.name in wanted:
+            shown.append(control)
+        if control.name == "field" and "field_xy" in wanted:
+            shown.extend(FIELD_XY_CONTROLS)
+    return tuple(shown)
+
+
+#: a setting's starting value, exactly as the Tk card creates it; weight/target come from the
+#: operand's own defaults and the wavelength from the system's
+_FIXED_DEFAULTS = {"field": "0", "field_x": "0", "field_y": "0", "surface": "Auto",
+                   "frequency": "5", "mtf_mode": "Average", "mtf_algorithm": "Diffraction FFT"}
+
+
+def default_for(control, spec, owner) -> str:
+    """What a setting starts as when no view has made its variable yet."""
+    if control.name == "weight":
+        return f"{spec.default_weight:g}"
+    if control.name == "target":
+        return f"{spec.default_target:g}"
+    if control.name == "wavelength":
+        variable = getattr(owner, "wavelength_var", None)
+        return str(variable.get()) if variable is not None else "0.55"
+    return _FIXED_DEFAULTS.get(control.name, "")
+
+
+def worker_choices(cpu_total: "int | None" = None) -> list[str]:
+    """What the Workers picker offers: Auto, 1, then a few counts up to the machine's."""
+    total = max(1, int(cpu_total if cpu_total is not None else (os.cpu_count() or 1)))
+    choices = ["Auto", "1"]
+    for candidate in (2, 4, 6, 8, 12, 16, total):
+        text = str(max(1, min(total, int(candidate))))
+        if text not in choices:
+            choices.append(text)
+    return choices
