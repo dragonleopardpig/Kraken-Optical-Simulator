@@ -14,12 +14,19 @@ class DockManager:
         self.main_window = main_window
         self.docks: dict[str, object] = {}
 
-    def create_dock(self, widget, name: str, title: str, area=None):
+    def create_dock(self, widget, name: str, title: str, area=None, *, scroll: bool = False):
+        """`scroll`: show a tall form in a scroll area, so its full height is not the dock's
+        MINIMUM height -- stacked forms otherwise push the window past the screen (bugs/0906)."""
         from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import QDockWidget
+        from PySide6.QtWidgets import QDockWidget, QScrollArea
 
         dock = QDockWidget(title, self.main_window)
         dock.setObjectName(name)
+        if scroll:
+            area_widget = QScrollArea()
+            area_widget.setWidgetResizable(True)
+            area_widget.setWidget(widget)
+            widget = area_widget
         dock.setWidget(widget)
         dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable
                          | QDockWidget.DockWidgetFeature.DockWidgetFloatable
@@ -36,6 +43,14 @@ class DockManager:
         if docks:
             self.main_window.resizeDocks(docks, [width_hint] * len(docks),
                                          Qt.Orientation.Horizontal)
+
+    def tabify(self, names) -> None:
+        """Stack the named docks as tabs of the first one, which stays in front."""
+        docks = [self.docks[name] for name in names if name in self.docks]
+        for dock in docks[1:]:
+            self.main_window.tabifyDockWidget(docks[0], dock)
+        if docks:
+            docks[0].raise_()
 
     def __getitem__(self, name):
         return self.docks[name]

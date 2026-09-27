@@ -200,6 +200,12 @@ def _make_inspector(widget):
 
     self = types.SimpleNamespace()
     self._vtk_widget = widget
+    # bugs/0906: the timer is armed through the inspector's UI host (for a bare object, its own
+    # after/after_cancel), not on the Tk VTK widget -- a Qt shell's VTK widget has no `after`.
+    # The fake widget stays the clock the checks read.
+    if widget is not None:
+        self.after = widget.after
+        self.after_cancel = widget.after_cancel
     self._mouse_move_min_interval_s = 0.035
     self._trailing_hover_repick_after_id = None
     self._step_carry_drag_state = None

@@ -40,6 +40,8 @@ class KrakenQtMainWindow(_main_window_class()):
         self.editor = editor
         self.ui = ui if ui is not None else host_of(editor)
         self.viewport = None
+        #: the real 3D inspector, hosted in a dock once asked for (bugs/0906)
+        self.inspector_view = None
 
         self.setWindowTitle("KrakenOS -- Qt shell")
         self.resize(1500, 950)
@@ -96,21 +98,25 @@ class KrakenQtMainWindow(_main_window_class()):
         # change what was traced (bugs/0900)
         self.system_panel = SystemPanel(editor)
         self.dock_manager.create_dock(self.system_panel.widget, "SystemDock", "System",
-                                      Qt.DockWidgetArea.RightDockWidgetArea)
+                                      Qt.DockWidgetArea.RightDockWidgetArea, scroll=True)
         # and what launches the light (bugs/0901) -- the same class over the other group
         self.source_panel = SystemPanel(editor, SOURCE_CONTROLS)
         self.dock_manager.create_dock(self.source_panel.widget, "SourceDock", "Source",
-                                      Qt.DockWidgetArea.RightDockWidgetArea)
+                                      Qt.DockWidgetArea.RightDockWidgetArea, scroll=True)
         # and how the trace runs and what the plots show (bugs/0902)
         self.trace_panel = SystemPanel(editor, TRACE_CONTROLS)
         self.dock_manager.create_dock(self.trace_panel.widget, "TraceDock", "Trace",
-                                      Qt.DockWidgetArea.RightDockWidgetArea)
+                                      Qt.DockWidgetArea.RightDockWidgetArea, scroll=True)
         # the model says when relevance or a live list may have changed; every form re-reads
         editor.show_control_state = self.refresh_control_panels
         # optimisation: operands, their settings, workers and Start/Stop (bugs/0904)
         self.optimization_panel = OptimizationPanel(editor)
         self.dock_manager.create_dock(self.optimization_panel.widget, "OptimizationDock",
-                                      "Optimization", Qt.DockWidgetArea.RightDockWidgetArea)
+                                      "Optimization", Qt.DockWidgetArea.RightDockWidgetArea,
+                                      scroll=True)
+        # the four input forms share one tabbed stack: stacked, their minimum heights summed to
+        # ~1600 px and forced the window past the screen, leaving the 3D inspector 0 px (bugs/0906)
+        self.dock_manager.tabify(("SystemDock", "SourceDock", "TraceDock", "OptimizationDock"))
 
         self._open_dialogs: list = []  # a modeless dialog must outlive the call that opened it
         self._status_trace = None
@@ -155,6 +161,58 @@ class KrakenQtMainWindow(_main_window_class()):
             self.viewport = SceneViewport(self.viewport_host)
             self.viewport_layout.addWidget(self.viewport.widget)
         return self.viewport
+
+    def build_inspector_view(self):
+        """Host the real 3D inspector in a dock. Call this AFTER `show()`, like `build_viewport`.
+
+        The dock may move between areas but never float: floating makes the dock a new native
+        top-level, and the VTK widget inside was handed its window id when it was built.
+        """
+        if self.inspector_view is not None:
+            return self.inspector_view
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QDockWidget, QVBoxLayout, QWidget
+
+        from KrakenOS.UI.qt.inspector_view import InspectorView
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        # the top area, which nothing else uses: the right one already stacks five docks at
+        # their minimum heights, and the inspector squeezed in there got 0 pixels (measured)
+        dock = self.dock_manager.create_dock(container, "InspectorDock", "3D Inspector",
+                                             area=Qt.DockWidgetArea.TopDockWidgetArea)
+        dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable
+                         | QDockWidget.DockWidgetFeature.DockWidgetClosable)
+        dock.show()
+        self.inspector_view = InspectorView(self.editor, container,
+                                            status=self.statusBar().showMessage)
+        layout.addWidget(self.inspector_view.widget)
+        # a VTK widget has no size hint, so the dock would open 0 pixels tall (measured) -- and a
+        # 0-pixel viewport picks nothing
+        self.inspector_view.widget.setMinimumSize(320, 240)
+        self.resize_inspector_dock()
+        if self.inspector_view.inspector.available:
+            self.inspector_view.inspector.refresh_from_editor()
+        else:
+            self.statusBar().showMessage(
+                f"3D inspector unavailable: {self.inspector_view.inspector.unavailable_reason}")
+        return self.inspector_view
+
+    def resize_inspector_dock(self) -> None:
+        """Give the inspector two thirds of the height -- once the layout has run, since a
+        `resizeDocks` before it is ignored (measured: the dock stayed at its minimum)."""
+        from PySide6.QtCore import QTimer, Qt
+
+        dock = self.dock_manager.docks.get("InspectorDock")
+        if dock is None:
+            return
+        QTimer.singleShot(0, lambda: self.resizeDocks(
+            [dock], [max(420, self.height() * 2 // 3)], Qt.Orientation.Vertical))
+
+    def inspector_action(self) -> None:
+        view = self.build_inspector_view()
+        view.show()
 
     def build_plot2d(self):
         """Create the 2D layout plot and hand the editor its figure (bugs/0893).

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from KrakenOS.UI.uihost import host_of
+
 
 DEFAULT_LIVE_REFRESH_DELAY_MS = 180
 MAIN_PANEL_LIVE_REFRESH_DELAY_MS = 220
@@ -36,7 +38,7 @@ class Open3DLiveRefreshService:
         self.after_id = None
         if after_id is not None:
             try:
-                self.inspector.after_cancel(after_id)
+                host_of(self.inspector).after_cancel(after_id)
             except Exception:
                 pass
         self.pending = False
@@ -53,11 +55,12 @@ class Open3DLiveRefreshService:
             return True
         if self.after_id is not None:
             try:
-                inspector.after_cancel(self.after_id)
+                host_of(inspector).after_cancel(self.after_id)
             except Exception:
                 pass
         delay = normalized_live_refresh_delay(delay_ms)
-        self.after_id = inspector.after(delay, self.run)
+        # the shell's host, so the refresh fires in whichever event loop runs (bugs/0906)
+        self.after_id = host_of(inspector).after(delay, self.run)
         inspector.status_var.set(f"Live Mode: scheduled trace ({self.reason}).")
         return True
 

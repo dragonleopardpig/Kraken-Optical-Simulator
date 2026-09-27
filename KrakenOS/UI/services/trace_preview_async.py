@@ -398,7 +398,10 @@ def maybe_begin_inspector_async_trace(
 
 def _schedule_async_poll(inspector: Any) -> None:
     try:
-        inspector.editor.after(_ASYNC_POLL_MS, lambda: _poll_inspector_async_trace(inspector))
+        from KrakenOS.UI.uihost import host_of
+
+        # the editor's host: under Tk it is the editor's own `after`; under Qt a QTimer (bugs/0906)
+        host_of(inspector.editor).after(_ASYNC_POLL_MS, lambda: _poll_inspector_async_trace(inspector))
         return
     except Exception:
         pass

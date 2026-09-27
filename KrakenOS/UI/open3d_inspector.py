@@ -543,15 +543,20 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def _step_clear_aperture_pick_mode(self, value: bool) -> None:
         self._set_pick_mode_flag(InteractionMode.STEP_CLEAR_APERTURE_PICK, value)
 
-    def __init__(self, editor: "KrakenLayoutEditor") -> None:
+    def __init__(self, editor: "KrakenLayoutEditor", *, vtk_host=None) -> None:
         _load_3d_backends()
         super().__init__(editor)
         self.editor = editor
+        # bugs/0906 (docs/design_qt_migration.md phase 5a): `vtk_host` is a VTK widget a shell
+        # already made -- the Qt shell's QVTKRenderWindowInteractor. The inspector then draws
+        # into it, takes its input through `dispatch_viewport_event`, and schedules on the
+        # shell's host; this Toplevel stays withdrawn and only its hidden panels remain.
+        self._shell_vtk_host = vtk_host
         # docs/design_qt_migration.md: its own host, so its timers stay bound to THIS window (a
         # Tk `after` registered on a widget dies with it) exactly as before the seam.
-        from KrakenOS.UI.uihost import TkUiHost
+        from KrakenOS.UI.uihost import TkUiHost, host_of
 
-        self.ui = TkUiHost(self)
+        self.ui = TkUiHost(self) if vtk_host is None else host_of(editor)
         self.available = False
         self.unavailable_reason = ""
         self.title("KrakenOS 3D Inspector")
@@ -1002,6 +1007,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             main_pane.add(host, weight=1)
             main_pane.add(step_admin_panel, weight=0)
 
+            if self._shell_vtk_host is not None:
+                # the shell shows status_var itself; this Toplevel never shows
+                self._attach_shell_viewport(self._shell_vtk_host)
+                self.available = True
+                return
             _prepare_vtk_tk_widget(host)
             ui_scale = self._kraken_ui_scale
             self._vtk_widget = vtkTkRenderWindowInteractor(
@@ -1530,6 +1540,23 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return
         if self._vtk_widget is not None:
             self._vtk_widget.configure(cursor=name)
+
+    def _attach_shell_viewport(self, vtk_host) -> None:
+        """Draw into a shell's own VTK widget instead of a Tk one (bugs/0906).
+
+        The same VTK core the Tk widget gets, the same handlers -- built but bound to nothing,
+        because the shell translates its own input into `dispatch_viewport_event` /
+        `dispatch_viewport_key` calls. The shell also installs `set_viewport_cursor` and
+        `viewport_pointer`; this Toplevel never shows.
+        """
+        self._vtk_widget = vtk_host
+        self._attach_vtk_core(vtk_host.GetRenderWindow(), initialize=vtk_host.Initialize)
+        service = self._mouse_bindings_service()
+        self._viewport_handlers = service._build_viewport_handlers()
+        try:
+            self.withdraw()
+        except Exception:
+            pass
 
     def _attach_vtk_core(self, render_window, *, initialize) -> None:
         """Build the inspector's VTK core on `render_window`: its renderer, the interactor
@@ -2463,7 +2490,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._cancel_trailing_hover_repick()
         delay_ms = max(1, int(round(float(self._mouse_move_min_interval_s) * 1000.0)) + 5)
         try:
-            self._trailing_hover_repick_after_id = widget.after(
+            # through the host, not the Tk VTK widget: a shell's own VTK widget has no
+            # `after`, and the repick silently never ran there (bugs/0906)
+            self._trailing_hover_repick_after_id = host_of(self).after(
                 delay_ms, self._on_trailing_hover_repick
             )
         except Exception:
@@ -2476,7 +2505,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if after_id is None or widget is None:
             return
         try:
-            widget.after_cancel(after_id)
+            host_of(self).after_cancel(after_id)
         except Exception:
             pass
 
@@ -2495,6 +2524,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._refire_scene_hover_pick()
 
     def _pointer_over_vtk_widget(self) -> bool:
+        # a shell with its own viewport says where its pointer is (bugs/0906) -- the Tk reads
+        # below always answered "not over" there, so an Alt tap never re-picked
+        shell = getattr(self, "viewport_pointer", None)
+        if shell is not None:
+            return shell() is not None
         widget = getattr(self, "_vtk_widget", None)
         if widget is None:
             return False

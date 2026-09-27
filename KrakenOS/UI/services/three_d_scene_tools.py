@@ -202,9 +202,15 @@ class ThreeDSceneToolsMixin:
                     if self._three_d_inspector is None or not self._three_d_inspector.winfo_exists():
                         self._three_d_inspector = Kraken3DInspector(self)
                     if self._three_d_inspector.available:
-                        self._three_d_inspector.deiconify()
-                        self._three_d_inspector.lift()
-                        self._three_d_inspector.focus_force()
+                        # bugs/0906: an inspector a shell hosts is shown BY the shell -- its
+                        # Toplevel holds only hidden panels and must never be deiconified
+                        show_in_shell = getattr(self._three_d_inspector, "show_in_shell", None)
+                        if show_in_shell is not None:
+                            show_in_shell()
+                        else:
+                            self._three_d_inspector.deiconify()
+                            self._three_d_inspector.lift()
+                            self._three_d_inspector.focus_force()
                         if self._start_open3d_step_cache_warmup(self._three_d_inspector):
                             return
                         self._three_d_inspector.refresh_from_editor()

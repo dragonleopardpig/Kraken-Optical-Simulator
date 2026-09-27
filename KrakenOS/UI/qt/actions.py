@@ -18,6 +18,8 @@ ACTIONS = (
     ("redraw", "&View", "&Redraw", "F5", "redraw_action", "Rebuild the scene from the model"),
     ("show_rays", "&View", "Show &Rays", "Ctrl+L", "toggle_rays_action",
      "Show or hide the traced light"),
+    ("inspector", "&View", "3D &Inspector", "Ctrl+I", "inspector_action",
+     "The full 3D inspector -- pick, orbit, pan, drag -- in a dock (bugs/0906)"),
     ("paraxial_matrix", "&Analysis", "Paraxial &Matrix Report", "Ctrl+M",
      "paraxial_matrix_report_action",
      "The system's paraxial matrices, surface by surface -- the same report the Tk editor shows"),

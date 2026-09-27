@@ -79,7 +79,7 @@ def validate_open3d_live_mode() -> list[Open3DLiveModeCheck]:
             and "Open3DLiveRefreshService(self)" in inspector_source
             and "def schedule" in open3d_live_refresh_service
             and "def run" in open3d_live_refresh_service
-            and "self.after_id = inspector.after(delay, self.run)" in open3d_live_refresh_service
+            and "self.after_id = host_of(inspector).after(delay, self.run)" in open3d_live_refresh_service
             and "normalized_live_refresh_delay(delay_ms)" in open3d_live_refresh_service
             and "self.pending = True" in open3d_live_refresh_service
             and 'self.schedule("pending scene change", delay_ms=PENDING_LIVE_REFRESH_RETRY_MS)' in open3d_live_refresh_service
