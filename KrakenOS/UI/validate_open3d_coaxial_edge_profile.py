@@ -187,27 +187,55 @@ def _check_whitelist(failures, notes):
 
 
 def _check_wiring(failures, notes):
-    from KrakenOS.UI.panels import open3d_source_edit_dialog as dlg
+    """bugs/0912: MEASURED through the real Edit Source form. Since bugs/0885 the dialog is a row
+    form (`row_forms/source_edit.py`, rendered by both shells), so the old text search of
+    `open_scene_source_edit_dialog` read a 20-line shim and failed while every claim held. This
+    builds the form on a coaxial source, checks the fields and their seeds, APPLIES an edit and
+    reads the stored spec back; and checks a non-coaxial source gets no edge fields."""
+    from KrakenOS.UI.row_forms.source_edit import _update_from_values, build_scene_source_edit_form
 
-    src = inspect.getsource(dlg.open_scene_source_edit_dialog)
-    for token in (
-        "coaxial_edge_profile_and_width",  # seed
-        "coaxial_edge_penumbra_mm",        # apply
-        "COAXIAL_EDGE_PROFILES",           # combobox values
-        "is_coaxial",                      # gate
-        "coaxial_edge_profile",            # written key
-        "coaxial_penumbra_mm",             # written key
-    ):
-        if token not in src:
-            failures.append(f"WIRING: dialog missing {token!r}")
+    editor = _StubSourceEditor([_coaxial_spec(COAXIAL_EDGE_PROFILE_SOFT, "2.0")])
+    form = build_scene_source_edit_form(editor, "source:led-1")
+    keys = {field.key: field for field in form.fields}
+    profile_field = keys.get("coaxial_edge_profile")
+    if profile_field is None or "coaxial_edge_width" not in keys:
+        failures.append("WIRING: a coaxial source's Edit Source form has no edge profile/width fields")
+        return
+    if tuple(profile_field.choices) != tuple(COAXIAL_EDGE_PROFILES) or len(COAXIAL_EDGE_PROFILES) != 2:
+        failures.append(f"WIRING: the edge choice offers {profile_field.choices}, want {COAXIAL_EDGE_PROFILES}")
+    seeded = (form.values.get("coaxial_edge_profile"), form.values.get("coaxial_edge_width"))
+    expected_seed = coaxial_edge_profile_and_width(editor.layout_scene_source_specs[0])
+    if tuple(seeded) != tuple(str(v) for v in expected_seed):
+        failures.append(f"WIRING: the form seeded {seeded}, not the stored {expected_seed}")
+
+    values = dict(form.values)
+    values.update(coaxial_edge_profile=COAXIAL_EDGE_PROFILE_SHARP, coaxial_edge_width="")
+    update = _update_from_values(form, values)
+    if update.get("coaxial_edge_profile") != COAXIAL_EDGE_PROFILE_SHARP or abs(
+            float(update.get("coaxial_penumbra_mm", -1)) - coaxial_edge_penumbra_mm(
+                COAXIAL_EDGE_PROFILE_SHARP, "")) > 1e-12:
+        failures.append(f"WIRING: the form's update does not carry both keys via the penumbra map ({update})")
+    form.apply(values)
+    stored = editor.layout_scene_source_specs[0]
+    if stored.get("coaxial_edge_profile") != COAXIAL_EDGE_PROFILE_SHARP or abs(
+            float(stored.get("coaxial_penumbra_mm", -1)) - _SHARP) > 1e-9:
+        failures.append(f"WIRING: Apply did not store Sharp ({stored.get('coaxial_edge_profile')!r}, "
+                        f"{stored.get('coaxial_penumbra_mm')!r})")
+
+    plain = _coaxial_spec(COAXIAL_EDGE_PROFILE_SOFT, "2.0", source_id="source:plain")
+    plain.pop(COAXIAL_ILLUMINATOR_KEY, None)
+    plain.pop("coaxial_edge_profile", None)
+    plain_form = build_scene_source_edit_form(_StubSourceEditor([plain]), "source:plain")
+    if any(field.key.startswith("coaxial_edge") for field in plain_form.fields):
+        failures.append("WIRING: a non-coaxial source's form offers an illumination edge")
+
     # Both keys must be in the editable whitelist or the apply silently no-ops.
     for key in ("coaxial_edge_profile", "coaxial_penumbra_mm"):
         if key not in SourceModelingMixin.SCENE_SOURCE_EDITABLE_KEYS:
             failures.append(f"WIRING: {key!r} missing from SCENE_SOURCE_EDITABLE_KEYS")
-    if len(COAXIAL_EDGE_PROFILES) != 2:
-        failures.append(f"WIRING: expected 2 edge profiles, got {COAXIAL_EDGE_PROFILES}")
     if not [f for f in failures if f.startswith("WIRING")]:
-        notes.append("wiring: dialog gated on is_coaxial seeds+writes both keys; both whitelisted")
+        notes.append("wiring: the Edit Source form offers the edge only on a coaxial source, seeds "
+                     "it from the stored spec, and Apply stores both keys (Sharp -> 0.01)")
 
 
 def run_checks() -> "tuple[bool, list[str]]":
