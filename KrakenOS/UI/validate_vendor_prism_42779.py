@@ -209,6 +209,13 @@ def _build_vendor_prism_doublet_trace_system(mesh_path: Path, metadata: dict[str
     return system, rows
 
 
+
+def _entrance_mirrors_exit(sequence, entrance, mirrors: set, exit_face) -> bool:
+    """The first four hits are the entrance, the two mirrors (in either order), then the exit."""
+    seq = list(sequence)[:4]
+    return (len(seq) == 4 and seq[0] == entrance and seq[3] == exit_face
+            and set(seq[1:3]) == set(mirrors))
+
 class _ReferencePlaneHarness:
     def __init__(self, rows: list[SurfaceRow]):
         self.rows = rows
@@ -240,6 +247,8 @@ _ReferencePlaneHarness._has_off_axis_geometry = le.KrakenLayoutEditor._has_off_a
 _ReferencePlaneHarness._has_beam_splitter_surface = le.KrakenLayoutEditor._has_beam_splitter_surface
 _ReferencePlaneHarness._has_diffuse_scatter_surface = le.KrakenLayoutEditor._has_diffuse_scatter_surface
 _ReferencePlaneHarness._has_optical_stl_solid = le.KrakenLayoutEditor._has_optical_stl_solid
+# bugs/0920: the 3D bounds path skips surrogate black-box members since bugs/0627
+_ReferencePlaneHarness._surrogate_blackbox_member_rows = le.KrakenLayoutEditor._surrogate_blackbox_member_rows
 _ReferencePlaneHarness._resolved_trace_mode = le.KrakenLayoutEditor._resolved_trace_mode
 _ReferencePlaneHarness._transform_reference_plane_overrides = le.KrakenLayoutEditor._transform_reference_plane_overrides
 _ReferencePlaneHarness._select_optical_solid_output_face = staticmethod(le.KrakenLayoutEditor._select_optical_solid_output_face)
@@ -911,7 +920,7 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
                 runtime_prefers_scene_boundary_index_ok = (
                     attached_boundary_ids == expected_boundary_ids
                     and {"F003", "F004", "F005", "F006"}.issubset(set(attached_boundary_ids))
-                    and scene_index_solid_faces[:4] == ["F005", "F003", "F004", "F006"]
+                    and _entrance_mirrors_exit(scene_index_solid_faces, "F005", {"F003", "F004"}, "F006")
                     and all(method == "triangle_membership" for method in scene_index_solid_methods[:4])
                 )
                 runtime_prefers_scene_boundary_index_detail = (
@@ -1275,8 +1284,14 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             ),
             VendorPrism42779Check(
                 "mirror-labeled vendor prism faces drive the non-sequential folded path",
-                [str(event.get("side_2d", "")) for event in trace_sequence if str(event.get("kind", "")) == "face_hit"]
-                == ["Left", "Right", "Up", "Down"],
+                # bugs/0920: entrance Left, both Mirror-labelled faces (Right = F003, Up = F004),
+                # exit Down. Which mirror the ray meets FIRST follows the physical fold, and the
+                # clustering's F003/F004 labels swapped relative to it when the 0847 triangle
+                # alignment changed how face records are built -- so the mirror pair is a set
+                _entrance_mirrors_exit(
+                    [str(event.get("side_2d", "")) for event in trace_sequence
+                     if str(event.get("kind", "")) == "face_hit"],
+                    "Left", {"Right", "Up"}, "Down"),
                 f"sequence={[str(event.get('side_2d', '')) for event in trace_sequence if str(event.get('kind', '')) == 'face_hit']}",
             ),
             VendorPrism42779Check(

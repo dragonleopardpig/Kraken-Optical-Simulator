@@ -2474,6 +2474,20 @@ def _apply_optical_solid_output_port_system_overrides_built(
             bodies = getattr(owner, "BBB", None) if owner is not None else None
             if bodies is None:
                 continue
+            # bugs/0920: Prerequisites3DSolids appends every side body to EEE after the n face
+            # meshes, and EEE -- not BBB -- is what the non-sequential tracer intersects (mapped
+            # to its surface through GlassOnSide). Replacing BBB[i] with a transformed COPY left
+            # EEE's twin at the pre-override pose, so a follower lens's edge wall stayed where the
+            # element was before the fold: behind a vendor prism it cut through the prism's exit,
+            # registered a spurious surface-3 hit and sent the ray back (7.83 mm of defocus since
+            # the 06-03 OCC mesh moved the prism into its path). Move the twin with the same delta.
+            faces_in_eee = None
+            eee = getattr(owner, "EEE", None)
+            try:
+                if eee is not None and len(eee) >= len(bodies):
+                    faces_in_eee = len(eee) - len(bodies)
+            except Exception:
+                faces_in_eee = None
             for body_index, side_row_index in enumerate(side_numbers):
                 try:
                     if int(side_row_index) != int(row_index):
@@ -2481,6 +2495,9 @@ def _apply_optical_solid_output_port_system_overrides_built(
                 except Exception:
                     continue
                 _replace_transformed_mesh(owner, "BBB", int(body_index), delta, transformed_mesh_lists)
+                if faces_in_eee is not None:
+                    _replace_transformed_mesh(
+                        owner, "EEE", int(faces_in_eee + body_index), delta, transformed_mesh_lists)
     cache = getattr(system, "_optical_solid_face_world_cache", None)
     if isinstance(cache, dict):
         cache.clear()
