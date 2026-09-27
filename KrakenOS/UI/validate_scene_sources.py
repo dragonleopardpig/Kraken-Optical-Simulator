@@ -325,11 +325,14 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
     checks.append(
         SceneSourceCheck(
             "blank reset Open 3D Pupil/field launch is parallel by default",
+            # bugs/0918: since bugs/0095 the default pupil pattern (Meridional fan) draws a
+            # literal fan of N, which spreads along ONE transverse axis -- the old 2-D grid
+            # expectation (x AND y span) predates it. The claim is a parallel launch that
+            # actually spreads across the pupil.
             reset_mode == "Infinity"
             and reset_field_type == "Angle"
             and reset_envelope_count >= 5
-            and float(reset_origin_span[0]) > 1e-9
-            and float(reset_origin_span[1]) > 1e-9
+            and max(float(reset_origin_span[0]), float(reset_origin_span[1])) > 1e-9
             and np.allclose(reset_direction_span, 0.0, atol=1e-12),
             (
                 f"mode={reset_mode}, field_type={reset_field_type}, samples={reset_envelope_count}, "
@@ -703,18 +706,23 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
     checks.append(
         SceneSourceCheck(
             "sequential pupil/field preview collapses zero-field samples to one launch",
+            # bugs/0918: the count is the literal Ray Fan N since bugs/0095 (it was a per-axis
+            # sample count when this check pinned 31); the claim is ONE launch of all N reaching
+            # the image with no x spread
             doublet_mode == "display_slice"
-            and int(doublet_editor._preview_field_ray_count) == 31
+            and int(doublet_editor._preview_field_ray_count)
+            == int(doublet_editor._current_ray_count())
             and int(doublet_editor._preview_field_bundle_count) == 1
-            and len(getattr(doublet_rays, "SURFACE", [])) == 31
-            and doublet_reached == 31
+            and len(getattr(doublet_rays, "SURFACE", [])) == int(doublet_editor._preview_field_ray_count)
+            and doublet_reached == int(doublet_editor._preview_field_ray_count)
             and doublet_x_span <= 1e-9
             and float(doublet_system.SDT[-1].Diameter) == doublet_image_diameter_before,
             (
                 f"mode={doublet_mode}, rays={len(getattr(doublet_rays, 'SURFACE', []))}, "
                 f"reached={doublet_reached}, preview={doublet_editor._preview_field_ray_count}, "
                 f"bundles={doublet_editor._preview_field_bundle_count}, x_span={doublet_x_span:.3g}, "
-                f"image_diameter={doublet_system.SDT[-1].Diameter}"
+                f"image_diameter={doublet_system.SDT[-1].Diameter} (before {doublet_image_diameter_before}), "
+                f"ray_count={doublet_editor._current_ray_count()}"
             ),
         )
     )
@@ -1082,8 +1090,16 @@ def validate_scene_sources() -> list[SceneSourceCheck]:
     checks.append(
         SceneSourceCheck(
             "non-sequential Pupil/field cone remains an aperture reference and does not auto-promote Image to detector",
-            nonseq_cone_2d_mode == "world_envelope" and 2 not in nonseq_cone_detectors,
-            f"mode={nonseq_cone_2d_mode}, detectors={sorted(nonseq_cone_detectors)}",
+            # bugs/0918: bug 0015 (95bd5ccb, after this check) makes the TERMINAL row a detector
+            # for display/terminal status on purpose, so traced rays are never silently dropped
+            # (North Star invariant 4, gated as phase 24) -- index 2 IS in the set now. The claim
+            # here is that the plain Image is not AUTO-PROMOTED to a physics detector for a
+            # Pupil/field cone, which is its own switch; measure that.
+            nonseq_cone_2d_mode == "world_envelope"
+            and not nonseq_cone_editor._nonseq_plain_image_detector_enabled(),
+            f"mode={nonseq_cone_2d_mode}, plain-image promotion="
+            f"{nonseq_cone_editor._nonseq_plain_image_detector_enabled()}, display detectors "
+            f"(terminal row included, bug 0015)={sorted(nonseq_cone_detectors)}",
         )
     )
     nonseq_cone_system = _build_system_from_specs(_row_specs(nonseq_cone_rows))

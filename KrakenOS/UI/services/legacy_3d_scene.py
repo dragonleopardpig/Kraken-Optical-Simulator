@@ -33,6 +33,24 @@ class Legacy3DSceneService:
             return
         setattr(self.editor, name, value)
 
+    def _legacy_show_terminal_diagnostics(self) -> bool:
+        """The "Miss" terminal-diagnostics toggle is the 3D INSPECTOR's (default off). The legacy
+        pyvista scene is populated by the EDITOR, which has no such variable, so reading it
+        directly raised AttributeError in the fallback view and in every headless snapshot
+        (bugs/0918: all 190 menu-smoke items). Read it where it exists, else the inspector's
+        default. ``__dict__`` first: a Tk widget's ``__getattr__`` can recurse (bugs/0594)."""
+        # this service proxies to the editor: look in the EDITOR's own __dict__
+        editor = self.__dict__.get("editor") or self.__dict__.get("_editor")
+        owner = editor if editor is not None else self
+        var = owner.__dict__.get("show_terminal_diagnostics_var")
+        if var is None:
+            inspector = owner.__dict__.get("_three_d_inspector")
+            var = getattr(inspector, "show_terminal_diagnostics_var", None) if inspector else None
+        try:
+            return bool(var.get()) if var is not None else False
+        except Exception:
+            return False
+
     def _populate_legacy_3d_plotter_scene(
         self,
         plotter,
@@ -393,7 +411,7 @@ class Legacy3DSceneService:
             ray_actors.append(actor)
             if not self._should_draw_3d_terminal_endpoint(
                 terminal_status,
-                show_terminal_diagnostics=bool(self.show_terminal_diagnostics_var.get()),
+                show_terminal_diagnostics=self._legacy_show_terminal_diagnostics(),
             ):
                 suppressed_endpoint_count += 1
                 continue

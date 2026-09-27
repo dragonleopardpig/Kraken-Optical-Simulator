@@ -927,8 +927,13 @@ class TracePreviewService:
             self._current_aperture_type(),
             self._current_aperture_value(),
         )
-        pupil.Samp = max(2, self._current_ray_count())
         pupil.Ptype = str(pattern)
+        # bugs/0918: the 2-D pattern preview missed bugs/0095's inversion -- Samp is a per-axis
+        # DENSITY (a fan emits 2*Samp+1), so "Ray Fan count = 31" drew 63 rays. Invert it for the
+        # pattern exactly as the 3-D display bundles do, so N means N here too.
+        from KrakenOS.UI.source_trace_helpers import kraken_pattern_samp_for_count
+
+        pupil.Samp = max(1, kraken_pattern_samp_for_count(pupil.Ptype, self._current_ray_count()))
         axis = self._current_display_slice_axis()
         if self._current_object_mode() == "Infinity":
             pupil.FieldType = "angle"

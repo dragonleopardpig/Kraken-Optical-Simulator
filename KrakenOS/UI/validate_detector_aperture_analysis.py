@@ -34,6 +34,19 @@ class DetectorApertureValidationResult:
     detail: str
 
 
+
+
+def _ray_inspector_exposes_aperture_status() -> bool:
+    """The Ray Inspector's table shows the aperture status and miss margin, and its CSV carries
+    every per-ray aperture column."""
+    from KrakenOS.UI.detector_aperture_analysis import DETECTOR_APERTURE_RECORD_STATUS_COLUMNS
+    from KrakenOS.UI.reports.ray_csv import RAY_INSPECTOR_CSV_COLUMNS
+    from KrakenOS.UI.reports.ray_tables import RAY_COLUMNS
+
+    labels = {column.key: column.heading for column in RAY_COLUMNS}
+    return (labels.get("aperture") == "Detector aperture" and "aperture_margin" in labels
+            and all(column in RAY_INSPECTOR_CSV_COLUMNS
+                    for column in DETECTOR_APERTURE_RECORD_STATUS_COLUMNS))
 def _result(check: str, ok: bool, detail: str) -> DetectorApertureValidationResult:
     return DetectorApertureValidationResult(check=check, ok=bool(ok), detail=str(detail))
 
@@ -201,9 +214,9 @@ def validate_detector_aperture_analysis() -> list[DetectorApertureValidationResu
         ),
         _result(
             "Ray Inspector top table and CSV expose per-ray aperture status",
-            "Detector aperture" in ray_table_source
-            and "aperture_margin" in ray_table_source
-            and "DETECTOR_APERTURE_RECORD_STATUS_COLUMNS" in ray_export_source
+            # bugs/0918: the Ray Inspector became a report (0894-0897) -- its table columns are
+            # reports/ray_tables.RAY_COLUMNS and its CSV header reports/ray_csv; read THOSE
+            _ray_inspector_exposes_aperture_status()
             and all(column in DETECTOR_APERTURE_RECORD_STATUS_COLUMNS for column in ("detector_aperture_status", "detector_aperture_margin_mm")),
             "ray inspector aperture hooks present",
         ),

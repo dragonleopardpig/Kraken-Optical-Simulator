@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import inspect
 from pathlib import Path
 
@@ -84,7 +86,10 @@ def _validate_docs_and_assets() -> None:
     doc = _text(DOC_PATH)
     index = _text(INDEX_PATH)
     _require("galvo_f_theta_laser_scanner" in index, "tutorial index does not include galvo page")
-    _require("Case Study 17: Galvo F-Theta Laser Scanner" in doc, "tutorial title missing")
+    # bugs/0918: case studies get renumbered as new ones are inserted (17 -> 19); the claim is
+    # that the page carries its title, not which number it currently has
+    _require(re.search(r"^Case Study \d+: Galvo F-Theta Laser Scanner$", doc, re.M) is not None,
+             "tutorial title missing")
     _require("TiltX = 40,45,50" in doc, "tutorial should document current conservative overlay")
     _require("TiltX = 35,45,55" in doc, "tutorial should document current full-field overlay")
     _require("F-Theta Lens 50mm Figure 8" in doc, "tutorial should link the standalone lens validation workflow")

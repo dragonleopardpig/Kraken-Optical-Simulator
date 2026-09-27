@@ -34,6 +34,29 @@ class _StubInspector:
         self.editor = editor
 
 
+
+def _live_combo_source() -> str:
+    from KrakenOS.UI.panels.open3d_live_controls import Open3DLiveControlsPanel
+
+    return inspect.getsource(Open3DLiveControlsPanel.live_labeled_combo)
+
+
+def _live_ray_count_call_syncs() -> bool:
+    """The Live Controls call that builds "Ray count": bound to ray_count_var, sync_fields=True."""
+    import ast
+
+    from KrakenOS.UI.panels import open3d_live_controls
+
+    tree = ast.parse(inspect.getsource(open3d_live_controls))
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Call) and getattr(node.func, "attr", "") == "live_labeled_combo"
+                and any(isinstance(a, ast.Constant) and a.value == "Ray count" for a in node.args)):
+            args = [a.value for a in node.args if isinstance(a, ast.Constant)]
+            sync = any(k.arg == "sync_fields" and isinstance(k.value, ast.Constant)
+                       and k.value.value is True for k in node.keywords)
+            return "ray_count_var" in args and sync
+    return False
+
 def main() -> int:
     root = tk.Tk()
     root.withdraw()
@@ -69,12 +92,18 @@ def main() -> int:
                 "editor_var falls back to a fresh StringVar for unknown names",
                 isinstance(fallback, tk.StringVar) and fallback is not editor.ray_count_var,
             ),
-            ("top View toolbar builds a Ray count entry", '"Ray count"' in toolbar_source),
-            ('toolbar Ray count binds the shared accessor', '_editor_var("ray_count_var")' in toolbar_source),
-            (
-                "toolbar Ray count commits via the field-sync path",
-                "_commit_live_control_update(sync_fields=True)" in toolbar_source,
-            ),
+            # bugs/0918: bugs/0093 REMOVED the toolbar's Ray count (it duplicated the Live
+            # Controls one); the old "toolbar builds a Ray count entry" check still passed only
+            # because the removal COMMENT says "Ray count". The claims now follow the single
+            # source: one Ray count, in Live Controls, on the shared var, committed with sync.
+            ("the toolbar keeps no duplicate Ray count (bugs/0093)",
+             "_open3d_toolbar_ray_count_entry = None" in toolbar_source),
+            ("Live Controls builds THE Ray count on ray_count_var with field sync",
+             _live_ray_count_call_syncs()),
+            ("a live combo binds the shared var and commits with the requested sync",
+             "textvariable=self.editor_var(var_name)" in _live_combo_source()
+             and "_commit_live_control_update(handler=handler, sync_fields=sync_fields)"
+             in _live_combo_source()),
         ]
     finally:
         root.destroy()

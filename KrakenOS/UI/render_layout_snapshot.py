@@ -131,6 +131,15 @@ def _snapshot_editor(rows: list[SurfaceRow], settings: dict) -> KrakenLayoutEdit
     # RecursionError instead). Mirror __init__'s scene-placement defaults that downstream
     # first-order/dimension code reads via getattr, so a headless snapshot can't recurse.
     editor._optical_led_glued = False
+    # bugs/0918: no imported STEP overlays in a snapshot -- but the lookups must exist, as
+    # KrakenLayoutEditor.__init__ declares them. The legacy 3D scene asks every overlay label
+    # whether a promoted row already represents it (95615f05's ghost suppression), which read
+    # imported_lens_step_path, and every __new__-built snapshot editor raised AttributeError --
+    # all 190 items of validate_menu_smoke failed on it.
+    editor.imported_camera_step_path = None
+    editor.imported_lens_step_path = None
+    editor.imported_optical_step_path = None
+    editor.imported_led_step_path = None
     # bugs/0223 (off-thread trace worker): the folded/promoted-STEP trace path reads these
     # plan caches via getattr(self, ..., {}) -- missing on a __new__ editor with no self.tk,
     # they recurse instead of defaulting. Seed them so a headless (worker) trace of a
