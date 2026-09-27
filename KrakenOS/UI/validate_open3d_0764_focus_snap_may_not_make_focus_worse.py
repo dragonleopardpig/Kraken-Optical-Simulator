@@ -279,23 +279,34 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         "E4: a scene with no part still flags cleanly -- the recorder never raises",
     )
 
-    dialog_src = inspect.getsource(inspection_part.open_inspection_part_dialog)
-    # bugs/0766: same order, the bench's names -- Length (width_mm), Width (depth_mm),
-    # Thickness (height_mm).
+    # bugs/0913: the part dialog is a row form since bugs/0882, so the order and the key each
+    # label writes are MEASURED on the real form -- field order, and a typed value per label
+    # landing in the right stored key -- instead of searched for in a Tk shim
+    from KrakenOS.UI.row_forms import inspection_part as part_form
+
+    form = part_form.build_inspection_part_form(SimpleNamespace(inspection_part_spec=None))
+    labels = [field.label for field in form.fields]
     order = ["Length L (mm)", "Width W (mm)", "Thickness T (mm)"]
-    positions = [dialog_src.find(label) for label in order]
+    positions = [labels.index(label) if label in labels else -1 for label in order]
     ok(
-        all(pos > 0 for pos in positions) and positions == sorted(positions),
+        all(pos >= 0 for pos in positions) and positions == sorted(positions)
+        and "build_inspection_part_form" in inspect.getsource(inspection_part.open_inspection_part_dialog),
         f"E5: the part dialog reads Length, Width, then Thickness (user request) -- got "
-        f"offsets {positions}",
+        f"field positions {positions}",
     )
+    by_label = {field.label: field.key for field in form.fields}
+    values = dict(form.values)
+    values.update({"width_mm": "31", "depth_mm": "17", "height_mm": "5"})
+    written = part_form._spec_from_values(form, values)
+    bound = {label: by_label.get(label) for label in order}
     ok(
-        "Length L (mm)\", w_var" in dialog_src
-        and "Width W (mm)\", d_var" in dialog_src
-        and "Thickness T (mm)\", h_var" in dialog_src,
+        bound == {"Length L (mm)": "width_mm", "Width W (mm)": "depth_mm",
+                  "Thickness T (mm)": "height_mm"}
+        and (float(written["width_mm"]), float(written["depth_mm"]), float(written["height_mm"]))
+        == (31.0, 17.0, 5.0),
         "E6: and each label is bound to the RIGHT stored key -- Length->width_mm, "
         "Width->depth_mm (the face separation), Thickness->height_mm. Getting this pairing "
-        "wrong silently swaps the device's axes (bugs/0766)",
+        f"wrong silently swaps the device's axes (bugs/0766) -- bound {bound}",
     )
 
     passed = not any(note.startswith("FAIL") for note in notes)

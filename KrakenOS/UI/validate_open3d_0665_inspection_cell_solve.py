@@ -120,7 +120,21 @@ def _check_wiring(ok, notes) -> None:
     from KrakenOS.UI.services import inspection_cell as ic
     from KrakenOS.UI.services import system_matcher as sm
 
-    ok("Solve & build stations" in inspect.getsource(ic.open_inspection_cell_dialog), "D1: the cell dialog carries the solve section")
+    # bugs/0913: the cell dialog is a row form since bugs/0883; the solve section is its solve
+    # action plus the requirement fields the solve reads -- measured on the real form
+    from types import SimpleNamespace
+
+    from KrakenOS.UI.row_forms import inspection_cell as cell_form
+
+    form = cell_form.build_inspection_cell_form(
+        SimpleNamespace(inspection_cell_spec=None, inspection_part_spec=None))
+    solve = next((action for action in form.actions if action.key == "solve"), None)
+    field_keys = {field.key for field in form.fields}
+    ok(solve is not None and "solve" in solve.label.lower()
+       and {"defect_mm", "px_per_defect", "wd_min_mm", "out_dir"} <= field_keys
+       and "build_inspection_cell_form" in inspect.getsource(ic.open_inspection_cell_dialog),
+       f"D1: the cell dialog carries the solve section ({solve.label if solve else None!r} + the "
+       f"defect / px / WD / output inputs)")
     ok(
         "folder" in {f.name for f in sm.LensSpec.__dataclass_fields__.values()}
         and "folder" in {f.name for f in sm.CameraSpec.__dataclass_fields__.values()},

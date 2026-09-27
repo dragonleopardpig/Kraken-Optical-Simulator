@@ -122,18 +122,39 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     # ---- G: the dialog wires both, and no selector came back --------------------------------------
     from KrakenOS.UI.services import inspection_part as ip
 
-    src = _inspect.getsource(ip.open_inspection_part_dialog)
-    ok("face_polygons" in src and "field_chain" in src,
-       "G1: the dialog draws the picture and renders the chain")
-    # Check for a constructed WIDGET, not the phrase: the source mentions "Inspected Face"
-    # only inside the note recording that bugs/0768 removed it, and a guard that fails on
-    # its own explanation would push the next reader to delete the explanation.
-    ok("Combobox(" not in src and "OptionMenu(" not in src,
-       "G2: NO face selector widget -- bugs/0768 removed it at the user's request")
-    ok("0768" in src,
+    # bugs/0913: the dialog is a row form since bugs/0882 -- the picture is the form's
+    # FormPreview, drawn by both shells. Measured: the preview draws the face polygons and the
+    # caption is the chain; the form has no face-choosing field; the FORM module keeps the note.
+    from types import SimpleNamespace
+
+    from KrakenOS.UI.row_forms import inspection_part as part_form
+
+    form = part_form.build_inspection_part_form(SimpleNamespace(inspection_part_spec=None))
+    form_src = _inspect.getsource(part_form)
+    preview = form.preview
+    shapes = list(preview.shapes(form, dict(form.values))) if preview is not None else []
+    polygons = [shape for shape in shapes if shape.get("kind") == "polygon"]
+    caption = str(preview.caption(form, dict(form.values))) if preview is not None else ""
+    ok(preview is not None and len(polygons) >= 3 and caption.strip()
+       and "polygons(" in _inspect.getsource(part_form._shapes)
+       and "chain_text(" in _inspect.getsource(part_form._caption)
+       and "build_inspection_part_form" in _inspect.getsource(ip.open_inspection_part_dialog),
+       f"G1: the dialog draws the picture ({len(polygons)} face polygons) and renders the chain "
+       f"({caption.splitlines()[0][:60] if caption else ''!r}...)")
+    # the selector is a CHOICE of face -- check the fields, not the source text
+    face_choices = [field.key for field in form.fields
+                    if field.kind == "choice" and "face" in (field.key + field.label).lower()]
+    ok(not face_choices,
+       f"G2: NO face selector field -- bugs/0768 removed it at the user's request {face_choices}")
+    ok("0768" in form_src,
        "G2b: and the source records WHY it is absent, so it is not re-added by accident")
-    ok("wraplength" in src,
-       "G3: the chain wraps -- an unwrapped render measured 1246 px wide, unusable")
+    from KrakenOS.UI.panels import row_form_view
+
+    render_src = _inspect.getsource(row_form_view.render_row_form)
+    caption_label = render_src[render_src.find("textvariable=caption_var"):][:200]
+    ok("wraplength=" in caption_label,
+       "G3: the chain wraps -- an unwrapped render measured 1246 px wide, unusable (the shared "
+       "renderer's caption label carries a wraplength)")
 
     passed = not any(note.startswith("FAIL") for note in notes)
     if verbose:

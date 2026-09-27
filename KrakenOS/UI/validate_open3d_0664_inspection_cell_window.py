@@ -123,10 +123,29 @@ def _check_wiring(ok, notes) -> None:
     from KrakenOS.UI.panels import inspection_cell_window as icw
     from KrakenOS.UI.services import inspection_cell as ic
 
-    dialog_src = inspect.getsource(ic.open_inspection_cell_dialog)
+    # bugs/0913: since bugs/0883 the cell dialog is a row form (row_forms/inspection_cell.py) the
+    # Tk shim renders, so "the dialog opens the embedded view" is MEASURED by running the form's
+    # own Open Cell View action with the embedded opener recorded
+    from types import SimpleNamespace
+
+    from KrakenOS.UI.row_forms import inspection_cell as cell_form
+
+    owner = SimpleNamespace(inspection_cell_spec=None, inspection_part_spec=None)
+    form = cell_form.build_inspection_cell_form(owner)
+    view = next((action for action in form.actions if action.key == "view"), None)
+    opened: list = []
+    real_open = icw.open_inspection_cell_window
+    icw.open_inspection_cell_window = lambda _owner, cell: opened.append(cell)
+    try:
+        message = view.run(form, None) if view is not None else ""
+    finally:
+        icw.open_inspection_cell_window = real_open
     ok(
-        "open_inspection_cell_window" in dialog_src,
-        "B1: the cell dialog opens the EMBEDDED view (pyvista only as fallback)",
+        view is not None and len(opened) == 1 and "pyvista" in str(message)
+        and "build_inspection_cell_form" in inspect.getsource(ic.open_inspection_cell_dialog),
+        "B1: the cell dialog opens the EMBEDDED view (pyvista only as fallback) -- its Open Cell "
+        f"View action called the embedded opener {len(opened)}x and, with no window back, said "
+        f"{message!r}",
     )
     compose_src = inspect.getsource(ic.compose_cell_plotter)
     ok("station_actor_keys" in compose_src, "B2: the composition records per-station actor keys for picking")

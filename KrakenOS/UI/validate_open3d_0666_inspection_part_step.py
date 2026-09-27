@@ -119,8 +119,25 @@ def _check_wiring(ok, notes) -> None:
 
     src = inspect.getsource(oi)
     ok("part_mesh_world" in src and "resolve_part_step_path" in src, "C1: the station glyph loads and places the part STEP")
-    ok("Part STEP (optional)" in inspect.getsource(ip.open_inspection_part_dialog), "C2: the part dialog offers the STEP")
-    ok("Part STEP (optional)" in inspect.getsource(ic.open_inspection_cell_dialog), "C3: the cell dialog offers the STEP")
+    # bugs/0913: both dialogs are row forms since bugs/0882/0883 -- measured on the real forms:
+    # a STEP path field AND a Browse action that fills it
+    from types import SimpleNamespace
+
+    from KrakenOS.UI.row_forms import inspection_cell as cell_form
+    from KrakenOS.UI.row_forms import inspection_part as part_form
+
+    owner = SimpleNamespace(inspection_cell_spec=None, inspection_part_spec=None)
+    for tag, form, opener, builder in (
+            ("C2: the part dialog", part_form.build_inspection_part_form(owner),
+             ip.open_inspection_part_dialog, "build_inspection_part_form"),
+            ("C3: the cell dialog", cell_form.build_inspection_cell_form(owner),
+             ic.open_inspection_cell_dialog, "build_inspection_cell_form")):
+        field = form.field("step_path")
+        browse = next((action for action in form.actions if action.key == "browse_step"), None)
+        ok(field is not None and "STEP" in field.label and browse is not None
+           and builder in inspect.getsource(opener),
+           f"{tag} offers the STEP ({field.label if field else None!r} + "
+           f"{browse.label if browse else None!r})")
     ok(ip.normalize_inspection_part_spec({"step_path": "x.step"})["step_path"] == "x.step", "C4: the spec keeps step_path")
 
 
