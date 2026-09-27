@@ -4508,8 +4508,14 @@ def phase_52_det_mode_keeps_reference_disks(
     (`validate_det_mode_keeps_reference_disks`) boots the doublet with Refs ON,
     toggles Det OFF->ON, and asserts the reference disk bodies and their z~0 /
     z~229 rim lines survive -- plus a Det-ON eyeball render. The live guard SKIPs
-    cleanly if no renderer is available. (Phase 52 is the last phase, so mutating
-    the shared inspector's rows / overlay toggles is safe.)
+    cleanly if no renderer is available.
+
+    bugs/0915: phase 52 is NOT the last phase any more -- it inherits whatever phases 0-51 left,
+    and it failed in every full run (baseline "fail" since at least 2026-08-30) while passing
+    alone, because an earlier phase leaves an OFF-axis field: the coverage overlay then really
+    draws its image circle and hiding the disks is correct (bugs/0033). The live guard now sets
+    its own premise (on-axis field), checks the off-axis companion (the disks give way ONLY to a
+    coverage overlay that draws), and restores the field so later phases see what they always did.
     """
     result = PhaseResult(
         name="Phase 52: Det toggle keeps Object/Image reference disks (no detector)"

@@ -105,7 +105,7 @@ def _frame_whole_system(inspector) -> None:
     inspector.update()
 
 
-def _measure(out_dir: Path, app=None, inspector=None) -> dict:
+def _measure(out_dir: Path, app=None, inspector=None, *, field_value: str = "0") -> dict:
     """Refresh the doublet with Det OFF then Det ON; return both disk/rim counts
     plus a Det-ON eyeball render. Reuses a provided ``(app, inspector)`` (Phase 52
     passes the shared harness inspector); otherwise boots its own."""
@@ -126,6 +126,22 @@ def _measure(out_dir: Path, app=None, inspector=None) -> dict:
 
     app.rows = _doublet_rows()
     app._sync_table()
+    # bugs/0915: the flag's premise is an ON-AXIS field -- that is what makes the auto image plane
+    # a 1 mm "detector" with max_real_image_height 0, so the coverage overlay draws nothing. The
+    # guard never set it: run alone the fresh editor's field is 0, but in the penta harness it
+    # inherits whatever field phases 0-51 left (measured: 5 deg gives max_rih 8.74 mm, the
+    # coverage overlay DRAWS, and hiding the disks is then correct -- bugs/0033), so phase 52
+    # failed only in the full suite. The field is set here and restored by run_checks.
+    app.field_value_var.set(str(field_value))
+    drawn: list[int] = []
+    real_coverage = inspector._add_detector_coverage_overlays
+
+    def counting_coverage(system, scene_bundle=None):
+        count = int(real_coverage(system, scene_bundle) or 0)
+        drawn.append(count)
+        return count
+
+    inspector._add_detector_coverage_overlays = counting_coverage
 
     inspector.show_detector_overlays_var.set(False)  # Det OFF
     inspector.refresh_from_editor(force_retrace=True)
@@ -134,10 +150,19 @@ def _measure(out_dir: Path, app=None, inspector=None) -> dict:
     off = _disk_and_rim_counts(inspector._renderer)
 
     inspector.show_detector_overlays_var.set(True)  # Det ON -- the failing toggle
-    inspector.refresh_from_editor(force_retrace=True)
-    inspector.update_idletasks()
-    inspector.update()
+    drawn.clear()
+    try:
+        inspector.refresh_from_editor(force_retrace=True)
+        inspector.update_idletasks()
+        inspector.update()
+    finally:
+        del inspector._add_detector_coverage_overlays
     on = _disk_and_rim_counts(inspector._renderer)
+    coverage_drawn = sum(drawn)
+    # the decision the disks follow: does the coverage overlay draw its REPLACEMENT geometry (an
+    # image circle / object FOV)? It may still draw a sensor outline either way.
+    coverage_replaces = bool(inspector._scene_refresh_service()._detector_coverage_will_draw(
+        inspector._current_scene_bundle))
 
     _frame_whole_system(inspector)
     png = out_dir / "det_on_keeps_reference_disks.png"
@@ -154,7 +179,8 @@ def _measure(out_dir: Path, app=None, inspector=None) -> dict:
     return {
         "off_disks": off[0], "off_rim_z0": off[1], "off_rim_z229": off[2],
         "on_disks": on[0], "on_rim_z0": on[1], "on_rim_z229": on[2],
-        "png": str(png), "non_blank": non_blank,
+        "png": str(png), "non_blank": non_blank, "coverage_drawn": coverage_drawn,
+        "coverage_replaces": coverage_replaces,
     }
 
 
@@ -178,6 +204,10 @@ def _evaluate(m) -> tuple[bool, list[str]]:
             f"(disks={m['off_disks']} rim_z0={m['off_rim_z0']} rim_z229={m['off_rim_z229']}) "
             "-- expected the Object and Image disks both drawn with Refs on"
         )
+    # the premise, measured: on-axis, the coverage overlay drew nothing to replace the disks with
+    if m.get("coverage_replaces"):
+        failures.append("FAIL: on-axis the coverage overlay still draws its replacement geometry "
+                        "-- the premise of bugs/0047 does not hold")
     # The bug 0047 assertion: the Det toggle must NOT blank them.
     if m["on_disks"] < 2:
         failures.append(
@@ -216,18 +246,46 @@ def run_checks(app=None, inspector=None) -> tuple[bool, list[str]]:
         xvfb_proc, env_err = _ensure_display()
         if env_err is not None:
             return True, [f"SKIP: cannot render snapshot: {env_err}"]
+    saved_field = None
     try:
-        m = _measure(out_dir, app=app, inspector=inspector)
+        if inspector is None:
+            from KrakenOS.UI.layout_editor import KrakenLayoutEditor
+            from KrakenOS.UI.validate_open3d_penta_telescope_comprehensive import _open_inspector
+
+            app = KrakenLayoutEditor()
+            inspector = _open_inspector(app)
+        saved_field = str(app.field_value_var.get())
+        m = _measure(out_dir, app=app, inspector=inspector, field_value="0")
+        # the companion half (bugs/0033): an OFF-axis field makes the coverage overlay draw its
+        # image circle, and only then may the disks give way to it
+        (out_dir / "off_axis").mkdir(parents=True, exist_ok=True)
+        off_axis = _measure(out_dir / "off_axis", app=app, inspector=inspector, field_value="5")
     except Exception as exc:  # a render crash is a real failure, not a skip
         return False, [f"FAIL: live Det-toggle render raised: {exc!r}"]
     finally:
+        if saved_field is not None:
+            try:
+                app.field_value_var.set(saved_field)  # later phases see the field they always did
+            except Exception:
+                pass
         if xvfb_proc is not None:
             xvfb_proc.terminate()
             try:
                 xvfb_proc.wait(timeout=5)
             except Exception:
                 xvfb_proc.kill()
-    return _evaluate(m)
+    passed, notes = _evaluate(m)
+    if off_axis is not None:
+        notes.append(f"on-axis: coverage drew {m['coverage_drawn']} actor(s), replaces="
+                     f"{m['coverage_replaces']}; off-axis (5): drew {off_axis['coverage_drawn']}, "
+                     f"replaces={off_axis['coverage_replaces']}, Det-ON disks {off_axis['on_disks']}")
+        if not (off_axis["coverage_replaces"] and off_axis["coverage_drawn"] > m["coverage_drawn"]
+                and off_axis["on_disks"] == 0):
+            passed = False
+            notes.append("FAIL: off-axis, the disks must give way ONLY to a coverage overlay that "
+                         f"draws its image circle (replaces={off_axis['coverage_replaces']}, drew "
+                         f"{off_axis['coverage_drawn']}, disks {off_axis['on_disks']})")
+    return passed, notes
 
 
 def main() -> int:
