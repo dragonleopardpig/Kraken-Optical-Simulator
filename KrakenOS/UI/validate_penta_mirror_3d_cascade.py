@@ -37,22 +37,19 @@ PENTA_MIRROR_FACES = ("F004", "F003")
 PENTA_REQUESTED_EXIT_DIRECTION = np.asarray((1.0, 0.0, 0.0), dtype=float)
 
 
-def _penta_faces_by_geometry(app: KrakenLayoutEditor) -> dict[str, object]:
-    """bugs/0914: find the penta prism's faces by GEOMETRY, not by name.
+def penta_face_roles(face_records) -> dict[str, object]:
+    """bugs/0914/0919: a pentaprism's faces by GEOMETRY, from face records carrying a normal.
 
-    The guard named them F005 (entrance), F006 (exit) and F004/F003 (mirrors) in the numbering of
-    the old planar-face clustering. The native STEP analytic import (58f0e215, 2026-05-28) numbers
-    faces its own way and qualifies them with the solid (S001/F005), so the old names first
-    failed to resolve ("F005 is not available") and, once qualified, pointed at different
-    physical faces -- the snap guided by a SIDE face and the mirrors assigned were the bevel and
-    the exit, so every ray refracted straight through. A pentaprism is identified by its normals
-    whatever the numbering: two parallel SIDE faces (dot -1); in the section plane, the
-    ENTRANCE and EXIT are the one perpendicular pair (dot 0) and the two MIRRORS the pair whose
-    normals are 135 degrees apart (dot -cos 45); the fifth is the bevel. Dot products do not
-    change under the overlay's pose, so any pose works.
+    Face NAMES drift -- the native STEP import (58f0e215) numbers faces its own way and
+    qualifies them (S001/F005) -- but the normals identify a pentaprism whatever the numbering
+    and whatever the pose (dot products are pose-invariant): two parallel SIDE faces (dot -1);
+    in the section plane the THROUGH pair (entrance and exit) is the one perpendicular pair
+    (dot 0); the two MIRRORS are the pair 135 degrees apart (dot -cos 45) among the remaining
+    three, since each mirror also meets a through face at 135 degrees; the fifth is the bevel.
+    Returns ``{"through": (a, b), "mirrors": (c, d), "bevel": e, "sides": (f, g)}``.
     """
     faces = []
-    for face in list(app._step_overlay_face_metadata("optical").get("faces", []) or []):
+    for face in list(face_records or []):
         if not isinstance(face, dict):
             continue
         normal = np.asarray(face.get("normal_world", face.get("normal", ())), dtype=float).reshape(-1)
@@ -66,20 +63,27 @@ def _penta_faces_by_geometry(app: KrakenLayoutEditor) -> dict[str, object]:
     sides = pairs(faces, -1.0)
     if len(sides) != 1:
         raise RuntimeError(f"expected ONE pair of parallel side faces, found {sides}")
-    side_ids = {sides[0][0][0], sides[0][1][0]}
+    side_ids = (sides[0][0][0], sides[0][1][0])
     section = [face for face in faces if face[0] not in side_ids]
     through = pairs(section, 0.0)
-    # each mirror ALSO meets the entrance or exit at 135 degrees, so the mirror pair is sought
-    # among the three faces that are neither
     through_ids = {face[0] for pair in through for face in pair}
-    mirrors = pairs([face for face in section if face[0] not in through_ids],
-                    -float(np.cos(np.radians(45.0))))
+    rest = [face for face in section if face[0] not in through_ids]
+    mirrors = pairs(rest, -float(np.cos(np.radians(45.0))))
     if len(section) != 5 or len(through) != 1 or len(mirrors) != 1:
         raise RuntimeError(f"not a pentaprism section: {len(section)} faces, perpendicular "
                            f"{through}, mirror pairs {mirrors}")
-    (entrance, exit_face) = sorted((through[0][0][0], through[0][1][0]), reverse=True)
-    return {"entrance": entrance, "exit": exit_face,
-            "mirrors": (mirrors[0][0][0], mirrors[0][1][0])}
+    mirror_ids = (mirrors[0][0][0], mirrors[0][1][0])
+    bevel = next(face[0] for face in rest if face[0] not in mirror_ids)
+    return {"through": (through[0][0][0], through[0][1][0]), "mirrors": mirror_ids,
+            "bevel": bevel, "sides": side_ids}
+
+
+def _penta_faces_by_geometry(app: KrakenLayoutEditor) -> dict[str, object]:
+    """This guard's roles on the imported overlay: the entrance is the through face the guard
+    has always snapped (the higher-numbered one), the exit the other."""
+    roles = penta_face_roles(app._step_overlay_face_metadata("optical").get("faces", []) or [])
+    entrance, exit_face = sorted(roles["through"], reverse=True)
+    return {"entrance": entrance, "exit": exit_face, "mirrors": tuple(roles["mirrors"])}
 
 
 def _global_plus_z_axis() -> dict[str, object]:

@@ -49,6 +49,13 @@ def _direct_context_metadata(metadata: dict[str, object], candidates: list[objec
     )
 
 
+
+def _mirror_face_ids(system) -> set:
+    """The faces this fixture assigned Mirror, read from the metadata the trace used."""
+    metadata = getattr(system.SDT[1], "OpticalSolidFaces", {}) or {}
+    return {str(face.get("face_id", "")) for face in list(metadata.get("faces", []) or [])
+            if isinstance(face, dict) and str(face.get("function", "")) == "Mirror"}
+
 def validate_optical_solid_direct_mirror_faces() -> list[DirectMirrorFaceCheck]:
     checks: list[DirectMirrorFaceCheck] = []
     if not PRISM_42779_STEP.exists():
@@ -119,7 +126,13 @@ def validate_optical_solid_direct_mirror_faces() -> list[DirectMirrorFaceCheck]:
     checks.append(
         DirectMirrorFaceCheck(
             "direct Interaction Surface mirror faces do not skip the closed solid",
-            solid_faces[:4] == ["F005", "F003", "F004", "F006"],
+            # bugs/0919: the ray must enter, hit BOTH faces assigned Mirror, and exit -- which of
+            # the two mirrors carries the label F003 vs F004 follows the face-record build (the
+            # 0847 triangle alignment relabelled them), so the pair is compared as a set, and
+            # against the fixture's OWN Mirror assignments rather than two fixed names
+            len(solid_faces) >= 4 and solid_faces[0] == "F005" and solid_faces[3] == "F006"
+            and set(solid_faces[1:3]) == _mirror_face_ids(system)
+            and len(set(solid_faces[1:3])) == 2,
             detail,
         )
     )

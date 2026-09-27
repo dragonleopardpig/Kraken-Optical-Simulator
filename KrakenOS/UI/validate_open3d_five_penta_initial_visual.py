@@ -54,8 +54,14 @@ def _assert_state_ok(state: dict[str, object]) -> None:
     if path_count != EXPECTED_RAYS:
         raise RuntimeError(f"{label}: expected {EXPECTED_RAYS} ray paths, got {path_count}.")
     terminal_counts = dict(state.get("terminal_counts", {}) or {})
-    if terminal_counts != {"escaped": EXPECTED_RAYS}:
-        raise RuntimeError(f"{label}: expected all rays escaped, got {terminal_counts!r}.")
+    # bugs/0919: the claim is that every ray LEAVES the cascade (-X) -- none stops inside a
+    # prism, none lands on the image plane. Since bug 0015 (after this guard was written) the
+    # terminal row counts as the detector, so a ray leaving sideways is honestly reported as
+    # "missed_detector" rather than "escaped"; both mean it left.
+    left = {"escaped", "missed_detector"}
+    if set(terminal_counts) - left or sum(int(v) for v in terminal_counts.values()) != EXPECTED_RAYS:
+        raise RuntimeError(f"{label}: expected all {EXPECTED_RAYS} rays to leave the cascade, "
+                           f"got {terminal_counts!r}.")
     events = dict(state.get("surface_event_counts", {}) or {})
     for face_id in ("F003", "F004"):
         expected = EXPECTED_RAYS * EXPECTED_PENTA_COUNT

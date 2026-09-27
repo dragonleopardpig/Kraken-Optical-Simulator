@@ -178,7 +178,8 @@ def _validate_promoted_reflecting_prism_image_plane_is_not_intrusive() -> None:
         row = app.rows[row_index]
         if abs(float(row.axis_move)) > 1e-12:
             raise AssertionError("Exact promoted reflecting-prism repro must use AxisMove=0.")
-        for face_id in ("F004", "F003"):
+        roles = _row_penta_roles(app, row_index)
+        for face_id in roles["mirrors"]:
             assigned = app.assign_optical_solid_face_function(
                 row_index,
                 face_id,
@@ -194,20 +195,48 @@ def _validate_promoted_reflecting_prism_image_plane_is_not_intrusive() -> None:
         )
         image_index = row_index + 1
         if image_index < len(app.rows) and app.rows[image_index].surface == "Image":
+            # bugs/0919: this assumed the Image never moves -- true only while the old face
+            # names put the "mirrors" on the wrong faces and nothing folded. With the true penta
+            # mirrors the beam turns 90 deg and the image reference follows the output port (the
+            # vendor-prism guard asserts exactly that). The bug guarded here was the Image landing
+            # INSIDE the prism: so its centre must sit ON the central ray's exit leg, BEYOND the
+            # exit face.
             image_transform = np.asarray(system.TRANS_2A[image_index], dtype=float).reshape(4, 4)
-            expected_center = np.asarray((0.0, 0.0, app._stl_row_z_station(image_index)), dtype=float)
             actual_center = image_transform[:3, 3]
-            if not np.allclose(actual_center, expected_center, atol=1e-6):
+            paths = list(getattr(scene_bundle, "ray_paths", []) or [])
+            central = min(paths, key=lambda path: float(np.hypot(
+                *np.asarray(getattr(path, "points_world"), dtype=float)[0, :2]))) if paths else None
+            pts = np.asarray(getattr(central, "points_world", np.empty((0, 3))), dtype=float)
+            if pts.shape[0] < 3:
+                raise AssertionError("Reflecting-prism repro traced no central exit leg.")
+            leg_start, leg_end = pts[-2, :3], pts[-1, :3]
+            leg = leg_end - leg_start
+            leg_len = float(np.linalg.norm(leg))
+            along = float(np.dot(actual_center - leg_start, leg / leg_len)) if leg_len > 0 else -1.0
+            off_leg = float(np.linalg.norm(np.cross(actual_center - leg_start, leg / leg_len))) \
+                if leg_len > 0 else float("inf")
+            # the image is port-anchored: centred on the prism's OUTPUT axis, which an off-centre
+            # input beam leaves parallel but offset (measured 3.6 mm) -- so "on the ray" is not
+            # the claim; "beyond the exit face, facing along the exit" is
+            image_axis = image_transform[:3, 2] / max(float(np.linalg.norm(image_transform[:3, 2])), 1e-12)
+            facing = abs(float(np.dot(image_axis, leg / leg_len))) if leg_len > 0 else 0.0
+            if not (along > 0.0 and facing > 0.999):
                 raise AssertionError(
                     "Exact promoted reflecting-prism repro moved the Image plane into the scene object: "
-                    f"actual={actual_center.tolist()}, expected={expected_center.tolist()}"
+                    f"centre {actual_center.tolist()} is {along:.3f} mm beyond the exit face "
+                    f"(off the leg {off_leg:.3f} mm), axis . exit direction = {facing:.4f}"
                 )
 
         ray_paths = list(getattr(scene_bundle, "ray_paths", []) or [])
         if len(ray_paths) < 10:
             raise AssertionError(f"Reflecting-prism repro traced too few rays: {len(ray_paths)}")
         sequences = [_surface_face_sequence(path) for path in ray_paths]
-        incomplete = [sequence for sequence in sequences if "F006" not in sequence]
+        entrance = _first_hit_face(scene_bundle)
+        exit_face = next((face for face in roles["through"] if face != entrance), "")
+        if entrance not in roles["through"] or not exit_face:
+            raise AssertionError(f"Reflecting-prism repro entered at {entrance!r}, not a through face "
+                                 f"{roles['through']!r}")
+        incomplete = [sequence for sequence in sequences if exit_face not in sequence]
         if incomplete:
             raise AssertionError(
                 "Exact promoted reflecting-prism repro left rays terminated before the exit face; "
@@ -215,6 +244,25 @@ def _validate_promoted_reflecting_prism_image_plane_is_not_intrusive() -> None:
             )
     finally:
         app.destroy()
+
+
+def _row_penta_roles(app, row_index: int) -> dict:
+    """bugs/0919: the promoted prism's faces by GEOMETRY -- the names F003/F004/F006 were the
+    old planar clustering's and the native STEP import renumbers them (see penta_face_roles)."""
+    from KrakenOS.UI.validate_penta_mirror_3d_cascade import penta_face_roles
+
+    _row, _path, metadata = app._optical_solid_face_metadata_for_row(row_index)
+    return penta_face_roles(list(metadata.get("faces", []) or []))
+
+
+def _first_hit_face(bundle) -> str:
+    """The face the traced rays meet first (most common first surface event)."""
+    firsts = []
+    for path in list(getattr(bundle, "ray_paths", []) or []):
+        sequence = _surface_face_sequence(path)
+        if sequence:
+            firsts.append(sequence[0])
+    return Counter(firsts).most_common(1)[0][0] if firsts else ""
 
 
 def _validate_face_assignment_drops_stale_trace_cache() -> None:
@@ -243,10 +291,12 @@ def _validate_face_assignment_drops_stale_trace_cache() -> None:
         if app._current_preview_scene_trace() is None:
             raise AssertionError("Expected a cached preview trace before assigning the mirror face.")
         before_counts = _surface_event_counts(before_bundle)
-        if not before_counts.get("F004:refraction", 0):
-            raise AssertionError(f"Expected the unassigned prism to refract at F004 first; counts={before_counts!r}.")
+        first_face = _first_hit_face(before_bundle)
+        if not before_counts.get(f"{first_face}:refraction", 0):
+            raise AssertionError(f"Expected the unassigned prism to refract at the first-hit face "
+                                 f"{first_face!r}; counts={before_counts!r}.")
 
-        app.assign_optical_solid_face_function(row_index, "F004", "Full Reflecting", direct_context=True)
+        app.assign_optical_solid_face_function(row_index, first_face, "Full Reflecting", direct_context=True)
         if app._current_preview_scene_trace() is not None:
             raise AssertionError("CAD/STL face assignment left a stale current preview trace available.")
         if app.last_system is not None or app.last_rays is not None or app._last_scene_bundle is not None:
@@ -258,13 +308,13 @@ def _validate_face_assignment_drops_stale_trace_cache() -> None:
         )
         ray_paths = list(getattr(after_bundle, "ray_paths", []) or [])
         after_counts = _surface_event_counts(after_bundle)
-        if len(ray_paths) <= 0 or after_counts.get("F004:reflection", 0) != len(ray_paths):
+        if len(ray_paths) <= 0 or after_counts.get(f"{first_face}:reflection", 0) != len(ray_paths):
             raise AssertionError(
-                "Rebuilt trace after F004 Full Reflecting assignment did not reflect every ray: "
+                f"Rebuilt trace after {first_face} Full Reflecting assignment did not reflect every ray: "
                 f"rays={len(ray_paths)}, counts={after_counts!r}."
             )
-        if after_counts.get("F004:refraction", 0):
-            raise AssertionError(f"Stale F004 refraction survived mirror assignment: counts={after_counts!r}.")
+        if after_counts.get(f"{first_face}:refraction", 0):
+            raise AssertionError(f"Stale {first_face} refraction survived mirror assignment: counts={after_counts!r}.")
     finally:
         app.destroy()
 
@@ -311,14 +361,18 @@ def _validate_promote_step_assignment_remaps_overlay_face_id_by_world_pick() -> 
             for face in list(metadata.get("faces", []) or [])
             if isinstance(face, dict)
         }
-        if functions.get("F004") != "Mirror":
+        # bugs/0919: the face that must end up Mirror is the ROW face at the picked world point
+        # and normal -- named by geometry, since the face numbering drifted -- and it must be
+        # the only one: the temporary overlay label ("F006" here) is never trusted
+        at_pick = app.optical_solid_face_record_at_world_point(
+            row_index, picked_point, normal_world=picked_normal, assigned_only=False)
+        expected = str((at_pick or {}).get("face_id", "") or "")
+        mirrored = sorted(face for face, function in functions.items() if function == "Mirror")
+        if not expected or mirrored != [expected]:
             raise AssertionError(
                 "Imported STEP promote-and-assign must remap the temporary overlay face label by "
-                f"picked world point/normal; functions={functions!r}."
-            )
-        if functions.get("F006") == "Mirror":
-            raise AssertionError(
-                "Temporary overlay face F006 was trusted after promotion and mirrored the wrong row face."
+                f"picked world point/normal: expected only {expected!r} mirrored, got {mirrored!r}; "
+                f"functions={functions!r}."
             )
     finally:
         app.destroy()
@@ -373,6 +427,14 @@ def main() -> int:
                     "Row-backed Open 3D face assignment must resolve the picked mesh cell before point/normal fallback: "
                     f"picked={picked!r}, matched_by_cell={matched_by_cell!r}"
                 )
+        # bugs/0919: promotion now DERIVES a 2D side label per face (Right/Down/...); remember
+        # them, so the check below can tell "kept its label" from "the assignment invented one"
+        sides_before = {
+            str(face.get("face_id", "") or ""): str(face.get("side_2d", "Auto") or "Auto")
+            for face in list(normalize_optical_solid_face_metadata(
+                app.rows[row_index].advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {})
+            ).get("faces", []) or [])
+        }
         assigned = app.assign_optical_solid_face_function_at_world_point(
             row_index,
             point,
@@ -409,7 +471,35 @@ def main() -> int:
             if coplanar_pair is not None:
                 break
         if coplanar_pair is None:
-            raise AssertionError("Expected promoted prism metadata to include a split coplanar face pair.")
+            # bugs/0919: the native STEP import (58f0e215, after this guard) keeps B-rep faces
+            # whole, so this prism no longer ARRIVES with a split plane. The claim -- assigning
+            # one record of a split plane updates its coplanar siblings -- still matters (a
+            # clustered STL or an old save can be split), so make the split: clone a face
+            # record under a new id into the row's own metadata, and assign as before.
+            import copy
+
+            raw = dict(app.rows[row_index].advanced.get(OPTICAL_SOLID_FACES_ADVANCED_ATTR, {}) or {})
+            raw_faces = [dict(face) for face in list(raw.get("faces", []) or [])]
+            # not the face assigned directly above -- that one's saved state is checked below
+            direct_id = str(reassigned.get("face_id", "") or "")
+            template = next((face for face in raw_faces
+                             if str(face.get("face_id", "")).strip()
+                             and str(face.get("face_id", "")) != direct_id), None)
+            if template is None:
+                raise AssertionError("Promoted prism metadata has no face record to split.")
+            sibling = copy.deepcopy(template)
+            sibling["face_id"] = f"{template['face_id']}_split"
+            raw["faces"] = raw_faces + [sibling]
+            app.rows[row_index].advanced[OPTICAL_SOLID_FACES_ADVANCED_ATTR] = raw
+            coplanar_metadata = normalize_optical_solid_face_metadata(raw)
+            coplanar_faces = list(coplanar_metadata.get("faces", []) or [])
+            coplanar_extent = _optical_solid_face_metadata_extent(coplanar_faces, app.rows[row_index])
+            by_id = {str(face.get("face_id", "")): face for face in coplanar_faces}
+            first, second = by_id.get(str(template["face_id"])), by_id.get(sibling["face_id"])
+            if first is None or second is None or not _optical_solid_face_records_share_plane(
+                    first, second, extent_mm=coplanar_extent):
+                raise AssertionError("A cloned face record is not recognised as coplanar with its source.")
+            coplanar_pair = (first, second)
         first_face, second_face = coplanar_pair
         first_face_id = str(first_face.get("face_id", "") or "")
         second_face_id = str(second_face.get("face_id", "") or "")
@@ -436,8 +526,14 @@ def main() -> int:
             for face in list(metadata.get("faces", []) or [])
             if str(face.get("face_id", "") or "") == str(reassigned.get("face_id", "") or "")
         ]
-        if not saved or str(saved[0].get("side_2d")) != "Auto":
-            raise AssertionError("Direct Open 3D physics assignment should not require Left/Right/Up/Down side labels.")
+        # the claim: a direct assignment neither REQUIRES nor INVENTS a side label -- the face
+        # ends with the label it arrived with (promotion may have derived one), or Auto
+        if not saved or str(saved[0].get("side_2d")) not in {
+                "Auto", sides_before.get(str(saved[0].get("face_id", "")), "Auto")}:
+            raise AssertionError(
+                "Direct Open 3D physics assignment should not require Left/Right/Up/Down side labels "
+                f"(side {saved[0].get('side_2d') if saved else None!r}, arrived "
+                f"{sides_before.get(str(saved[0].get('face_id', '')) if saved else '', None)!r}).")
 
         _fmt, triangles = le._read_stl_triangle_vertices(Path(metadata["source_stl"]))
         overlay_triangles = Kraken3DInspector._world_face_triangles_for_record(
