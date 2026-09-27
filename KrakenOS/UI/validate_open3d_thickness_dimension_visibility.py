@@ -39,6 +39,8 @@ Exit: 0 = pass, 1 = regression.
 """
 from __future__ import annotations
 
+from KrakenOS.UI.services.open3d_mouse_bindings import viewport_wiring_source
+
 import contextlib
 import inspect
 import io
@@ -130,7 +132,7 @@ def run_checks() -> "tuple[bool, list[str]]":
     # E) Drag-to-point re-anchor commit.
     from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService
 
-    release_src = inspect.getsource(Open3DMouseBindingsService._install_pick_only_left_click_bindings)
+    release_src = viewport_wiring_source()
     if "dimension_anchor_was_drag" not in release_src:
         failures.append(
             "FAIL: a drag of the dimension endpoint onto a surface/edge must commit the "

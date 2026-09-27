@@ -50,6 +50,8 @@ Exit: 0 = pass, 1 = regression.
 """
 from __future__ import annotations
 
+from KrakenOS.UI.services.open3d_mouse_bindings import viewport_wiring_source
+
 import inspect
 import types
 
@@ -162,7 +164,7 @@ def run_checks() -> "tuple[bool, list[str]]":
         failures.append("FAIL(E): pointer outside the widget rect must read as NOT over")
 
     # F) Source wiring.
-    mb_src = inspect.getsource(mb_mod.Open3DMouseBindingsService._install_pick_only_left_click_bindings)
+    mb_src = viewport_wiring_source()
     if "alt_changed" not in mb_src or "self._refire_scene_hover_pick()" not in mb_src:
         failures.append("FAIL(F): hover_motion must re-fire the pick on an Alt transition (alt_changed)")
     for seq in ('"<KeyPress-Alt_L>"', '"<KeyPress-Alt_R>"', '"<KeyRelease-Alt_L>"', '"<KeyRelease-Alt_R>"'):

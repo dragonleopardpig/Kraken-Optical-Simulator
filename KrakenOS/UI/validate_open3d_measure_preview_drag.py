@@ -24,6 +24,8 @@ Penta phase 106 runs ``run_checks`` only.
 
 from __future__ import annotations
 
+from KrakenOS.UI.services.open3d_mouse_bindings import viewport_wiring_source
+
 import inspect
 from types import SimpleNamespace
 
@@ -125,7 +127,7 @@ def run_checks() -> list[tuple[str, bool, str]]:
     # 6) the lane-handle drag gesture is wired through the Tk mouse bindings:
     #    press grabs the handle, B1-motion drags it, release commits.
     from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService
-    binds = inspect.getsource(Open3DMouseBindingsService._install_pick_only_left_click_bindings)
+    binds = viewport_wiring_source()
     bindings_ok = (
         "_measure_offset_drag_state_from_current_pick()" in binds
         and "_apply_measure_offset_drag_motion(current)" in binds

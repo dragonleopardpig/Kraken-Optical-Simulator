@@ -27,6 +27,8 @@ Commit-2 handle drag), and the rest is source-string wiring. Penta phase 107 run
 
 from __future__ import annotations
 
+from KrakenOS.UI.services.open3d_mouse_bindings import viewport_wiring_source
+
 import inspect
 from types import SimpleNamespace
 
@@ -178,7 +180,7 @@ def run_checks() -> list[tuple[str, bool, str]]:
     #    it, a release finishes it, a press while active arms no drag detector) and
     #    the VTK-side hover is suppressed so the two don't fight.
     from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService
-    binds = inspect.getsource(Open3DMouseBindingsService._install_pick_only_left_click_bindings)
+    binds = viewport_wiring_source()
     from KrakenOS.UI.services.open3d_interaction import Open3DInteractionService
     move_src = inspect.getsource(Open3DInteractionService._on_mouse_move)
     bindings_ok = (

@@ -33,6 +33,8 @@ Exit: 0 = pass, 1 = regression.
 """
 from __future__ import annotations
 
+from KrakenOS.UI.services.open3d_mouse_bindings import viewport_wiring_source
+
 import inspect
 import types
 
@@ -57,7 +59,7 @@ def _check_source_contract() -> list[str]:
     from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService as MB
 
     failures: list[str] = []
-    src = inspect.getsource(MB._install_pick_only_left_click_bindings)
+    src = viewport_wiring_source()
 
     # Slice out each closure body so a stray reference elsewhere can't mask a miss.
     def _closure_body(name: str) -> str:

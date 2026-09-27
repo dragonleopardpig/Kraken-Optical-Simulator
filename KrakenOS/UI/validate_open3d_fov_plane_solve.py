@@ -23,6 +23,8 @@ the gesture/UI wiring is asserted against the installer/handler source.
 """
 from __future__ import annotations
 
+from KrakenOS.UI.services.open3d_mouse_bindings import viewport_wiring_source
+
 import inspect
 import types
 
@@ -374,7 +376,7 @@ def _test_double_click_gesture_wiring() -> None:
     from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService
     from KrakenOS.UI.open3d_inspector import Kraken3DInspector
 
-    binds = inspect.getsource(Open3DMouseBindingsService._install_pick_only_left_click_bindings)
+    binds = viewport_wiring_source()
     if "<Double-Button-1>" not in binds or "_maybe_open_fov_popup_from_double_click" not in binds:
         raise AssertionError("double-left-click must be bound and route to the FOV popup")
 

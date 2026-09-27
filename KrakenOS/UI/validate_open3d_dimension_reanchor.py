@@ -33,6 +33,8 @@ No X server needed. Checks:
 """
 from __future__ import annotations
 
+from KrakenOS.UI.services.open3d_mouse_bindings import viewport_wiring_source
+
 import inspect
 import types
 
@@ -128,7 +130,7 @@ def _test_modal_pick_source_contract() -> None:
     from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService
     from KrakenOS.UI.open3d_inspector import Kraken3DInspector
 
-    binds = inspect.getsource(Open3DMouseBindingsService._install_pick_only_left_click_bindings)
+    binds = viewport_wiring_source()
     # left_press: a Ctrl-click that lands on a dimension enters the modal pick.
     if "_begin_dimension_anchor_pick_from_current_pick()" not in binds:
         raise AssertionError("left_press does not enter the modal re-anchor on Ctrl-click")

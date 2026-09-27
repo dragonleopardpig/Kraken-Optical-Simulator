@@ -38,6 +38,8 @@ which phase / sub-check failed.
 
 from __future__ import annotations
 
+from KrakenOS.UI.services.open3d_mouse_bindings import viewport_wiring_source
+
 import sys
 import tempfile
 import os
@@ -5398,7 +5400,7 @@ def phase_60_fov_plane_solve(
         apply_error = str(exc)
 
     # 6) Gesture + popup wiring (no X server can fire a real double-click).
-    binds = inspect.getsource(Open3DMouseBindingsService._install_pick_only_left_click_bindings)
+    binds = viewport_wiring_source()
     gesture_ok = "<Double-Button-1>" in binds and "_maybe_open_fov_popup_from_double_click" in binds
     popup = inspect.getsource(type(inspector)._open_quick_estimation_fov_popup)
     buttons_ok = "Solve for Thickness" in popup and "Solve for Image/Sensor Size" in popup
@@ -16733,6 +16735,10 @@ phase_692_optimization_in_qt = _phase_from_standalone(
     692, "optimisation in Qt (Qt migration phase 6, 0904): after 0903 the Qt shell could edit the lens but not optimise it, and three things stood in the way, all the model reaching into Tk widgets. WHICH OPERANDS were in use existed only as a Tk Listbox selection (merit_mode_list.curselection(), read by three model functions); it goes through a selected_merit_operands seam now -- shell first, then the Tk Listbox, then the headless list -- and all three ask it. START/STOP: the model configured the Tk button itself; it also tells a shell through show_optimization_state(running). MARKING A VARIABLE and its bounds were Tk-menu verbs keyed on the Tk item under the mouse; toggle_optimization_cell, clear_bounds_for_cell and optimization_cell_state take a row and a field, and the Tk menu verbs delegate. What each per-operand setting IS (label, variable, choices, default) is KrakenOS/UI/optimization_controls.py; which settings an operand HAS was already OperandSpec.controls; ensure_operand_variables makes the per-operand variables a shell without the Tk panel would otherwise lack. The Qt shell gets an Optimization dock and the optimisation entries of the cell menu, and marked cells carry the Tk marker colour. MEASURED: a real Spot RMS optimisation of the Cooke triplet started from the Qt dock goes 25.0547 -> 0.053189, EXACTLY the same run in Tk; and on om05a_folded the same Spot RMS run stays at the 1e9 failure sentinel in BOTH shells (the thickness moves on a flat merit) -- a pre-existing scene/operand finding recorded in bugs/0904, not a Qt fault. Guard: the Listbox read in exactly one fallback place, the Start/Stop seam, the Tk menu verbs delegating, every operand control catalogued with defaults equal to the Tk panel, Tk unchanged, and in Qt the operand pick, the settings per spec, a typed weight, the cell menu and marker, and the Qt-started run matching Tk (0904)",
     "KrakenOS.UI.validate_open3d_0904_optimization_in_qt",
     "optimization_in_qt")
+phase_693_viewport_event_seam = _phase_from_standalone(
+    693, "the 3D viewport input handlers reachable without Tk (Qt migration phase 5a part 1, 0905): phase 5 looked enormous -- the inspector is 26 234 lines -- but MEASURED it has only 30 event hookups (8 toolkit-neutral VTK observers, 11 Tk bindings on the viewport, 12 inside Tk dialogs) and the real mouse wiring is services/open3d_mouse_bindings: 16 Tk bindings onto handlers that implement pick-vs-orbit, pan, the context menu and Alt-edge hover with the inspector own camera math, reading only an event x, y, state, keysym and root position. So 5a is re-plumbing: the handlers are built once (_build_viewport_handlers) and bound to Tk separately (_bind_tk_viewport); dispatch_viewport_event runs one with any event carrying those fields (viewport_events.ViewportEvent, Tk modifier bits kept); button_handler is the routing rule the Tk table encodes; VIEWPORT_KEYS is one shortcut table for both shells; cursor, timers and pointer go through seams; and _attach_vtk_core(render_window, initialize) moved the VTK core verbatim out of __init__ (AST-checked: no __init__ local). FINDING: the Tk VTK widget has NO cursor option -- configure(cursor=...) raises TclError and all six call sites always swallowed it, so the Tk 3D view cursor cues have never shown; the seam keeps that (no Tk behaviour change) and it is recorded for a decision. HARNESS TRAPS: event_generate does not derive modifier state from the pattern (a synthetic Shift-drag must carry state=0x1|0x100), and synthetic presses have no timestamps, so a second press on the same pixel reads as a double-click. Guard: the handlers read only ViewportEvent fields, all 14 built and every Tk sequence and key still bound, button_handler equal to the Tk table, an orbit AND a pan through genuine Tk events and through dispatch leaving a REAL inspector camera in the SAME place, a dispatched Escape cancelling, the seams reaching a shell hook or Tk, and the core built (0905)",
+    "KrakenOS.UI.validate_open3d_0905_viewport_event_seam",
+    "viewport_event_seam")
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17491,6 +17497,7 @@ def main() -> int:
             phase_690_trace_controls,
             phase_691_surface_table_editing,
             phase_692_optimization_in_qt,
+            phase_693_viewport_event_seam,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

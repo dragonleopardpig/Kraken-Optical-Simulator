@@ -44,10 +44,10 @@ def _check_source_contracts() -> list[str]:
     for marker in ("slide_along_axis_mode_var", "_axis_slide_drag_state"):
         if marker not in init_source:
             failures.append(f"Kraken3DInspector.__init__ must declare {marker}")
-    bindings_source = inspect.getsource(
-        __import__("KrakenOS.UI.services.open3d_mouse_bindings", fromlist=["Open3DMouseBindingsService"])
-        .Open3DMouseBindingsService._install_pick_only_left_click_bindings
-    )
+    # the whole viewport wiring -- install, handlers and Tk binding (split by bugs/0905)
+    bindings_source = __import__(
+        "KrakenOS.UI.services.open3d_mouse_bindings", fromlist=["viewport_wiring_source"]
+    ).viewport_wiring_source()
     apply_source = inspect.getsource(Kraken3DInspector._apply_axis_slide_drag_motion)
     finish_source = inspect.getsource(Kraken3DInspector._finish_axis_slide_drag)
     cancel_source = inspect.getsource(Kraken3DInspector.cancel_active_3d_operation)

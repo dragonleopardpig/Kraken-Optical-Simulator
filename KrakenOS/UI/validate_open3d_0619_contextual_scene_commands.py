@@ -27,6 +27,8 @@ Run:  .devenv/state/venv/bin/python -m KrakenOS.UI.validate_open3d_0619_contextu
 
 from __future__ import annotations
 
+from KrakenOS.UI.services.open3d_mouse_bindings import viewport_wiring_source
+
 import inspect
 from types import SimpleNamespace
 
@@ -164,7 +166,7 @@ def run_checks():
     # ---------------------------------------------------------------- F: empty-drag select
     from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService as M
 
-    bindings_src = inspect.getsource(M._install_pick_only_left_click_bindings)
+    bindings_src = viewport_wiring_source()
     if "_ctrl_drag_select_pending = True" not in bindings_src:
         ok = False
         notes.append("FAIL: F (bugs/0622): the Ctrl press no longer arms the box select")

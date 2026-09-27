@@ -37,6 +37,8 @@ Exit: 0 = pass, 1 = regression.
 """
 from __future__ import annotations
 
+from KrakenOS.UI.services.open3d_mouse_bindings import viewport_wiring_source
+
 import inspect
 
 import numpy as np
@@ -219,9 +221,7 @@ def run_checks() -> "tuple[bool, list[str]]":
     # --- H: source contract -- new hook wired, old forwarding helpers gone ------
     from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService
 
-    install_src = inspect.getsource(
-        Open3DMouseBindingsService._install_pick_only_left_click_bindings
-    )
+    install_src = viewport_wiring_source()
     if "self._handle_navigation_cube_left_press()" not in install_src:
         failures.append(
             "H FAIL: left_press does not call _handle_navigation_cube_left_press -- the "

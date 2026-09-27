@@ -396,6 +396,16 @@ def expand_rows_to_lens_block(row_indices, front_datum, rear_datum, excluded=())
     return sorted(selected | block), True
 
 
+#: the 3D viewport's shortcut keys and the inspector handler each runs -- the Tk bindings and
+#: `dispatch_viewport_key` both read this, so a shell cannot bind a different set (bugs/0905)
+VIEWPORT_KEYS = (
+    ("Escape", "_cancel_active_3d_operation_event"),
+    ("Delete", "_delete_selected_step_event"),
+    ("BackSpace", "_delete_selected_step_event"),
+    ("s", "_flag_bug_event"),
+    ("S", "_flag_bug_event"),
+)
+
 class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     # Pick state lives on a SelectionModel that survives RemoveAllViewProps().
     # These five properties are compatibility shims so existing call sites
@@ -999,130 +1009,20 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             )
             self._vtk_widget.grid(row=0, column=0, sticky="nsew")
             render_window = self._vtk_widget.GetRenderWindow()
-            self._renderer = vtkRenderer()
-            render_window.AddRenderer(self._renderer)
-            self._renderer.SetBackground(1.0, 1.0, 1.0)
-
-            self._vtk_interactor = render_window.GetInteractor()
-            if self._vtk_interactor is not None:
-                self._vtk_interactor.AddObserver("LeftButtonPressEvent", self._on_left_button_press)
-                self._vtk_interactor.AddObserver("MouseMoveEvent", self._on_mouse_move)
-                self._vtk_interactor.AddObserver("KeyPressEvent", self._on_key_press)
-                # bugs/0048: orbit/zoom can swing the far scene geometry behind a
-                # too-close camera; keep the camera clear of the scene so the
-                # converging cone is never near-clipped during interaction.
-                self._vtk_interactor.AddObserver("InteractionEvent", self._on_camera_interaction)
-                self._vtk_interactor.AddObserver("EndInteractionEvent", self._on_camera_interaction)
-            # Deep-trace VTK render-window resize: maximising the Open
-            # 3D window is a known trigger for hover-freeze reports, so
-            # we log every Configure / Resize so the post-mortem can
-            # tell whether the freeze starts on the resize event itself
-            # or only on the next mouse-move after it.
+            self._attach_vtk_core(render_window, initialize=self._vtk_widget.Initialize)
             if open3d_trace_enabled():
-                self._bind_trace_window_observers(render_window)
+                # the Tk-window half of the resize trace; the VTK half is in _attach_vtk_core
                 self._bind_trace_tk_configure()
-
-            if vtkCellPicker is not None:
-                self._picker = vtkCellPicker()
-                self._picker.SetTolerance(0.0015)
-            if vtkPropPicker is not None:
-                self._prop_picker = vtkPropPicker()
-
-            if vtkOrientationMarkerWidget is not None and vtkAxesActor is not None and self._vtk_interactor is not None:
-                axes = vtkAxesActor()
-                self._orientation_widget = vtkOrientationMarkerWidget()
-                self._orientation_widget.SetOrientationMarker(axes)
-                self._orientation_widget.SetInteractor(self._vtk_interactor)
-                # flag_20260810_151023: hug the lower-left corner (smaller viewport = less
-                # internal margin in pixels), freeing scene space when panels are hidden.
-                # flag_20260810_164247: a window-FRACTION viewport letterboxes on a wide
-                # window (0.13 of 2478x1264 = 322x164 px, aspect 2) and the marker camera
-                # centres the axes ~80 px off the left edge -- keep it PIXEL-SQUARE at the
-                # corner instead, recomputed per render (window StartEvent).
-                self._orientation_widget.SetViewport(0.0, 0.0, 0.13, 0.13)
-                self._orientation_marker_viewport = None
-                self._orientation_widget.SetEnabled(1)
-                self._orientation_widget.InteractiveOff()
-                render_window.AddObserver("StartEvent", self._square_orientation_marker_viewport)
-
-            # bugs/0112: a dedicated always-on-top overlay layer for the
-            # move/rotate gizmo handles. Sharing the main camera keeps the
-            # gizmo aligned; PreserveColorBuffer composites it over the scene
-            # colour, and clearing its own depth buffer (PreserveDepthBuffer
-            # off) draws it in front of any occluding body. The orientation
-            # marker widget already claims layer 1, so the gizmo overlay sits
-            # on layer 2.
-            if vtkRenderer is not None:
-                try:
-                    self._gizmo_overlay_renderer = vtkRenderer()
-                    self._gizmo_overlay_renderer.SetLayer(2)
-                    self._gizmo_overlay_renderer.InteractiveOff()
-                    self._gizmo_overlay_renderer.SetActiveCamera(self._renderer.GetActiveCamera())
-                    self._gizmo_overlay_renderer.SetPreserveColorBuffer(True)
-                    self._gizmo_overlay_renderer.SetPreserveDepthBuffer(False)
-                    render_window.SetNumberOfLayers(3)
-                    render_window.AddRenderer(self._gizmo_overlay_renderer)
-                except Exception as exc:
-                    self._gizmo_overlay_renderer = None
-                    self.editor.append_debug(f"Open 3D gizmo overlay layer unavailable: {exc}")
-
-            self._vtk_widget.Initialize()
-
-            # bugs/0156: a genuine FreeCAD-style navigation cube in the upper-right
-            # corner (the custom NavigationCube widget -- VTK's own
-            # vtkCameraOrientationWidget renders only as three axis balls on this
-            # build). It parks its own corner renderers (the labelled pick-cube on
-            # layer 3, the discrete-step arrows on layer 4) clear of the lower-left
-            # axes marker, and mirrors the main camera every render so it turns as
-            # the user orbits. A left-click on a cube face snaps to that ortho preset,
-            # an edge/corner to the matching oblique "angled" view, and an arrow
-            # rolls/azimuths/elevates the view 45 deg -- the discrete rotation step
-            # the plain cube lacked. Built AFTER Initialize() so the interactor is
-            # live. Clicks are routed from the Tk left-press (the app owns left-clicks;
-            # see open3d_mouse_bindings) through _handle_navigation_cube_left_press,
-            # and each snap runs _on_navigation_cube_snap (reframe + the orbit
-            # backstop _on_camera_interaction, so the clip range re-fits and the
-            # perpendicular thickness labels re-square exactly as a mouse orbit does).
-            if self._renderer is not None and self._vtk_interactor is not None:
-                try:
-                    from KrakenOS.UI.services.nav_cube_widget import NavigationCube
-
-                    self._navigation_cube = NavigationCube(
-                        render_window,
-                        self._renderer,
-                        self._vtk_interactor,
-                        apply_orientation=self._apply_navigation_cube_orientation,
-                        apply_step=self._apply_navigation_cube_step,
-                        get_main_camera=lambda: self._renderer.GetActiveCamera(),
-                        iso_up_axis=lambda: getattr(self, "_iso_up_axis", "y"),
-                    )
-                    if not getattr(self._navigation_cube, "available", False):
-                        self._navigation_cube = None
-                        self.editor.append_debug(
-                            "Open 3D navigation cube unavailable (widget not available)"
-                        )
-                except Exception as exc:
-                    self._navigation_cube = None
-                    self.editor.append_debug(f"Open 3D navigation cube unavailable: {exc}")
-
             self._install_pick_only_left_click_bindings()
-            self.bind("<Escape>", self._cancel_active_3d_operation_event)
-            self._vtk_widget.bind("<Escape>", self._cancel_active_3d_operation_event, add="+")
-            self.bind("<Delete>", self._delete_selected_step_event)
-            self.bind("<BackSpace>", self._delete_selected_step_event)
-            self._vtk_widget.bind("<Delete>", self._delete_selected_step_event, add="+")
-            self._vtk_widget.bind("<BackSpace>", self._delete_selected_step_event, add="+")
-            # Flag-bug hotkey: bind at both Toplevel and 3D-pane level so
-            # `s` works whether focus is on the renderer or just inside
-            # the inspector window. The VTK observer in `_on_key_press`
-            # also handles `s`, but Tk's focus model means a non-focused
-            # render pane (e.g. after the user clicked the Record
-            # button) silently swallows the key without firing the VTK
-            # observer.
-            self.bind("<KeyPress-s>", self._flag_bug_event)
-            self.bind("<KeyPress-S>", self._flag_bug_event)
-            self._vtk_widget.bind("<KeyPress-s>", self._flag_bug_event, add="+")
-            self._vtk_widget.bind("<KeyPress-S>", self._flag_bug_event, add="+")
+            # The viewport's shortcut keys (VIEWPORT_KEYS), bound at both Toplevel and 3D-pane
+            # level so they work whether focus is on the renderer or just inside the inspector
+            # window. The VTK observer in `_on_key_press` also handles `s`, but Tk's focus model
+            # means a non-focused render pane (e.g. after the user clicked the Record button)
+            # silently swallows the key without firing the VTK observer.
+            for keysym, handler_name in VIEWPORT_KEYS:
+                handler = getattr(self, handler_name)
+                self.bind(f"<KeyPress-{keysym}>", handler)
+                self._vtk_widget.bind(f"<KeyPress-{keysym}>", handler, add="+")
             ttk.Label(self, textvariable=self.status_var, padding=(8, 0, 8, 8)).grid(row=2, column=0, columnspan=3, sticky="ew")
             self.available = True
         except Exception as exc:
@@ -1600,6 +1500,152 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
     def _install_pick_only_left_click_bindings(self) -> None:
         return self._mouse_bindings_service()._install_pick_only_left_click_bindings()
+
+    # ---- the viewport, for any shell (docs/design_qt_migration.md phase 5a, bugs/0905) ----------
+    def dispatch_viewport_event(self, kind: str, event):
+        """Run a viewport input handler -- the ones the Tk bindings run -- with any event that
+        carries the fields they read (a Tk event, or a `viewport_events.ViewportEvent`)."""
+        return self._mouse_bindings_service().dispatch_viewport_event(kind, event)
+
+    def dispatch_viewport_key(self, keysym: str, event=None):
+        """Run the handler a viewport shortcut key is bound to; False when the key has none."""
+        handler_name = dict(VIEWPORT_KEYS).get(str(keysym))
+        if handler_name is None:
+            return False
+        if event is None:
+            from KrakenOS.UI.viewport_events import ViewportEvent
+
+            event = ViewportEvent(keysym=str(keysym))
+        return getattr(self, handler_name)(event)
+
+    def _set_viewport_cursor(self, name: str) -> None:
+        """Show a cursor over the 3D viewport, by its Tk name ("crosshair", "fleur", "").
+
+        A shell with its own viewport installs `set_viewport_cursor` and maps the name (the
+        same seam 0893 gave the 2D plot); otherwise it is the Tk VTK widget's cursor.
+        """
+        shell = getattr(self, "set_viewport_cursor", None)
+        if shell is not None:
+            shell(str(name))
+            return
+        if self._vtk_widget is not None:
+            self._vtk_widget.configure(cursor=name)
+
+    def _attach_vtk_core(self, render_window, *, initialize) -> None:
+        """Build the inspector's VTK core on `render_window`: its renderer, the interactor
+        observers, the pickers, the orientation marker, the gizmo overlay layer and the
+        navigation cube.
+
+        Everything here is VTK and none of it is Tk: the Tk inspector passes its
+        vtkTkRenderWindowInteractor's window, and a shell with its own VTK widget can pass
+        that widget's. `initialize` is the widget's own Initialize, which the navigation cube
+        must be built after. (Moved verbatim out of __init__, bugs/0905.)
+        """
+        self._renderer = vtkRenderer()
+        render_window.AddRenderer(self._renderer)
+        self._renderer.SetBackground(1.0, 1.0, 1.0)
+
+        self._vtk_interactor = render_window.GetInteractor()
+        if self._vtk_interactor is not None:
+            self._vtk_interactor.AddObserver("LeftButtonPressEvent", self._on_left_button_press)
+            self._vtk_interactor.AddObserver("MouseMoveEvent", self._on_mouse_move)
+            self._vtk_interactor.AddObserver("KeyPressEvent", self._on_key_press)
+            # bugs/0048: orbit/zoom can swing the far scene geometry behind a
+            # too-close camera; keep the camera clear of the scene so the
+            # converging cone is never near-clipped during interaction.
+            self._vtk_interactor.AddObserver("InteractionEvent", self._on_camera_interaction)
+            self._vtk_interactor.AddObserver("EndInteractionEvent", self._on_camera_interaction)
+        # Deep-trace VTK render-window resize: maximising the Open
+        # 3D window is a known trigger for hover-freeze reports, so
+        # we log every Configure / Resize so the post-mortem can
+        # tell whether the freeze starts on the resize event itself
+        # or only on the next mouse-move after it.
+        if open3d_trace_enabled():
+            self._bind_trace_window_observers(render_window)
+
+        if vtkCellPicker is not None:
+            self._picker = vtkCellPicker()
+            self._picker.SetTolerance(0.0015)
+        if vtkPropPicker is not None:
+            self._prop_picker = vtkPropPicker()
+
+        if vtkOrientationMarkerWidget is not None and vtkAxesActor is not None and self._vtk_interactor is not None:
+            axes = vtkAxesActor()
+            self._orientation_widget = vtkOrientationMarkerWidget()
+            self._orientation_widget.SetOrientationMarker(axes)
+            self._orientation_widget.SetInteractor(self._vtk_interactor)
+            # flag_20260810_151023: hug the lower-left corner (smaller viewport = less
+            # internal margin in pixels), freeing scene space when panels are hidden.
+            # flag_20260810_164247: a window-FRACTION viewport letterboxes on a wide
+            # window (0.13 of 2478x1264 = 322x164 px, aspect 2) and the marker camera
+            # centres the axes ~80 px off the left edge -- keep it PIXEL-SQUARE at the
+            # corner instead, recomputed per render (window StartEvent).
+            self._orientation_widget.SetViewport(0.0, 0.0, 0.13, 0.13)
+            self._orientation_marker_viewport = None
+            self._orientation_widget.SetEnabled(1)
+            self._orientation_widget.InteractiveOff()
+            render_window.AddObserver("StartEvent", self._square_orientation_marker_viewport)
+
+        # bugs/0112: a dedicated always-on-top overlay layer for the
+        # move/rotate gizmo handles. Sharing the main camera keeps the
+        # gizmo aligned; PreserveColorBuffer composites it over the scene
+        # colour, and clearing its own depth buffer (PreserveDepthBuffer
+        # off) draws it in front of any occluding body. The orientation
+        # marker widget already claims layer 1, so the gizmo overlay sits
+        # on layer 2.
+        if vtkRenderer is not None:
+            try:
+                self._gizmo_overlay_renderer = vtkRenderer()
+                self._gizmo_overlay_renderer.SetLayer(2)
+                self._gizmo_overlay_renderer.InteractiveOff()
+                self._gizmo_overlay_renderer.SetActiveCamera(self._renderer.GetActiveCamera())
+                self._gizmo_overlay_renderer.SetPreserveColorBuffer(True)
+                self._gizmo_overlay_renderer.SetPreserveDepthBuffer(False)
+                render_window.SetNumberOfLayers(3)
+                render_window.AddRenderer(self._gizmo_overlay_renderer)
+            except Exception as exc:
+                self._gizmo_overlay_renderer = None
+                self.editor.append_debug(f"Open 3D gizmo overlay layer unavailable: {exc}")
+
+        initialize()
+
+        # bugs/0156: a genuine FreeCAD-style navigation cube in the upper-right
+        # corner (the custom NavigationCube widget -- VTK's own
+        # vtkCameraOrientationWidget renders only as three axis balls on this
+        # build). It parks its own corner renderers (the labelled pick-cube on
+        # layer 3, the discrete-step arrows on layer 4) clear of the lower-left
+        # axes marker, and mirrors the main camera every render so it turns as
+        # the user orbits. A left-click on a cube face snaps to that ortho preset,
+        # an edge/corner to the matching oblique "angled" view, and an arrow
+        # rolls/azimuths/elevates the view 45 deg -- the discrete rotation step
+        # the plain cube lacked. Built AFTER Initialize() so the interactor is
+        # live. Clicks are routed from the Tk left-press (the app owns left-clicks;
+        # see open3d_mouse_bindings) through _handle_navigation_cube_left_press,
+        # and each snap runs _on_navigation_cube_snap (reframe + the orbit
+        # backstop _on_camera_interaction, so the clip range re-fits and the
+        # perpendicular thickness labels re-square exactly as a mouse orbit does).
+        if self._renderer is not None and self._vtk_interactor is not None:
+            try:
+                from KrakenOS.UI.services.nav_cube_widget import NavigationCube
+
+                self._navigation_cube = NavigationCube(
+                    render_window,
+                    self._renderer,
+                    self._vtk_interactor,
+                    apply_orientation=self._apply_navigation_cube_orientation,
+                    apply_step=self._apply_navigation_cube_step,
+                    get_main_camera=lambda: self._renderer.GetActiveCamera(),
+                    iso_up_axis=lambda: getattr(self, "_iso_up_axis", "y"),
+                )
+                if not getattr(self._navigation_cube, "available", False):
+                    self._navigation_cube = None
+                    self.editor.append_debug(
+                        "Open 3D navigation cube unavailable (widget not available)"
+                    )
+            except Exception as exc:
+                self._navigation_cube = None
+                self.editor.append_debug(f"Open 3D navigation cube unavailable: {exc}")
+
 
     def _right_click_face_ray_context(self, display_xy, event=None) -> dict[str, object] | None:
         try:
@@ -2659,11 +2705,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             if self._vtk_widget is not None:
                 if active:
                     try:
-                        self._vtk_widget.configure(cursor="none")
+                        self._set_viewport_cursor("none")
                     except Exception:
-                        self._vtk_widget.configure(cursor="fleur")
+                        self._set_viewport_cursor("fleur")
                 else:
-                    self._vtk_widget.configure(cursor="")
+                    self._set_viewport_cursor("")
         except Exception:
             pass
         try:
@@ -2711,7 +2757,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if after_id is None or self._vtk_widget is None:
             return
         try:
-            self._vtk_widget.after_cancel(after_id)
+            host_of(self).after_cancel(after_id)
         except Exception:
             pass
 
@@ -2724,7 +2770,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if after_id is None or self._vtk_widget is None:
             return
         try:
-            self._vtk_widget.after_cancel(after_id)
+            host_of(self).after_cancel(after_id)
         except Exception:
             pass
 
@@ -2823,7 +2869,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         else:
             self.status_var.set(f"Hold S{row_index} briefly to lift the promoted optical solid; drag freely; release to drop.")
         try:
-            self._row_carry_hold_after_id = self._vtk_widget.after(
+            self._row_carry_hold_after_id = host_of(self).after(
                 self._step_carry_hold_delay_ms(),
                 self._activate_row_carry_hold,
             )
@@ -2886,7 +2932,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if transition.status:
             self.status_var.set(transition.status)
         try:
-            self._step_carry_hold_after_id = self._vtk_widget.after(
+            self._step_carry_hold_after_id = host_of(self).after(
                 self._step_carry_hold_delay_ms(),
                 self._activate_step_carry_hold,
             )
@@ -3335,6 +3381,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self.status_var.set("Detector moved.")
 
     def _current_widget_pointer_xy(self) -> tuple[int, int] | None:
+        # a shell with its own viewport knows where its pointer is (bugs/0905)
+        shell = getattr(self, "viewport_pointer", None)
+        if shell is not None:
+            return shell()
         if self._vtk_widget is not None:
             try:
                 x = int(self._vtk_widget.winfo_pointerx() - self._vtk_widget.winfo_rootx())
@@ -20107,7 +20157,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         to the plain crosshair while armed over empty space."""
         try:
             if self._vtk_widget is not None:
-                self._vtk_widget.configure(cursor="X_cursor" if over_surface else "crosshair")
+                self._set_viewport_cursor("X_cursor" if over_surface else "crosshair")
         except Exception:
             pass
         try:
@@ -20873,7 +20923,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         so the gesture reads as "drag the dimension spacing". bugs/0115."""
         try:
             if self._vtk_widget is not None:
-                self._vtk_widget.configure(cursor="sb_v_double_arrow")
+                self._set_viewport_cursor("sb_v_double_arrow")
         except Exception:
             pass
 
@@ -24488,7 +24538,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def _set_axis_pick_cursor(self, hand: bool) -> None:
         try:
             if self._vtk_widget is not None:
-                self._vtk_widget.configure(cursor="crosshair" if hand else "")
+                self._set_viewport_cursor("crosshair" if hand else "")
         except Exception:
             pass
         try:

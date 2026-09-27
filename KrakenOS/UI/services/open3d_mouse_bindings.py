@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from KrakenOS.UI.uihost import host_of
+
 
 class Open3DMouseBindingsService:
     """Install the embedded Open 3D mouse bindings."""
@@ -61,10 +63,35 @@ class Open3DMouseBindingsService:
     # gesture -- no button-held drag/release forwarding is needed.
     # ------------------------------------------------------------------
     def _install_pick_only_left_click_bindings(self) -> None:
-        """Left click selects; left drag rotates; middle (or Shift+Left) drag pans the camera."""
+        """Left click selects; left drag rotates; middle (or Shift+Left) drag pans the camera.
+
+        Builds the handlers once and binds them to the Tk VTK widget. A shell with its own
+        viewport drives the SAME handlers through `dispatch_viewport_event` (bugs/0905).
+        """
         if self._vtk_widget is None:
             return
+        self._viewport_handlers = self._build_viewport_handlers()
+        self._bind_tk_viewport(self._viewport_handlers)
 
+    def dispatch_viewport_event(self, kind: str, event):
+        """Run one viewport handler with any event carrying the fields the handlers read.
+
+        `kind` is one of `viewport_events.KINDS`; `event` is a Tk event or a
+        `viewport_events.ViewportEvent`. The handlers are built on first use, so a viewport
+        that is not the Tk VTK widget needs no Tk binding to reach them.
+        """
+        handlers = getattr(self._inspector, "_viewport_handlers", None)
+        if handlers is None:
+            handlers = self._build_viewport_handlers()
+            self._viewport_handlers = handlers
+        return handlers[kind](event)
+
+    def _build_viewport_handlers(self) -> dict:
+        """The viewport's input handlers, by kind -- toolkit-free apart from the event they read.
+
+        The bodies are the ones the Tk bindings always ran; they read only an event's `x`,
+        `y`, `state`, `keysym` and root position, which `ViewportEvent` carries.
+        """
         # bugs/0323: a left-click select tolerates a little hand jitter before it
         # is treated as a camera orbit. At 4 px a small wobble during the press
         # flipped the click into an orbit (should_pick went false) and abandoned
@@ -358,7 +385,7 @@ class Open3DMouseBindingsService:
                     self._step_carry_hold_after_id = None
                     if after_id is not None:
                         try:
-                            self._vtk_widget.after_cancel(after_id)
+                            host_of(self._inspector).after_cancel(after_id)
                         except Exception:
                             pass
                     self._activate_step_carry_hold()
@@ -371,7 +398,7 @@ class Open3DMouseBindingsService:
                     self._row_carry_hold_after_id = None
                     if after_id is not None:
                         try:
-                            self._vtk_widget.after_cancel(after_id)
+                            host_of(self._inspector).after_cancel(after_id)
                         except Exception:
                             pass
                     self._activate_row_carry_hold()
@@ -639,37 +666,70 @@ class Open3DMouseBindingsService:
             # KeyRelease; drop the mode on focus loss so it can't stick on.
             self._edge_pick_alt_active = False
 
+        return {
+            "left_press": left_press,
+            "left_motion": left_motion,
+            "left_release": left_release,
+            "double_left": double_left_press,
+            "middle_press": middle_press,
+            "middle_motion": middle_motion,
+            "middle_release": middle_release,
+            "right_press": right_press,
+            "right_motion": right_motion,
+            "right_release": right_release,
+            "hover": hover_motion,
+            "alt_press": alt_key_press,
+            "alt_release": alt_key_release,
+            "focus_out": clear_alt_on_focus_out,
+        }
+
+    def _bind_tk_viewport(self, handlers: dict) -> None:
+        """Bind the handlers to the Tk VTK widget and the inspector window, as they always were."""
         try:
-            self._vtk_widget.bind("<ButtonPress-1>", left_press)
-            self._vtk_widget.bind("<B1-Motion>", left_motion)
-            self._vtk_widget.bind("<ButtonRelease-1>", left_release)
-            self._vtk_widget.bind("<Double-Button-1>", double_left_press)
-            self._vtk_widget.bind("<Control-ButtonPress-1>", left_press)
-            self._vtk_widget.bind("<Control-B1-Motion>", left_motion)
-            self._vtk_widget.bind("<Control-ButtonRelease-1>", left_release)
-            self._vtk_widget.bind("<ButtonPress-2>", middle_press)
-            self._vtk_widget.bind("<B2-Motion>", middle_motion)
-            self._vtk_widget.bind("<ButtonRelease-2>", middle_release)
+            self._vtk_widget.bind("<ButtonPress-1>", handlers["left_press"])
+            self._vtk_widget.bind("<B1-Motion>", handlers["left_motion"])
+            self._vtk_widget.bind("<ButtonRelease-1>", handlers["left_release"])
+            self._vtk_widget.bind("<Double-Button-1>", handlers["double_left"])
+            self._vtk_widget.bind("<Control-ButtonPress-1>", handlers["left_press"])
+            self._vtk_widget.bind("<Control-B1-Motion>", handlers["left_motion"])
+            self._vtk_widget.bind("<Control-ButtonRelease-1>", handlers["left_release"])
+            self._vtk_widget.bind("<ButtonPress-2>", handlers["middle_press"])
+            self._vtk_widget.bind("<B2-Motion>", handlers["middle_motion"])
+            self._vtk_widget.bind("<ButtonRelease-2>", handlers["middle_release"])
             # Touchpad-friendly pan: Shift+Left drag mirrors the middle-button
             # pan so laptop users without a middle button (or three-finger
             # gesture) can still slide the scene. Reuses the middle handlers so
             # the behavior is identical; the Shift modifier keeps it distinct
             # from plain left-drag rotate / left-click pick.
-            self._vtk_widget.bind("<Shift-ButtonPress-1>", middle_press)
-            self._vtk_widget.bind("<Shift-B1-Motion>", middle_motion)
-            self._vtk_widget.bind("<Shift-ButtonRelease-1>", middle_release)
-            self._vtk_widget.bind("<ButtonPress-3>", right_press)
-            self._vtk_widget.bind("<B3-Motion>", right_motion)
-            self._vtk_widget.bind("<ButtonRelease-3>", right_release)
-            self._vtk_widget.bind("<Motion>", hover_motion, add="+")
+            self._vtk_widget.bind("<Shift-ButtonPress-1>", handlers["middle_press"])
+            self._vtk_widget.bind("<Shift-B1-Motion>", handlers["middle_motion"])
+            self._vtk_widget.bind("<Shift-ButtonRelease-1>", handlers["middle_release"])
+            self._vtk_widget.bind("<ButtonPress-3>", handlers["right_press"])
+            self._vtk_widget.bind("<B3-Motion>", handlers["right_motion"])
+            self._vtk_widget.bind("<ButtonRelease-3>", handlers["right_release"])
+            self._vtk_widget.bind("<Motion>", handlers["hover"], add="+")
             # bugs/0324: track the Alt modifier on the inspector Toplevel (self)
             # so a stationary Alt press/release flips edge-refine hover without a
             # mouse move. The Toplevel is in the VTK widget's bindtags, so these
             # fire whether or not the widget has grabbed keyboard focus.
-            self.bind("<KeyPress-Alt_L>", alt_key_press, add="+")
-            self.bind("<KeyPress-Alt_R>", alt_key_press, add="+")
-            self.bind("<KeyRelease-Alt_L>", alt_key_release, add="+")
-            self.bind("<KeyRelease-Alt_R>", alt_key_release, add="+")
-            self.bind("<FocusOut>", clear_alt_on_focus_out, add="+")
+            self.bind("<KeyPress-Alt_L>", handlers["alt_press"], add="+")
+            self.bind("<KeyPress-Alt_R>", handlers["alt_press"], add="+")
+            self.bind("<KeyRelease-Alt_L>", handlers["alt_release"], add="+")
+            self.bind("<KeyRelease-Alt_R>", handlers["alt_release"], add="+")
+            self.bind("<FocusOut>", handlers["focus_out"], add="+")
         except Exception as exc:
             self.editor.append_debug(f"3D mouse binding override failed: {exc}")
+
+
+def viewport_wiring_source() -> str:
+    """The source of the whole viewport wiring: install, the handlers, and the Tk binding.
+
+    bugs/0905 split what was one method into three so a non-Tk viewport can drive the
+    handlers; a guard that reads "the mouse bindings" for a handler's contents or a bound
+    event sequence reads this, so the next split does not break it.
+    """
+    import inspect
+
+    return "\n".join(inspect.getsource(getattr(Open3DMouseBindingsService, name))
+                     for name in ("_install_pick_only_left_click_bindings",
+                                  "_build_viewport_handlers", "_bind_tk_viewport"))

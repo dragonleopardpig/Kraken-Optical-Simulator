@@ -56,6 +56,8 @@ Exit: 0 = pass, 1 = regression.
 """
 from __future__ import annotations
 
+from KrakenOS.UI.services.open3d_mouse_bindings import viewport_wiring_source
+
 import inspect
 import types
 
@@ -206,7 +208,7 @@ def run_checks() -> "tuple[bool, list[str]]":
         failures.append("FAIL(E): _edge_refined_feature must pass depth_reference into nearest_display_edge")
 
     # F) Mouse-bindings + interaction wiring (source).
-    mb_src = inspect.getsource(mb_mod.Open3DMouseBindingsService._install_pick_only_left_click_bindings)
+    mb_src = viewport_wiring_source()
     if "drag_threshold_px = 8" not in mb_src:
         failures.append("FAIL(F): left-click drag threshold must be 8 px (jitter tolerance)")
     if "self._edge_pick_alt_active = self._event_alt_pressed(event)" not in mb_src:

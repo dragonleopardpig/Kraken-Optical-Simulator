@@ -7,6 +7,8 @@ and dense placement/orientation actions live in category menus.
 
 from __future__ import annotations
 
+from KrakenOS.UI.services.open3d_mouse_bindings import viewport_wiring_source
+
 import inspect
 import re
 
@@ -223,7 +225,7 @@ def main() -> int:
             "Open 3D carry row avoids explicit Lift/Drop buttons",
             'ttk.Button(carry_toolbar, text="Lift"' not in toolbar_source
             and 'ttk.Button(carry_toolbar, text="Drop"' not in toolbar_source
-            and "_arm_step_carry_hold" in inspect.getsource(Open3DMouseBindingsService._install_pick_only_left_click_bindings),
+            and "_arm_step_carry_hold" in viewport_wiring_source(),
             "STEP carry should use press-hold lift and release drop instead of toolbar Lift/Drop buttons",
         ),
         (

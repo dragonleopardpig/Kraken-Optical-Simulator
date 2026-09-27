@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from KrakenOS.UI.services.open3d_mouse_bindings import viewport_wiring_source
+import KrakenOS.UI.open3d_inspector as inspector_module
+
 import inspect
 
 import numpy as np
@@ -292,7 +295,8 @@ RAY_STYLE_PROBE_COLOR = (0.13, 0.77, 0.31)
 
 def _evaluate_checks() -> tuple[list, dict]:
     """Every contract check, as (name, passed), plus the diagnostics worth printing."""
-    bindings = inspect.getsource(Open3DMouseBindingsService._install_pick_only_left_click_bindings)
+    bindings = viewport_wiring_source()
+    attach_vtk_core = inspect.getsource(Kraken3DInspector._attach_vtk_core)
     try:
         step_carry_drag_branch = bindings.split("elif self._step_carry_drag_state is not None:", 1)[1].split(
             "else:",
@@ -974,7 +978,8 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "_arm_step_carry_hold(step_label" in bindings
             and "_step_carry_hold_candidate_label is not None" in bindings
             and "_activate_step_carry_hold()" in step_carry_drag_branch
-            and "_vtk_widget.after" in step_carry_hold_arm
+            # the hold is a TIMER; since bugs/0905 it is armed through the UI host
+            and "host_of(self).after(" in step_carry_hold_arm
             and "_activate_step_carry_hold" in step_carry_hold_arm
             and "prepare_carry_hold_arm" in step_carry_hold_arm
             and "consume_carry_hold_request" in step_carry_hold_activate
@@ -1002,7 +1007,8 @@ def _evaluate_checks() -> tuple[list, dict]:
             and 'event_generate("<Motion>", warp=True' not in init
             and "_step_carry_pointer_syncing" not in init
             and "_transformed_imported_step_mesh_for_label" in step_carry_center
-            and 'cursor="none"' in step_carry_cursor,
+            # since bugs/0905 the cursor goes through the viewport cursor seam
+            and '_set_viewport_cursor("none")' in step_carry_cursor,
         ),
         (
             "Open 3D STEP carry shows an in-scene grip cursor",
@@ -1552,8 +1558,10 @@ def _evaluate_checks() -> tuple[list, dict]:
         ),
         (
             "Open 3D Esc cancels active carry and pick operations",
-            '"<Escape>"' in init
-            and "KeyPressEvent" in init
+            # since bugs/0905 the keys are ONE table both shells bind, and the VTK observers
+            # live in _attach_vtk_core
+            ("Escape", "_cancel_active_3d_operation_event") in inspector_module.VIEWPORT_KEYS
+            and "KeyPressEvent" in attach_vtk_core
             and "cancel_active_3d_operation()" in key_press
             and "_cancel_step_carry_hold_timer()" in operation_cancel
             and "_step_carry_follow_state = None" in operation_cancel
@@ -1562,8 +1570,8 @@ def _evaluate_checks() -> tuple[list, dict]:
         ),
         (
             "Open 3D Delete/Backspace deletes selected STEP elements",
-            '"<Delete>"' in init
-            and '"<BackSpace>"' in init
+            ("Delete", "_delete_selected_step_event") in inspector_module.VIEWPORT_KEYS
+            and ("BackSpace", "_delete_selected_step_event") in inspector_module.VIEWPORT_KEYS
             and "delete_selected_step()" in key_press
             and "KP_Delete" in key_press
             and "delete_selected_step()" in delete_step_event
