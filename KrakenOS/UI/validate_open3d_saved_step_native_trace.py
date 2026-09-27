@@ -132,5 +132,13 @@ def main() -> int:
     return 0
 
 
+
+def run_checks() -> "tuple[bool, list[str]]":
+    """Penta entry (bugs/0914): this smoke opens its own editor and inspector, so it runs in its
+    own process -- the harness owns the one embedded inspector of its process (bugs/0661)."""
+    from KrakenOS.UI.guard_subprocess import run_module_isolated
+
+    return run_module_isolated('KrakenOS.UI.validate_open3d_saved_step_native_trace')
+
 if __name__ == "__main__":
     raise SystemExit(main())

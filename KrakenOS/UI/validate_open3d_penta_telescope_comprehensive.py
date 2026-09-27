@@ -16747,6 +16747,26 @@ phase_695_context_menus_in_qt = _phase_from_standalone(
     695, "the 3D view right-click menus in the Qt shell (Qt migration phase 5c, 0907): every CAD/Place/Orient command is a right-click verb (0619), and 0906 held the right press back because it posts a Tk menu. MEASURED: the inspector and its face-assignment service build 16 menus and use only add_command (180), add_separator (47), add_checkbutton (6), add_cascade (5), invoke, unpost and a post, every action a plain callable. So the builders are not rewritten: context_menu.new_context_menu replaces the 16 tk.Menu calls -- a real tk.Menu as before (looked up at call time, so the existing menu guards fakes still apply), or a MenuModel recording the same calls when a shell installed show_context_menu; _popup_context_menu hands a model to the shell and skips the Tk grab machinery; the four direct tk_popup sites share _post_viewport_menu; the Qt view renders the model as a QMenu whose actions run MenuModel.run (a check entry toggles and a radio sets its variable BEFORE the command, as Tk). MEASURED while guarding: a right-click can change what the NEXT menu reads, so the Tk comparison settles each pixel with one click first. Guard: no direct tk.Menu, only the two posters post, every builder call is modelled; click semantics; in the Tk shell the REAL posted tk.Menu and the model the same builder filled at the same pixel have the identical outline for seven kinds of menu; in a real Qt shell every QMenu is exactly its model, Select Elements arms the box select, and a scene click dismisses (0907)",
     "KrakenOS.UI.validate_open3d_0907_context_menus_in_qt",
     "context_menus_in_qt")
+phase_696_step_carry_smoke = _phase_from_standalone(
+    696, 'the Open 3D STEP carry smoke is a GATED phase (0909/0914): carry mode, the whole-body gizmo gated by the 0338 toggle (no handles OFF, handles ON), rays off/on with the axis guide kept, the carry status line surviving a Center Row round trip (0909: carry was ACTIVE with nothing on screen once another pick mode cleared the selection), free-plane drags moving the persistent offset, the grip marker (now Open3DCarryGripService), the face-normal to optical-axis snap from a real StepFeatureSelection, and select/clear/pan. It had failed ungated since late May',
+    'KrakenOS.UI.validate_step_carry_open3d_smoke',
+    'step_carry_smoke')
+phase_697_ray_toggle_scene_retention = _phase_from_standalone(
+    697, 'rays off/on keep every physical row actor and the promoted STEP stays glass (0914): the promoted row wears the selection highlight (>= 0.75) while selected -- promotion selects it -- and reads 0.20-0.38 once deselected; the status waits out the STEP display-cache warm-up that shares its line',
+    'KrakenOS.UI.validate_open3d_ray_toggle_scene_retention',
+    'ray_toggle_scene_retention')
+phase_698_prism_by_prism_cascade = _phase_from_standalone(
+    698, "the five-penta cascade builds prism by prism (0914): a row per insertion, ray paths at every depth, cached chief-ray segments surviving rays-off, and the chief ray's exit direction turning at every fold -- read while rays are ON, since a rays-off refresh is bodies-only by design",
+    'KrakenOS.UI.validate_open3d_penta_cascade_prism_by_prism',
+    'prism_by_prism_cascade')
+phase_699_penta_mirror_3d_cascade = _phase_from_standalone(
+    699, 'a snapped, promoted pentaprism deviates the beam onto the requested +X (0914): faces found by GEOMETRY (parallel sides dot -1, perpendicular entrance/exit, the 135-degree mirror pair among the rest) because the native STEP import renumbered and qualified them (S001/F005) and the old names pointed at a side face and the bevel; every ray F005 refract -> F002 reflect -> F004 reflect -> F001 refract. Failing since June',
+    'KrakenOS.UI.validate_penta_mirror_3d_cascade',
+    'penta_mirror_3d_cascade')
+phase_700_saved_step_native_trace = _phase_from_standalone(
+    700, "a saved promoted STEP is not drawn twice (0909): 95615f05's ghost suppression holds with the live-trace exclusion -- only rows flagged transient_live_trace leave the promoted set, so a traced unpromoted STEP stays selectable while a saved one still suppresses its overlay",
+    'KrakenOS.UI.validate_open3d_saved_step_native_trace',
+    'saved_step_native_trace')
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17508,6 +17528,11 @@ def main() -> int:
             phase_693_viewport_event_seam,
             phase_694_qt_hosts_inspector,
             phase_695_context_menus_in_qt,
+            phase_696_step_carry_smoke,
+            phase_697_ray_toggle_scene_retention,
+            phase_698_prism_by_prism_cascade,
+            phase_699_penta_mirror_3d_cascade,
+            phase_700_saved_step_native_trace,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

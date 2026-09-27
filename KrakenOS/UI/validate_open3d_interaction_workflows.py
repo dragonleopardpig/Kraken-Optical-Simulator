@@ -844,6 +844,9 @@ def workflow_click_handles(inspector: Kraken3DInspector) -> WorkflowReport:
     # the STEP selection so this workflow can exercise the rotation-handle
     # click path on real handles.
     if inspector.editor._step_path_for_label("optical") is not None:
+        # bugs/0914: the rotation gizmo is gated by the "Move/Rotate whole body" selection-mode
+        # toggle, default OFF since bugs/0338 -- a user turns it on to get the gizmo, so does this
+        inspector.show_rotation_handles_var.set(True)
         inspector.editor.select_step_component("optical")
         try:
             inspector.show_step_rotation_handler("optical")

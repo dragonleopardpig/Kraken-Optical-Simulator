@@ -233,8 +233,31 @@ def main() -> int:
         inspector.refresh_from_editor()
         inspector.update_idletasks()
         inspector.update()
+        # bugs/0914: promotion SELECTS the new row (the user sees what they just made), and a
+        # selected row wears the pink highlight at opacity >= 0.75 -- which this check read as
+        # "not transparent". The claim is about the unselected glass, so assert the highlight
+        # while selected, then clear the selection and check the glass.
+        selected_opacities = [
+            float(inspector._actor_by_key[key].GetProperty().GetOpacity())
+            for key, row_index in list(getattr(inspector, "_actor_row_map", {}).items())
+            if int(row_index) == promoted_row_index and key in inspector._actor_by_key]
+        if app._current_selected_row_index() == promoted_row_index and not any(
+                value >= 0.75 for value in selected_opacities):
+            raise AssertionError(f"Ray On: the selected promoted row shows no highlight ({selected_opacities}).")
+        app._clear_table_selection()
+        inspector._clear_open3d_selection(render=False)
+        inspector.refresh_from_editor()
+        inspector.update_idletasks()
+        inspector.update()
         _assert_scene_rows_visible(app, inspector, promoted_row_index=promoted_row_index, label="Ray On")
+        # bugs/0914: the STEP display-cache warm-up (outside the UI process) now writes its own
+        # progress into the same status line; the scene's report lands when it finishes
         status = str(inspector.status_var.get())
+        deadline = time.time() + 180.0
+        while ("surfaces=" not in status or "rays=" not in status) and time.time() < deadline:
+            inspector.update()
+            time.sleep(0.2)
+            status = str(inspector.status_var.get())
         if "surfaces=" not in status or "rays=" not in status:
             raise AssertionError(f"Ray On status did not report rendered surfaces and rays: {status!r}")
     finally:
@@ -248,6 +271,14 @@ def main() -> int:
     print("Open 3D ray-toggle scene retention validation passed.")
     return 0
 
+
+
+def run_checks() -> "tuple[bool, list[str]]":
+    """Penta entry (bugs/0914): this smoke opens its own editor and inspector, so it runs in its
+    own process -- the harness owns the one embedded inspector of its process (bugs/0661)."""
+    from KrakenOS.UI.guard_subprocess import run_module_isolated
+
+    return run_module_isolated('KrakenOS.UI.validate_open3d_ray_toggle_scene_retention')
 
 if __name__ == "__main__":
     raise SystemExit(main())

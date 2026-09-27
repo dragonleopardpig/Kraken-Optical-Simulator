@@ -28,10 +28,53 @@ from KrakenOS.UI.scene_geometry import ray_path_terminal_status_from_events
 
 PENTA_IMPORT_OFFSET = (18.0, -22.0, 38.0)
 PENTA_INITIAL_ROLL_DEG = 34.0
-PENTA_ENTRANCE_FACE = "F005"
-PENTA_EXIT_FACE = "F006"
-PENTA_MIRROR_FACES = ("F004", "F003")
+# the faces are found by geometry (_penta_faces_by_geometry, bugs/0914), not by these old names
 PENTA_REQUESTED_EXIT_DIRECTION = np.asarray((1.0, 0.0, 0.0), dtype=float)
+
+
+def _penta_faces_by_geometry(app: KrakenLayoutEditor) -> dict[str, object]:
+    """bugs/0914: find the penta prism's faces by GEOMETRY, not by name.
+
+    The guard named them F005 (entrance), F006 (exit) and F004/F003 (mirrors) in the numbering of
+    the old planar-face clustering. The native STEP analytic import (58f0e215, 2026-05-28) numbers
+    faces its own way and qualifies them with the solid (S001/F005), so the old names first
+    failed to resolve ("F005 is not available") and, once qualified, pointed at different
+    physical faces -- the snap guided by a SIDE face and the mirrors assigned were the bevel and
+    the exit, so every ray refracted straight through. A pentaprism is identified by its normals
+    whatever the numbering: two parallel SIDE faces (dot -1); in the section plane, the
+    ENTRANCE and EXIT are the one perpendicular pair (dot 0) and the two MIRRORS the pair whose
+    normals are 135 degrees apart (dot -cos 45); the fifth is the bevel. Dot products do not
+    change under the overlay's pose, so any pose works.
+    """
+    faces = []
+    for face in list(app._step_overlay_face_metadata("optical").get("faces", []) or []):
+        if not isinstance(face, dict):
+            continue
+        normal = np.asarray(face.get("normal_world", face.get("normal", ())), dtype=float).reshape(-1)
+        if normal.size >= 3 and np.linalg.norm(normal[:3]) > 1e-9:
+            faces.append((str(face.get("face_id", "")).strip(), normal[:3] / np.linalg.norm(normal[:3])))
+
+    def pairs(pool, target, tol=0.02):
+        return [(a, b) for i, a in enumerate(pool) for b in pool[i + 1:]
+                if abs(float(np.dot(a[1], b[1])) - target) <= tol]
+
+    sides = pairs(faces, -1.0)
+    if len(sides) != 1:
+        raise RuntimeError(f"expected ONE pair of parallel side faces, found {sides}")
+    side_ids = {sides[0][0][0], sides[0][1][0]}
+    section = [face for face in faces if face[0] not in side_ids]
+    through = pairs(section, 0.0)
+    # each mirror ALSO meets the entrance or exit at 135 degrees, so the mirror pair is sought
+    # among the three faces that are neither
+    through_ids = {face[0] for pair in through for face in pair}
+    mirrors = pairs([face for face in section if face[0] not in through_ids],
+                    -float(np.cos(np.radians(45.0))))
+    if len(section) != 5 or len(through) != 1 or len(mirrors) != 1:
+        raise RuntimeError(f"not a pentaprism section: {len(section)} faces, perpendicular "
+                           f"{through}, mirror pairs {mirrors}")
+    (entrance, exit_face) = sorted((through[0][0][0], through[0][1][0]), reverse=True)
+    return {"entrance": entrance, "exit": exit_face,
+            "mirrors": (mirrors[0][0][0], mirrors[0][1][0])}
 
 
 def _global_plus_z_axis() -> dict[str, object]:
@@ -175,11 +218,15 @@ def run_case() -> dict[str, Any]:
         actions.append({"action": "import_optical_step", "path": str(PRISM_42779_STEP), "roll_deg": PENTA_INITIAL_ROLL_DEG})
 
         app.select_step_component("optical")
+        penta = _penta_faces_by_geometry(app)
+        entrance_face = str(penta["entrance"])
+        mirror_faces = tuple(penta["mirrors"])
+        actions.append({"action": "identify_faces_by_geometry", **{k: v for k, v in penta.items()}})
         snap = app.snap_step_overlay_face_to_optical_axis(
             "optical",
             _global_plus_z_axis(),
-            face_id=PENTA_ENTRANCE_FACE,
-            guide_face_id=PENTA_EXIT_FACE,
+            face_id=entrance_face,
+            guide_face_id=str(penta["exit"]),
             guide_direction=PENTA_REQUESTED_EXIT_DIRECTION,
         )
         if snap is None:
@@ -187,7 +234,7 @@ def run_case() -> dict[str, Any]:
         actions.append(
             {
                 "action": "snap_face_normal_to_optical_axis",
-                "face_id": PENTA_ENTRANCE_FACE,
+                "face_id": entrance_face,
                 "guide_face_id": str(snap.get("guide_face_id", "")),
                 "guide_direction": [round(float(value), 6) for value in snap.get("guide_direction", ())],
                 "axis_id": str(snap.get("axis_id", "")),
@@ -200,7 +247,7 @@ def run_case() -> dict[str, Any]:
         actions.append({"action": "promote_step_to_optical_solid_row", "row_index": row_index})
 
         assigned_faces = []
-        for face_id in PENTA_MIRROR_FACES:
+        for face_id in mirror_faces:
             assigned = _assign_reflecting_face(app, row_index, face_id)
             assigned_faces.append(assigned)
             actions.append({"action": "assign_face_function", "row_index": row_index, "face_id": face_id, "function": "Full Reflecting"})
@@ -223,7 +270,7 @@ def run_case() -> dict[str, Any]:
         )
 
         expected_reflect_count = len(ray_paths)
-        for face_id in PENTA_MIRROR_FACES:
+        for face_id in mirror_faces:
             count = int(event_counts.get((face_id, "reflection"), 0) or 0)
             if count != expected_reflect_count:
                 raise RuntimeError(
@@ -272,6 +319,14 @@ def main() -> int:
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0
 
+
+
+def run_checks() -> "tuple[bool, list[str]]":
+    """Penta entry (bugs/0914): this smoke opens its own editor and inspector, so it runs in its
+    own process -- the harness owns the one embedded inspector of its process (bugs/0661)."""
+    from KrakenOS.UI.guard_subprocess import run_module_isolated
+
+    return run_module_isolated('KrakenOS.UI.validate_penta_mirror_3d_cascade')
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -109,6 +109,10 @@ def _step_report(inspector: Kraken3DInspector, prism_count: int, app: KrakenLayo
     traced_segments = sum(
         1 for r in on_records if str(r.get("axis_kind", "")) == "traced_chief_ray_segment"
     )
+    # bugs/0914: read the chief ray while the rays are ON. A rays-off refresh is bodies-only by
+    # design (the bundle carries no ray paths), so reading it after the toggle below found
+    # nothing and reported every step as a truncated trace.
+    pts = _chief_ray_polyline(inspector)
     # Toggle rays OFF and refresh. Counts include the global guide +
     # the cached traced segments (task #24).
     inspector.show_rays_var.set(False)
@@ -118,7 +122,6 @@ def _step_report(inspector: Kraken3DInspector, prism_count: int, app: KrakenLayo
     cached = sum(
         1 for r in off_records if str(r.get("axis_kind", "")) == "traced_chief_ray_segment"
     )
-    pts = _chief_ray_polyline(inspector)
     last_segment_dir: tuple[float, float, float] | None = None
     if pts is not None and pts.shape[0] >= 2:
         seg = pts[-1] - pts[-2]
@@ -246,6 +249,14 @@ def _run() -> int:
     )
     return 0
 
+
+
+def run_checks() -> "tuple[bool, list[str]]":
+    """Penta entry (bugs/0914): this smoke opens its own editor and inspector, so it runs in its
+    own process -- the harness owns the one embedded inspector of its process (bugs/0661)."""
+    from KrakenOS.UI.guard_subprocess import run_module_isolated
+
+    return run_module_isolated('KrakenOS.UI.validate_open3d_penta_cascade_prism_by_prism')
 
 if __name__ == "__main__":
     raise SystemExit(_run())
