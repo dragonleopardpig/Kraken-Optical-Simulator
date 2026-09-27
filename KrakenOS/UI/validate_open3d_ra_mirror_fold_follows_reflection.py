@@ -55,6 +55,8 @@ class _FoldStub:
     _row_z_positions = LayoutPolylineDisplayMixin._row_z_positions
     _lens_front_datum_z = LayoutPolylineDisplayMixin._lens_front_datum_z
     _lens_front_datum_row_index = LayoutPolylineDisplayMixin._lens_front_datum_row_index
+    # bugs/0916: the front-datum lookup goes through the side-aware helper since bugs/0384
+    _lens_datum_row_index = LayoutPolylineDisplayMixin._lens_datum_row_index
     _image_plane_row_index = LayoutPolylineDisplayMixin._image_plane_row_index
     _optical_axis_fold_world_transform_for_row = (
         LayoutPolylineDisplayMixin._optical_axis_fold_world_transform_for_row

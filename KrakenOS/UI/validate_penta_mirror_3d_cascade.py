@@ -28,7 +28,12 @@ from KrakenOS.UI.scene_geometry import ray_path_terminal_status_from_events
 
 PENTA_IMPORT_OFFSET = (18.0, -22.0, 38.0)
 PENTA_INITIAL_ROLL_DEG = 34.0
-# the faces are found by geometry (_penta_faces_by_geometry, bugs/0914), not by these old names
+# This guard finds its faces by GEOMETRY (_penta_faces_by_geometry, bugs/0914). These are the
+# names in the numbering of the old planar-face clustering; validate_five_penta_prism_cascade
+# still imports them, so they stay (removing them in 0914 broke that import -- bugs/0916).
+PENTA_ENTRANCE_FACE = "F005"
+PENTA_EXIT_FACE = "F006"
+PENTA_MIRROR_FACES = ("F004", "F003")
 PENTA_REQUESTED_EXIT_DIRECTION = np.asarray((1.0, 0.0, 0.0), dtype=float)
 
 

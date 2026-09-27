@@ -456,6 +456,16 @@ def _bounds_for_ray_path(path: object) -> np.ndarray:
     )
 
 
+def _expected_exit_axes(prism_count: int) -> int:
+    """bugs/0916: one exit-axis record per prism whose output leg is NOT along the global z axis.
+
+    b987840d (2026-05-27, after this guard was written) stopped drawing a separate guide for a leg
+    parallel to z -- the global dotted optical axis already is that guide -- so prism 3's +z output
+    has no record of its own, and "one per prism" no longer holds by design."""
+    return sum(1 for direction in PENTA_PATH_DIRECTIONS[1:1 + int(prism_count)]
+               if float(np.hypot(direction[0], direction[1])) > 1e-4)
+
+
 def _validate_exit_axis_records(scene_bundle: object, *, expected_exit_axes: int) -> dict[str, object]:
     ray_paths = list(getattr(scene_bundle, "ray_paths", []) or [])
     central = _central_path(ray_paths)
@@ -596,7 +606,7 @@ def build_case_editor(stage_snapshot_dir: Path | None = None) -> tuple[KrakenLay
         central = _central_path(ray_paths)
         prefix_validation = _validate_trace(scene_bundle, row_indices + [insert_at], final_expected_direction=outgoing)
         mesh_congruence = _validate_event_mesh_congruence(app, _system, scene_bundle, row_indices + [insert_at])
-        exit_axis_validation = _validate_exit_axis_records(scene_bundle, expected_exit_axes=prism_number)
+        exit_axis_validation = _validate_exit_axis_records(scene_bundle, expected_exit_axes=_expected_exit_axes(prism_number))
         stage: dict[str, object] = {
             "prism": prism_number,
             "row_index": insert_at,
@@ -642,7 +652,7 @@ def build_case_editor(stage_snapshot_dir: Path | None = None) -> tuple[KrakenLay
 
     final = _validate_trace(scene_bundle, row_indices, final_expected_direction=directions[-1])
     final["display_mesh_congruence"] = _validate_event_mesh_congruence(app, _system, scene_bundle, row_indices)
-    final["exit_axis_validation"] = _validate_exit_axis_records(scene_bundle, expected_exit_axes=len(row_indices))
+    final["exit_axis_validation"] = _validate_exit_axis_records(scene_bundle, expected_exit_axes=_expected_exit_axes(len(row_indices)))
     report = {
         "ok": True,
         "penta_count": PENTA_COUNT,

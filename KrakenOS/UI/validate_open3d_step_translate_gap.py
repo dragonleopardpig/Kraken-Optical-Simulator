@@ -85,6 +85,13 @@ class _PV:
 
 
 class _ThicknessService:
+    # bugs/0916: the leaders share the dimension line width (read from the real service)
+    from KrakenOS.UI.services.open3d_thickness_dimensions import (
+        Open3DThicknessDimensionService as _Real,
+    )
+
+    DIMENSION_LEADER_LINE_WIDTH = _Real.DIMENSION_LEADER_LINE_WIDTH
+
     def __init__(self) -> None:
         self.pv = _PV()
 
@@ -92,8 +99,10 @@ class _ThicknessService:
     def offset_direction(_segment: Any) -> np.ndarray:
         return np.asarray((1.0, 0.0, 0.0), dtype=float)
 
-    def arrow_mesh(self, _start: Any, _end: Any, *, scene_span: float) -> Any:
-        del scene_span
+    # bugs/0916: the live gap is drawn thicker than the persistent dimensions (#65)
+    def arrow_mesh(self, _start: Any, _end: Any, *, scene_span: float,
+                   thickness_scale: float = 1.0) -> Any:
+        del scene_span, thickness_scale
         return type("_Mesh", (), {"n_points": 32})()
 
 
@@ -114,6 +123,14 @@ class _Editor:
 
     def append_debug(self, message: str) -> None:
         self.debug.append(str(message))
+
+    # bugs/0916: a drag commit is one undo step since bugs/0449 -- record the grouping
+    transactions = 0
+
+    @__import__("contextlib").contextmanager
+    def history_transaction(self):
+        type(self).transactions += 1
+        yield
 
     def _step_overlay_display_label(self, label: str) -> str:
         return str(label)

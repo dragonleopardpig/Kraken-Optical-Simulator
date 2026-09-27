@@ -125,6 +125,8 @@ def _headless_editor() -> KrakenLayoutEditor:
     editor._commit_pending_table_edit = lambda: None
     editor._read_rows_from_table = lambda: None
     editor.after_idle = lambda _callback, *args: None
+    # bugs/0916: a table selection schedules the active-cell border repaint; __init__ sets this
+    editor._active_cell_border_after_id = None
     editor._schedule_table_grid_update = lambda *args, **kwargs: None
     editor._refresh_analysis_surface_choices = lambda: None
     editor._refresh_operand_surface_choices = lambda: None

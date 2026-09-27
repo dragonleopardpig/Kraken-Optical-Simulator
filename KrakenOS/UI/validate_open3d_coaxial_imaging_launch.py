@@ -267,6 +267,8 @@ class _LiveBundleBuilder:
     _build_scene_source_bundle = _SourceModeling._build_scene_source_bundle
     _source_spec_float = staticmethod(_SourceModeling._source_spec_float)
     _random_cone_directions = staticmethod(_SourceModeling._random_cone_directions)
+    # bugs/0916: the bundle builder reads an optional world aim point since bugs/0680
+    _source_spec_aim_point = staticmethod(_SourceModeling._source_spec_aim_point)
     _orient_source_points_and_dirs_for_source = staticmethod(
         _SourceModeling._orient_source_points_and_dirs_for_source
     )
@@ -300,7 +302,10 @@ def _check_live_saved_rectangle(failures: list[str], notes: list[str]) -> None:
         "seed": 7,
     }
     source = scene_source_from_spec(spec, 0, wavelength=0.546)
-    live = _LiveBundleBuilder()._build_scene_source_bundle(source)
+    # bugs/0916: the live builder CAPS an interactive preview at 200 rays by design (bugs/0540,
+    # an analysis pass is uncapped -- bugs/0590); the saved builder is full-count, so compare
+    # the live ANALYSIS launch, like for like
+    live = _LiveBundleBuilder()._build_scene_source_bundle(source, full_count=True)
     saved = build_scene_source_bundle(source)
     if live is None or saved is None:
         failures.append("BUNDLE: live or saved rectangle builder returned None")

@@ -150,6 +150,13 @@ class _ReconcileInspector:
     def _show_rotation_handles(self) -> bool:
         return True
 
+    # bugs/0916: handle teardown removes each actor from BOTH renderers since the gizmo layer
+    # (bugs/0112); bind the real method -- this fake has no overlay renderer
+    _gizmo_overlay_renderer = None
+    from KrakenOS.UI.open3d_inspector import Kraken3DInspector as _Inspector
+
+    _remove_actor_from_renderers = _Inspector._remove_actor_from_renderers
+
 
 def _register_handles(inspector: _ReconcileInspector, label: str) -> int:
     """Mimic ``add_handles`` actor tagging: 6 rotate + 3 arc + 3 translate."""
