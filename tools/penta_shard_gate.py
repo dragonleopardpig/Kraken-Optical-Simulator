@@ -28,9 +28,12 @@ Exit: 0 = every shard reported and no PASS->FAIL regression; 1 otherwise.
 from __future__ import annotations
 
 import argparse
+import os
 import re
+import signal
 import sys
 import tempfile
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -41,8 +44,14 @@ import penta_validator_gate as gate  # noqa: E402
 VALIDATOR_SOURCE = gate.REPO_ROOT / "KrakenOS" / "UI" / "validate_open3d_penta_telescope_comprehensive.py"
 PHASE_NAME_RE = re.compile(r"^\s+phase_(\d+)_[A-Za-z0-9_]+,\s*$", re.M)
 SECONDS_RE = re.compile(r"^\s*\[(?:PASS|FAIL)\]\s+Phase\s+(\d+)\s*:.*?$\n(?:(?!\s*\[(?:PASS|FAIL)\]).*\n)*?\s*seconds:\s*([0-9.]+)", re.M)
-#: GB a shard is budgeted for (a whole-suite process peaks well above this; a shard holds a slice)
-GB_PER_SHARD = 4.0
+#: GB a shard is budgeted for. Measured 2026-09-28: a shard's validator reaches ~6 GB, and the
+#: tail shard also runs isolated child apps (run_module_isolated, several GB each) while its
+#: parent waits. 4 GB/shard let 4 shards exhaust a 30 GB machine with NO swap -- the kernel
+#: OOM killer fired and the desktop session was logged out.
+GB_PER_SHARD = 7.0
+#: The watchdog stops every shard when available memory drops below this, so a heavy run
+#: fails loudly instead of taking the desktop session with it.
+MIN_AVAILABLE_GB = 3.0
 
 
 def suite_phases() -> list[int]:
@@ -93,6 +102,56 @@ def available_gb() -> float:
     return 8.0
 
 
+def _descendants(root: int) -> list[int]:
+    """Every live descendant pid of ``root`` (read from /proc; no psutil)."""
+    children: dict[int, list[int]] = {}
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            fields = (entry / "stat").read_text().rsplit(")", 1)[1].split()
+            children.setdefault(int(fields[1]), []).append(int(entry.name))
+        except (OSError, IndexError, ValueError):
+            continue
+    found, stack = [], [root]
+    while stack:
+        for child in children.get(stack.pop(), []):
+            found.append(child)
+            stack.append(child)
+    return found
+
+
+class MemoryWatchdog(threading.Thread):
+    """Kill every descendant process when MemAvailable falls below ``floor_gb``."""
+
+    def __init__(self, floor_gb: float, interval: float = 2.0) -> None:
+        super().__init__(daemon=True)
+        self.floor_gb = float(floor_gb)
+        self.interval = float(interval)
+        self.tripped_at_gb: float | None = None
+        self.lowest_gb = float("inf")
+        self._stop = threading.Event()
+
+    def run(self) -> None:
+        while not self._stop.wait(self.interval):
+            available = available_gb()
+            self.lowest_gb = min(self.lowest_gb, available)
+            if available >= self.floor_gb:
+                continue
+            self.tripped_at_gb = available
+            print(f"[shards] MEMORY WATCHDOG: {available:.1f} GB available < {self.floor_gb:g} GB "
+                  "-- stopping every shard", file=sys.stderr, flush=True)
+            for pid in reversed(_descendants(os.getpid())):
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except OSError:
+                    pass
+            return
+
+    def stop(self) -> None:
+        self._stop.set()
+
+
 def free_displays(count: int, start: int = 110) -> list[int]:
     out, num = [], start
     while len(out) < count:
@@ -105,6 +164,8 @@ def free_displays(count: int, start: int = 110) -> list[int]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--shards", type=int, default=None, help="shard count (default: memory-capped, max 4)")
+    parser.add_argument("--min-available-gb", type=float, default=MIN_AVAILABLE_GB,
+                        help="stop every shard when available memory falls below this (default %(default)s)")
     parser.add_argument("--baseline", type=Path, default=gate.DEFAULT_BASELINE)
     parser.add_argument("--update-baseline", action="store_true",
                         help="write the merged states as the baseline (only if EVERY shard reported)")
@@ -152,8 +213,16 @@ def main(argv: list[str] | None = None) -> int:
         return index, code, states, env_error, time.time() - started
 
     started = time.time()
+    watchdog = MemoryWatchdog(args.min_available_gb)
+    watchdog.start()
     with ThreadPoolExecutor(max_workers=len(shards)) as pool:
         results = sorted(pool.map(run_one, range(len(shards))))
+    watchdog.stop()
+    print(f"[shards] lowest available memory during the run: {watchdog.lowest_gb:.1f} GB")
+    if watchdog.tripped_at_gb is not None:
+        print(f"[shards] FAILED -- the memory watchdog stopped the run at {watchdog.tripped_at_gb:.1f} GB "
+              "available; rerun with fewer --shards", file=sys.stderr)
+        return 1
 
     merged: dict[str, dict[str, str]] = {}
     silent: list[int] = []
