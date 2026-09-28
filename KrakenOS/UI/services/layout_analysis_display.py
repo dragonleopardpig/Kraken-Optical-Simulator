@@ -1195,6 +1195,17 @@ class LayoutAnalysisDisplayMixin:
             reference = np.asarray((0.0, 0.0, self._current_object_distance()), dtype=float)
         if reference.size < 3 or not np.all(np.isfinite(reference[:3])):
             reference = np.asarray((0.0, 0.0, self._current_object_distance()), dtype=float)
+        # bugs/0922 (user decision 2026-09-28: "stay on axis, show misses"): centring on the stop
+        # (596c8134) is for a real APERTURE -- it points each oblique field's chief ray through
+        # it. A file-backed optical SOLID (a promoted STEP/STL body) as the reference is where
+        # the user PLACED a body; following its decentre dragged the whole launch 42 mm onto a
+        # prism parked off the beam. The source never moves with an element: keep the axis point
+        # at its z. An on-axis stop (the Double Gauss case) gives the same point either way.
+        try:
+            if self._file_backed_stl_row_at(int(self._analysis_surface_index())) is not None:
+                reference = np.asarray((0.0, 0.0, float(reference[2])), dtype=float)
+        except Exception:
+            pass
         return reference.astype(float)
 
     def _center_infinity_bundle_on_launch_reference(self, bundle, *, system=None):

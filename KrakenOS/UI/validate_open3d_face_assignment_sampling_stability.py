@@ -418,14 +418,28 @@ def _validate_world_envelope_survives_off_axis_step_promotion() -> None:
             sampling_mode="world_envelope",
             update_state=False,
         )
-        after_signature = _launch_signature(after_bundle)
-        if len(after_signature) != len(before_signature):
+        # bugs/0922 (user decision 2026-09-28: "stay on axis, show misses"): a body parked OFF the
+        # beam must not move the source, and the rays that miss it must still be drawn. The
+        # launch PATTERN may change -- a solid in the scene makes the trace non-sequential and
+        # the envelope then fills the pupil disk instead of a meridional fan -- so the claim is
+        # measured, not byte-compared: same ray count, every ray drawn, the launch centre still
+        # on the axis and inside the same pupil.
+        before_origins = np.asarray([row[:3] for row in before_signature], dtype=float)
+        after_paths = list(getattr(after_bundle, "ray_paths", []) or [])
+        after_origins = np.asarray([np.asarray(path.points_world, dtype=float)[0, :3]
+                                    for path in after_paths], dtype=float)
+        if len(after_paths) != len(before_signature):
             raise AssertionError(
-                "World-envelope launch count changed after off-axis STEP promotion: "
-                f"before={len(before_signature)}, after={len(after_signature)}."
-            )
-        if after_signature != before_signature:
-            raise AssertionError("World-envelope launch origins/directions changed after off-axis STEP promotion.")
+                "World-envelope rays vanished or multiplied after off-axis STEP promotion: "
+                f"before={len(before_signature)}, drawn after={len(after_paths)}.")
+        before_radius = float(np.max(np.hypot(before_origins[:, 0], before_origins[:, 1])))
+        after_centre = after_origins[:, :2].mean(axis=0)
+        after_radius = float(np.max(np.hypot(after_origins[:, 0], after_origins[:, 1])))
+        if float(np.hypot(*after_centre)) > 0.1 * max(before_radius, 1e-9) \
+                or after_radius > before_radius * 1.01:  # the disk sampler reaches 2.005 of 2.000
+            raise AssertionError(
+                "World-envelope launch moved with the off-axis STEP: centre "
+                f"{after_centre.round(3).tolist()}, radius {after_radius:.3f} vs {before_radius:.3f}.")
     finally:
         app.destroy()
 

@@ -836,6 +836,12 @@ class LayoutSceneBundleDisplayMixin:
         if not paths:
             return 0
         kept = [p for p in paths if not _is_blocked_reference_ray_stub(p)]
+        if not kept:
+            # bugs/0922: the 0189 stubs are scaffolding BESIDE a beam that went through the fold.
+            # When EVERY ray missed (the launch on the axis, the only optic parked off it), those
+            # rays are the whole truth of the scene -- hiding them made the light vanish. Show
+            # the miss ("rays trace regardless of element placement"; a miss must visibly MISS).
+            return 0
         dropped = len(paths) - len(kept)
         if dropped:
             bundle.ray_paths = kept
