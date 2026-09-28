@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-09-20T04:52:46+00:00",
+  "generated_at": "2026-09-28T06:13:33+00:00",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -700,7 +700,9 @@
     "697": "pass",
     "698": "pass",
     "699": "pass",
-    "700": "pass"
+    "700": "pass",
+    "701": "pass",
+    "702": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -1401,6 +1403,8 @@
     "697": "rays off/on keep every physical row actor and the promoted STEP stays glass (0914): the promoted row wears the selection highlight (>= 0.75) while selected -- promotion selects it -- and reads 0.20-0.38 once deselected; the status waits out the STEP display-cache warm-up that shares its line",
     "698": "the five-penta cascade builds prism by prism (0914): a row per insertion, ray paths at every depth, cached chief-ray segments surviving rays-off, and the chief ray's exit direction turning at every fold -- read while rays are ON, since a rays-off refresh is bodies-only by design",
     "699": "a snapped, promoted pentaprism deviates the beam onto the requested +X (0914): faces found by GEOMETRY (parallel sides dot -1, perpendicular entrance/exit, the 135-degree mirror pair among the rest) because the native STEP import renumbered and qualified them (S001/F005) and the old names pointed at a side face and the bevel; every ray F005 refract -> F002 reflect -> F004 reflect -> F001 refract. Failing since June",
-    "700": "a saved promoted STEP is not drawn twice (0909): 95615f05's ghost suppression holds with the live-trace exclusion -- only rows flagged transient_live_trace leave the promoted set, so a traced unpromoted STEP stays selectable while a saved one still suppresses its overlay"
+    "700": "a saved promoted STEP is not drawn twice (0909): 95615f05's ghost suppression holds with the live-trace exclusion -- only rows flagged transient_live_trace leave the promoted set, so a traced unpromoted STEP stays selectable while a saved one still suppresses its overlay",
+    "701": "optics appended on the five-penta cascade's -X exit leg are traced where they are drawn (0923): EVERY ray passes through both ball lenses, the DCV, the achromat and the cylinder, counted as traced vertices inside each body on the ray's exit leg -- never a projection of the whole folded path, which let the cascade vouch for optics no ray reached. Failing since the chain was written",
+    "702": "the three rules behind 0923: a promoted STEP baked with an X/Y rotation traces its drawn mesh (the native prescription is rebuilt along the UNROTATED +Z), a lens on any line is straight-through and never a fold source, and the output-face pick measures along the running beam it is given"
   }
 }

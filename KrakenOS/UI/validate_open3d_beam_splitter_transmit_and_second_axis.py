@@ -417,9 +417,13 @@ def run_checks() -> tuple[bool, list[str]]:
         lens = {"surface": "Standard", "name": "Lens", "glass": "BK7", "thickness": 10.0, "diameter": 30.0, "advanced": {}}
         img = {"surface": "Image", "name": "Image", "thickness": 0.0, "diameter": 30.0, "advanced": {}}
         return _override_keys([obj, plate, lens, img])
+    # bugs/0923: a CLEAR tilted plate (every face Transmit, on one line, faces on both sides) is
+    # a straight-through optic -- it shifts the beam sideways but never folds it -- so it no
+    # longer folds the chain even WITHOUT the mark. The mark's own effect is proven by 2f below
+    # (a folding explicit port stops folding once marked).
     _check(
-        _marked_plate_keys(False) != [],
-        f"an unflagged tilted plate WITHOUT the BS mark folds the chain (the bug) (keys={_marked_plate_keys(False)})",
+        _marked_plate_keys(False) == [],
+        f"an unflagged CLEAR tilted plate no longer folds the chain either -- a straight-through optic is never a fold source (0923) (keys={_marked_plate_keys(False)})",
     )
     _check(
         _marked_plate_keys(True) == [],

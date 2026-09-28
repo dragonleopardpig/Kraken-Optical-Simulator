@@ -155,6 +155,14 @@ def _tilts_to_align_local_axis_to_world(
     world = np.asarray(world_axis, dtype=float).reshape(3)
     local /= max(float(np.linalg.norm(local)), 1e-12)
     world /= max(float(np.linalg.norm(world)), 1e-12)
+    # bugs/0923: the exit direction comes from a TRACE, so it carries a ~1e-6 residual
+    # (-1, -2.3e-6, -1.6e-6). np.allclose's default atol (1e-8) rejected it, the helper
+    # fell through to identity, and every optic was promoted un-rotated -- a Z-axis lens
+    # on a -X beam. Snap to the axis within 1e-3 (0.06 deg) before matching.
+    nearest = np.zeros(3)
+    nearest[int(np.argmax(np.abs(world)))] = float(np.sign(world[int(np.argmax(np.abs(world)))]))
+    if float(np.linalg.norm(world - nearest)) <= 1e-3:
+        world = nearest
     # Local +Z to world -X => rotate -90 around Y.
     if np.allclose(local, [0.0, 0.0, 1.0]) and np.allclose(world, [-1.0, 0.0, 0.0]):
         return (0.0, -90.0, 0.0)
@@ -170,8 +178,9 @@ def _tilts_to_align_local_axis_to_world(
     # Local +Z to world +Z => no rotation.
     if np.allclose(local, [0.0, 0.0, 1.0]) and np.allclose(world, [0.0, 0.0, 1.0]):
         return (0.0, 0.0, 0.0)
-    # Fallback: identity (caller should adapt).
-    return (0.0, 0.0, 0.0)
+    # bugs/0923: never fall back to identity silently -- that is how the whole chain got
+    # promoted along the wrong axis without one failing check.
+    raise ValueError(f"no tilt maps local {local.tolist()} onto world {world.tolist()}")
 
 
 # ---------------------------------------------------------------------------
@@ -540,6 +549,59 @@ def _perp_offset_from_axis(point: np.ndarray) -> float:
     return float(np.linalg.norm(perp))
 
 
+def _exit_leg(pts: np.ndarray) -> np.ndarray:
+    """bugs/0923: the part of a ray polyline AFTER it leaves the cascade on the exit axis.
+
+    The folded cascade itself wanders up to ~60 mm "along" the exit axis (prism 2 sits at
+    x = -23), so projecting a WHOLE path onto the axis let the cascade vouch for optics the
+    rays never reached (phase 1 passed with every ray stopped 30 mm short of ball 1). The
+    leg starts at the last vertex on the axis line at or before EXIT_POSITION."""
+    pts = np.asarray(pts, dtype=float)
+    start = None
+    for index in range(pts.shape[0]):
+        if _axis_projection(pts[index, :3]) <= 1e-6 and _perp_offset_from_axis(pts[index, :3]) < 5.0:
+            start = index
+    return pts[start:, :3] if start is not None else np.empty((0, 3))
+
+
+def _row_actor_bounds(inspector: Kraken3DInspector, row_index: int) -> tuple[np.ndarray, np.ndarray] | None:
+    actor_by_key = inspector._actor_by_key or {}
+    bmin = np.full(3, float("inf"))
+    bmax = np.full(3, float("-inf"))
+    for key in list((inspector._row_actor_map or {}).get(row_index, []) or []):
+        actor = actor_by_key.get(key)
+        try:
+            b = actor.GetBounds() if actor is not None else None
+        except Exception:
+            b = None
+        if b is None or len(b) < 6:
+            continue
+        bmin = np.minimum(bmin, np.asarray([b[0], b[2], b[4]], dtype=float))
+        bmax = np.maximum(bmax, np.asarray([b[1], b[3], b[5]], dtype=float))
+    if not np.all(np.isfinite(bmin)):
+        return None
+    return bmin, bmax
+
+
+def _paths_through_row(inspector: Kraken3DInspector, paths: Sequence[Any], row_index: int) -> int:
+    """bugs/0923: rays with a TRACED vertex inside the row's body on their exit leg.
+
+    A vertex is a surface interaction; the leg's last point is the terminal/missed stub,
+    which the display draws a fixed length past the last hit -- so it proves nothing."""
+    bounds = _row_actor_bounds(inspector, row_index)
+    if bounds is None:
+        return 0
+    lo = bounds[0] - 0.05
+    hi = bounds[1] + 0.05
+    count = 0
+    for path in paths:
+        leg = _exit_leg(np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float))
+        interior = leg[:-1] if leg.shape[0] >= 2 else np.empty((0, 3))
+        if any(bool(np.all(point >= lo) and np.all(point <= hi)) for point in interior):
+            count += 1
+    return count
+
+
 # ---------------------------------------------------------------------------
 # Phase 1 workflow: add 2 ball lenses for 1:1 image relay
 
@@ -634,13 +696,11 @@ def phase1_ball_lens_telescope(app: KrakenLayoutEditor, inspector: Kraken3DInspe
             _axis_projection(ball1_target) + _axis_projection(ball2_target)
         )
         focal_offsets: list[float] = []
-        max_along = 0.0
         for path in paths:
-            pts = np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float)
-            if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+            pts = _exit_leg(np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float))
+            if pts.shape[0] < 2:
                 continue
             alongs = np.asarray([_axis_projection(p) for p in pts[:, :3]], dtype=float)
-            max_along = max(max_along, float(alongs.max()))
             for i in range(pts.shape[0] - 1):
                 a0 = float(alongs[i]); a1 = float(alongs[i + 1])
                 if a0 == a1 or (a0 - focal_along) * (a1 - focal_along) > 0:
@@ -655,8 +715,8 @@ def phase1_ball_lens_telescope(app: KrakenLayoutEditor, inspector: Kraken3DInspe
         return {
             "ray_path_count": len(paths),
             "ray_actor_count": len(inspector._actor_ray_map or {}),
-            "max_axis_projection_mm": round(max_along, 2),
-            "ball_2_axis_projection_mm": round(_axis_projection(ball2_target), 2),
+            "rays_through_ball_1": _paths_through_row(inspector, paths, ball1_row),
+            "rays_through_ball_2": _paths_through_row(inspector, paths, ball2_row),
             "focal_plane_axis_mm": round(focal_along, 3),
             "rays_at_focal_plane": len(focal_offsets),
             "focal_spot_radius_mm": round(focal_spot_radius, 3),
@@ -668,12 +728,12 @@ def phase1_ball_lens_telescope(app: KrakenLayoutEditor, inspector: Kraken3DInspe
             tr.ok = False
             tr.note = "trace produced 0 ray paths after adding ball lenses"
             report.failures.append(tr.note)
-        elif tr.payload.get("max_axis_projection_mm", 0.0) < tr.payload.get("ball_2_axis_projection_mm", 0.0):
+        elif min(tr.payload.get("rays_through_ball_1", 0), tr.payload.get("rays_through_ball_2", 0)) < tr.payload.get("ray_path_count", 0):
             tr.ok = False
             tr.note = (
-                f"rays terminated before second ball lens along the cascade exit axis: "
-                f"max_axis_projection={tr.payload.get('max_axis_projection_mm')} < "
-                f"ball_2={tr.payload.get('ball_2_axis_projection_mm')}"
+                f"not every ray is traced through both ball lenses: "
+                f"ball_1={tr.payload.get('rays_through_ball_1')}, "
+                f"ball_2={tr.payload.get('rays_through_ball_2')} of {tr.payload.get('ray_path_count')}"
             )
             report.failures.append(tr.note)
         elif tr.payload.get("rays_at_focal_plane", 0) == 0:
@@ -758,15 +818,10 @@ def phase2_dcv_achromat_group(app: KrakenLayoutEditor, inspector: Kraken3DInspec
         inspector.update()
         bundle = inspector._current_scene_bundle
         paths = list(getattr(bundle, "ray_paths", []) or []) if bundle is not None else []
-        max_along = 0.0
-        for path in paths:
-            pts = np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float)
-            if pts.ndim == 2 and pts.shape[0] >= 1 and pts.shape[1] >= 3:
-                max_along = max(max_along, float(max(_axis_projection(p) for p in pts[:, :3])))
         return {
             "ray_path_count": len(paths),
-            "max_axis_projection_mm": round(max_along, 2),
-            "achromat_axis_projection_mm": round(_axis_projection(achromat_target), 2),
+            "rays_through_dcv": _paths_through_row(inspector, paths, dcv_row),
+            "rays_through_achromat": _paths_through_row(inspector, paths, ach_row),
         }
 
     tr = _timed(report, "trace_after_dcv_achromat", _trace_after_group, budget_ms=20000.0)
@@ -775,12 +830,12 @@ def phase2_dcv_achromat_group(app: KrakenLayoutEditor, inspector: Kraken3DInspec
             tr.ok = False
             tr.note = "trace produced 0 ray paths after DCV+Achromat"
             report.failures.append(tr.note)
-        elif tr.payload.get("max_axis_projection_mm", 0.0) < tr.payload.get("achromat_axis_projection_mm", 0.0):
+        elif min(tr.payload.get("rays_through_dcv", 0), tr.payload.get("rays_through_achromat", 0)) < tr.payload.get("ray_path_count", 0):
             tr.ok = False
             tr.note = (
-                f"rays terminated before Achromat along the axis: "
-                f"{tr.payload.get('max_axis_projection_mm')} < "
-                f"{tr.payload.get('achromat_axis_projection_mm')}"
+                f"not every ray is traced through the DCV and the Achromat: "
+                f"dcv={tr.payload.get('rays_through_dcv')}, "
+                f"achromat={tr.payload.get('rays_through_achromat')} of {tr.payload.get('ray_path_count')}"
             )
             report.failures.append(tr.note)
     return report
@@ -872,8 +927,8 @@ def phase3_cylindrical_line_focus(app: KrakenLayoutEditor, inspector: Kraken3DIn
         u_proj: list[float] = []
         v_proj: list[float] = []
         for path in paths:
-            pts = np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float)
-            if pts.ndim != 2 or pts.shape[0] < 2 or pts.shape[1] < 3:
+            pts = _exit_leg(np.asarray(getattr(path, "points_world", np.empty((0, 3))), dtype=float))
+            if pts.shape[0] < 2:
                 continue
             alongs = np.asarray([_axis_projection(p) for p in pts[:, :3]], dtype=float)
             for i in range(pts.shape[0] - 1):
@@ -897,6 +952,7 @@ def phase3_cylindrical_line_focus(app: KrakenLayoutEditor, inspector: Kraken3DIn
         )
         return {
             "ray_path_count": len(paths),
+            "rays_through_cylinder": _paths_through_row(inspector, paths, cyl_row),
             "focal_axis_projection_mm": round(focal_along, 2),
             "rays_reached_focal_plane": len(u_proj),
             "u_range_mm": round(u_range, 3),
@@ -917,7 +973,15 @@ def phase3_cylindrical_line_focus(app: KrakenLayoutEditor, inspector: Kraken3DIn
         # ratio check is a soft warning until face roles are
         # auto-assigned for cylinder promotions.
         reached = line_step.payload.get("rays_reached_focal_plane", 0)
-        if reached == 0:
+        through = line_step.payload.get("rays_through_cylinder", 0)
+        if through < line_step.payload.get("ray_path_count", 0):
+            line_step.ok = False
+            line_step.note = (
+                f"not every ray is traced through the cylindrical lens: "
+                f"{through} of {line_step.payload.get('ray_path_count')}"
+            )
+            report.failures.append(line_step.note)
+        elif reached == 0:
             line_step.ok = False
             line_step.note = (
                 "no rays reached the cylindrical focal plane "
@@ -1101,6 +1165,15 @@ def main() -> int:
         app.destroy()
 
     return _print_report(reports, recordings)
+
+
+
+def run_checks() -> "tuple[bool, list[str]]":
+    """Penta entry (bugs/0923): this chain opens its own editor and inspector, so it runs in
+    its own process -- the harness owns the one embedded inspector of its process (bugs/0661)."""
+    from KrakenOS.UI.guard_subprocess import run_module_isolated
+
+    return run_module_isolated("KrakenOS.UI.validate_open3d_penta_telescope_chain")
 
 
 if __name__ == "__main__":

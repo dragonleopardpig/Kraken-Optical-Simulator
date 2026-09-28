@@ -1188,6 +1188,25 @@ class ThreeDSceneToolsMixin:
             return ("AIR",)
         return tuple(material for _ in range(count - 1)) + ("AIR",)
 
+    @staticmethod
+    def _baked_rotation_moves_step_axis(advanced: dict) -> bool:
+        """bugs/0923: True when the promoted mesh was baked with an overlay rotation
+        about X or Y -- i.e. its optical axis is no longer the STEP file's own Z.
+
+        The native plan rebuilds the prescription from the UNROTATED source STEP and
+        poses it with the row tilts only, which promotion leaves at zero because the
+        rotation is already inside the mesh. A ball lens turned onto a -X beam was drawn
+        on the beam but traced as a Z-axis surface pair every ray ran parallel to. A roll
+        (Z) keeps the axis, so it keeps the native trace."""
+        promotion = advanced.get("StepOverlayPromotion")
+        if not isinstance(promotion, dict):
+            return False
+        try:
+            angles = [float(value) for value in list(promotion.get("step_rotation_deg") or ())[:2]]
+        except Exception:
+            return False
+        return any(abs(((angle + 180.0) % 360.0) - 180.0) > 1.0e-9 for angle in angles)
+
     def _saved_promoted_step_native_trace_plan(
         self,
         row: SurfaceRow,
@@ -1199,6 +1218,9 @@ class ThreeDSceneToolsMixin:
     ) -> dict[str, object] | None:
         advanced = row.advanced if isinstance(getattr(row, "advanced", None), dict) else {}
         if not str(advanced.get("Solid_3d_stl", "") or "").strip():
+            return None
+        if self._baked_rotation_moves_step_axis(advanced):
+            # bugs/0923: trace the drawn mesh -- the one pose the display and the trace share
             return None
         try:
             stat_key = (int(source_path.stat().st_mtime_ns), int(source_path.stat().st_size))

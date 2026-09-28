@@ -16773,6 +16773,14 @@ phase_700_saved_step_native_trace = _phase_from_standalone(
     700, "a saved promoted STEP is not drawn twice (0909): 95615f05's ghost suppression holds with the live-trace exclusion -- only rows flagged transient_live_trace leave the promoted set, so a traced unpromoted STEP stays selectable while a saved one still suppresses its overlay",
     'KrakenOS.UI.validate_open3d_saved_step_native_trace',
     'saved_step_native_trace')
+phase_701_penta_telescope_chain = _phase_from_standalone(
+    701, "optics appended on the five-penta cascade's -X exit leg are traced where they are drawn (0923): EVERY ray passes through both ball lenses, the DCV, the achromat and the cylinder, counted as traced vertices inside each body on the ray's exit leg -- never a projection of the whole folded path, which let the cascade vouch for optics no ray reached. Failing since the chain was written",
+    'KrakenOS.UI.validate_open3d_penta_telescope_chain',
+    'penta_telescope_chain')
+phase_702_folded_leg_lens_chain = _phase_from_standalone(
+    702, "the three rules behind 0923: a promoted STEP baked with an X/Y rotation traces its drawn mesh (the native prescription is rebuilt along the UNROTATED +Z), a lens on any line is straight-through and never a fold source, and the output-face pick measures along the running beam it is given",
+    'KrakenOS.UI.validate_open3d_0923_folded_leg_lens_chain',
+    'folded_leg_lens_chain')
 phase_518_lens_move_thickness_pair = _phase_from_standalone(
     518, "a feasible FOV solve moves ONLY the lens: thickness pair on (front-1, rear), physical-room gate, no Filter drum, focus residual reported (0719)",
     "KrakenOS.UI.validate_open3d_0719_lens_move_thickness_pair",
@@ -17539,6 +17547,8 @@ def main() -> int:
             phase_698_prism_by_prism_cascade,
             phase_699_penta_mirror_3d_cascade,
             phase_700_saved_step_native_trace,
+            phase_701_penta_telescope_chain,
+            phase_702_folded_leg_lens_chain,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

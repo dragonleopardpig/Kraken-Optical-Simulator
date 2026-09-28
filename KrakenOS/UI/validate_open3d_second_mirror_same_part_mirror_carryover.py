@@ -230,17 +230,20 @@ def validate_second_mirror_same_part_mirror_carryover() -> list[Check]:
         ),
     ))
 
-    # CAUSAL contrast: strip the carried Mirror face and re-seat -> the detector flips back
-    # UP (+Z), proving the carried Mirror face is exactly what makes the fold go DOWN (the
-    # user's original no-Mirror bug).
+    # CAUSAL contrast: strip the carried Mirror face and re-seat. The fold no longer goes DOWN,
+    # so the carried Mirror face is exactly what makes it go down. bugs/0923: nor does the
+    # detector flip UP (+Z) any more -- that flagged "wrong side" came from the follower walk
+    # picking the stripped block's exit face by a world-+Z preference while the beam ran +X.
+    # The walk now picks along the running beam, so a clear block leaves the detector on the
+    # incoming +X line, at the mirror's height: it transmits, it does not fold.
     _strip_mirror_faces(editor.rows[ri])
-    img_z_up = _image_center_z(editor.rows)
-    flips_up = img_z_up is not None and img_z_up > _MIRROR2_Z + 1.0
+    img_z_stripped = _image_center_z(editor.rows)
+    stays_on_line = img_z_stripped is not None and abs(img_z_stripped - _MIRROR2_Z) <= 1.0
     checks.append(Check(
-        "CAUSAL: with the Mirror face stripped the detector seats UP (+Z) again (reproduces the flagged bug)",
-        flips_up,
-        f"stripped image_center_z={None if img_z_up is None else round(img_z_up, 3)} "
-        f"(expect > {_MIRROR2_Z + 1.0}, i.e. the wrong side the carry-over fixes)",
+        "CAUSAL: with the Mirror face stripped the detector no longer folds DOWN -- it stays on the incoming line (neither down nor the old flagged UP, 0923)",
+        stays_on_line,
+        f"stripped image_center_z={None if img_z_stripped is None else round(img_z_stripped, 3)} "
+        f"(expect within 1 mm of the mirror height {_MIRROR2_Z}; DOWN needs the Mirror face, UP was the 0923 walk bug)",
     ))
 
     # ===================== (B) SCOPING of the carry-over helper ===================== #

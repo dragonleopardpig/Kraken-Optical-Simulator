@@ -307,7 +307,13 @@ def select_optical_solid_explicit_input_face(world_faces: list[dict[str, object]
     return max(explicit_input_faces, key=lambda face: float(face.get("area_mm2", 0.0) or 0.0))
 
 
-def select_optical_solid_output_face(world_faces: list[dict[str, object]]) -> dict[str, object] | None:
+def select_optical_solid_output_face(
+    world_faces: list[dict[str, object]],
+    *,
+    incoming_axis=None,
+) -> dict[str, object] | None:
+    """``incoming_axis`` is the running beam direction when the caller knows it (the
+    follower walk); ``None`` keeps the historic incoming +Z (bugs/0923)."""
     explicit_output_faces: list[dict[str, object]] = []
     inferred_output_faces: list[dict[str, object]] = []
     for face in list(world_faces or []):
@@ -345,10 +351,16 @@ def select_optical_solid_output_face(world_faces: list[dict[str, object]]) -> di
         # +Z-aligned transmit exit -- its output is a side face -- so it still
         # falls back to the side-priority pick below. Faces without a world normal
         # default to +Z, so non-world callers keep their existing behavior.
+        # bugs/0923: "along the incoming axis" means the RUNNING beam's direction, not world
+        # +Z. On a folded leg (the penta cascade exits along -X) a lens's two faces both
+        # read as sides, the side-priority pick took the achromat's UPSTREAM face, and the
+        # walk re-sourced the frame backwards -- seating the Image between the DCV and the
+        # achromat, facing the source.
+        axis = _unit_vector(incoming_axis if incoming_axis is not None else (0.0, 0.0, 1.0))
         axial_outputs = [
             face
             for face in inferred_output_faces
-            if float(_unit_vector(face.get("normal_world", (0.0, 0.0, 1.0)))[2]) >= 0.966  # cos(~15 deg)
+            if float(np.dot(_unit_vector(face.get("normal_world", (0.0, 0.0, 1.0))), axis)) >= 0.966  # cos(~15 deg)
         ]
         if axial_outputs:
             return max(axial_outputs, key=_output_face_sort_key)
@@ -1525,6 +1537,31 @@ def _exit_frame_is_non_folding(
     return float(np.dot(forward, incoming)) >= 1.0 - float(direction_tol)
 
 
+def _is_straight_through_transmit_optic(world_faces: list[dict[str, object]], output_normal) -> bool:
+    """bugs/0923: True when the solid is a straight-through transmit optic on the line of
+    ``output_normal`` -- every assigned face is a plain Transmit face lying on that line, and
+    faces sit on BOTH sides (an entry and an exit).
+
+    Such a body (a lens, a window) cannot fold a beam, whichever way the beam runs along its
+    axis. The non-folding test above measures against world +Z, so a lens on a FOLDED leg
+    (the penta cascade exits along -X) read as a 90-degree fold off whichever face the
+    side-priority pick chose -- the DCV's UPSTREAM face -- and swept the Image back between
+    the DCV and the achromat. A cube (faces on three lines) or anything carrying a mirror /
+    beam-splitter / other interaction face is not this, and keeps the existing path."""
+    axis = _unit_vector(output_normal)
+    dots: list[float] = []
+    for face in list(world_faces or []):
+        if not isinstance(face, dict):
+            continue
+        function = normalize_optical_solid_face_function(face.get("function"), legacy_role=face.get("role"))
+        if function != OPTICAL_SOLID_FACE_FUNCTION_TRANSMIT:
+            return False
+        dots.append(float(np.dot(_unit_vector(face.get("normal_world", (0.0, 0.0, 1.0))), axis)))
+    if len(dots) < 2 or any(abs(value) < 0.966 for value in dots):  # cos(~15 deg), as the axial pick
+        return False
+    return any(value > 0.0 for value in dots) and any(value < 0.0 for value in dots)
+
+
 def _beam_splitter_coating_face_extent_mm(face: dict[str, object]) -> float:
     """bugs/0643: an in-plane HALF-EXTENT (mm) for a coating face, so a caller can ask whether
     the incoming axis actually lands ON the coating instead of on its infinite plane.
@@ -2145,9 +2182,9 @@ def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict
         # Folded inferred exits, explicit output ports, and physics-traced exits
         # still drive the follower-row workflow normally. (Beam splitters are skipped
         # ABOVE, before the frame is computed -- bugs/0398 -- so they never reach here.)
-        if str(frame_source or "").startswith("inferred_output") and _exit_frame_is_non_folding(
-            frame_rotation,
-            np.asarray((0.0, 0.0, 1.0), dtype=float),
+        if str(frame_source or "").startswith("inferred_output") and (
+            _exit_frame_is_non_folding(frame_rotation, np.asarray((0.0, 0.0, 1.0), dtype=float))
+            or _is_straight_through_transmit_optic(world_faces, frame_rotation[:, 2])
         ):
             # bugs/0185: a promoted right-angle MIRROR cube reads all six outer
             # faces as inferred Transmit/Port outputs, so the +Z face is picked as
@@ -2236,7 +2273,9 @@ def build_optical_solid_output_port_pose_overrides(rows, *, system=None) -> dict
                     np.asarray(rotation, dtype=float),
                     assigned_only=True,
                 )
-                follower_output_face = select_optical_solid_output_face(follower_faces)
+                follower_output_face = select_optical_solid_output_face(
+                    follower_faces, incoming_axis=frame_rotation[:, 2]
+                )
                 explicit_follower_output = select_optical_solid_explicit_output_face(follower_faces)
                 explicit_follower_input = select_optical_solid_explicit_input_face(follower_faces)
                 # bugs/0398b: a BEAM SPLITTER reached inside a follower walk never RE-SOURCES the
