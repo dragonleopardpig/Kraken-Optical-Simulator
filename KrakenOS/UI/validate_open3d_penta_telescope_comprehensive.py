@@ -16777,6 +16777,10 @@ phase_701_penta_telescope_chain = _phase_from_standalone(
     701, "optics appended on the five-penta cascade's -X exit leg are traced where they are drawn (0923): EVERY ray passes through both ball lenses, the DCV, the achromat and the cylinder, counted as traced vertices inside each body on the ray's exit leg -- never a projection of the whole folded path, which let the cascade vouch for optics no ray reached. Failing since the chain was written",
     'KrakenOS.UI.validate_open3d_penta_telescope_chain',
     'penta_telescope_chain')
+phase_703_five_penta_native_step_export = _phase_from_standalone(
+    703, "the five-penta STEP export writes each prism as its native 7-face solid ON the traced body (0924): the export body is the traced mesh the 3D draws, the native solid is taken only when verified to lie on it (an 11 mm miss -- 0300's shared template -- is refused and exports the faceted drawn mesh), so 5 prism solids read back within 0.001 mm and the file drops from 4979 faces / 15 MB to ~600 / 1.4 MB",
+    'KrakenOS.UI.validate_five_penta_native_step_export',
+    'five_penta_native_step_export')
 phase_702_folded_leg_lens_chain = _phase_from_standalone(
     702, "the three rules behind 0923: a promoted STEP baked with an X/Y rotation traces its drawn mesh (the native prescription is rebuilt along the UNROTATED +Z), a lens on any line is straight-through and never a fold source, and the output-face pick measures along the running beam it is given",
     'KrakenOS.UI.validate_open3d_0923_folded_leg_lens_chain',
@@ -17549,6 +17553,7 @@ def main() -> int:
             phase_700_saved_step_native_trace,
             phase_701_penta_telescope_chain,
             phase_702_folded_leg_lens_chain,
+            phase_703_five_penta_native_step_export,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

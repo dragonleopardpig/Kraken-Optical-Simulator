@@ -163,12 +163,20 @@ def _facet_b_object(checks: list[Check]) -> None:
 def _facet_c_single_source(checks: list[Check]) -> None:
     from KrakenOS.UI.layout_editor import KrakenLayoutEditor
 
+    # bugs/0924: the shell is built from _optical_solid_row_world_mesh, which returns the
+    # traced mesh the 3D draws (_runtime_trace_surface_mesh, as _iter_3d_optical_surface_meshes
+    # does) and falls back to the STL under the display transform only without one.
     shell_src = inspect.getsource(KrakenLayoutEditor._optical_solid_row_world_step_shell)
-    uses_display_transform = "_row_optical_solid_display_world_transform" in shell_src
+    mesh_src = inspect.getsource(KrakenLayoutEditor._optical_solid_row_world_mesh)
+    uses_display_transform = (
+        "_optical_solid_row_world_mesh" in shell_src
+        and "_runtime_trace_surface_mesh" in mesh_src
+        and "_row_optical_solid_display_world_transform" in mesh_src
+    )
     checks.append(Check(
-        "C1 EXPORT USES THE DISPLAY TRANSFORM: the shell pose comes from the 3D's own transform",
+        "C1 EXPORT USES THE DISPLAY BODY: the shell is the traced mesh the 3D draws (the display transform is the fallback)",
         uses_display_transform,
-        f"_optical_solid_row_world_step_shell references _row_optical_solid_display_world_transform: {uses_display_transform}",
+        f"shell -> _optical_solid_row_world_mesh -> traced mesh, display-transform fallback: {uses_display_transform}",
     ))
 
     xform_src = inspect.getsource(KrakenLayoutEditor._row_optical_solid_display_world_transform)
@@ -179,12 +187,19 @@ def _facet_c_single_source(checks: list[Check]) -> None:
         f"_row_optical_solid_display_world_transform references _runtime_transform_for_row: {prefers_inspector}",
     ))
 
+    # bugs/0924: a file-backed row exports its native STEP solid ONLY when that solid is verified
+    # to lie on the drawn body; otherwise the faceted drawn mesh (0300's shared-template case).
     collect_src = inspect.getsource(KrakenLayoutEditor._collect_row_native_step_export_shapes)
-    branches = "_file_backed_stl_row_at" in collect_src and "_optical_solid_row_world_step_shell" in collect_src
+    branches = (
+        "_file_backed_stl_row_at" in collect_src
+        and "_optical_solid_row_world_mesh" in collect_src
+        and "_verified_native_row_export_shape" in collect_src
+        and "occ_shell_shape_from_mesh" in collect_src
+    )
     checks.append(Check(
-        "C3 COLLECTOR BRANCHES ON STL ROWS: file-backed optical solids take the faithful STL path",
+        "C3 COLLECTOR BRANCHES ON STL ROWS: file-backed solids export the verified native solid, else the faceted drawn mesh",
         branches,
-        f"_collect_row_native_step_export_shapes branches file-backed rows to the shell path: {branches}",
+        f"_collect_row_native_step_export_shapes: drawn mesh + verified native + faceted fallback: {branches}",
     ))
 
 

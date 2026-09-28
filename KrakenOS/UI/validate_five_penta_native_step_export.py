@@ -287,6 +287,26 @@ def main() -> int:
                 except Exception as exc:
                     entry["error"] = str(exc)
                 native_row_export.append(entry)
+        # bugs/0924: the export body of every prism IS the traced mesh the 3D draws, and the
+        # native solid is taken only when it is verified to lie on it -- the true placement is
+        # accepted, the same body 11 mm off (0300's shared-template miss) is refused.
+        drawn_is_traced: list[bool] = []
+        verify_accepts: list[bool] = []
+        verify_refuses_offset: list[bool] = []
+        for row_index, row in enumerate(app.rows):
+            stl_item = app._file_backed_stl_row_at(row_index)
+            if stl_item is None:
+                continue
+            drawn = app._optical_solid_row_world_mesh(stl_item[0], row_index, system)
+            traced = app._runtime_trace_surface_mesh(system, row_index)
+            drawn_is_traced.append(
+                drawn is not None and traced is not None
+                and np.allclose(np.asarray(drawn.points), np.asarray(traced.points), atol=1e-9)
+            )
+            verify_accepts.append(app._verified_native_row_export_shape(row, row_index, system, drawn) is not None)
+            shifted = drawn.copy(deep=True)
+            shifted.translate((11.0, 0.0, 0.0), inplace=True)
+            verify_refuses_offset.append(app._verified_native_row_export_shape(row, row_index, system, shifted) is None)
         analytic_count, cad_count, ray_count, _dimension_count = _write_step_with_cad_shapes_and_rays(
             system,
             app.rows,
@@ -313,6 +333,9 @@ def main() -> int:
             "roundtrip_alignment": roundtrip_alignment,
             "native_row_export": native_row_export,
             "debug_tail": list(getattr(app, "debug_messages", [])[-20:]),
+            "drawn_is_traced": drawn_is_traced,
+            "verify_accepts": verify_accepts,
+            "verify_refuses_offset": verify_refuses_offset,
         }
         print("Five-penta native STEP export validation")
         print(json.dumps(report, indent=2, sort_keys=True))
@@ -328,6 +351,9 @@ def main() -> int:
                 "native cad alignment stayed on traced bodies",
                 bool(alignment) and all(float(item.get("p95", float("inf"))) <= MAX_ALIGNMENT_ERROR_MM for item in alignment),
             ),
+            ("export body is the traced mesh the 3D draws (0924)", len(drawn_is_traced) == 5 and all(drawn_is_traced)),
+            ("native solid accepted where it lies on the drawn body (0924)", len(verify_accepts) == 5 and all(verify_accepts)),
+            ("native solid refused 11 mm off the drawn body (0300 miss, 0924)", len(verify_refuses_offset) == 5 and all(verify_refuses_offset)),
             (
                 "serialized step bodies stayed on traced bodies",
                 bool(roundtrip_alignment)
@@ -344,6 +370,14 @@ def main() -> int:
             app.destroy()
         except Exception:
             pass
+
+
+def run_checks() -> "tuple[bool, list[str]]":
+    """Penta entry (bugs/0924): this export opens its own editor, so it runs in its own process --
+    the harness owns the one embedded inspector of its process (bugs/0661)."""
+    from KrakenOS.UI.guard_subprocess import run_module_isolated
+
+    return run_module_isolated("KrakenOS.UI.validate_five_penta_native_step_export")
 
 
 if __name__ == "__main__":

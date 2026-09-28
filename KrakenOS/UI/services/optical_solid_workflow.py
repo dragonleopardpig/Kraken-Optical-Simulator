@@ -1686,6 +1686,26 @@ class LayoutOpticalSolidWorkflowMixin:
             from KrakenOS.UI.services.cad_step_export import occ_shell_shape_from_mesh
         except Exception as exc:
             raise RuntimeError(f"faceted STEP shell helper unavailable: {exc}") from exc
+        mesh = self._optical_solid_row_world_mesh(row, int(row_index), system)
+        if mesh is None:
+            return None
+        return occ_shell_shape_from_mesh(mesh)
+
+    def _optical_solid_row_world_mesh(self, row, row_index: int, system):
+        """The world-placed mesh the 3D draws for a file-backed optical solid (bugs/0300).
+
+        bugs/0924: that IS the traced body -- ``_iter_3d_optical_surface_meshes`` draws a
+        file-backed solid from ``_runtime_trace_surface_mesh`` (``system.EEE``) untouched. The
+        0300 reconstruction (the STL under the headless runtime transform) reads ``TRANS_2A``,
+        whose rotation order differs from the traced mesh's for tilted rows: the five-penta
+        cascade's tilted prisms 1, 3 and 4 were exported 26.7 mm off the body the view shows.
+        The reconstruction stays only as the fallback when no traced mesh exists."""
+        try:
+            traced = self._runtime_trace_surface_mesh(system, int(row_index))
+        except Exception:
+            traced = None
+        if traced is not None and int(getattr(traced, "n_points", 0) or 0) > 0:
+            return traced
         transform = self._row_optical_solid_display_world_transform(system, int(row_index))
         if transform is None:
             return None
@@ -1694,7 +1714,54 @@ class LayoutOpticalSolidWorkflowMixin:
         mesh = self._stl_mesh_with_world_transform(row, transform)
         if mesh is None or int(getattr(mesh, "n_points", 0)) <= 0:
             return None
-        return occ_shell_shape_from_mesh(mesh)
+        return mesh
+
+    def _verified_native_row_export_shape(self, row, row_index: int, system, display_mesh):
+        """bugs/0924: the row's native STEP solid, placed by its alignment affine -- ONLY when
+        that placed solid coincides with the mesh the 3D draws; ``None`` otherwise.
+
+        bugs/0300 exports every STL-backed optical solid as a faceted shell of its drawn mesh,
+        because a SHARED template (the RA prism's step_87391) sits in a different local frame
+        from each instance's STL and landed ~11 mm off. But where the STL IS the template's
+        tessellation (the five-penta cascade's 42779 prisms), the native solid lands on the
+        drawn body to ~0.002 mm, and the faceted fallback turned each 7-face prism into 882
+        loose triangles (4979 faces, no solid a reader could find). Verify, then choose: the
+        native solid when both surfaces lie on each other within the tessellation tolerance
+        (point-to-surface, both directions), the drawn mesh otherwise."""
+        if display_mesh is None or int(getattr(display_mesh, "n_points", 0) or 0) <= 0:
+            return None
+        source_path = self._resolve_row_saved_step_source_path(row)
+        if source_path is None:
+            return None
+        matrix = self._row_native_step_alignment_affine(source_path, int(row_index), system)
+        if matrix is None:
+            return None
+        try:
+            from KrakenOS.UI.services.cad_step_export import _read_step_shape, _shape_with_affine
+
+            template = self._load_step_mesh(source_path, largest_component=False)
+            if template is None or int(getattr(template, "n_points", 0) or 0) <= 0:
+                return None
+            placed = template.copy(deep=True)
+            placed.transform(np.asarray(matrix, dtype=float), inplace=True)
+            drawn = display_mesh.extract_surface().triangulate()
+            placed = placed.extract_surface().triangulate()
+            bounds = np.asarray(drawn.bounds, dtype=float).reshape(3, 2)
+            diagonal = float(np.linalg.norm(bounds[:, 1] - bounds[:, 0]))
+            tolerance = max(0.05, 2.0e-3 * diagonal)
+            off_drawn = np.abs(np.asarray(placed.compute_implicit_distance(drawn)["implicit_distance"], dtype=float))
+            off_placed = np.abs(np.asarray(drawn.compute_implicit_distance(placed)["implicit_distance"], dtype=float))
+            worst = max(float(np.max(off_drawn)), float(np.max(off_placed)))
+            if not np.isfinite(worst) or worst > tolerance:
+                self.append_debug(
+                    f"3D STEP S{row_index}: native solid is {worst:.3f} mm off the drawn body "
+                    f"(tolerance {tolerance:.3f} mm) -- exporting the drawn mesh (bugs/0300)"
+                )
+                return None
+            return _shape_with_affine(_read_step_shape(source_path), matrix)
+        except Exception as exc:
+            self.append_debug(f"3D STEP S{row_index}: native solid not verified ({exc}); exporting the drawn mesh")
+            return None
 
     def _collect_row_native_step_export_shapes(self, system, progress_callback=None) -> list[tuple[str, object]]:
         shape_items: list[tuple[str, object]] = []
@@ -1729,9 +1796,15 @@ class LayoutOpticalSolidWorkflowMixin:
                         block_count,
                     )
                 try:
-                    shell = self._optical_solid_row_world_step_shell(stl_item[0], row_index, system)
-                    if shell is None:
+                    from KrakenOS.UI.services.cad_step_export import occ_shell_shape_from_mesh
+
+                    mesh = self._optical_solid_row_world_mesh(stl_item[0], row_index, system)
+                    if mesh is None:
                         raise RuntimeError("optical-solid STL produced no exportable geometry")
+                    # bugs/0924: the native solid when it is verified to sit on the drawn body
+                    shell = self._verified_native_row_export_shape(row, row_index, system, mesh)
+                    if shell is None:
+                        shell = occ_shell_shape_from_mesh(mesh)
                     label = f"S{row_index} {row.name or row.element or row.surface or 'optical solid'}"
                     shape_items.append((label, shell))
                 except Exception as exc:
