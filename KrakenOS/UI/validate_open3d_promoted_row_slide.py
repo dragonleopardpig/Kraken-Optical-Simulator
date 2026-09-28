@@ -132,7 +132,14 @@ def main() -> int:
     z_mid = _row_z(insp, target)
     desp_mid = float(getattr(app.rows[target], "desp_z", 0.0))
     pending = float(state.get("pending_translate_mm", 0.0))
-    expected = n_steps * z_step
+    # bugs/0921: a translate drag is CONTINUOUS since the "the BS still moves in steps" request --
+    # the body tracks the cursor at step/pixels_per_step mm per pixel; only rotate (or a live
+    # "Snap mm") snaps. The old n_steps * z_step assumed whole 18 px steps.
+    snap = insp._drag_snap_override_mm()
+    if snap is not None and snap > 1e-9:
+        expected = n_steps * z_step
+    else:
+        expected = n_steps * 20.0 * z_step / float(insp._placement_drag_pixels_per_step())
     print(f"during drag: body z {z0} -> {z_mid}, desp_z {desp0:.3f} -> {desp_mid:.3f}, pending {pending:.3f} (expected {expected:.3f})")
 
     # During the drag the body must move LIVE but the model commit is DEFERRED.
