@@ -52,6 +52,10 @@ GB_PER_SHARD = 7.0
 #: The watchdog stops every shard when available memory drops below this, so a heavy run
 #: fails loudly instead of taking the desktop session with it.
 MIN_AVAILABLE_GB = 3.0
+#: The shard runner's OWN timings, rewritten only by a complete sharded run. The single gate's
+#: log is also rewritten by every --phases smoke run, which left a 2-phase log to balance by
+#: and a 70-minute count-balanced run (2026-09-28).
+TIMINGS_LOG = Path(tempfile.gettempdir()) / "penta_shard_timings.log"
 
 
 def suite_phases() -> list[int]:
@@ -152,6 +156,15 @@ class MemoryWatchdog(threading.Thread):
         self._stop.set()
 
 
+def silent_shards(results, shards) -> list[int]:
+    """Shards that reported none of their phases (crashed / env error)."""
+    out = []
+    for index, _code, states, env_error, _elapsed in results:
+        if env_error or not (set(states) & {str(p) for p in shards[index]}):
+            out.append(index)
+    return out
+
+
 def free_displays(count: int, start: int = 110) -> list[int]:
     out, num = [], start
     while len(out) < count:
@@ -169,8 +182,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--baseline", type=Path, default=gate.DEFAULT_BASELINE)
     parser.add_argument("--update-baseline", action="store_true",
                         help="write the merged states as the baseline (only if EVERY shard reported)")
-    parser.add_argument("--timings-log", type=Path,
-                        default=Path(tempfile.gettempdir()) / "penta_validator_last.log",
+    parser.add_argument("--timings-log", type=Path, default=TIMINGS_LOG,
                         help="a previous detailed log to balance shards by measured seconds")
     parser.add_argument("--timeout", type=int, default=10800)
     parser.add_argument("--python", default=None)
@@ -243,6 +255,8 @@ def main(argv: list[str] | None = None) -> int:
     joined = "\n".join((log_dir / f"shard_{i}.log").read_text(encoding="utf-8", errors="replace")
                        for i in range(len(shards)) if (log_dir / f"shard_{i}.log").exists())
     (Path(tempfile.gettempdir()) / "penta_validator_last.log").write_text(joined, encoding="utf-8")
+    if not silent_shards(results, shards) and watchdog.tripped_at_gb is None:
+        TIMINGS_LOG.write_text(joined, encoding="utf-8")
     print(f"[shards] wall time {(time.time() - started) / 60:.1f} min; logs in {log_dir}")
 
     if silent:
