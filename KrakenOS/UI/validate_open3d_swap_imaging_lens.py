@@ -114,7 +114,10 @@ def run_checks() -> tuple[bool, list[str]]:
         failures.append("swap must NOT use the layout-replacement teardown path (it keeps the scene)")
 
     from KrakenOS.UI.panels import open3d_top_controls, main_context_menu
-    if "swap_imaging_lens_from_folder" not in inspect.getsource(open3d_top_controls):
+    from KrakenOS.UI import open3d_toolbar  # bugs/0928: the catalogue both shells render
+
+    if not open3d_toolbar.offers("Swap Imaging Lens from Folder (keeps scene)...", menu="CAD / target",
+                                 target="swap_imaging_lens_from_folder"):
         failures.append("the 3D top-controls menu has no Swap Imaging Lens command")
     if "swap_imaging_lens_from_folder" not in inspect.getsource(main_context_menu):
         failures.append("the main context menu has no Swap Imaging Lens command")

@@ -223,9 +223,10 @@ def run_checks() -> tuple[bool, list[str]]:
         failures.append("2D context menu does not wire the camera folder importer")
     if "Import Vendor Camera from Folder" not in menu_src:
         failures.append("2D context menu has no 'Import Vendor Camera from Folder' label")
-    if "import_vendor_camera_from_folder" not in top_controls_src:
+    # bugs/0928: the toolbar is a catalogue both shells render
+    if not __import__("KrakenOS.UI.open3d_toolbar", fromlist=["offers"]).offers("Import Camera from Folder...", menu="CAD / target", target="import_vendor_camera_from_folder"):
         failures.append("3D top controls do not wire the camera folder importer")
-    if "Import Camera from Folder" not in top_controls_src:
+    if not __import__("KrakenOS.UI.open3d_toolbar", fromlist=["offers"]).offers("Import Camera from Folder...", menu="CAD / target"):
         failures.append("3D top controls have no 'Import Camera from Folder' label")
 
     return (not failures), failures

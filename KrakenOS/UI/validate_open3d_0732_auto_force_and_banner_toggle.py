@@ -107,7 +107,9 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     from KrakenOS.UI.panels import open3d_top_controls
 
     ok(
-        'MenuCheckbutton("Solve banner", self.inspector.show_solve_banner_var' in inspect.getsource(open3d_top_controls),
+        # bugs/0928: the toolbar is a catalogue both shells render
+        __import__("KrakenOS.UI.open3d_toolbar", fromlist=["offers"]).offers(
+            "Solve banner", menu="Overlays", var="show_solve_banner_var"),
         "C4: the toggle is in the top toolbar's Overlays menu, where the other drawn-over-scene "
         "switches live -- not buried in an analyses submenu",
     )

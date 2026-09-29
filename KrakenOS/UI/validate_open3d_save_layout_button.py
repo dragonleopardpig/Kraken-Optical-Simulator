@@ -124,9 +124,11 @@ def validate() -> list[Check]:
         f"result={cancel_result} status={cancel_inspector.status_var.value!r}",
     ))
 
-    toolbar_src = inspect.getsource(Open3DTopControlsPanel.build_view_toolbar)
-    has_label = '"Save Layout"' in toolbar_src
-    has_command = "self.inspector.save_layout" in toolbar_src
+    # bugs/0928: the toolbar is a catalogue both shells render
+    from KrakenOS.UI import open3d_toolbar as toolbar
+
+    has_label = toolbar.find("Save Layout", row="View") is not None
+    has_command = toolbar.offers("Save Layout", row="View", target="save_layout")
     checks.append(Check(
         "TOOLBAR WIRES IT: the View toolbar packs a 'Save Layout' button bound to save_layout",
         has_label and has_command,

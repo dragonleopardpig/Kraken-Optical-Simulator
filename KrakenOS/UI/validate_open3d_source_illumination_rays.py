@@ -363,7 +363,7 @@ def _check_source_contracts(failures: list[str]) -> None:
 
     from KrakenOS.UI.panels import open3d_top_controls
     controls_src = inspect.getsource(open3d_top_controls)
-    if "show_source_illumination_rays_var" not in controls_src:
+    if not __import__("KrakenOS.UI.open3d_toolbar", fromlist=["offers"]).offers("Illum rays", menu="Overlays", var="show_source_illumination_rays_var"):  # bugs/0928
         failures.append("CONTRACT: the Overlays menu does not offer the illumination-rays toggle")
 
 

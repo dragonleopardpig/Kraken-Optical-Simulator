@@ -110,17 +110,14 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
         passed = False
 
     # --- A: Overlays-menu wiring -----------------------------------------
-    from KrakenOS.UI.panels.open3d_top_controls import Open3DTopControlsPanel
-    try:
-        toolbar_src = inspect.getsource(Open3DTopControlsPanel.build_view_toolbar)
-    except Exception as exc:
-        toolbar_src = ""
-        _fail(f"cannot read build_view_toolbar: {exc!r}")
-    if 'MenuCheckbutton("Clipped"' not in toolbar_src:
-        _fail("Overlays menu has no \"Clipped\" MenuCheckbutton")
-    if '_editor_var("show_clipped_rays_var")' not in toolbar_src:
-        _fail("Clipped toggle is not bound to the shared show_clipped_rays_var via _editor_var")
-    if "_on_clipped_rays_changed" not in toolbar_src:
+    # bugs/0928: the toolbar is a catalogue both shells render -- ask it, not a panel's source
+    from KrakenOS.UI import open3d_toolbar as toolbar
+
+    if toolbar.find("Clipped", menu="Overlays") is None:
+        _fail("Overlays menu has no \"Clipped\" check")
+    if not toolbar.offers("Clipped", menu="Overlays", var="editor.show_clipped_rays_var"):
+        _fail("Clipped toggle is not bound to the editor's shared show_clipped_rays_var")
+    if not toolbar.offers("Clipped", menu="Overlays", target="_on_clipped_rays_changed"):
         _fail("Clipped toggle is not wired to _on_clipped_rays_changed")
 
     # --- B: inspector handler exists + marks 2D + refreshes 3D -----------

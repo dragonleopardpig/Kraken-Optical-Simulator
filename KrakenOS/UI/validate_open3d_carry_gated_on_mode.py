@@ -50,9 +50,9 @@ def _check_toggle(failures, notes):
     src = inspect.getsource(Kraken3DInspector._show_rotation_handles)
     if "show_rotation_handles_var" not in src:
         failures.append("TOGGLE: _show_rotation_handles must read show_rotation_handles_var")
-    import KrakenOS.UI.panels.open3d_top_controls as controls_mod
-    controls_src = inspect.getsource(controls_mod)
-    if "Move/Rotate whole body" not in controls_src or "show_rotation_handles_var" not in controls_src:
+    from KrakenOS.UI import open3d_toolbar as _toolbar  # bugs/0928: the catalogue both shells render
+
+    if not _toolbar.offers("Move/Rotate whole body", var="show_rotation_handles_var"):
         failures.append("TOGGLE: the 'Move/Rotate whole body' checkbox must drive show_rotation_handles_var")
     if not [f for f in failures if f.startswith("TOGGLE")]:
         notes.append("toggle = 'Move/Rotate whole body' drives show_rotation_handles_var / _show_rotation_handles")

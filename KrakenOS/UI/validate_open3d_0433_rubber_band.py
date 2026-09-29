@@ -241,8 +241,11 @@ def run_checks() -> "tuple[bool, list[str]]":
         bindings_src = _inspect.getsource(_bindings_mod)
         if "_rubber_band_select_mode" not in bindings_src or "_complete_rubber_band_select" not in bindings_src:
             failures.append("wiring: mouse bindings lost the rubber-band drag routing")
-        controls_src = _inspect.getsource(_controls_mod)
-        if "start_rubber_band_select" not in controls_src:
+        from KrakenOS.UI import open3d_toolbar as _toolbar  # bugs/0928: the catalogue both shells render
+
+        if not (_toolbar.offers("Select Elements (Rubber Band)", menu="Place", target="start_rubber_band_select")
+                and _toolbar.offers("Rubber-Band Select + Snap to Axis...", menu="Place",
+                                    target="start_rubber_band_select_and_snap")):
             failures.append("wiring: Place menu lost the rubber-band entries")
         cancel_src = _inspect.getsource(_inspector_mod.Kraken3DInspector.cancel_active_3d_operation)
         for flag in ("_rubber_band_select_mode", "_axis_to_axis_move_pick_mode", "_snap_rows_to_axis_pick_mode"):

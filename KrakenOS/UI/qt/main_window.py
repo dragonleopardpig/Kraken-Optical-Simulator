@@ -187,6 +187,12 @@ class KrakenQtMainWindow(_main_window_class()):
         dock.show()
         self.inspector_view = InspectorView(self.editor, container,
                                             status=self.statusBar().showMessage)
+        # the View / Scene / Carry rows above the viewport, from the same catalogue as Tk (5f)
+        if self.inspector_view.inspector.available:
+            from KrakenOS.UI.qt.inspector_toolbar import build_toolbar
+
+            self.inspector_view.toolbar = build_toolbar(self.inspector_view.inspector, container)
+            layout.addWidget(self.inspector_view.toolbar)
         layout.addWidget(self.inspector_view.widget)
         # a VTK widget has no size hint, so the dock would open 0 pixels tall (measured) -- and a
         # 0-pixel viewport picks nothing

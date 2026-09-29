@@ -390,7 +390,9 @@ def _check_menu_wiring(ok, notes) -> None:
     )
     ok(
         callable(getattr(Kraken3DInspector, "center_lens_body_on_surrogate_axis", None))
-        and "center_lens_body_on_surrogate_axis" in inspect.getsource(open3d_top_controls),
+        and __import__("KrakenOS.UI.open3d_toolbar", fromlist=["offers"]).offers(
+            "Center Lens Body->Surrogate Axis (no axial shift)", menu="CAD / target",
+            target="center_lens_body_on_surrogate_axis"),  # bugs/0928: the catalogue both shells render
         "D1: the CAD / target menu offers it (and the inspector command it names exists)",
     )
     handler = getattr(Open3DFaceAssignmentService, "_center_lens_body_on_surrogate_axis_from_context", None)

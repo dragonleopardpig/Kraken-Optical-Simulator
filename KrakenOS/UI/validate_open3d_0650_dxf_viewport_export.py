@@ -433,9 +433,9 @@ def run_checks():
     except Exception as exc:
         d_problems.append(f"main_window probe failed: {exc}")
     try:
-        from KrakenOS.UI.panels import open3d_top_controls as tc
+        from KrakenOS.UI import open3d_toolbar as _toolbar  # bugs/0928: the catalogue both shells render
 
-        if "DXF" not in _inspect.getsource(tc):
+        if not _toolbar.offers("Export View DXF", menu="CAD / target", target="export_3d_view_dxf"):
             d_problems.append("3D window menu does not offer the DXF export")
     except Exception as exc:
         d_problems.append(f"top-controls probe failed: {exc}")

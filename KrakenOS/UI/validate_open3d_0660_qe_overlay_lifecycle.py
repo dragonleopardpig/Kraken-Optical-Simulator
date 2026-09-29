@@ -146,9 +146,10 @@ def _check_wiring(ok, notes) -> None:
     from KrakenOS.UI.panels import open3d_top_controls as tc
     from KrakenOS.UI.services import quick_estimation_overlay as qeo
 
-    menu_src = inspect.getsource(tc)
+    from KrakenOS.UI import open3d_toolbar as _toolbar  # bugs/0928: the catalogue both shells render
+
     ok(
-        "FOV planes (QE)" in menu_src and "quick_estimation_var" in menu_src,
+        _toolbar.offers("FOV planes (QE)", menu="Overlays", var="quick_estimation_var"),
         "B1: the Overlays menu carries the QE toggle (the Left Panel was the only "
         "switch before)",
     )

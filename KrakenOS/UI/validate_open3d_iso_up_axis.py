@@ -99,23 +99,25 @@ def validate_iso_up_axis() -> list[Check]:
 
     # ---- (D) wiring ------------------------------------------------------------------------- #
     preset_src = inspect.getsource(Kraken3DInspector.set_camera_preset)
-    toolbar_src = inspect.getsource(Open3DTopControlsPanel.build_view_toolbar)
     init_src = inspect.getsource(Kraken3DInspector.__init__)
+    # bugs/0928: the toolbar is a catalogue both shells render -- the Iso-up control is a Radio
+    from KrakenOS.UI import open3d_toolbar as toolbar
+
+    iso = next((item for item in toolbar.walk(toolbar.ROWS) if isinstance(item, toolbar.Radio)
+                and item.var.endswith("iso_up_axis_var")), None)
+    values = sorted(value for _label, value in iso.options) if iso is not None else []
     wired = (
         "_iso_camera_offset_and_view_up(self._iso_up_axis" in preset_src
-        and "iso_up_axis_var" in toolbar_src
-        and "_on_iso_up_axis_changed" in toolbar_src
-        and "add_radiobutton" in toolbar_src
-        and "value=axis_value" in toolbar_src
-        and '"y"' in toolbar_src and '"z"' in toolbar_src and '"x"' in toolbar_src
+        and iso is not None
+        and iso.target.endswith("_on_iso_up_axis_changed")
+        and values == ["x", "y", "z"]
         and _default_of(Kraken3DInspector, "iso_up_axis_var") == "y"
     )
     checks.append(Check(
-        "WIRED: the Iso branch reads the helper; the toolbar wires a radiobutton per axis to the var + handler",
+        "WIRED: the Iso branch reads the helper; the toolbar offers one radio per axis on the var + handler",
         wired,
         f"preset_uses_helper={'_iso_camera_offset_and_view_up(self._iso_up_axis' in preset_src} "
-        f"toolbar_var={'iso_up_axis_var' in toolbar_src} handler={'_on_iso_up_axis_changed' in toolbar_src} "
-        f"radios={'add_radiobutton' in toolbar_src}",
+        f"radio={iso is not None} handler={getattr(iso, 'target', None)} values={values}",
     ))
     return checks
 

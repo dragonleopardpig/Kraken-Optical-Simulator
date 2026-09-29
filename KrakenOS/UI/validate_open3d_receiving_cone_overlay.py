@@ -84,7 +84,7 @@ def run_checks() -> tuple[bool, list[str]]:
         failures.append("the refresh path does not gate the cone on its toggle")
     import KrakenOS.UI.panels.open3d_top_controls as top_controls
 
-    if "show_receiving_cone_var" not in inspect.getsource(top_controls):
+    if not __import__("KrakenOS.UI.open3d_toolbar", fromlist=["offers"]).offers("Accept cone", menu="Overlays", var="show_receiving_cone_var"):  # bugs/0928
         failures.append("the Overlays menu has no Accept-cone toggle")
 
     return (not failures), failures

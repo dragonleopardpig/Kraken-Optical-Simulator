@@ -211,10 +211,14 @@ def run_checks():
         failures.append("editor importer does not accept dialog_parent / return the model")
     # bugs/0381 relabelled it so it cannot be mistaken for Swap: "(replaces scene)"; match the entry
     # and its command, not one exact label.
-    if not re.search(r'"Import Lens from Folder[^"]*\.\.\."\s*,[^\n]*\n?\s*self\.inspector\.import_machine_vision_lens_from_folder',
-                     controls_src):
+    # bugs/0928: the toolbar is a catalogue both shells render -- ask it, not the panel's source
+    from KrakenOS.UI import open3d_toolbar
+
+    lens_entry = next((e for e in open3d_toolbar.walk(open3d_toolbar.ROWS)
+                       if str(getattr(e, "label", "")).startswith("Import Lens from Folder")), None)
+    if lens_entry is None or not str(lens_entry.label).endswith("..."):
         failures.append("3D CAD menu has no 'Import Lens from Folder...' entry")
-    if "self.inspector.import_machine_vision_lens_from_folder" not in controls_src:
+    if lens_entry is None or not str(lens_entry.target).endswith("import_machine_vision_lens_from_folder"):
         failures.append("3D CAD menu entry is not wired to the inspector importer")
 
     # --- real Schneider PYRITE datasheet when present ----------------------

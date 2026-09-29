@@ -153,7 +153,7 @@ def _check_wiring(failures: list[str]) -> None:
         )
 
     controls_src = _src(open3d_top_controls, "open3d_top_controls module")
-    if "show_illumination_marker_rays_var" not in controls_src:
+    if not __import__("KrakenOS.UI.open3d_toolbar", fromlist=["offers"]).offers("Illum emission", menu="Overlays", var="show_illumination_marker_rays_var"):  # bugs/0928
         failures.append("WIRING: the Overlays menu does not expose show_illumination_marker_rays_var")
 
 

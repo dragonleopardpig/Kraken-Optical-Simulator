@@ -252,10 +252,10 @@ def run_checks() -> tuple[bool, list[str]]:
     if "save_layout_as" not in saveas_src or "_write_open3d_session_sidecar" not in saveas_src:
         failures.append("inspector save_layout_as is missing or does not write the sidecar")
 
-    import KrakenOS.UI.panels.open3d_top_controls as topc
+    # bugs/0928: the toolbar is a catalogue both shells render
+    from KrakenOS.UI import open3d_toolbar as toolbar
 
-    tc_src = inspect.getsource(topc)
-    if "save_layout_as" not in tc_src or "Save As" not in tc_src:
+    if not toolbar.offers("Save As", row="View", target="save_layout_as"):
         failures.append("the 3D toolbar has no 'Save As' button wired to save_layout_as")
 
     return (not failures), failures
