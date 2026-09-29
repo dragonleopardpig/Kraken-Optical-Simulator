@@ -31,7 +31,7 @@ def _watch(variable, repaint) -> None:
 class LiveControlsForm:
     """The form; ``controls`` maps a label to its widget, ``readouts`` a key to its value label."""
 
-    def __init__(self, inspector) -> None:
+    def __init__(self, inspector, *, open_system_selection=None) -> None:
         from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout,
                                        QLabel, QPushButton, QVBoxLayout, QWidget)
 
@@ -128,12 +128,125 @@ class LiveControlsForm:
             self.controls[label] = button
         self.solve_layout.addLayout(buttons)
         outer.addWidget(self.solve_box)
+
+        self._build_design_constraints(outer)
+
+        # the calculator the Tk panel embeds opens as the main window's dialog -- one copy (0930)
+        sizing = QGroupBox("Camera + lens (System Selection)")
+        sizing_layout = QVBoxLayout(sizing)
+        open_button = QPushButton("System Selection Calculator…")
+        if open_system_selection is not None:
+            open_button.clicked.connect(lambda _checked=False: open_system_selection())
+        else:
+            open_button.setEnabled(False)
+        sizing_layout.addWidget(open_button)
+        self.controls["System Selection Calculator…"] = open_button
+        outer.addWidget(sizing)
         outer.addStretch(1)
         self.refresh_gaps()
         try:
             inspector._quick_estimation_service().update_readout()
         except Exception:
             pass
+
+    # ---- design constraints (0930) -------------------------------------------------------------
+    def _build_design_constraints(self, outer) -> None:
+        """The design-constraint block (0930): the same rows, header and service calls as the Tk block,
+        from `design_constraints_model`."""
+        from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
+                                       QLineEdit, QPushButton, QRadioButton, QVBoxLayout)
+
+        from KrakenOS.UI import design_constraints_model as model
+
+        box = QGroupBox("Solve: constraints")
+        layout = QVBoxLayout(box)
+        modes = QHBoxLayout()
+        self.design_mode = "design"
+        group = QButtonGroup(box)
+        for value, label in model.MODES:
+            radio = QRadioButton(label)
+            radio.setChecked(value == "design")
+            radio.toggled.connect(lambda checked, v=value: checked and self._set_design_mode(v))
+            group.addButton(radio)
+            modes.addWidget(radio)
+            self.controls[label] = radio
+        layout.addLayout(modes)
+        self.design_header = QLabel(model.header_text("design"))
+        self.design_header.setStyleSheet("color: #555555")
+        layout.addWidget(self.design_header)
+        grid = QGridLayout()
+        self.design_checks, self.design_values = {}, {}
+        for row, (quantity, label, unit) in enumerate(model.ROWS):
+            check = QCheckBox(label)
+            value = QLineEdit()
+            value.setMaximumWidth(110)
+            check.toggled.connect(lambda _checked: self.recompute_design())
+            value.editingFinished.connect(self.recompute_design)
+            grid.addWidget(check, row, 0)
+            grid.addWidget(value, row, 1)
+            grid.addWidget(QLabel(unit), row, 2)
+            self.design_checks[quantity] = check
+            self.design_values[quantity] = value
+        layout.addLayout(grid)
+        self.design_result = QLabel("Pin two knowns to size the lens.")
+        self.design_result.setWordWrap(True)
+        layout.addWidget(self.design_result)
+        buttons = QHBoxLayout()
+        for label, handler in (("Compute lens", self.recompute_design), ("Apply to layout", self.apply_design)):
+            button = QPushButton(label)
+            button.clicked.connect(lambda _checked=False, h=handler: h())
+            buttons.addWidget(button)
+            self.controls[label] = button
+        layout.addLayout(buttons)
+        outer.addWidget(box)
+        self.recompute_design()
+
+
+    def _set_design_mode(self, mode: str) -> None:
+        self.design_mode = mode
+        self.recompute_design()
+
+
+    def _design_pins(self) -> dict:
+        from KrakenOS.UI import design_constraints_model as model
+
+        return model.collect_pins({q: c.isChecked() for q, c in self.design_checks.items()},
+                                  {q: e.text() for q, e in self.design_values.items()})
+
+
+    def recompute_design(self) -> None:
+        from KrakenOS.UI import design_constraints_model as model
+
+        self.design_header.setText(model.header_text(self.design_mode))
+        try:
+            states, result = model.evaluate(self.inspector, self.design_mode, self._design_pins())
+        except Exception:
+            return
+        for quantity, check in self.design_checks.items():
+            entry = self.design_values[quantity]
+            state = (states.get(quantity) or {}).get("state", "available")
+            locked = state == "locked"
+            check.setEnabled(not locked)
+            entry.setEnabled(not locked)
+            if locked:
+                value = (states.get(quantity) or {}).get("value")
+                if value is not None:
+                    try:
+                        entry.setText(f"{float(value):.4g}")
+                    except (TypeError, ValueError):
+                        pass
+        self.design_result.setText(result.get("message") or "Pin the remaining knowns to size the lens.")
+        self.design_result.setStyleSheet(f"color: {model.STATUS_COLORS.get(result.get('status'), '#1a3b6d')}")
+
+
+    def apply_design(self) -> None:
+        from KrakenOS.UI import design_constraints_model as model
+
+        try:
+            model.apply(self.inspector, self.design_mode, self._design_pins())
+        except Exception:
+            return
+        self.recompute_design()
 
     # ---- pieces -------------------------------------------------------------------------------
     def _control(self, item):
@@ -222,3 +335,4 @@ class LiveControlsForm:
                 box.setChecked(bool(service.is_variable(row_index)))
             finally:
                 box.blockSignals(blocked)
+

@@ -196,7 +196,8 @@ class KrakenQtMainWindow(_main_window_class()):
             # the Live Controls the docks do not already carry, tabbed with them (5f part 2)
             from KrakenOS.UI.qt.live_controls_dock import LiveControlsForm
 
-            self.live_controls = LiveControlsForm(self.inspector_view.inspector)
+            self.live_controls = LiveControlsForm(self.inspector_view.inspector,
+                                                  open_system_selection=self.system_selection_action)
             self.dock_manager.create_dock(self.live_controls.widget, "LiveControlsDock", "3D Live",
                                           Qt.DockWidgetArea.RightDockWidgetArea, scroll=True)
             self.dock_manager.tabify(("SystemDock", "SourceDock", "TraceDock", "OptimizationDock",
@@ -681,6 +682,12 @@ class KrakenQtMainWindow(_main_window_class()):
         from KrakenOS.UI.row_forms import build_catalog_matcher_form
 
         return self.open_row_form(build_catalog_matcher_form, row_index=False)
+
+    def system_selection_action(self):
+        """Size the camera and the lens for a FOV, resolution and working distance (0631; 0930)."""
+        from KrakenOS.UI.row_forms.system_selection import build_system_selection_form_model
+
+        return self.open_row_form(build_system_selection_form_model, row_index=False)
 
     def galvo_scan_action(self):
         """The TiltX angles the selected mirror is drawn at."""

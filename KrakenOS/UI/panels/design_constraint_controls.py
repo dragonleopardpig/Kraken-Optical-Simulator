@@ -24,31 +24,14 @@ from collections.abc import Callable
 from tkinter import ttk
 from typing import Any
 
-from KrakenOS.UI.services.quick_estimation import (
-    DESIGN_IMAGE_DISTANCE,
-    DESIGN_MAGNIFICATION,
-    DESIGN_OBJECT_DISTANCE,
-    DESIGN_OBJECT_FOV_SEMI,
-    DESIGN_TOTAL_TRACK,
-)
+# bugs/0930: the rows, the header, pin collection and the evaluate / apply calls are the model's
+# (design_constraints_model), shared with the Qt 3D Live dock; this class is Tk layout only.
+from KrakenOS.UI import design_constraints_model as model
 
-# (quantity, label, unit) in display order.
-_DESIGN_ROWS = (
-    (DESIGN_MAGNIFICATION, "Magnification", "x"),
-    (DESIGN_OBJECT_DISTANCE, "Object distance", "mm"),
-    (DESIGN_IMAGE_DISTANCE, "Image distance", "mm"),
-    (DESIGN_TOTAL_TRACK, "Total track", "mm"),
-    (DESIGN_OBJECT_FOV_SEMI, "Object FOV (semi)", "mm"),
-)
-_LABELS = {q: label for q, label, _unit in _DESIGN_ROWS}
-# magnification and object FOV are the same DOF -- pinning one locks the other.
-_TWIN = {DESIGN_MAGNIFICATION: DESIGN_OBJECT_FOV_SEMI, DESIGN_OBJECT_FOV_SEMI: DESIGN_MAGNIFICATION}
-_STATUS_COLORS = {
-    "balanced": "#1a6d2f",
-    "under": "#7a5b00",
-    "over": "#8a2b2b",
-    "invalid": "#8a2b2b",
-}
+_DESIGN_ROWS = model.ROWS
+_LABELS = model.LABELS
+_TWIN = model.TWIN
+_STATUS_COLORS = model.STATUS_COLORS
 
 
 class DesignConstraintControls:
@@ -92,28 +75,15 @@ class DesignConstraintControls:
 
     @staticmethod
     def _header_text(mode: str) -> str:
-        return (
-            "Placement (fixed lens) -- pin one, solve & focus"
-            if mode == "placement"
-            else "Design lens -- pin knowns, solve for the EFL"
-        )
+        return model.header_text(mode)
 
     def _context(self) -> dict[str, float]:
         if self.context_provider is None:
             return {}
         try:
-            raw = self.context_provider() or {}
+            return model.clean_context(self.context_provider() or {})
         except Exception:
             return {}
-        out: dict[str, float] = {}
-        for q, v in raw.items():
-            try:
-                fv = float(v)
-            except (TypeError, ValueError):
-                continue
-            if fv == fv:  # not NaN
-                out[q] = fv
-        return out
 
     def build(self, parent: tk.Widget, *, start_row: int = 0, show_separator: bool = True, compact: bool = False) -> None:
         row = start_row
@@ -189,21 +159,14 @@ class DesignConstraintControls:
         self.recompute()
 
     def _collect_pins(self) -> dict[str, float]:
-        pins: dict[str, float] = {}
+        fixed, values = {}, {}
         for quantity, fix_var in self._fix.items():
             try:
-                if not bool(fix_var.get()):
-                    continue
+                fixed[quantity] = bool(fix_var.get())
+                values[quantity] = self._val[quantity].get()
             except Exception:
                 continue
-            raw = self._val[quantity].get().strip()
-            if not raw:
-                continue
-            try:
-                pins[quantity] = float(raw)
-            except ValueError:
-                continue
-        return pins
+        return model.collect_pins(fixed, values)
 
     def recompute(self) -> None:
         if not self._fix and self.context_provider is None:
@@ -214,12 +177,9 @@ class DesignConstraintControls:
         context = self._context()
         pins = {**context, **self._collect_pins()}
         try:
-            svc = self.inspector._quick_estimation_service()
-            view = svc.placement_constraint_view(pins) if mode == "placement" else svc.design_constraint_view(pins)
+            states, result = model.evaluate(self.inspector, mode, pins)
         except Exception:
             return
-        states = view.get("states", {}) or {}
-        result = view.get("result", {}) or {}
         for quantity, chk in self._checks.items():
             state = (states.get(quantity) or {}).get("state", "available")
             ent = self._entries[quantity]
@@ -260,10 +220,7 @@ class DesignConstraintControls:
             return
         pins = {**self._context(), **self._collect_pins()}
         try:
-            if self._mode() == "placement":
-                self.inspector._apply_placement_constraints(pins)
-            else:
-                self.inspector._apply_design_constraints(pins)
+            model.apply(self.inspector, self._mode(), pins)
         except Exception:
             return
         self.recompute()

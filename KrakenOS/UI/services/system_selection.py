@@ -208,6 +208,72 @@ def gather_system_selection_prefill(editor):
     return fov, sensor, pixels
 
 
+#: the calculator's inputs, in order: (key, compact label, full label)
+SYSTEM_SELECTION_INPUTS = (
+    ("fov_w", "FOV W (mm):", "FOV width (mm):"),
+    ("fov_h", "FOV H (mm):", "FOV height (mm):"),
+    ("resolution", "Res (µm/px):", "Resolution (µm/px):"),
+    ("wd_min", "Min WD (mm):", "Minimum working distance (mm):"),
+    ("sensor_w", "Sensor W (mm):", "Sensor width (mm):"),
+    ("sensor_h", "Sensor H (mm):", "Sensor height (mm):"),
+    ("wavelength", "λ (µm):", "Wavelength (µm):"),
+)
+
+
+def system_selection_text(values: dict, camera_pixels=None) -> str:
+    """The calculator's result for the typed ``values`` (key -> text) -- the one place the
+    inputs are parsed and the answer composed, for the Tk form and the Qt form alike (0930)."""
+    def number(key):
+        raw = str(values.get(key, "") or "").strip()
+        if not raw:
+            return None
+        try:
+            value = float(raw)
+        except ValueError:
+            return "error"
+        return value if value > 0 else "error"
+
+    fov_w, fov_h = number("fov_w"), number("fov_h")
+    res, wd = number("resolution"), number("wd_min")
+    sw, sh = number("sensor_w"), number("sensor_h")
+    wl = number("wavelength")
+    if "error" in (fov_w, fov_h, res, wd, sw, sh, wl):
+        return "Enter positive numbers (optional boxes may be blank)."
+    if fov_w is None or fov_h is None or res is None:
+        return "Enter FOV width, height and resolution."
+    sensor_wh = (sw, sh) if (sw and sh) else None
+    try:
+        result = compute_system_selection(
+            (fov_w, fov_h), res, wd_min_mm=wd, sensor_wh_mm=sensor_wh, wavelength_um=(wl if wl else 0.55),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return f"Cannot compute: {exc}"
+    lines = format_system_selection_lines(result)
+    if camera_pixels is not None:
+        meets = camera_pixels[0] >= result.required_pixels_w and camera_pixels[1] >= result.required_pixels_h
+        lines.append(
+            f"Current camera {camera_pixels[0]}×{camera_pixels[1]} px: "
+            + ("meets the pixel requirement." if meets else "UNDER the pixel requirement.")
+        )
+    lines.extend(result.notes)
+    return "\n".join(lines)
+
+
+def system_selection_prefill_values(editor) -> "tuple[dict, object]":
+    """``({key: text}, camera_pixels)`` pulled from the current scene / camera."""
+    fov, sensor, pixels = gather_system_selection_prefill(editor)
+
+    def pf(value):
+        return f"{float(value):.6g}" if value else ""
+
+    values = {}
+    if fov:
+        values["fov_w"], values["fov_h"] = pf(fov[0]), pf(fov[1])
+    if sensor:
+        values["sensor_w"], values["sensor_h"] = pf(sensor[0]), pf(sensor[1])
+    return values, pixels
+
+
 def build_system_selection_form(parent, editor, *, compact: bool = False, prefill: bool = True):
     """Build the calculator's inputs + live output into ``parent`` (a dialog or a panel
     section). Returns a controller with ``.recompute()``, ``.out_var``, ``.next_row`` and
@@ -304,35 +370,12 @@ def build_system_selection_form(parent, editor, *, compact: bool = False, prefil
         return v if v > 0 else "error"
 
     def recompute(*_a):
-        fov_w, fov_h = _num(fov_w_var), _num(fov_h_var)
-        res, wd = _num(res_var), _num(wd_var)
-        sw, sh = _num(sw_var), _num(sh_var)
-        wl = _num(wl_var)
-        if "error" in (fov_w, fov_h, res, wd, sw, sh, wl):
-            out_var.set("Enter positive numbers (optional boxes may be blank).")
-            return
-        if fov_w is None or fov_h is None or res is None:
-            out_var.set("Enter FOV width, height and resolution.")
-            return
-        sensor_wh = (sw, sh) if (sw and sh) else None
-        try:
-            result = compute_system_selection(
-                (fov_w, fov_h), res, wd_min_mm=wd, sensor_wh_mm=sensor_wh,
-                wavelength_um=(wl if wl else 0.55),
-            )
-        except Exception as exc:  # noqa: BLE001
-            out_var.set(f"Cannot compute: {exc}")
-            return
-        lines = format_system_selection_lines(result)
-        cam = state.get("pixels")
-        if cam is not None:
-            meets = cam[0] >= result.required_pixels_w and cam[1] >= result.required_pixels_h
-            lines.append(
-                f"Current camera {cam[0]}×{cam[1]} px: "
-                + ("meets the pixel requirement." if meets else "UNDER the pixel requirement.")
-            )
-        lines.extend(result.notes)
-        out_var.set("\n".join(lines))
+        # bugs/0930: parsed and composed in ONE place, shared with the Qt form
+        out_var.set(system_selection_text({
+            "fov_w": fov_w_var.get(), "fov_h": fov_h_var.get(), "resolution": res_var.get(),
+            "wd_min": wd_var.get(), "sensor_w": sw_var.get(), "sensor_h": sh_var.get(),
+            "wavelength": wl_var.get(),
+        }, state.get("pixels")))
 
     def set_prefill():
         f, s, p = gather_system_selection_prefill(editor)
