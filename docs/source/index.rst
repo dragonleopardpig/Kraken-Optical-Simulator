@@ -30,3 +30,9 @@ The source PDF is retained in the repository at
    :caption: Worked Exercise Solutions
 
    knowledge_base/worked_exercises/index
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Future Plan
+
+   future_plan/index
