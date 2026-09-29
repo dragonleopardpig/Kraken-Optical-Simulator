@@ -16777,6 +16777,10 @@ phase_701_penta_telescope_chain = _phase_from_standalone(
     701, "optics appended on the five-penta cascade's -X exit leg are traced where they are drawn (0923): EVERY ray passes through both ball lenses, the DCV, the achromat and the cylinder, counted as traced vertices inside each body on the ray's exit leg -- never a projection of the whole folded path, which let the cascade vouch for optics no ray reached. Failing since the chain was written",
     'KrakenOS.UI.validate_open3d_penta_telescope_chain',
     'penta_telescope_chain')
+phase_710_qt_5f_scene_components = _phase_from_standalone(
+    710, "the Scene Components browser reaches the Qt shell from the Tk browser's own data, selection and menus (phase 5f part 3b, 0931): the Tk tree renders tree_nodes() exactly, every browser menu goes through new_context_menu, and in Qt the same nodes show, a click selects in the browser and the editor, the right-click menu is the browser's own, and Hide greys the item",
+    'KrakenOS.UI.validate_open3d_qt_5f_scene_components',
+    'qt_5f_scene_components')
 phase_709_qt_5f_constraints_selection = _phase_from_standalone(
     709, "the design-constraint block and the System Selection calculator reach the Qt shell from ONE implementation each (phase 5f part 3a, 0930): the Tk calculator's result is system_selection_text's, the Tk constraint block shows design_constraints_model's message, and in Qt the 3D Live block shows the service's answer, locks + applies, and opens the calculator (never ported before: the plan's 0864 row was the Gaussian Beam report)",
     'KrakenOS.UI.validate_open3d_qt_5f_constraints_selection',
@@ -17584,6 +17588,7 @@ def main() -> int:
             phase_707_qt_5f_toolbar,
             phase_708_qt_5f_live_controls,
             phase_709_qt_5f_constraints_selection,
+            phase_710_qt_5f_scene_components,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

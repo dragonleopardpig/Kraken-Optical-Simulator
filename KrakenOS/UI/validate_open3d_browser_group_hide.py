@@ -32,6 +32,8 @@ class _FakePanel:
 
     def __init__(self, children, targets):
         self._tree = _FakeTree(children)
+        # bugs/0931: the cascade walks the tree's DATA (node_children), not a Tk widget
+        self.node_children = lambda iid: list(self._tree.get_children(iid))
         self._targets = dict(targets)
         self.calls: list[tuple] = []
         self.inspector = SimpleNamespace(status_var=SimpleNamespace(set=lambda _s: None))
@@ -97,6 +99,14 @@ def run_checks() -> tuple[bool, list[str]]:
 
     class _RouterPanel:
         _on_tree_right_click = Open3DStepAdminPanel._on_tree_right_click
+        # bugs/0931: the Tk handler delegates to the shared dispatch the Qt tree also calls
+        show_menu_for_iid = Open3DStepAdminPanel.show_menu_for_iid
+
+        def select_iid(self, *_a, **_k):
+            pass
+
+        def _show_inspection_part_context_menu(self, _event):
+            pass
 
         def __init__(self, iid):
             self._tree = _RouterTree(iid)

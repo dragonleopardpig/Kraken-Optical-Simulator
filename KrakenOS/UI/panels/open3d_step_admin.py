@@ -7,6 +7,8 @@ from pathlib import Path
 from tkinter import simpledialog, ttk
 from typing import Any, Callable
 
+from KrakenOS.UI.context_menu import new_context_menu
+
 
 class Open3DStepAdminPanel:
     """Build a CAD-style browser for Open 3D scene components."""
@@ -565,7 +567,138 @@ class Open3DStepAdminPanel:
                 return f"scene-row:{row_index}"
         return ""
 
+    def tree_nodes(self) -> list[dict]:
+        """The Scene Components tree as data (docs/design_qt_migration.md 5f, bugs/0931): one dict
+        per node, parents before children -- ``iid``, ``parent`` ("" for a root), ``text``, ``open``
+        (the default expansion, None for a leaf) and ``tags`` (("hidden",) for a hidden element).
+        The Tk tree and the Qt shell's tree both render exactly this."""
+        nodes: list[dict] = []
+
+        def node(parent: str, iid: str, text: str, *, open_default=None, tags=()) -> None:
+            nodes.append({"iid": iid, "parent": parent, "text": text, "open": open_default,
+                          "tags": tuple(tags or ())})
+
+        category_iids: dict[str, str] = {}
+        category_counts: dict[str, int] = {}
+        for key, title, _labels in self.CATEGORY_SPECS:
+            iid = f"category:{key}"
+            node("", iid, title, open_default=True)
+            category_iids[key] = iid
+            category_counts[key] = 0
+        for spec_key, spec_label, _owner, _var_name in self._display_toggle_specs():
+            if self._display_var_for_key(spec_key) is None:
+                continue
+            node(category_iids["display"], f"display:{spec_key}", spec_label,
+                 tags=self._item_hidden_tag(display_key=spec_key))
+            category_counts["display"] += 1
+        for _key, _title, labels in self.CATEGORY_SPECS:
+            for label in labels:
+                if self.editor._step_path_for_label(label) is None:
+                    continue
+                category = self._category_for_label(label)
+                display = self.editor._step_overlay_display_label(label)
+                name = self._step_path_name(label)
+                text = f"{display}: {name}" if name else f"{display} STEP"
+                text += self._glue_partner_suffix(label)
+                node(category_iids[category], f"overlay:{label}", text, tags=self._item_hidden_tag(label=label))
+                category_counts[category] += 1
+        for row_index, label, name in self._promoted_step_rows():
+            category = self._category_for_label(label)
+            row_text = f"S{row_index}: {name}" + self._glue_partner_suffix(label)
+            node(category_iids[category], f"row:{row_index}", row_text, tags=self._item_hidden_tag(rows=[row_index]))
+            category_counts[category] += 1
+        rows = list(getattr(self.editor, "rows", []) or [])
+        for record in self._scene_component_records():
+            kind = str(record.get("kind", "") or "")
+            category = str(record.get("category", "layout") or "layout")
+            parent = category_iids.get(category, category_iids["layout"])
+            count_key = category if category in category_counts else "layout"
+            if kind == "element":
+                children = [int(index) for index in list(record.get("children", []) or [])]
+                if not children:
+                    continue
+                start = int(record.get("start", children[0]))
+                end = int(record.get("end", children[-1]))
+                element_iid = self._element_iid(start, end)
+                name = str(record.get("name", "") or "Element")
+                node(parent, element_iid, f"{name} ({len(children)} surfaces)", open_default=False,
+                     tags=self._item_hidden_tag(rows=children))
+                category_counts[count_key] += 1
+                for row_index in children:
+                    if row_index < 0 or row_index >= len(rows):
+                        continue
+                    row_name = self._scene_row_display_name(row_index, rows[row_index])
+                    node(element_iid, f"scene-row:{row_index}", f"S{row_index}: {row_name}",
+                         tags=self._item_hidden_tag(rows=[row_index]))
+                continue
+            if kind == "scene-row":
+                row_index = int(record.get("row_index", -1))
+                name = str(record.get("name", "") or f"Surface {row_index}")
+                node(parent, f"scene-row:{row_index}", f"S{row_index}: {name}",
+                     tags=self._item_hidden_tag(rows=[row_index]))
+                category_counts[count_key] += 1
+        for source_id, source_name in self._scene_source_browser_rows():
+            node(category_iids["sources"], f"source:{source_id}", source_name,
+                 tags=self._item_hidden_tag(source_id=source_id))
+            category_counts["sources"] += 1
+        try:
+            from KrakenOS.UI.services.inspection_part import normalize_inspection_part_spec
+
+            part = normalize_inspection_part_spec(getattr(self.editor, "inspection_part_spec", None))
+            if part["enabled"]:
+                node("", "inspection-part",
+                     f"Device {part['width_mm']:g} × {part['height_mm']:g} × {part['depth_mm']:g} mm "
+                     f"(inspect: {part['active_face']})", open_default=True)
+        except Exception:
+            pass
+        for key, parent_iid in category_iids.items():
+            if category_counts.get(key, 0) <= 0:
+                node(parent_iid, f"empty:{key}", "(empty)")
+        self._last_nodes = nodes
+        return nodes
+
+    def _nodes(self) -> list[dict]:
+        nodes = self.__dict__.get("_last_nodes")
+        return nodes if nodes is not None else self.tree_nodes()
+
+    def node_text(self, iid: str) -> str:
+        """An item's text from the tree's DATA -- not from a Tk widget (bugs/0931)."""
+        return next((n["text"] for n in self._nodes() if n["iid"] == str(iid)), "")
+
+    def node_children(self, iid: str) -> list[str]:
+        return [n["iid"] for n in self._nodes() if n["parent"] == str(iid)]
+
+    def show_menu_for_iid(self, iid: str, event) -> None:
+        """Right-click an item: select it and post its menu -- in whichever shell drew the tree
+        (bugs/0931). ``event`` carries the pointer (x_root / y_root) the menu opens at."""
+        iid = str(iid or "")
+        if iid in ("category:sources", "empty:sources"):
+            self._show_scene_sources_context_menu(event)
+            return
+        if not iid or iid.startswith("empty:"):
+            return
+        if iid == "inspection-part":
+            self.select_iid(iid)
+            self._show_inspection_part_context_menu(event)
+            return
+        if not iid.startswith("category:"):
+            self.select_iid(iid)
+        self._show_element_context_menu(event, iid)
+
     def refresh(self) -> None:
+        try:
+            self._refresh_tk_tree()
+        finally:
+            # every refresh -- a model refresh, a hide, a rename -- reaches a shell that draws its
+            # own browser (bugs/0931), whether or not a Tk tree exists
+            changed = self.inspector.__dict__.get("scene_components_changed")
+            if callable(changed):
+                try:
+                    changed()
+                except Exception as exc:
+                    self.editor.append_debug(f"Scene Components shell refresh failed: {exc}")
+
+    def _refresh_tk_tree(self) -> None:
         tree = self._tree
         if tree is None:
             return
@@ -590,120 +723,14 @@ class Open3DStepAdminPanel:
         self._refreshing = True
         try:
             tree.delete(*tree.get_children(""))
-            category_iids: dict[str, str] = {}
-            category_counts: dict[str, int] = {}
-            for key, title, _labels in self.CATEGORY_SPECS:
-                iid = f"category:{key}"
-                tree.insert(
-                    "",
-                    "end",
-                    iid=iid,
-                    text=title,
-                    open=previous_open_state.get(iid, True),
-                )
-                category_iids[key] = iid
-                category_counts[key] = 0
-            # Display / Overlays: rays + overlay toggles as hide/unhide elements.
-            for spec_key, spec_label, _owner, _var_name in self._display_toggle_specs():
-                if self._display_var_for_key(spec_key) is None:
-                    continue
-                tree.insert(category_iids["display"], "end", iid=f"display:{spec_key}", text=spec_label,
-                            tags=self._item_hidden_tag(display_key=spec_key))
-                category_counts["display"] += 1
-            for _key, _title, labels in self.CATEGORY_SPECS:
-                for label in labels:
-                    if self.editor._step_path_for_label(label) is None:
-                        continue
-                    category = self._category_for_label(label)
-                    display = self.editor._step_overlay_display_label(label)
-                    name = self._step_path_name(label)
-                    text = f"{display}: {name}" if name else f"{display} STEP"
-                    text += self._glue_partner_suffix(label)
-                    tree.insert(category_iids[category], "end", iid=f"overlay:{label}", text=text,
-                                tags=self._item_hidden_tag(label=label))
-                    category_counts[category] += 1
-            for row_index, label, name in self._promoted_step_rows():
-                category = self._category_for_label(label)
-                row_text = f"S{row_index}: {name}" + self._glue_partner_suffix(label)
-                tree.insert(category_iids[category], "end", iid=f"row:{row_index}", text=row_text,
-                            tags=self._item_hidden_tag(rows=[row_index]))
-                category_counts[category] += 1
-            rows = list(getattr(self.editor, "rows", []) or [])
-            for record in self._scene_component_records():
-                kind = str(record.get("kind", "") or "")
-                category = str(record.get("category", "layout") or "layout")
-                parent = category_iids.get(category, category_iids["layout"])
-                count_key = category if category in category_counts else "layout"
-                if kind == "element":
-                    children = [int(index) for index in list(record.get("children", []) or [])]
-                    if not children:
-                        continue
-                    start = int(record.get("start", children[0]))
-                    end = int(record.get("end", children[-1]))
-                    element_iid = self._element_iid(start, end)
-                    name = str(record.get("name", "") or "Element")
-                    tree.insert(
-                        parent,
-                        "end",
-                        iid=element_iid,
-                        text=f"{name} ({len(children)} surfaces)",
-                        open=previous_open_state.get(element_iid, False),
-                        tags=self._item_hidden_tag(rows=children),
-                    )
-                    category_counts[count_key] += 1
-                    for row_index in children:
-                        if row_index < 0 or row_index >= len(rows):
-                            continue
-                        row_name = self._scene_row_display_name(row_index, rows[row_index])
-                        tree.insert(element_iid, "end", iid=f"scene-row:{row_index}", text=f"S{row_index}: {row_name}",
-                                    tags=self._item_hidden_tag(rows=[row_index]))
-                    continue
-                if kind == "scene-row":
-                    row_index = int(record.get("row_index", -1))
-                    name = str(record.get("name", "") or f"Surface {row_index}")
-                    tree.insert(parent, "end", iid=f"scene-row:{row_index}", text=f"S{row_index}: {name}",
-                                tags=self._item_hidden_tag(rows=[row_index]))
-                    category_counts[count_key] += 1
-            # bugs/0283: scene sources (emitting LEDs etc.) as first-class rows under "Scene Sources",
-            # each hide/unhide-able like a scene element.
-            for source_id, source_name in self._scene_source_browser_rows():
-                tree.insert(category_iids["sources"], "end", iid=f"source:{source_id}", text=source_name,
-                            tags=self._item_hidden_tag(source_id=source_id))
-                category_counts["sources"] += 1
-            # bugs/0705 (flag: "unable to select the Device on the scene, it is not
-            # appeared in right panel browser as well"): the inspection part (the
-            # DEVICE under test) is a first-class browser row. On the om05a the part
-            # box sits INSIDE the prism-assembly meshes, so a canvas click lands on
-            # the STEP overlays first -- the browser row is the reliable handle:
-            # right-click = the same face/size/FOV menu as the canvas part menu.
-            try:
-                from KrakenOS.UI.services.inspection_part import normalize_inspection_part_spec
-
-                part = normalize_inspection_part_spec(getattr(self.editor, "inspection_part_spec", None))
-                if part["enabled"]:
-                    tree.insert(
-                        "",
-                        "end",
-                        iid="inspection-part",
-                        text=(
-                            f"Device {part['width_mm']:g} × {part['height_mm']:g} × "
-                            f"{part['depth_mm']:g} mm (inspect: {part['active_face']})"
-                        ),
-                        open=True,
-                    )
-            except Exception:
-                pass
-            for key, parent_iid in category_iids.items():
-                if category_counts.get(key, 0) <= 0:
-                    tree.insert(parent_iid, "end", iid=f"empty:{key}", text="(empty)")
-            # Don't restore an `overlay:<label>` selection that no longer
-            # matches the editor's `_selected_step_label`. Otherwise the
-            # tree's selection_set re-fires <<TreeviewSelect>> *after*
-            # _refreshing flips back to False, the callback runs
-            # `select_step_overlay_from_admin(label)`, and the rotation
-            # handles silently reappear after a snap that cleared the
-            # editor-side selection on purpose ("rotation handles pop
-            # up after previous action").
+            # bugs/0931: the tree is DATA (tree_nodes) that both shells render
+            for node in self.tree_nodes():
+                options = {"iid": node["iid"], "text": node["text"]}
+                if node["open"] is not None:
+                    options["open"] = previous_open_state.get(node["iid"], node["open"])
+                if node["tags"]:
+                    options["tags"] = node["tags"]
+                tree.insert(node["parent"], "end", **options)
             if previous and previous.startswith("overlay:"):
                 label = previous.split(":", 1)[1]
                 current = str(getattr(self.editor, "_selected_step_label", "") or "").strip().lower()
@@ -775,7 +802,12 @@ class Open3DStepAdminPanel:
             self._selected_item_id = focus_iid
             self._update_properties(focus_iid)
             return
-        iid = str(selection[0]) if selection else ""
+        self.select_iid(str(selection[0]) if selection else "")
+
+    def select_iid(self, iid: str) -> None:
+        """Select one browser item by its iid -- what a click on it does, in whichever shell drew
+        the tree (bugs/0931: the Tk <<TreeviewSelect>> handler and the Qt tree both call this)."""
+        iid = str(iid or "")
         if not iid or iid.startswith("category:") or iid.startswith("empty:"):
             self._selected_item_id = ""
             self._update_properties("")
@@ -860,39 +892,18 @@ class Open3DStepAdminPanel:
         if tree is None:
             return "break"
         iid = tree.identify_row(event.y)
-        # bugs/0284: right-clicking the Scene Sources group (its header or its "(empty)" placeholder)
-        # offers the "Add Illumination Source (LED)" entry point rather than the usual no-op on a category.
-        if iid in ("category:sources", "empty:sources"):
-            self._show_scene_sources_context_menu(event)
-            return "break"
-        if not iid or iid.startswith("empty:"):
-            return "break"
-        if iid == "inspection-part":
-            # bugs/0705: the Device row's menu = the canvas part menu's verbs.
+        # highlight the clicked row in Tk, then the shared dispatch (bugs/0931) selects it and posts
+        # its menu -- the Qt tree calls show_menu_for_iid the same way
+        if iid and not iid.startswith(("category:", "empty:")):
             try:
+                self._refreshing = True
                 tree.selection_set(iid)
                 tree.focus(iid)
             except Exception:
                 pass
-            self._on_tree_select()
-            self._show_inspection_part_context_menu(event)
-            return "break"
-        if iid.startswith("category:"):
-            # bugs/0361: category headers ("Optical Element", "Imaging Lens", ...) must
-            # reach the 0360 group Hide/Show menu -- the old gate swallowed the click
-            # SILENTLY in the router, so the group menu was dead code for them (the 0348
-            # trap class: the menu probe passed while the live click never arrived).
-            # Skip the selection routing, matching the sources path, so the properties
-            # pane stays untouched.
-            self._show_element_context_menu(event, iid)
-            return "break"
-        try:
-            tree.selection_set(iid)
-            tree.focus(iid)
-        except Exception:
-            pass
-        self._on_tree_select()  # route the selection to the editor + properties
-        self._show_element_context_menu(event, iid)
+            finally:
+                self._refreshing = False
+        self.show_menu_for_iid(iid, event)
         return "break"
 
     def _edit_scene_source(self, source_id: str) -> None:
@@ -917,7 +928,7 @@ class Open3DStepAdminPanel:
         from KrakenOS.UI.services.inspection_part import FACE_ORDER, face_dims, normalize_inspection_part_spec
 
         spec = normalize_inspection_part_spec(getattr(self.editor, "inspection_part_spec", None))
-        menu = tk.Menu(self.inspector, tearoff=False)
+        menu = new_context_menu(self.inspector, self.inspector)  # bugs/0931: a MenuModel under a shell
         menu.add_command(
             label=f"Device {spec['width_mm']:g} x {spec['height_mm']:g} x {spec['depth_mm']:g} mm",
             state="disabled",
@@ -966,7 +977,7 @@ class Open3DStepAdminPanel:
         tree = self._tree
         if tree is None:
             return
-        menu = tk.Menu(tree, tearoff=False)
+        menu = new_context_menu(self.inspector, tree)  # bugs/0931: a MenuModel under a shell
         menu.add_command(label="Scene Sources", state="disabled")
         menu.add_separator()
         # bugs/0366: the FIRST ACTIVE ENTRY of a group menu must be Hide/Show, NEVER a
@@ -976,7 +987,7 @@ class Open3DStepAdminPanel:
         try:
             source_children = [
                 child
-                for child in tree.get_children("category:sources")
+                for child in self.node_children("category:sources")
                 if str(child).startswith("source:")
             ]
         except Exception:
@@ -1101,21 +1112,13 @@ class Open3DStepAdminPanel:
         self.refresh()  # re-tag the tree so hidden items grey out
 
     def _iter_descendant_iids(self, iid: str):
-        """bugs/0360: every descendant iid under a tree node, depth-first."""
-        tree = self._tree
-        if tree is None:
-            return
-        try:
-            stack = list(tree.get_children(iid))
-        except Exception:
-            return
+        """bugs/0360: every descendant iid under a tree node, depth-first -- read from the tree's
+        data, so a shell that draws its own tree cascades the same way (bugs/0931)."""
+        stack = list(self.node_children(iid))
         while stack:
             child = stack.pop()
             yield str(child)
-            try:
-                stack.extend(tree.get_children(child))
-            except Exception:
-                continue
+            stack.extend(self.node_children(child))
 
     def _set_element_hidden_cascade(self, iid: str, rows, label, hidden: bool, display_key, source_id) -> None:
         """bugs/0360: hide/show a PARENT and every resolvable descendant in one click
@@ -1144,7 +1147,7 @@ class Open3DStepAdminPanel:
         rows, label, display_key, source_id = self._resolve_iid_target(iid)
         has_children = False
         try:
-            has_children = bool(self._tree is not None and self._tree.get_children(iid))
+            has_children = bool(self.node_children(iid))
         except Exception:
             has_children = False
         if not rows and label is None and display_key is None and source_id is None:
@@ -1152,10 +1155,10 @@ class Open3DStepAdminPanel:
                 return
             # bugs/0360: a pure GROUP node (parent with children, no element identity of
             # its own) -- Hide/Show cascades over every resolvable descendant.
-            menu = tk.Menu(self.inspector, tearoff=False)
+            menu = new_context_menu(self.inspector, self.inspector)  # bugs/0931: a MenuModel under a shell
             group_name = ""
             try:
-                group_name = str(self._tree.item(iid, "text")) if self._tree is not None else ""
+                group_name = self.node_text(iid)
             except Exception:
                 group_name = ""
             menu.add_command(label=(group_name.strip() or "Group"), state="disabled")
@@ -1174,10 +1177,10 @@ class Open3DStepAdminPanel:
         tree = self._tree
         name = ""
         try:
-            name = str(tree.item(iid, "text")) if tree is not None else ""
+            name = self.node_text(iid)
         except Exception:
             name = ""
-        menu = tk.Menu(self.inspector, tearoff=False)
+        menu = new_context_menu(self.inspector, self.inspector)  # bugs/0931: a MenuModel under a shell
         if name:
             menu.add_command(label=name.strip() or "Scene element", state="disabled")
             menu.add_separator()

@@ -202,6 +202,12 @@ class KrakenQtMainWindow(_main_window_class()):
                                           Qt.DockWidgetArea.RightDockWidgetArea, scroll=True)
             self.dock_manager.tabify(("SystemDock", "SourceDock", "TraceDock", "OptimizationDock",
                                       "LiveControlsDock"))
+            # the Scene Components browser, from the Tk browser's own nodes / selection / menus (5f 3b)
+            from KrakenOS.UI.qt.scene_components_dock import SceneComponentsTree
+
+            self.scene_components = SceneComponentsTree(self.inspector_view.inspector)
+            self.dock_manager.create_dock(self.scene_components.widget, "SceneComponentsDock",
+                                          "Scene Components", Qt.DockWidgetArea.LeftDockWidgetArea)
         layout.addWidget(self.inspector_view.widget)
         # a VTK widget has no size hint, so the dock would open 0 pixels tall (measured) -- and a
         # 0-pixel viewport picks nothing

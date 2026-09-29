@@ -36,24 +36,26 @@ def run_checks(verbose: bool = False, app=None, inspector=None) -> "tuple[bool, 
     def ok(condition: bool, message: str) -> None:
         notes.append(("PASS: " if condition else "FAIL: ") + message)
 
+    # bugs/0931: the tree is built as data (tree_nodes), selection is select_iid and the
+    # right-click is show_menu_for_iid -- the methods both shells call; read those
     rebuild_src = ""
-    for name in ("refresh_tree", "_refresh_tree", "rebuild", "_rebuild"):
+    for name in ("tree_nodes", "refresh_tree", "_refresh_tree", "rebuild", "_rebuild"):
         if hasattr(Open3DStepAdminPanel, name):
             rebuild_src += inspect.getsource(getattr(Open3DStepAdminPanel, name))
     if not rebuild_src:
         rebuild_src = inspect.getsource(Open3DStepAdminPanel)
     ok(
-        'iid="inspection-part"' in rebuild_src and 'part["enabled"]' in rebuild_src,
+        '"inspection-part"' in rebuild_src and 'part["enabled"]' in rebuild_src,
         "A: the browser rebuild inserts the Device row, gated on the part being enabled",
     )
 
-    select_src = inspect.getsource(Open3DStepAdminPanel._on_tree_select)
+    select_src = inspect.getsource(Open3DStepAdminPanel.select_iid)
     ok(
         'iid == "inspection-part"' in select_src and "Right-click for size / faces / FOV" in select_src,
         "B: selecting the Device row writes the status hint",
     )
 
-    right_src = inspect.getsource(Open3DStepAdminPanel._on_tree_right_click)
+    right_src = inspect.getsource(Open3DStepAdminPanel.show_menu_for_iid)
     ok(
         '"inspection-part"' in right_src and "_show_inspection_part_context_menu" in right_src,
         "C1: right-clicking the Device row routes to its context menu",

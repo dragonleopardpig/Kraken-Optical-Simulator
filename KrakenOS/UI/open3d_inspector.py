@@ -1265,6 +1265,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception as exc:
             self.editor.append_debug(f"Open 3D STEP admin refresh failed: {exc}")
 
+
     def sync_step_admin_canvas_selection(self, iid: str) -> None:
         """bugs/0063: mirror a direct 3D-canvas pick into the STEP admin browser
         so the "Selected Element" action buttons enable just as a browser-tree

@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-09-29T06:44:43+00:00",
+  "generated_at": "2026-09-29T07:34:38+00:00",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -709,7 +709,8 @@
     "706": "pass",
     "707": "pass",
     "708": "pass",
-    "709": "pass"
+    "709": "pass",
+    "710": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -1419,6 +1420,7 @@
     "706": "measure, box select, the navigation cube and the banner/HUD work in the Qt shell (phase 5e, 0927): a nav-cube click, a two-click measure and a rubber-band box give the same camera / segment / rows with real Qt input as dispatched, and every viewport text stays inside the window and off the nav cube after a Qt resize -- the solve banner now re-wraps when the render window's size changes (it was laid out only on a refresh)",
     "707": "the 3D inspector's View / Scene / Carry rows are one catalogue rendered by both shells (phase 5f part 1, 0928): every command and variable it names resolves on the Tk and the Qt inspector, the Tk menus carry exactly its entries, and the Qt shell shows every control but the Tk-only Close, bound both ways to the model",
     "708": "the 3D Live Controls reach the Qt shell (phase 5f part 2, 0929): every editor variable the Tk panel edits has a Qt home (the System/Source/Trace docks or the 3D Live dock), the Quick Estimation readouts are model-owned variables both views bind, and in Qt the readouts fill, Live Mode / camera / role reach the model and a Variable-thickness check sets the flag it shows",
-    "709": "the design-constraint block and the System Selection calculator reach the Qt shell from ONE implementation each (phase 5f part 3a, 0930): the Tk calculator's result is system_selection_text's, the Tk constraint block shows design_constraints_model's message, and in Qt the 3D Live block shows the service's answer, locks + applies, and opens the calculator (never ported before: the plan's 0864 row was the Gaussian Beam report)"
+    "709": "the design-constraint block and the System Selection calculator reach the Qt shell from ONE implementation each (phase 5f part 3a, 0930): the Tk calculator's result is system_selection_text's, the Tk constraint block shows design_constraints_model's message, and in Qt the 3D Live block shows the service's answer, locks + applies, and opens the calculator (never ported before: the plan's 0864 row was the Gaussian Beam report)",
+    "710": "the Scene Components browser reaches the Qt shell from the Tk browser's own data, selection and menus (phase 5f part 3b, 0931): the Tk tree renders tree_nodes() exactly, every browser menu goes through new_context_menu, and in Qt the same nodes show, a click selects in the browser and the editor, the right-click menu is the browser's own, and Hide greys the item"
   }
 }
