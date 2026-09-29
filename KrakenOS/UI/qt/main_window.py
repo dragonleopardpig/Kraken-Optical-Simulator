@@ -193,6 +193,14 @@ class KrakenQtMainWindow(_main_window_class()):
 
             self.inspector_view.toolbar = build_toolbar(self.inspector_view.inspector, container)
             layout.addWidget(self.inspector_view.toolbar)
+            # the Live Controls the docks do not already carry, tabbed with them (5f part 2)
+            from KrakenOS.UI.qt.live_controls_dock import LiveControlsForm
+
+            self.live_controls = LiveControlsForm(self.inspector_view.inspector)
+            self.dock_manager.create_dock(self.live_controls.widget, "LiveControlsDock", "3D Live",
+                                          Qt.DockWidgetArea.RightDockWidgetArea, scroll=True)
+            self.dock_manager.tabify(("SystemDock", "SourceDock", "TraceDock", "OptimizationDock",
+                                      "LiveControlsDock"))
         layout.addWidget(self.inspector_view.widget)
         # a VTK widget has no size hint, so the dock would open 0 pixels tall (measured) -- and a
         # 0-pixel viewport picks nothing

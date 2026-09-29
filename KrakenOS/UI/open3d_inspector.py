@@ -963,7 +963,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.live_mode_var = self.ui.boolean_var(value=False)
         self.quick_estimation_var = self.ui.boolean_var(value=False)
         self._quick_estimation_service_instance = None
-        self._quick_estimation_readout_vars: dict[str, tk.StringVar] = {}
+        # phase 5f (bugs/0929): the readouts are MODEL values -- one host variable per key, written
+        # by the Quick Estimation service and bound by BOTH views (the Tk panel used to make its own
+        # StringVars and hand them over, so under the Qt shell the readouts had nowhere to go)
+        from KrakenOS.UI.open3d_live_panel import READOUT_KEYS
+
+        self._quick_estimation_readout_vars = {key: self.ui.string_var(value="--") for key in READOUT_KEYS}
         self.status_var = self.ui.string_var(value="3D inspector ready")
 
         self.columnconfigure(0, weight=0)
@@ -23254,6 +23259,24 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         var = vars_map.get(row_index)
         enabled = bool(var.get()) if var is not None else (not service.is_variable(row_index))
         service.set_variable(row_index, enabled)
+        self.status_var.set(f"Thickness row {row_index} marked {'Variable' if enabled else 'fixed'}.")
+
+    def _open3d_set_variable_thickness(self, row_index: int, enabled: bool) -> None:
+        """Set a thickness gap's Variable flag to an explicit value (phase 5f, bugs/0929).
+
+        `_open3d_toggle_variable_thickness` reads the Tk checkbox Tk has already flipped; under the
+        Qt shell that checkbox still exists, hidden in the withdrawn window, and Qt never flips it --
+        so the toggle wrote back the OLD value. A view that knows the new value says it here; the
+        hidden Tk variable is kept in step so the two never disagree."""
+        service = self._open3d_solve_service()
+        row_index = int(row_index)
+        service.set_variable(row_index, bool(enabled))
+        var = (getattr(self, "_open3d_variable_thickness_vars", None) or {}).get(row_index)
+        if var is not None:
+            try:
+                var.set(bool(enabled))
+            except Exception:
+                pass
         self.status_var.set(f"Thickness row {row_index} marked {'Variable' if enabled else 'fixed'}.")
 
     def _open3d_run_thickness_solve(self, objective: str) -> None:

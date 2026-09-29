@@ -16777,6 +16777,10 @@ phase_701_penta_telescope_chain = _phase_from_standalone(
     701, "optics appended on the five-penta cascade's -X exit leg are traced where they are drawn (0923): EVERY ray passes through both ball lenses, the DCV, the achromat and the cylinder, counted as traced vertices inside each body on the ray's exit leg -- never a projection of the whole folded path, which let the cascade vouch for optics no ray reached. Failing since the chain was written",
     'KrakenOS.UI.validate_open3d_penta_telescope_chain',
     'penta_telescope_chain')
+phase_708_qt_5f_live_controls = _phase_from_standalone(
+    708, "the 3D Live Controls reach the Qt shell (phase 5f part 2, 0929): every editor variable the Tk panel edits has a Qt home (the System/Source/Trace docks or the 3D Live dock), the Quick Estimation readouts are model-owned variables both views bind, and in Qt the readouts fill, Live Mode / camera / role reach the model and a Variable-thickness check sets the flag it shows",
+    'KrakenOS.UI.validate_open3d_qt_5f_live_controls',
+    'qt_5f_live_controls')
 phase_707_qt_5f_toolbar = _phase_from_standalone(
     707, "the 3D inspector's View / Scene / Carry rows are one catalogue rendered by both shells (phase 5f part 1, 0928): every command and variable it names resolves on the Tk and the Qt inspector, the Tk menus carry exactly its entries, and the Qt shell shows every control but the Tk-only Close, bound both ways to the model",
     'KrakenOS.UI.validate_open3d_qt_5f_toolbar',
@@ -17574,6 +17578,7 @@ def main() -> int:
             phase_705_qt_5b_hover_parity,
             phase_706_qt_5e_tools,
             phase_707_qt_5f_toolbar,
+            phase_708_qt_5f_live_controls,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

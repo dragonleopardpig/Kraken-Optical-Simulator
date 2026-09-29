@@ -183,12 +183,15 @@ class Open3DLiveControlsPanel:
             justify="left",
         ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 6))
 
-        readout_vars: dict[str, tk.StringVar] = {}
+        # bugs/0929: bind to the MODEL's readout variables (the inspector owns them; the Qt shell
+        # binds the same ones) instead of making private ones and handing them over
+        readout_vars = inspector._quick_estimation_readout_vars
 
         def _row(grid_row: int, key: str, label: str, *, role_combo: bool = False) -> None:
             ttk.Label(parent, text=label).grid(row=grid_row, column=0, sticky="w", pady=1)
-            var = tk.StringVar(value="--")
-            readout_vars[key] = var
+            var = readout_vars.get(key)
+            if var is None:
+                var = readout_vars[key] = tk.StringVar(value="--")
             ttk.Label(parent, textvariable=var, foreground="#1a3b6d").grid(
                 row=grid_row, column=1, sticky="w", padx=(6, 0), pady=1
             )
@@ -252,7 +255,6 @@ class Open3DLiveControlsPanel:
         # Design-mode constraints: pin first-order knowns, solve for the lens (EFL).
         self.build_design_constraint_controls(parent, 18)
 
-        inspector._quick_estimation_readout_vars = readout_vars
         try:
             inspector._quick_estimation_service().update_readout()
         except Exception:
