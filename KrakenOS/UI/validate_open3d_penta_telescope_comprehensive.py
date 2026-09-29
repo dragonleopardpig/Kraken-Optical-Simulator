@@ -16777,6 +16777,10 @@ phase_701_penta_telescope_chain = _phase_from_standalone(
     701, "optics appended on the five-penta cascade's -X exit leg are traced where they are drawn (0923): EVERY ray passes through both ball lenses, the DCV, the achromat and the cylinder, counted as traced vertices inside each body on the ray's exit leg -- never a projection of the whole folded path, which let the cascade vouch for optics no ray reached. Failing since the chain was written",
     'KrakenOS.UI.validate_open3d_penta_telescope_chain',
     'penta_telescope_chain')
+phase_705_qt_5b_hover_parity = _phase_from_standalone(
+    705, "hover and pick RESULTS match Tk in the Qt shell (phase 5b, 0926): om05a_folded with thickness dimensions and the vendor LED, plain and Alt, swept with real Qt input and with the Tk bindings' own sequence -- every hover field, the outline GEOMETRY (face vs nearest drawn edge), the hover text, the status, the nav-cube cell and the thickness-handle hover identical step by step; Alt really switches face -> edge at most LED pixels",
+    'KrakenOS.UI.validate_open3d_qt_5b_hover_parity',
+    'qt_5b_hover_parity')
 phase_704_qt_5d_placement = _phase_from_standalone(
     704, "placement drags work in the Qt shell (phase 5d): a move-handle drag, a rotate-handle click, the STEP-overlay and promoted-row long-press carries (the HOST timer fires under Qt) commit the same change with real Qt input as the dispatched gesture, and Place/Orient CAD/STL Solid opens as a Qt dialog whose Done keeps the shell's inspector",
     'KrakenOS.UI.validate_open3d_qt_5d_placement',
@@ -17559,6 +17563,7 @@ def main() -> int:
             phase_702_folded_leg_lens_chain,
             phase_703_five_penta_native_step_export,
             phase_704_qt_5d_placement,
+            phase_705_qt_5b_hover_parity,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
