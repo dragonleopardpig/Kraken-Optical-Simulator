@@ -1626,6 +1626,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._orientation_widget.SetEnabled(1)
             self._orientation_widget.InteractiveOff()
             render_window.AddObserver("StartEvent", self._square_orientation_marker_viewport)
+        # phase 5e (bugs/0927): the solve banner's wrap width is the viewport's (bugs/0839), but it
+        # was laid out only on a scene refresh -- a window resize left it at the old width, running
+        # past the edge and over the navigation cube (0841). Re-lay it out when the render window's
+        # size changes, per render like the corner viewports, so both toolkits get it.
+        render_window.AddObserver("StartEvent", self._relayout_banner_on_resize)
 
         # bugs/0112: a dedicated always-on-top overlay layer for the
         # move/rotate gizmo handles. Sharing the main camera keeps the
@@ -18833,6 +18838,25 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return magnification, (float(dims[0]) / magnification, float(dims[1]) / magnification)
         except Exception:
             return None
+
+    def _relayout_banner_on_resize(self, render_window, _event=None) -> None:
+        """Re-wrap a shown solve banner when the render window's size changes (bugs/0927)."""
+        try:
+            size = tuple(int(v) for v in render_window.GetSize())
+        except Exception:
+            return
+        if size == self.__dict__.get("_banner_layout_size"):
+            return
+        self._banner_layout_size = size
+        if self.__dict__.get("_solve_refusal_banner_actor") is None:
+            return
+        try:
+            self._update_solve_refusal_banner(render=False)
+        except Exception as exc:
+            try:
+                self.editor.append_debug(f"Banner re-layout on resize failed: {exc}")
+            except Exception:
+                pass
 
     def _update_solve_refusal_banner(self, *, render: bool = False) -> None:
         """bugs/0717 (user directive: "The UI shouldn't silently fail and display
