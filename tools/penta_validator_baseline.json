@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-09-28T07:36:25+00:00",
+  "generated_at": "2026-09-28T09:11:09+00:00",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -703,7 +703,8 @@
     "700": "pass",
     "701": "pass",
     "702": "pass",
-    "703": "pass"
+    "703": "pass",
+    "704": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -1407,6 +1408,7 @@
     "700": "a saved promoted STEP is not drawn twice (0909): 95615f05's ghost suppression holds with the live-trace exclusion -- only rows flagged transient_live_trace leave the promoted set, so a traced unpromoted STEP stays selectable while a saved one still suppresses its overlay",
     "701": "optics appended on the five-penta cascade's -X exit leg are traced where they are drawn (0923): EVERY ray passes through both ball lenses, the DCV, the achromat and the cylinder, counted as traced vertices inside each body on the ray's exit leg -- never a projection of the whole folded path, which let the cascade vouch for optics no ray reached. Failing since the chain was written",
     "702": "the three rules behind 0923: a promoted STEP baked with an X/Y rotation traces its drawn mesh (the native prescription is rebuilt along the UNROTATED +Z), a lens on any line is straight-through and never a fold source, and the output-face pick measures along the running beam it is given",
-    "703": "the five-penta STEP export writes each prism as its native 7-face solid ON the traced body (0924): the export body is the traced mesh the 3D draws, the native solid is taken only when verified to lie on it (an 11 mm miss -- 0300's shared template -- is refused and exports the faceted drawn mesh), so 5 prism solids read back within 0.001 mm and the file drops from 4979 faces / 15 MB to ~600 / 1.4 MB"
+    "703": "the five-penta STEP export writes each prism as its native 7-face solid ON the traced body (0924): the export body is the traced mesh the 3D draws, the native solid is taken only when verified to lie on it (an 11 mm miss -- 0300's shared template -- is refused and exports the faceted drawn mesh), so 5 prism solids read back within 0.001 mm and the file drops from 4979 faces / 15 MB to ~600 / 1.4 MB",
+    "704": "placement drags work in the Qt shell (phase 5d): a move-handle drag, a rotate-handle click, the STEP-overlay and promoted-row long-press carries (the HOST timer fires under Qt) commit the same change with real Qt input as the dispatched gesture, and Place/Orient CAD/STL Solid opens as a Qt dialog whose Done keeps the shell's inspector"
   }
 }

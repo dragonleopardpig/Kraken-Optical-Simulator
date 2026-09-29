@@ -89,6 +89,10 @@ class InspectorView:
         self.inspector.show_in_shell = self.show
         # the inspector's menu builders now fill a MenuModel, shown here (bugs/0907)
         self.inspector.show_context_menu = self.show_context_menu
+        # the inspector's side panels as non-modal row-form dialogs (phase 5d)
+        self.inspector.show_row_form = self.show_row_form
+        #: the row-form dialog last shown, for a guard to read and drive
+        self.last_form_dialog = None
         #: the QMenu last shown, for a guard to read and trigger
         self.last_menu = None
         if self.inspector.available:
@@ -157,6 +161,19 @@ class InspectorView:
         else:
             point = QPoint(int(x_root), int(y_root))
         menu.popup(point)
+
+    def show_row_form(self, form, *, on_close=None):
+        """Show an inspector side panel as a non-modal row-form dialog; ``on_close`` runs when it
+        goes, however it goes (its Close button, an action's close_after, the inspector)."""
+        from KrakenOS.UI.qt.dialogs.row_form_dialog import RowFormDialog
+        from KrakenOS.UI.uihost import host_of
+
+        dialog = RowFormDialog(form, parent=self.widget.window(), host=host_of(self.inspector))
+        if on_close is not None:
+            dialog.finished.connect(lambda _result: on_close())
+        self.last_form_dialog = dialog
+        dialog.show()
+        return dialog
 
     def status_text(self) -> str:
         return str(self.inspector.status_var.get())

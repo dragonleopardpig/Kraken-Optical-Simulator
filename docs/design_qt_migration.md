@@ -133,6 +133,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0905 | Phase 5a part 1: viewport handlers reachable without Tk; key table; cursor/timer/pointer seams; `_attach_vtk_core` | phase 5 |
 | 0906 | Phase 5a part 2: the Qt shell hosts the REAL inspector (3D Inspector dock); Qt input -> dispatches; three Tk-armed timers and the pointer-over test moved onto the host | phase 5 |
 | 0907 | Phase 5c: the 16 right-click menu builders fill a `MenuModel` under a shell; Qt shows it as a QMenu running the same callables | phase 5 |
+| 0925 | Phase 5d: placement drags proven equal under Qt input; the CAD/STL placement panel as a row form + `show_row_form` seam; Qt honours `close_after` on every form | phase 5 |
 
 The row-form framework: `FormField` kinds (number, int, bool, choice, text, textarea, static),
 `choices` that grow at runtime, `editable` choices the user may type into, `on_change` fields that
@@ -319,7 +320,7 @@ main window's own panels, which turned out to hide model state in Tk widgets jus
 | 5a | event plumbing: the 30 bindings onto `QVTKRenderWindowInteractor` -- mouse, wheel, keys, modifiers. **Part 1 done (0905)**: handlers built apart from their Tk binding, `dispatch_viewport_event`, `VIEWPORT_KEYS`, cursor/timer/pointer seams, `_attach_vtk_core`. **Part 2 done (0906)**: the Qt shell hosts the real inspector (View -> 3D Inspector) and feeds it Qt events; the right-button press is held for 5c | 30 bindings |
 | 5b | hover and pick, keeping the modifier contract (plain = face, Alt = nearest drawn edge; two event streams). The event half landed with 0906 (hover order, Alt on/off, a click picks what dispatch picks); what remains is proving the RESULTS match Tk -- face vs edge highlight, hover status text, the thickness-handle and nav-cube hovers -- and moving the inspector's hidden Tk status line into the shell | ~133 |
 | 5c | right-click contextual scene commands as Qt menus. **Done (0907)**: the builders are unchanged -- `new_context_menu` hands them a recording `MenuModel` under a shell and Qt renders it; verbs that open a Tk DIALOG run but the dialog cannot show until 5f/5g | 16 builders |
-| 5d | drag / move / rotate, snap, glue -- the densest bug arc (0433 stay-put, 0503 glue, 0693 frame) | ~62 |
+| 5d | drag / move / rotate, snap, glue -- the densest bug arc (0433 stay-put, 0503 glue, 0693 frame). **Done (0925)**: nothing to port in the gesture layer -- a static audit of the drag code found only host-routed timers, and real Qt input commits the SAME change as the dispatched gesture for a move-handle drag, a rotate-handle click and both long-press carries (the carry-hold timer is a QTimer under Qt). The one Tk-only piece was the "Place/Orient CAD/STL Solid" side panel (built in the withdrawn Toplevel, never seen): it is now `row_forms/stl_placement.py`, shown by the shell as a non-modal dialog, and its Done keeps the shell's inspector (Tk's Done closes the separate 3D window) | ~62 |
 | 5e | measure tool, box select, navigation cube, banner/HUD | ~69 |
 | 5f | Scene Components tree + the 3D top/live controls | 1 639 + 374 + 559 lines |
 | 5g | **CAD handling**: the face-roles editor (VTK preview with click-picking, 2 034 lines), the optical-solid utility dialogs (273), MTF-from-image (draw-a-box, 406) | 2 713 lines |

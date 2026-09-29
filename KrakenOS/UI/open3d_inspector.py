@@ -7085,6 +7085,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             return True
 
     def _stl_placement_panel_visible(self) -> bool:
+        # phase 5d: under a shell the panel is a Qt dialog, not a Tk frame
+        if self.__dict__.get("_stl_placement_dialog") is not None:
+            return True
         popup = getattr(self, "_stl_placement_popup", None)
         if popup is None:
             return False
@@ -11520,6 +11523,24 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.editor._select_table_row(row_index)
         self.highlight_row(row_index)
 
+        # docs/design_qt_migration.md phase 5d: under a shell this Tk frame would be built inside
+        # the withdrawn Toplevel and never seen -- the shell shows the same panel as a form.
+        show_row_form = self.__dict__.get("show_row_form")
+        if callable(show_row_form):
+            from KrakenOS.UI.row_forms.stl_placement import build_stl_placement_form
+
+            previous = self.__dict__.get("_stl_placement_dialog")
+            if previous is not None:
+                try:
+                    previous.close()
+                except Exception:
+                    pass
+            self._stl_placement_dialog = show_row_form(
+                build_stl_placement_form(self, row_index),
+                on_close=lambda: self.__dict__.pop("_stl_placement_dialog", None),
+            )
+            return
+
         popup = self._stl_placement_popup
         if popup is None or not bool(getattr(popup, "winfo_exists", lambda: False)()):
             popup = ttk.Frame(self, padding=10, borderwidth=1, relief="groove")
@@ -11668,6 +11689,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self._update_stl_placement_handler_state()
 
     def _close_stl_placement_handler(self) -> None:
+        dialog = self.__dict__.pop("_stl_placement_dialog", None)
+        if dialog is not None:
+            try:
+                dialog.close()
+            except Exception:
+                pass
         popup = self._stl_placement_popup
         self._stl_placement_popup = None
         self._stl_placement_status_var = None
@@ -26254,6 +26281,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             except Exception as exc:
                 self.editor.status_var.set(f"CAD/STL placement saved; 2D refresh failed: {_short_error_message(exc)}")
                 self.editor.append_debug(f"CAD/STL placement 2D refresh failed: {exc}")
+        if getattr(self, "_shell_vtk_host", None) is not None:
+            # phase 5d: "Done -> 2D" closes the separate Tk 3D window; a shell's inspector is a
+            # dock of the main window, so it ends the placement and keeps the 3D view.
+            self._close_stl_placement_handler()
+            return
         self._on_close()
 
     def _on_close(self) -> None:

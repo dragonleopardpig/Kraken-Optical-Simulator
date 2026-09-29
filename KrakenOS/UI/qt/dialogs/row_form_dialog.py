@@ -348,7 +348,9 @@ class RowFormDialog(_dialog_class()):
             self.host.showerror(self.form.title, str(exc))
             self.summary.setText(f"{action.label}: {str(exc).splitlines()[0]}")
             return ""
-        if self.form.records is not None and self.form.state.pop("close_after", False):
+        # an action that ends the form says so (a record list's "Use Source Panel Only", the
+        # placement assistant's Done); every other action leaves it open to run again
+        if self.form.state.pop("close_after", False):
             self.refresh_from_form()
             self.summary.setText(message or self.form.summary)
             self.accept()
