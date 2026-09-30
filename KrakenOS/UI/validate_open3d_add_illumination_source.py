@@ -251,7 +251,7 @@ def _check_wiring(failures: list[str], notes: list[str]) -> None:
     if "Random rectangle source" not in editor_src or "physical" not in editor_src:
         failures.append("WIRING: editor add does not build a physical Random-rectangle LED")
 
-    rc_src = _src(Open3DStepAdminPanel._on_tree_right_click)
+    rc_src = _src(Open3DStepAdminPanel.show_menu_for_iid)  # bugs/0931: the shared right-click dispatch
     if "category:sources" not in rc_src or "empty:sources" not in rc_src:
         failures.append("WIRING: browser right-click does not intercept the Scene Sources group")
     if "Add Illumination Source (LED)" not in _src(Open3DStepAdminPanel._show_scene_sources_context_menu):

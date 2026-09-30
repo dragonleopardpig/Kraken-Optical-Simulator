@@ -180,7 +180,8 @@ def run_checks() -> "tuple[bool, list[str]]":
         failures.append("FAIL: no glue indicator when nothing is glued")
 
     # D-source) refresh() actually applies the suffix to the overlay + promoted-row text.
-    refresh_src = inspect.getsource(Open3DStepAdminPanel.refresh)
+    # bugs/0931: the browser's tree is built as data in tree_nodes(), which both shells render
+    refresh_src = inspect.getsource(Open3DStepAdminPanel.tree_nodes)
     if refresh_src.count("_glue_partner_suffix(") < 2:
         failures.append("FAIL: refresh() must apply _glue_partner_suffix to overlays AND promoted rows")
 

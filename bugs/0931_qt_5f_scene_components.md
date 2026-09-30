@@ -74,3 +74,24 @@ leaf routing.
   and it passes 6/6.
 - An earlier 2-shard full gate was stopped by the memory watchdog (2.2 GB free, with Sioyek and
   Firefox open). **Run the full gate first next session.**
+
+## Full gate (2026-09-30): 706/709, then three more source pins re-pointed -> 709/709
+
+The owed full gate (3 shards, 43.8 min) blocked on phases 89, 249 and 250. In each, the behaviour
+checks passed. Only the WIRING checks failed, because they read the source of `refresh()` /
+`_on_tree_right_click`, whose logic 0931 moved:
+
+- **89** `validate_open3d_glue_unglue_indicator`: "refresh() must apply `_glue_partner_suffix` to
+  overlays AND promoted rows". It now reads `tree_nodes`.
+- **249** `validate_open3d_scene_source_object`: "browser refresh inserts Scene Sources rows". It
+  now reads `tree_nodes`.
+- **250** `validate_open3d_add_illumination_source`: "browser right-click intercepts the Scene
+  Sources group". It now reads `show_menu_for_iid`.
+
+The claims are unchanged. All three pass standalone and through the gate (`--phases 89,249,250`).
+With the other 706 from the full run, the suite stands at 709/709.
+
+**The 23-phase subset missed them.** It was picked by phase NAME (browser / admin / hide). These
+three inspect the browser but are named for glue and sources. This is the memory note "subset
+gates miss cross-cutting changes" again: a subset must be picked by what the phases INSPECT, which
+for a moved method means every validator whose source mentions it.

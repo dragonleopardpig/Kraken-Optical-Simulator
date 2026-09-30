@@ -273,7 +273,7 @@ def _check_wiring(failures: list[str], notes: list[str]) -> None:
         failures.append("WIRING: refresh_scene does not reset the source actor maps")
     if "sources" not in [key for key, _title, _labels in Open3DStepAdminPanel.CATEGORY_SPECS]:
         failures.append("WIRING: browser has no 'Scene Sources' category")
-    build_src = _src(Open3DStepAdminPanel.refresh)
+    build_src = _src(Open3DStepAdminPanel.tree_nodes)  # bugs/0931: the tree is data both shells render
     if "_scene_source_browser_rows" not in build_src or "source:" not in build_src:
         failures.append("WIRING: browser refresh does not insert Scene Sources rows")
     if "set_source_hidden" not in _src(Open3DStepAdminPanel._set_element_hidden):
