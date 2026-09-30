@@ -538,9 +538,9 @@ def _evaluate_checks() -> tuple[list, dict]:
     main_optical_solid_face_roles_factory = inspect.getsource(KrakenLayoutEditor._main_optical_solid_face_roles_dialog)
     open_optical_solid_faces_for_row = inspect.getsource(KrakenLayoutEditor._open_optical_solid_faces_for_row)
     main_optical_solid_dialogs = inspect.getsource(MainOpticalSolidDialogs)
+    main_optical_solid_dialogs_module = inspect.getsource(sys.modules[MainOpticalSolidDialogs.__module__])
     main_optical_solid_dialogs_factory = inspect.getsource(KrakenLayoutEditor._main_optical_solid_dialogs)
     open_optical_stl_diagnostics = inspect.getsource(KrakenLayoutEditor.open_optical_stl_diagnostics)
-    open_optical_stl_numeric_placement = inspect.getsource(KrakenLayoutEditor._open_optical_stl_numeric_placement_assistant)
     main_path_component_placement_dialog = inspect.getsource(MainPathComponentPlacementDialog)
     main_path_component_placement_factory = inspect.getsource(KrakenLayoutEditor._main_path_component_placement_dialog)
     open_arm_path_component_placement = inspect.getsource(KrakenLayoutEditor.open_arm_path_component_placement)
@@ -1241,13 +1241,13 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "owner.rows[row_index].glass = glass" in glass_catalog_row_form,
         ),
         (
+            # 0936: the diagnostics are ONE report both shells render; the numeric Place/Orient
+            # assistant (uncalled since a53b72a3) is gone -- no editor method may reach it
             "Optical solid utility dialogs live outside layout_editor",
             "MainOpticalSolidDialogs(" in main_optical_solid_dialogs_factory
-            and "axis_to_layout_z_tilts=STL_AXIS_TO_LAYOUT_Z_TILTS" in main_optical_solid_dialogs_factory
             and "self._main_optical_solid_dialogs().open_optical_stl_diagnostics()" in open_optical_stl_diagnostics
-            and "self._main_optical_solid_dialogs()._open_optical_stl_numeric_placement_assistant(" in open_optical_stl_numeric_placement
-            and "Optical CAD/STL Solid Diagnostics" in main_optical_solid_dialogs
-            and "Place/Orient CAD/STL Solid" in main_optical_solid_dialogs,
+            and "build_optical_solid_diagnostics_report" in main_optical_solid_dialogs_module
+            and not hasattr(KrakenLayoutEditor, "_open_optical_stl_numeric_placement_assistant"),
         ),
         (
             "Optical solid face-role editor lives outside layout_editor",

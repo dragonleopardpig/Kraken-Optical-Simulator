@@ -16776,6 +16776,10 @@ phase_701_penta_telescope_chain = _phase_from_standalone(
     701, "optics appended on the five-penta cascade's -X exit leg are traced where they are drawn (0923): EVERY ray passes through both ball lenses, the DCV, the achromat and the cylinder, counted as traced vertices inside each body on the ray's exit leg -- never a projection of the whole folded path, which let the cascade vouch for optics no ray reached. Failing since the chain was written",
     'KrakenOS.UI.validate_open3d_penta_telescope_chain',
     'penta_telescope_chain')
+phase_715_optical_solid_diagnostics = _phase_from_standalone(
+    715, "Inspect Optical CAD/STL Solids is one report in both shells (phase 5g, 0936): on the Edmund 42779 prism layout the meshed prism reads READY with its own diagnostics text and CAD source, the same mesh with a triangle cut out reads CHECK with its open edges counted, an in-memory solid reads CHECK, an empty layout refuses; the Tk window and the Qt dialog (also on the ribbon) show the same rows and the selected solid's detail",
+    'KrakenOS.UI.validate_optical_solid_diagnostics',
+    'optical_solid_diagnostics')
 phase_714_qt_ribbon = _phase_from_standalone(
     714, "the Qt shell's ribbon + command palette (0935): the ribbon and its exclusion list cover every shell action exactly, every action has an icon that draws and no two icons render the same, each ribbon button runs its own action, Show Rays keeps one state and really hides the rays, the plot picker follows the model's selection, Ctrl+Shift+P focuses the palette and a unique query runs its command, and on a 1000-px screen the ribbon starts folded (the 3D view keeps >= 400 px) with tab pages as pop-ups",
     'KrakenOS.UI.validate_qt_ribbon',
@@ -17608,6 +17612,7 @@ def main() -> int:
             phase_712_face_roles_session,
             phase_713_qt_5g_face_roles,
             phase_714_qt_ribbon,
+            phase_715_optical_solid_diagnostics,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

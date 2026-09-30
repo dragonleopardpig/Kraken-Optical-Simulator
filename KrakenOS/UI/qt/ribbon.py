@@ -36,7 +36,7 @@ RIBBON = (
         ("Placement", (("scene_target", "L", "Scene\nTarget"), ("path_local_pose", "S", "Path-Local Pose"),
                        ("element_settings", "S", "Element Settings"))),
         ("Sources", (("scene_sources", "L", "Source\nManager"), ("source_edit", "L", "Edit\nSource"))),
-        ("CAD", (("face_roles", "L", "Optical\nFaces"),)),
+        ("CAD", (("face_roles", "L", "Optical\nFaces"), ("stl_diagnostics", "L", "Inspect\nSolids"))),
         ("Inspection", (("inspection_cell", "L", "Inspection\nCell"), ("inspection_part", "L", "Inspection\nPart"))),
     )),
     ("Analysis", (

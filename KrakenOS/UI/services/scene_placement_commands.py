@@ -2210,19 +2210,6 @@ class ScenePlacementMixin:
         self.status_var.set("3D CAD/STL placement unavailable; use row Tilt/Decenter fields.")
         self.append_debug("3D CAD/STL placement unavailable; neither embedded nor legacy 3D view is active.")
 
-    def _open_optical_stl_numeric_placement_assistant(
-        self,
-        row_index: int,
-        row: SurfaceRow,
-        path: Path,
-        diagnostics: StlMeshDiagnostics,
-    ) -> None:
-        self._main_optical_solid_dialogs()._open_optical_stl_numeric_placement_assistant(
-            row_index,
-            row,
-            path,
-            diagnostics,
-        )
 
     def _step_overlay_import_service(self) -> StepOverlayImportService:
         service = self.__dict__.get("_step_overlay_import_service_instance")

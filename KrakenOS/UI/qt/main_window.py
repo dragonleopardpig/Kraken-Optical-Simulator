@@ -727,6 +727,12 @@ class KrakenQtMainWindow(_main_window_class()):
 
         return self.open_row_form(build_apply_tolerance_preset_form, row_index=False)
 
+    def stl_diagnostics_action(self):
+        """The trace-readiness of every CAD/STL solid row -- the report the Tk dialog shows (0936)."""
+        from KrakenOS.UI.reports import build_optical_solid_diagnostics_report
+
+        return self.open_report(build_optical_solid_diagnostics_report)
+
     def face_roles_action(self):
         """Assign optical intent to the faces of the selected CAD/STL solid row."""
         row_index = self.selected_row_index()

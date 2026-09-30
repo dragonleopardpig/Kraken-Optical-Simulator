@@ -17,6 +17,7 @@ from KrakenOS.UI.reports.gaussian_beam import (build_gaussian_beam_report,
 from KrakenOS.UI.reports.nonseq_scene_graph import build_nonseq_scene_graph_report
 from KrakenOS.UI.reports.paraxial_matrix import build_paraxial_matrix_report
 from KrakenOS.UI.reports.ray_inspector import build_ray_inspector_report
+from KrakenOS.UI.reports.optical_solid_diagnostics import build_optical_solid_diagnostics_report
 from KrakenOS.UI.reports.source_illumination import build_source_illumination_report
 from KrakenOS.UI.reports.trace_paths import build_trace_path_report
 
@@ -27,6 +28,7 @@ REPORT_BUILDERS = {
     "detector_aperture": build_detector_aperture_report,
     "branch_throughput": build_branch_throughput_report,
     "source_illumination": build_source_illumination_report,
+    "optical_solid_diagnostics": build_optical_solid_diagnostics_report,
     "gaussian_beam": build_gaussian_beam_report,
     "ray_inspector": build_ray_inspector_report,
     "trace_paths": build_trace_path_report,
@@ -39,5 +41,6 @@ __all__ = ["Report", "ReportChoice", "ReportColumn", "ReportFailed", "ReportValu
            "build_paraxial_matrix_report", "build_branch_gaussian_q_report",
            "build_detector_aperture_report", "build_branch_throughput_report",
            "build_source_illumination_report", "build_gaussian_beam_report",
+           "build_optical_solid_diagnostics_report",
            "build_ray_inspector_report", "build_trace_path_report",
            "build_nonseq_scene_graph_report"]

@@ -440,11 +440,7 @@ class LayoutOpticalSolidWorkflowMixin:
     def _main_optical_solid_dialogs(self) -> MainOpticalSolidDialogs:
         dialog = self.__dict__.get("_main_optical_solid_dialogs_instance")
         if dialog is None:
-            dialog = MainOpticalSolidDialogs(
-                self,
-                short_error_message=_short_error_message,
-                axis_to_layout_z_tilts=STL_AXIS_TO_LAYOUT_Z_TILTS,
-            )
+            dialog = MainOpticalSolidDialogs(self)
             self._main_optical_solid_dialogs_instance = dialog
         return dialog
 
