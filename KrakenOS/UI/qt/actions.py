@@ -83,6 +83,8 @@ ACTIONS = (
     ("system_selection", "&Analysis", "S&ystem Selection Calculator...", None,
      "system_selection_action",
      "FOV + resolution + minimum working distance -> the camera pixels and the lens EFL / magnification"),
+    ("face_roles", "&Edit", "Assign CAD/STL &Optical Faces...", None, "face_roles_action",
+     "Assign 2D sides, coatings and port roles to the faces of the selected CAD/STL solid row"),
     ("galvo_scan", "&Edit", "&Galvo Scan Overlay...", None, "galvo_scan_action",
      "The TiltX angles the selected mirror is drawn at"),
     ("grating_settings", "&Edit", "G&rating Settings...", None, "grating_settings_action",

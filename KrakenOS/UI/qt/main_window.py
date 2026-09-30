@@ -109,6 +109,9 @@ class KrakenQtMainWindow(_main_window_class()):
                                       Qt.DockWidgetArea.RightDockWidgetArea, scroll=True)
         # the model says when relevance or a live list may have changed; every form re-reads
         editor.show_control_state = self.refresh_control_panels
+        # the CAD/STL face-roles editor opens here, over the model's session (bugs/0934)
+        editor.show_face_roles_dialog = self.show_face_roles_dialog
+        self.last_face_roles_dialog = None
         # optimisation: operands, their settings, workers and Start/Stop (bugs/0904)
         self.optimization_panel = OptimizationPanel(editor)
         self.dock_manager.create_dock(self.optimization_panel.widget, "OptimizationDock",
@@ -718,6 +721,30 @@ class KrakenQtMainWindow(_main_window_class()):
         from KrakenOS.UI.row_forms import build_apply_tolerance_preset_form
 
         return self.open_row_form(build_apply_tolerance_preset_form, row_index=False)
+
+    def face_roles_action(self):
+        """Assign optical intent to the faces of the selected CAD/STL solid row."""
+        row_index = self.selected_row_index()
+        if row_index is None:
+            host_of(self).showinfo("Assign CAD/STL Optical Faces", "Select an STL solid row first.")
+            return None
+        self.editor.open_optical_solid_face_role_editor(int(row_index))
+        return self.last_face_roles_dialog
+
+    def show_face_roles_dialog(self, session):
+        """The model's `show_face_roles_dialog` seam: it built a `FaceRolesSession` for a row and
+        hands it here instead of opening its Tk window (bugs/0934)."""
+        from KrakenOS.UI.qt.dialogs.face_roles_dialog import FaceRolesDialog
+
+        dialog = FaceRolesDialog(session, parent=self, host=host_of(self))
+        dialog.finished.connect(lambda _result, d=dialog: self._forget_dialog(d))
+        self._open_dialogs.append(dialog)
+        dialog.show()
+        dialog.build_preview()        # VTK takes the shown window's native id
+        if session.records:
+            session.select([0], 0)    # the first face, as the Tk dialog opens
+        self.last_face_roles_dialog = dialog
+        return dialog
 
     def _forget_dialog(self, dialog) -> None:
         if dialog in self._open_dialogs:

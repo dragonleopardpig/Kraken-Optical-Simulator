@@ -16776,6 +16776,10 @@ phase_701_penta_telescope_chain = _phase_from_standalone(
     701, "optics appended on the five-penta cascade's -X exit leg are traced where they are drawn (0923): EVERY ray passes through both ball lenses, the DCV, the achromat and the cylinder, counted as traced vertices inside each body on the ray's exit leg -- never a projection of the whole folded path, which let the cascade vouch for optics no ray reached. Failing since the chain was written",
     'KrakenOS.UI.validate_open3d_penta_telescope_chain',
     'penta_telescope_chain')
+phase_713_qt_5g_face_roles = _phase_from_standalone(
+    713, "the CAD/STL face-roles editor opens in the Qt shell over the same session the Tk dialog renders (phase 5g part 2, 0934), on the Edmund 42779 prism with real Qt input: the Edit menu opens the Qt dialog and no Tk window, its table is the session's rows and a click selects, a combo choice and a typed loss persist at once and the debounced retrace fires on the Qt timer, a preview click selects the face it hit and a drag orbits without selecting, Save auto-orients and keeps its message, and the Tk and Qt runs of the same actions save identical face metadata",
+    'KrakenOS.UI.validate_open3d_qt_5g_face_roles',
+    'qt_5g_face_roles')
 phase_712_face_roles_session = _phase_from_standalone(
     712, "the CAD/STL face-roles editor is a toolkit-neutral session + VTK preview the Tk dialog renders (phase 5g part 1, 0933), measured on the Edmund 42779 prism: a committed field persists at once and the retrace is debounced (one, after the timer), Save cancels it and retraces once and auto-orients from the Input Port, a custom coating table round-trips, Illumination Source binds (outward aim kept) and unbinds, input snap is locked to the Input Port face and sets U/V from the pick, a preview click selects the face it hit, and the Tk dialog shows the session's rows and keeps an action's message visible",
     'KrakenOS.UI.validate_open3d_face_roles_session',
@@ -17598,6 +17602,7 @@ def main() -> int:
             phase_710_qt_5f_scene_components,
             phase_711_qt_5f_properties,
             phase_712_face_roles_session,
+            phase_713_qt_5g_face_roles,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
