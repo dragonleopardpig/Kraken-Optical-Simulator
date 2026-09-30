@@ -206,7 +206,7 @@ class KrakenQtMainWindow(_main_window_class()):
             from KrakenOS.UI.qt.scene_components_dock import SceneComponentsTree
 
             self.scene_components = SceneComponentsTree(self.inspector_view.inspector)
-            self.dock_manager.create_dock(self.scene_components.widget, "SceneComponentsDock",
+            self.dock_manager.create_dock(self.scene_components.container, "SceneComponentsDock",
                                           "Scene Components", Qt.DockWidgetArea.LeftDockWidgetArea)
         layout.addWidget(self.inspector_view.widget)
         # a VTK widget has no size hint, so the dock would open 0 pixels tall (measured) -- and a

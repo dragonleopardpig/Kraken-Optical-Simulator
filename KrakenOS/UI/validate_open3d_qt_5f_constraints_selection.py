@@ -123,7 +123,10 @@ def _run(call: str) -> list:
         f"    print({SKIP_MARK!r} + 'no DISPLAY')\n"
         "    raise SystemExit(0)\n"
         "from KrakenOS.UI.validate_open3d_qt_5f_constraints_selection import tk_checks, qt_runtime_checks\n"
-        f"print({RESULT_MARK!r} + json.dumps({call}))\n"
+        # flushed, then exit WITHOUT interpreter teardown: VTK/Qt objects can segfault while
+        # being destroyed, and a crash there loses a buffered result line (0932)
+        f"print({RESULT_MARK!r} + json.dumps({call}), flush=True)\n"
+        "os._exit(0)\n"
     )
     env = dict(os.environ)
     env.pop("WAYLAND_DISPLAY", None)

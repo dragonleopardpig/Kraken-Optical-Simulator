@@ -1395,7 +1395,29 @@ class Open3DStepAdminPanel:
                 self._refreshing = False
         self._update_properties(iid)
 
-    def _update_properties(self, iid: str) -> None:
+    #: the property rows the pane shows, in order (both shells lay out these)
+    PROPERTY_ROWS = (("name", "Name"), ("kind", "Kind"), ("file", "File"), ("pose", "Pose"), ("faces", "Faces"))
+    #: the Selected-Element actions: (key, label, method) -- a view enables a key per properties_for
+    SELECTION_ACTIONS = (
+        ("carry", "Carry", "_carry_selected"),
+        ("accept", "Accept", "_accept_selected"),
+        ("promote", "Promote", "_promote_selected"),
+        ("delete", "Delete", "_delete_selected"),
+        ("native", "Native Rows", "_native_selected"),
+        ("faces", "Faces", "_faces_selected"),
+        ("center", "Center Axis", "_center_selected"),
+        ("normal", "Center Normal->Axis", "_normal_axis_selected"),
+        ("pick_normal", "Pick Normal->Axis", "_pick_normal_axis_selected"),
+        ("surface_center", "Center Surface->Axis", "_surface_center_selected"),
+    )
+    FACE_DIRECTIONS = ("Left", "Right", "Up", "Down", "Front", "Back")
+
+    def properties_for(self, iid: str) -> dict:
+        """What the Properties / Selected-Element pane shows for ``iid`` -- ``values`` (the five
+        property texts), ``buttons`` (action key -> enabled) and ``face_direction`` (whether the face
+        direction choice applies). DATA: the Tk pane and the Qt shell's pane both show exactly this
+        (bugs/0932)."""
+        iid = str(iid or "")
         values = {
             "name": "-",
             "kind": "-",
@@ -1510,11 +1532,21 @@ class Open3DStepAdminPanel:
                             "faces": f"{face_count} assigned" if file_backed_count else "Grouped element",
                         }
                     )
-        for key, value in values.items():
+        return {
+            "values": values,
+            "buttons": self._compute_selection_button_states(flags),
+            "face_direction": bool(flags["overlay"]),
+        }
+
+    def _update_properties(self, iid: str) -> None:
+        shown = self.properties_for(iid)
+        self._last_properties = shown
+        for key, value in shown["values"].items():
             var = self._property_vars.get(key)
             if var is not None:
                 var.set(value)
-        button_states = self._compute_selection_button_states(flags)
+        button_states = shown["buttons"]
+        flags = {"overlay": shown["face_direction"]}
         for key, button in self._selection_buttons.items():
             try:
                 button.configure(state="normal" if button_states.get(key, False) else "disabled")
@@ -1525,6 +1557,14 @@ class Open3DStepAdminPanel:
                 self._face_direction_combo.configure(state="readonly" if flags["overlay"] else "disabled")
             except Exception:
                 pass
+        # a shell drawing its own pane re-reads properties_for (bugs/0932) -- a canvas pick updates
+        # the pane without the tree, so the tree's refresh hook alone would miss it
+        changed = self.inspector.__dict__.get("scene_properties_changed")
+        if callable(changed):
+            try:
+                changed()
+            except Exception as exc:
+                self.editor.append_debug(f"Scene Components properties shell refresh failed: {exc}")
 
     def _select_current_for_action(self) -> bool:
         kind, value = self._current_kind_value()
@@ -1633,8 +1673,13 @@ class Open3DStepAdminPanel:
 
     def _on_face_direction_selected(self, _event=None) -> None:
         var = self._face_direction_var
-        direction = str(var.get() if var is not None else "").strip()
-        if direction not in {"Left", "Right", "Up", "Down", "Front", "Back"}:
+        self.apply_face_direction(str(var.get() if var is not None else ""))
+
+    def apply_face_direction(self, direction: str) -> None:
+        """Orient the selected STEP's picked face toward ``direction`` (bugs/0932: the value is
+        passed in -- the Tk combobox's variable is hidden under a shell, and Qt never sets it)."""
+        direction = str(direction or "").strip()
+        if direction not in set(self.FACE_DIRECTIONS):
             return
         if not self._select_current_for_action():
             return

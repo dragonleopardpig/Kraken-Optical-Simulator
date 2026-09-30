@@ -229,7 +229,10 @@ def _run_qt_subprocess() -> tuple[str, list]:
         f"    print({SKIP_MARK!r} + 'no DISPLAY: the shell needs an X server')\n"
         "    raise SystemExit(0)\n"
         "from KrakenOS.UI.validate_open3d_qt_5e_tools import qt_runtime_checks\n"
-        f"print({RESULT_MARK!r} + json.dumps(qt_runtime_checks()))\n"
+        # flushed, then exit WITHOUT interpreter teardown: VTK/Qt objects can segfault while
+        # being destroyed, and a crash there loses a buffered result line (0932)
+        f"print({RESULT_MARK!r} + json.dumps(qt_runtime_checks()), flush=True)\n"
+        "os._exit(0)\n"
     )
     env = dict(os.environ)
     env.pop("WAYLAND_DISPLAY", None)
