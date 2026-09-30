@@ -2884,9 +2884,8 @@ def phase_21_brep_lens_rim_grouped(
     """
     import inspect as _inspect
 
-    from KrakenOS.UI.panels.main_optical_solid_face_roles_dialog import (
-        MainOpticalSolidFaceRolesDialog,
-    )
+    from KrakenOS.UI.face_roles_preview import FaceRolesPreview
+    from KrakenOS.UI.face_roles_session import FaceRolesSession
     from KrakenOS.UI.validate_open3d_brep_lens_rim_grouping import (
         _STEP_FIXTURE,
         rim_grouping_failures,
@@ -2905,10 +2904,10 @@ def phase_21_brep_lens_rim_grouped(
     else:
         result.detail["rim_grouping"] = "skipped (achromat STEP fixture missing)"
 
-    # Source-couple seam 1 + seam 2 from the dialog method (render_face_preview
-    # is nested inside it, so one getsource covers both).
+    # Source-couple seam 1 (the session's face grouping) + seam 2 (the preview's render) -- they
+    # were one nested dialog method until bugs/0933.
     try:
-        src = _inspect.getsource(MainOpticalSolidFaceRolesDialog._open_optical_solid_faces_for_row)
+        src = _inspect.getsource(FaceRolesSession._group_faces) + _inspect.getsource(FaceRolesPreview.render)
     except Exception:
         src = ""
     groups_brep = "group_brep_optical_solid_faces(" in src
@@ -16777,6 +16776,10 @@ phase_701_penta_telescope_chain = _phase_from_standalone(
     701, "optics appended on the five-penta cascade's -X exit leg are traced where they are drawn (0923): EVERY ray passes through both ball lenses, the DCV, the achromat and the cylinder, counted as traced vertices inside each body on the ray's exit leg -- never a projection of the whole folded path, which let the cascade vouch for optics no ray reached. Failing since the chain was written",
     'KrakenOS.UI.validate_open3d_penta_telescope_chain',
     'penta_telescope_chain')
+phase_712_face_roles_session = _phase_from_standalone(
+    712, "the CAD/STL face-roles editor is a toolkit-neutral session + VTK preview the Tk dialog renders (phase 5g part 1, 0933), measured on the Edmund 42779 prism: a committed field persists at once and the retrace is debounced (one, after the timer), Save cancels it and retraces once and auto-orients from the Input Port, a custom coating table round-trips, Illumination Source binds (outward aim kept) and unbinds, input snap is locked to the Input Port face and sets U/V from the pick, a preview click selects the face it hit, and the Tk dialog shows the session's rows and keeps an action's message visible",
+    'KrakenOS.UI.validate_open3d_face_roles_session',
+    'face_roles_session')
 phase_711_qt_5f_properties = _phase_from_standalone(
     711, "the Scene Components Properties / Selected-Element pane reaches the Qt shell from one computation (phase 5f part 3c, 0932): the Qt pane equals the Tk pane for a table row and two overlays (texts, enabled actions, face direction), the Qt face-direction choice orients toward the chosen value (never the hidden Tk variable), and a canvas pick refreshes the Qt pane",
     'KrakenOS.UI.validate_open3d_qt_5f_properties',
@@ -17594,6 +17597,7 @@ def main() -> int:
             phase_709_qt_5f_constraints_selection,
             phase_710_qt_5f_scene_components,
             phase_711_qt_5f_properties,
+            phase_712_face_roles_session,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

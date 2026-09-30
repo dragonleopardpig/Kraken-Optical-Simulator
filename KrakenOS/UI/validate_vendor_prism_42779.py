@@ -1178,9 +1178,10 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             (Path(le.__file__).resolve().parent / "open3d_inspector.py").read_text(encoding="utf-8"),
         ]
     )
-    face_roles_dialog_source = (
-        Path(le.__file__).resolve().parent / "panels" / "main_optical_solid_face_roles_dialog.py"
-    ).read_text(encoding="utf-8")
+    # the face-roles editor = its Tk view + the toolkit-neutral session (bugs/0933)
+    face_roles_dialog_source = "".join(
+        (Path(le.__file__).resolve().parent / name).read_text(encoding="utf-8")
+        for name in ("panels/main_optical_solid_face_roles_dialog.py", "face_roles_session.py"))
     nonseq_output_ports_source = (Path(le.__file__).resolve().parent / "nonseq_output_ports.py").read_text(encoding="utf-8")
     grouping_rows = [
         SurfaceRow(label="0", surface="Object", name="Object", thickness=100.0, diameter=25.0, glass="AIR"),
@@ -1460,16 +1461,17 @@ def validate_vendor_prism_42779() -> list[VendorPrism42779Check]:
             VendorPrism42779Check(
                 "face assignment save can snap Input Port face to traced ray",
                 "snap Input Port to traced ray" in face_roles_dialog_source
-                and "_solve_optical_solid_path_input_pose(row_index, metadata_to_save)" in face_roles_dialog_source
+                and "_solve_optical_solid_path_input_pose(self.row_index, metadata_to_save)" in face_roles_dialog_source
                 and "solve_optical_solid_left_input_pose(metadata_to_save)" in face_roles_dialog_source,
                 "Save Roles prefers traced path/table-surface placement and falls back to the axial Left-face input solver",
             ),
             VendorPrism42779Check(
                 "Save Roles applies the current selected face form before persisting",
-                "def apply_current_form_to_selection_for_save" in face_roles_dialog_source
-                and "if not apply_current_form_to_selection_for_save()" in face_roles_dialog_source
-                and "side_menu.bind('<<ComboboxSelected>>', auto_apply_selected_face_identity" in face_roles_dialog_source
-                and "function_menu.bind('<<ComboboxSelected>>', auto_apply_selected_face_identity" in face_roles_dialog_source,
+                # save_roles applies the form to the selection first; every choice (side, function,
+                # port, fit ref) auto-applies on selection -- one loop over form_choices() since 0933
+                "if self.selection and not self.apply_form_to_selection(quiet=True)" in face_roles_dialog_source
+                and 'combo.bind("<<ComboboxSelected>>", self._auto_apply' in face_roles_dialog_source
+                and "for key, (label, values) in frs.form_choices().items()" in face_roles_dialog_source,
                 "users can change 2D side/function fields, switch faces, or press Save Roles without a separate Apply click",
             ),
         ]

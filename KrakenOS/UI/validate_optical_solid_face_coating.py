@@ -210,8 +210,10 @@ def run_checks() -> "tuple[bool, list[str]]":
     try:
         import inspect
 
+        from KrakenOS.UI import face_roles_session
         from KrakenOS.UI.panels import main_optical_solid_face_roles_dialog as face_dialog
-        dialog_src = inspect.getsource(face_dialog)
+        # the Tk view + the session holding the form and its record writes (bugs/0933)
+        dialog_src = inspect.getsource(face_dialog) + inspect.getsource(face_roles_session)
         if "_open_face_coating_table_editor" not in dialog_src or "Edit table" not in dialog_src:
             failures.append("F: the face dialog exposes no per-face coating-table editor / 'Edit table' button")
         if "'coating_table'" not in dialog_src or "'coating_met'" not in dialog_src:

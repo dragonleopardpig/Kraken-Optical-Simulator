@@ -14,7 +14,6 @@ from KrakenOS.UI.layout_editor import (
     KrakenLayoutEditor,
     _raykeeper_has_non_primary_branch_paths,
 )
-from KrakenOS.UI.panels.main_optical_solid_face_roles_dialog import MainOpticalSolidFaceRolesDialog
 from KrakenOS.UI.services.open3d_face_assignment import Open3DFaceAssignmentService
 from KrakenOS.UI.services.open3d_trace_refresh import Open3DTraceRefreshService
 from KrakenOS.UI.services.prism_fixtures import PRISM_42779_STEP
@@ -313,21 +312,26 @@ def _validate_focus_and_vtk_teardown_are_guarded() -> None:
 
 
 def _validate_face_role_save_forces_stale_trace_rebuild() -> None:
-    face_editor_source = inspect.getsource(MainOpticalSolidFaceRolesDialog._open_optical_solid_faces_for_row)
+    # the editor = the Tk view + its session (state, persistence, retrace) + its VTK preview (0933)
+    from KrakenOS.UI import face_roles_preview, face_roles_session
+    from KrakenOS.UI.panels.main_optical_solid_face_roles_dialog import TkFaceRolesView
+
+    face_editor_source = (inspect.getsource(TkFaceRolesView) + inspect.getsource(face_roles_session)
+                          + inspect.getsource(face_roles_preview))
     refresh_source = inspect.getsource(KrakenLayoutEditor._refresh_open_3d_views)
     assign_source = inspect.getsource(KrakenLayoutEditor.assign_optical_solid_face_function)
     if "_refresh_open_3d_views(force_retrace=True)" not in face_editor_source:
         raise AssertionError("CAD/STL face-role Save Roles does not force an open Open 3D inspector to retrace.")
     if (
         "reason_text = str(reason or 'Face Editor')" not in face_editor_source
-        or "_invalidate_optical_solid_face_assignment_trace(row_index, reason_text)" not in face_editor_source
+        or "_invalidate_optical_solid_face_assignment_trace(self.row_index, reason_text)" not in face_editor_source
     ):
         raise AssertionError("CAD/STL face-role Save Roles does not clear stale traced scene state.")
-    if "def persist_face_editor_metadata" not in face_editor_source:
+    if "def persist(self" not in face_editor_source:
         raise AssertionError("CAD/STL face-role editor has no immediate row-metadata persistence helper.")
-    if "persist_face_editor_metadata(f'{face_id} {function_display}')" not in face_editor_source:
+    if "self.persist(f'{shown_id} {function}')" not in face_editor_source:
         raise AssertionError("CAD/STL face-role combobox edits are not saved immediately to row metadata.")
-    if "entry_widget.bind('<FocusOut>', auto_apply_selected_face_identity" not in face_editor_source:
+    if 'entry.bind("<FocusOut>", self._auto_apply' not in face_editor_source:
         raise AssertionError("CAD/STL face-role text fields do not save on focus-out.")
     if "_invalidate_optical_solid_face_assignment_trace(row_index, face_id, function)" not in assign_source:
         raise AssertionError("Direct CAD/STL face assignment does not clear stale traced scene state.")
@@ -339,13 +343,13 @@ def _validate_face_role_save_forces_stale_trace_rebuild() -> None:
     # Performance: the slow Face Editor / Save Roles came from render_face_preview
     # re-reading the body mesh from disk + re-extracting feature edges on EVERY
     # call, and auto-apply firing a full Open 3D retrace on EVERY field change.
-    if "base_mesh_cache" not in face_editor_source or "def base_body_raw_and_edges" not in face_editor_source:
+    if "self._base = (body, edges)" not in face_editor_source or "def _base_body_raw_and_edges" not in face_editor_source:
         raise AssertionError("Face Editor preview lacks a cached base body mesh (re-reads the STL from disk every render).")
-    if "raw_body, raw_edges = base_body_raw_and_edges()" not in face_editor_source:
+    if "raw_body, raw_edges = self._base_body_raw_and_edges()" not in face_editor_source:
         raise AssertionError("Face Editor render_face_preview does not use the cached base body/edges.")
-    if "def schedule_face_editor_retrace" not in face_editor_source or "schedule_face_editor_retrace()" not in face_editor_source:
+    if "def schedule_retrace" not in face_editor_source or "self.schedule_retrace()" not in face_editor_source:
         raise AssertionError("Face Editor auto-apply does not debounce the Open 3D retrace (full retrace per field change).")
-    if "cancel_pending_face_editor_retrace()" not in face_editor_source:
+    if "self.cancel_pending_retrace()" not in face_editor_source:
         raise AssertionError("Face Editor Save Roles does not cancel the pending debounced retrace (risk of double retrace).")
 
 

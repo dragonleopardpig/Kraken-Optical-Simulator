@@ -68,7 +68,8 @@ def _check_wiring(failures: list[str]) -> None:
     try:
         from KrakenOS.UI.panels import main_optical_solid_face_roles_dialog as dialog
 
-        dialog_src = inspect.getsource(dialog)
+        from KrakenOS.UI import face_roles_session  # the editor's actions live here (bugs/0933)
+        dialog_src = inspect.getsource(dialog) + inspect.getsource(face_roles_session)
     except Exception as exc:  # pragma: no cover - defensive
         dialog_src = ""
         failures.append(f"WIRING: could not read the face-roles dialog source ({exc!r})")

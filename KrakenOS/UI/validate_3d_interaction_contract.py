@@ -6,6 +6,7 @@ from KrakenOS.UI.services.open3d_mouse_bindings import viewport_wiring_source
 import KrakenOS.UI.open3d_inspector as inspector_module
 
 import inspect
+import sys
 
 import numpy as np
 
@@ -63,6 +64,7 @@ from KrakenOS.UI.panels.main_nonseq_scene_graph_dialog import MainNonSequentialS
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
 from KrakenOS.UI.panels.main_window import MainWindowBuilder
 from KrakenOS.UI.panels.main_optical_solid_face_roles_dialog import MainOpticalSolidFaceRolesDialog
+from KrakenOS.UI import face_roles_session
 from KrakenOS.UI.panels.main_optical_solid_dialogs import MainOpticalSolidDialogs
 from KrakenOS.UI.panels.main_path_component_placement_dialog import MainPathComponentPlacementDialog
 from KrakenOS.UI.panels.main_path_detector_analysis import MainPathDetectorAnalysis
@@ -530,7 +532,9 @@ def _evaluate_checks() -> tuple[list, dict]:
     main_glass_catalog_browser_dialog = inspect.getsource(MainGlassCatalogBrowserDialog)
     main_glass_catalog_browser_factory = inspect.getsource(KrakenLayoutEditor._main_glass_catalog_browser_dialog)
     open_glass_catalog_browser = inspect.getsource(KrakenLayoutEditor.open_glass_catalog_browser)
-    main_optical_solid_face_roles_dialog = inspect.getsource(MainOpticalSolidFaceRolesDialog)
+    # the editor is the Tk view + its toolkit-neutral session since bugs/0933
+    main_optical_solid_face_roles_dialog = inspect.getsource(
+        sys.modules[MainOpticalSolidFaceRolesDialog.__module__]) + inspect.getsource(face_roles_session)
     main_optical_solid_face_roles_factory = inspect.getsource(KrakenLayoutEditor._main_optical_solid_face_roles_dialog)
     open_optical_solid_faces_for_row = inspect.getsource(KrakenLayoutEditor._open_optical_solid_faces_for_row)
     main_optical_solid_dialogs = inspect.getsource(MainOpticalSolidDialogs)

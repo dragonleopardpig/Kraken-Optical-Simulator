@@ -13,7 +13,7 @@ harness has no display for, so this is a source-structure guard:
   A. the editor pane is wrapped in a Canvas with a vertical Scrollbar and the inner
      form is placed via ``create_window``;
   B. the wheel handler binds ``<MouseWheel>`` AND ``<Button-4>``/``<Button-5>``
-     (mouse + X11/touchpad) and is applied recursively (``_bind_editor_wheel``);
+     (mouse + X11/touchpad) and is applied recursively (``_bind_form_wheel``);
   C. the Save/Close footer stays on the dialog window (not inside the scrolled
      pane) so it is always visible.
 
@@ -28,17 +28,17 @@ import inspect
 
 
 def run_checks() -> "tuple[bool, list[str]]":
-    from KrakenOS.UI.panels.main_optical_solid_face_roles_dialog import (
-        MainOpticalSolidFaceRolesDialog,
-    )
+    from KrakenOS.UI.panels.main_optical_solid_face_roles_dialog import TkFaceRolesView
 
     failures: list[str] = []
-    src = inspect.getsource(MainOpticalSolidFaceRolesDialog._open_optical_solid_faces_for_row)
+    # the Tk layout is the TkFaceRolesView class since bugs/0933 (its state + actions are the
+    # toolkit-neutral FaceRolesSession)
+    src = inspect.getsource(TkFaceRolesView)
 
     # A) the editor pane is a scroll canvas with an inner frame.
     if "tk.Canvas(editor_host" not in src and "Canvas(editor_host" not in src:
         failures.append("FAIL: the editor pane must be wrapped in a Canvas (editor_host -> Canvas)")
-    if "create_window(" not in src or "window=editor" not in src:
+    if "create_window(" not in src or "window=form" not in src:
         failures.append("FAIL: the inner editor form must be placed in the canvas via create_window")
     if "Scrollbar(editor_host" not in src:
         failures.append("FAIL: the editor pane needs a vertical Scrollbar")
@@ -49,10 +49,10 @@ def run_checks() -> "tuple[bool, list[str]]":
     for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
         if seq not in src:
             failures.append(f"FAIL: the editor scroll must bind {seq} (mouse + X11/touchpad)")
-    if "_bind_editor_wheel" not in src:
+    if "_bind_form_wheel" not in src:
         failures.append(
             "FAIL: the wheel handler must be bound recursively on every control "
-            "(_bind_editor_wheel) so hovering any field scrolls")
+            "(_bind_form_wheel) so hovering any field scrolls")
 
     # C) the Save/Close footer is on the dialog window, not inside the scrolled pane.
     if "footer = ttk.Frame(window" not in src:

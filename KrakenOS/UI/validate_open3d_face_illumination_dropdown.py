@@ -83,7 +83,8 @@ def _check_wiring(failures: list[str]) -> None:
             failures.append(f"WIRING: editor is missing {name}()")
 
     try:
-        dialog_src = inspect.getsource(dialog)
+        from KrakenOS.UI import face_roles_session  # the editor's actions live here (bugs/0933)
+        dialog_src = inspect.getsource(dialog) + inspect.getsource(face_roles_session)
     except Exception as exc:  # pragma: no cover - defensive
         dialog_src = ""
         failures.append(f"WIRING: could not read the Face Editor dialog source ({exc!r})")
