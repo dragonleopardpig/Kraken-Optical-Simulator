@@ -22,6 +22,8 @@ class AnalysisToolbar:
         self.main_window = main_window
         self.editor = main_window.editor
         self.actions: dict = {}
+        #: other views of the picker's caption (the ribbon's Plots button, bugs/0935)
+        self.caption_listeners: list = []
 
         self.toolbar = QToolBar("Analysis", main_window)
         self.toolbar.setObjectName("AnalysisToolBar")
@@ -90,6 +92,8 @@ class AnalysisToolbar:
             caption = selection_label(len(selected))
         # the arrow is the Tk button's own; Qt draws its own menu indicator
         self.button.setText(str(caption).replace("▾", "").strip())
+        for listener in self.caption_listeners:
+            listener(self.button.text())
 
     # ---- view -> model ---------------------------------------------------------------------
     def toggle(self, mode: str) -> None:

@@ -94,6 +94,11 @@ class KrakenQtMainWindow(_main_window_class()):
         # the analysis picker and Update: the Qt shell could open every dialog and show every
         # result, but could not set an analysis up (bugs/0899)
         self.analysis_toolbar = AnalysisToolbar(self)
+        # every command as tabbed icon groups + a command palette; it takes over the analysis
+        # toolbar's row, so the 3D view loses no height to it (bugs/0935)
+        from KrakenOS.UI.qt.ribbon import Ribbon
+
+        self.ribbon = Ribbon(self)
         # the inputs that define the system: the Qt shell could analyse a loaded layout but not
         # change what was traced (bugs/0900)
         self.system_panel = SystemPanel(editor)

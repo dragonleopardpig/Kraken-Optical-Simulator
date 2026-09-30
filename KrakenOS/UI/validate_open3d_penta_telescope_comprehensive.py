@@ -16776,6 +16776,10 @@ phase_701_penta_telescope_chain = _phase_from_standalone(
     701, "optics appended on the five-penta cascade's -X exit leg are traced where they are drawn (0923): EVERY ray passes through both ball lenses, the DCV, the achromat and the cylinder, counted as traced vertices inside each body on the ray's exit leg -- never a projection of the whole folded path, which let the cascade vouch for optics no ray reached. Failing since the chain was written",
     'KrakenOS.UI.validate_open3d_penta_telescope_chain',
     'penta_telescope_chain')
+phase_714_qt_ribbon = _phase_from_standalone(
+    714, "the Qt shell's ribbon + command palette (0935): the ribbon and its exclusion list cover every shell action exactly, every action has an icon that draws and no two icons render the same, each ribbon button runs its own action, Show Rays keeps one state and really hides the rays, the plot picker follows the model's selection, Ctrl+Shift+P focuses the palette and a unique query runs its command, and on a 1000-px screen the ribbon starts folded (the 3D view keeps >= 400 px) with tab pages as pop-ups",
+    'KrakenOS.UI.validate_qt_ribbon',
+    'qt_ribbon')
 phase_713_qt_5g_face_roles = _phase_from_standalone(
     713, "the CAD/STL face-roles editor opens in the Qt shell over the same session the Tk dialog renders (phase 5g part 2, 0934), on the Edmund 42779 prism with real Qt input: the Edit menu opens the Qt dialog and no Tk window, its table is the session's rows and a click selects, a combo choice and a typed loss persist at once and the debounced retrace fires on the Qt timer, a preview click selects the face it hit and a drag orbits without selecting, Save auto-orients and keeps its message, and the Tk and Qt runs of the same actions save identical face metadata",
     'KrakenOS.UI.validate_open3d_qt_5g_face_roles',
@@ -17603,6 +17607,7 @@ def main() -> int:
             phase_711_qt_5f_properties,
             phase_712_face_roles_session,
             phase_713_qt_5g_face_roles,
+            phase_714_qt_ribbon,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
