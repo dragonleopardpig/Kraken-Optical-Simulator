@@ -33,6 +33,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BASELINE = REPO_ROOT / "tools" / "penta_validator_baseline.json"
+#: the Qt-shell run's own baseline (bugs/0939): its phase set is the harness's own phases only
+QT_BASELINE = REPO_ROOT / "tools" / "penta_validator_baseline_qt.json"
 HOOKS_DIR = REPO_ROOT / ".githooks"
 VALIDATOR_MODULE = "KrakenOS.UI.validate_open3d_penta_telescope_comprehensive"
 PHASE_RE = re.compile(r"^\s*\[(PASS|FAIL)\]\s+Phase\s+(\d+)\s*:\s*(.*?)\s*$")
@@ -94,7 +96,7 @@ def _parse_phase_states(log_text: str) -> dict[str, dict[str, str]]:
 
 def run_validator(
     *, interpreter: str, display: int | None, timeout: int, log_path: Path,
-    phases: str | None = None,
+    phases: str | None = None, shell: str = "tk",
 ) -> tuple[int, dict[str, dict[str, str]], str | None]:
     """Boot Xvfb, run the validator, return (exit_code, phase_states, env_error)."""
     chosen = _free_display(display)
@@ -105,6 +107,8 @@ def run_validator(
     env["DISPLAY"] = f":{chosen}"
     if phases:
         env["KRAKEN_PENTA_PHASES"] = str(phases)
+    # bugs/0939: --shell qt runs the harness's own phases against the inspector hosted in the Qt shell
+    env["KRAKEN_PENTA_SHELL"] = shell
     env["PYTHONPATH"] = os.pathsep.join(
         [str(REPO_ROOT), env.get("PYTHONPATH", "")]
     ).rstrip(os.pathsep)
@@ -209,7 +213,11 @@ def _restore_fixtures(tag: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--baseline", type=Path, default=DEFAULT_BASELINE)
+    parser.add_argument("--baseline", type=Path, default=None,
+                        help="default: tools/penta_validator_baseline.json (Tk) / ..._qt.json (--shell qt)")
+    parser.add_argument("--shell", choices=("tk", "qt"), default="tk",
+                        help="qt: the harness's own ~350 phases against the inspector hosted in the Qt shell "
+                             "(Qt migration phase 5h, bugs/0939; ~15 min)")
     parser.add_argument("--update-baseline", action="store_true",
                         help="run, then overwrite the baseline with the current phase states")
     parser.add_argument("--install", action="store_true",
@@ -243,6 +251,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--require-env", action="store_true",
                         help="treat a missing Xvfb/interpreter as a failure (exit 1) instead of skipping")
     args = parser.parse_args(argv)
+    if args.baseline is None:
+        args.baseline = QT_BASELINE if args.shell == "qt" else DEFAULT_BASELINE
 
     if args.install:
         return _install_hook()
@@ -266,6 +276,7 @@ def main(argv: list[str] | None = None) -> int:
         timeout=args.timeout,
         log_path=log_path,
         phases=selected_phases,
+        shell=args.shell,
     )
     if env_error is not None:
         print(f"[gate] SKIP: {env_error}", file=sys.stderr)

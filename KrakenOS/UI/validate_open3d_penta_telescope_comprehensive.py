@@ -185,7 +185,56 @@ class PhaseResult:
     detail: dict[str, Any] = field(default_factory=dict)
 
 
+def _penta_shell() -> str:
+    """``KRAKEN_PENTA_SHELL=qt`` runs the harness's own phases against the inspector hosted in the
+    REAL Qt shell (Qt migration phase 5h, bugs/0939); anything else is the Tk shell, as always."""
+    return str(os.environ.get("KRAKEN_PENTA_SHELL", "tk") or "tk").strip().lower()
+
+
+def _open_qt_shell():
+    """The Qt shell with the real inspector in its dock: (editor, inspector, QApplication, window).
+
+    The phases pump with ``app.update()`` / ``inspector.update()`` -- Tk calls. Under the Qt shell
+    the inspector's timers and repaints live on the Qt event loop (its host is a QtUiHost), so here
+    both also pump Qt; otherwise a debounced refresh or a trailing re-pick would never run."""
+    os.environ.pop("WAYLAND_DISPLAY", None)
+    os.environ["QT_QPA_PLATFORM"] = "xcb"
+    from KrakenOS.UI.qt.app import build
+
+    qt_app, window = build(["penta"])
+    window.resize(1500, 950)
+    window.show()
+    qt_app.processEvents()
+    window.build_viewport()
+    view = window.build_inspector_view()
+    editor, inspector = window.editor, view.inspector
+    # the phases must drive the Qt-hosted render window, not a hidden Tk one
+    if inspector._shell_vtk_host is not view.widget or inspector._vtk_widget is not view.widget:
+        raise RuntimeError("the inspector is not hosted in the Qt shell's VTK widget")
+
+    def pumping(original):
+        def run(*args, **kwargs):
+            qt_app.processEvents()
+            result = original(*args, **kwargs)
+            qt_app.processEvents()
+            return result
+        return run
+
+    for target in (editor, inspector):
+        for name in ("update", "update_idletasks"):
+            object.__setattr__(target, name, pumping(getattr(target, name)))
+    for _ in range(30):
+        qt_app.processEvents()
+    return editor, inspector, qt_app, window
+
+
 def _open_inspector(app: KrakenLayoutEditor) -> Kraken3DInspector:
+    existing = getattr(app, "_three_d_inspector", None)
+    if _penta_shell() == "qt" and existing is not None and getattr(existing, "available", False):
+        # the Qt shell's dock already hosts it; the Tk geometry/deiconify below would raise the
+        # withdrawn Tk Toplevel the Qt-hosted inspector keeps
+        app.update()
+        return existing
     app.open_3d_view()
     app.update_idletasks()
     app.update()
@@ -15445,6 +15494,7 @@ def _phase_from_standalone(number: int, title: str, module_name: str, guard_labe
         return result
 
     _phase.__name__ = f"phase_{number}_{guard_label}"
+    _phase.standalone = True   # it builds its own editor: a Qt-shell run (bugs/0939) skips it
     return _phase
 
 
@@ -16894,9 +16944,16 @@ def _print_report(results: list[PhaseResult]) -> int:
 
 
 def main() -> int:
-    app = KrakenLayoutEditor()
+    qt_shell = None
+    if _penta_shell() == "qt":
+        app, inspector, _qt_app, qt_shell = _open_qt_shell()
+        print(f"[shell] Qt: inspector hosted in the Qt shell ({type(inspector._vtk_widget).__name__}, "
+              f"host {type(inspector.ui).__name__})", flush=True)
+    else:
+        app = KrakenLayoutEditor()
     try:
-        inspector = _open_inspector(app)
+        if qt_shell is None:
+            inspector = _open_inspector(app)
         results: list[PhaseResult] = []
         phases: list[Callable[[KrakenLayoutEditor, Kraken3DInspector], PhaseResult]] = [
             phase_0_load_cascade,
@@ -17658,6 +17715,11 @@ def main() -> int:
                 if _wanted:
                     phases = [f for f in phases if _phase_number(f) in _wanted]
             print(f"[filter] KRAKEN_PENTA_PHASES={_phase_filter} -> running {len(phases)} phase(s)", flush=True)
+        if qt_shell is not None:
+            # only the harness's own phases drive the shared inspector; a standalone guard would
+            # just run its own Tk editor again (bugs/0939)
+            phases = [f for f in phases if not getattr(f, "standalone", False)]
+            print(f"[shell] Qt: running the {len(phases)} harness phase(s) that use the shared inspector", flush=True)
 
         for phase in phases:
             # Streamed progress marker: the report only prints at the END, so a hard
