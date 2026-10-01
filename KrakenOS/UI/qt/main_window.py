@@ -116,6 +116,9 @@ class KrakenQtMainWindow(_main_window_class()):
         editor.show_control_state = self.refresh_control_panels
         # the CAD/STL face-roles editor opens here, over the model's session (bugs/0934)
         editor.show_face_roles_dialog = self.show_face_roles_dialog
+        # and "Measure MTF from Image" (bugs/0938)
+        editor.show_mtf_from_image_dialog = self.show_mtf_from_image_dialog
+        self.last_mtf_from_image_dialog = None
         self.last_face_roles_dialog = None
         # optimisation: operands, their settings, workers and Start/Stop (bugs/0904)
         self.optimization_panel = OptimizationPanel(editor)
@@ -732,6 +735,23 @@ class KrakenQtMainWindow(_main_window_class()):
         from KrakenOS.UI.reports import build_optical_solid_diagnostics_report
 
         return self.open_report(build_optical_solid_diagnostics_report)
+
+    def mtf_from_image_action(self):
+        """Measure a real MTF from a captured image: a slanted edge, or USAF three-bar elements."""
+        self.editor.open_mtf_from_image_dialog()
+        return self.last_mtf_from_image_dialog
+
+    def show_mtf_from_image_dialog(self):
+        """The model's `show_mtf_from_image_dialog` seam: a session, rendered by the Qt dialog."""
+        from KrakenOS.UI.mtf_from_image_session import MtfFromImageSession
+        from KrakenOS.UI.qt.dialogs.mtf_from_image_dialog import MtfFromImageDialog
+
+        dialog = MtfFromImageDialog(MtfFromImageSession(self.editor), parent=self, host=host_of(self))
+        dialog.finished.connect(lambda _result, d=dialog: self._forget_dialog(d))
+        self._open_dialogs.append(dialog)
+        dialog.show()
+        self.last_mtf_from_image_dialog = dialog
+        return dialog
 
     def face_roles_action(self):
         """Assign optical intent to the faces of the selected CAD/STL solid row."""

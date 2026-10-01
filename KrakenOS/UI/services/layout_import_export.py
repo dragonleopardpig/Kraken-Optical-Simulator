@@ -181,6 +181,10 @@ class LayoutImportExportMixin:
         """Measure MTF from a captured USAF-1951 image (KrakenOS.USAFMTF) -- the interactive
         "draw ROIs on the image" dialog: load a raster capture, drag a rectangle over each three-bar
         element, Compute to fit + plot the MTF curve, Save CSV."""
+        shell_opener = self.__dict__.get("show_mtf_from_image_dialog")
+        if callable(shell_opener):        # the Qt shell renders the same session (bugs/0938)
+            shell_opener()
+            return
         from KrakenOS.UI.panels.mtf_from_image_dialog import open_mtf_from_image_dialog
         open_mtf_from_image_dialog(self)
 

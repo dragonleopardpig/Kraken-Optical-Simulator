@@ -12,6 +12,8 @@ ACTIONS = (
      "Open a Kraken layout -- the same model code the Tk editor's File menu runs"),
     ("reload", "&File", "&Reload Layout", "Ctrl+R", "reload_layout_action",
      "Re-read the current layout file from disk"),
+    ("mtf_from_image", "&File", "Measure MTF from &Image...", None, "mtf_from_image_action",
+     "Measure a real MTF from a captured image: one box over a slanted edge, or a box per USAF element"),
     ("quit", "&File", "&Quit", "Ctrl+Q", "quit_action", "Close the Qt shell"),
     ("reset_camera", "&View", "&Fit Scene", "Ctrl+0", "reset_camera_action",
      "Frame every drawn body"),

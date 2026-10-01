@@ -16776,6 +16776,10 @@ phase_701_penta_telescope_chain = _phase_from_standalone(
     701, "optics appended on the five-penta cascade's -X exit leg are traced where they are drawn (0923): EVERY ray passes through both ball lenses, the DCV, the achromat and the cylinder, counted as traced vertices inside each body on the ray's exit leg -- never a projection of the whole folded path, which let the cascade vouch for optics no ray reached. Failing since the chain was written",
     'KrakenOS.UI.validate_open3d_penta_telescope_chain',
     'penta_telescope_chain')
+phase_716_qt_mtf_from_image = _phase_from_standalone(
+    716, "Measure MTF from Image is one session rendered by Tk and Qt (phase 5g, 0938): File -> Measure MTF from Image opens the Qt dialog (also on the ribbon); a real drag on a capture shown at 0.5x stores the box at twice the size in image pixels and Compute equals the direct slanted-edge fit (5 deg); two USAF drags add G2E1/G2E2 and fill MTF + R2; the Tk dialog's same drags store the same ROIs and both shells save byte-identical CSVs",
+    'KrakenOS.UI.validate_qt_mtf_from_image',
+    'qt_mtf_from_image')
 phase_715_optical_solid_diagnostics = _phase_from_standalone(
     715, "Inspect Optical CAD/STL Solids is one report in both shells (phase 5g, 0936): on the Edmund 42779 prism layout the meshed prism reads READY with its own diagnostics text and CAD source, the same mesh with a triangle cut out reads CHECK with its open edges counted, an in-memory solid reads CHECK, an empty layout refuses; the Tk window and the Qt dialog (also on the ribbon) show the same rows and the selected solid's detail",
     'KrakenOS.UI.validate_optical_solid_diagnostics',
@@ -17613,6 +17617,7 @@ def main() -> int:
             phase_713_qt_5g_face_roles,
             phase_714_qt_ribbon,
             phase_715_optical_solid_diagnostics,
+            phase_716_qt_mtf_from_image,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

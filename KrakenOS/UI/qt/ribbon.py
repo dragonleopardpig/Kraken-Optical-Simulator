@@ -41,6 +41,7 @@ RIBBON = (
     )),
     ("Analysis", (
         # the plot picker / Update / WFront 3D come first -- see `Ribbon._plots_group`
+        ("Measure", (("mtf_from_image", "L", "MTF from\nImage"),)),
         ("Paraxial", (("paraxial_matrix", "L", "Paraxial\nMatrix"), ("paraxial_calculator", "L", "Paraxial\nCalculator"),
                       ("gaussian_beam", "S", "Gaussian Beam"), ("branch_gaussian_q", "S", "Branch Gaussian q"))),
         ("Rays", (("ray_inspector", "L", "Ray\nInspector"), ("trace_paths", "S", "Trace Paths"),

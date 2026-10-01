@@ -24,15 +24,17 @@ import inspect
 
 
 def _dialog_source() -> str:
-    from KrakenOS.UI.panels.mtf_from_image_dialog import open_mtf_from_image_dialog
-    return inspect.getsource(open_mtf_from_image_dialog)
+    # the Tk view + the session holding enlarge / save (bugs/0938)
+    from KrakenOS.UI import mtf_from_image_session
+    from KrakenOS.UI.panels import mtf_from_image_dialog
+    return inspect.getsource(mtf_from_image_dialog) + inspect.getsource(mtf_from_image_session)
 
 
 def _check_close(failures, notes):
     src = _dialog_source()
     need = {
-        "a Close button": 'text="Close", command=lambda: _close()',
-        "the WM_DELETE_WINDOW protocol": 'window.protocol("WM_DELETE_WINDOW", _close)',
+        "a Close button": 'text="Close", command=lambda: self._close()',
+        "the WM_DELETE_WINDOW protocol": 'window.protocol("WM_DELETE_WINDOW", self._close)',
         "an <Escape> binding": 'window.bind("<Escape>"',
         "window.destroy in _close": "window.destroy()",
     }
@@ -48,14 +50,14 @@ def _check_close(failures, notes):
 def _check_enlarge(failures, notes):
     src = _dialog_source()
     need = {
-        "the plot click binding": 'plot_widget.bind("<Button-1>", lambda _e: _enlarge_plot())',
+        "the plot click binding": 'plot_widget.bind("<Button-1>", lambda _e: session.enlarge(self.figure))',
         "the hand cursor": 'cursor="hand2"',
         "a high-res savefig": "figure.savefig(image_path, dpi=300",
         "the system-viewer open": "_open_image_with_system_viewer(image_path)",
     }
     missing = [label for label, token in need.items() if token not in src]
-    if "def _enlarge_plot(" not in src:
-        missing.append("an _enlarge_plot helper")
+    if "def enlarge(" not in src:
+        missing.append("the session's enlarge helper")
     if missing:
         failures.append("ENLARGE: dialog is missing " + ", ".join(missing))
     else:

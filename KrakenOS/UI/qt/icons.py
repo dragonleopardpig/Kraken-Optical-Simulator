@@ -51,6 +51,9 @@ ICONS: dict[str, str] = {
     "optical_solid_diagnostics": (f'<path {_GLASS} d="M3 17L8 5l7 3 1 9z"/><path {_OPEN} d="M8 5l-1 12M15 8l-8 9M3 17h13"/>'
                         f'<circle {_OPEN} cx="17" cy="15" r="4"/><path {_LIGHT} d="M15.3 15l1.2 1.2 2.2-2.4"/>'
                         f'<path {_OPEN} d="M20 18l2.5 2.5"/>'),
+    "mtf_from_image": (f'<rect {_OPEN} x="3" y="3" width="18" height="18" rx="1.5"/>'
+                       f'<path fill="{{fg}}" fill-opacity="0.35" d="M3 3h7l4 18H3z"/>'
+                       f'<path {_LIGHT} d="M5 7c4 0 7 2 9 6s4 6 6 6"/>'),
     # ---- scene ------------------------------------------------------------------------------------
     "scene_target": (f'<circle {_OPEN} cx="12" cy="12" r="8"/><circle {_OPEN} cx="12" cy="12" r="4"/>'
                      f'<circle cx="12" cy="12" r="1.3" fill="{{accent}}"/>'),

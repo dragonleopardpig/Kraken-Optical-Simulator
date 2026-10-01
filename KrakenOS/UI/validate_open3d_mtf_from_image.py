@@ -101,9 +101,11 @@ def _check_wiring(failures, notes):
 
 
 def _check_contract(failures, notes):
+    from KrakenOS.UI import mtf_from_image_session
     from KrakenOS.UI.panels import mtf_from_image_dialog as mod
 
-    src = inspect.getsource(mod.open_mtf_from_image_dialog)
+    # the dialog is the Tk view + the toolkit-neutral session it renders (bugs/0938)
+    src = inspect.getsource(mod) + inspect.getsource(mtf_from_image_session)
     for token, msg in (
         ("measure_slanted_edge_mtf", "the dialog does not offer the slanted-edge mode"),
         ("analyze_usaf_image", "the dialog does not call analyze_usaf_image (USAF mode)"),
@@ -130,7 +132,9 @@ def _check_axes(failures, notes):
         failures.append("AXES: both axis origins must be pinned to 0.0")
     if "arange(0.0, 1.001, 0.2)" not in styler:
         failures.append("AXES: the Y ticks must be 0.0, 0.2, ..., 1.0")
-    if "_style_mtf_axes(ax)" not in inspect.getsource(mod.open_mtf_from_image_dialog):
+    from KrakenOS.UI import mtf_from_image_session
+
+    if "style_mtf_axes(ax)" not in inspect.getsource(mtf_from_image_session.MtfFromImageSession.draw):
         failures.append("AXES: the dialog does not apply _style_mtf_axes to the plot")
     # behavioural: styling an axes yields origin 0.0 + the 0.2-step ticks
     import matplotlib
