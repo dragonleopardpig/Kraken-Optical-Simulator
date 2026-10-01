@@ -83,7 +83,7 @@ ACTIONS = (
     ("system_selection", "&Analysis", "S&ystem Selection Calculator...", None,
      "system_selection_action",
      "FOV + resolution + minimum working distance -> the camera pixels and the lens EFL / magnification"),
-    ("stl_diagnostics", "&Analysis", "Inspect Optical CAD/STL &Solids", None, "stl_diagnostics_action",
+    ("optical_solid_diagnostics", "&Analysis", "Inspect Optical CAD/STL &Solids", None, "optical_solid_diagnostics_action",
      "Check every CAD/STL solid row can be traced: closed, manifold, outward winding, size, CAD source"),
     ("face_roles", "&Edit", "Assign CAD/STL &Optical Faces...", None, "face_roles_action",
      "Assign 2D sides, coatings and port roles to the faces of the selected CAD/STL solid row"),

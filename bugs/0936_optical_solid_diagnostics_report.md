@@ -47,3 +47,15 @@ plus two added rows.
 The ribbon guard (714) now counts 41 actions on the ribbon + Quit excluded, with all 42 icons
 distinct.
 - **Full gate OWED:** committed on the subset (655, 707, 713, 714, 715 pass); the full run was stopped when the user had to leave. Run `tools/penta_shard_gate.py` first next session.
+
+## Follow-up: the full gate caught a naming break (fixed)
+
+The full gate (run on X299-SSD, 2026-10-01) failed phases 639 and 640. Their check A requires every
+`REPORT_BUILDERS` entry to have a Qt action of the SAME name. 0936 registered
+`optical_solid_diagnostics` but named the action `stl_diagnostics`, and the subset gate had been
+picked without them. The action, its method, the ribbon entry and the icon are now all
+`optical_solid_diagnostics`.
+
+The subset for this fix was chosen by what validators READ: every validator mentioning
+`REPORT_BUILDERS`, the Qt action list or the ribbon. That is phases 634, 639, 640, 642, 649, 714
+and 715, and all pass.

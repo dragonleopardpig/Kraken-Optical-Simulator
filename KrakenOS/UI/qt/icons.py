@@ -48,7 +48,7 @@ ICONS: dict[str, str] = {
                       f'<path {_LIGHT} d="M6 8h3M15 8h3M6 11h3M15 11h3"/>'),
     "stock_lens": (f'<path {_GLASS} d="M10 3c-2 6-2 12 0 18h4c2-6 2-12 0-18z"/>'
                    f'<path {_OPEN} d="M3 7h3M3 12h3M3 17h3M18 7h3M18 12h3M18 17h3"/>'),
-    "stl_diagnostics": (f'<path {_GLASS} d="M3 17L8 5l7 3 1 9z"/><path {_OPEN} d="M8 5l-1 12M15 8l-8 9M3 17h13"/>'
+    "optical_solid_diagnostics": (f'<path {_GLASS} d="M3 17L8 5l7 3 1 9z"/><path {_OPEN} d="M8 5l-1 12M15 8l-8 9M3 17h13"/>'
                         f'<circle {_OPEN} cx="17" cy="15" r="4"/><path {_LIGHT} d="M15.3 15l1.2 1.2 2.2-2.4"/>'
                         f'<path {_OPEN} d="M20 18l2.5 2.5"/>'),
     # ---- scene ------------------------------------------------------------------------------------

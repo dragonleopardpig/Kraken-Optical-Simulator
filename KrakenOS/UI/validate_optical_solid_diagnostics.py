@@ -112,7 +112,7 @@ def qt_runtime_checks() -> list:
     app.processEvents()
     _prism_layout(window.editor)
     window.refresh_from_model()
-    window.action_manager["stl_diagnostics"].trigger()
+    window.action_manager["optical_solid_diagnostics"].trigger()
     end = time.time() + 0.5
     while time.time() < end:
         app.processEvents()
@@ -125,7 +125,7 @@ def qt_runtime_checks() -> list:
     dialog.select_master_row(1)
     app.processEvents()
     detail = dialog.detail_text.toPlainText() if dialog.detail_text is not None else ""
-    on_ribbon = "stl_diagnostics" in window.ribbon.buttons
+    on_ribbon = "optical_solid_diagnostics" in window.ribbon.buttons
     return [["Q", shown == ["S1", "S2", "S3"] and detail.startswith("S2: Torn prism") and on_ribbon,
              f"Qt report rows {shown}; selecting the second shows {detail.splitlines()[0] if detail else ''!r}; "
              f"on the ribbon: {on_ribbon}"]]
