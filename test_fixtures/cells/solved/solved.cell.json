@@ -1,0 +1,37 @@
+{
+  "part": {
+    "enabled": true,
+    "width_mm": 60.0,
+    "height_mm": 40.0,
+    "depth_mm": 20.0,
+    "active_face": "front",
+    "axis_reach_mm": 0.0,
+    "step_path": ""
+  },
+  "stations": {
+    "front": {
+      "layout": "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/cells/solved/solved_front.py",
+      "enabled": true
+    },
+    "back": {
+      "layout": "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/cells/solved/solved_front.py",
+      "enabled": true
+    },
+    "left": {
+      "layout": "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/cells/solved/solved_left.py",
+      "enabled": true
+    },
+    "right": {
+      "layout": "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/cells/solved/solved_left.py",
+      "enabled": true
+    },
+    "top": {
+      "layout": "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/cells/solved/solved_top.py",
+      "enabled": true
+    },
+    "bottom": {
+      "layout": "/home/thinky/Projects/Kraken-Optical-Simulator/attachment/cells/solved/solved_top.py",
+      "enabled": true
+    }
+  }
+}

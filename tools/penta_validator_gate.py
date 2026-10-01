@@ -197,6 +197,16 @@ def _install_hook() -> int:
     return 0
 
 
+def _restore_fixtures(tag: str) -> None:
+    """Put back any validator fixture missing from attachment/ (git-tracked copies, bugs/0937): a
+    scene lost to Filen made its validators SKIP or fail quietly instead of testing anything."""
+    try:
+        import validator_fixtures
+        validator_fixtures.restore()
+    except Exception as exc:  # the gate must still run without the fixture store
+        print(f"[{tag}] fixture restore skipped: {exc}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline", type=Path, default=DEFAULT_BASELINE)
@@ -236,6 +246,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.install:
         return _install_hook()
+    _restore_fixtures("gate")
 
     interpreter = _find_interpreter(args.python)
     if interpreter is None:

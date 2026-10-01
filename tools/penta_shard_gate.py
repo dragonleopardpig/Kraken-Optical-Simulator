@@ -208,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
               + (f", ~{est / 60:.0f} min measured" if seconds else ""))
     if args.dry_run:
         return 0
+    gate._restore_fixtures("shards")
 
     interpreter = gate._find_interpreter(args.python)
     if interpreter is None:

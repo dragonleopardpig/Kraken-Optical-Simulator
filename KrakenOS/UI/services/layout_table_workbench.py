@@ -10135,7 +10135,13 @@ class LayoutTableWorkbenchMixin:
         stem = stem.replace(" ", "_")
         if stem.startswith("station_"):
             stem = "cell"
-        out_dir = _PART_ROOT / "attachment" / "cells" / stem
+        # KRAKENOS_CELLS_DIR relocates new stations (a guard points it at a temp folder, so its
+        # scratch never lands in the Filen-synced attachment/ -- bugs/0937); unset, as before
+        import os as _os
+        from pathlib import Path as _Path
+
+        cells_root = _os.environ.get("KRAKENOS_CELLS_DIR", "").strip()
+        out_dir = (_Path(cells_root) if cells_root else _PART_ROOT / "attachment" / "cells") / stem
         try:
             out_dir.mkdir(parents=True, exist_ok=True)
         except Exception as exc:

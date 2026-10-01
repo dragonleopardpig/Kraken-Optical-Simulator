@@ -1,0 +1,27 @@
+# Validator INPUT fixtures, kept in git (bugs/0937). One path per line, relative to attachment/.
+# tools/validator_fixtures.py --restore copies any of these missing from attachment/ back from here
+# (never overwriting); the penta gates run it first. Vendor CAD / datasheets are deliberately NOT
+# here: this repository is public. Scratch and output folders validators WRITE are not fixtures.
+Basler_Telecentric.py
+MV-CS050-60UM_V5_TCL4.0X-65DI-5M.py
+five_penta_prism_analytic_telescope_cascade.py
+five_penta_prism_cascade.py
+machine_vision_120mm_65M.py
+machine_vision_150mm_GN.py
+machine_vision_Apo75.py
+machine_vision_ELS85.py
+machine_vision_Pyrite85.py
+machine_vision_Pyrite90_0.3X.py
+om05a_folded.py
+om05a_folded_80mm.py
+cells/solved/solved.cell.json
+cells/solved/solved_front.py
+cells/solved/solved_left.py
+cells/solved/solved_top.py
+cells/solved/solved_10x8x6.cell.json
+cells/solved/solved_10x8x6_front.py
+cells/solved/solved_10x8x6_left.py
+cells/solved/solved_10x8x6_top.py
+recorded_bug_repros/flag_20260805_081811_672/state.json
+recorded_bug_repros/flag_20260806_125028_234/state.json
+recorded_bug_repros/flag_20260921_172317_713/state.json

@@ -31,7 +31,9 @@ from __future__ import annotations
 
 import inspect
 import json
+import os
 import shutil
+import tempfile
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -45,13 +47,16 @@ def _check_station_create_open(ok, notes) -> None:
         return
     from KrakenOS.UI.layout_editor import KrakenLayoutEditor
 
-    cell_dir = PROJECT_ROOT / "attachment" / "cells" / "_guard_0667"
+    # a private cells root: new stations land in KRAKENOS_CELLS_DIR/<stem>, so the guard writes
+    # nothing into the Filen-synced attachment/ (its old scratch folder there, created and deleted
+    # mid-sync, stalled the attachment sync for days -- bugs/0937)
+    cells_root = Path(tempfile.mkdtemp(prefix="guard_0667_cells_"))
+    previous_cells_dir = os.environ.get("KRAKENOS_CELLS_DIR")
+    os.environ["KRAKENOS_CELLS_DIR"] = str(cells_root)
+    cell_dir = cells_root / "_guard_0667"
     editor = None
     editor2 = None
     try:
-        # a private copy so the guard never writes into the user's cells
-        if cell_dir.exists():
-            shutil.rmtree(cell_dir)
         scene_copy_dir = cell_dir / "seed"
         scene_copy_dir.mkdir(parents=True)
         seed = scene_copy_dir / "_guard_0667.py"
@@ -64,8 +69,8 @@ def _check_station_create_open(ok, notes) -> None:
             {"enabled": True, "width_mm": 10, "height_mm": 8, "depth_mm": 6, "active_face": "front"}
         )
         created = editor.open_station_for_face("top")
-        station = PROJECT_ROOT / "attachment" / "cells" / "_guard_0667" / "station_top.py"
-        cell_json = PROJECT_ROOT / "attachment" / "cells" / "_guard_0667" / "_guard_0667.cell.json"
+        station = cell_dir / "station_top.py"
+        cell_json = cell_dir / "_guard_0667.cell.json"
         ok(
             created and station.exists() and cell_json.exists(),
             f"A1: the top station + cell file are created ({station.name}, {cell_json.name})",
@@ -99,10 +104,11 @@ def _check_station_create_open(ok, notes) -> None:
                     e.destroy()
             except Exception:
                 pass
-        try:
-            shutil.rmtree(cell_dir)
-        except Exception:
-            pass
+        if previous_cells_dir is None:
+            os.environ.pop("KRAKENOS_CELLS_DIR", None)
+        else:
+            os.environ["KRAKENOS_CELLS_DIR"] = previous_cells_dir
+        shutil.rmtree(cells_root, ignore_errors=True)
 
 
 def _check_part_survives_lens_import(ok, notes) -> None:
