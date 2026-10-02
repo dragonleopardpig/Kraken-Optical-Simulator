@@ -38,6 +38,9 @@ ACTIONS = (
      "Write the 3D scene's solids as one STEP assembly"),
     ("export_3d_dxf", "&File", "Export 3D View DXF...", None, "editor:export_3d_view_dxf",
      "Write the current 3D view as a 2D DXF drawing"),
+    # bugs/0945: the surface-properties window is a session the Qt shell renders too
+    ("export_lens_drawing", "&File", "Export Lens &Drawing (PDF)...", None, "editor:export_lens_drawing",
+     "An ISO 10110-style fabrication drawing of the lens elements, as PDF"),
     ("export_wavefront_csv", "&File/Export Analysis &CSV", "Export Wavefront CSV...", None, "editor:export_wavefront_csv",
      "Write the last wavefront map as CSV"),
     ("export_zernike_csv", "&File/Export Analysis &CSV", "Export Zernike CSV...", None, "editor:export_zernike_csv",
@@ -120,6 +123,9 @@ ACTIONS = (
      "Search a .ZMF catalog and insert a stock lens as surface rows"),
     # bugs/0944: both refused every chosen Path view since the automatic path graph (a leg names no
     # branch path), in both shells; pick the Path view on the surface table's toolbar
+    ("lens_drawing_properties", "&Edit", "Lens Drawing Surface &Properties...", None,
+     "editor:_open_lens_drawing_surface_properties_dialog",
+     "Tolerances, coatings and finish per lens surface, for the fabrication drawing"),
     ("add_path_component", "&Edit", "Add Component to Current &Path View...", None,
      "editor:open_current_path_component_placement",
      "Insert a component on the traced path the table toolbar's Path view shows"),

@@ -60,6 +60,7 @@ from KrakenOS.UI.panels.main_error_map_dialog import MainErrorMapDialog
 from KrakenOS.UI.panels.main_field_controls import MainFieldControlsPanel
 from KrakenOS.UI.panels.main_glass_catalog_browser_dialog import MainGlassCatalogBrowserDialog
 from KrakenOS.UI.panels.main_lens_drawing_dialogs import MainLensDrawingDialogs
+from KrakenOS.UI import lens_drawing_session as lens_drawing_session_module
 from KrakenOS.UI.panels.main_nonseq_scene_graph_dialog import MainNonSequentialSceneGraphDialog
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
 from KrakenOS.UI.panels.main_window import MainWindowBuilder
@@ -510,6 +511,7 @@ def _evaluate_checks() -> tuple[list, dict]:
     open_branch_gaussian_q_report = inspect.getsource(KrakenLayoutEditor.open_branch_gaussian_q_report)
     refresh_branch_gaussian_q_report = inspect.getsource(KrakenLayoutEditor._refresh_branch_gaussian_q_report)
     main_lens_drawing_dialogs = inspect.getsource(MainLensDrawingDialogs)
+    lens_drawing_session_source = inspect.getsource(lens_drawing_session_module)
     main_lens_drawing_factory = inspect.getsource(KrakenLayoutEditor._main_lens_drawing_dialogs)
     open_lens_drawing_properties = inspect.getsource(KrakenLayoutEditor._open_lens_drawing_surface_properties_dialog)
     export_lens_drawing_wrapper = inspect.getsource(KrakenLayoutEditor.export_lens_drawing)
@@ -1160,8 +1162,11 @@ def _evaluate_checks() -> tuple[list, dict]:
             "MainLensDrawingDialogs(self, screenshot_dir=SCREENSHOT_DIR)" in main_lens_drawing_factory
             and "self._main_lens_drawing_dialogs()._open_lens_drawing_surface_properties_dialog(" in open_lens_drawing_properties
             and "self._main_lens_drawing_dialogs().export_lens_drawing()" in export_lens_drawing_wrapper
-            and "Lens Drawing Surface Properties" in main_lens_drawing_dialogs
-            and "Save JSON..." in main_lens_drawing_dialogs
+            # bugs/0945: the dialog's state, title and buttons are lens_drawing_session (rendered by
+            # the panel's Tk window and the Qt shell's dialog); the export stays in the panel
+            and "Lens Drawing Surface Properties" in lens_drawing_session_source
+            and "Save JSON..." in lens_drawing_session_source
+            and "LensDrawingPropertiesSession(" in main_lens_drawing_dialogs
             and "Export Lens Drawing" in main_lens_drawing_dialogs,
         ),
         (

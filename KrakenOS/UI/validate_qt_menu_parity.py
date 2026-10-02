@@ -87,12 +87,9 @@ QT_PORTS = {
     "open_paraxial_calculator": "paraxial_calculator",
 }
 
-_LENS_DRAWING = "opens the modal Tk lens-drawing surface-properties window -- needs a Qt port"
 #: Tk menu-bar commands with no Qt route yet -> why (measured by running each in the Qt shell).
 #: bugs/0943 routed the 16 tolerance / path-detector commands that only asked through Tk dialogs.
 KNOWN_GAPS = {
-    "_open_lens_drawing_surface_properties_dialog": _LENS_DRAWING,
-    "export_lens_drawing": _LENS_DRAWING,
     "open_atmosphere_settings_dialog": "opens a Tk window -- needs a Qt port",
 }
 

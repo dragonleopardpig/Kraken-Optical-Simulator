@@ -84,6 +84,9 @@ _MENU_ONLY = {
         "clear_zemax_wavefront", "clear_marks"),
     "help (Help menu)": ("formula_sheet", "manual_index", "copy_debug"),
     # bugs/0944: they act on the Path view chosen on the surface table's toolbar
+    # bugs/0945
+    "the lens fabrication drawing (File > Export Lens Drawing; Edit > its surface properties)": (
+        "export_lens_drawing", "lens_drawing_properties"),
     "inserts onto the current Path view (Edit menu; choose the path on the table toolbar)": (
         "add_path_component", "add_path_stock_lens"),
     # bugs/0943: each needs its report or a trace first, so a ribbon button would mostly refuse

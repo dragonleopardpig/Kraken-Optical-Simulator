@@ -16834,6 +16834,10 @@ phase_718_qt_menu_parity = _phase_from_standalone(
     718, "every Tk menu-bar command has a Qt route or is a documented gap that may only shrink (0942): 26 working commands gained Qt actions (editor:<method>) plus Save and Reset; in the Qt shell Undo/Redo restore model AND table and follow the history, Save As then Save write one file without re-asking, Ctrl+C/V on the table paste right after the Qt selection (not the hidden Tk one) and Ctrl+C elsewhere copies no rows, and File -> Open / Reset keep the hosted 3D inspector alive and showing the new layout (it was destroyed on every layout swap); since 0943 the 11 tolerance reports/CSVs and 5 path/detector CSV exports ask through the Qt host (a 3-sample Monte Carlo runs 3, every CSV is written, not one Tk dialog call); since 0944 the Qt table toolbar's Path view offers the model's views and Add Component / Stock Lens to Current Path View open Qt dialogs and insert on the chosen leg's traced branch -- in Tk too, where every leg-based Path view refused -- 72 of 75 routed",
     'KrakenOS.UI.validate_qt_menu_parity',
     'qt_menu_parity')
+phase_719_qt_lens_drawing = _phase_from_standalone(
+    719, "the lens-drawing surface properties and the PDF lens drawing work in both shells (0945): one session (lens_drawing_session) rendered by a Tk window and a modal Qt dialog; in the Qt shell real typing is validated (a negative clear aperture refused through the host), Apply writes DrawingProperties, Save/Clear/Load JSON round-trip, Apply & Close returns success; Export Lens Drawing cancels cleanly and otherwise writes the PDF through the host; the same script in Tk leaves identical properties and a byte-identical JSON sidecar",
+    'KrakenOS.UI.validate_qt_lens_drawing',
+    'qt_lens_drawing')
 phase_716_qt_mtf_from_image = _phase_from_standalone(
     716, "Measure MTF from Image is one session rendered by Tk and Qt (phase 5g, 0938): File -> Measure MTF from Image opens the Qt dialog (also on the ribbon); a real drag on a capture shown at 0.5x stores the box at twice the size in image pixels and Compute equals the direct slanted-edge fit (5 deg); two USAF drags add G2E1/G2E2 and fill MTF + R2; the Tk dialog's same drags store the same ROIs and both shells save byte-identical CSVs",
     'KrakenOS.UI.validate_qt_mtf_from_image',
@@ -17685,6 +17689,7 @@ def main() -> int:
             phase_716_qt_mtf_from_image,
             phase_717_editor_panel_delegations,
             phase_718_qt_menu_parity,
+            phase_719_qt_lens_drawing,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

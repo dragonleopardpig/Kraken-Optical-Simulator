@@ -129,6 +129,10 @@ class KrakenQtMainWindow(_main_window_class()):
         editor.show_control_state = self.refresh_control_panels
         # the CAD/STL face-roles editor opens here, over the model's session (bugs/0934)
         editor.show_face_roles_dialog = self.show_face_roles_dialog
+        # the lens-drawing surface properties, modal: a PDF export waits on the answer (bugs/0945)
+        editor.show_lens_drawing_properties = self.show_lens_drawing_properties
+        #: the dialog `show_lens_drawing_properties` last opened, for a guard to drive
+        self.last_lens_drawing_dialog = None
         # a form a model command builds itself (the Path-view placements) opens here (bugs/0944)
         editor.show_row_form = self.show_model_row_form
         #: the dialog `show_model_row_form` last opened, for a guard to read and drive
@@ -159,6 +163,16 @@ class KrakenQtMainWindow(_main_window_class()):
         for panel in (self.system_panel, self.source_panel, self.trace_panel):
             panel.refresh_state()
         self._refresh_path_view_choices()
+
+    def show_lens_drawing_properties(self, session) -> bool:
+        """The model's `show_lens_drawing_properties` seam (bugs/0945): the session in a modal Qt
+        dialog; returns once the session is closed, with whether the caller may go on."""
+        from KrakenOS.UI.qt.dialogs.lens_drawing_dialog import LensDrawingPropertiesDialog
+
+        dialog = LensDrawingPropertiesDialog(session, parent=self)
+        self.last_lens_drawing_dialog = dialog
+        dialog.exec()
+        return bool(session.result_ok)
 
     def show_model_row_form(self, form, *, on_close=None, modal=False):
         """The model's `show_row_form` seam (bugs/0944): a form a model command builds itself --
