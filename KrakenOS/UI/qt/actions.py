@@ -118,6 +118,14 @@ ACTIONS = (
      "Pick a catalogue glass and apply it to the selected row"),
     ("stock_lens", "&Edit", "Import &Stock Lens...", None, "stock_lens_action",
      "Search a .ZMF catalog and insert a stock lens as surface rows"),
+    # bugs/0944: both refused every chosen Path view since the automatic path graph (a leg names no
+    # branch path), in both shells; pick the Path view on the surface table's toolbar
+    ("add_path_component", "&Edit", "Add Component to Current &Path View...", None,
+     "editor:open_current_path_component_placement",
+     "Insert a component on the traced path the table toolbar's Path view shows"),
+    ("add_path_stock_lens", "&Edit", "Add Stock Lens to Current Path View...", None,
+     "editor:open_current_path_stock_lens_placement",
+     "Insert a catalogue lens on the traced path the table toolbar's Path view shows"),
     ("inspection_cell", "&Edit", "&Inspection Cell...", None, "inspection_cell_action",
      "Slot a station layout on each of the part's six faces"),
     ("source_edit", "&Edit", "Edit Scene Sou&rce...", None, "source_edit_action",

@@ -72,6 +72,20 @@ def bind_tab_wheel(canvas, inner) -> None:
     bind_recursive(inner)
 
 
+def present_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None, modal: bool = False):
+    """Show `form` wherever the running shell shows forms (bugs/0944).
+
+    A shell that draws its own dialogs installs `show_row_form` on the editor -- the Qt shell,
+    whose Tk root is withdrawn -- and gets the form; otherwise it is Tk's `render_row_form`. A
+    command that ends in a form calls this, so it works in both shells unchanged.
+    """
+    editor = getattr(owner, "editor", None) or owner
+    shell = editor.__dict__.get("show_row_form") if hasattr(editor, "__dict__") else None
+    if callable(shell):
+        return shell(form, on_close=on_close, modal=modal)
+    return render_row_form(owner, form, wraplength=wraplength, on_close=on_close, modal=modal)
+
+
 def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None,
                     modal: bool = False) -> tk.Toplevel:
     """Show `form` in a Tk dialog and return the window."""

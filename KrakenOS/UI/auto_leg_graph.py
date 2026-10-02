@@ -387,8 +387,13 @@ def build_auto_leg_entries_from_projected(
                     "surface_indices": set(),
                     "context_indices": set(),
                     "segment_surface_ids": set(),
+                    "branch_paths": set(),
                 }
             entry = legs[candidate_key]
+            # which traced branches run this leg: a leg names no branch path of its own, and a
+            # component placed "on the current Path view" needs one (bugs/0944)
+            if branch_path:
+                entry["branch_paths"].add(branch_path)
             entry["polylines"].append(polyline)
             entry["surface_indices"].update(non_branch_surface_ids)
             entry["segment_surface_ids"].update(segment_surface_ids)
@@ -429,6 +434,7 @@ def build_auto_leg_entries_from_projected(
                 "segment_surface_ids": set(entry.get("segment_surface_ids", set()) or set()),
                 "start_node_key": str(entry.get("start_node_key", "")),
                 "end_node_key": str(entry.get("end_node_key", "")),
+                "branch_paths": sorted(entry.get("branch_paths", set()) or set()),
             }
         )
     return entries

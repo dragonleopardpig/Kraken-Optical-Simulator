@@ -29,6 +29,15 @@ In a second Qt shell, on the tolerance example layout (bugs/0943 -- these asked 
   P  after Refresh Plot, the five path / detector CSV exports each ask for a file through the host
      and write rows
   K  across all of it, not one Tk messagebox / simpledialog / filedialog call
+On the two-arm beam-splitter example (bugs/0944: "Add Component / Stock Lens to Current Path View"
+took every chosen Path view for none since the automatic path graph lists LEGS, in both shells):
+  V  after Refresh Plot the surface table toolbar's Path view offers exactly the model's views;
+     choosing Path 2 there sets the model's view and selects that path's rows in the Qt table
+  L  Add Component to Current Path View opens a QT dialog (no Tk window) and Apply inserts one row,
+     in the model and the Qt table, on the traced branch that runs Path 2; Add Stock Lens to
+     Current Path View opens its Qt dialog too; the input leg (Path 1), which both branches
+     share, refuses through the host and names them
+  W  in the Tk editor, Path 2 opens both Tk forms where they used to refuse
 """
 from __future__ import annotations
 
@@ -49,6 +58,7 @@ TOLERANCE_LAYOUT = Path("KrakenOS/common_optical_layouts/native_variable_breadth
 TOLERANCE_EXPORTS = ("export_tolerance_monte_carlo_csv", "export_tolerance_comparison_csv",
                      "export_tolerance_stackup_csv", "export_tolerance_compensator_csv",
                      "export_tolerance_multi_compensator_csv", "export_tolerance_overlay_csv")
+PATH_VIEW_LAYOUT = Path("KrakenOS/common_optical_layouts/beam_splitter_two_arm_doublets.py")
 PATH_EXPORTS = ("export_path_psf_csv", "export_path_mtf_csv", "export_detector_map_csv",
                 "export_coherent_detector_csv", "export_branch_field_csv")
 
@@ -83,8 +93,6 @@ _LENS_DRAWING = "opens the modal Tk lens-drawing surface-properties window -- ne
 KNOWN_GAPS = {
     "_open_lens_drawing_surface_properties_dialog": _LENS_DRAWING,
     "export_lens_drawing": _LENS_DRAWING,
-    "open_current_path_component_placement": "ends in a Tk row form (path component placement)",
-    "open_current_path_stock_lens_placement": "ends in a Tk row form (stock lens placement)",
     "open_atmosphere_settings_dialog": "opens a Tk window -- needs a Qt port",
 }
 
@@ -378,6 +386,119 @@ def qt_export_checks(folder: str) -> list:
     return rows
 
 
+def qt_path_view_checks() -> list:
+    import tkinter as tk
+
+    from KrakenOS.UI.qt.app import build
+    from KrakenOS.UI.uihost import host_of
+
+    tk_windows: list = []
+    tk_init = tk.Toplevel.__init__
+
+    def counting_init(self, *args, **kwargs):
+        tk_init(self, *args, **kwargs)
+        tk_windows.append(self)
+
+    tk.Toplevel.__init__ = counting_init
+    app, window = build(["guard"])
+    window.show()
+    app.processEvents()
+    window.build_viewport()
+    window.load_layout_path(PATH_VIEW_LAYOUT)
+    actions = window.action_manager.actions
+    actions["refresh_plot"].trigger()
+    app.processEvents()
+    editor, combo = window.editor, window.path_view
+    said: list = []
+    for name in ("showinfo", "showerror", "showwarning"):
+        setattr(host_of(window), name, (lambda n: lambda title=None, message=None, **_k: said.append((n, str(message))))(name))
+
+    def choose(index: int) -> str:
+        combo.setCurrentIndex(index)
+        combo.activated.emit(index)          # what a user's pick sends
+        app.processEvents()
+        return combo.itemText(index)
+
+    rows = []
+    offered = [combo.itemText(i) for i in range(combo.count())]
+    label = choose(2) if len(offered) > 2 else ""
+    key = editor._arm_key_for_view_label(label)
+    expected_rows = editor._indices_for_arm_key(key)
+    rows.append(["V", offered == list(editor.arm_view_options()) and len(offered) >= 4
+                 and editor.arm_view_var.get() == label and bool(expected_rows)
+                 and window.selected_row_indices() == expected_rows,
+                 f"the toolbar offers {len(offered)} views = the model's: {offered == list(editor.arm_view_options())}; "
+                 f"chose {label[:40]!r} -> model view set: {editor.arm_view_var.get() == label}, Qt selection "
+                 f"{window.selected_row_indices()} (the path's rows {expected_rows})"])
+
+    branch, _why = editor._placement_branch_path_for_arm_key(key)
+    from collections import Counter
+
+    # by name: Apply re-reads the table, so every row object is new afterwards
+    before = Counter(str(row.name) for row in editor.rows)
+    count = len(editor.rows)
+    said.clear()
+    actions["add_path_component"].trigger()
+    app.processEvents()
+    dialog = window.last_model_form_dialog
+    opened = (dialog is not None and dialog.isVisible(), dialog.windowTitle() if dialog is not None else "")
+    if dialog is not None:
+        dialog.apply_button.click()
+        app.processEvents()
+    added = Counter(str(row.name) for row in editor.rows) - before
+    inserted = [row for row in editor.rows if str(row.name) in added]
+    placed_on = editor._element_metadata(inserted[0]).get("branch_path", "") if len(inserted) == 1 else None
+    said_component = list(said)
+    actions["add_path_stock_lens"].trigger()
+    app.processEvents()
+    stock = window.last_model_form_dialog
+    stock_opened = (stock is not dialog and stock is not None and stock.isVisible(),
+                    stock.windowTitle() if stock is not None else "")
+    said.clear()
+    choose(1)
+    actions["add_path_component"].trigger()
+    app.processEvents()
+    refusal = said[0][1] if said else ""
+    rows.append(["L", opened == (True, "Add Traced Path Component") and not said_component and bool(branch)
+                 and len(inserted) == 1 and placed_on == branch and len(editor.rows) == count + 1
+                 and window.rows_model.rowCount() == count + 1 and stock_opened == (True, "Add Stock Lens to Path")
+                 and not tk_windows and "shared by 2 traced branches" in refusal,
+                 f"component form {opened}, messages {said_component}; Apply inserted {[r.name for r in inserted]} on "
+                 f"{placed_on!r} (Path 2's branch {branch!r}), table {window.rows_model.rowCount()} of "
+                 f"{len(editor.rows)}; stock-lens form {stock_opened}; Tk windows {len(tk_windows)}; Path 1 -> "
+                 f"{refusal[:90]!r}"])
+    return rows
+
+
+def tk_path_view_checks() -> list:
+    import tkinter as tk
+    import tkinter.messagebox as tk_messagebox
+
+    from KrakenOS.UI.layout_editor import KrakenLayoutEditor
+
+    said: list = []
+    for name in ("showinfo", "showerror", "showwarning"):
+        setattr(tk_messagebox, name, (lambda n: lambda *a, **_k: said.append((n,) + a[:2]))(name))
+    editor = KrakenLayoutEditor()
+    editor.layout_files[PATH_VIEW_LAYOUT.stem] = PATH_VIEW_LAYOUT
+    editor.load_layout_by_name(PATH_VIEW_LAYOUT.stem)
+    editor.refresh_plot()
+    editor.update()
+    editor._refresh_arm_view_choices()
+    choices = list(editor.arm_view_menu["values"])
+    editor.arm_view_var.set(choices[2])
+    editor.set_arm_view()
+    editor.update()
+    titles = []
+    for command in (editor.open_current_path_component_placement, editor.open_current_path_stock_lens_placement):
+        before = set(editor.root.winfo_children())
+        command()
+        editor.update()
+        titles += [w.title() for w in set(editor.root.winfo_children()) - before if isinstance(w, tk.Toplevel)]
+    return [["W", titles == ["Add Traced Path Component", "Add Stock Lens to Path"] and not said,
+             f"Tk with {choices[2][:40]!r} chosen opened {titles}; messages {said}"]]
+
+
 def _run(call: str) -> list:
     driver = (
         "import json, os\n"
@@ -389,7 +510,8 @@ def _run(call: str) -> list:
         "if not os.environ.get('DISPLAY'):\n"
         f"    print({SKIP_MARK!r} + 'no DISPLAY')\n"
         "    raise SystemExit(0)\n"
-        "from KrakenOS.UI.validate_qt_menu_parity import qt_export_checks, qt_runtime_checks\n"
+        "from KrakenOS.UI.validate_qt_menu_parity import (qt_export_checks, qt_path_view_checks, qt_runtime_checks,\n"
+        "    tk_path_view_checks)\n"
         # flushed, then exit WITHOUT interpreter teardown (a Qt/Tk teardown crash must not lose it)
         f"print({RESULT_MARK!r} + json.dumps({call}), flush=True)\n"
         "os._exit(0)\n"
@@ -414,7 +536,8 @@ def _run(call: str) -> list:
 def run_checks() -> tuple[bool, list[str]]:
     folder = tempfile.mkdtemp(prefix="qt_menu_parity_")
     exports = tempfile.mkdtemp(prefix="qt_menu_exports_")
-    rows = static_checks() + _run(f"qt_runtime_checks({folder!r})") + _run(f"qt_export_checks({exports!r})")
+    rows = (static_checks() + _run(f"qt_runtime_checks({folder!r})") + _run(f"qt_export_checks({exports!r})")
+            + _run("qt_path_view_checks()") + _run("tk_path_view_checks()"))
     return all(ok for _k, ok, _d in rows), [f"{k} = {d}" if ok else f"{k} FAILED: {d}" for k, ok, d in rows]
 
 

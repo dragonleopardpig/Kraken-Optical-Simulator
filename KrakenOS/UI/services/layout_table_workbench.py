@@ -6125,15 +6125,20 @@ class LayoutTableWorkbenchMixin:
             indices.update(self._branch_path_surface_indices(path))
         return indices
 
-    def _refresh_arm_view_choices(self) -> None:
-        menu = self.__dict__.get("arm_view_menu")
-        if menu is None:
-            return
+    def arm_view_options(self) -> tuple[str, ...]:
+        """The Path views a shell offers: All paths, then every traced path or leg (bugs/0944)."""
         choices = [ARM_VIEW_DEFAULT]
         for entry in self._arm_catalog():
             label = entry["label"]
             if label not in choices:
                 choices.append(label)
+        return tuple(choices)
+
+    def _refresh_arm_view_choices(self) -> None:
+        menu = self.__dict__.get("arm_view_menu")
+        if menu is None:
+            return
+        choices = list(self.arm_view_options())
         menu["values"] = choices
         current = str(self.arm_view_var.get() or ARM_VIEW_DEFAULT).strip()
         if current not in choices:
@@ -6585,7 +6590,36 @@ class LayoutTableWorkbenchMixin:
         if not focus_label or focus_label == ARM_VIEW_DEFAULT:
             return ""
         key = self._arm_key_for_view_label(focus_label)
-        return self._branch_path_for_arm_key(key)
+        return self._placement_branch_path_for_arm_key(key)[0]
+
+    def _placement_branch_path_for_arm_key(self, key: str) -> tuple[str, str]:
+        """The traced branch path a component placed on this Path view goes onto, or ("", why not).
+
+        A traced-path view (`path|...`) names one directly. Since the automatic path graph the Path
+        view lists LEGS (`leg|auto_...`), and a leg names no branch path -- so "Add Component / Stock
+        Lens to Current Path View" took every chosen view for no view at all, in both shells
+        (bugs/0944). A leg resolves to the one non-primary traced branch whose rays run it; a leg
+        several branches share (the input before a splitter) has no single answer, and says so.
+        """
+        path = self._branch_path_for_arm_key(key)
+        if path:
+            return path, ""
+        leg_id = self._leg_id_from_arm_key(key)
+        if not leg_id:
+            return "", "Choose a traced Path view first."
+        entry = self._auto_leg_entry_for_id(leg_id)
+        if entry is None:
+            return "", ("This Path view is a defined interferometer leg, not one traced branch; choose a "
+                        "traced path that leaves a splitter.")
+        branches = [str(branch).strip() for branch in entry.get("branch_paths", []) or []]
+        branches = [branch for branch in branches if branch and branch != "primary"]
+        if len(branches) == 1:
+            return branches[0], ""
+        if not branches:
+            return "", ("This Path view runs before any splitter; choose a path that leaves one (a "
+                        "component is placed by its distance from the last splitter).")
+        return "", (f"This Path view is shared by {len(branches)} traced branches "
+                    f"({', '.join(branches[:3])}); choose a path that leaves a splitter.")
 
     def _current_path_view_frame_near_point(self, reference_point) -> dict[str, object]:
         branch_path = self._current_path_view_branch_path()
@@ -7269,11 +7303,11 @@ class LayoutTableWorkbenchMixin:
         self._refresh_arm_view_choices()
         label = str(self.arm_view_var.get() or ARM_VIEW_DEFAULT).strip()
         arm_key = self._arm_key_for_view_label(label)
-        branch_path = self._branch_path_for_arm_key(arm_key)
+        branch_path, reason = self._placement_branch_path_for_arm_key(arm_key)
         if not branch_path:
             host_of(self).showinfo(
                 "Path Stock Lens",
-                "Choose a traced Path view first, then run Insert/Actions -> Stock Lens to Current Path View.",
+                f"{reason} Then run Insert/Actions -> Stock Lens to Current Path View.",
                 parent=self,
             )
             return

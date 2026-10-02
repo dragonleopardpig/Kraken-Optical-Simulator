@@ -83,6 +83,9 @@ _MENU_ONLY = {
         "refresh_plot", "folded_assembly", "benchmark_psf_mtf", "copy_phase2_report", "copy_wavefront_fit",
         "clear_zemax_wavefront", "clear_marks"),
     "help (Help menu)": ("formula_sheet", "manual_index", "copy_debug"),
+    # bugs/0944: they act on the Path view chosen on the surface table's toolbar
+    "inserts onto the current Path view (Edit menu; choose the path on the table toolbar)": (
+        "add_path_component", "add_path_stock_lens"),
     # bugs/0943: each needs its report or a trace first, so a ribbon button would mostly refuse
     "analysis CSV exports (File > Export Analysis CSV; tolerance ones in Analysis > Tolerance)": (
         "export_path_psf_csv", "export_path_mtf_csv", "export_detector_map_csv", "export_coherent_detector_csv",

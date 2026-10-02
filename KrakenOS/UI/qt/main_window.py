@@ -129,6 +129,10 @@ class KrakenQtMainWindow(_main_window_class()):
         editor.show_control_state = self.refresh_control_panels
         # the CAD/STL face-roles editor opens here, over the model's session (bugs/0934)
         editor.show_face_roles_dialog = self.show_face_roles_dialog
+        # a form a model command builds itself (the Path-view placements) opens here (bugs/0944)
+        editor.show_row_form = self.show_model_row_form
+        #: the dialog `show_model_row_form` last opened, for a guard to read and drive
+        self.last_model_form_dialog = None
         # undo / redo enable as the model's history changes (bugs/0942)
         editor.show_undo_state = self.show_undo_state
         self.show_undo_state(bool(getattr(editor, "_undo_stack", None)), bool(getattr(editor, "_redo_stack", None)))
@@ -154,6 +158,22 @@ class KrakenQtMainWindow(_main_window_class()):
         """The model's `show_control_state` seam: re-read relevance and live lists (0902)."""
         for panel in (self.system_panel, self.source_panel, self.trace_panel):
             panel.refresh_state()
+        self._refresh_path_view_choices()
+
+    def show_model_row_form(self, form, *, on_close=None, modal=False):
+        """The model's `show_row_form` seam (bugs/0944): a form a model command builds itself --
+        "Add Component / Stock Lens to Current Path View" -- in a Qt dialog, not a Tk window."""
+        from KrakenOS.UI.qt.dialogs.row_form_dialog import RowFormDialog
+
+        dialog = RowFormDialog(form, parent=self, host=host_of(self))
+        dialog.setModal(bool(modal))
+        if on_close is not None:
+            dialog.finished.connect(lambda _result: on_close())
+        dialog.finished.connect(lambda _result, d=dialog: self._forget_dialog(d))
+        self._open_dialogs.append(dialog)
+        self.last_model_form_dialog = dialog
+        dialog.show()
+        return dialog
 
     # ---- the model's status line drives ours ---------------------------------------------------
     def _model_status(self) -> str:
@@ -309,6 +329,7 @@ class KrakenQtMainWindow(_main_window_class()):
             self.viewport.render()
         self._show_layout_title()
         self._adopt_replaced_layout()
+        self._refresh_path_view_choices()
         if drawn.get("error"):
             # The model could not build its display geometry: say so rather than showing a
             # viewport that is quietly missing every optical element.
@@ -509,6 +530,21 @@ class KrakenQtMainWindow(_main_window_class()):
             action.setToolTip(tip)
             action.triggered.connect(lambda _checked=False, method=method: self.run_table_verb(method))
             self.table_actions[method] = action
+        # "Path view", right-aligned as on the Tk table toolbar: the Path-view placements act on it,
+        # and choosing one selects that path's rows (bugs/0944)
+        from PySide6.QtWidgets import QComboBox, QLabel, QSizePolicy
+
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.table_toolbar.addWidget(spacer)
+        self.table_toolbar.addWidget(QLabel("Path view "))
+        self.path_view = QComboBox()
+        self.path_view.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.path_view.setMinimumContentsLength(24)
+        self.path_view.setToolTip("The traced path the table, the 2-D plot and the Path-view placements use")
+        self.path_view.activated.connect(self._choose_path_view)
+        self.table_toolbar.addWidget(self.path_view)
+        self._refresh_path_view_choices()
         layout.addWidget(self.table_toolbar)
         layout.addWidget(self.rows_view)
         # a refused edit says why, in the status bar rather than a Tk message box
@@ -519,6 +555,38 @@ class KrakenQtMainWindow(_main_window_class()):
         self.rows_view.setContextMenuPolicy(_Qt.ContextMenuPolicy.CustomContextMenu)
         self.rows_view.customContextMenuRequested.connect(self._show_cell_menu)
         return widget
+
+    def _refresh_path_view_choices(self) -> None:
+        """Offer the model's Path views; they change whenever a trace does."""
+        combo = getattr(self, "path_view", None)
+        if combo is None:
+            return
+        try:
+            choices = list(self.editor.arm_view_options())
+            current = str(self.editor.arm_view_var.get() or "")
+        except Exception:
+            return
+        combo.blockSignals(True)
+        try:
+            if [combo.itemText(i) for i in range(combo.count())] != choices:
+                combo.clear()
+                combo.addItems(choices)
+                # the labels are long ("Path 2: splitter to detector via ..."): the list shows them
+                width = max((combo.fontMetrics().horizontalAdvance(text) for text in choices), default=0)
+                combo.view().setMinimumWidth(width + 40)
+            if current in choices:
+                combo.setCurrentIndex(choices.index(current))
+            elif choices:
+                combo.setCurrentIndex(0)
+        finally:
+            combo.blockSignals(False)
+
+    def _choose_path_view(self, index: int) -> None:
+        """A Path view chosen here is the model's `set_arm_view`, as the Tk combobox commits it."""
+        label = self.path_view.itemText(int(index))
+        self.editor.arm_view_var.set(label)
+        self.editor.set_arm_view()
+        self.refresh_from_model()
 
     def cell_menu_actions(self, row: int, field: str) -> list:
         """(label, enabled, callable) for a cell's optimisation menu -- the model decides.

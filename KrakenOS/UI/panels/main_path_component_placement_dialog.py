@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Callable
-from KrakenOS.UI.panels.row_form_view import render_row_form
+from KrakenOS.UI.panels.row_form_view import present_row_form
 from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.path_component import build_path_component_form
 
@@ -57,8 +57,7 @@ class MainPathComponentPlacementDialog:
         except FormRefused as exc:
             host_of(self.editor).showinfo("Path Component", str(exc))
             return
-        render_row_form(self, form, wraplength=460,
-                        on_close=self._cleanup_current_popup_menu)
+        present_row_form(self, form, wraplength=460, on_close=self._cleanup_current_popup_menu)
 
     def open_current_path_component_placement(self) -> None:
         """Actions -> Add Component to Current Path View: the placement form on the traced path the
@@ -76,10 +75,10 @@ class MainPathComponentPlacementDialog:
             return
         self._refresh_arm_view_choices()
         label = str(self.arm_view_var.get() or le.ARM_VIEW_DEFAULT).strip()
-        branch_path = self._branch_path_for_arm_key(self._arm_key_for_view_label(label))
+        # a leg resolves to the traced branch running it (bugs/0944)
+        branch_path, reason = self._placement_branch_path_for_arm_key(self._arm_key_for_view_label(label))
         if not branch_path:
             host_of(self.editor).showinfo(
-                "Path Component",
-                "Choose a traced Path view first, then run Actions -> Add Component to Current Path View.")
+                "Path Component", f"{reason} Then run Actions -> Add Component to Current Path View.")
             return
         self.open_arm_path_component_placement(-1, "Path", branch_path=branch_path)

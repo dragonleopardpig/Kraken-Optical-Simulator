@@ -1272,7 +1272,11 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "_path_component_row_for_branch_path" in path_component_row_form
             and 'form.labels["parameter"]' in path_component_row_form
             and "build_path_component_form(" in main_path_component_placement_dialog
-            and "render_row_form(" in main_path_component_placement_dialog,
+            # bugs/0944: shown through the shared row-form view's shell-aware entry (Tk's
+            # render_row_form, or the Qt shell's dialog) -- never a hand-built window
+            and ("present_row_form(" in main_path_component_placement_dialog
+                 or "render_row_form(" in main_path_component_placement_dialog)
+            and "return render_row_form(" in inspect.getsource(row_form_view_module.present_row_form),
         ),
         (
             "Atmosphere controls and dialog live outside layout_editor",
@@ -1441,7 +1445,8 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "Add Stock Lens to Path" in stock_lens_row_form
             and "_insert_surface_rows(rows, insert_after=insert_after)" in stock_lens_row_form
             and "build_stock_lens_form(" in main_stock_lens_dialog
-            and "render_row_form(" in main_stock_lens_dialog,
+            and ("present_row_form(" in main_stock_lens_dialog  # bugs/0944, as above
+                 or "render_row_form(" in main_stock_lens_dialog),
         ),
         (
             "Open 3D renders editable table Thickness dimensions",
