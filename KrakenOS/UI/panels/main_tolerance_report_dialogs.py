@@ -5,8 +5,6 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 import re
-import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog, ttk
 import traceback
 from typing import Any
 from KrakenOS.UI.panels.row_form_view import render_row_form
@@ -14,10 +12,15 @@ from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.presets import (apply_preset as apply_tolerance_preset,
                                            build_apply_tolerance_preset_form,
                                            build_save_tolerance_preset_form)
+from KrakenOS.UI.uihost import host_of
 
 
 class MainToleranceReportDialogs:
-    """Own tolerance report dialogs/exports while delegating tolerance calculations to the editor."""
+    """Own tolerance report dialogs/exports while delegating tolerance calculations to the editor.
+
+    Every question and message goes through the editor's UI host (bugs/0943), so these commands
+    ask with Qt's dialogs in the Qt shell and with Tk's in the Tk editor.
+    """
 
     def __init__(self, editor: Any, *, tolerance_compare_view_values: tuple[str, ...]) -> None:
         object.__setattr__(self, "editor", editor)
@@ -37,10 +40,10 @@ class MainToleranceReportDialogs:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Tolerance Monte Carlo", f"Could not read the surface table:\n\n{exc}", parent=self.editor)
+            host_of(self).showerror("Tolerance Monte Carlo", f"Could not read the surface table:\n\n{exc}", parent=self.editor)
             return
         preset = self._active_tolerance_solve_preset()
-        sample_count = simpledialog.askinteger(
+        sample_count = host_of(self).askinteger(
             "Tolerance Monte Carlo",
             "Monte Carlo sample count",
             initialvalue=self._tolerance_preset_int(preset.get("sample_count", 25), 25, 1, 1000),
@@ -50,7 +53,7 @@ class MainToleranceReportDialogs:
         )
         if sample_count is None:
             return
-        seed = simpledialog.askinteger(
+        seed = host_of(self).askinteger(
             "Tolerance Monte Carlo",
             "Random seed",
             initialvalue=self._tolerance_preset_int(preset.get("seed", 12345), 12345, 0, 2**31 - 1),
@@ -74,14 +77,14 @@ class MainToleranceReportDialogs:
         except Exception as exc:
             self._finish_analysis_progress("Tolerance Monte Carlo", success=False)
             self.append_debug(f"Tolerance Monte Carlo failed: {traceback.format_exc()}")
-            messagebox.showerror("Tolerance Monte Carlo", str(exc), parent=self.editor)
+            host_of(self).showerror("Tolerance Monte Carlo", str(exc), parent=self.editor)
 
     def export_tolerance_monte_carlo_csv(self) -> None:
         records = list(getattr(self, "_last_tolerance_monte_carlo_records", []) or [])
         if not records:
-            messagebox.showinfo("Export Tolerance Monte Carlo", "Run Tolerance Monte Carlo Report first.", parent=self.editor)
+            host_of(self).showinfo("Export Tolerance Monte Carlo", "Run Tolerance Monte Carlo Report first.", parent=self.editor)
             return
-        path = filedialog.asksaveasfilename(
+        path = host_of(self).asksaveasfilename(
             title="Export Tolerance Monte Carlo CSV",
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv"), ("All files", "*")],
@@ -110,14 +113,14 @@ class MainToleranceReportDialogs:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Save Tolerance Solve Preset",
-                                 f"Could not read the surface table:\n\n{exc}",
-                                 parent=self.editor)
+            host_of(self).showerror("Save Tolerance Solve Preset",
+                                    f"Could not read the surface table:\n\n{exc}",
+                                    parent=self.editor)
             return
         try:
             form = build_save_tolerance_preset_form(self)
         except FormRefused as exc:
-            messagebox.showinfo("Save Tolerance Solve Preset", str(exc), parent=self.editor)
+            host_of(self).showinfo("Save Tolerance Solve Preset", str(exc), parent=self.editor)
             return
         render_row_form(self, form, wraplength=460, modal=True)
 
@@ -129,15 +132,15 @@ class MainToleranceReportDialogs:
         try:
             form = build_apply_tolerance_preset_form(self)
         except FormRefused as exc:
-            messagebox.showinfo("Apply Tolerance Solve Preset", str(exc), parent=self.editor)
+            host_of(self).showinfo("Apply Tolerance Solve Preset", str(exc), parent=self.editor)
             return
         names = list(form.state["names"])
         if len(names) == 1:
             try:
                 apply_tolerance_preset(self, names[0])
             except FormRefused as exc:
-                messagebox.showerror("Apply Tolerance Solve Preset", str(exc),
-                                     parent=self.editor)
+                host_of(self).showerror("Apply Tolerance Solve Preset", str(exc),
+                                        parent=self.editor)
             return
         render_row_form(self, form, wraplength=380, modal=True)
 
@@ -152,14 +155,14 @@ class MainToleranceReportDialogs:
             else:
                 self.status_var.set("Tolerance comparison report written to Debug; clipboard unavailable.")
         except Exception as exc:
-            messagebox.showerror("Tolerance Worst-Sample Comparison", str(exc), parent=self.editor)
+            host_of(self).showerror("Tolerance Worst-Sample Comparison", str(exc), parent=self.editor)
 
     def export_tolerance_comparison_csv(self) -> None:
         records = list(getattr(self, "_last_tolerance_comparison_records", []) or [])
         if not records:
-            messagebox.showinfo("Export Tolerance Comparison", "Run Tolerance Worst-Sample Comparison first.", parent=self.editor)
+            host_of(self).showinfo("Export Tolerance Comparison", "Run Tolerance Worst-Sample Comparison first.", parent=self.editor)
             return
-        path = filedialog.asksaveasfilename(
+        path = host_of(self).asksaveasfilename(
             title="Export Tolerance Comparison CSV",
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv"), ("All files", "*")],
@@ -194,7 +197,7 @@ class MainToleranceReportDialogs:
 
     def open_tolerance_stackup_dashboard_report(self) -> None:
         if not getattr(self, "_last_tolerance_monte_carlo_summary", None):
-            messagebox.showinfo("Tolerance Stack-Up Dashboard", "Run Tolerance Monte Carlo Report first.", parent=self.editor)
+            host_of(self).showinfo("Tolerance Stack-Up Dashboard", "Run Tolerance Monte Carlo Report first.", parent=self.editor)
             return
         try:
             dashboard = self.tolerance_stackup_dashboard()
@@ -206,22 +209,22 @@ class MainToleranceReportDialogs:
             else:
                 self.status_var.set("Tolerance stack-up dashboard written to Debug; clipboard unavailable.")
         except Exception as exc:
-            messagebox.showerror("Tolerance Stack-Up Dashboard", str(exc), parent=self.editor)
+            host_of(self).showerror("Tolerance Stack-Up Dashboard", str(exc), parent=self.editor)
 
     def export_tolerance_stackup_csv(self) -> None:
         if not getattr(self, "_last_tolerance_monte_carlo_summary", None):
-            messagebox.showinfo("Export Tolerance Stack-Up", "Run Tolerance Monte Carlo Report first.", parent=self.editor)
+            host_of(self).showinfo("Export Tolerance Stack-Up", "Run Tolerance Monte Carlo Report first.", parent=self.editor)
             return
         try:
             dashboard = self.tolerance_stackup_dashboard()
         except Exception as exc:
-            messagebox.showerror("Export Tolerance Stack-Up", str(exc), parent=self.editor)
+            host_of(self).showerror("Export Tolerance Stack-Up", str(exc), parent=self.editor)
             return
         columns, rows = self.tolerance_stackup_csv_rows(dashboard)
         if not rows:
-            messagebox.showinfo("Export Tolerance Stack-Up", "No stack-up rows are available.", parent=self.editor)
+            host_of(self).showinfo("Export Tolerance Stack-Up", "No stack-up rows are available.", parent=self.editor)
             return
-        path = filedialog.asksaveasfilename(
+        path = host_of(self).asksaveasfilename(
             title="Export Tolerance Stack-Up CSV",
             defaultextension=".csv",
             initialfile="tolerance_stackup_dashboard.csv",
@@ -238,10 +241,10 @@ class MainToleranceReportDialogs:
 
     def open_tolerance_compensator_sweep_report(self) -> None:
         if not getattr(self, "_last_tolerance_monte_carlo_summary", None):
-            messagebox.showinfo("Tolerance Compensator Sweep", "Run Tolerance Monte Carlo Report first.", parent=self.editor)
+            host_of(self).showinfo("Tolerance Compensator Sweep", "Run Tolerance Monte Carlo Report first.", parent=self.editor)
             return
         preset = self._active_tolerance_solve_preset()
-        steps = simpledialog.askinteger(
+        steps = host_of(self).askinteger(
             "Tolerance Compensator Sweep",
             "Sweep steps per compensator",
             initialvalue=self._tolerance_preset_int(preset.get("compensator_steps", 9), 9, 3, 101),
@@ -265,18 +268,18 @@ class MainToleranceReportDialogs:
         except Exception as exc:
             self._finish_analysis_progress("Tolerance compensator sweep", success=False)
             self.append_debug(f"Tolerance compensator sweep failed: {traceback.format_exc()}")
-            messagebox.showerror("Tolerance Compensator Sweep", str(exc), parent=self.editor)
+            host_of(self).showerror("Tolerance Compensator Sweep", str(exc), parent=self.editor)
 
     def export_tolerance_compensator_csv(self) -> None:
         records = list(getattr(self, "_last_tolerance_compensator_records", []) or [])
         if not records:
-            messagebox.showinfo("Export Tolerance Compensator", "Run Tolerance Compensator Sweep first.", parent=self.editor)
+            host_of(self).showinfo("Export Tolerance Compensator", "Run Tolerance Compensator Sweep first.", parent=self.editor)
             return
         columns, rows = self.tolerance_compensator_csv_rows()
         if not rows:
-            messagebox.showinfo("Export Tolerance Compensator", "No compensator sweep rows are available.", parent=self.editor)
+            host_of(self).showinfo("Export Tolerance Compensator", "No compensator sweep rows are available.", parent=self.editor)
             return
-        path = filedialog.asksaveasfilename(
+        path = host_of(self).asksaveasfilename(
             title="Export Tolerance Compensator CSV",
             defaultextension=".csv",
             initialfile="tolerance_compensator_sweep.csv",
@@ -293,10 +296,10 @@ class MainToleranceReportDialogs:
 
     def open_tolerance_multi_compensator_report(self) -> None:
         if not getattr(self, "_last_tolerance_monte_carlo_summary", None):
-            messagebox.showinfo("Tolerance Multi-Compensator Solve", "Run Tolerance Monte Carlo Report first.", parent=self.editor)
+            host_of(self).showinfo("Tolerance Multi-Compensator Solve", "Run Tolerance Monte Carlo Report first.", parent=self.editor)
             return
         preset = self._active_tolerance_solve_preset()
-        steps = simpledialog.askinteger(
+        steps = host_of(self).askinteger(
             "Tolerance Multi-Compensator Solve",
             "Sweep steps per variable",
             initialvalue=self._tolerance_preset_int(preset.get("multi_steps", 5), 5, 3, 51),
@@ -306,7 +309,7 @@ class MainToleranceReportDialogs:
         )
         if steps is None:
             return
-        passes = simpledialog.askinteger(
+        passes = host_of(self).askinteger(
             "Tolerance Multi-Compensator Solve",
             "Coordinate passes",
             initialvalue=self._tolerance_preset_int(preset.get("multi_passes", 2), 2, 1, 20),
@@ -330,18 +333,18 @@ class MainToleranceReportDialogs:
         except Exception as exc:
             self._finish_analysis_progress("Tolerance multi-compensator solve", success=False)
             self.append_debug(f"Tolerance multi-compensator solve failed: {traceback.format_exc()}")
-            messagebox.showerror("Tolerance Multi-Compensator Solve", str(exc), parent=self.editor)
+            host_of(self).showerror("Tolerance Multi-Compensator Solve", str(exc), parent=self.editor)
 
     def export_tolerance_multi_compensator_csv(self) -> None:
         records = list(getattr(self, "_last_tolerance_multi_compensator_records", []) or [])
         if not records:
-            messagebox.showinfo("Export Tolerance Multi-Compensator", "Run Tolerance Multi-Compensator Solve first.", parent=self.editor)
+            host_of(self).showinfo("Export Tolerance Multi-Compensator", "Run Tolerance Multi-Compensator Solve first.", parent=self.editor)
             return
         columns, rows = self.tolerance_multi_compensator_csv_rows()
         if not rows:
-            messagebox.showinfo("Export Tolerance Multi-Compensator", "No multi-compensator rows are available.", parent=self.editor)
+            host_of(self).showinfo("Export Tolerance Multi-Compensator", "No multi-compensator rows are available.", parent=self.editor)
             return
-        path = filedialog.asksaveasfilename(
+        path = host_of(self).asksaveasfilename(
             title="Export Tolerance Multi-Compensator CSV",
             defaultextension=".csv",
             initialfile="tolerance_multi_compensator_solve.csv",
@@ -358,7 +361,7 @@ class MainToleranceReportDialogs:
 
     def export_tolerance_overlay_csv(self) -> None:
         if not getattr(self, "_last_tolerance_monte_carlo_summary", None):
-            messagebox.showinfo("Export Tolerance Overlay", "Run Tolerance Monte Carlo Report first.", parent=self.editor)
+            host_of(self).showinfo("Export Tolerance Overlay", "Run Tolerance Monte Carlo Report first.", parent=self.editor)
             return
         self._commit_pending_table_edit()
         try:
@@ -366,13 +369,13 @@ class MainToleranceReportDialogs:
             view = self._current_tolerance_compare_view()
             columns, rows = self.tolerance_overlay_csv_rows(view)
         except Exception as exc:
-            messagebox.showerror("Export Tolerance Overlay", str(exc), parent=self.editor)
+            host_of(self).showerror("Export Tolerance Overlay", str(exc), parent=self.editor)
             return
         if not rows:
-            messagebox.showinfo("Export Tolerance Overlay", "No tolerance overlay rows are available.", parent=self.editor)
+            host_of(self).showinfo("Export Tolerance Overlay", "No tolerance overlay rows are available.", parent=self.editor)
             return
         safe_view = re.sub(r"[^a-z0-9]+", "_", str(view).strip().lower()).strip("_") or "overlay"
-        path = filedialog.asksaveasfilename(
+        path = host_of(self).asksaveasfilename(
             title="Export Tolerance Overlay CSV",
             defaultextension=".csv",
             initialfile=f"tolerance_{safe_view}.csv",

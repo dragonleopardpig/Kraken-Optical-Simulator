@@ -55,7 +55,15 @@ RIBBON = (
         ("Power", (("detector_aperture", "S", "Detector Aperture"), ("branch_throughput", "S", "Path Throughput"),
                    ("source_illumination", "S", "Source Illumination"))),
         ("Design", (("system_selection", "L", "System\nSelection"), ("catalog_matcher", "L", "Lens\nMatcher"))),
-        ("Tolerance", (("tolerance_preset", "S", "Save Preset"), ("apply_tolerance_preset", "S", "Apply Preset"))),
+    )),
+    # its own tab since the reports were routed (bugs/0943): on the Analysis tab they made the window
+    # at least ~1500 px wide (1240 before)
+    ("Tolerance", (
+        ("Run", (("tolerance_monte_carlo", "L", "Monte\nCarlo"), ("tolerance_worst_sample", "S", "Worst Sample"),
+                 ("tolerance_stackup", "S", "Stack-Up"))),
+        ("Compensators", (("tolerance_compensator", "L", "Compensator\nSweep"),
+                          ("tolerance_multi_compensator", "L", "Multi-\nCompensator"))),
+        ("Presets", (("tolerance_preset", "S", "Save Preset"), ("apply_tolerance_preset", "S", "Apply Preset"))),
     )),
 )
 
@@ -75,6 +83,12 @@ _MENU_ONLY = {
         "refresh_plot", "folded_assembly", "benchmark_psf_mtf", "copy_phase2_report", "copy_wavefront_fit",
         "clear_zemax_wavefront", "clear_marks"),
     "help (Help menu)": ("formula_sheet", "manual_index", "copy_debug"),
+    # bugs/0943: each needs its report or a trace first, so a ribbon button would mostly refuse
+    "analysis CSV exports (File > Export Analysis CSV; tolerance ones in Analysis > Tolerance)": (
+        "export_path_psf_csv", "export_path_mtf_csv", "export_detector_map_csv", "export_coherent_detector_csv",
+        "export_branch_field_csv", "export_tolerance_monte_carlo_csv", "export_tolerance_comparison_csv",
+        "export_tolerance_stackup_csv", "export_tolerance_compensator_csv",
+        "export_tolerance_multi_compensator_csv", "export_tolerance_overlay_csv"),
 }
 RIBBON_EXCLUDED.update({name: f"menu + palette only: {why}" for why, names in _MENU_ONLY.items() for name in names})
 

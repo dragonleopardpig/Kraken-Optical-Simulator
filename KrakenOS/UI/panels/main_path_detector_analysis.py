@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import csv
 from pathlib import Path
-from tkinter import filedialog, messagebox
 from typing import Any
 
 from matplotlib import colormaps
@@ -41,6 +40,7 @@ from KrakenOS.UI.detector_path_analysis import (
     write_branch_detector_psf_csv,
     write_detector_map_csv,
 )
+from KrakenOS.UI.uihost import host_of
 
 
 def _normalize_path_filter_label(value: object) -> str:
@@ -52,7 +52,11 @@ def _normalize_coherent_sum_mode(value: object) -> str:
 
 
 class MainPathDetectorAnalysis:
-    """Own detector/path analysis rendering and CSV export while delegating editor state."""
+    """Own detector/path analysis rendering and CSV export while delegating editor state.
+
+    The exports ask and report through the editor's UI host (bugs/0943): Qt's dialogs in the Qt
+    shell, Tk's in the Tk editor.
+    """
 
     def __init__(self, editor: Any) -> None:
         object.__setattr__(self, "editor", editor)
@@ -594,7 +598,7 @@ class MainPathDetectorAnalysis:
 
     def export_branch_psf_csv(self) -> None:
         if self.last_system is None or self.last_rays is None:
-            messagebox.showinfo(
+            host_of(self).showinfo(
                 "Export Path PSF CSV",
                 "No path PSF trace data. Click Update first, then choose an Analysis path.",
                 parent=self,
@@ -605,10 +609,10 @@ class MainPathDetectorAnalysis:
             data = self._branch_detector_psf_data(self.last_system, ray_records=ray_records)
             rows = self._branch_detector_psf_csv_rows(data)
         except Exception as exc:
-            messagebox.showinfo("Export Path PSF CSV", str(exc), parent=self)
+            host_of(self).showinfo("Export Path PSF CSV", str(exc), parent=self)
             return
 
-        path = filedialog.asksaveasfilename(
+        path = host_of(self).asksaveasfilename(
             title="Export Path PSF CSV",
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv"), ("All files", "*")],
@@ -625,7 +629,7 @@ class MainPathDetectorAnalysis:
 
     def export_branch_mtf_csv(self) -> None:
         if self.last_system is None or self.last_rays is None:
-            messagebox.showinfo(
+            host_of(self).showinfo(
                 "Export Path MTF CSV",
                 "No path MTF trace data. Click Update first, then choose an Analysis path.",
                 parent=self,
@@ -638,10 +642,10 @@ class MainPathDetectorAnalysis:
             mtf_mode = self._operand_mtf_mode("MTF @ freq")
             rows = self._branch_detector_mtf_csv_rows(data, target_freq=target_freq, mtf_mode=mtf_mode)
         except Exception as exc:
-            messagebox.showinfo("Export Path MTF CSV", str(exc), parent=self)
+            host_of(self).showinfo("Export Path MTF CSV", str(exc), parent=self)
             return
 
-        path = filedialog.asksaveasfilename(
+        path = host_of(self).asksaveasfilename(
             title="Export Path MTF CSV",
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv"), ("All files", "*")],
@@ -718,7 +722,7 @@ class MainPathDetectorAnalysis:
 
     def export_detector_map_csv(self) -> None:
         if self.last_system is None or self.last_rays is None:
-            messagebox.showinfo(
+            host_of(self).showinfo(
                 "Export Detector Map CSV",
                 "No detector-map trace data. Click Update first, then choose an Analysis path.",
                 parent=self,
@@ -728,10 +732,10 @@ class MainPathDetectorAnalysis:
             ray_records = self._ray_analysis_records_for_trace(system=self.last_system, rays=self.last_rays)
             data = self._branch_detector_map_data(self.last_system, ray_records=ray_records)
         except Exception as exc:
-            messagebox.showinfo("Export Detector Map CSV", str(exc), parent=self)
+            host_of(self).showinfo("Export Detector Map CSV", str(exc), parent=self)
             return
 
-        path = filedialog.asksaveasfilename(
+        path = host_of(self).asksaveasfilename(
             title="Export Detector Map CSV",
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv"), ("All files", "*")],
@@ -1233,7 +1237,7 @@ class MainPathDetectorAnalysis:
 
     def export_coherent_detector_csv(self) -> None:
         if self.last_system is None or self.last_rays is None:
-            messagebox.showinfo(
+            host_of(self).showinfo(
                 "Export Coherent Detector CSV",
                 "No coherent detector trace data. Click Update first, then choose an Analysis path.",
                 parent=self,
@@ -1244,10 +1248,10 @@ class MainPathDetectorAnalysis:
             ray_records = self._ray_analysis_records_for_trace(system=self.last_system, rays=self.last_rays)
             data = self._coherent_detector_field_data(self.last_system, wavelength, ray_records=ray_records)
         except Exception as exc:
-            messagebox.showinfo("Export Coherent Detector CSV", str(exc), parent=self)
+            host_of(self).showinfo("Export Coherent Detector CSV", str(exc), parent=self)
             return
 
-        path = filedialog.asksaveasfilename(
+        path = host_of(self).asksaveasfilename(
             title="Export Coherent Detector CSV",
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv"), ("All files", "*")],
@@ -1364,7 +1368,7 @@ class MainPathDetectorAnalysis:
 
     def export_branch_field_csv(self) -> None:
         if self.last_system is None or self.last_rays is None:
-            messagebox.showinfo(
+            host_of(self).showinfo(
                 "Export Branch Field CSV",
                 "No branch-field trace data. Click Update first, then choose an Analysis path.",
                 parent=self,
@@ -1375,10 +1379,10 @@ class MainPathDetectorAnalysis:
             ray_records = self._ray_analysis_records_for_trace(system=self.last_system, rays=self.last_rays)
             data = self._branch_field_analysis_data(self.last_system, wavelength, ray_records=ray_records)
         except Exception as exc:
-            messagebox.showinfo("Export Branch Field CSV", str(exc), parent=self)
+            host_of(self).showinfo("Export Branch Field CSV", str(exc), parent=self)
             return
 
-        path = filedialog.asksaveasfilename(
+        path = host_of(self).asksaveasfilename(
             title="Export Branch Field CSV",
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv"), ("All files", "*")],

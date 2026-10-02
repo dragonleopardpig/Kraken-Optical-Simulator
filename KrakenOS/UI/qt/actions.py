@@ -6,7 +6,8 @@ toolbar and a test all reach the same action by name.
 """
 from __future__ import annotations
 
-#: name -> (menu, text, shortcut, main-window method, tooltip). "editor:<method>" runs the editor's
+#: name -> (menu, text, shortcut, main-window method, tooltip). A menu "&Analysis/&Tolerance" is a
+#: submenu of "&Analysis" (bugs/0943). "editor:<method>" runs the editor's
 #: own method instead (bugs/0942): a Tk menu-bar command that already works under the Qt shell --
 #: measured: it opens no window, or asks through the shell's own dialogs -- and only lacked a route.
 #: Menus list their actions in this order.
@@ -37,10 +38,21 @@ ACTIONS = (
      "Write the 3D scene's solids as one STEP assembly"),
     ("export_3d_dxf", "&File", "Export 3D View DXF...", None, "editor:export_3d_view_dxf",
      "Write the current 3D view as a 2D DXF drawing"),
-    ("export_wavefront_csv", "&File", "Export Wavefront CSV...", None, "editor:export_wavefront_csv",
+    ("export_wavefront_csv", "&File/Export Analysis &CSV", "Export Wavefront CSV...", None, "editor:export_wavefront_csv",
      "Write the last wavefront map as CSV"),
-    ("export_zernike_csv", "&File", "Export Zernike CSV...", None, "editor:export_zernike_csv",
+    ("export_zernike_csv", "&File/Export Analysis &CSV", "Export Zernike CSV...", None, "editor:export_zernike_csv",
      "Write the last Zernike fit as CSV"),
+    # the path / detector exports ask and report through the UI host since bugs/0943
+    ("export_path_psf_csv", "&File/Export Analysis &CSV", "Export Path PSF CSV...", None, "editor:export_branch_psf_csv",
+     "Write the analysed path's PSF on its detector as CSV (needs a trace: Update first)"),
+    ("export_path_mtf_csv", "&File/Export Analysis &CSV", "Export Path MTF CSV...", None, "editor:export_branch_mtf_csv",
+     "Write the analysed path's MTF on its detector as CSV (needs a trace: Update first)"),
+    ("export_detector_map_csv", "&File/Export Analysis &CSV", "Export Detector Map CSV...", None, "editor:export_detector_map_csv",
+     "Write the detector power map as CSV (needs a trace: Update first)"),
+    ("export_coherent_detector_csv", "&File/Export Analysis &CSV", "Export Coherent Detector CSV...", None,
+     "editor:export_coherent_detector_csv", "Write the coherent detector field sum as CSV"),
+    ("export_branch_field_csv", "&File/Export Analysis &CSV", "Export Branch Field CSV...", None, "editor:export_branch_field_csv",
+     "Write the propagated branch field as CSV"),
     ("mtf_from_image", "&File", "Measure MTF from &Image...", None, "mtf_from_image_action",
      "Measure a real MTF from a captured image: one box over a slanted edge, or a box per USAF element"),
     ("quit", "&File", "&Quit", "Ctrl+Q", "quit_action", "Close the Qt shell"),
@@ -128,12 +140,36 @@ ACTIONS = (
      "The TiltX angles the selected mirror is drawn at"),
     ("grating_settings", "&Edit", "G&rating Settings...", None, "grating_settings_action",
      "Diffraction order, pitch and line angle for the selected row"),
-    ("tolerance_preset", "&Analysis", "Save &Tolerance Solve Preset...", None,
+    ("tolerance_preset", "&Analysis/&Tolerance", "Save &Tolerance Solve Preset...", None,
      "tolerance_preset_action",
      "Save the Monte Carlo settings, merit operands and tolerance roles as a preset"),
-    ("apply_tolerance_preset", "&Analysis", "&Apply Tolerance Solve Preset...", None,
+    ("apply_tolerance_preset", "&Analysis/&Tolerance", "&Apply Tolerance Solve Preset...", None,
      "apply_tolerance_preset_action",
      "Apply one of the layout's saved tolerance solve presets"),
+    # the reports write to Debug and the clipboard; they ask and report through the UI host since
+    # bugs/0943. Each export needs its report run first.
+    ("tolerance_monte_carlo", "&Analysis/&Tolerance", "Tolerance &Monte Carlo Report...", None,
+     "editor:open_tolerance_monte_carlo_report", "Perturb the tolerances N times and report the merit spread"),
+    ("export_tolerance_monte_carlo_csv", "&Analysis/&Tolerance", "Export Tolerance Monte Carlo CSV...", None,
+     "editor:export_tolerance_monte_carlo_csv", "Write the last Monte Carlo run's samples as CSV"),
+    ("tolerance_worst_sample", "&Analysis/&Tolerance", "Tolerance &Worst-Sample Comparison...", None,
+     "editor:open_tolerance_worst_sample_comparison_report", "Compare the worst Monte Carlo sample with nominal"),
+    ("export_tolerance_comparison_csv", "&Analysis/&Tolerance", "Export Tolerance Comparison CSV...", None,
+     "editor:export_tolerance_comparison_csv", "Write the worst-sample comparison as CSV"),
+    ("tolerance_stackup", "&Analysis/&Tolerance", "Tolerance &Stack-Up Dashboard...", None,
+     "editor:open_tolerance_stackup_dashboard_report", "Which tolerances drive the merit spread"),
+    ("export_tolerance_stackup_csv", "&Analysis/&Tolerance", "Export Tolerance Stack-Up CSV...", None,
+     "editor:export_tolerance_stackup_csv", "Write the stack-up dashboard as CSV"),
+    ("tolerance_compensator", "&Analysis/&Tolerance", "Tolerance &Compensator Sweep...", None,
+     "editor:open_tolerance_compensator_sweep_report", "Sweep each compensator over the Monte Carlo samples"),
+    ("export_tolerance_compensator_csv", "&Analysis/&Tolerance", "Export Tolerance Compensator CSV...", None,
+     "editor:export_tolerance_compensator_csv", "Write the compensator sweep as CSV"),
+    ("tolerance_multi_compensator", "&Analysis/&Tolerance", "Tolerance Multi-Com&pensator Solve...", None,
+     "editor:open_tolerance_multi_compensator_report", "Solve all compensators together, sample by sample"),
+    ("export_tolerance_multi_compensator_csv", "&Analysis/&Tolerance", "Export Tolerance Multi-Compensator CSV...", None,
+     "editor:export_tolerance_multi_compensator_csv", "Write the multi-compensator solve as CSV"),
+    ("export_tolerance_overlay_csv", "&Analysis/&Tolerance", "Export Tolerance Overlay CSV...", None,
+     "editor:export_tolerance_overlay_csv", "Write the current tolerance overlay view as CSV"),
     ("about", "&Help", "&About", None, "about_action", "What this window is"),
     # ---- menu parity (bugs/0942): more Tk menu-bar commands that already work under the Qt shell
     # and only lacked a Qt route (File and Edit ones sit with their menus above)
@@ -213,13 +249,18 @@ class ActionManager:
         return self.actions
 
     def populate_menu_bar(self, menu_bar) -> dict[str, object]:
-        """Add every action to its menu, in declaration order. Returns menu title -> QMenu."""
+        """Add every action to its menu, in declaration order. Returns menu path -> QMenu; a
+        submenu sits in its parent where its first action is declared."""
         menus: dict[str, object] = {}
-        for name, title, *_rest in ACTIONS:
-            menu = menus.get(title)
-            if menu is None:
-                menu = menus[title] = menu_bar.addMenu(title)
-            menu.addAction(self.actions[name])
+
+        def menu_for(path: str):
+            if path not in menus:
+                parent, _sep, title = path.rpartition("/")
+                menus[path] = (menu_for(parent) if parent else menu_bar).addMenu(title)
+            return menus[path]
+
+        for name, path, *_rest in ACTIONS:
+            menu_for(path).addAction(self.actions[name])
         return menus
 
     def __getitem__(self, name):

@@ -70,6 +70,9 @@ def qt_runtime_checks() -> list[list]:
             time.sleep(0.05)
 
     # ---- Q1 the window --------------------------------------------------------------------
+    # a menu path "&Analysis/&Tolerance" is a submenu titled "&Tolerance" (bugs/0943)
+    menu_paths = list(window.menus)
+    mistitled = [path for path, menu in window.menus.items() if menu.title() != path.rpartition("/")[2]]
     menu_titles = [menu.title() for menu in window.menus.values()]
     dock = window.findChild(QDockWidget, "SurfaceTableDock")
     table = window.findChild(QTableView)
@@ -77,7 +80,7 @@ def qt_runtime_checks() -> list[list]:
     for _name, title, *_rest in ACTIONS:
         if title not in declared_menus:
             declared_menus.append(title)
-    row("Q1", menu_titles == declared_menus and dock is not None and table is not None
+    row("Q1", menu_paths == declared_menus and not mistitled and dock is not None and table is not None
         and window.centralWidget() is window.viewport_host
         and window.viewport.widget.parent() is window.viewport_host,
         f"menus {menu_titles} match the declaration; the surface table is docked as "

@@ -19,6 +19,16 @@ In a real Qt shell, with the 3D inspector hosted in its dock:
      the Qt shell's inspector is that window.
   R  File -> Reset clears to Object + Image in the model and the Qt table, keeps the inspector and
      redraws it -- its scene shrinks to the blank layout -- and Undo brings the layout back.
+In a second Qt shell, on the tolerance example layout (bugs/0943 -- these asked through Tk dialogs):
+  E  before any run, all six tolerance CSV exports and the three reports that need a Monte Carlo
+     run refuse with a message through the Qt host
+  T  the Monte Carlo report asks its sample count and seed through the Qt host and runs EXACTLY that
+     many samples; worst-sample, stack-up, compensator sweep (its steps asked) and multi-compensator
+     (steps and passes asked) each run; each of their five CSVs is asked for through the host and
+     written
+  P  after Refresh Plot, the five path / detector CSV exports each ask for a file through the host
+     and write rows
+  K  across all of it, not one Tk messagebox / simpledialog / filedialog call
 """
 from __future__ import annotations
 
@@ -35,6 +45,12 @@ SKIP_MARK = "QTMENU_SKIP "
 TK_MENU_SOURCE = Path("KrakenOS/UI/panels/main_window.py")
 FIRST = Path("test_fixtures/machine_vision_Pyrite90_0.3X.py")    # 7 rows, three lens/stop rows
 SECOND = Path("test_fixtures/Basler_Telecentric.py")
+TOLERANCE_LAYOUT = Path("KrakenOS/common_optical_layouts/native_variable_breadth_example.py")  # native Var/VarBounds
+TOLERANCE_EXPORTS = ("export_tolerance_monte_carlo_csv", "export_tolerance_comparison_csv",
+                     "export_tolerance_stackup_csv", "export_tolerance_compensator_csv",
+                     "export_tolerance_multi_compensator_csv", "export_tolerance_overlay_csv")
+PATH_EXPORTS = ("export_path_psf_csv", "export_path_mtf_csv", "export_detector_map_csv",
+                "export_coherent_detector_csv", "export_branch_field_csv")
 
 #: Tk menu-bar command -> the Qt action that ports it (a row form, a report, a Qt dialog)
 QT_PORTS = {
@@ -61,30 +77,15 @@ QT_PORTS = {
     "open_paraxial_calculator": "paraxial_calculator",
 }
 
-_TK_DIALOGS = "calls Tk messagebox / simpledialog directly -- needs host_of before it can be routed"
-#: Tk menu-bar commands with no Qt route yet -> why (measured by running each in the Qt shell)
+_LENS_DRAWING = "opens the modal Tk lens-drawing surface-properties window -- needs a Qt port"
+#: Tk menu-bar commands with no Qt route yet -> why (measured by running each in the Qt shell).
+#: bugs/0943 routed the 16 tolerance / path-detector commands that only asked through Tk dialogs.
 KNOWN_GAPS = {
-    "_open_lens_drawing_surface_properties_dialog": _TK_DIALOGS,
-    "export_lens_drawing": _TK_DIALOGS,
+    "_open_lens_drawing_surface_properties_dialog": _LENS_DRAWING,
+    "export_lens_drawing": _LENS_DRAWING,
     "open_current_path_component_placement": "ends in a Tk row form (path component placement)",
     "open_current_path_stock_lens_placement": "ends in a Tk row form (stock lens placement)",
     "open_atmosphere_settings_dialog": "opens a Tk window -- needs a Qt port",
-    "open_tolerance_monte_carlo_report": _TK_DIALOGS,
-    "export_tolerance_monte_carlo_csv": _TK_DIALOGS,
-    "open_tolerance_worst_sample_comparison_report": _TK_DIALOGS,
-    "export_tolerance_comparison_csv": _TK_DIALOGS,
-    "open_tolerance_stackup_dashboard_report": _TK_DIALOGS,
-    "export_tolerance_stackup_csv": _TK_DIALOGS,
-    "open_tolerance_compensator_sweep_report": _TK_DIALOGS,
-    "export_tolerance_compensator_csv": _TK_DIALOGS,
-    "open_tolerance_multi_compensator_report": _TK_DIALOGS,
-    "export_tolerance_multi_compensator_csv": _TK_DIALOGS,
-    "export_tolerance_overlay_csv": _TK_DIALOGS,
-    "export_branch_psf_csv": _TK_DIALOGS,
-    "export_branch_mtf_csv": _TK_DIALOGS,
-    "export_detector_map_csv": _TK_DIALOGS,
-    "export_coherent_detector_csv": _TK_DIALOGS,
-    "export_branch_field_csv": _TK_DIALOGS,
 }
 
 
@@ -282,6 +283,101 @@ def qt_runtime_checks(folder: str) -> list:
     return rows
 
 
+def qt_export_checks(folder: str) -> list:
+    import tkinter.filedialog as tk_filedialog
+    import tkinter.messagebox as tk_messagebox
+    import tkinter.simpledialog as tk_simpledialog
+
+    from KrakenOS.UI.qt.app import build
+    from KrakenOS.UI.uihost import host_of
+
+    folder = Path(folder)
+    tk_calls: list = []
+    for module, names in ((tk_messagebox, ("showinfo", "showwarning", "showerror", "askyesno", "askokcancel")),
+                          (tk_simpledialog, ("askinteger", "askfloat", "askstring")),
+                          (tk_filedialog, ("asksaveasfilename", "askopenfilename", "askdirectory"))):
+        for name in names:
+            setattr(module, name, (lambda n: lambda *a, **_k: tk_calls.append((n, str(a[:1]))))(name))
+    app, window = build(["guard"])
+    window.show()
+    app.processEvents()
+    window.build_viewport()
+    window.load_layout_path(TOLERANCE_LAYOUT)
+    app.processEvents()
+    actions = window.action_manager.actions
+    host = host_of(window)
+    asked: list = []
+    integers = iter([3, 7, 3, 3, 1])     # MC samples, seed; sweep steps; multi steps, passes
+
+    def ask_integer(title, prompt, **_kw):
+        asked.append(("int", title, prompt))
+        return next(integers)
+
+    def ask_file(**kw):
+        asked.append(("file", kw.get("title")))
+        return str(folder / (str(kw.get("title")).replace(" ", "_").replace("/", "_") + ".csv"))
+
+    host.askinteger = ask_integer
+    host.asksaveasfilename = ask_file
+    for name in ("showinfo", "showwarning", "showerror"):
+        setattr(host, name, (lambda n: lambda title=None, message=None, **_k: asked.append((n, title, str(message))))(name))
+
+    def run(name) -> list:
+        asked.clear()
+        actions[name].trigger()
+        app.processEvents()
+        return list(asked)
+
+    def rows_in(title) -> int:
+        path = folder / (title.replace(" ", "_").replace("/", "_") + ".csv")
+        return sum(1 for _ in path.open(encoding="utf-8")) - 1 if path.exists() else -1
+
+    rows = []
+    # E -- with nothing run yet, every export and the dependent reports refuse through the host
+    refusals = {name: run(name) for name in TOLERANCE_EXPORTS + ("tolerance_stackup", "tolerance_compensator",
+                                                                  "tolerance_multi_compensator")}
+    silent = [name for name, said in refusals.items()
+              if len(said) != 1 or said[0][0] not in ("showinfo", "showerror") or "first" not in said[0][2]]
+    rows.append(["E", not silent and not any(f.suffix == ".csv" for f in folder.iterdir()),
+                 f"{len(refusals)} commands refused before a Monte Carlo run, each with one host message "
+                 f"('... first'); silent or wrong: {silent}"])
+
+    # T -- the reports ask through the host and run; their CSVs are asked for and written
+    monte = run("tolerance_monte_carlo")
+    reports = {name: run(name) for name in ("tolerance_worst_sample", "tolerance_stackup", "tolerance_compensator",
+                                            "tolerance_multi_compensator")}
+    exported = {name: (run(name), rows_in(title)) for name, title in (
+        ("export_tolerance_monte_carlo_csv", "Export Tolerance Monte Carlo CSV"),
+        ("export_tolerance_comparison_csv", "Export Tolerance Comparison CSV"),
+        ("export_tolerance_stackup_csv", "Export Tolerance Stack-Up CSV"),
+        ("export_tolerance_compensator_csv", "Export Tolerance Compensator CSV"),
+        ("export_tolerance_multi_compensator_csv", "Export Tolerance Multi-Compensator CSV"))}
+    records = list(getattr(window.editor, "_last_tolerance_monte_carlo_records", []) or [])
+    samples = sum(1 for record in records if record.get("kind") == "monte_carlo")   # plus one nominal
+    asked_ints = [entry[2] for entry in monte if entry[0] == "int"] + [
+        entry[2] for said in reports.values() for entry in said if entry[0] == "int"]
+    refused = {name: said for name, said in reports.items() if any(entry[0] != "int" for entry in said)}
+    unwritten = {name: count for name, (_said, count) in exported.items() if count < 1}
+    rows.append(["T", asked_ints == ["Monte Carlo sample count", "Random seed", "Sweep steps per compensator",
+                                     "Sweep steps per variable", "Coordinate passes"]
+                 and samples == 3 and not refused and not unwritten
+                 and all(said == [("file", said[0][1])] for said, _n in exported.values()),
+                 f"asked through the host: {asked_ints}; Monte Carlo ran {samples} samples (3 asked); reports that "
+                 f"refused {refused}; CSV data rows {[(n, c) for n, (_s, c) in exported.items()]}"])
+
+    # P -- the path / detector exports after a trace
+    run("refresh_plot")
+    path_rows = {}
+    for name, title in zip(PATH_EXPORTS, ("Export Path PSF CSV", "Export Path MTF CSV", "Export Detector Map CSV",
+                                          "Export Coherent Detector CSV", "Export Branch Field CSV")):
+        said = run(name)
+        path_rows[name] = (said == [("file", title)], rows_in(title))
+    rows.append(["P", all(ok and count > 0 for ok, count in path_rows.values()),
+                 f"each asked for its file through the host and wrote data rows: {path_rows}"])
+    rows.append(["K", not tk_calls, f"Tk dialog calls across E, T and P: {tk_calls[:5]}"])
+    return rows
+
+
 def _run(call: str) -> list:
     driver = (
         "import json, os\n"
@@ -293,7 +389,7 @@ def _run(call: str) -> list:
         "if not os.environ.get('DISPLAY'):\n"
         f"    print({SKIP_MARK!r} + 'no DISPLAY')\n"
         "    raise SystemExit(0)\n"
-        "from KrakenOS.UI.validate_qt_menu_parity import qt_runtime_checks\n"
+        "from KrakenOS.UI.validate_qt_menu_parity import qt_export_checks, qt_runtime_checks\n"
         # flushed, then exit WITHOUT interpreter teardown (a Qt/Tk teardown crash must not lose it)
         f"print({RESULT_MARK!r} + json.dumps({call}), flush=True)\n"
         "os._exit(0)\n"
@@ -317,7 +413,8 @@ def _run(call: str) -> list:
 
 def run_checks() -> tuple[bool, list[str]]:
     folder = tempfile.mkdtemp(prefix="qt_menu_parity_")
-    rows = static_checks() + _run(f"qt_runtime_checks({folder!r})")
+    exports = tempfile.mkdtemp(prefix="qt_menu_exports_")
+    rows = static_checks() + _run(f"qt_runtime_checks({folder!r})") + _run(f"qt_export_checks({exports!r})")
     return all(ok for _k, ok, _d in rows), [f"{k} = {d}" if ok else f"{k} FAILED: {d}" for k, ok, d in rows]
 
 

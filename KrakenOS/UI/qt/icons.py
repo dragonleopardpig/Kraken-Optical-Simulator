@@ -110,6 +110,22 @@ ICONS: dict[str, str] = {
                          f'<path {_LIGHT} d="M9 14h6M12 11v6M9 19h6"/>'),
     "apply_tolerance_preset": (f'<path {_LIGHT} d="M4 8h6M7 5v6M4 14h6"/>'
                                f'<path {_GLASS} d="M13 6l8 6-8 6z"/>'),
+    # bugs/0943: the tolerance reports
+    "tolerance_monte_carlo": (f'<path {_LIGHT} d="M2 20c5 0 6-14 10-14s5 14 10 14"/><path {_OPEN} d="M2 21h20"/>'
+                              f'<circle {_GLASS} cx="7" cy="16" r="1.4"/><circle {_GLASS} cx="12" cy="10" r="1.4"/>'
+                              f'<circle {_GLASS} cx="16" cy="14" r="1.4"/><circle {_GLASS} cx="10" cy="17" r="1.4"/>'),
+    "tolerance_worst_sample": (f'<path {_OPEN} d="M3 21h18"/><rect {_GLASS} x="4" y="9" width="6" height="12"/>'
+                               f'<rect {_GLASS} x="14" y="14" width="6" height="7"/>'
+                               f'<path {_LIGHT} d="M17 3v7M14.5 7.5L17 10l2.5-2.5"/>'),
+    "tolerance_stackup": (f'<rect {_GLASS} x="3" y="16" width="13" height="5"/><rect {_GLASS} x="4.5" y="10" width="10" height="5"/>'
+                          f'<rect {_GLASS} x="6" y="4" width="7" height="5"/>'
+                          f'<path {_LIGHT} d="M20 4v17M18.5 4h3M18.5 21h3"/>'),
+    "tolerance_compensator": (f'<path {_OPEN} d="M3 21h18"/><path {_LIGHT} d="M3 4c3 13 15 13 18 0"/>'
+                              f'<circle {_GLASS} cx="12" cy="13.5" r="2"/><path {_OPEN} d="M12 16.5v4.5"/>'),
+    # contours of a two-variable merit, and coordinate passes stepping down to its minimum
+    "tolerance_multi_compensator": (f'<ellipse {_OPEN} cx="14" cy="9" rx="8.5" ry="5" transform="rotate(-25 14 9)"/>'
+                                    f'<ellipse {_OPEN} cx="14" cy="9" rx="4" ry="2.3" transform="rotate(-25 14 9)"/>'
+                                    f'<path {_LIGHT} d="M3 21v-6h5v-4h4.5v-2"/><circle {_GLASS} cx="14" cy="9" r="1.4"/>'),
     # ---- the ribbon's own -------------------------------------------------------------------------
     "search": f'<circle {_OPEN} cx="10" cy="10" r="6"/><path {_OPEN} d="M14.5 14.5L20 20"/>',
 }
