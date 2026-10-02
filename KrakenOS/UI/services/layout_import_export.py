@@ -171,9 +171,6 @@ class LayoutImportExportMixin:
             self._main_glass_catalog_browser_dialog_instance = dialog
         return dialog
 
-    def _glass_catalog_records(self) -> list[dict[str, object]]:
-        return self._main_glass_catalog_browser_dialog()._glass_catalog_records()
-
     def open_glass_catalog_browser(self) -> None:
         self._main_glass_catalog_browser_dialog().open_glass_catalog_browser()
 

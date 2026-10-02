@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-10-01T06:05:49+00:00",
+  "generated_at": "2026-10-02T06:19:56+00:00",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -716,7 +716,8 @@
     "713": "pass",
     "714": "pass",
     "715": "pass",
-    "716": "pass"
+    "716": "pass",
+    "717": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -1433,6 +1434,7 @@
     "713": "the CAD/STL face-roles editor opens in the Qt shell over the same session the Tk dialog renders (phase 5g part 2, 0934), on the Edmund 42779 prism with real Qt input: the Edit menu opens the Qt dialog and no Tk window, its table is the session's rows and a click selects, a combo choice and a typed loss persist at once and the debounced retrace fires on the Qt timer, a preview click selects the face it hit and a drag orbits without selecting, Save auto-orients and keeps its message, and the Tk and Qt runs of the same actions save identical face metadata",
     "714": "the Qt shell's ribbon + command palette (0935): the ribbon and its exclusion list cover every shell action exactly, every action has an icon that draws and no two icons render the same, each ribbon button runs its own action, Show Rays keeps one state and really hides the rays, the plot picker follows the model's selection, Ctrl+Shift+P focuses the palette and a unique query runs its command, and on a 1000-px screen the ribbon starts folded (the 3D view keeps >= 400 px) with tab pages as pop-ups",
     "715": "Inspect Optical CAD/STL Solids is one report in both shells (phase 5g, 0936): on the Edmund 42779 prism layout the meshed prism reads READY with its own diagnostics text and CAD source, the same mesh with a triangle cut out reads CHECK with its open edges counted, an in-memory solid reads CHECK, an empty layout refuses; the Tk window and the Qt dialog (also on the ribbon) show the same rows and the selected solid's detail",
-    "716": "Measure MTF from Image is one session rendered by Tk and Qt (phase 5g, 0938): File -> Measure MTF from Image opens the Qt dialog (also on the ribbon); a real drag on a capture shown at 0.5x stores the box at twice the size in image pixels and Compute equals the direct slanted-edge fit (5 deg); two USAF drags add G2E1/G2E2 and fill MTF + R2; the Tk dialog's same drags store the same ROIs and both shells save byte-identical CSVs"
+    "716": "Measure MTF from Image is one session rendered by Tk and Qt (phase 5g, 0938): File -> Measure MTF from Image opens the Qt dialog (also on the ribbon); a real drag on a capture shown at 0.5x stores the box at twice the size in image pixels and Compute equals the direct slanted-edge fit (5 deg); two USAF drags add G2E1/G2E2 and fill MTF + R2; the Tk dialog's same drags store the same ROIs and both shells save byte-identical CSVs",
+    "717": "every editor command that delegates to a panel reaches a method the panel DEFINES (0941): the panels forward unknown names back to the editor, so a delegation to a removed panel method recursed forever -- 0888 left 'Add Component to Current Path View' a RecursionError in both shells for a week; the scan of every self._main_<panel>().<method>( finds none broken, and the command now asks for a Path view in Tk and in the Qt shell"
   }
 }
