@@ -37,3 +37,12 @@ constructions.  Formulae use SI units unless another consistent system is stated
    ch06_interference_and_coherence
    ch07_diffraction
    ch08_introduction_to_fourier_optics
+
+The additional explanation below develops the construction in Solved
+Problem 8.21, from the two masks in Fig. 8-29 to Fig. 8-30.
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Solved Problem Explanations
+
+   problem_8_21_triangle_convolution

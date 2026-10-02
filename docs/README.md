@@ -55,3 +55,11 @@ The numerical tests cover representative sign conventions, diffraction integrals
 Fourier coefficients, and convolution constructions. They are regression checks,
 not a symbolic verification of every solution. The private reference scans are not
 required to regenerate or build the documentation.
+
+The additional Solved Problem 8.21 page explains the three-hole-mask
+convolution from Fig. 8-29 to Fig. 8-30, with a coordinate table, three
+original SVG diagrams, and fixed-mask and scanning implementations.
+Edit `problem_8_21_triangle_convolution.rst` directly;
+it is separate from the generated supplementary problem inventory. Regenerate
+its diagrams with `python docs/generate_schaum_problem_821.py`, optionally
+adding `--preview-dir /tmp/schaum-821-previews` for visual review.

@@ -12,6 +12,9 @@ ray geometry, field relationships, or calculated curves.  Diagrams are schematic
 unless their axes specify a scale.  Source inconsistencies and approximations are
 identified explicitly rather than silently copied into the answer.
 
+For the construction from Fig. 8-29 to Fig. 8-30 in the chapter's
+Solved Problem 8.21, see :doc:`problem_8_21_triangle_convolution`.
+
 Periodic waves and Fourier series
 ---------------------------------
 

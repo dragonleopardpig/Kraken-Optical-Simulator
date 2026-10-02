@@ -205,3 +205,49 @@ def test_hexagonal_mask_pair_sum_multiplicities():
     assert counts[(0, 0)] == 6
     assert Counter(counts.values()) == {1: 6, 2: 12, 6: 1}
     assert sum(counts.values()) == 36
+
+
+def test_solved_problem_821_three_hole_convolution(monkeypatch):
+    monkeypatch.syspath_prepend(str(DOCS))
+    construction = importlib.import_module("generate_schaum_problem_821")
+    counts = construction.pair_sum_counts()
+    assert counts == {
+        (0, 0): 3,
+        (-2, 0): 1,
+        (2, 0): 1,
+        (-1, 3): 1,
+        (1, 3): 1,
+        (-1, -3): 1,
+        (1, -3): 1,
+    }
+    assert sum(counts.values()) == 9
+    outer_positions = construction.coordinates(
+        [position for position in counts if position != (0, 0)]
+    )
+    assert np.linalg.norm(outer_positions, axis=1) == pytest.approx(np.full(6, 2))
+
+
+@pytest.mark.parametrize(
+    "source_distance,screen_distance", [(100, 100), (50, 100), (200, 50)]
+)
+def test_solved_problem_821_fixed_mask_projection(
+    monkeypatch, source_distance, screen_distance
+):
+    monkeypatch.syspath_prepend(str(DOCS))
+    construction = importlib.import_module("generate_schaum_problem_821")
+    source_points = (
+        -(source_distance + screen_distance)
+        / screen_distance
+        * construction.coordinates(construction.F_CENTRES)
+    )
+    aperture_points = construction.coordinates(construction.H_CENTRES)
+    hits = construction.shadow_ray_hits(
+        source_points, aperture_points, source_distance, screen_distance
+    )
+    scale = 1 + screen_distance / source_distance
+    counts = Counter(tuple(point) for point in np.round(hits / scale, 12))
+    expected = {
+        tuple(np.round(construction.coordinates([position])[0], 12)): weight
+        for position, weight in construction.pair_sum_counts().items()
+    }
+    assert counts == expected

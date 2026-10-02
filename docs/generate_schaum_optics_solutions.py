@@ -983,6 +983,15 @@ def render_chapter(chapter: Chapter) -> str:
         "",
     ]
 
+    if chapter.number == 8:
+        lines.extend(
+            [
+                "For the construction from Fig. 8-29 to Fig. 8-30 in the chapter's",
+                "Solved Problem 8.21, see :doc:`problem_8_21_triangle_convolution`.",
+                "",
+            ]
+        )
+
     for section_index, section in enumerate(chapter.sections, start=1):
         label = f"schaum-{chapter.number}-{section_index}"
         lines.extend(
@@ -1069,6 +1078,19 @@ def render_index() -> str:
         "",
     ]
     lines.extend(f"   ch{chapter.number:02d}_{chapter.slug}" for chapter in CHAPTERS)
+    lines.extend(
+        [
+            "",
+            "The additional explanation below develops the construction in Solved",
+            "Problem 8.21, from the two masks in Fig. 8-29 to Fig. 8-30.",
+            "",
+            ".. toctree::",
+            "   :maxdepth: 1",
+            "   :caption: Solved Problem Explanations",
+            "",
+            "   problem_8_21_triangle_convolution",
+        ]
+    )
     return "\n".join(lines) + "\n"
 
 
