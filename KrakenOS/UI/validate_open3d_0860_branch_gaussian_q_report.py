@@ -202,8 +202,13 @@ def run_checks() -> tuple[bool, list[str]]:
     defined = {node.name for node in ast.walk(ast.parse(source))
                if isinstance(node, ast.FunctionDef)}
     report_actions = [name for name, _menu, *_rest in ACTIONS if name in REPORT_BUILDERS]
+    from KrakenOS.UI.layout_editor import KrakenLayoutEditor
+    from KrakenOS.UI.qt.actions import editor_command
+
+    # an "editor:<method>" action runs the editor's own method (bugs/0942): that one must exist
     missing = [(name, method) for name, _menu, _text, _short, method, _tip in ACTIONS
-               if method not in defined]
+               if (method not in defined if editor_command(method) is None
+                   else not callable(getattr(KrakenLayoutEditor, editor_command(method), None)))]
     titled = [getattr(builder, "TITLE", None) for builder in REPORT_BUILDERS.values()]
     ok(sorted(report_actions) == sorted(REPORT_BUILDERS) and not missing and all(titled),
        f"A: every report builder {sorted(REPORT_BUILDERS)} has an action of the same name, each "

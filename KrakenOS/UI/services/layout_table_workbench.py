@@ -209,6 +209,11 @@ class LayoutTableWorkbenchMixin:
         self._on_table_selection_changed()
 
     def _current_selected_row_index(self) -> int | None:
+        # a shell with its own table answers from THAT selection (bugs/0903, 0942): the Qt shell's
+        # hidden Tk table only ever holds what a model verb last selected there
+        if getattr(self, "selected_row_indices", None) is not None:
+            indices = self._selected_table_indices()
+            return indices[0] if indices else None
         items = self.table.selection()
         if not items:
             return None
@@ -372,6 +377,13 @@ class LayoutTableWorkbenchMixin:
             self.__dict__.get("_keep_scene_viewers_across_layout_replacement")
         )
         inspector = self.__dict__.get("_three_d_inspector")
+        # bugs/0942: an inspector HOSTED in a shell window (the Qt shell's 3D dock) is part of that
+        # window, not a separate 3D window to close -- destroying it left the dock showing a dead
+        # inspector after every Reload / Reset. Keep it; the shell redraws it once the new layout is
+        # in (`adopt_replaced_layout`). A caller that set the keep flag refreshes it itself (0294).
+        if inspector is not None and not keep_inspector and getattr(inspector, "_shell_vtk_host", None) is not None:
+            inspector._layout_replaced_pending = True
+            keep_inspector = True
         if inspector is not None and not keep_inspector:
             try:
                 inspector.destroy()
@@ -3263,6 +3275,10 @@ class LayoutTableWorkbenchMixin:
             self._undo_button.configure(state=undo_state)
         if self._redo_button is not None:
             self._redo_button.configure(state=redo_state)
+        # a shell's own Undo / Redo follow the same history (bugs/0942)
+        show = self.__dict__.get("show_undo_state")
+        if callable(show):
+            show(bool(self._undo_stack), bool(self._redo_stack))
 
     def undo(self) -> None:
         if not self._undo_stack:
@@ -4390,8 +4406,8 @@ class LayoutTableWorkbenchMixin:
         )
 
     def _selected_insert_index(self) -> int | None:
-        selected = self.table.selection()
-        if not selected:
+        # Paste / stock-lens insert go after the selection of the table the user SEES (bugs/0942)
+        if not self._selected_table_indices():
             return None
         element_blocks = self._selected_element_blocks()
         if element_blocks:

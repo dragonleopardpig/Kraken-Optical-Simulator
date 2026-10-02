@@ -26,6 +26,12 @@ ICONS: dict[str, str] = {
     "inspector": (f'<path {_GLASS} d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/>'
                   f'<path {_OPEN} d="M4 7.5l8 4.5 8-4.5M12 12v9"/>'),
     "about": f'<circle {_OPEN} cx="12" cy="12" r="9"/><path {_OPEN} d="M12 11v6M12 7.5v.5"/>',
+    "save": (f'<path {_OPEN} d="M4 4h12l4 4v12H4z"/><path {_OPEN} d="M8 4v5h7V4"/>'
+             f'<rect {_GLASS} x="7" y="13" width="10" height="7"/>'),
+    "save_as": (f'<path {_OPEN} d="M4 4h12l4 4v12H4z"/><path {_OPEN} d="M8 4v5h7V4"/>'
+                f'<path {_LIGHT} d="M10 20v-6h4l3 3-3 3z"/>'),
+    "undo": f'<path {_OPEN} d="M9 14L4 9l5-5"/><path {_LIGHT} d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
+    "redo": f'<path {_OPEN} d="M15 14l5-5-5-5"/><path {_LIGHT} d="M20 9H10a6 6 0 0 0 0 12h3"/>',
     # ---- surfaces ------------------------------------------------------------------------------
     "advanced_surface": (f'<path {_GLASS} d="M9 3c-3 5-3 13 0 18h6c3-5 3-13 0-18z"/>'
                          f'<path {_OPEN} d="M2 12h20" stroke-dasharray="2 2"/>'),

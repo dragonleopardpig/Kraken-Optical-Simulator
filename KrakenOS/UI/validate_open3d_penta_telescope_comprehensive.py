@@ -16830,6 +16830,10 @@ phase_717_editor_panel_delegations = _phase_from_standalone(
     717, "every editor command that delegates to a panel reaches a method the panel DEFINES (0941): the panels forward unknown names back to the editor, so a delegation to a removed panel method recursed forever -- 0888 left 'Add Component to Current Path View' a RecursionError in both shells for a week; the scan of every self._main_<panel>().<method>( finds none broken, and the command now asks for a Path view in Tk and in the Qt shell",
     'KrakenOS.UI.validate_editor_panel_delegations',
     'editor_panel_delegations')
+phase_718_qt_menu_parity = _phase_from_standalone(
+    718, "every Tk menu-bar command has a Qt route or is a documented gap that may only shrink (0942): 26 working commands gained Qt actions (editor:<method>) plus Save and Reset; in the Qt shell Undo/Redo restore model AND table and follow the history, Save As then Save write one file without re-asking, Ctrl+C/V on the table paste right after the Qt selection (not the hidden Tk one) and Ctrl+C elsewhere copies no rows, and File -> Open / Reset keep the hosted 3D inspector alive and showing the new layout (it was destroyed on every layout swap)",
+    'KrakenOS.UI.validate_qt_menu_parity',
+    'qt_menu_parity')
 phase_716_qt_mtf_from_image = _phase_from_standalone(
     716, "Measure MTF from Image is one session rendered by Tk and Qt (phase 5g, 0938): File -> Measure MTF from Image opens the Qt dialog (also on the ribbon); a real drag on a capture shown at 0.5x stores the box at twice the size in image pixels and Compute equals the direct slanted-edge fit (5 deg); two USAF drags add G2E1/G2E2 and fill MTF + R2; the Tk dialog's same drags store the same ROIs and both shells save byte-identical CSVs",
     'KrakenOS.UI.validate_qt_mtf_from_image',
@@ -16839,7 +16843,7 @@ phase_715_optical_solid_diagnostics = _phase_from_standalone(
     'KrakenOS.UI.validate_optical_solid_diagnostics',
     'optical_solid_diagnostics')
 phase_714_qt_ribbon = _phase_from_standalone(
-    714, "the Qt shell's ribbon + command palette (0935): the ribbon and its exclusion list cover every shell action exactly, every action has an icon that draws and no two icons render the same, each ribbon button runs its own action, Show Rays keeps one state and really hides the rays, the plot picker follows the model's selection, Ctrl+Shift+P focuses the palette and a unique query runs its command, and on a 1000-px screen the ribbon starts folded (the 3D view keeps >= 400 px) with tab pages as pop-ups; since 0940 the ribbon is a dock that undocks into its own window (exactly one page showing) and re-docks folded at the top, and the surface table runs full-width across the top under it",
+    714, "the Qt shell's ribbon + command palette (0935): the ribbon and its exclusion list cover every shell action exactly, every ribbon action has an icon that draws and no two icons render the same, each ribbon button runs its own action (a disabled action disables its button), Show Rays keeps one state and really hides the rays, the plot picker follows the model's selection, Ctrl+Shift+P focuses the palette and a unique query runs its command, and on a 1000-px screen the ribbon starts folded (the 3D view keeps >= 400 px) with tab pages as pop-ups; since 0940 the ribbon is a dock that undocks into its own window (exactly one page showing) and re-docks folded at the top, and the surface table runs full-width across the top under it",
     'KrakenOS.UI.validate_qt_ribbon',
     'qt_ribbon')
 phase_713_qt_5g_face_roles = _phase_from_standalone(
@@ -17680,6 +17684,7 @@ def main() -> int:
             phase_715_optical_solid_diagnostics,
             phase_716_qt_mtf_from_image,
             phase_717_editor_panel_delegations,
+            phase_718_qt_menu_parity,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

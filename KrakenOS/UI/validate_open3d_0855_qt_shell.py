@@ -261,10 +261,16 @@ def run_checks() -> tuple[bool, list[str]]:
     source = Path("KrakenOS/UI/qt/main_window.py").read_text(encoding="utf-8")
     defined = {node.name for node in ast.walk(ast.parse(source))
                if isinstance(node, ast.FunctionDef)}
+    from KrakenOS.UI.layout_editor import KrakenLayoutEditor
+    from KrakenOS.UI.qt.actions import editor_command
+
+    # an "editor:<method>" action runs the editor's own method (bugs/0942): that one must exist
     missing = [(name, method) for name, _menu, _text, _short, method, _tip in ACTIONS
-               if method not in defined]
+               if (method not in defined if editor_command(method) is None
+                   else not callable(getattr(KrakenLayoutEditor, editor_command(method), None)))]
     ok(len(ACTIONS) >= 6 and not missing,
-       f"B: all {len(ACTIONS)} declared actions name a method KrakenQtMainWindow defines"
+       f"B: all {len(ACTIONS)} declared actions name a method KrakenQtMainWindow (or, for "
+       f"'editor:' actions, the editor) defines"
        + (f" -- missing {missing}" if missing else ""))
 
     # ---- Q the shell itself, in its own process ----------------------------------------------

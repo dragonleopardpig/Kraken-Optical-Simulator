@@ -7601,12 +7601,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 return
             # A brand-new working layout was loaded; clear transient carry /
             # selection state so no stale handles survive the rebuild.
-            self._close_step_rotation_handler()
-            self._step_rotation_active_label = None
-            self._step_carry_active_label = None
-            self._step_carry_follow_state = None
-            self._selected_step_feature = None
-            self._selected_step_feature_label = None
+            self._drop_replaced_layout_state()
             self._apply_model_change()
             self.status_var.set(editor.status_var.get())
         except Exception as exc:
@@ -7616,6 +7611,25 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             self._timing_finish(token, status="ok", title=str(model.title))
         finally:
             editor.__dict__.pop("_keep_scene_viewers_across_layout_replacement", None)
+
+    def _drop_replaced_layout_state(self) -> None:
+        """The working layout was replaced under this open inspector: drop the per-scene carry /
+        rotation / selection handles, which name rows of the OLD layout. The new layout's 3D-session
+        sidecar is read on the next refresh, as a freshly opened inspector reads it."""
+        self._layout_replaced_pending = False
+        self._session_restored_for_path = None
+        self._close_step_rotation_handler()
+        self._step_rotation_active_label = None
+        self._step_carry_active_label = None
+        self._step_carry_follow_state = None
+        self._selected_step_feature = None
+        self._selected_step_feature_label = None
+
+    def adopt_replaced_layout(self) -> None:
+        """Show a newly loaded layout in THIS inspector -- a shell keeps its hosted inspector across
+        File -> Open / Reload / Reset (bugs/0942), as bugs/0294 keeps one across its own import."""
+        self._drop_replaced_layout_state()
+        self._apply_model_change()
 
     def swap_imaging_lens_from_folder(self) -> None:
         """3D CAD menu: SWAP the scene's imaging lens for a newly imported one, IN PLACE

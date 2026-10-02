@@ -78,6 +78,12 @@ class KrakenQtMainWindow(_main_window_class()):
         editor.select_rows = self.select_rows
         editor.show_rows = self.show_rows
         self.table_widget = self._build_table_widget()
+        from KrakenOS.UI.qt.actions import TABLE_SHORTCUTS
+
+        for name in TABLE_SHORTCUTS:
+            action = self.action_manager[name]
+            action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            self.rows_view.addAction(action)
 
         self.dock_manager = DockManager(self)
         # the table is many columns wide: across the top of the window it shows them all and its
@@ -123,6 +129,9 @@ class KrakenQtMainWindow(_main_window_class()):
         editor.show_control_state = self.refresh_control_panels
         # the CAD/STL face-roles editor opens here, over the model's session (bugs/0934)
         editor.show_face_roles_dialog = self.show_face_roles_dialog
+        # undo / redo enable as the model's history changes (bugs/0942)
+        editor.show_undo_state = self.show_undo_state
+        self.show_undo_state(bool(getattr(editor, "_undo_stack", None)), bool(getattr(editor, "_redo_stack", None)))
         # and "Measure MTF from Image" (bugs/0938)
         editor.show_mtf_from_image_dialog = self.show_mtf_from_image_dialog
         self.last_mtf_from_image_dialog = None
@@ -298,9 +307,8 @@ class KrakenQtMainWindow(_main_window_class()):
         if self.viewport is not None:
             drawn = self.viewport.show_editor_scene(self.editor)
             self.viewport.render()
-        current = getattr(self.editor, "current_layout_file", None)
-        self.setWindowTitle(f"KrakenOS -- Qt shell -- {Path(current).name}" if current
-                            else "KrakenOS -- Qt shell")
+        self._show_layout_title()
+        self._adopt_replaced_layout()
         if drawn.get("error"):
             # The model could not build its display geometry: say so rather than showing a
             # viewport that is quietly missing every optical element.
@@ -313,6 +321,26 @@ class KrakenQtMainWindow(_main_window_class()):
                 f"3D view: {len(drawn['elements'])} optical elements, {drawn['rays']} rays, "
                 f"{len(drawn['bodies'])} imported bodies.")
         return drawn
+
+    def _show_layout_title(self) -> None:
+        current = getattr(self.editor, "current_layout_file", None)
+        self.setWindowTitle(f"KrakenOS -- Qt shell -- {Path(current).name}" if current
+                            else "KrakenOS -- Qt shell")
+
+    def _adopt_replaced_layout(self) -> None:
+        """A whole new layout came in (Open, Reload, Reset, an import): the hosted 3D inspector now
+        shows it. The model keeps a shell's inspector across the swap instead of destroying it as
+        it does a separate Tk 3D window (bugs/0942)."""
+        view = self.inspector_view
+        inspector = getattr(view, "inspector", None)
+        if inspector is None or not getattr(inspector, "_layout_replaced_pending", False):
+            return
+        try:
+            alive = bool(inspector.winfo_exists())
+        except Exception:
+            alive = False
+        if alive and inspector.available:
+            inspector.adopt_replaced_layout()
 
     def load_layout_path(self, path) -> None:
         """Load a layout file by path, through the editor's own named-layout loader."""
@@ -754,6 +782,25 @@ class KrakenQtMainWindow(_main_window_class()):
         from KrakenOS.UI.reports import build_optical_solid_diagnostics_report
 
         return self.open_report(build_optical_solid_diagnostics_report)
+
+    def run_editor_command(self, method: str):
+        """A menu command that is the editor's own method (bugs/0942): run it, and when it changes
+        the model (`actions.EDITOR_REFRESH`), let every view re-read it."""
+        from KrakenOS.UI.qt.actions import EDITOR_REFRESH
+
+        result = getattr(self.editor, method)()
+        if method in EDITOR_REFRESH:
+            self.refresh_from_model()
+        else:
+            self._show_layout_title()  # Save / Save As may have named the layout
+        return result
+
+    def show_undo_state(self, can_undo: bool, can_redo: bool) -> None:
+        """The model's `show_undo_state` seam: Undo / Redo enabled as its history allows."""
+        for name, enabled in (("undo", can_undo), ("redo", can_redo)):
+            action = self.action_manager.actions.get(name)
+            if action is not None:
+                action.setEnabled(bool(enabled))
 
     def mtf_from_image_action(self):
         """Measure a real MTF from a captured image: a slanted edge, or USAF three-bar elements."""

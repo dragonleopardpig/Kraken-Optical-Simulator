@@ -1,9 +1,10 @@
 """Guard for the Qt shell's ribbon + command palette (bugs/0935). In a real Qt shell on om05a_folded:
 
   C  the ribbon and `RIBBON_EXCLUDED` cover the shell's `ACTIONS` exactly (a new action cannot go
-     missing), no action is on it twice, and every action has an icon that draws pixels -- no two
-     icons render the same
-  B  each ribbon button runs ITS OWN action (the click reaches that action's `trigger`)
+     missing), no action is on it twice, and every RIBBON action has an icon that draws pixels -- no
+     two render the same (menu + palette-only commands, bugs/0942, may have none)
+  B  each ribbon button runs ITS OWN action (the click reaches that action's `trigger`); a disabled
+     action (Redo with nothing to redo) disables its button too
   R  Show Rays keeps one state: a ribbon click flips the menu action AND really hides the traced
      rays (the viewport's ray actors), and the menu action checks the ribbon button again
   A  the ribbon's plot picker is the analysis picker: it carries the same menu, and its caption
@@ -68,7 +69,8 @@ def qt_runtime_checks() -> list:
     unknown = sorted(set(on_ribbon) - set(declared))
     twice = sorted({n for n in on_ribbon if on_ribbon.count(n) > 1})
     images = {}
-    for name, action in actions.items():
+    # every RIBBON button needs its own icon; menu + palette-only commands (bugs/0942) may have none
+    for name, action in ((n, actions[n]) for n in set(on_ribbon) if n in actions):
         image = action.icon().pixmap(32, 32).toImage().convertToFormat(QImage.Format.Format_ARGB32)
         drawn = sum(1 for y in range(image.height()) for x in range(image.width()) if image.pixelColor(x, y).alpha() > 40)
         images[name] = (drawn, bytes(image.constBits()))
@@ -81,21 +83,31 @@ def qt_runtime_checks() -> list:
                  f"{len(set(on_ribbon))} actions on the ribbon + {len(RIBBON_EXCLUDED)} excluded of {len(declared)}; "
                  f"missing {missing}, unknown {unknown}, twice {twice}; blank icons {blank}; identical icons {same}"])
 
-    # B -- every ribbon button reaches its own action (spied, so no dialog opens)
+    # B -- every ribbon button reaches its own action (spied, so no dialog opens). A disabled action
+    # (Redo with no history, bugs/0942) must disable its button too; enabled, its click still lands
     reached: dict = {}
     wrong = []
+    disabled, live_when_disabled = [], []
     for name, button in ribbon.buttons.items():
         action = actions[name]
         if action.isCheckable():
             continue
+        was_enabled = action.isEnabled()
+        if not was_enabled:
+            disabled.append(name)
+            if button.isEnabled():
+                live_when_disabled.append(name)
+            action.setEnabled(True)
         action.trigger = lambda n=name: reached.setdefault(n, 0) or reached.__setitem__(n, 1)
         button.click()
         del action.trigger
+        action.setEnabled(was_enabled)
         if reached.get(name) != 1:
             wrong.append(name)
     checked = [n for n in ribbon.buttons if not actions[n].isCheckable()]
-    rows.append(["B", len(checked) >= 38 and not wrong,
-                 f"{len(checked)} ribbon buttons clicked; each reached its own action: {not wrong} {wrong[:5]}"])
+    rows.append(["B", len(checked) >= 38 and not wrong and not live_when_disabled,
+                 f"{len(checked)} ribbon buttons clicked; each reached its own action: {not wrong} {wrong[:5]}; "
+                 f"disabled actions {disabled} -- their buttons disabled too: {not live_when_disabled}"])
 
     # R -- Show Rays, one state
     rays = actions["show_rays"]

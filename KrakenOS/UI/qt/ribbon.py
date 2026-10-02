@@ -24,7 +24,9 @@ from __future__ import annotations
 #: to a column. Labels are short forms of the action's text; "\n" breaks a large button's label.
 RIBBON = (
     ("Home", (
-        ("File", (("open", "L", "Open\nLayout"), ("reload", "L", "Reload"))),
+        ("File", (("open", "L", "Open\nLayout"), ("reload", "L", "Reload"), ("save", "S", "Save"),
+                  ("save_as", "S", "Save As"))),
+        ("Edit", (("undo", "S", "Undo"), ("redo", "S", "Redo"))),
         ("View", (("reset_camera", "L", "Fit\nScene"), ("inspector", "L", "3D\nInspector"),
                   ("show_rays", "S", "Show Rays"), ("redraw", "S", "Redraw"), ("about", "S", "About"))),
     )),
@@ -59,6 +61,22 @@ RIBBON = (
 
 #: actions deliberately not on the ribbon -> why
 RIBBON_EXCLUDED = {"quit": "leaves the application: File menu and Ctrl+Q only, never one stray click away"}
+# menu + palette only (bugs/0942): Tk menu-bar commands given a Qt route -- occasional imports,
+# exports, clears and reports, reached from the menus and Ctrl+Shift+P, not worth ribbon space
+_MENU_ONLY = {
+    "wipes the whole layout -- File menu only, like Quit (Undo brings it back)": ("reset",),
+    "imports and exports (File menu)": ("import_zemax", "import_zemax_wavefront", "import_cad_solid",
+                                        "import_lens_step", "import_camera_step", "import_led_step",
+                                        "export_3d_step", "export_3d_dxf", "export_wavefront_csv",
+                                        "export_zernike_csv"),
+    "row clipboard and scene clears (Edit menu; Ctrl+C / Ctrl+V for rows)": (
+        "copy_rows", "paste_rows", "clear_cad_axis_offsets", "clear_step_imports", "place_cad_solid"),
+    "occasional view / analysis commands (View and Analysis menus)": (
+        "refresh_plot", "folded_assembly", "benchmark_psf_mtf", "copy_phase2_report", "copy_wavefront_fit",
+        "clear_zemax_wavefront", "clear_marks"),
+    "help (Help menu)": ("formula_sheet", "manual_index", "copy_debug"),
+}
+RIBBON_EXCLUDED.update({name: f"menu + palette only: {why}" for why, names in _MENU_ONLY.items() for name in names})
 
 LARGE_ICON = 26
 SMALL_ICON = 16
