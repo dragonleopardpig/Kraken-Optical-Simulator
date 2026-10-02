@@ -36,13 +36,14 @@ class DockManager:
         return dock
 
     def setup_default_layout(self, width_hint: int = 620) -> None:
-        """The surface table down the left, everything else stacked under it."""
+        """The side columns' width. The surface table is across the TOP since bugs/0940 (its
+        height is set with the inspector's, once the layout has run)."""
         from PySide6.QtCore import Qt
 
-        docks = [self.docks[name] for name in ("SurfaceTableDock",) if name in self.docks]
-        if docks:
-            self.main_window.resizeDocks(docks, [width_hint] * len(docks),
-                                         Qt.Orientation.Horizontal)
+        side = [dock for name, dock in self.docks.items()
+                if self.main_window.dockWidgetArea(dock) == Qt.DockWidgetArea.LeftDockWidgetArea]
+        if side:
+            self.main_window.resizeDocks(side, [width_hint] * len(side), Qt.Orientation.Horizontal)
 
     def tabify(self, names) -> None:
         """Stack the named docks as tabs of the first one, which stays in front."""

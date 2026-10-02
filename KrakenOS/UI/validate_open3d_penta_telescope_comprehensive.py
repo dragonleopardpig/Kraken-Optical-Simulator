@@ -16835,7 +16835,7 @@ phase_715_optical_solid_diagnostics = _phase_from_standalone(
     'KrakenOS.UI.validate_optical_solid_diagnostics',
     'optical_solid_diagnostics')
 phase_714_qt_ribbon = _phase_from_standalone(
-    714, "the Qt shell's ribbon + command palette (0935): the ribbon and its exclusion list cover every shell action exactly, every action has an icon that draws and no two icons render the same, each ribbon button runs its own action, Show Rays keeps one state and really hides the rays, the plot picker follows the model's selection, Ctrl+Shift+P focuses the palette and a unique query runs its command, and on a 1000-px screen the ribbon starts folded (the 3D view keeps >= 400 px) with tab pages as pop-ups",
+    714, "the Qt shell's ribbon + command palette (0935): the ribbon and its exclusion list cover every shell action exactly, every action has an icon that draws and no two icons render the same, each ribbon button runs its own action, Show Rays keeps one state and really hides the rays, the plot picker follows the model's selection, Ctrl+Shift+P focuses the palette and a unique query runs its command, and on a 1000-px screen the ribbon starts folded (the 3D view keeps >= 400 px) with tab pages as pop-ups; since 0940 the ribbon is a dock that undocks into its own window (exactly one page showing) and re-docks folded at the top, and the surface table runs full-width across the top under it",
     'KrakenOS.UI.validate_qt_ribbon',
     'qt_ribbon')
 phase_713_qt_5g_face_roles = _phase_from_standalone(

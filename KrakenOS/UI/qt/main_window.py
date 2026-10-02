@@ -80,15 +80,20 @@ class KrakenQtMainWindow(_main_window_class()):
         self.table_widget = self._build_table_widget()
 
         self.dock_manager = DockManager(self)
+        # the table is many columns wide: across the top of the window it shows them all and its
+        # rows run DOWN, where the left column made it scroll sideways (user request, bugs/0940)
         self.dock_manager.create_dock(self.table_widget, "SurfaceTableDock", "Surface Table",
-                                      Qt.DockWidgetArea.LeftDockWidgetArea)
+                                      Qt.DockWidgetArea.TopDockWidgetArea)
         # the two panels the model used to write into Tk widgets directly (bugs/0898)
         self.results_panel = ResultsPanel(editor)
-        self.dock_manager.create_dock(self.results_panel.table, "ResultsDock", "Results",
-                                      Qt.DockWidgetArea.RightDockWidgetArea)
         self.dock_manager.create_dock(self.results_panel.log, "DebugDock", "Debug",
                                       Qt.DockWidgetArea.BottomDockWidgetArea)
         self.dock_manager.create_dock(self.results_panel.progress, "ProgressDock", "Progress",
+                                      Qt.DockWidgetArea.BottomDockWidgetArea)
+        # Results sits in the bottom row beside Debug and Progress: stacked over the right column's
+        # input tabs it held the middle band ~90 px tall, and that height came out of the 3D view
+        # once the surface table moved to the top (bugs/0940)
+        self.dock_manager.create_dock(self.results_panel.table, "ResultsDock", "Results",
                                       Qt.DockWidgetArea.BottomDockWidgetArea)
         self.dock_manager.setup_default_layout()
         # the analysis picker and Update: the Qt shell could open every dialog and show every
@@ -99,6 +104,8 @@ class KrakenQtMainWindow(_main_window_class()):
         from KrakenOS.UI.qt.ribbon import Ribbon
 
         self.ribbon = Ribbon(self)
+        # the top area, top to bottom: ribbon, surface table, then the 3D inspector (built later)
+        self.splitDockWidget(self.ribbon.dock, self.dock_manager["SurfaceTableDock"], Qt.Orientation.Vertical)
         # the inputs that define the system: the Qt shell could analyse a loaded layout but not
         # change what was traced (bugs/0900)
         self.system_panel = SystemPanel(editor)
@@ -195,6 +202,9 @@ class KrakenQtMainWindow(_main_window_class()):
                                              area=Qt.DockWidgetArea.TopDockWidgetArea)
         dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable
                          | QDockWidget.DockWidgetFeature.DockWidgetClosable)
+        table_dock = self.dock_manager.docks.get("SurfaceTableDock")
+        if table_dock is not None and self.dockWidgetArea(table_dock) == Qt.DockWidgetArea.TopDockWidgetArea:
+            self.splitDockWidget(table_dock, dock, Qt.Orientation.Vertical)   # under the table
         dock.show()
         self.inspector_view = InspectorView(self.editor, container,
                                             status=self.statusBar().showMessage)
@@ -231,16 +241,25 @@ class KrakenQtMainWindow(_main_window_class()):
                 f"3D inspector unavailable: {self.inspector_view.inspector.unavailable_reason}")
         return self.inspector_view
 
+    #: the surface table's starting height at the top: a header and about five rows; drag it
+    #: taller (bugs/0940)
+    TABLE_DOCK_HEIGHT = 170
+
     def resize_inspector_dock(self) -> None:
-        """Give the inspector two thirds of the height -- once the layout has run, since a
-        `resizeDocks` before it is ignored (measured: the dock stayed at its minimum)."""
+        """Give the inspector two thirds of the height, the surface table above it a few rows --
+        once the layout has run, since a `resizeDocks` before it is ignored (measured: the dock
+        stayed at its minimum)."""
         from PySide6.QtCore import QTimer, Qt
 
         dock = self.dock_manager.docks.get("InspectorDock")
         if dock is None:
             return
-        QTimer.singleShot(0, lambda: self.resizeDocks(
-            [dock], [max(420, self.height() * 2 // 3)], Qt.Orientation.Vertical))
+        docks, heights = [dock], [max(420, self.height() * 2 // 3)]
+        table = self.dock_manager.docks.get("SurfaceTableDock")
+        if table is not None and self.dockWidgetArea(table) == Qt.DockWidgetArea.TopDockWidgetArea:
+            docks.insert(0, table)
+            heights.insert(0, self.TABLE_DOCK_HEIGHT)
+        QTimer.singleShot(0, lambda: self.resizeDocks(docks, heights, Qt.Orientation.Vertical))
 
     def inspector_action(self) -> None:
         view = self.build_inspector_view()

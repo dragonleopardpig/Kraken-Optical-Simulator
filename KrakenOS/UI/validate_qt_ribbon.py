@@ -12,6 +12,12 @@
      a fragment several commands share runs nothing
   F  on a 1000-px screen the ribbon starts folded and the 3D view keeps >= 400 px; a tab click drops
      its page as a pop-up, and running a command from it closes the pop-up
+  D  (bugs/0940) the ribbon is a dock: undocked it is a window of its own showing its pages, with
+     EXACTLY ONE page visible (unfolding used to show all four drawn over each other); docked
+     again it returns to the top area, folded to its tab row, and the 3D view gets its height back
+  U  docked and unfolded (double-click a tab), exactly one page shows; folded again, none
+  T  (bugs/0940) the surface table is across the TOP of the window -- full width, under the ribbon
+     and above the 3D inspector -- so its columns show without sideways scrolling
 """
 from __future__ import annotations
 
@@ -152,10 +158,54 @@ def qt_runtime_checks() -> list:
     popup_button.click()
     del actions["redraw"].trigger
     app.processEvents()
+    ribbon_was_folded = ribbon.collapsed
     rows.append(["F", (screen_height >= 1100 or ribbon.collapsed) and view.widget.height() >= 400
                  and shown and not popup.isVisible(),
                  f"screen {screen_height} px: folded={ribbon.collapsed}; 3D view {view.widget.height()} px; "
                  f"pop-up shown {shown}, closed after a command: {not popup.isVisible()}"])
+
+    def visible_pages() -> list:
+        return [i for i in range(ribbon.tabs.count()) if ribbon.tabs.widget(i).isVisible()]
+
+    # D -- undock / dock
+    from PySide6.QtCore import Qt as _Qt
+
+    view_docked = view.widget.height()
+    folded_height = ribbon.dock.height()
+    ribbon.tabs.setCurrentIndex(2)
+    ribbon.set_floating(True)
+    settle(0.6)
+    floating = (ribbon.dock.isFloating(), visible_pages(), ribbon.collapsed)
+    ribbon.set_floating(False)
+    settle(0.6)
+    redocked = (ribbon.dock.isFloating(), window.dockWidgetArea(ribbon.dock) == _Qt.DockWidgetArea.TopDockWidgetArea,
+                ribbon.collapsed, ribbon.dock.height(), view.widget.height())
+    rows.append(["D", floating[0] and floating[1] == [2] and not floating[2]
+                 and not redocked[0] and redocked[1] and redocked[2] == ribbon_was_folded
+                 and redocked[3] == folded_height and redocked[4] == view_docked,
+                 f"floating={floating[0]}, pages visible {floating[1]} (current 2), unfolded={not floating[2]}; docked "
+                 f"again at the top={redocked[1]}, folded={redocked[2]}, height {redocked[3]} (was {folded_height}), "
+                 f"3D view {redocked[4]} (was {view_docked})"])
+
+    # U -- unfold / fold while docked
+    ribbon.set_collapsed(False)
+    settle(0.4)
+    unfolded = visible_pages()
+    ribbon.set_collapsed(True)
+    settle(0.4)
+    rows.append(["U", unfolded == [ribbon.tabs.currentIndex()] and visible_pages() == [],
+                 f"unfolded: pages visible {unfolded} (current {ribbon.tabs.currentIndex()}); folded: {visible_pages()}"])
+
+    # T -- the surface table across the top
+    table = window.dock_manager["SurfaceTableDock"]
+    inspector_dock = window.dock_manager["InspectorDock"]
+    top = window.dockWidgetArea(table) == _Qt.DockWidgetArea.TopDockWidgetArea
+    order = (ribbon.dock.geometry().bottom() <= table.geometry().top()
+             and table.geometry().bottom() <= inspector_dock.geometry().top())
+    full = table.width() >= window.width() - 4
+    rows.append(["T", top and order and full,
+                 f"table in the top area={top}; ribbon < table < inspector top-to-bottom={order}; "
+                 f"width {table.width()} of the window's {window.width()}"])
     return rows
 
 

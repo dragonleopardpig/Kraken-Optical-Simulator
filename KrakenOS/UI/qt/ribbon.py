@@ -13,6 +13,10 @@ second strip of height.
 Folded (the default on a short screen, or double-click a tab), only the tab row shows; clicking a
 tab drops its page over the window as a pop-up, which closes once a command runs -- the 3D view
 keeps its height. Double-click a tab to pin the ribbon open, or folded again.
+
+It lives in a dock (bugs/0940): the slim title bar down its left edge undocks it (float button or
+double-click) into a window of its own, which opens fully; dragged to the top or bottom edge it
+docks again and returns to its folded / open state.
 """
 from __future__ import annotations
 
@@ -80,7 +84,7 @@ class Ribbon:
 
     def __init__(self, main_window) -> None:
         from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import QTabWidget, QToolBar
+        from PySide6.QtWidgets import QDockWidget, QTabWidget
 
         from KrakenOS.UI.qt.icons import icon
 
@@ -105,16 +109,23 @@ class Ribbon:
         self.tabs.tabBarDoubleClicked.connect(lambda _index: self.set_collapsed(not self.collapsed))
         self.tabs.tabBarClicked.connect(self._tab_clicked)
         self.collapsed = False
-        self.toolbar = QToolBar("Ribbon", main_window)
-        self.toolbar.setObjectName("RibbonToolBar")
-        self.toolbar.setMovable(False)
-        self.toolbar.setFloatable(False)
-        self.toolbar.addWidget(self.tabs)
-        main_window.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.toolbar)
-        main_window.addToolBarBreak(Qt.ToolBarArea.TopToolBarArea)
-        screen = main_window.screen()
-        if screen is not None and screen.availableGeometry().height() < FOLD_BELOW_SCREEN_HEIGHT:
+        # a dock, so it can be undocked (user request, bugs/0940): its title bar runs down the
+        # LEFT edge (no height taken from the 3D view) -- its float button, or a double-click on
+        # it, makes the ribbon a window of its own; dragged back to the top or bottom it docks
+        dock = self.dock = QDockWidget("Ribbon", main_window)
+        dock.setObjectName("RibbonDock")
+        dock.setWidget(self.tabs)
+        dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable
+                         | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+                         | QDockWidget.DockWidgetFeature.DockWidgetVerticalTitleBar)
+        dock.setAllowedAreas(Qt.DockWidgetArea.TopDockWidgetArea | Qt.DockWidgetArea.BottomDockWidgetArea)
+        main_window.addDockWidget(Qt.DockWidgetArea.TopDockWidgetArea, dock)
+        dock.topLevelChanged.connect(self._on_floating_changed)
+        self._collapsed_when_docked = False
+        if self._short_screen():
             self.set_collapsed(True)
+        else:
+            self._fit_docked_height()
 
     # ---- the pages ------------------------------------------------------------------------------
     def _page(self, tab: str, groups):
@@ -292,15 +303,57 @@ class Ribbon:
         self.actions[name].trigger()
         return name
 
-    # ---- folding ----------------------------------------------------------------------------------
+    # ---- folding + floating --------------------------------------------------------------------
+    def _short_screen(self) -> bool:
+        screen = self.main_window.screen()
+        return screen is not None and screen.availableGeometry().height() < FOLD_BELOW_SCREEN_HEIGHT
+
     def set_collapsed(self, collapsed: bool) -> None:
         """Fold the ribbon to its tab row (more room for the 3D view), or open it again."""
+        from PySide6.QtWidgets import QStackedWidget
+
         self.collapsed = bool(collapsed)
         self._close_popups()
         bar_height = self.tabs.tabBar().sizeHint().height()
-        for index in range(self.tabs.count()):
-            self.tabs.widget(index).setVisible(not self.collapsed)
+        # fold by hiding the tab widget's PAGE STACK: showing each page by hand on unfold made
+        # all four visible at once, drawn over each other (bugs/0940 -- seen floating; the
+        # double-click unfold had it since 0935). The stack keeps showing only the current page.
+        stack = self.tabs.findChild(QStackedWidget)
+        if stack is not None:
+            stack.setVisible(not self.collapsed)
         self.tabs.setMaximumHeight(bar_height + 4 if self.collapsed else 16777215)
+        self._fit_docked_height()
+
+    def _fit_docked_height(self) -> None:
+        """Docked, the ribbon is exactly as tall as its content -- the dock splitter must not hand
+        it (or take from it) the 3D view's height. Floating, it is a free window."""
+        dock = getattr(self, "dock", None)
+        if dock is None:
+            return
+        if dock.isFloating():
+            dock.setMinimumHeight(0)
+            dock.setMaximumHeight(16777215)
+            return
+        # FIXED, not just capped: re-docked, the layout kept the floating window's height even
+        # under a 30-px maximum (measured: 114 px folded)
+        dock.setFixedHeight(self.tabs.maximumHeight() if self.collapsed else self.tabs.sizeHint().height() + 2)
+
+    def set_floating(self, floating: bool) -> None:
+        """Undock the ribbon into a window of its own, or dock it back at the top."""
+        self.dock.setFloating(bool(floating))
+
+    def _on_floating_changed(self, floating: bool) -> None:
+        # a floating ribbon costs the 3D view nothing, so it opens fully; docked again, it goes
+        # back to how it was (folded on a short screen)
+        if floating:
+            self._collapsed_when_docked = self.collapsed
+            self.dock.setMinimumHeight(0)
+            self.dock.setMaximumHeight(16777215)
+            if self.collapsed:
+                self.set_collapsed(False)
+            self.dock.adjustSize()
+        else:
+            self.set_collapsed(self._collapsed_when_docked)
 
     def _tab_clicked(self, index: int) -> None:
         if self.collapsed and index >= 0:
