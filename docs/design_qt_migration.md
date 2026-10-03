@@ -332,7 +332,7 @@ out to hide model state in Tk widgets just as the dialogs did.
 **Gates.** Full Tk gate **721/721 at 89c64ca9** (2026-10-04, after 0948 and 0949; 1 h 47 min on M90aPro
 in seven sequential chunks, lowest free memory 4.1 GB). Before it: 720/720 at 7e384fdc (2026-10-03,
 after 0947; the one before was 717/717 at
-7ace2ca9); the baseline holds 720 phases, all pass, 721 the newest. On 14 GB hardware the parallel shard gate does
+7ace2ca9); the baseline holds 721 phases, all pass, 722 the newest. On 14 GB hardware the parallel shard gate does
 not fit (7 GB per shard): run it as sequential `--phases` chunks (1 h 42 min, bugs/0945).
 
 ### What is left, in order
