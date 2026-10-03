@@ -89,3 +89,9 @@ icons at 96, 26 and 16 px.
 - The Tk shell keeps its menu bar.
 - Right-click menus (table, 3D view, Scene Components) are context menus, not a menu bar.
 - The command palette (Ctrl+Shift+P) still lists every command by name.
+
+## Gates
+
+- **Full Tk gate at 89c64ca9: 721 of 721 phases pass.** It ran on M90aPro (14 GB, no swap) as seven
+  sequential `--phases` chunks under a 2.5 GB free-memory watchdog: 1 h 47 min, lowest free memory
+  4.1 GB. It also covers 0948.

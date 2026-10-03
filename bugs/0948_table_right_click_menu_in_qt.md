@@ -82,3 +82,9 @@ fixing a devenv CLI update (2.4.0 installed beside the system 2.0.6 this project
 project's bootstrap re-creates the venv empty whenever it decides the Python changed. Restored with
 `/run/current-system/sw/bin/devenv shell kraken-install` (209 packages from pip's cache, 8 tooling
 packages fetched). **Use the system devenv for this project until its modules are re-pinned.**
+
+## Gates
+
+- **Full Tk gate at 89c64ca9: 721 of 721 phases pass.** It ran on M90aPro (14 GB, no swap) as seven
+  sequential `--phases` chunks under a 2.5 GB free-memory watchdog: 1 h 47 min, lowest free memory
+  4.1 GB. It also covers 0949.
