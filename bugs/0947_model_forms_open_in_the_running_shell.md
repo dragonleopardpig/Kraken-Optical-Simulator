@@ -93,3 +93,10 @@ inside a Tk window. They are listed in the guard's `TK_ONLY` with exact counts:
 They now accept `present_row_form(`, and the contract still checks that `present_row_form` falls
 back to `render_row_form`. The claim is unchanged: the form goes through the shared row-form view,
 never a hand-built window.
+
+## Gates
+
+- **Targeted:** 171, 312, 330, 341, 474, 495, 496, 655, 671-673, 679, 680, 692, 718 and 721 pass.
+- **Full Tk gate at 7e384fdc: 720 of 720 phases pass.** It ran on M90aPro (14 GB, no swap) as seven
+  sequential `--phases` chunks under a 2.5 GB free-memory watchdog: 1 h 45 min, lowest free memory
+  3.3 GB. This also covers 0945 and 0946, which had only targeted gates.
