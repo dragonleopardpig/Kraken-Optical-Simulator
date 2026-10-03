@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import tkinter as tk
 from typing import Any, Callable
 from KrakenOS.UI.panels.row_form_view import present_row_form
 from KrakenOS.UI.row_forms import FormRefused
@@ -53,7 +52,4 @@ class MainStockLensImporterDialog:
         except FormRefused as exc:
             host_of(self).showerror("Import Stock Lens", str(exc), parent=self.editor)
             return
-        # the Qt shell shows it in its own dialog (bugs/0944); only a Tk window takes a geometry
-        window = present_row_form(self, form, wraplength=880)
-        if isinstance(window, tk.Toplevel):
-            window.geometry("1080x660")
+        present_row_form(self, form, wraplength=880, geometry="1080x660")

@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import ttk
 from typing import Any, Callable
 
 from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.advanced_surface import build_advanced_surface_form
-from KrakenOS.UI.panels.row_form_view import render_row_form
+from KrakenOS.UI.panels.row_form_view import present_row_form
+from KrakenOS.UI.uihost import host_of
 
 
 class MainAdvancedSurfaceDialog:
@@ -72,16 +73,16 @@ class MainAdvancedSurfaceDialog:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Advanced Surface",
-                                 f"Could not read the surface table:\n\n{exc}",
-                                 parent=self.editor)
+            host_of(self).showerror("Advanced Surface",
+                                    f"Could not read the surface table:\n\n{exc}",
+                                    parent=self.editor)
             return
 
         try:
             form = build_advanced_surface_form(self, row_index)
         except FormRefused as exc:
-            messagebox.showinfo("Advanced Surface", str(exc), parent=self.editor)
+            host_of(self).showinfo("Advanced Surface", str(exc), parent=self.editor)
             return
         # bugs/0884: the Tk layout is the SHARED renderer now -- this file keeps only the
         # read-the-table prologue and the builder call.
-        render_row_form(self, form, wraplength=700)
+        present_row_form(self, form, wraplength=700)

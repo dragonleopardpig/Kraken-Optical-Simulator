@@ -98,7 +98,8 @@ def run_checks() -> tuple[bool, list[str]]:
         path = Path("KrakenOS/UI/panels") / f"{panel}.py"
         source = path.read_text(encoding="utf-8")
         sizes[panel] = len(source.splitlines())
-        if "render_row_form(" not in source:
+        # bugs/0947: `present_row_form` is the shell-aware entry to the shared renderer
+        if "present_row_form(" not in source and "render_row_form(" not in source:
             ok(False, f"L: {panel} does not use the shared renderer")
             break
         if "ttk.Entry(" in source or "ttk.Combobox(" in source or "ttk.Notebook(" in source:

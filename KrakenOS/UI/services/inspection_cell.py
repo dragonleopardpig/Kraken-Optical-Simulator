@@ -500,7 +500,7 @@ def open_inspection_cell_dialog(editor):
     verb is a FormAction in ``KrakenOS/UI/row_forms/inspection_cell.py``, which the Qt dialog
     uses too. The embedded cell VIEW stays a VTK plotter -- this only asks it to open.
     """
-    from KrakenOS.UI.panels.row_form_view import render_row_form
+    from KrakenOS.UI.panels.row_form_view import present_row_form
     from KrakenOS.UI.row_forms import FormRefused
     from KrakenOS.UI.row_forms.inspection_cell import build_inspection_cell_form
     from KrakenOS.UI.uihost import host_of
@@ -510,6 +510,4 @@ def open_inspection_cell_dialog(editor):
     except FormRefused as exc:
         host_of(editor).showinfo("Inspection Cell", str(exc))
         return None
-    window = render_row_form(editor, form, wraplength=700)
-    window.geometry("1080x620")
-    return window
+    return present_row_form(editor, form, wraplength=700, geometry="1080x620")

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from tkinter import messagebox
 from typing import Any, Callable
-from KrakenOS.UI.panels.row_form_view import render_row_form
+from KrakenOS.UI.panels.row_form_view import present_row_form
+from KrakenOS.UI.uihost import host_of
 from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.surface_shape import build_surface_shape_form
 
@@ -65,14 +65,13 @@ class MainSurfaceShapeBuilderDialog:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Surface Shape Builder",
-                                 f"Could not read the surface table:\n\n{exc}",
-                                 parent=self.editor)
+            host_of(self).showerror("Surface Shape Builder",
+                                    f"Could not read the surface table:\n\n{exc}",
+                                    parent=self.editor)
             return
         try:
             form = build_surface_shape_form(self, row_index)
         except FormRefused as exc:
-            messagebox.showinfo("Surface Shape Builder", str(exc), parent=self.editor)
+            host_of(self).showinfo("Surface Shape Builder", str(exc), parent=self.editor)
             return
-        window = render_row_form(self, form, wraplength=420)
-        window.geometry("1180x760")
+        present_row_form(self, form, wraplength=420, geometry="1180x760")

@@ -47,7 +47,7 @@ def open_scene_source_edit_dialog(editor, inspector, source_id: str) -> None:
     # docs/design_qt_migration.md phase 3 (bugs/0885): the fields, the coaxial extras, the
     # validation and what Apply writes live in KrakenOS/UI/row_forms/source_edit.py, which the
     # Qt dialog uses too.
-    from KrakenOS.UI.panels.row_form_view import render_row_form
+    from KrakenOS.UI.panels.row_form_view import present_row_form
     from KrakenOS.UI.row_forms import FormRefused
     from KrakenOS.UI.row_forms.source_edit import build_scene_source_edit_form
 
@@ -56,4 +56,4 @@ def open_scene_source_edit_dialog(editor, inspector, source_id: str) -> None:
     except FormRefused as exc:
         inspector.status_var.set(str(exc))
         return
-    render_row_form(editor, form, wraplength=460, modal=True)
+    present_row_form(editor, form, wraplength=460, modal=True)

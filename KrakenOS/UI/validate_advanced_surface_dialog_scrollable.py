@@ -89,7 +89,10 @@ def run_checks() -> "tuple[bool, list[str]]":
     wheel_src = inspect.getsource(row_form_view.bind_tab_wheel)
     place_src = inspect.getsource(LayoutTableWorkbenchMixin._show_centered_dialog)
 
-    if "render_row_form(" not in inspect.getsource(dialog_module):
+    # bugs/0947: through `present_row_form`, the shell-aware entry that falls back to this renderer
+    dialog_src = inspect.getsource(dialog_module)
+    if not (("present_row_form(" in dialog_src or "render_row_form(" in dialog_src)
+            and "render_row_form(owner, form" in inspect.getsource(row_form_view.present_row_form)):
         failures.append("the Advanced Surface dialog no longer renders through render_row_form")
 
     # A) every tab of a grouped form is a Canvas + Scrollbar scroll region

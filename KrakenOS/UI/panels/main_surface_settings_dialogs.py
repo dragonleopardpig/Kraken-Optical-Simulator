@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from KrakenOS.UI.panels.row_form_view import render_row_form
+from KrakenOS.UI.panels.row_form_view import present_row_form
 from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.surface_settings import (build_galvo_scan_form,
                                                     build_grating_settings_form)
@@ -53,7 +53,7 @@ class MainSurfaceSettingsDialogs:
         except FormRefused as exc:
             self.status_var.set(str(exc))
             return
-        render_row_form(self, form, wraplength=440)
+        present_row_form(self, form, wraplength=440)
 
     def open_surface_additional_settings(self, index: int | None = None) -> None:
         if index is None:
@@ -75,4 +75,4 @@ class MainSurfaceSettingsDialogs:
         except FormRefused as exc:
             self.status_var.set(str(exc))
             return
-        render_row_form(self, form, wraplength=420)
+        present_row_form(self, form, wraplength=420)

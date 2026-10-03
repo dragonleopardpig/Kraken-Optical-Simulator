@@ -5,13 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 from pprint import pformat
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, ttk
 from typing import Any, Callable
 
 from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.coating_material import build_coating_material_form
 from KrakenOS.UI.uihost import host_of
-from KrakenOS.UI.panels.row_form_view import render_row_form
+from KrakenOS.UI.panels.row_form_view import present_row_form
 
 
 class MainCoatingMaterialDialog:
@@ -70,16 +70,16 @@ class MainCoatingMaterialDialog:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Coating / Material",
-                                 f"Could not read the surface table:\n\n{exc}",
-                                 parent=self.editor)
+            host_of(self).showerror("Coating / Material",
+                                    f"Could not read the surface table:\n\n{exc}",
+                                    parent=self.editor)
             return
 
         try:
             form = build_coating_material_form(self, row_index)
         except FormRefused as exc:
-            messagebox.showinfo("Coating / Material", str(exc), parent=self.editor)
+            host_of(self).showinfo("Coating / Material", str(exc), parent=self.editor)
             return
         # bugs/0884: the Tk layout is the SHARED renderer now -- this file keeps only the
         # read-the-table prologue and the builder call.
-        render_row_form(self, form, wraplength=560)
+        present_row_form(self, form, wraplength=560)

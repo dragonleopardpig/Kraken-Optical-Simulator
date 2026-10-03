@@ -223,7 +223,10 @@ def _check_shortcut(failures, notes):
     from KrakenOS.UI.panels import row_form_view
 
     edit_src = inspect.getsource(dlg.open_scene_source_edit_dialog)
-    renders_row_form = "render_row_form(" in edit_src
+    # bugs/0947: `present_row_form` is the shell-aware entry; in Tk it IS render_row_form
+    renders_row_form = ("render_row_form(" in edit_src
+                        or ("present_row_form(" in edit_src
+                            and "render_row_form(owner, form" in inspect.getsource(row_form_view.present_row_form)))
     placed = ("_show_centered_dialog" in edit_src
               or (renders_row_form
                   and "_show_centered_dialog(window)" in inspect.getsource(row_form_view.render_row_form)))

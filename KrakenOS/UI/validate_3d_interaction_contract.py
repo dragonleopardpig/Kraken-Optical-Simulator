@@ -113,6 +113,15 @@ from KrakenOS.UI.widgets.tooltips import WidgetTooltip
 from KrakenOS.UI.uihost.introspect import constructor_variable_default as _default_of  # bugs/0852
 
 
+def _shared_row_form(source: str) -> bool:
+    """A panel shows its form through the shared row-form view -- never a hand-built window.
+
+    Since bugs/0947 that is `present_row_form`, the shell-aware entry: Tk's `render_row_form` in the
+    Tk editor, the shell's own dialog in the Qt shell. (The contract below also checks that
+    `present_row_form` falls back to `render_row_form`.)"""
+    return "present_row_form(" in source or "render_row_form(" in source
+
+
 def _scene_path_preserves_raykeeper_terminal_continuation() -> tuple[bool, str]:
     """Regression guard for prism exits that continue after the last surface event."""
     raw_points = np.asarray(
@@ -1131,7 +1140,7 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "Bounds for" in presets_row_form
             and "lower must be less than upper" in presets_row_form
             and "build_optimization_bounds_form(" in main_optimization_panel
-            and "render_row_form(" in main_optimization_panel
+            and _shared_row_form(main_optimization_panel)
             and "optimization_workers_var" in main_optimization_panel
             and "merit_mode_list" in main_optimization_panel
             and "operand_weight_vars" in main_optimization_panel
@@ -1241,7 +1250,7 @@ def _evaluate_checks() -> tuple[list, dict]:
             # the catalogue records and the row it writes them to.
             and "Glass Catalog Browser" in main_glass_catalog_browser_dialog
             and "build_glass_catalog_form(" in main_glass_catalog_browser_dialog
-            and "render_row_form(" in main_glass_catalog_browser_dialog
+            and _shared_row_form(main_glass_catalog_browser_dialog)
             and "Select a surface row first, then apply the glass." in glass_catalog_row_form
             and "owner.rows[row_index].glass = glass" in glass_catalog_row_form,
         ),
@@ -1279,9 +1288,8 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "build_path_component_form(" in main_path_component_placement_dialog
             # bugs/0944: shown through the shared row-form view's shell-aware entry (Tk's
             # render_row_form, or the Qt shell's dialog) -- never a hand-built window
-            and ("present_row_form(" in main_path_component_placement_dialog
-                 or "render_row_form(" in main_path_component_placement_dialog)
-            and "return render_row_form(" in inspect.getsource(row_form_view_module.present_row_form),
+            and _shared_row_form(main_path_component_placement_dialog)
+            and "render_row_form(owner, form" in inspect.getsource(row_form_view_module.present_row_form),
         ),
         (
             "Atmosphere controls and dialog live outside layout_editor",
@@ -1316,7 +1324,7 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "pySCATMECH BRDF" in diffuse_scatter_row_form
             and "Guided target surface" in diffuse_scatter_row_form
             and "build_diffuse_scatter_form(" in main_diffuse_dialog
-            and "render_row_form(" in main_diffuse_dialog
+            and _shared_row_form(main_diffuse_dialog)
             and '"Validation passed: "' in row_form_view_source,
         ),
         (
@@ -1335,7 +1343,7 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "Optical CAD/STL" in surface_shape_row_form
             and "FormFigure(" in surface_shape_row_form
             and "build_surface_shape_form(" in main_surface_shape_dialog
-            and "render_row_form(" in main_surface_shape_dialog,
+            and _shared_row_form(main_surface_shape_dialog),
         ),
         (
             "Beam Splitter settings dialog lives outside layout_editor",
@@ -1347,7 +1355,7 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "Beam Splitter can spawn deterministic" in beam_splitter_row_form
             and "Fresnel P/S mode" in beam_splitter_row_form
             and "build_beam_splitter_form(" in main_beam_splitter_dialog
-            and "render_row_form(" in main_beam_splitter_dialog
+            and _shared_row_form(main_beam_splitter_dialog)
             and '"Validation passed: "' in row_form_view_source,
         ),
         (
@@ -1360,7 +1368,7 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "Error_map = [X, Y, Z, SPACE]" in error_map_row_form
             and "Import..." in error_map_row_form
             and "build_error_map_form(" in main_error_map_dialog
-            and "render_row_form(" in main_error_map_dialog
+            and _shared_row_form(main_error_map_dialog)
             and "No Error_map will be stored on this surface." in error_map_row_form,
         ),
         (
@@ -1373,7 +1381,7 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "Shape Params" in advanced_surface_row_form
             and "Optimize conic k" in advanced_surface_row_form
             and "build_advanced_surface_form(" in main_advanced_surface_dialog
-            and "render_row_form(" in main_advanced_surface_dialog
+            and _shared_row_form(main_advanced_surface_dialog)
             and "ttk.Notebook(" in row_form_view_source,
         ),
         (
@@ -1392,7 +1400,7 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "Pitch [um] must be non-zero." in surface_settings_row_form
             and "build_galvo_scan_form(" in main_surface_settings_dialogs
             and "build_grating_settings_form(" in main_surface_settings_dialogs
-            and "render_row_form(" in main_surface_settings_dialogs,
+            and _shared_row_form(main_surface_settings_dialogs),
         ),
         (
             "Main table context menu lives outside layout_editor",
@@ -1435,7 +1443,7 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "Add From Source Panel" in scene_sources_row_form
             and "Use Source Panel Only" in scene_sources_row_form
             and "build_scene_source_manager_form(" in main_scene_source_dialog
-            and "render_row_form(" in main_scene_source_dialog,
+            and _shared_row_form(main_scene_source_dialog),
         ),
         (
             "Stock lens importer dialog lives outside layout_editor",
@@ -1450,8 +1458,7 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "Add Stock Lens to Path" in stock_lens_row_form
             and "_insert_surface_rows(rows, insert_after=insert_after)" in stock_lens_row_form
             and "build_stock_lens_form(" in main_stock_lens_dialog
-            and ("present_row_form(" in main_stock_lens_dialog  # bugs/0944, as above
-                 or "render_row_form(" in main_stock_lens_dialog),
+            and _shared_row_form(main_stock_lens_dialog),
         ),
         (
             "Open 3D renders editable table Thickness dimensions",

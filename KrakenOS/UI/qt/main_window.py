@@ -174,19 +174,29 @@ class KrakenQtMainWindow(_main_window_class()):
         dialog.exec()
         return bool(session.result_ok)
 
-    def show_model_row_form(self, form, *, on_close=None, modal=False):
-        """The model's `show_row_form` seam (bugs/0944): a form a model command builds itself --
-        "Add Component / Stock Lens to Current Path View" -- in a Qt dialog, not a Tk window."""
+    def show_model_row_form(self, form, *, on_close=None, modal=False, geometry=None, wait=False):
+        """The model's `show_row_form` seam (bugs/0944): a form a model command builds itself, in a
+        Qt dialog instead of a Tk window. Since bugs/0947 every row form the model opens comes
+        here -- the table's and the inspector's verbs included.
+
+        `geometry` is the Tk window's "WIDTHxHEIGHT"; `wait` runs the dialog to its end (a caller
+        that reads the result afterwards), where a plain modal one only blocks the window."""
         from KrakenOS.UI.qt.dialogs.row_form_dialog import RowFormDialog
 
         dialog = RowFormDialog(form, parent=self, host=host_of(self))
-        dialog.setModal(bool(modal))
+        dialog.setModal(bool(modal) or bool(wait))
+        size = str(geometry or "").split("+")[0].lower().split("x")
+        if len(size) == 2 and all(part.isdigit() for part in size):
+            dialog.resize(int(size[0]), int(size[1]))
         if on_close is not None:
             dialog.finished.connect(lambda _result: on_close())
         dialog.finished.connect(lambda _result, d=dialog: self._forget_dialog(d))
         self._open_dialogs.append(dialog)
         self.last_model_form_dialog = dialog
-        dialog.show()
+        if wait:
+            dialog.exec()
+        else:
+            dialog.show()
         return dialog
 
     # ---- the model's status line drives ours ---------------------------------------------------

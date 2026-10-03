@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from tkinter import messagebox
 
 from typing import Any, Callable
 
-from KrakenOS.UI.panels.row_form_view import render_row_form
+from KrakenOS.UI.panels.row_form_view import present_row_form
+from KrakenOS.UI.uihost import host_of
 from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.detector_settings import build_detector_settings_form
 from KrakenOS.UI.row_forms.element_forms import (build_element_settings_form,
@@ -71,7 +71,7 @@ class MainSceneElementDialogs:
 
     def _run_row_form_dialog(self, form, *, wraplength: int = 520):
         """Show a `RowForm` -- the Tk view lives in panels/row_form_view.py (bugs/0881)."""
-        return render_row_form(self, form, wraplength=wraplength,
+        return present_row_form(self, form, wraplength=wraplength,
                                on_close=self._cleanup_current_popup_menu)
 
     def _open_row_form(self, title: str, builder, *args, wraplength: int = 520):
@@ -80,13 +80,13 @@ class MainSceneElementDialogs:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror(title, f"Could not read the surface table:\n\n{exc}",
-                                 parent=self.editor)
+            host_of(self).showerror(title, f"Could not read the surface table:\n\n{exc}",
+                                    parent=self.editor)
             return None
         try:
             form = builder(self, *args)
         except FormRefused as exc:
-            messagebox.showinfo(title, str(exc), parent=self.editor)
+            host_of(self).showinfo(title, str(exc), parent=self.editor)
             return None
         return self._run_row_form_dialog(form, wraplength=wraplength)
 

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import ttk
 from typing import Any, Callable
 
 from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.beam_splitter import build_beam_splitter_form
-from KrakenOS.UI.panels.row_form_view import render_row_form
+from KrakenOS.UI.panels.row_form_view import present_row_form
+from KrakenOS.UI.uihost import host_of
 
 
 class MainBeamSplitterDialog:
@@ -64,15 +65,15 @@ class MainBeamSplitterDialog:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Beam Splitter", f"Could not read the surface table:\n\n{exc}",
-                                 parent=self.editor)
+            host_of(self).showerror("Beam Splitter", f"Could not read the surface table:\n\n{exc}",
+                                    parent=self.editor)
             return
 
         try:
             form = build_beam_splitter_form(self, row_index)
         except FormRefused as exc:
-            messagebox.showinfo("Beam Splitter", str(exc), parent=self.editor)
+            host_of(self).showinfo("Beam Splitter", str(exc), parent=self.editor)
             return
         # bugs/0884: the Tk layout is the SHARED renderer now -- this file keeps only the
         # read-the-table prologue and the builder call.
-        render_row_form(self, form, wraplength=520)
+        present_row_form(self, form, wraplength=520)

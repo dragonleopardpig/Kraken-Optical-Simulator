@@ -324,7 +324,7 @@ def open_catalog_matcher_dialog(editor):
     rows and the per-row explanation live in ``KrakenOS/UI/row_forms/catalog_matcher.py``,
     which the Qt dialog uses too. It REPORTS -- RowForm.read_only drops Validate and Apply.
     """
-    from KrakenOS.UI.panels.row_form_view import render_row_form
+    from KrakenOS.UI.panels.row_form_view import present_row_form
     from KrakenOS.UI.row_forms import FormRefused
     from KrakenOS.UI.row_forms.catalog_matcher import build_catalog_matcher_form
     from KrakenOS.UI.uihost import host_of
@@ -334,6 +334,4 @@ def open_catalog_matcher_dialog(editor):
     except FormRefused as exc:
         host_of(editor).showinfo("Camera + Lens Matcher", str(exc))
         return None
-    window = render_row_form(editor, form, wraplength=760)
-    window.geometry("1080x620")
-    return window
+    return present_row_form(editor, form, wraplength=760, geometry="1080x620")

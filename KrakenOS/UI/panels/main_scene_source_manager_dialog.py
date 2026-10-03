@@ -8,12 +8,12 @@ kwargs -- the constants the builder falls back to when an owner lacks them.
 
 from __future__ import annotations
 
-from tkinter import messagebox
 from typing import Any, Callable
 
-from KrakenOS.UI.panels.row_form_view import render_row_form
+from KrakenOS.UI.panels.row_form_view import present_row_form
 from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.scene_sources import build_scene_source_manager_form
+from KrakenOS.UI.uihost import host_of
 
 
 class MainSceneSourceManagerDialog:
@@ -102,7 +102,6 @@ class MainSceneSourceManagerDialog:
                 aim_face_id=aim_face_id,
             )
         except FormRefused as exc:
-            messagebox.showinfo("Scene Source Manager", str(exc), parent=self.editor)
+            host_of(self).showinfo("Scene Source Manager", str(exc), parent=self.editor)
             return
-        window = render_row_form(self, form, wraplength=900)
-        window.geometry("1120x720")
+        present_row_form(self, form, wraplength=900, geometry="1120x720")

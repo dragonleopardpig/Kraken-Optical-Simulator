@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 import traceback
 from typing import Any
-from KrakenOS.UI.panels.row_form_view import render_row_form
+from KrakenOS.UI.panels.row_form_view import present_row_form
 from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.presets import (apply_preset as apply_tolerance_preset,
                                            build_apply_tolerance_preset_form,
@@ -122,7 +122,7 @@ class MainToleranceReportDialogs:
         except FormRefused as exc:
             host_of(self).showinfo("Save Tolerance Solve Preset", str(exc), parent=self.editor)
             return
-        render_row_form(self, form, wraplength=460, modal=True)
+        present_row_form(self, form, wraplength=460, modal=True)
 
     def open_apply_tolerance_solve_preset_dialog(self) -> None:
         # docs/design_qt_migration.md phase 3 (bugs/0892): the preset list and what Apply does
@@ -142,7 +142,7 @@ class MainToleranceReportDialogs:
                 host_of(self).showerror("Apply Tolerance Solve Preset", str(exc),
                                         parent=self.editor)
             return
-        render_row_form(self, form, wraplength=380, modal=True)
+        present_row_form(self, form, wraplength=380, modal=True)
 
     def open_tolerance_worst_sample_comparison_report(self) -> None:
         try:

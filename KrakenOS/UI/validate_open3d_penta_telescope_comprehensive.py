@@ -16842,6 +16842,10 @@ phase_720_build_stamp_takes_no_git_lock = _phase_from_standalone(
     720, "the build stamp never leaves .git/index.lock behind (0946): its git queries run with --no-optional-locks, so a `git status` killed at the 2 s import-time timeout cannot strand the lock that made every later git command fail (\"can't git pull\" on M90aPro twice); in a throwaway repo the stamp's status leaves the index byte- and mtime-identical where plain `git status` rewrites it, a killed query returns None with no lock, the answers stay truthful, and an unanswered status is recorded as dirty=None, not clean",
     'KrakenOS.UI.validate_open3d_0946_build_stamp_takes_no_git_lock',
     'build_stamp_takes_no_git_lock')
+phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
+    721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
+    'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
+    'qt_model_forms_open_in_qt')
 phase_716_qt_mtf_from_image = _phase_from_standalone(
     716, "Measure MTF from Image is one session rendered by Tk and Qt (phase 5g, 0938): File -> Measure MTF from Image opens the Qt dialog (also on the ribbon); a real drag on a capture shown at 0.5x stores the box at twice the size in image pixels and Compute equals the direct slanted-edge fit (5 deg); two USAF drags add G2E1/G2E2 and fill MTF + R2; the Tk dialog's same drags store the same ROIs and both shells save byte-identical CSVs",
     'KrakenOS.UI.validate_qt_mtf_from_image',
@@ -17695,6 +17699,7 @@ def main() -> int:
             phase_718_qt_menu_parity,
             phase_719_qt_lens_drawing,
             phase_720_build_stamp_takes_no_git_lock,
+            phase_721_qt_model_forms_open_in_qt,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

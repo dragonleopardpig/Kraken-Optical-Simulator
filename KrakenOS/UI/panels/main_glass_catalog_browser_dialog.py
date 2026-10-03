@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from tkinter import messagebox
 from typing import Any, Callable
-from KrakenOS.UI.panels.row_form_view import render_row_form
+from KrakenOS.UI.panels.row_form_view import present_row_form
+from KrakenOS.UI.uihost import host_of
 from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.glass_catalog import build_glass_catalog_form
 
@@ -39,16 +39,15 @@ class MainGlassCatalogBrowserDialog:
         try:
             form = build_glass_catalog_form(self)
         except FormRefused as exc:
-            messagebox.showinfo("Glass Catalog Browser", str(exc), parent=self.editor)
+            host_of(self).showinfo("Glass Catalog Browser", str(exc), parent=self.editor)
             return
         except Exception as exc:
             message = self.short_error_message(exc)
-            messagebox.showerror(
+            host_of(self).showerror(
                 "Glass Catalog Browser",
                 f"Could not load KrakenOS glass catalogs:\n\n{message}",
                 parent=self.editor,
             )
             self.status_var.set(f"Glass catalog browser failed: {message}")
             return
-        window = render_row_form(self, form, wraplength=760)
-        window.geometry("900x600")
+        present_row_form(self, form, wraplength=760, geometry="900x600")

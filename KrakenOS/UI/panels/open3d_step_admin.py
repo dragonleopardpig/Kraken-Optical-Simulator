@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import tkinter as tk
 from pathlib import Path
-from tkinter import simpledialog, ttk
+from tkinter import ttk
 from typing import Any, Callable
 
 from KrakenOS.UI.context_menu import new_context_menu
+from KrakenOS.UI.uihost import host_of
 
 
 class Open3DStepAdminPanel:
@@ -1620,7 +1621,7 @@ class Open3DStepAdminPanel:
             return
         label = str(getattr(self.editor, "_selected_step_label", "") or "").strip().lower()
         display = self.editor._step_overlay_display_label(label) if label else "STEP"
-        materials = simpledialog.askstring(
+        materials = host_of(self.inspector).askstring(
             "Native STEP Materials",
             (
                 f"Glass/material sequence after each native {display} surface.\n"

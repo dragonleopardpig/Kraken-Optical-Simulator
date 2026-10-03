@@ -8,7 +8,7 @@ from tkinter import ttk
 from typing import Any
 from KrakenOS.UI.optimization_controls import MTF_ALGORITHMS, MTF_MODES
 from KrakenOS.UI.optimization_controls import worker_choices as optimization_worker_choices
-from KrakenOS.UI.panels.row_form_view import render_row_form
+from KrakenOS.UI.panels.row_form_view import present_row_form
 from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.presets import build_optimization_bounds_form
 
@@ -45,9 +45,8 @@ class MainOptimizationPanel:
         except FormRefused as exc:
             self.append_debug(str(exc))
             return
-        window = render_row_form(self, form, wraplength=320, modal=True,
-                                 on_close=self._cleanup_current_popup_menu)
-        self.wait_window(window)
+        present_row_form(self, form, wraplength=320, modal=True,
+                         on_close=self._cleanup_current_popup_menu, wait=True)
 
     def build(self, parent: tk.Widget) -> None:
         specs = self.operand_specs

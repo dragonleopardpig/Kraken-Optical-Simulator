@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import ttk
 from typing import Any, Callable
 
 from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.diffuse_scatter import build_diffuse_scatter_form
-from KrakenOS.UI.panels.row_form_view import render_row_form
+from KrakenOS.UI.panels.row_form_view import present_row_form
+from KrakenOS.UI.uihost import host_of
 
 
 class MainDiffuseScatterDialog:
@@ -61,15 +62,15 @@ class MainDiffuseScatterDialog:
         try:
             self._read_rows_from_table()
         except Exception as exc:
-            messagebox.showerror("Diffuse / BRDF", f"Could not read the surface table:\n\n{exc}",
-                                 parent=self.editor)
+            host_of(self).showerror("Diffuse / BRDF", f"Could not read the surface table:\n\n{exc}",
+                                    parent=self.editor)
             return
 
         try:
             form = build_diffuse_scatter_form(self, row_index)
         except FormRefused as exc:
-            messagebox.showinfo("Diffuse / BRDF", str(exc), parent=self.editor)
+            host_of(self).showinfo("Diffuse / BRDF", str(exc), parent=self.editor)
             return
         # bugs/0884: the Tk layout is the SHARED renderer now -- this file keeps only the
         # read-the-table prologue and the builder call.
-        render_row_form(self, form, wraplength=560)
+        present_row_form(self, form, wraplength=560)
