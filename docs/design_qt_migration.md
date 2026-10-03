@@ -310,22 +310,41 @@ the same `get` / `set` / `trace_add`). The 35 view-only variables stay where the
 | 6 | matplotlib embeds -> `FigureCanvasQTAgg` | Qt | days |
 | 7 | editor-instantiating validators repointed; penta gate re-baselined | Qt | 1-2 wk |
 
-## Status and remaining work (measured 2026-09-27, after 0904)
+## Status and remaining work (re-measured 2026-10-03, after 0945)
 
 The phase table above is the original estimate. Where each phase stands, and what is left, measured
-against the code rather than remembered. "Shell parity" is work the table never had a row for: the
-main window's own panels, which turned out to hide model state in Tk widgets just as the dialogs did.
+against the code rather than remembered (the previous measurement was 2026-09-27, after 0904).
+"Shell parity" is work the table never had a row for: the main window's own panels, which turned
+out to hide model state in Tk widgets just as the dialogs did.
 
 | Phase | Status | Remaining, with sizes |
 |---|---|---|
 | 1a-1d seam | **done** (0851-0853) | -- |
 | 2 shell + viewport | **done** (0854-0858) | -- |
-| 3 dialogs | **mostly done** (0859-0897; 9 report builders, row forms) | lens drawing surface properties + PDF export (353 lines); atmosphere panel (220); the three paraxial solve prompts inside `main_paraxial_analysis_dialogs` (471); missing-assets (559) -- a resolution workflow, not a report: port as its own dialog or keep Tk-only, a decision owed |
-| 4 tables -> model/view | **mostly done** (reports 0894-0897, surface table 0903) | the table's right-click menu -- 529 lines, 12 submenus, only the optimisation entries ported (0904); the Tk table is still the cell PARSER (`_read_rows_from_table`), the seam that must move before Tk can go |
-| shell parity | **done for the core workflow** (0893, 0898-0904: plot, results/logs, plot picker, system/source/trace inputs, table editing, optimisation) | 2D-plot toolbar toggles (cardinals, thickness, path view); `_refresh_operand_surface_choices` still walks every Tk widget; the `self.__dict__.get` sweep (0901) |
-| **5 interaction layer -- THE RISK** | **5a + 5c done (0905-0907)**: the real inspector runs in a Qt dock -- orbit, pan, zoom, pick, hover, keys, Alt, timers, and every right-click menu; `SceneViewport` stays central until parity | measured: `open3d_inspector.py` is 26 234 lines / 828 methods but only **30** event bindings, and VTK itself is toolkit-neutral -- so 5 is re-plumbing, not a rewrite. Four more services are Tk-bound (`three_d_scene_tools` 6 782, `scene_placement_commands` 10 385, `open3d_face_assignment` 3 059, `open3d_interaction` 1 611). Sub-steps below |
-| 6 matplotlib | **done except inside phase-5 dialogs** (2D plot 0893, FormFigure 0887) | the embeds in MTF-from-image and the face-roles editor move with 5g |
-| 7 validators + gate | **not started** | 226 validators build a real editor, 38 of them drive Tk widgets directly; ~165 validators are in no penta phase; then Qt as the default shell and the Tk-retirement decision |
+| 3 dialogs | **done but four** (0859-0897 reports and row forms; 0933-0938 face roles, diagnostics, MTF from image; 0945 lens drawing) | Atmospheric Settings (`main_atmosphere_panel`, a Tk window -- the LAST of the 75 menu-bar commands); the three paraxial solve prompts (`_show_paraxial_solve_dialog`, folded mirror, best focus: 207 lines); missing-assets (559 lines, 9 direct tkinter dialog calls) -- a resolution workflow, decision still owed; the 2D bug-flag description dialog |
+| 4 tables -> model/view | **mostly done** (reports 0894-0897, surface table 0903, Path view on the table toolbar 0944) | the table's right-click menu: Tk has **95 commands in 14 submenus**, Qt has **3** (the optimisation entries, 0904) -- the largest single gap; the Tk table is still the cell PARSER (`_read_rows_from_table`), the seam that must move before Tk can go; Group / Ungroup Element read the hidden Tk selection |
+| shell parity | **menu bar 74 of 75** (0942-0945; phase 718 holds it: `KNOWN_GAPS` may only shrink); ribbon with 5 tabs and a command palette (0935, 0940, 0943); 93 actions; docks, undo/redo, save, table copy/paste | 2D-plot toolbar toggles (cardinals, thickness); `_refresh_operand_surface_choices` still walks every Tk widget; the `self.__dict__.get` sweep (0901) |
+| **5 interaction layer** | **done** (0905-0939): the real inspector runs in a Qt dock and the harness's 352 phases pass with it there | what a USER still cannot see in the Qt shell -- the inspector's own popups are Tk windows and not one is shell-aware: Quick Estimation's FOV popup (428 lines), target-FOV, detector-design and configuration-table popups; Edit Thickness (a dimension double-click, 139); STEP Resize Solid (123); LED Edge Distance; the centred input dialog (2 callers); the bug-flag description. The harness drives them programmatically, which is why it passes. Also mechanical: 18 panels call Tk `render_row_form` directly (the shell-aware `present_row_form` exists since 0944) and 42 direct `tkinter` dialog calls remain in 19 panel files |
+| 6 matplotlib | **done** (2D plot 0893, FormFigure 0887, MTF from image 0938) | -- |
+| 7 validators + gate | **started**: `--shell qt` harness gate 352/352 (0939); 62 validators exercise the Qt shell | 862 validators, 173 in no penta phase; 239 build a real editor (94 already `headless=True`), about 63 touch Tk widgets directly (a source scan); then Qt as the default shell and the Tk-retirement decision |
+
+**Gates.** Full Tk gate 717/717 at 7ace2ca9 (2026-10-02; 0939-0944 had ridden on subsets); the
+baseline holds 718 phases, all pass, 719 the newest. On 14 GB hardware the parallel shard gate does
+not fit (7 GB per shard): run it as sequential `--phases` chunks (1 h 42 min, bugs/0945).
+
+### What is left, in order
+
+1. **Sweep the Tk leftovers a menu can reach** -- `render_row_form` -> `present_row_form` in the 18
+   panels, the 42 direct tkinter dialog calls -> `host_of`. Mechanical, and it unblocks 2 and 3.
+   Prove it by running every inspector and table menu verb in the Qt shell and recording Tk windows.
+2. **The table's right-click menu** -- the 5c move: let the Tk builder fill a recording `MenuModel`
+   and have Qt render it, so the 95 commands arrive together rather than one port each.
+3. **The inspector's popups** -- the small ones first through the host or a row form (centred
+   input, LED edge distance, Edit Thickness, STEP resize), then Quick Estimation as a session with
+   two views.
+4. **Atmospheric Settings** -- menu parity 75 of 75.
+5. Paraxial solve prompts; the 2D-plot toggles; the missing-assets decision.
+6. **Phase 7** -- validators off Tk, Qt the default shell, the Tk-retirement decision.
 
 ### Phase 5, broken down
 
