@@ -179,6 +179,34 @@ def _layout_editor_class():
 _RUNNING_BUILD_STAMP: "dict[str, object] | None" = None
 
 
+def _build_stamp_git(repo_dir: str, *args: str, timeout: float = 2.0) -> "str | None":
+    """One read-only git query for the build stamp: its output ("" when there is none), or None
+    when git is missing, fails or does not answer within `timeout`.
+
+    `--no-optional-locks` is the point (bugs/0946). `git status` takes `.git/index.lock` for the
+    whole of its tree walk so it can save a refreshed index; a status that outlives `timeout` is
+    KILLED by `subprocess.run`, the lock stays, and from then on every git command in the checkout
+    fails ("Unable to create .git/index.lock: File exists") until someone deletes it. This runs at
+    IMPORT, so every app start and every validator rolled that die -- lost on a cold cache under
+    disk pressure. With optional locks off, git never takes the lock here: there is nothing to
+    leave behind, and a query that is only a question cannot break the next `git pull`.
+    """
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["git", "--no-optional-locks", "-C", repo_dir, *args],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except Exception:
+        return None
+    if out.returncode != 0:
+        return None
+    return out.stdout.strip()
+
+
 def _open3d_running_build_stamp() -> "dict[str, object]":
     """Best-effort git fingerprint of the CODE the running app was launched from.
 
@@ -194,31 +222,19 @@ def _open3d_running_build_stamp() -> "dict[str, object]":
         return _RUNNING_BUILD_STAMP
     stamp: "dict[str, object]" = {"git": None}
     try:
-        import subprocess
-
         repo_dir = os.path.dirname(os.path.abspath(__file__))
 
         def _git(*args: str) -> "str | None":
-            try:
-                out = subprocess.run(
-                    ["git", "-C", repo_dir, *args],
-                    capture_output=True,
-                    text=True,
-                    timeout=2.0,
-                )
-            except Exception:
-                return None
-            if out.returncode != 0:
-                return None
-            return out.stdout.strip() or None
+            return _build_stamp_git(repo_dir, *args) or None
 
         head = _git("rev-parse", "--short", "HEAD")
         if head is not None:
-            dirty = _git("status", "--porcelain")
+            status = _build_stamp_git(repo_dir, "status", "--porcelain")
             stamp = {
                 "git": head,
                 "branch": _git("rev-parse", "--abbrev-ref", "HEAD"),
-                "dirty": bool(dirty),
+                # None = the status did not answer in time: unknown, which is not "clean"
+                "dirty": None if status is None else bool(status),
                 # bugs/0502: WHICH COPY is running. `git rev-parse` reads the repository, so the
                 # hash above is honest about the checkout even when the process imported KrakenOS
                 # from somewhere else entirely -- an installed copy, a Nix store path, a stale

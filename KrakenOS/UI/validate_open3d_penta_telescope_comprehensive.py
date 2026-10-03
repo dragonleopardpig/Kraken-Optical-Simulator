@@ -16838,6 +16838,10 @@ phase_719_qt_lens_drawing = _phase_from_standalone(
     719, "the lens-drawing surface properties and the PDF lens drawing work in both shells (0945): one session (lens_drawing_session) rendered by a Tk window and a modal Qt dialog; in the Qt shell real typing is validated (a negative clear aperture refused through the host), Apply writes DrawingProperties, Save/Clear/Load JSON round-trip, Apply & Close returns success; Export Lens Drawing cancels cleanly and otherwise writes the PDF through the host; the same script in Tk leaves identical properties and a byte-identical JSON sidecar",
     'KrakenOS.UI.validate_qt_lens_drawing',
     'qt_lens_drawing')
+phase_720_build_stamp_takes_no_git_lock = _phase_from_standalone(
+    720, "the build stamp never leaves .git/index.lock behind (0946): its git queries run with --no-optional-locks, so a `git status` killed at the 2 s import-time timeout cannot strand the lock that made every later git command fail (\"can't git pull\" on M90aPro twice); in a throwaway repo the stamp's status leaves the index byte- and mtime-identical where plain `git status` rewrites it, a killed query returns None with no lock, the answers stay truthful, and an unanswered status is recorded as dirty=None, not clean",
+    'KrakenOS.UI.validate_open3d_0946_build_stamp_takes_no_git_lock',
+    'build_stamp_takes_no_git_lock')
 phase_716_qt_mtf_from_image = _phase_from_standalone(
     716, "Measure MTF from Image is one session rendered by Tk and Qt (phase 5g, 0938): File -> Measure MTF from Image opens the Qt dialog (also on the ribbon); a real drag on a capture shown at 0.5x stores the box at twice the size in image pixels and Compute equals the direct slanted-edge fit (5 deg); two USAF drags add G2E1/G2E2 and fill MTF + R2; the Tk dialog's same drags store the same ROIs and both shells save byte-identical CSVs",
     'KrakenOS.UI.validate_qt_mtf_from_image',
@@ -17690,6 +17694,7 @@ def main() -> int:
             phase_717_editor_panel_delegations,
             phase_718_qt_menu_parity,
             phase_719_qt_lens_drawing,
+            phase_720_build_stamp_takes_no_git_lock,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
