@@ -11,8 +11,9 @@ DISPLAY (VTK draws through a real GL context and the model still builds a Tk tre
 or without PySide6, the Q sections report SKIP and the rest still runs.
 
   A  importing `KrakenOS.UI.qt` loads no Qt binding (a Tk run must not pull in PySide6)
-  B  every declared action names a real main-window method, and the menus follow the declaration
-  Q1 the window builds: menus, the docked surface table with its object name, and a viewport
+  B  every declared action names a real main-window method
+  Q1 the window builds: NO menu bar (bugs/0949 -- the ribbon's tabs are the command surface, as
+     declared), the docked surface table with its object name, and a viewport
      container that is the central widget (the viewport is built after `show()`, on purpose)
   Q2 the Qt table shows the REAL rows -- row count, headings and cell values read back to
      `editor.rows`, with no copy in between
@@ -47,7 +48,6 @@ def qt_runtime_checks() -> list[list]:
     from PySide6.QtGui import QMouseEvent
     from PySide6.QtWidgets import QDockWidget, QTableView
 
-    from KrakenOS.UI.qt.actions import ACTIONS
     from KrakenOS.UI.qt.app import build
     from KrakenOS.UI.qt.rows_table import table_fields
     from KrakenOS.UI.uihost import host_of
@@ -70,20 +70,20 @@ def qt_runtime_checks() -> list[list]:
             time.sleep(0.05)
 
     # ---- Q1 the window --------------------------------------------------------------------
-    # a menu path "&Analysis/&Tolerance" is a submenu titled "&Tolerance" (bugs/0943)
-    menu_paths = list(window.menus)
-    mistitled = [path for path, menu in window.menus.items() if menu.title() != path.rpartition("/")[2]]
-    menu_titles = [menu.title() for menu in window.menus.values()]
+    # the shell has no menu bar (bugs/0949): the ribbon's tabs are the one command surface
+    from PySide6.QtWidgets import QMenuBar
+
+    from KrakenOS.UI.qt.ribbon import RIBBON
+
+    menu_bars = len(window.findChildren(QMenuBar)) + (0 if window.menuWidget() is None else 1)
+    tabs = [window.ribbon.tabs.tabText(index) for index in range(window.ribbon.tabs.count())]
     dock = window.findChild(QDockWidget, "SurfaceTableDock")
     table = window.findChild(QTableView)
-    declared_menus = []
-    for _name, title, *_rest in ACTIONS:
-        if title not in declared_menus:
-            declared_menus.append(title)
-    row("Q1", menu_paths == declared_menus and not mistitled and dock is not None and table is not None
+    row("Q1", menu_bars == 0 and tabs == [tab for tab, _groups in RIBBON] and len(tabs) >= 5
+        and dock is not None and table is not None
         and window.centralWidget() is window.viewport_host
         and window.viewport.widget.parent() is window.viewport_host,
-        f"menus {menu_titles} match the declaration; the surface table is docked as "
+        f"menu bars {menu_bars}; ribbon tabs {tabs} match the declaration; the surface table is docked as "
         f"{dock.objectName()!r}; the viewport sits in the central container "
         f"(never reparented after construction)")
 
@@ -268,7 +268,7 @@ def run_checks() -> tuple[bool, list[str]]:
     from KrakenOS.UI.qt.actions import editor_command
 
     # an "editor:<method>" action runs the editor's own method (bugs/0942): that one must exist
-    missing = [(name, method) for name, _menu, _text, _short, method, _tip in ACTIONS
+    missing = [(name, method) for name, _text, _short, method, _tip in ACTIONS
                if (method not in defined if editor_command(method) is None
                    else not callable(getattr(KrakenLayoutEditor, editor_command(method), None)))]
     ok(len(ACTIONS) >= 6 and not missing,

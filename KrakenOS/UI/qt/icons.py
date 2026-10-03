@@ -1,4 +1,4 @@
-"""The Qt shell's command icons (bugs/0935: the ribbon and the menus).
+"""The Qt shell's command icons (bugs/0935: the ribbon's buttons and dropdowns).
 
 Line icons drawn for this project on a 24x24 grid, kept here as SVG text rather than files, so they
 ship with the code and scale to any size. ``{fg}`` is the pen colour and ``{accent}`` the light /
@@ -126,6 +126,45 @@ ICONS: dict[str, str] = {
     "tolerance_multi_compensator": (f'<ellipse {_OPEN} cx="14" cy="9" rx="8.5" ry="5" transform="rotate(-25 14 9)"/>'
                                     f'<ellipse {_OPEN} cx="14" cy="9" rx="4" ry="2.3" transform="rotate(-25 14 9)"/>'
                                     f'<path {_LIGHT} d="M3 21v-6h5v-4h4.5v-2"/><circle {_GLASS} cx="14" cy="9" r="1.4"/>'),
+    # ---- commands that lived only in the menus until the menu bar went (bugs/0949) -----------------
+    # a blank sheet: the layout cleared to Object + Image
+    "reset": (f'<path {_OPEN} d="M6 3h8l4 4v14H6z"/><path {_OPEN} d="M14 3v4h4"/>'
+              f'<path {_LIGHT} d="M9.5 12.5l5 5M14.5 12.5l-5 5"/>'),
+    "copy_rows": (f'<rect {_GLASS} x="9" y="9" width="11" height="11" rx="1"/>'
+                  f'<path {_OPEN} d="M15 6V4H4v11h2"/>'),
+    "paste_rows": (f'<path {_OPEN} d="M8 5H5v16h14V5h-3"/><rect {_GLASS} x="8" y="3" width="8" height="4" rx="1"/>'
+                   f'<path {_LIGHT} d="M8.5 12h7M8.5 16h7"/>'),
+    "refresh_plot": (f'<path {_OPEN} d="M4 3v17h17"/><path {_LIGHT} d="M7 16c3-9 5-9 7-3s4 1 6-6"/>'),
+    # a beam turned by a fold mirror
+    "folded_assembly": (f'<path {_LIGHT} d="M2 8h12v13"/><path {_OPEN} d="M10 4l8 8"/>'
+                        f'<ellipse {_GLASS} cx="6" cy="8" rx="1.6" ry="4.5"/>'
+                        f'<rect {_GLASS} x="10.5" y="18" width="7" height="3"/>'),
+    # a drawing sheet: the lens, its dimension line and the title block
+    "lens_drawing_properties": (f'<rect {_OPEN} x="2.5" y="4" width="19" height="16"/>'
+                                f'<ellipse {_GLASS} cx="8" cy="10.5" rx="2.2" ry="4.5"/>'
+                                f'<path {_LIGHT} d="M4.5 17.5h7M4.5 16.3v2.4M11.5 16.3v2.4"/>'
+                                f'<path {_OPEN} d="M14.5 14.5h7M14.5 14.5v5.5"/>'),
+    "add_path_component": (f'<path {_LIGHT} d="M2 14h20"/><ellipse {_GLASS} cx="9" cy="14" rx="2.2" ry="6"/>'
+                           f'<path {_OPEN} d="M18 3v7M14.5 6.5h7"/>'),
+    # a cemented pair, where the component above is one element
+    "add_path_stock_lens": (f'<path {_LIGHT} d="M2 14h20"/><ellipse {_GLASS} cx="6.5" cy="14" rx="2.2" ry="6"/>'
+                            f'<path {_GLASS} d="M8.7 8.4h3.6c1.6 3.6 1.6 7.6 0 11.2H8.7"/>'
+                            f'<path {_OPEN} d="M18 3v7M14.5 6.5h7"/>'),
+    # a solid and the arrows that move it
+    "place_cad_solid": (f'<path {_GLASS} d="M9 9l5-2.5 5 2.5v6l-5 2.5-5-2.5z"/><path {_OPEN} d="M9 9l5 2.5 5-2.5M14 11.5v6"/>'
+                        f'<path {_LIGHT} d="M2 12h5M4 10l-2 2 2 2M14 2v3.5M12 4l2-2 2 2"/>'),
+    # ---- the dropdown buttons ------------------------------------------------------------------------
+    "menu_import": (f'<path {_OPEN} d="M4 14v6h16v-6"/><path {_LIGHT} d="M12 3v12M7.5 10.5L12 15l4.5-4.5"/>'),
+    "menu_export": (f'<path {_OPEN} d="M4 14v6h16v-6"/><path {_LIGHT} d="M12 16V3M7.5 7.5L12 3l4.5 4.5"/>'),
+    "menu_help": (f'<circle {_OPEN} cx="12" cy="12" r="9"/>'
+                  f'<path {_LIGHT} d="M9 9.5a3 3 0 1 1 4.6 2.5c-1 .7-1.6 1.2-1.6 2.5M12 17.5v.5"/>'),
+    "menu_cad_clear": (f'<path {_OPEN} d="M4 7h16M9 7V4h6v3M6.5 7l1 14h9l1-14"/><path {_LIGHT} d="M10 11v6M14 11v6"/>'),
+    "menu_analysis_more": (f'<circle {_GLASS} cx="5" cy="12" r="2"/><circle {_GLASS} cx="12" cy="12" r="2"/>'
+                           f'<circle {_GLASS} cx="19" cy="12" r="2"/>'),
+    # a table, written out
+    "menu_tolerance_csv": (f'<rect {_GLASS} x="3" y="4" width="12" height="16"/>'
+                           f'<path {_OPEN} d="M3 9.5h12M3 14.5h12M9 4v16"/>'
+                           f'<path {_LIGHT} d="M17 12h5M19.5 9.5L22 12l-2.5 2.5"/>'),
     # ---- the ribbon's own -------------------------------------------------------------------------
     "search": f'<circle {_OPEN} cx="10" cy="10" r="6"/><path {_OPEN} d="M14.5 14.5L20 20"/>',
 }

@@ -112,7 +112,7 @@ def qt_routes() -> dict[str, str]:
     names = {action[0] for action in ACTIONS}
     routes: dict[str, str] = {}
     for _label, method in tk_menu_commands():
-        for name, _menu, _text, _short, target, _tip in ACTIONS:
+        for name, _text, _short, target, _tip in ACTIONS:
             command = editor_command(target)
             if command == method or (command is None and f"self.editor.{method}(" in bodies.get(target, "")):
                 routes[method] = name
@@ -132,7 +132,7 @@ def static_checks() -> list:
     unrouted = [m for m in methods if m not in routes and m not in KNOWN_GAPS]
     stale = sorted(m for m in KNOWN_GAPS if m in routes)
     gone = sorted(m for m in set(KNOWN_GAPS) | set(QT_PORTS) if m not in methods)
-    targets = [editor_command(action[4]) for action in ACTIONS]
+    targets = [editor_command(method) for _name, _text, _short, method, _tip in ACTIONS]
     undefined = sorted(t for t in targets if t is not None and not callable(getattr(KrakenLayoutEditor, t, None)))
     return [["S", len(methods) >= 70 and not unrouted and not stale and not gone and not undefined,
              f"{len(methods)} Tk menu-bar commands: {len(routes)} routed in Qt, {len(KNOWN_GAPS)} known gaps; "

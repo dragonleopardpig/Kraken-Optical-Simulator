@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from KrakenOS.UI.qt.actions import ActionManager
+from KrakenOS.UI.qt.actions import TABLE_SHORTCUTS, ActionManager
 from KrakenOS.UI.qt.docks import DockManager
 from KrakenOS.UI.qt.analysis_toolbar import AnalysisToolbar
 from KrakenOS.UI.qt.optimization_panel import OptimizationPanel
@@ -30,7 +30,7 @@ def _main_window_class():
 
 
 class KrakenQtMainWindow(_main_window_class()):
-    """Menus, a surface table, a 3D viewport and a status line over a live editor."""
+    """A ribbon, a surface table, a 3D viewport and a status line over a live editor."""
 
     def __init__(self, editor, ui=None) -> None:
         from PySide6.QtCore import Qt
@@ -48,7 +48,11 @@ class KrakenQtMainWindow(_main_window_class()):
 
         self.action_manager = ActionManager(self)
         self.action_manager.create_all_actions()
-        self.menus = self.action_manager.populate_menu_bar(self.menuBar())
+        # no menu bar (bugs/0949): the ribbon is the one command surface. A shortcut only fires for
+        # an action some visible widget holds -- the menu bar used to be that widget. The table's
+        # own shortcuts stay off the window: held here, Ctrl+C would copy rows from every view
+        self.addActions([action for name, action in self.action_manager.actions.items()
+                         if name not in TABLE_SHORTCUTS])
 
         # The viewport is NOT created here: it must be built once this window is shown, because
         # the VTK widget hands VTK its window id in its constructor and Qt recreates a native
@@ -78,8 +82,6 @@ class KrakenQtMainWindow(_main_window_class()):
         editor.select_rows = self.select_rows
         editor.show_rows = self.show_rows
         self.table_widget = self._build_table_widget()
-        from KrakenOS.UI.qt.actions import TABLE_SHORTCUTS
-
         for name in TABLE_SHORTCUTS:
             action = self.action_manager[name]
             action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)

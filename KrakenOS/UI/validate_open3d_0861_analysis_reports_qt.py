@@ -190,8 +190,8 @@ def run_checks() -> tuple[bool, list[str]]:
     source = Path("KrakenOS/UI/qt/main_window.py").read_text(encoding="utf-8")
     defined = {node.name for node in ast.walk(ast.parse(source))
                if isinstance(node, ast.FunctionDef)}
-    action_names = {name for name, _menu, *_rest in ACTIONS}
-    methods = {name: method for name, _menu, _text, _short, method, _tip in ACTIONS}
+    action_names = {name for name, *_rest in ACTIONS}
+    methods = {name: method for name, _text, _short, method, _tip in ACTIONS}
     missing_action = sorted(set(REPORT_BUILDERS) - action_names)
     missing_method = [methods[name] for name in REPORT_BUILDERS
                       if name in methods and methods[name] not in defined]

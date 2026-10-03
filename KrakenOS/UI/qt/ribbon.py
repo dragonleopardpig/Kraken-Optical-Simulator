@@ -1,10 +1,13 @@
 """The Qt shell's ribbon: tabbed groups of icon commands + a command palette (bugs/0935).
 
 The ribbon is layout only. Every button runs one of the shell's own `QAction`s (`actions.ACTIONS`),
-so a ribbon click, a menu click and a shortcut are the same call, a checkable action (Show Rays)
-shows one state everywhere, and the menus stay for keyboard use. `RIBBON` is the whole layout as
-data; `RIBBON_EXCLUDED` names the actions left off it on purpose, so a new action cannot quietly
-go missing (the guard checks the two cover `ACTIONS` exactly).
+so a ribbon click and a shortcut are the same call and a checkable action (Show Rays) shows one
+state everywhere. `RIBBON` is the whole layout as data.
+
+The ribbon is the shell's ONLY command surface (user request, bugs/0949): there is no menu bar, so
+every action is on it -- as a button, or as an entry of a DROPDOWN button (`DROPDOWNS`: Import,
+Export, Help, ...) where a list is long and used now and then. The guard checks that buttons and
+dropdowns together reach every one of `ACTIONS` exactly once, so a new action cannot go missing.
 
 The Analysis tab also carries the plot picker, Update and WFront 3D -- the same menu and actions as
 `AnalysisToolbar`, whose own toolbar row is hidden so the ribbon does not cost the 3D viewport a
@@ -20,19 +23,28 @@ docks again and returns to its folded / open state.
 """
 from __future__ import annotations
 
-#: tab -> groups -> (action name, "L" large | "S" small, ribbon label). Small buttons stack three
-#: to a column. Labels are short forms of the action's text; "\n" breaks a large button's label.
+#: tab -> groups -> (name, "L" large | "S" small, ribbon label). Small buttons stack three to a
+#: column. Labels are short forms of the action's text; "\n" breaks a large button's label. A name
+#: starting "menu:" is a dropdown button -- its commands are listed in `DROPDOWNS`.
 RIBBON = (
+    ("File", (
+        ("Layout", (("open", "L", "Open\nLayout"), ("reload", "L", "Reload"), ("save", "S", "Save"),
+                    ("save_as", "S", "Save As"), ("reset", "S", "Reset"))),
+        ("Import / Export", (("menu:import", "L", "Import"), ("menu:export", "L", "Export"))),
+        # Quit is small and last, on a tab that is not the one shown at start-up
+        ("Application", (("menu:help", "L", "Help"), ("about", "S", "About"), ("quit", "S", "Quit"))),
+    )),
     ("Home", (
-        ("File", (("open", "L", "Open\nLayout"), ("reload", "L", "Reload"), ("save", "S", "Save"),
-                  ("save_as", "S", "Save As"))),
         ("Edit", (("undo", "S", "Undo"), ("redo", "S", "Redo"))),
+        ("Rows", (("copy_rows", "S", "Copy"), ("paste_rows", "S", "Paste"))),
         ("View", (("reset_camera", "L", "Fit\nScene"), ("inspector", "L", "3D\nInspector"),
-                  ("show_rays", "S", "Show Rays"), ("redraw", "S", "Redraw"), ("about", "S", "About"))),
+                  ("folded_assembly", "L", "Folded\nAssembly"), ("show_rays", "S", "Show Rays"),
+                  ("redraw", "S", "Redraw"), ("refresh_plot", "S", "Refresh Plot"))),
     )),
     ("Surfaces", (
         ("Surface", (("advanced_surface", "L", "Advanced\nSurface"), ("surface_shape", "L", "Shape\nBuilder"),
-                     ("coating_material", "S", "Coating / Material"), ("error_map", "S", "Error Map"))),
+                     ("coating_material", "S", "Coating / Material"), ("error_map", "S", "Error Map"),
+                     ("lens_drawing_properties", "S", "Drawing Properties"))),
         ("Special rows", (("beam_splitter", "S", "Beam Splitter"), ("diffuse_scatter", "S", "Diffuse / BRDF"),
                           ("grating_settings", "S", "Grating"), ("detector_settings", "S", "Detector"),
                           ("galvo_scan", "S", "Galvo Scan"))),
@@ -41,8 +53,11 @@ RIBBON = (
     ("Scene", (
         ("Placement", (("scene_target", "L", "Scene\nTarget"), ("path_local_pose", "S", "Path-Local Pose"),
                        ("element_settings", "S", "Element Settings"))),
+        # they act on the Path view chosen on the surface table's toolbar (bugs/0944)
+        ("Path view", (("add_path_component", "S", "Add Component"), ("add_path_stock_lens", "S", "Add Stock Lens"))),
         ("Sources", (("scene_sources", "L", "Source\nManager"), ("source_edit", "L", "Edit\nSource"))),
-        ("CAD", (("face_roles", "L", "Optical\nFaces"), ("optical_solid_diagnostics", "L", "Inspect\nSolids"))),
+        ("CAD", (("face_roles", "L", "Optical\nFaces"), ("optical_solid_diagnostics", "L", "Inspect\nSolids"),
+                 ("place_cad_solid", "S", "Place / Orient"), ("menu:cad_clear", "S", "Clear"))),
         ("Inspection", (("inspection_cell", "L", "Inspection\nCell"), ("inspection_part", "L", "Inspection\nPart"))),
     )),
     ("Analysis", (
@@ -55,6 +70,7 @@ RIBBON = (
         ("Power", (("detector_aperture", "S", "Detector Aperture"), ("branch_throughput", "S", "Path Throughput"),
                    ("source_illumination", "S", "Source Illumination"))),
         ("Design", (("system_selection", "L", "System\nSelection"), ("catalog_matcher", "L", "Lens\nMatcher"))),
+        ("More", (("menu:analysis_more", "L", "More"),)),
     )),
     # its own tab since the reports were routed (bugs/0943): on the Analysis tab they made the window
     # at least ~1500 px wide (1240 before)
@@ -64,39 +80,35 @@ RIBBON = (
         ("Compensators", (("tolerance_compensator", "L", "Compensator\nSweep"),
                           ("tolerance_multi_compensator", "L", "Multi-\nCompensator"))),
         ("Presets", (("tolerance_preset", "S", "Save Preset"), ("apply_tolerance_preset", "S", "Apply Preset"))),
+        ("Export", (("menu:tolerance_csv", "L", "Export\nCSV"),)),
     )),
 )
 
-#: actions deliberately not on the ribbon -> why
-RIBBON_EXCLUDED = {"quit": "leaves the application: File menu and Ctrl+Q only, never one stray click away"}
-# menu + palette only (bugs/0942): Tk menu-bar commands given a Qt route -- occasional imports,
-# exports, clears and reports, reached from the menus and Ctrl+Shift+P, not worth ribbon space
-_MENU_ONLY = {
-    "wipes the whole layout -- File menu only, like Quit (Undo brings it back)": ("reset",),
-    "imports and exports (File menu)": ("import_zemax", "import_zemax_wavefront", "import_cad_solid",
-                                        "import_lens_step", "import_camera_step", "import_led_step",
-                                        "export_3d_step", "export_3d_dxf", "export_wavefront_csv",
-                                        "export_zernike_csv"),
-    "row clipboard and scene clears (Edit menu; Ctrl+C / Ctrl+V for rows)": (
-        "copy_rows", "paste_rows", "clear_cad_axis_offsets", "clear_step_imports", "place_cad_solid"),
-    "occasional view / analysis commands (View and Analysis menus)": (
-        "refresh_plot", "folded_assembly", "benchmark_psf_mtf", "copy_phase2_report", "copy_wavefront_fit",
-        "clear_zemax_wavefront", "clear_marks"),
-    "help (Help menu)": ("formula_sheet", "manual_index", "copy_debug"),
-    # bugs/0944: they act on the Path view chosen on the surface table's toolbar
-    # bugs/0945
-    "the lens fabrication drawing (File > Export Lens Drawing; Edit > its surface properties)": (
-        "export_lens_drawing", "lens_drawing_properties"),
-    "inserts onto the current Path view (Edit menu; choose the path on the table toolbar)": (
-        "add_path_component", "add_path_stock_lens"),
-    # bugs/0943: each needs its report or a trace first, so a ribbon button would mostly refuse
-    "analysis CSV exports (File > Export Analysis CSV; tolerance ones in Analysis > Tolerance)": (
-        "export_path_psf_csv", "export_path_mtf_csv", "export_detector_map_csv", "export_coherent_detector_csv",
-        "export_branch_field_csv", "export_tolerance_monte_carlo_csv", "export_tolerance_comparison_csv",
-        "export_tolerance_stackup_csv", "export_tolerance_compensator_csv",
-        "export_tolerance_multi_compensator_csv", "export_tolerance_overlay_csv"),
+#: dropdown button -> (what it holds, its actions in order; None is a separator). These are the
+#: long, occasional lists -- a button each would only widen the ribbon.
+DROPDOWNS = {
+    "menu:import": ("Bring a design, a wavefront map or vendor CAD into the layout",
+                    ("import_zemax", "import_zemax_wavefront", None, "import_cad_solid", "import_lens_step",
+                     "import_camera_step", "import_led_step")),
+    "menu:export": ("Write the 3D scene, a lens drawing or analysis data to a file",
+                    ("export_3d_step", "export_3d_dxf", "export_lens_drawing", None, "export_wavefront_csv",
+                     "export_zernike_csv", "export_path_psf_csv", "export_path_mtf_csv", "export_detector_map_csv",
+                     "export_coherent_detector_csv", "export_branch_field_csv")),
+    "menu:help": ("The formula sheet, the manual and the debug log",
+                  ("formula_sheet", "manual_index", None, "copy_debug")),
+    "menu:cad_clear": ("Remove the imported STEP bodies, or only their axis offsets",
+                       ("clear_cad_axis_offsets", "clear_step_imports")),
+    "menu:analysis_more": ("Benchmarks, report copies and clears",
+                           ("benchmark_psf_mtf", None, "copy_phase2_report", "copy_wavefront_fit", None,
+                            "clear_zemax_wavefront", "clear_marks")),
+    # each needs its report run first, so six buttons would mostly refuse
+    "menu:tolerance_csv": ("Write a tolerance run as CSV -- run its report first",
+                           ("export_tolerance_monte_carlo_csv", "export_tolerance_comparison_csv",
+                            "export_tolerance_stackup_csv", "export_tolerance_compensator_csv",
+                            "export_tolerance_multi_compensator_csv", "export_tolerance_overlay_csv")),
 }
-RIBBON_EXCLUDED.update({name: f"menu + palette only: {why}" for why, names in _MENU_ONLY.items() for name in names})
+#: the tab shown at start-up: the everyday one, not File
+START_TAB = "Home"
 
 LARGE_ICON = 26
 SMALL_ICON = 16
@@ -107,9 +119,21 @@ FOLD_BELOW_SCREEN_HEIGHT = 1100
 
 
 def ribbon_entries() -> list:
-    """Every (tab, group, action name, size, label) on the ribbon, in order."""
+    """Every (tab, group, name, size, label) on the ribbon, in order -- a button's action name, or a
+    dropdown's "menu:..." key."""
     return [(tab, group, name, size, label)
             for tab, groups in RIBBON for group, entries in groups for name, size, label in entries]
+
+
+def ribbon_actions() -> list:
+    """Every action the ribbon reaches, in order: its buttons, and each dropdown's commands."""
+    names = []
+    for _tab, _group, name, _size, _label in ribbon_entries():
+        if name in DROPDOWNS:
+            names.extend(member for member in DROPDOWNS[name][1] if member is not None)
+        else:
+            names.append(name)
+    return names
 
 
 def plain_text(text: str) -> str:
@@ -130,10 +154,12 @@ class Ribbon:
         self.actions = main_window.action_manager.actions
         #: action name -> the ribbon button that runs it (on the docked pages)
         self.buttons: dict[str, object] = {}
+        #: "menu:..." key -> its dropdown button (on the docked pages)
+        self.dropdowns: dict[str, object] = {}
         #: tab index -> its pop-up page, built the first time it is shown folded
         self.popups: dict[int, object] = {}
         self._building_popup = False
-        # the menus get the same icons as the ribbon
+        # an action carries its icon wherever it shows: its button, or a dropdown's list
         for name, action in self.actions.items():
             action.setIcon(icon(name))
         self.tabs = QTabWidget()
@@ -141,6 +167,7 @@ class Ribbon:
         self.tabs.setObjectName("Ribbon")
         for tab, groups in RIBBON:
             self.tabs.addTab(self._page(tab, groups), tab)
+        self.tabs.setCurrentIndex([tab for tab, _groups in RIBBON].index(START_TAB))
         self.tabs.setCornerWidget(self._palette(), Qt.Corner.TopRightCorner)
         # double-click a tab to fold the ribbon to its tab row, and again to open it (as Office);
         # folded, a click on a tab shows its page as a pop-up
@@ -224,6 +251,8 @@ class Ribbon:
         from PySide6.QtCore import QSize, Qt
         from PySide6.QtWidgets import QToolButton
 
+        if name in DROPDOWNS:
+            return self._dropdown(name, size, label)
         action = self.actions[name]
         button = QToolButton()
         button.setAutoRaise(True)
@@ -249,6 +278,39 @@ class Ribbon:
         button.clicked.connect(self._close_popups)
         if not self._building_popup:
             self.buttons[name] = button
+        return button
+
+    def _dropdown(self, name: str, size: str, label: str):
+        """A button that drops a list of commands -- the shell's own actions, so an entry is the
+        same call as a button or a shortcut (bugs/0949: there is no menu bar to hold them)."""
+        from PySide6.QtCore import QSize, Qt
+        from PySide6.QtWidgets import QMenu, QToolButton
+
+        from KrakenOS.UI.qt.icons import icon
+
+        about, members = DROPDOWNS[name]
+        button = QToolButton()
+        button.setAutoRaise(True)
+        button.setIcon(icon(name.replace(":", "_")))
+        button.setText(label)
+        large = size == "L"
+        button.setIconSize(QSize(LARGE_ICON, LARGE_ICON) if large else QSize(SMALL_ICON, SMALL_ICON))
+        button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon if large
+                                  else Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        menu = QMenu(button)
+        menu.setToolTipsVisible(True)
+        for member in members:
+            if member is None:
+                menu.addSeparator()
+            else:
+                menu.addAction(self.actions[member])
+        # folded, the page is a pop-up: a command chosen from the list closes it, as a button does
+        menu.triggered.connect(lambda _action: self._close_popups())
+        button.setMenu(menu)
+        button.setToolTip(f"<b>{label.replace(chr(10), ' ')}</b><br>{about}")
+        if not self._building_popup:
+            self.dropdowns[name] = button
         return button
 
     def _plots_group(self):

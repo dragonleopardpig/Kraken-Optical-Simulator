@@ -1,8 +1,14 @@
 """Guard for the Qt shell's ribbon + command palette (bugs/0935). In a real Qt shell on om05a_folded:
 
-  C  the ribbon and `RIBBON_EXCLUDED` cover the shell's `ACTIONS` exactly (a new action cannot go
-     missing), no action is on it twice, and every RIBBON action has an icon that draws pixels -- no
-     two render the same (menu + palette-only commands, bugs/0942, may have none)
+  M  (bugs/0949) the ribbon is the ONLY command surface: the window has no menu bar, and it opens
+     on the Home tab (File is first, as in a ribbon, but not the everyday one)
+  C  the ribbon's buttons and dropdown lists reach every one of the shell's `ACTIONS` exactly once
+     (a new action cannot go missing), and every button and dropdown has an icon that draws pixels
+     -- no two render the same
+  L  (bugs/0949) each dropdown button lists exactly its declared commands, in order -- the shell's
+     own action objects, so an entry is the same call as a button -- and opens on a plain click
+  K  (bugs/0949) shortcuts work without a menu bar: F5 runs Redraw once, Ctrl+L flips Show Rays
+  W  the window's minimum width stays under 1240 px (the tolerance reports once made it ~1500)
   B  each ribbon button runs ITS OWN action (the click reaches that action's `trigger`); a disabled
      action (Redo with nothing to redo) disables its button too
   R  Show Rays keeps one state: a ribbon click flips the menu action AND really hides the traced
@@ -12,7 +18,8 @@
   P  the palette: Ctrl+Shift+P focuses it; "gaussian beam" runs the Gaussian Beam Report action;
      a fragment several commands share runs nothing
   F  on a 1000-px screen the ribbon starts folded and the 3D view keeps >= 400 px; a tab click drops
-     its page as a pop-up, and running a command from it closes the pop-up
+     its page as a pop-up, and running a command from it -- a button, or an entry of one of its
+     dropdowns -- closes the pop-up
   D  (bugs/0940) the ribbon is a dock: undocked it is a window of its own showing its pages, with
      EXACTLY ONE page visible (unfolding used to show all four drawn over each other); docked
      again it returns to the top area, folded to its tab row, and the 3D view gets its height back
@@ -42,11 +49,12 @@ def qt_runtime_checks() -> list:
 
     from KrakenOS.UI.qt.actions import ACTIONS
     from KrakenOS.UI.qt.app import build
-    from KrakenOS.UI.qt.ribbon import RIBBON_EXCLUDED, ribbon_entries
+    from KrakenOS.UI.qt.ribbon import DROPDOWNS, RIBBON, START_TAB, ribbon_actions, ribbon_entries
 
     app, window = build(["guard"])
     window.show()
     app.processEvents()
+    start_tab = window.ribbon.tabs.tabText(window.ribbon.tabs.currentIndex())
     window.build_viewport()
     window.load_layout_path(SCENE)
     view = window.build_inspector_view()
@@ -62,16 +70,30 @@ def qt_runtime_checks() -> list:
     actions = window.action_manager.actions
     rows = []
 
+    # M -- no menu bar: the ribbon is the one command surface
+    from PySide6.QtWidgets import QMenuBar
+
+    menu_bars = len(window.findChildren(QMenuBar)) + (0 if window.menuWidget() is None else 1)
+    tabs = [ribbon.tabs.tabText(index) for index in range(ribbon.tabs.count())]
+    rows.append(["M", menu_bars == 0 and tabs == [tab for tab, _groups in RIBBON] and tabs[0] == "File"
+                 and start_tab == START_TAB == "Home",
+                 f"menu bars in the window: {menu_bars}; tabs {tabs}; opens on {start_tab!r}"])
+
     # C -- coverage, uniqueness, icons that draw and differ
     on_ribbon = [name for _t, _g, name, _s, _l in ribbon_entries()]
+    buttons_declared = [name for name in on_ribbon if name not in DROPDOWNS]
+    reached = ribbon_actions()
     declared = [a[0] for a in ACTIONS]
-    missing = sorted(set(declared) - set(on_ribbon) - set(RIBBON_EXCLUDED))
-    unknown = sorted(set(on_ribbon) - set(declared))
-    twice = sorted({n for n in on_ribbon if on_ribbon.count(n) > 1})
+    missing = sorted(set(declared) - set(reached))
+    unknown = sorted(set(reached) - set(declared))
+    twice = sorted({n for n in reached if reached.count(n) > 1})
+    unbuilt = sorted((set(buttons_declared) - set(ribbon.buttons)) | (set(DROPDOWNS) - set(ribbon.dropdowns)))
     images = {}
-    # every RIBBON button needs its own icon; menu + palette-only commands (bugs/0942) may have none
-    for name, action in ((n, actions[n]) for n in set(on_ribbon) if n in actions):
-        image = action.icon().pixmap(32, 32).toImage().convertToFormat(QImage.Format.Format_ARGB32)
+    # every BUTTON needs its own icon -- a command's, or a dropdown's; an entry of a list may have none
+    faces = [(name, actions[name].icon()) for name in buttons_declared if name in actions]
+    faces += [(name, button.icon()) for name, button in ribbon.dropdowns.items()]
+    for name, face in faces:
+        image = face.pixmap(32, 32).toImage().convertToFormat(QImage.Format.Format_ARGB32)
         drawn = sum(1 for y in range(image.height()) for x in range(image.width()) if image.pixelColor(x, y).alpha() > 40)
         images[name] = (drawn, bytes(image.constBits()))
     blank = sorted(n for n, (drawn, _b) in images.items() if drawn < 20)
@@ -79,9 +101,27 @@ def qt_runtime_checks() -> list:
     for name, (_drawn, bits) in images.items():
         by_bits.setdefault(bits, []).append(name)
     same = [names for names in by_bits.values() if len(names) > 1]
-    rows.append(["C", not missing and not unknown and not twice and not blank and not same,
-                 f"{len(set(on_ribbon))} actions on the ribbon + {len(RIBBON_EXCLUDED)} excluded of {len(declared)}; "
-                 f"missing {missing}, unknown {unknown}, twice {twice}; blank icons {blank}; identical icons {same}"])
+    rows.append(["C", not missing and not unknown and not twice and not unbuilt and not blank and not same,
+                 f"{len(buttons_declared)} buttons + {len(DROPDOWNS)} dropdowns listing "
+                 f"{len(reached) - len(buttons_declared)} commands reach {len(set(reached))} of {len(declared)} "
+                 f"actions; missing {missing}, unknown {unknown}, twice {twice}, declared but not built {unbuilt}; "
+                 f"blank icons {blank}; identical icons {same}"])
+
+    # L -- a dropdown lists its declared commands: the shell's own action objects, in order
+    from PySide6.QtWidgets import QToolButton
+
+    wrong_lists = []
+    for key, (_about, members) in DROPDOWNS.items():
+        button = ribbon.dropdowns.get(key)
+        listed = [] if button is None or button.menu() is None else button.menu().actions()
+        expected = [None if member is None else actions[member] for member in members]
+        got = [None if entry.isSeparator() else entry for entry in listed]
+        if (len(got) != len(expected) or any(a is not b for a, b in zip(got, expected))
+                or button.popupMode() != QToolButton.ToolButtonPopupMode.InstantPopup):
+            wrong_lists.append(key)
+    rows.append(["L", len(DROPDOWNS) >= 6 and not wrong_lists,
+                 f"{len(DROPDOWNS)} dropdowns {sorted(k.split(':')[1] for k in DROPDOWNS)}; lists that are not "
+                 f"their declared action objects in order, or do not open on a click: {wrong_lists}"])
 
     # B -- every ribbon button reaches its own action (spied, so no dialog opens). A disabled action
     # (Redo with no history, bugs/0942) must disable its button too; enabled, its click still lands
@@ -105,7 +145,7 @@ def qt_runtime_checks() -> list:
         if reached.get(name) != 1:
             wrong.append(name)
     checked = [n for n in ribbon.buttons if not actions[n].isCheckable()]
-    rows.append(["B", len(checked) >= 38 and not wrong and not live_when_disabled,
+    rows.append(["B", len(checked) >= 55 and not wrong and not live_when_disabled,
                  f"{len(checked)} ribbon buttons clicked; each reached its own action: {not wrong} {wrong[:5]}; "
                  f"disabled actions {disabled} -- their buttons disabled too: {not live_when_disabled}"])
 
@@ -118,14 +158,14 @@ def qt_runtime_checks() -> list:
     ray_actors = list(window.viewport.ray_actors) if window.viewport is not None else []
     visible = sorted({bool(actor.GetVisibility()) for actor in ray_actors})
     after_click = (rays.isChecked(), button.isChecked(), visible)
-    rays.trigger()                              # the menu's route
+    rays.trigger()                              # the action's own route (a shortcut, the palette)
     app.processEvents()
     after_menu = (rays.isChecked(), button.isChecked())
     rows.append(["R", after_click[0] == (not start) and after_click[1] == (not start)
                  and bool(ray_actors) and after_click[2] == [not start] and after_menu == (start, start),
                  f"ribbon click -> action {after_click[0]}, button {after_click[1]}, the {len(ray_actors)} ray "
                  f"actors visible {after_click[2]}; "
-                 f"menu trigger -> action/button {after_menu} (started {start})"])
+                 f"action trigger -> action/button {after_menu} (started {start})"])
 
     # A -- the plot picker
     bar = window.analysis_toolbar
@@ -160,9 +200,30 @@ def qt_runtime_checks() -> list:
     rows.append(["P", focused and matched == "gaussian_beam" and ran == ["gaussian_beam"] and ambiguous is None,
                  f"Ctrl+Shift+P focuses the palette: {focused} (window active {active}); 'gaussian beam' ran {ran}; 'report' matches {ambiguous}"])
 
+    # K -- shortcuts need no menu bar (the window is active: P waited for it)
+    fired = []
+    actions["redraw"].triggered.connect(lambda *_a: fired.append("redraw"))
+    rays_before = rays.isChecked()
+    target = app.focusWidget() or window
+    QTest.keyClick(target, Qt.Key.Key_F5)
+    QTest.keyClick(target, Qt.Key.Key_L, Qt.KeyboardModifier.ControlModifier)
+    app.processEvents()
+    rays_flipped = rays.isChecked() != rays_before
+    QTest.keyClick(target, Qt.Key.Key_L, Qt.KeyboardModifier.ControlModifier)
+    app.processEvents()
+    rows.append(["K", fired == ["redraw"] and rays_flipped and rays.isChecked() == rays_before,
+                 f"F5 ran Redraw {len(fired)} time(s); Ctrl+L flipped Show Rays: {rays_flipped}, and back: "
+                 f"{rays.isChecked() == rays_before} (window active {active})"])
+
+    # W -- the ribbon does not force a wide window
+    widest = max(range(ribbon.tabs.count()), key=lambda index: ribbon.tabs.widget(index).minimumSizeHint().width())
+    rows.append(["W", window.minimumSizeHint().width() <= 1240,
+                 f"window minimum width {window.minimumSizeHint().width()} px; the widest tab is "
+                 f"{ribbon.tabs.tabText(widest)!r} at {ribbon.tabs.widget(widest).minimumSizeHint().width()} px"])
+
     # F -- folded on a short screen, the pop-up
     screen_height = window.screen().availableGeometry().height()
-    popup = ribbon.show_popup(0)
+    popup = ribbon.show_popup(tabs.index("Home"))
     settle(0.3)
     shown = popup.isVisible()
     popup_button = next(b for b in popup.findChildren(type(button)) if b.text() == "Redraw")
@@ -170,11 +231,22 @@ def qt_runtime_checks() -> list:
     popup_button.click()
     del actions["redraw"].trigger
     app.processEvents()
+    closed_by_button = not popup.isVisible()
+    # ... and an entry of a dropdown on a pop-up page: Analysis > More > Clear Marks
+    more_popup = ribbon.show_popup(tabs.index("Analysis"))
+    settle(0.3)
+    more_shown = more_popup.isVisible()
+    more_button = next(b for b in more_popup.findChildren(type(button)) if b.text() == "More")
+    listed = more_button.menu().actions()
+    next(entry for entry in listed if entry is actions["clear_marks"]).trigger()
+    app.processEvents()
+    closed_by_entry = not more_popup.isVisible()
     ribbon_was_folded = ribbon.collapsed
     rows.append(["F", (screen_height >= 1100 or ribbon.collapsed) and view.widget.height() >= 400
-                 and shown and not popup.isVisible(),
+                 and shown and closed_by_button and more_shown and closed_by_entry,
                  f"screen {screen_height} px: folded={ribbon.collapsed}; 3D view {view.widget.height()} px; "
-                 f"pop-up shown {shown}, closed after a command: {not popup.isVisible()}"])
+                 f"pop-up shown {shown}, closed after a button's command: {closed_by_button}; the Analysis "
+                 f"pop-up shown {more_shown}, closed after a dropdown entry (More > Clear Marks): {closed_by_entry}"])
 
     def visible_pages() -> list:
         return [i for i in range(ribbon.tabs.count()) if ribbon.tabs.widget(i).isVisible()]
