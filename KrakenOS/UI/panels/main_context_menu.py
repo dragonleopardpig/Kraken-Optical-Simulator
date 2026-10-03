@@ -6,6 +6,7 @@ import tkinter as tk
 from typing import Any
 
 from KrakenOS.Optimization.variables import OpticalVariable
+from KrakenOS.UI.context_menu import new_context_menu
 
 
 class MainContextMenu:
@@ -125,6 +126,19 @@ class MainContextMenu:
         if not self._table_cell_enabled(row_index, field):
             self.status_var.set(self._surface_type_disabled_message(row_index, field))
             self._schedule_active_cell_border_update()
+        self._cleanup_current_popup_menu()
+        self.current_menu_row_id = row_id
+        self.current_menu_field = field
+        menu = self.build_cell_menu(row_index, field, tk.Menu(self.editor, tearoff=0))
+        self._post_popup_menu(menu, event.x_root, event.y_root)
+
+    def build_cell_menu(self, row_index: int, field: str, menu):
+        """Fill `menu` with what a right-click on this cell offers, and return it.
+
+        `menu` is a `tk.Menu` in the Tk editor and a recording `MenuModel` for a shell that shows
+        its own menus (bugs/0948); the submenus follow it. Everything here depends on the row, the
+        field and the selection only -- which cell the pointer was over is the caller's business.
+        """
         paraxial_target = self._paraxial_solve_target_for_cell(row_index, field)
         paraxial_variable_target = self._paraxial_variable_thickness_target_for_cell(row_index, field)
         best_focus_target = self._best_focus_solve_target_for_cell(row_index, field)
@@ -135,10 +149,6 @@ class MainContextMenu:
         if spec is not None and row.surface != "Image" and spec.is_supported(row):
             supports_optimization = True
             bounds = spec.get_bounds(row)
-        self._cleanup_current_popup_menu()
-        self.current_menu_row_id = row_id
-        self.current_menu_field = field
-        menu = tk.Menu(self.editor, tearoff=0)
         selected_indices = self._selected_table_indices()
         selected_has_element = any(
             0 <= index < len(self.rows) and bool(self._element_key(self.rows[index]))
@@ -147,7 +157,7 @@ class MainContextMenu:
         selected_assignable = any(0 < index < len(self.rows) - 1 for index in selected_indices)
         selected_element_blocks = self._selected_element_blocks()
 
-        convert_menu = tk.Menu(menu, tearoff=0)
+        convert_menu = new_context_menu(None, menu)
         convert_surface_types = (
             "Standard",
             "Aperture",
@@ -168,7 +178,7 @@ class MainContextMenu:
         convert_menu.add_command(label="Optical CAD/STL Solid...", command=lambda index=row_index: self.convert_row_to_optical_stl_solid(index))
         menu.add_cascade(label="Convert Type", menu=convert_menu)
 
-        insert_menu = tk.Menu(menu, tearoff=0)
+        insert_menu = new_context_menu(None, menu)
         component_specs = (
             ("Singlet", "singlet"),
             ("Doublet", "doublet"),
@@ -194,7 +204,7 @@ class MainContextMenu:
         insert_menu.add_command(label="Optical CAD/STL Solid...", command=self.import_optical_stl_solid)
         insert_menu.add_command(label="Component to Current Path View...", command=self.open_current_path_component_placement)
         machine_vision_names = list(getattr(self, "machine_vision_names", []) or [])
-        machine_vision_menu = tk.Menu(insert_menu, tearoff=0)
+        machine_vision_menu = new_context_menu(None, insert_menu)
         machine_vision_menu.add_command(
             label="Import Lens from Folder (replaces scene)...",  # bugs/0381: distinct from Swap
             command=self.import_machine_vision_lens_from_folder,
@@ -243,7 +253,7 @@ class MainContextMenu:
             )
         menu.add_cascade(label="Insert Component Below", menu=insert_menu)
 
-        shape_menu = tk.Menu(menu, tearoff=0)
+        shape_menu = new_context_menu(None, menu)
         shape_menu.add_command(label="Shape Builder...", command=lambda index=row_index: self.open_surface_shape_builder(index))
         shape_menu.add_separator()
         shape_menu.add_command(label="Circular clear aperture", command=lambda index=row_index: self.apply_shape_aperture_preset(index, "circular"))
@@ -254,7 +264,7 @@ class MainContextMenu:
         shape_menu.add_command(label="Rectangular clear aperture", command=lambda index=row_index: self.apply_shape_aperture_preset(index, "rectangular_clear"))
         menu.add_cascade(label="Shape / Aperture", menu=shape_menu)
 
-        material_menu = tk.Menu(menu, tearoff=0)
+        material_menu = new_context_menu(None, menu)
         material_menu.add_command(label="Glass Catalog Browser...", command=self.open_glass_catalog_browser)
         material_menu.add_separator()
         for glass in ("AIR", "BK7", "F2"):
@@ -262,7 +272,7 @@ class MainContextMenu:
         material_menu.add_command(label="Make MIRROR", command=lambda: self.apply_material_to_selected("MIRROR", mirror_surface=True))
         menu.add_cascade(label="Material", menu=material_menu)
 
-        coating_menu = tk.Menu(menu, tearoff=0)
+        coating_menu = new_context_menu(None, menu)
         coating_menu.add_command(label="Coating / Material Editor...", command=lambda index=row_index: self.open_coating_material_editor(index))
         coating_menu.add_separator()
         for preset_name in self.coating_preset_names:
@@ -288,7 +298,7 @@ class MainContextMenu:
         )
         menu.add_cascade(label="Coating / Polarization", menu=coating_menu)
 
-        geometry_menu = tk.Menu(menu, tearoff=0)
+        geometry_menu = new_context_menu(None, menu)
         geometry_menu.add_command(label="Align normal to previous path", command=lambda index=row_index: self.align_surface_normal_to_previous(index))
         geometry_menu.add_command(label="Set incidence angle...", command=lambda index=row_index: self.set_surface_incidence_angle(index))
         geometry_menu.add_separator()
@@ -308,7 +318,7 @@ class MainContextMenu:
         )
         menu.add_cascade(label="Geometry", menu=geometry_menu)
 
-        element_menu = tk.Menu(menu, tearoff=0)
+        element_menu = new_context_menu(None, menu)
         element_menu.add_command(
             label="Group selected rows as element",
             command=self.group_selected_as_element,
@@ -332,7 +342,7 @@ class MainContextMenu:
 
         leg_catalog = self._leg_catalog()
         if leg_catalog:
-            leg_menu = tk.Menu(element_menu, tearoff=0)
+            leg_menu = new_context_menu(None, element_menu)
             for entry in leg_catalog:
                 leg_menu.add_command(
                     label=f"Assign to {entry['label']}",
@@ -351,7 +361,7 @@ class MainContextMenu:
         else:
             path_catalog = self._arm_catalog()
             if path_catalog:
-                path_menu = tk.Menu(element_menu, tearoff=0)
+                path_menu = new_context_menu(None, element_menu)
                 for entry in path_catalog:
                     path_menu.add_command(
                         label=f"Assign to {entry['label']}",
@@ -367,7 +377,7 @@ class MainContextMenu:
                     menu=path_menu,
                     state=("normal" if selected_assignable else "disabled"),
                 )
-        arm_menu = tk.Menu(element_menu, tearoff=0)
+        arm_menu = new_context_menu(None, element_menu)
         for role in self.element_arm_role_values:
             label = "Clear path role" if role == self.element_arm_role_default else f"Assign to {role} path"
             arm_menu.add_command(label=label, command=lambda selected_role=role: self.assign_selected_elements_to_arm(selected_role))
@@ -378,7 +388,7 @@ class MainContextMenu:
         )
         menu.add_cascade(label="Element", menu=element_menu)
 
-        diagnostics_menu = tk.Menu(menu, tearoff=0)
+        diagnostics_menu = new_context_menu(None, menu)
         diagnostics_menu.add_command(label="Trace to this surface", command=lambda index=row_index: self.set_nonseq_target_to_row(index))
         diagnostics_menu.add_command(label="Make this analysis surface", command=lambda index=row_index: self.set_analysis_surface_to_row(index))
         diagnostics_menu.add_command(
@@ -400,7 +410,7 @@ class MainContextMenu:
         diagnostics_menu.add_command(label="Validate row physics", command=lambda index=row_index: self.validate_surface_row_physics(index))
         menu.add_cascade(label="Diagnostics", menu=diagnostics_menu)
 
-        advanced_menu = tk.Menu(menu, tearoff=0)
+        advanced_menu = new_context_menu(None, menu)
         advanced_menu.add_command(label="Native KrakenOS attributes...", command=lambda index=row_index: self.open_advanced_surface_editor(index))
         advanced_menu.add_command(label="Lens drawing surface properties...", command=self._open_lens_drawing_surface_properties_dialog)
         advanced_menu.add_command(label="Shape Builder...", command=lambda index=row_index: self.open_surface_shape_builder(index))
@@ -424,7 +434,7 @@ class MainContextMenu:
         advanced_menu.add_command(label="Place/Orient Selected CAD/STL Solid", command=self.open_optical_stl_placement_assistant)
         menu.add_cascade(label="Advanced", menu=advanced_menu)
 
-        solve_menu = tk.Menu(menu, tearoff=0)
+        solve_menu = new_context_menu(None, menu)
         if supports_optimization and spec is not None:
             marked = self._variable_enabled_for_row(row, spec)
             solve_menu.add_command(
@@ -524,6 +534,5 @@ class MainContextMenu:
         if solve_menu.index("end") is None:
             solve_menu.add_command(label="No cell-specific solve/optimization actions", state="disabled")
         menu.add_cascade(label="Optimization / Solves", menu=solve_menu)
-
-        self._post_popup_menu(menu, event.x_root, event.y_root)
+        return menu
 

@@ -7,15 +7,21 @@ a report SHOWS lives in `KrakenOS/UI/reports/`; this decides only how it is laid
 
 The window is modeless and reusable -- Update refreshes whichever report is open -- so unlike
 `render_row_form` this is a class: the panel keeps the handle and asks it to refresh.
+
+Under a shell that draws its own dialogs (the Qt shell installs `show_report` on the editor) the
+SAME handle shows the report in the shell's dialog instead, and everything the model asks of the
+handle -- open, refresh, close, the selection -- goes to that dialog (bugs/0948). So a model
+command that opens a report works in both shells, as `present_row_form` does for forms.
 """
 from __future__ import annotations
 
 from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import ttk
 from typing import Any
 
 from KrakenOS.UI.reports import ReportFailed
+from KrakenOS.UI.uihost import host_of
 
 class ReportWindow:
     """One modeless report window: build, show, refresh, copy, export.
@@ -33,6 +39,8 @@ class ReportWindow:
         self.minsize = minsize
         self.csv_title = csv_title
         self.report = None
+        #: the shell's own dialog, while a shell (not this Tk window) is showing the report
+        self.shell_view = None
         self.window: tk.Toplevel | None = None
         self.table: ttk.Treeview | None = None
         self.detail_table: ttk.Treeview | None = None
@@ -51,7 +59,27 @@ class ReportWindow:
         # `editor.editor` returns None rather than raising (bugs/0883).
         return getattr(self.owner, "editor", None) or self.owner
 
+    def _shell_report(self):
+        """The running shell's `show_report`, when it draws its own report dialogs."""
+        editor = self.editor
+        return editor.__dict__.get("show_report") if hasattr(editor, "__dict__") else None
+
+    def _shell_view(self):
+        """The shell's dialog showing this report, while it is up."""
+        view = self.shell_view
+        if view is None:
+            return None
+        try:
+            if view.isVisible():
+                return view
+        except Exception:
+            pass
+        self.shell_view = None
+        return None
+
     def is_open(self) -> bool:
+        if self._shell_view() is not None:
+            return True
         window = self.window
         if window is None:
             return False
@@ -62,6 +90,17 @@ class ReportWindow:
 
     def open(self) -> "tk.Toplevel | None":
         """Show the report, reusing the window when it is already up."""
+        shell = self._shell_report()
+        if shell is not None:
+            view = self._shell_view()
+            if view is not None:
+                self.refresh()
+                view.raise_()
+                view.activateWindow()
+                return view
+            self.shell_view = shell(self.build)
+            self.report = getattr(self.shell_view, "report", None)
+            return self.shell_view
         if self.is_open():
             self.refresh()
             window = self.window
@@ -78,6 +117,12 @@ class ReportWindow:
         return self.window
 
     def close(self) -> None:
+        view, self.shell_view = self.shell_view, None
+        if view is not None:
+            try:
+                view.close()
+            except Exception:
+                pass
         window = self.window
         self.window = None
         self.table = None
@@ -95,6 +140,9 @@ class ReportWindow:
 
     def refresh_if_open(self) -> None:
         """What Update calls: refresh a live window, forget a window the user already closed."""
+        if self._shell_view() is not None:
+            self.refresh()
+            return
         if self.window is None:
             return
         if not self.is_open():
@@ -109,17 +157,24 @@ class ReportWindow:
         if report is None:
             return
         self.report = report
+        view = self._shell_view()
+        if view is not None:
+            view.set_report(report)
+            return
         self._render(report)
 
     # ---- model ----------------------------------------------------------------------------
     def control_values(self) -> dict:
+        view = self._shell_view()
+        if view is not None:
+            return dict(view.control_values())
         return {key: var.get() for key, var in self.controls.items()}
 
     def _build(self):
         try:
             return self.build(**self.control_values())
         except ReportFailed as exc:
-            messagebox.showerror("Report", str(exc), parent=self.editor)
+            host_of(self.editor).showerror("Report", str(exc), parent=self.editor)
             self._set_status(f"Report failed: {exc}")
             return None
 
@@ -308,6 +363,9 @@ class ReportWindow:
     # ---- master/detail --------------------------------------------------------------------
     def selected_key(self):
         """The detail key of the selected row: its index in a table, its node key in a tree."""
+        view = self._shell_view()
+        if view is not None:
+            return view.selected_key()
         table = self.table
         if table is None:
             return None
@@ -324,6 +382,10 @@ class ReportWindow:
 
     def select_key(self, key) -> None:
         """Select the row or node carrying `key`, falling back to the first row."""
+        view = self._shell_view()
+        if view is not None:
+            view.select_key(key)
+            return
         table = self.table
         if table is None or self.report is None:
             return
@@ -346,6 +408,10 @@ class ReportWindow:
         Selecting is this method's job whether or not there IS a detail view: a report without
         one still opens on a row, and its verbs act on whatever is selected (bugs/0897).
         """
+        view = self._shell_view()
+        if view is not None:
+            view.select_master_row(int(index))
+            return
         table = self.table
         if table is None or self.report is None:
             return
@@ -372,6 +438,8 @@ class ReportWindow:
 
     def refresh_detail(self) -> None:
         """Show the detail of whatever is selected -- what a selection change calls."""
+        if self._shell_view() is not None:
+            return                      # the shell's dialog follows its own selection
         self._show_detail(self.selected_key())
 
     def _show_detail(self, key) -> None:
@@ -420,7 +488,7 @@ class ReportWindow:
         """
         arguments: tuple = ()
         if action.save_title:
-            path = filedialog.asksaveasfilename(
+            path = host_of(self.editor).asksaveasfilename(
                 title=action.save_title, defaultextension=".csv",
                 filetypes=[("CSV files", "*.csv"), ("All files", "*")], parent=self.editor)
             if not path:
@@ -450,10 +518,10 @@ class ReportWindow:
         if report is None:
             return ""
         if not report.rows:
-            messagebox.showinfo(f"Export {report.title}",
-                                "No data. Click Update first.", parent=self.editor)
+            host_of(self.editor).showinfo(f"Export {report.title}",
+                                          "No data. Click Update first.", parent=self.editor)
             return ""
-        path = filedialog.asksaveasfilename(
+        path = host_of(self.editor).asksaveasfilename(
             title=f"Export {self.csv_title or report.title} CSV",
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv"), ("All files", "*")],

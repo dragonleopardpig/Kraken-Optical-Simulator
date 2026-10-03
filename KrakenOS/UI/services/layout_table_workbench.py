@@ -5867,9 +5867,15 @@ class LayoutTableWorkbenchMixin:
             counter += 1
         return f"Element {counter}"
 
+    def _table_has_selection(self) -> bool:
+        """Whether anything is selected in the table the user SEES (bugs/0948): a shell's own table
+        when it draws one, else the Tk Treeview -- any item, as these verbs always asked."""
+        if getattr(self, "selected_row_indices", None) is not None:
+            return bool(self._selected_table_indices())
+        return bool(self.table.selection())
+
     def group_selected_as_element(self) -> None:
-        selected = self.table.selection()
-        if not selected:
+        if not self._table_has_selection():
             return
         self._commit_pending_table_edit()
         try:
@@ -5899,8 +5905,7 @@ class LayoutTableWorkbenchMixin:
         self.status_var.set(f"Grouped rows {indices[0]}-{indices[-1]} as one element.")
 
     def ungroup_selected_elements(self) -> None:
-        selected = self.table.selection()
-        if not selected:
+        if not self._table_has_selection():
             return
         self._commit_pending_table_edit()
         try:
@@ -8640,6 +8645,31 @@ class LayoutTableWorkbenchMixin:
 
     def show_context_menu(self, event: tk.Event) -> None:
         self._main_context_menu().show_context_menu(event)
+
+    def table_cell_menu(self, row_index: int, field: str):
+        """The right-click menu of one surface-table cell, RECORDED for a shell that draws its own
+        menus (bugs/0948) -- the same builder the Tk menu comes from, so the same entries.
+
+        It does what the Tk right-click does first: a cell outside the selection becomes the
+        selection, and the cell is remembered as the one the menu's "current cell" verbs act on.
+        """
+        from KrakenOS.UI.context_menu import MenuModel
+
+        if not (0 <= int(row_index) < len(self.rows)):
+            return None
+        row_index = int(row_index)
+        if row_index not in self._selected_table_indices():
+            if field == "label":
+                block_indices = self._element_indices_for_index(self.rows, row_index)
+                self._select_table_indices(block_indices or [row_index], focus_index=row_index)
+            else:
+                self._select_table_indices([row_index], focus_index=row_index)
+        if not self._table_cell_enabled(row_index, field):
+            self.status_var.set(self._surface_type_disabled_message(row_index, field))
+        self._cleanup_current_popup_menu()
+        self.current_menu_row_id = self._table_item_for_row_index(row_index)
+        self.current_menu_field = field
+        return self._main_context_menu().build_cell_menu(row_index, field, MenuModel())
 
 
     def _finish_edit(self, row_id: str, field: str, quiet: bool = False) -> None:

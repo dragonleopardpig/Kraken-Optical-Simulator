@@ -101,7 +101,10 @@ def qt_runtime_checks() -> list[list]:
     app.processEvents()
     after = [(label, enabled) for label, enabled, _run in window.cell_menu_actions(row, "thickness")]
     colour = model.data(model.index(row, fields.index("thickness")), Qt.ItemDataRole.BackgroundRole)
-    rows.append(["Q2", before and before[0][0].startswith("Select") and before[2] == ("Clear bounds", False)
+    # bugs/0948: the cell menu is the model's full menu now; these are its "Optimization / Solves"
+    # entries, found by label (they used to be the whole menu, found by position)
+    rows.append(["Q2", before and before[0][0].startswith("Select") and ("Clear bounds", False) in before
+                 and any(label == "Set bounds..." and enabled for label, enabled in before)
                  and after[0][0].startswith("Unselect")
                  and editor.optimization_cell_state(row, "thickness")["marked"]
                  and colour is not None and colour.name().lower() == marker_colour().lower()

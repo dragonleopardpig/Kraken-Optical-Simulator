@@ -322,7 +322,7 @@ out to hide model state in Tk widgets just as the dialogs did.
 | 1a-1d seam | **done** (0851-0853) | -- |
 | 2 shell + viewport | **done** (0854-0858) | -- |
 | 3 dialogs | **done but four** (0859-0897 reports and row forms; 0933-0938 face roles, diagnostics, MTF from image; 0945 lens drawing) | Atmospheric Settings (`main_atmosphere_panel`, a Tk window -- the LAST of the 75 menu-bar commands); the three paraxial solve prompts (`_show_paraxial_solve_dialog`, folded mirror, best focus: 207 lines); missing-assets (559 lines, 9 direct tkinter dialog calls) -- a resolution workflow, decision still owed; the 2D bug-flag description dialog |
-| 4 tables -> model/view | **mostly done** (reports 0894-0897, surface table 0903, Path view on the table toolbar 0944) | the table's right-click menu: Tk has **95 commands in 14 submenus**, Qt has **3** (the optimisation entries, 0904) -- the largest single gap; the Tk table is still the cell PARSER (`_read_rows_from_table`), the seam that must move before Tk can go; Group / Ungroup Element read the hidden Tk selection |
+| 4 tables -> model/view | **mostly done** (reports 0894-0897, surface table 0903, Path view on the table toolbar 0944) | ~~the table's right-click menu~~ **done (0948)**: the Tk builder fills a `tk.Menu` or a recording `MenuModel`, so the Qt table shows the same 100+ commands in 13 submenus (it had 3); the Tk table is still the cell PARSER (`_read_rows_from_table`), the seam that must move before Tk can go; Group / Ungroup Element read the shell's selection since 0948 |
 | shell parity | **menu bar 74 of 75** (0942-0945; phase 718 holds it: `KNOWN_GAPS` may only shrink); ribbon with 5 tabs and a command palette (0935, 0940, 0943); 93 actions; docks, undo/redo, save, table copy/paste | 2D-plot toolbar toggles (cardinals, thickness); `_refresh_operand_surface_choices` still walks every Tk widget; the `self.__dict__.get` sweep (0901) |
 | **5 interaction layer** | **done** (0905-0939): the real inspector runs in a Qt dock and the harness's 352 phases pass with it there | what a USER still cannot see in the Qt shell -- the inspector's own popups are Tk windows and not one is shell-aware: Quick Estimation's FOV popup (428 lines), target-FOV, detector-design and configuration-table popups; Edit Thickness (a dimension double-click, 139); STEP Resize Solid (123); LED Edge Distance; the centred input dialog (2 callers); the bug-flag description. The harness drives them programmatically, which is why it passes. The row forms the model opens are done (0947): all 19 call sites go through the shell-aware `present_row_form` and 18 dialog calls through the host; what stays Tk is a listed set of Tk-only windows (phase 721, may only shrink) |
 | 6 matplotlib | **done** (2D plot 0893, FormFigure 0887, MTF from image 0938) | -- |
@@ -337,8 +337,10 @@ not fit (7 GB per shard): run it as sequential `--phases` chunks (1 h 42 min, bu
 1. ~~Sweep the Tk leftovers a menu can reach~~ -- **done (0947, phase 721).** Of 20 editor form
    commands run in the Qt shell, 14 opened Tk windows and 2 Tk message boxes before; none do now.
    "Set bounds" used to hang there (it waited on a Tk window).
-2. **The table's right-click menu** -- the 5c move: let the Tk builder fill a recording `MenuModel`
-   and have Qt render it, so the 95 commands arrive together rather than one port each.
+2. ~~The table's right-click menu~~ -- **done (0948, phase 722).** The Tk builder fills a recording
+   `MenuModel` and Qt renders it. Every one of its 118 distinct entries was run in a Qt shell; the
+   reports it opens go to the Qt report dialog through a `show_report` seam on the Tk report
+   handle. One entry still ends in Tk (Best Image Solve: the paraxial solve prompts, item 5).
 3. **The inspector's popups** -- the small ones first through the host or a row form (centred
    input, LED edge distance, Edit Thickness, STEP resize), then Quick Estimation as a session with
    two views.

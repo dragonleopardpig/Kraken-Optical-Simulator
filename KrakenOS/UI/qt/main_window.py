@@ -129,6 +129,11 @@ class KrakenQtMainWindow(_main_window_class()):
         editor.show_control_state = self.refresh_control_panels
         # the CAD/STL face-roles editor opens here, over the model's session (bugs/0934)
         editor.show_face_roles_dialog = self.show_face_roles_dialog
+        # a report a model command opens -- the table menu's Diagnostics, the inspector's verbs --
+        # shows in the Qt report dialog (bugs/0948)
+        editor.show_report = self.show_model_report
+        #: the dialog `show_model_report` last opened, for a guard to read
+        self.last_model_report_dialog = None
         # the lens-drawing surface properties, modal: a PDF export waits on the answer (bugs/0945)
         editor.show_lens_drawing_properties = self.show_lens_drawing_properties
         #: the dialog `show_lens_drawing_properties` last opened, for a guard to drive
@@ -431,22 +436,30 @@ class KrakenQtMainWindow(_main_window_class()):
         This is the whole Qt side of a report dialog -- a port is a builder under
         `KrakenOS/UI/reports/` plus a menu entry (docs/design_qt_migration.md phase 3).
         """
+        return self.show_model_report(lambda **values: builder(self.editor, **values),
+                                      title=getattr(builder, "TITLE", "Report"))
+
+    def show_model_report(self, build, *, title: str = "Report"):
+        """Show a report in the Qt report dialog. `build(**controls)` is the report's own builder,
+        already bound to its owner; the dialog rebuilds through it when a control changes.
+
+        Also the model's `show_report` seam (bugs/0948): the Tk report handle a model command
+        holds (`panels/report_view.ReportWindow`) shows its report here instead of in a Tk window.
+        """
         from KrakenOS.UI.qt.dialogs.report_dialog import ReportDialog
         from KrakenOS.UI.reports import ReportFailed
 
         try:
-            report = builder(self.editor)
+            report = build()
         except ReportFailed as exc:
-            title = getattr(builder, "TITLE", "Report")
             host_of(self).showerror(title, f"Could not build the report:\n\n{exc}")
             self.statusBar().showMessage(f"{title} failed: {exc}")
             return None
 
-        # the dialog rebuilds through the same builder when one of its controls changes
-        dialog = ReportDialog(report, parent=self, host=host_of(self),
-                              rebuild=lambda **values: builder(self.editor, **values))
+        dialog = ReportDialog(report, parent=self, host=host_of(self), rebuild=build)
         dialog.finished.connect(lambda _result, d=dialog: self._forget_dialog(d))
         self._open_dialogs.append(dialog)
+        self.last_model_report_dialog = dialog
         dialog.show()
         self.statusBar().showMessage(report.status or report.title)
         return dialog
@@ -613,49 +626,48 @@ class KrakenQtMainWindow(_main_window_class()):
         self.refresh_from_model()
 
     def cell_menu_actions(self, row: int, field: str) -> list:
-        """(label, enabled, callable) for a cell's optimisation menu -- the model decides.
-
-        A separate method so a guard can read the menu without popping one up.
+        """(label, enabled, callable) of a cell's "Optimization / Solves" entries, from the model's
+        own menu (bugs/0948). A separate method so a guard can read them without popping a menu.
         """
-        state = self.editor.optimization_cell_state(row, field)
-        if not state["supported"]:
+        model = self.editor.table_cell_menu(row, field)
+        solves = next((entry.submenu for entry in (model.entries if model is not None else [])
+                       if entry.kind == "cascade" and entry.label == "Optimization / Solves"), None)
+        if solves is None:
             return []
-        name = state["label"]
-        return [
-            (f"{'Unselect' if state['marked'] else 'Select'} {name} for optimization", True,
-             lambda: self.editor.toggle_optimization_cell(row, field)),
-            ("Set bounds...", True, lambda: self.open_bounds_form(row, field)),
-            ("Clear bounds", state["has_bounds"],
-             lambda: self.editor.clear_bounds_for_cell(row, field)),
-        ]
-
-    def open_bounds_form(self, row: int, field: str):
-        """The same bounds form the Tk "Set bounds..." opens (row_forms/presets, bugs/0891)."""
-        from KrakenOS.UI.row_forms.presets import build_optimization_bounds_form
-
-        spec = self.editor._variable_spec_for_field(field)
-
-        def builder(owner, index):
-            return build_optimization_bounds_form(owner, index, spec=spec)
-
-        builder.TITLE = "Optimization bounds"
-        return self.open_row_form(builder, row)
+        return [(entry.label, entry.enabled, (lambda entry=entry: solves.run(entry)))
+                for entry in solves.entries if entry.kind == "command" and entry.command is not None]
 
     def _show_cell_menu(self, position) -> None:
-        from PySide6.QtWidgets import QMenu
+        """The surface table's right-click menu: the model's own, recorded and drawn here.
+
+        Until bugs/0948 this menu had three entries (the optimisation ones, 0904) where the Tk
+        table's has over a hundred in thirteen submenus. The Tk builder now fills a `MenuModel`
+        for a shell, exactly as the 3D inspector's menus do (0907), so nothing is ported twice.
+        """
+        from KrakenOS.UI.qt.inspector_view import build_qmenu
 
         index = self.rows_view.indexAt(position)
         if not index.isValid():
             return
-        actions = self.cell_menu_actions(index.row(), self.rows_model.field(index.column()))
-        if not actions:
+        model = self.editor.table_cell_menu(index.row(), self.rows_model.field(index.column()))
+        if model is None or not model.entries:
             return
-        menu = QMenu(self.rows_view)
-        for label, enabled, run in actions:
-            action = menu.addAction(label)
-            action.setEnabled(bool(enabled))
-            action.triggered.connect(lambda _checked=False, run=run: (run(), self.refresh_from_model()))
-        menu.exec(self.rows_view.viewport().mapToGlobal(position))
+        menu = build_qmenu(model, self.rows_view)
+        model.on_close = menu.close
+
+        def follow(qmenu) -> None:
+            # after ANY entry, in whichever submenu, the table and the 3D view follow the model
+            # (connected after build_qmenu's own slot, so the entry has run by then)
+            for action in qmenu.actions():
+                if action.menu() is not None:
+                    follow(action.menu())
+                elif not action.isSeparator():
+                    action.triggered.connect(lambda _checked=False: self.refresh_from_model())
+
+        follow(menu)
+        #: the menu last shown and its model, for a guard to read and trigger
+        self.last_cell_menu, self.last_cell_menu_model = menu, model
+        menu.popup(self.rows_view.viewport().mapToGlobal(position))
 
     def _report_refused_edit(self, *_args) -> None:
         refusal = getattr(self.rows_model, "last_refusal", "")

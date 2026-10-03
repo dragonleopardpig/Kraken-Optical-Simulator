@@ -89,6 +89,13 @@ class MenuModel:
     def invoke(self, index):
         return self.run(self.entries[int(index)])
 
+    def index(self, which):
+        """`index("end")` as Tk answers it: the last entry's index, None for an empty menu -- how
+        the table's builder asks whether a submenu got anything (bugs/0948)."""
+        if str(which) == "end":
+            return len(self.entries) - 1 if self.entries else None
+        return int(which)
+
     def unpost(self) -> None:
         if self.on_close is not None:
             self.on_close()
