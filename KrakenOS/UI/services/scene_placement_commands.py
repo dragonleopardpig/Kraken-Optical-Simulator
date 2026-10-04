@@ -53,7 +53,7 @@ from KrakenOS.UI.services.step_overlay_import import StepOverlayImportService
 from KrakenOS.UI.services.step_overlay_promotion import StepOverlayPromotionService
 from KrakenOS.UI.source_trace_helpers import SOURCE_MODEL_DEFAULT
 from KrakenOS.UI.surface_table_model import SurfaceRow
-from KrakenOS.UI.uihost import host_of
+from KrakenOS.UI.uihost import host_of, shell_host_of
 
 
 #: bugs/0764: how much worse the traced defocus may get before a focus snap is judged a
@@ -2326,6 +2326,15 @@ class ScenePlacementMixin:
         self._refresh_open_3d_views(step_label="led")
 
     def _ask_led_edge_distance(self, initial_value: float, *, parent: tk.Misc | None = None) -> float | None:
+        shell = shell_host_of(self)
+        if shell is not None:          # bugs/0950: a shell asks in its own window
+            value = shell.askfloat(
+                "LED Edge Distance",
+                "Distance from object plane to the object-side LED box edge [mm]",
+                initialvalue=max(float(initial_value), 0.0),
+                minvalue=0.0,
+            )
+            return None if value is None else max(float(value), 0.0)
         value_var = tk.StringVar(value=f"{max(float(initial_value), 0.0):g}")
         value_holder: dict[str, float] = {}
 

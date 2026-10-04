@@ -14,6 +14,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from KrakenOS.UI.services.step_overlay_labels import is_step_overlay_decoration
+from KrakenOS.UI.uihost import shell_host_of
 
 
 class Open3DThicknessDimensionService:
@@ -1748,6 +1749,22 @@ class Open3DThicknessDimensionService:
         if gap_offset is not None and np.isfinite(gap_offset):
             current = current + float(gap_offset)
         self._destroy_inline_editor()
+        shell = shell_host_of(self.inspector)
+        if shell is not None:
+            # bugs/0950: a shell asks in its own window -- the Tk editor below is placed and
+            # grabbed by hand, which no shell would see
+            typed = shell.askfloat(
+                "Edit Thickness",
+                f"{self._row_label(row_index)}\nThickness [mm]",
+                initialvalue=float(f"{current:.6g}"),
+            )
+            if typed is None:
+                self.inspector.status_var.set("Thickness edit cancelled.")
+            elif not np.isfinite(float(typed)):
+                self.inspector.status_var.set("Thickness must be a finite number.")
+            else:
+                self.apply_dimension_value(row_index, float(typed))
+            return
         value_var = tk.StringVar(value=f"{current:.6g}")
         window = tk.Toplevel(self.inspector)
         self._inline_editor_window = window

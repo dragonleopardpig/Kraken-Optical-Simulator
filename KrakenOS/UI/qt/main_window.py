@@ -140,6 +140,11 @@ class KrakenQtMainWindow(_main_window_class()):
         editor.show_lens_drawing_properties = self.show_lens_drawing_properties
         #: the dialog `show_lens_drawing_properties` last opened, for a guard to drive
         self.last_lens_drawing_dialog = None
+        # the `s` bug flag asks for its description in a Qt window (bugs/0950): the inspector's Tk
+        # popup would never be seen here, so the flag kept its screenshot but never its words
+        editor.show_flag_description = self.show_flag_description
+        #: the dialog `show_flag_description` last opened, for a guard to drive
+        self.last_flag_description_dialog = None
         # a form a model command builds itself (the Path-view placements) opens here (bugs/0944)
         editor.show_row_form = self.show_model_row_form
         #: the dialog `show_model_row_form` last opened, for a guard to read and drive
@@ -180,6 +185,18 @@ class KrakenQtMainWindow(_main_window_class()):
         self.last_lens_drawing_dialog = dialog
         dialog.exec()
         return bool(session.result_ok)
+
+    def show_flag_description(self, session):
+        """The model's `show_flag_description` seam (bugs/0950): the flag's description prompt as
+        a Qt window that is NOT modal -- a carry or a drag stays live while it is open."""
+        from KrakenOS.UI.qt.dialogs.flag_description_dialog import FlagDescriptionDialog
+
+        dialog = FlagDescriptionDialog(session, parent=self)
+        dialog.finished.connect(lambda _result, d=dialog: self._forget_dialog(d))
+        self._open_dialogs.append(dialog)
+        self.last_flag_description_dialog = dialog
+        dialog.show()
+        return dialog
 
     def show_model_row_form(self, form, *, on_close=None, modal=False, geometry=None, wait=False):
         """The model's `show_row_form` seam (bugs/0944): a form a model command builds itself, in a

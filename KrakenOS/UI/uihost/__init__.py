@@ -15,7 +15,7 @@ from KrakenOS.UI.uihost.tk_host import TkUiHost
 from KrakenOS.UI.uihost.values import ObservableValue
 
 __all__ = ["UiHost", "TkUiHost", "QtUiHost", "ScriptedUiHost", "ObservableValue", "host_of",
-           "qt_filter"]
+           "shell_host_of", "qt_filter"]
 
 
 def host_of(owner) -> UiHost:
@@ -35,3 +35,16 @@ def host_of(owner) -> UiHost:
     if isinstance(ui, UiHost):
         return ui
     return TkUiHost(owner)
+
+
+def shell_host_of(owner) -> "UiHost | None":
+    """The host to ask through when something OTHER than Tk draws ``owner``; None under Tk.
+
+    A few small Tk windows stay as they are for the Tk app (bugs/0950): each is placed by hand so
+    it lands on screen under Wayland, or holds focus against the 3D canvas. Under a shell -- Qt,
+    or a scripted host in a guard -- a window built that way is never seen, and one that waits on
+    itself stops the shell's event loop. Their callers ask this first and use the host's own
+    prompt when there is one.
+    """
+    host = host_of(owner)
+    return None if isinstance(host, TkUiHost) else host

@@ -136,6 +136,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0932 | Phase 5f part 3c: the browser's Properties / Selected-Element pane in Qt -- 5f complete | phase 5 |
 | 0933 | Phase 5g part 1: the face-roles editor split into a toolkit-neutral session + VTK preview; the Tk dialog is a view (parity: identical state over 19 steps, pixel-identical preview); two latent Tk defects fixed | phase 5 |
 | 0935 | The Qt shell's ribbon (tabs of icon groups over the shell's own actions) + command palette; folds on short screens | shell |
+| 0950 | The inspector's five small popups open in the running shell (`shell_host_of`; a row form; a flag-description session) | phase 5 |
 | 0949 | The ribbon is the shell's only command surface: no menu bar; a File tab; six dropdown buttons hold the long lists; shortcuts registered on the window | shell |
 | 0936 | Phase 5g part 3: Inspect Optical CAD/STL Solids as one report in both shells; the numeric Place/Orient assistant (uncalled since a53b72a3) removed | phase 5 |
 | 0937 | Validator input fixtures kept in git (`test_fixtures/`, restored by the gates); the 0667 guard stops writing into attachment/ | tooling |
@@ -344,9 +345,11 @@ not fit (7 GB per shard): run it as sequential `--phases` chunks (1 h 42 min, bu
    `MenuModel` and Qt renders it. Every one of its 118 distinct entries was run in a Qt shell; the
    reports it opens go to the Qt report dialog through a `show_report` seam on the Tk report
    handle. One entry still ends in Tk (Best Image Solve: the paraxial solve prompts, item 5).
-3. **The inspector's popups** -- the small ones first through the host or a row form (centred
-   input, LED edge distance, Edit Thickness, STEP resize), then Quick Estimation as a session with
-   two views.
+3. **The inspector's popups.** ~~The small ones~~ -- **done (0950, phase 723):** the centred
+   input, LED Edge Distance and Edit Thickness ask through the host, Resize Solid is a row form,
+   and the bug-flag description is a session with a Tk and a Qt view. All five froze the Qt shell
+   or were never seen before. **Left:** Quick Estimation's four windows, as a session with two
+   views; and a Qt route for the 2D bug flag (none exists).
 4. **Atmospheric Settings** -- menu parity 75 of 75.
 5. Paraxial solve prompts; the 2D-plot toggles; the missing-assets decision.
 6. **Phase 7** -- validators off Tk, Qt the default shell, the Tk-retirement decision.

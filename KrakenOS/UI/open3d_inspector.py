@@ -140,7 +140,7 @@ from KrakenOS.UI.services.offbeam_optical_solid import offbeam_neutralized_body_
 from KrakenOS.UI.nonseq_output_ports import optical_solid_output_port_runtime_transform_override
 from KrakenOS.UI import optical_solid_metadata
 from KrakenOS.UI.context_menu import MenuModel, new_context_menu
-from KrakenOS.UI.uihost import host_of
+from KrakenOS.UI.uihost import host_of, shell_host_of
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ATTACHMENT_DIR = PROJECT_ROOT / "attachment"
@@ -11121,9 +11121,24 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         (Escape / window-close) with an empty box also discards it, so an
         accidental flag does not linger.
         """
+        from KrakenOS.UI.services.flag_description import FlagDescription
+
+        # what Save / Keep / Discard do is the model's (bugs/0950); a view collects the text
+        session = FlagDescription(
+            bundle_dir=bundle_dir,
+            state_path=state_path,
+            flag_event_payload=flag_event_payload,
+            set_status=self.status_var.set,
+            debug=self.editor.append_debug,
+            discard=lambda: self._discard_flag_bundle(bundle_dir, flag_event_payload),
+        )
+        shell = self.editor.__dict__.get("show_flag_description") if hasattr(self.editor, "__dict__") else None
+        if callable(shell):
+            shell(session)
+            return
         try:
             popup = tk.Toplevel(self)
-            popup.title(f"Flag: {bundle_dir.name}")
+            popup.title(session.title)
             popup.transient(self)
             popup.attributes("-topmost", True)
             try:
@@ -11132,15 +11147,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 pass
             frame = ttk.Frame(popup, padding=10)
             frame.pack(fill="both", expand=True)
-            ttk.Label(
-                frame,
-                text=(
-                    "Describe the bug (carry / drag stays live while this is open).\n"
-                    "Save = keep with description · Keep screenshot = keep without · Discard = delete this flag.\n"
-                    "Closing with an empty box discards the flag (changed your mind)."
-                ),
-                justify="left",
-            ).pack(anchor="w")
+            ttk.Label(frame, text=session.prompt, justify="left").pack(anchor="w")
             entry = tk.Text(frame, height=4, width=60, wrap="word")
             entry.pack(fill="both", expand=True, pady=(8, 8))
             try:
@@ -11150,51 +11157,23 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             buttons = ttk.Frame(frame)
             buttons.pack(fill="x")
 
-            def _do_save(*_args) -> None:
-                text = entry.get("1.0", "end").strip()
-                if text:
-                    try:
-                        (bundle_dir / "description.txt").write_text(text + "\n", encoding="utf-8")
-                    except Exception as exc:
-                        self.editor.append_debug(f"Open 3D flag description save failed: {exc}")
-                    try:
-                        if state_path.exists():
-                            data = json.loads(state_path.read_text(encoding="utf-8"))
-                            data["description"] = text
-                            state_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-                    except Exception as exc:
-                        self.editor.append_debug(f"Open 3D flag state update failed: {exc}")
-                    if isinstance(flag_event_payload, dict):
-                        try:
-                            flag_event_payload["description"] = text
-                        except Exception:
-                            pass
-                    self.status_var.set(f"Flag description saved: {bundle_dir.name}")
-                else:
-                    self.status_var.set(f"Flag kept without description: {bundle_dir.name}")
+            def _close() -> None:
                 try:
                     popup.destroy()
                 except Exception:
                     pass
+
+            def _do_save(*_args) -> None:
+                session.save(entry.get("1.0", "end"))
+                _close()
 
             def _do_keep(*_args) -> None:
-                # Keep the bundle even with an empty description (the mid-drag safety net).
-                self.status_var.set(f"Flag kept (screenshot only): {bundle_dir.name}")
-                try:
-                    popup.destroy()
-                except Exception:
-                    pass
+                session.keep()
+                _close()
 
             def _do_discard(*_args) -> None:
-                name = bundle_dir.name
-                ok = self._discard_flag_bundle(bundle_dir, flag_event_payload)
-                self.status_var.set(
-                    f"Flag discarded: {name}" if ok else f"Flag discard failed (kept): {name}"
-                )
-                try:
-                    popup.destroy()
-                except Exception:
-                    pass
+                session.discard()
+                _close()
 
             def _dismiss(*_args) -> None:
                 # Empty box on dismiss == cancelled -> discard; typed-but-unsaved text is saved
@@ -23040,6 +23019,9 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def _centered_input_dialog(self, title: str, prompt: str, initial: str) -> str | None:
         """Small screen-centred modal text input reusing the reliable
         _show_centered_dialog placement (works under Wayland/layer-shell)."""
+        shell = shell_host_of(self)
+        if shell is not None:          # bugs/0950: a shell asks in its own window
+            return shell.askstring(title, prompt, initialvalue=str(initial))
         holder: dict[str, str] = {}
         dialog = tk.Toplevel(self)
         try:
@@ -24098,15 +24080,6 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         display = self.editor._step_overlay_display_label(label).upper()
         coupled = axes is not None
 
-        dialog = tk.Toplevel(self)
-        try:
-            dialog.withdraw()
-            dialog.title(f"{display} STEP — Resize Solid")
-            dialog.transient(self.winfo_toplevel())
-            dialog.resizable(False, False)
-        except Exception:
-            pass
-
         if coupled:
             s_axis = axes.coupled_axes[0]
             d_axis = axes.free_axis
@@ -24126,6 +24099,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 ("Height (mm):", current[1]),
                 ("Depth (mm):", current[2]),
             ]
+        if shell_host_of(self) is not None:      # bugs/0950: a shell shows it as a row form
+            self._present_step_overlay_resize_form(label, f"{display} STEP — Resize Solid", prompt, fields, axes)
+            return
+
+        dialog = tk.Toplevel(self)
+        try:
+            dialog.withdraw()
+            dialog.title(f"{display} STEP — Resize Solid")
+            dialog.transient(self.winfo_toplevel())
+            dialog.resizable(False, False)
+        except Exception:
+            pass
         ttk.Label(dialog, text=prompt, wraplength=340, justify="left").grid(
             row=0, column=0, columnspan=2, padx=12, pady=(12, 8), sticky="w"
         )
@@ -24145,23 +24130,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
         def run() -> None:
             try:
-                values = [float(var.get()) for var in entry_vars]
-            except (TypeError, ValueError):
-                self.status_var.set("Dimensions must be numbers.")
+                target, anchor_axis = self._step_overlay_resize_target([var.get() for var in entry_vars], axes)
+            except ValueError as exc:
+                self.status_var.set(str(exc))
                 return
-            if not all(v > 0 for v in values):
-                self.status_var.set("Dimensions must be positive.")
-                return
-            target: list[float | None] = [None, None, None]
-            if coupled:
-                cross, depth = values
-                for axis in axes.coupled_axes:
-                    target[axis] = cross
-                target[axes.free_axis] = depth
-                anchor_axis = axes.free_axis
-            else:
-                target = list(values)  # type: ignore[assignment]
-                anchor_axis = None
             try:
                 dialog.grab_release()
             except Exception:
@@ -24192,6 +24164,65 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             pass
         self.wait_window(dialog)
+
+    @staticmethod
+    def _step_overlay_resize_target(texts, axes) -> "tuple[list, int | None]":
+        """The typed sizes as (target extents per axis, the axis that stays anchored) -- for a
+        coupled beam-splitter cube the two cross-section axes take one number. Raises ValueError
+        with the line to show when an entry is not a positive number."""
+        try:
+            values = [float(text) for text in texts]
+        except (TypeError, ValueError):
+            raise ValueError("Dimensions must be numbers.") from None
+        if not all(np.isfinite(v) and v > 0 for v in values):
+            raise ValueError("Dimensions must be positive.")
+        if axes is None:
+            return list(values), None
+        cross, depth = values
+        target: list[float | None] = [None, None, None]
+        for axis in axes.coupled_axes:
+            target[axis] = cross
+        target[axes.free_axis] = depth
+        return target, axes.free_axis
+
+    def _present_step_overlay_resize_form(self, label: str, title: str, prompt: str, fields, axes) -> None:
+        """The resize question as a row form (bugs/0950): the same fields, rule and apply as the Tk
+        popup, shown by the running shell."""
+        from KrakenOS.UI.panels.row_form_view import present_row_form
+        from KrakenOS.UI.row_forms.base import FormField, FormRefused, RowForm
+
+        keys = [f"size_{index}" for index in range(len(fields))]
+
+        def target_of(values: dict):
+            return self._step_overlay_resize_target([values.get(key, "") for key in keys], axes)
+
+        def validate(values: dict) -> list:
+            try:
+                target_of(values)
+            except ValueError as exc:
+                return [str(exc)]
+            return []
+
+        def apply(values: dict) -> str:
+            try:
+                target, anchor_axis = target_of(values)
+            except ValueError as exc:
+                raise FormRefused(str(exc)) from None
+            self._apply_step_overlay_resize_solve(label, target, anchor_axis, axes is not None)
+            return str(self.status_var.get())
+
+        form = RowForm(
+            title=title,
+            row_index=-1,
+            fields=tuple(FormField(key, text.rstrip(":"), kind="number", width=12)
+                         for key, (text, _value) in zip(keys, fields)),
+            values={key: (f"{value:.6g}" if value else "") for key, (_text, value) in zip(keys, fields)},
+            summary=prompt,
+            validate=validate,
+            apply=apply,
+            describe=lambda values: " × ".join(str(values.get(key, "")).strip() for key in keys) + " mm",
+        )
+        present_row_form(self, form, wraplength=340, modal=True, wait=True)
 
     def _apply_step_overlay_resize_solve(
         self,
