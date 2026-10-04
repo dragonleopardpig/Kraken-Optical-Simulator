@@ -52,6 +52,13 @@ python tools/penta_parallel_gate.py --dry-run
   group from 421, 4 per group from 689), so the next run should be shorter. That has not been
   measured on the full suite yet.
 
+## Second full run (the same day, after the bands were tightened)
+
+727 of 727 phases in **41.6 min** at 4 groups at a time (38 groups). The watchdog fired twice in
+the Qt tail (lowest free memory 2.4 GB); both groups were re-run and passed. A killed group's
+re-run costs more than waiting would have, so the admission mark was raised from 5.5 to 6.5 GB.
+The long pole is one group of nine phases (448-456: 1340 s).
+
 ## Checked
 
 - The first full run: 25 groups, every group reported, 726 pass, 0 fail.

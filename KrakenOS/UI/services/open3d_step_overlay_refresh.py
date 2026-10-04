@@ -6,13 +6,7 @@ from typing import Any
 
 import numpy as np
 
-from KrakenOS.UI.services.open3d_scene_refresh import (
-    _GLASS_EDGE_LINE_WIDTH,
-    _GLASS_EDGE_SILHOUETTE_WIDTH,
-    _OPTICAL_STEP_BODY_COLOR,
-    _OPTICAL_STEP_EDGE_COLOR,
-    _OPTICAL_STEP_SILHOUETTE_COLOR,
-)
+from KrakenOS.UI.services.open3d_scene_refresh import _OPTICAL_STEP_BODY_COLOR, step_overlay_style
 from KrakenOS.UI.services.open3d_timing import open3d_timing_event, open3d_timing_span
 from KrakenOS.UI.services.step_overlay_labels import STEP_OVERLAY_LABEL_SET
 
@@ -215,14 +209,15 @@ class Open3DStepOverlayRefreshService:
                 round_lens_like = bool(inspector._mesh_round_lens_axis(cad_mesh) is not None)
             except Exception:
                 round_lens_like = False
+            body_opacity, body_flat, edge_passes = step_overlay_style(inspector, display_opacity)
             inspector._add_mesh_actor(
                 cad_mesh,
                 color=tuple(color),
-                opacity=display_opacity,
+                opacity=body_opacity,
                 pick_row_index=None,
                 pick_step_label=label,
                 follow_step_label=label,
-                flat_shading=True,
+                flat_shading=body_flat,
                 backface_culling=False,
             )
             try:
@@ -236,22 +231,15 @@ class Open3DStepOverlayRefreshService:
                     boundary_edges=not round_lens_like,
                 )
                 if int(getattr(cad_edges, "n_points", 0)) > 0:
-                    inspector._add_mesh_actor(
-                        cad_edges,
-                        color=_OPTICAL_STEP_SILHOUETTE_COLOR,
-                        opacity=0.98,
-                        line_width=_GLASS_EDGE_SILHOUETTE_WIDTH,
-                        follow_step_label=label,
-                        backface_culling=False,
-                    )
-                    inspector._add_mesh_actor(
-                        cad_edges,
-                        color=_OPTICAL_STEP_EDGE_COLOR,
-                        opacity=0.96,
-                        line_width=_GLASS_EDGE_LINE_WIDTH,
-                        follow_step_label=label,
-                        backface_culling=False,
-                    )
+                    for edge_color, edge_opacity, edge_width in edge_passes:
+                        inspector._add_mesh_actor(
+                            cad_edges,
+                            color=edge_color,
+                            opacity=edge_opacity,
+                            line_width=edge_width,
+                            follow_step_label=label,
+                            backface_culling=False,
+                        )
             except Exception:
                 pass
             inspector._add_clear_aperture_highlight_actor(label)

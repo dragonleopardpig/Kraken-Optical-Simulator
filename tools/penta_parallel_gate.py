@@ -121,7 +121,10 @@ def main(argv=None) -> int:
     parser.add_argument("--jobs", type=int, default=3, help="groups run at the same time (default 3)")
     parser.add_argument("--cores", default=None,
                         help='the cores to share out, e.g. "0-11" (default: all but the last two)')
-    parser.add_argument("--start-gb", type=float, default=5.5,
+    # 6.5, not 5.5: with four groups in the Qt tail the watchdog fired twice in one run (2026-10-04);
+    # a higher admission mark keeps the fourth out until there is room, which costs less than a
+    # killed group's re-run
+    parser.add_argument("--start-gb", type=float, default=6.5,
                         help="start another group only while this much memory is available")
     parser.add_argument("--min-gb", type=float, default=2.5,
                         help="below this, the group started last is killed and queued again")

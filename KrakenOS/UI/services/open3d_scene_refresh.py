@@ -19,6 +19,31 @@ _OPTICAL_STEP_SILHOUETTE_COLOR = (0.014, 0.279, 0.288)
 # Shared outline weights (line widths) for glass elements.
 _GLASS_EDGE_SILHOUETTE_WIDTH = 2.8
 _GLASS_EDGE_LINE_WIDTH = 2.0
+# The SOFT look for imported STEP hardware (bugs/0958): a smooth-shaded, slightly denser body and
+# ONE thin, faint pass of the same feature edges. A vendor camera or lens barrel has hundreds of
+# feature edges; under the two glass-palette passes above they read as a dense dark web. The
+# edges stay drawn -- Alt-hover picks the nearest DRAWN edge -- they are only quieter.
+_SOFT_STEP_EDGE_COLOR = (0.30, 0.36, 0.44)
+_SOFT_STEP_EDGE_OPACITY = 0.60
+_SOFT_STEP_EDGE_WIDTH = 1.0
+_SOFT_STEP_BODY_OPACITY = 0.45
+
+
+def step_overlay_style(inspector, opacity: float) -> "tuple[float, bool, tuple]":
+    """How an imported STEP body is drawn: (body opacity, flat shading, the edge passes as
+    (colour, opacity, line width)), by the inspector's "Soft STEP bodies" switch. The full scene
+    refresh and the single-body refresh both draw from this, so they cannot disagree."""
+    variable = getattr(inspector, "soft_step_bodies_var", None)
+    try:
+        soft = bool(variable.get()) if variable is not None else False
+    except Exception:
+        soft = False
+    if soft:
+        return (max(float(opacity), _SOFT_STEP_BODY_OPACITY), False,
+                ((_SOFT_STEP_EDGE_COLOR, _SOFT_STEP_EDGE_OPACITY, _SOFT_STEP_EDGE_WIDTH),))
+    return (float(opacity), True,
+            ((_OPTICAL_STEP_SILHOUETTE_COLOR, 0.98, _GLASS_EDGE_SILHOUETTE_WIDTH),
+             (_OPTICAL_STEP_EDGE_COLOR, 0.96, _GLASS_EDGE_LINE_WIDTH)))
 
 
 def _layout_module():
@@ -1120,14 +1145,15 @@ class Open3DSceneRefreshService:
                 display_opacity = float(opacity)
                 if ray_visibility_requested and label == "optical":
                     display_opacity = max(display_opacity, 0.46)
+                body_opacity, body_flat, edge_passes = step_overlay_style(self, display_opacity)
                 self._add_mesh_actor(
                     cad_mesh,
                     color=color,
-                    opacity=display_opacity,
+                    opacity=body_opacity,
                     pick_row_index=None,
                     pick_step_label=label,
                     follow_step_label=label,
-                    flat_shading=True,
+                    flat_shading=body_flat,
                     backface_culling=False,
                 )
                 try:
@@ -1148,22 +1174,15 @@ class Open3DSceneRefreshService:
                         boundary_edges=not round_lens_like,
                     )
                     if int(getattr(cad_edges, "n_points", 0)) > 0:
-                        self._add_mesh_actor(
-                            cad_edges,
-                            color=_OPTICAL_STEP_SILHOUETTE_COLOR,
-                            opacity=0.98,
-                            line_width=_GLASS_EDGE_SILHOUETTE_WIDTH,
-                            follow_step_label=label,
-                            backface_culling=False,
-                        )
-                        self._add_mesh_actor(
-                            cad_edges,
-                            color=_OPTICAL_STEP_EDGE_COLOR,
-                            opacity=0.96,
-                            line_width=_GLASS_EDGE_LINE_WIDTH,
-                            follow_step_label=label,
-                            backface_culling=False,
-                        )
+                        for edge_color, edge_opacity, edge_width in edge_passes:
+                            self._add_mesh_actor(
+                                cad_edges,
+                                color=edge_color,
+                                opacity=edge_opacity,
+                                line_width=edge_width,
+                                follow_step_label=label,
+                                backface_culling=False,
+                            )
                 except Exception:
                     pass
                 self._add_clear_aperture_highlight_actor(label)

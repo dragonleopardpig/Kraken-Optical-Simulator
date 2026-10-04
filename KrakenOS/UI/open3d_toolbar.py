@@ -117,6 +117,8 @@ OVERLAYS = Menu("Overlays", (
     Check("Illum emission", "inspector.show_illumination_marker_rays_var", "inspector._on_scene_visibility_changed"),
     Check("Accept cone", "inspector.show_receiving_cone_var", "inspector._on_scene_visibility_changed"),
     Check("Illum volume", "inspector.show_illumination_volume_var", "inspector._on_scene_visibility_changed"),
+    # bugs/0958: how imported STEP hardware is drawn -- display only
+    Check("Soft STEP bodies", "inspector.soft_step_bodies_var", "inspector._on_step_body_style_changed"),
     None,
     Command("Normal to Sensor", "inspector.view_normal_to_sensor"),
     Command("Clear selection / hide handles (Esc)", "inspector.cancel_active_3d_operation"),

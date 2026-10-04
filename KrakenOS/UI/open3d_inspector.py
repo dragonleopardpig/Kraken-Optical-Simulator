@@ -926,6 +926,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # smoothly / to a precise step instead of the coarse auto placement-handle snap.
         self.carry_snap_mm_var = self.ui.string_var(value="")
         self.show_rays_var = self.ui.boolean_var(value=True)
+        # bugs/0958: imported STEP hardware drawn SOFT -- smooth bodies with one faint pass of
+        # their edges -- instead of the two-pass glass outline. Off here: the Tk app keeps the look
+        # it has had since bugs/0020. A shell may switch it on for its scene (the Qt shell does).
+        self.soft_step_bodies_var = self.ui.boolean_var(value=False)
         # bugs/0732 (user: "the red banner is kind of static on the screen, blocking the view"):
         # the solve/focus banner is a fixed viewport actor, so give it an off switch.
         self.show_solve_banner_var = self.ui.boolean_var(value=True)
@@ -2120,6 +2124,17 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             optical_solid_metadata.OPTICAL_SOLID_FACE_FUNCTION_UI_LABEL_ABSORB,
             OPTICAL_SOLID_FACE_FUNCTION_DEFAULT,
         )
+
+    def _on_step_body_style_changed(self) -> None:
+        """Overlays > "Soft STEP bodies" (bugs/0958): redraw every imported STEP body in the chosen
+        style. Display only -- nothing is traced again."""
+        for label in STEP_OVERLAY_LABELS:
+            if self.editor._step_path_for_label(label) is not None:
+                self.refresh_imported_step_overlay(label, render=False)
+        self.render()
+        soft = bool(self.soft_step_bodies_var.get())
+        self.status_var.set("STEP bodies drawn soft (smooth, faint edges)." if soft
+                            else "STEP bodies drawn outlined (the glass edge palette).")
 
     def _on_show_rays_changed(self) -> None:
         self._debug_trace("show_rays_toggled", show_rays=bool(self.show_rays_var.get()), counts=self._debug_actor_counts())

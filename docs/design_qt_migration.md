@@ -136,6 +136,8 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0932 | Phase 5f part 3c: the browser's Properties / Selected-Element pane in Qt -- 5f complete | phase 5 |
 | 0933 | Phase 5g part 1: the face-roles editor split into a toolkit-neutral session + VTK preview; the Tk dialog is a view (parity: identical state over 19 steps, pixel-identical preview); two latent Tk defects fixed | phase 5 |
 | 0935 | The Qt shell's ribbon (tabs of icon groups over the shell's own actions) + command palette; folds on short screens | shell |
+| 0958 | Imported STEP hardware drawn soft (smooth body, one faint edge pass): an Overlays switch in both shells, on by default in the Qt shell's scene | shell |
+| 0957 | Under Qt a bound key (`s`, Escape, Delete) ran its handler twice: one `s` wrote two flag bundles | phase 5 |
 | 0956 | `tools/penta_parallel_gate.py`: the full gate as many small groups, several at a time, with memory admission and a watchdog (44.5 min instead of 1 h 54 min on 14 GB) | tooling |
 | 0955 | The solve review windows (paraxial thickness, folded mirror, best image): fixed in Tk (broken since 2026-05-24), a modal Qt dialog from one shared description | phase 3 |
 | 0954 | Atmospheric Settings in Qt (a fourth `system_controls` group): Tk menu-bar parity 75 of 75 | phase 6 |
@@ -336,8 +338,10 @@ out to hide model state in Tk widgets just as the dialogs did.
 | 6 matplotlib | **done** (2D plot 0893, FormFigure 0887, MTF from image 0938) | -- |
 | 7 validators + gate | **started**: `--shell qt` harness gate 352/352 (0939); 62 validators exercise the Qt shell | 862 validators, 173 in no penta phase; 239 build a real editor (94 already `headless=True`), about 63 touch Tk widgets directly (a source scan); then Qt as the default shell and the Tk-retirement decision |
 
-**Gates.** Full Tk gate **726/726 at c45e41f6** (2026-10-04, after 0954 and 0955), run IN PARALLEL with
-`tools/penta_parallel_gate.py --jobs 4` (bugs/0956): 44.5 min where the sequential run took 1 h 54 min.
+**Gates.** Full Tk gate **727/727 with 0958** (2026-10-04, on bb4c3bec plus 0958; covers 0957 and 0958),
+run in parallel with `tools/penta_parallel_gate.py --jobs 4` (bugs/0956): 41.6 min. The Qt-hosted
+harness (`--shell qt`): 352/352. Before it: 726/726 at c45e41f6 (after 0954 and 0955), 44.5 min in
+parallel where the sequential run took 1 h 54 min.
 Before it: **724/724 with 0953** (2026-10-04, on 9aea5eb8 plus 0953; covers 0950-0953;
 1 h 54 min on M90aPro in seven sequential chunks, lowest free memory 2.9 GB -- close to the 2.5 GB
 watchdog, so quit other apps before the next one). Before it: 721/721 at 89c64ca9 (after 0948 and

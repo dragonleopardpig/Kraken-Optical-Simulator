@@ -84,6 +84,11 @@ class InspectorView:
         self.dispatched: list[str] = []
 
         self.inspector = Kraken3DInspector(editor, vtk_host=self.widget)
+        # The shell's scene draws imported STEP hardware SOFT (bugs/0958): smooth bodies with one
+        # faint pass of their edges, the look of the shell's first 3D view. The user compared the
+        # two and called the outlined look "a TK version, not qt". Overlays > Soft STEP bodies
+        # switches it either way; the Tk app's default is unchanged.
+        self.inspector.soft_step_bodies_var.set(True)
         self.inspector.set_viewport_cursor = self.set_cursor
         self.inspector.viewport_pointer = self.pointer
         self.inspector.show_in_shell = self.show
