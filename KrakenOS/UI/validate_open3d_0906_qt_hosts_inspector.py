@@ -24,6 +24,9 @@ In a real Qt shell (subprocess, xcb):
   O  an orbit (left drag), a Shift+left pan and a middle pan sent as Qt mouse events MOVE the
      camera and leave it where the same gestures dispatched as ViewportEvents leave it
   P  a Qt hover + click on a body selects exactly what the dispatched hover + click selects
+  K2 (bugs/0957) one key press runs ONE handler: `s`, Escape and Delete each run their handler
+     once and do not also reach VTK's own key observer (one `s` used to write two flag bundles);
+     a key the inspector does not bind still goes to VTK
   K  Escape pressed on the Qt widget cancels an armed pick mode
   A  Alt pressed and released on the Qt widget turns edge hover ON and then OFF
   D  a right press dispatches nothing (no Tk menu under Qt); the release is still routed
@@ -233,6 +236,28 @@ def qt_runtime_checks() -> list:
     key(QEvent.Type.KeyPress, Qt.Key.Key_Escape)
     rows.append(["K", inspector._placement_target_pick_mode is False,
                  "Escape pressed on the Qt widget cancelled the armed placement-target pick"])
+
+    # ---- K2 (bugs/0957): one key press runs ONE handler ---------------------------------------
+    # A bound key used to go to VTK as well, whose own key observer handles the same three keys:
+    # one `s` wrote two flag bundles, one Escape cancelled AND cleared the selection.
+    calls: list = []
+    inspector.flag_bug = lambda *_a, **_k: calls.append("flag")
+    inspector.cancel_active_3d_operation = lambda *_a, **_k: calls.append("cancel")
+    inspector.delete_selected_step = lambda *_a, **_k: calls.append("delete")
+    reached_vtk: list = []
+    interactor = inspector._vtk_interactor
+    tag = interactor.AddObserver("KeyPressEvent", lambda *_a: reached_vtk.append(str(interactor.GetKeySym())))
+    key(QEvent.Type.KeyPress, Qt.Key.Key_S, text="s")
+    key(QEvent.Type.KeyPress, Qt.Key.Key_Escape)
+    key(QEvent.Type.KeyPress, Qt.Key.Key_Delete)
+    bound = (list(calls), list(reached_vtk))
+    key(QEvent.Type.KeyPress, Qt.Key.Key_F9)                 # a key the inspector does not bind
+    unbound = (list(calls), list(reached_vtk))
+    interactor.RemoveObserver(tag)
+    del inspector.flag_bug, inspector.cancel_active_3d_operation, inspector.delete_selected_step
+    rows.append(["K2", bound == (["flag", "cancel", "delete"], []) and unbound == (["flag", "cancel", "delete"], ["F9"]),
+                 f"`s`, Escape, Delete pressed once each ran {bound[0]} and reached VTK's own key observer "
+                 f"{bound[1]}; an unbound key (F9) ran nothing more and reached VTK {unbound[1]}"])
 
     # ---- A ---------------------------------------------------------------------------------
     inspector._edge_pick_alt_active = False

@@ -248,8 +248,14 @@ class InspectorView:
                 self.dispatch("alt_press", self.viewport_event(event, keysym="Alt_L"))
                 return False
             _char, keysym = self.widget._GetKeyCharAndKeySym(event)
-            self.widget.keyPressEvent(event)
-            self.inspector.dispatch_viewport_key(keysym, self.viewport_event(event, keysym=keysym))
+            # A key the inspector binds (Escape, Delete, `s`) runs ITS handler and stops there, as
+            # the Tk binding does -- a specific Tk binding shadows VTK's own <KeyPress>. Forwarding
+            # it to VTK as well ran the interactor's key observer too, which handles the same
+            # three keys: one `s` flagged TWO bugs, one Escape cancelled the operation AND cleared
+            # the selection (bugs/0957). Any other key goes to VTK, as before.
+            handled = self.inspector.dispatch_viewport_key(keysym, self.viewport_event(event, keysym=keysym))
+            if handled is False:
+                self.widget.keyPressEvent(event)
             return True
         if kind == QEvent.Type.KeyRelease and event.key() == Qt.Key.Key_Alt:
             self.dispatch("alt_release", self.viewport_event(event, keysym="Alt_L"))
