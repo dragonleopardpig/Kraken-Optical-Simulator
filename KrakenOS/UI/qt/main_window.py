@@ -141,6 +141,10 @@ class KrakenQtMainWindow(_main_window_class()):
                                       Qt.DockWidgetArea.RightDockWidgetArea, scroll=True)
         # the model says when relevance or a live list may have changed; every form re-reads
         editor.show_control_state = self.refresh_control_panels
+        # Atmospheric Settings: the same catalogue mechanism, in a window of its own (bugs/0954)
+        editor.show_atmosphere_settings = self.show_atmosphere_settings
+        #: the one Atmospheric Settings window, made the first time it is asked for
+        self.atmosphere_dialog = None
         # the CAD/STL face-roles editor opens here, over the model's session (bugs/0934)
         editor.show_face_roles_dialog = self.show_face_roles_dialog
         # a report a model command opens -- the table menu's Diagnostics, the inspector's verbs --
@@ -186,7 +190,21 @@ class KrakenQtMainWindow(_main_window_class()):
         """The model's `show_control_state` seam: re-read relevance and live lists (0902)."""
         for panel in (self.system_panel, self.source_panel, self.trace_panel):
             panel.refresh_state()
+        if self.atmosphere_dialog is not None:
+            self.atmosphere_dialog.panel.refresh_state()
         self._refresh_path_view_choices()
+
+    def show_atmosphere_settings(self):
+        """The model's `show_atmosphere_settings` seam (bugs/0954): one window, not modal -- asked
+        for again, it comes back to the front, as the Tk one does."""
+        from KrakenOS.UI.qt.dialogs.atmosphere_dialog import AtmosphereSettingsDialog
+
+        if self.atmosphere_dialog is None:
+            self.atmosphere_dialog = AtmosphereSettingsDialog(self.editor, parent=self)
+        self.atmosphere_dialog.show()
+        self.atmosphere_dialog.raise_()
+        self.atmosphere_dialog.activateWindow()
+        return self.atmosphere_dialog
 
     def show_lens_drawing_properties(self, session) -> bool:
         """The model's `show_lens_drawing_properties` seam (bugs/0945): the session in a modal Qt

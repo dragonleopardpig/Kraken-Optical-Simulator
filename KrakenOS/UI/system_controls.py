@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from KrakenOS.UI.coherent_detector_analysis import COHERENT_SUM_MODE_VALUES
-from KrakenOS.UI.source_trace_helpers import (GAUSSIAN_INPUT_MODE_VALUES,
+from KrakenOS.UI.source_trace_helpers import (ATMOS_PLOT_MODE_VALUES, GAUSSIAN_INPUT_MODE_VALUES,
                                               GAUSSIAN_WAIST_SIDE_VALUES, PUPIL_PATTERN_VALUES,
                                               RAY_FAN_COUNT_VALUES,
                                               SOURCE_ANGULAR_WEIGHT_VALUES,
@@ -249,3 +249,32 @@ def control_for(key: str) -> "SystemControl | None":
             if control.key == key:
                 return control
     return None
+
+
+
+# ---- the atmosphere (bugs/0954) -----------------------------------------------------------------
+ATMOSPHERE_TITLE = "Atmospheric Settings"
+ATMOSPHERE_NOTE = ("Atmospheric refraction/dispersion settings are advanced analysis inputs. "
+                   "Use the Atmos analysis button after changing these values.")
+#: (label, model variable, default) of the ten numbers -- the Tk panel builds its entries from
+#: this list and the Qt dialog its form, so the two cannot name a different set
+ATMOSPHERE_CONTROL_SPECS = (
+    ("Min wavelength [um]", "atmos_wavelength_min_var", "0.45"),
+    ("Max wavelength [um]", "atmos_wavelength_max_var", "0.75"),
+    ("Samples", "atmos_wavelength_count_var", "11"),
+    ("Zenith angle [deg]", "atmos_zenith_deg_var", "45.0"),
+    ("Temperature [K]", "atmos_temperature_k_var", "283.15"),
+    ("Pressure [Pa]", "atmos_pressure_pa_var", "101300"),
+    ("Humidity [0-1]", "atmos_humidity_var", "0.5"),
+    ("CO2 [ppm]", "atmos_co2_ppm_var", "400"),
+    ("Latitude [deg]", "atmos_latitude_deg_var", "31.0"),
+    ("Altitude [m]", "atmos_altitude_m_var", "2800"),
+)
+#: the observatory preset fills six of the numbers; the plot choice and every number mark the
+#: plot stale, as the Tk window's boxes do
+ATMOSPHERE_CONTROLS = (
+    SystemControl("atmos_observatory_var", "Observatory preset", "choice", ("Manual",),
+                  commit="_on_atmos_observatory_changed", choices_from="_atmos_observatory_names"),
+    SystemControl("atmos_plot_mode_var", "Atmos plot", "choice", ATMOS_PLOT_MODE_VALUES,
+                  commit="_mark_plot_update_pending"),
+) + tuple(SystemControl(variable, label) for label, variable, _default in ATMOSPHERE_CONTROL_SPECS)

@@ -100,8 +100,9 @@ DROPDOWNS = {
                   ("formula_sheet", "manual_index", None, "copy_debug")),
     "menu:cad_clear": ("Remove the imported STEP bodies, or only their axis offsets",
                        ("clear_cad_axis_offsets", "clear_step_imports")),
-    "menu:analysis_more": ("Benchmarks, report copies and clears",
-                           ("benchmark_psf_mtf", None, "copy_phase2_report", "copy_wavefront_fit", None,
+    "menu:analysis_more": ("Atmospheric settings, benchmarks, report copies and clears",
+                           ("atmosphere_settings", None, "benchmark_psf_mtf", None, "copy_phase2_report",
+                            "copy_wavefront_fit", None,
                             "clear_zemax_wavefront", "clear_marks")),
     # each needs its report run first, so six buttons would mostly refuse
     "menu:tolerance_csv": ("Write a tolerance run as CSV -- run its report first",

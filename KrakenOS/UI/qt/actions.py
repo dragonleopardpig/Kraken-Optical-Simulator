@@ -196,6 +196,8 @@ ACTIONS = (
     ("refresh_plot", "Refresh Plot", None, "editor:refresh_plot", "Re-trace and redraw the 2D plot"),
     ("folded_assembly", "Folded Assembly View...", None, "editor:open_folded_assembly_view",
      "The folded assembly in its own 3D window: per-arm reflections, isometric"),
+    ("atmosphere_settings", "Atmospheric &Settings...", None, "editor:open_atmosphere_settings_dialog",
+     "Refraction / dispersion inputs for the Atmos analysis: observatory, wavelengths, zenith angle, air"),
     ("benchmark_psf_mtf", "Benchmark PSF/MTF", None, "editor:benchmark_psf_mtf",
      "Time the PSF / MTF computation on this system"),
     ("copy_phase2_report", "Copy Phase 2 Report", None, "editor:copy_phase2_report_to_clipboard",

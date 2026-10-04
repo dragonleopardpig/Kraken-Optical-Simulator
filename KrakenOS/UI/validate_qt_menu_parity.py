@@ -89,9 +89,7 @@ QT_PORTS = {
 
 #: Tk menu-bar commands with no Qt route yet -> why (measured by running each in the Qt shell).
 #: bugs/0943 routed the 16 tolerance / path-detector commands that only asked through Tk dialogs.
-KNOWN_GAPS = {
-    "open_atmosphere_settings_dialog": "opens a Tk window -- needs a Qt port",
-}
+KNOWN_GAPS: dict = {}          # bugs/0954 routed the last one (Atmospheric Settings)
 
 
 def tk_menu_commands() -> list[tuple[str, str]]:

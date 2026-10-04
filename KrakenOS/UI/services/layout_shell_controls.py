@@ -521,7 +521,19 @@ class LayoutShellControlsMixin:
         self._main_atmosphere_panel().build_hidden_panel(parent)
 
     def open_atmosphere_settings_dialog(self) -> None:
+        shell = self.__dict__.get("show_atmosphere_settings")
+        if callable(shell):          # bugs/0954: the shell's own window over the same variables
+            shell()
+            return
         self._main_atmosphere_panel().open_settings_dialog()
+
+    def apply_atmosphere_settings(self, *, show_plot: bool = False) -> None:
+        """The Atmospheric Settings window's Apply (bugs/0954): refresh the summary and mark the
+        plot stale; with `show_plot` ("Apply + Atmos"), switch the Atmos analysis on first."""
+        self._update_atmosphere_summary()
+        if show_plot and "atmosphere" not in self.selected_analysis_modes:
+            self.toggle_analysis_mode("atmosphere")
+        self._mark_plot_update_pending()
 
     def _close_atmosphere_settings_dialog(self) -> None:
         self._main_atmosphere_panel().close_settings_dialog()

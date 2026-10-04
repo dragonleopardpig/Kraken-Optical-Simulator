@@ -1668,9 +1668,11 @@ class SourceModelingMixin:
             self._apply_atmos_observatory(name)
         else:
             self._update_atmosphere_summary()
+        self._mark_plot_update_pending()
+        # AFTER the mark: its own line ("Display settings changed. Click Update.") replaced this
+        # one at once, so the preset was never named on the status line (bugs/0954)
         if hasattr(self, "status_var"):
             self.status_var.set(f"Atmosphere preset set to {name}. Click Update.")
-        self._mark_plot_update_pending()
 
     def _format_source_summary(self, sample_count: int | None = None) -> str:
         if self._normalize_scene_source_specs(getattr(self, "layout_scene_source_specs", [])):

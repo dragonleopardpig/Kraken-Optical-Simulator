@@ -7,19 +7,8 @@ from collections.abc import Sequence
 from tkinter import ttk
 from typing import Any
 
+from KrakenOS.UI.system_controls import ATMOSPHERE_CONTROL_SPECS, ATMOSPHERE_NOTE, ATMOSPHERE_TITLE
 
-ATMOSPHERE_CONTROL_SPECS = (
-    ("Min wavelength [um]", "atmos_wavelength_min_var", "0.45"),
-    ("Max wavelength [um]", "atmos_wavelength_max_var", "0.75"),
-    ("Samples", "atmos_wavelength_count_var", "11"),
-    ("Zenith angle [deg]", "atmos_zenith_deg_var", "45.0"),
-    ("Temperature [K]", "atmos_temperature_k_var", "283.15"),
-    ("Pressure [Pa]", "atmos_pressure_pa_var", "101300"),
-    ("Humidity [0-1]", "atmos_humidity_var", "0.5"),
-    ("CO2 [ppm]", "atmos_co2_ppm_var", "400"),
-    ("Latitude [deg]", "atmos_latitude_deg_var", "31.0"),
-    ("Altitude [m]", "atmos_altitude_m_var", "2800"),
-)
 
 
 class MainAtmospherePanel:
@@ -123,7 +112,7 @@ class MainAtmospherePanel:
 
         window = tk.Toplevel(self.editor)
         self._atmosphere_settings_window = window
-        window.title("Atmospheric Settings")
+        window.title(ATMOSPHERE_TITLE)
         window.transient(self.editor)
         window.protocol("WM_DELETE_WINDOW", self.close_settings_dialog)
         window.columnconfigure(0, weight=1)
@@ -135,10 +124,7 @@ class MainAtmospherePanel:
 
         ttk.Label(
             root,
-            text=(
-                "Atmospheric refraction/dispersion settings are advanced analysis inputs. "
-                "Use the Atmos analysis button after changing these values."
-            ),
+            text=ATMOSPHERE_NOTE,
             foreground="#475569",
             wraplength=520,
             justify="left",
@@ -195,16 +181,12 @@ class MainAtmospherePanel:
         ttk.Button(
             buttons,
             text="Apply",
-            command=lambda: (self._update_atmosphere_summary(), self._mark_plot_update_pending()),
+            command=lambda: self.apply_atmosphere_settings(),
         ).pack(side="left")
         ttk.Button(
             buttons,
             text="Apply + Atmos",
-            command=lambda: (
-                self._update_atmosphere_summary(),
-                None if "atmosphere" in self.selected_analysis_modes else self.toggle_analysis_mode("atmosphere"),
-                self._mark_plot_update_pending(),
-            ),
+            command=lambda: self.apply_atmosphere_settings(show_plot=True),
         ).pack(side="left", padx=(8, 0))
         ttk.Button(buttons, text="Close", command=self.close_settings_dialog).pack(side="left", padx=(8, 0))
 
