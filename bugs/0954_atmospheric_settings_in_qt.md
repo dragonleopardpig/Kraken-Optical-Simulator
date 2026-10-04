@@ -61,3 +61,8 @@ mark now comes first.
 (259 checks; it pins the Tk panel's source) pass.
 
 **Seen by eye:** the Qt window rendered to PNG with a preset chosen.
+
+## Gates
+
+- **Full Tk gate at c45e41f6: 726 of 726 phases pass**, run in parallel with
+  `tools/penta_parallel_gate.py --jobs 4` (bugs/0956): 44.5 min on M90aPro.

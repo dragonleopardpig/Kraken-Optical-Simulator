@@ -86,3 +86,8 @@ instance.
 - **The folded mirror solve returned a negative thickness** (-42.11 mm) on the example scene. That
   is the solve's own arithmetic (straight image gap minus the gap before the mirror); it is shown
   for review and applied as computed.
+
+## Gates
+
+- **Full Tk gate at c45e41f6: 726 of 726 phases pass**, run in parallel with
+  `tools/penta_parallel_gate.py --jobs 4` (bugs/0956): 44.5 min on M90aPro.
