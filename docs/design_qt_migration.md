@@ -136,6 +136,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0932 | Phase 5f part 3c: the browser's Properties / Selected-Element pane in Qt -- 5f complete | phase 5 |
 | 0933 | Phase 5g part 1: the face-roles editor split into a toolkit-neutral session + VTK preview; the Tk dialog is a view (parity: identical state over 19 steps, pixel-identical preview); two latent Tk defects fixed | phase 5 |
 | 0935 | The Qt shell's ribbon (tabs of icon groups over the shell's own actions) + command palette; folds on short screens | shell |
+| 0955 | The solve review windows (paraxial thickness, folded mirror, best image): fixed in Tk (broken since 2026-05-24), a modal Qt dialog from one shared description | phase 3 |
 | 0954 | Atmospheric Settings in Qt (a fourth `system_controls` group): Tk menu-bar parity 75 of 75 | phase 6 |
 | 0953 | Quick Estimation's four windows open in the running shell: three row forms (`FormPanel` for the design block) and a report | phase 5 |
 | 0952 | Edge tabs hide and show the panels (upright on the left / right edges, flat on top, the bottom ones in the status bar); a small arrow folds the ribbon | shell |
@@ -360,7 +361,11 @@ not fit (7 GB per shard): run it as sequential `--phases` chunks (1 h 42 min, bu
 4. ~~Atmospheric Settings~~ -- **done (0954, phase 726): menu parity 75 of 75.** A fourth group
    of the `system_controls` catalogue in a window of its own; the model's command opens it through
    a `show_atmosphere_settings` seam.
-5. Paraxial solve prompts; the 2D-plot toggles; the missing-assets decision.
+5. ~~Paraxial solve prompts~~ -- **done (0955, phase 727).** The three "apply this?" windows are
+   one description (`solve_reviews`) with a Tk window and a modal Qt dialog. They had been broken
+   in the Tk app itself since 2026-05-24 (a non-widget handed to Tk as the parent). The table's
+   right-click menu now has no entry that ends in Tk. **Left in this step:** the 2D-plot toggles
+   (cardinals, thickness); the missing-assets decision; a Qt route for the 2D bug flag.
 6. **Phase 7** -- validators off Tk, Qt the default shell, the Tk-retirement decision.
 
 ### Phase 5, broken down

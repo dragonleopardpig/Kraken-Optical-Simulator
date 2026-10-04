@@ -11,7 +11,8 @@ and WRITES IT BACK into the waist and offset boxes before recomputing.
 arithmetic stays in the model and each toolkit has one job: put these values in those widgets.
 Qt now has the button it never had.
 
-  L  the panel is two `ReportWindow`s; the calculator and the three solve prompts stay its own
+  L  the panel is two `ReportWindow`s; the calculator stays its own page, and it shows the three
+     solve prompts, whose wording is `solve_reviews`' since bugs/0955
   M  the REAL Tk matrix window draws the builder's grid, cell for cell, and exports it
   G  the Gaussian window's four inputs are the builder's own, and typing one rebuilds through it
   C  on a STABLE cavity the verb returns the model's own w0 and q, and the view adopts them and
@@ -178,11 +179,15 @@ def run_checks() -> tuple[bool, list[str]]:
             state["ok"] = False
 
     panel_source = inspect.getsource(main_paraxial_analysis_dialogs)
+    from KrakenOS.UI import solve_reviews
+
+    reviews_source = inspect.getsource(solve_reviews)
     ok(panel_source.count("ReportWindow(") == 2 and "ttk.Treeview(" not in panel_source
-       and "Paraxial Calculator" in panel_source and "Best Image Solve" in panel_source,
+       and "Paraxial Calculator" in panel_source and "def _show_solve_review(" in panel_source
+       and "Best Image Solve" in reviews_source and "Folded Mirror Solve" in reviews_source,
        f"L: the two reports are ReportWindows and the panel draws no table of its own "
-       f"({len(panel_source.splitlines())} lines), while the calculator and the three solve "
-       f"prompts stay its own pages")
+       f"({len(panel_source.splitlines())} lines), while the calculator stays its own page and it "
+       f"shows the three solve prompts that `solve_reviews` describes")
 
     saved = (tk_messagebox.showinfo, tk_messagebox.showerror, tk_filedialog.asksaveasfilename)
     boxes: list = []

@@ -525,6 +525,9 @@ def _evaluate_checks() -> tuple[list, dict]:
     open_lens_drawing_properties = inspect.getsource(KrakenLayoutEditor._open_lens_drawing_surface_properties_dialog)
     export_lens_drawing_wrapper = inspect.getsource(KrakenLayoutEditor.export_lens_drawing)
     main_paraxial_analysis_dialogs = inspect.getsource(MainParaxialAnalysisDialogs)
+    import KrakenOS.UI.solve_reviews as _solve_reviews
+
+    solve_reviews_source = inspect.getsource(_solve_reviews)
     main_paraxial_analysis_factory = inspect.getsource(KrakenLayoutEditor._main_paraxial_analysis_dialogs)
     open_gaussian_report = inspect.getsource(KrakenLayoutEditor.open_gaussian_beam_report)
     open_paraxial_matrix_report = inspect.getsource(KrakenLayoutEditor.open_paraxial_matrix_report)
@@ -1156,15 +1159,22 @@ def _evaluate_checks() -> tuple[list, dict]:
             and "self._main_paraxial_analysis_dialogs()._show_folded_mirror_solve_dialog(result)" in show_folded_mirror_solve_dialog
             and "self._main_paraxial_analysis_dialogs()._show_best_focus_dialog(result)" in show_best_focus_dialog
             and "Paraxial Calculator" in main_paraxial_analysis_dialogs
-            # the two REPORTS are their builders' now (bugs/0896); the calculator and the three
-            # solve prompts are still this panel's own pages
+            # the two REPORTS are their builders' now (bugs/0896); the calculator is still this
+            # panel's own page
             and "Paraxial Matrix Report" in paraxial_matrix_builder
             and "Gaussian Beam Report" in gaussian_beam_builder
             and "Use Cavity Eigenmode" in gaussian_beam_builder
             and main_paraxial_analysis_dialogs.count("ReportWindow(") == 2
             and "ttk.Treeview(" not in main_paraxial_analysis_dialogs
-            and "Folded Mirror Solve" in main_paraxial_analysis_dialogs
-            and "Best Image Solve" in main_paraxial_analysis_dialogs,
+            # the three solve prompts: what they say is `solve_reviews`' (bugs/0955), and this
+            # panel shows all three in one window, or hands them to a shell
+            and "Folded Mirror Solve" in solve_reviews_source
+            and "Best Image Solve" in solve_reviews_source
+            and "paraxial_solve_review(" in main_paraxial_analysis_dialogs
+            and "folded_mirror_solve_review(" in main_paraxial_analysis_dialogs
+            and "best_focus_review(" in main_paraxial_analysis_dialogs
+            and "def _show_solve_review(" in main_paraxial_analysis_dialogs
+            and '"show_solve_review"' in main_paraxial_analysis_dialogs,
         ),
         (
             "Lens drawing dialogs live outside layout_editor",

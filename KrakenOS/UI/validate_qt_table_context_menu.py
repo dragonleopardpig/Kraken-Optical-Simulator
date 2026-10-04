@@ -37,9 +37,7 @@ CELLS = ((2, "thickness"), (1, "label"), (0, "thickness"), (11, "rc"), (6, "thic
 LENS = 2
 #: menu entries that still end in a Tk window -> why. An entry that stops doing so fails the guard
 #: until it is deleted here, so this can only shrink.
-KNOWN_TK_ENTRIES = {
-    "Optimization / Solves > Best Image Solve": "the Tk best-focus solve prompt (paraxial solve prompts, not ported)",
-}
+KNOWN_TK_ENTRIES: dict = {}          # bugs/0955 gave the solve review windows a Qt dialog: none left
 
 
 def _counts(outline) -> tuple[int, int]:

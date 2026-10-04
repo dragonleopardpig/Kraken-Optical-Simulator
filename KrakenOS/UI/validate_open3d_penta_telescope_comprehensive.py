@@ -16846,6 +16846,10 @@ phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
     721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
     'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
     'qt_model_forms_open_in_qt')
+phase_727_solve_review_windows = _phase_from_standalone(
+    727, "a table-cell solve shows its result for review in both shells (0955): the three descriptions (paraxial thickness / image / object solve, folded mirror solve, best image solve) carry the right title, intro, rows and rule; in the Tk app each of the three opens its window with NO error box (they failed with 'bad window path name' from 2026-05-24: the window was given a non-widget as its Tk parent), Cancel leaves the row alone and Apply writes the solved value; in the Qt shell, run from the table's right-click menu where an entry exists, each opens a modal Qt dialog with no Tk window and no error box, and Cancel / Apply do the same; and both shells show the same title, intro, row labels and rule -- and the same numbers for the two paraxial solves",
+    'KrakenOS.UI.validate_solve_review_windows',
+    'solve_review_windows')
 phase_726_qt_atmosphere_settings = _phase_from_standalone(
     726, "Atmospheric Settings opens in the Qt shell (0954), the last Tk menu-bar command to get a Qt route (75 of 75): the action sits in the ribbon's Analysis > More list and opens ONE non-modal window that the model's own command opens too; its twelve inputs are the catalogue's and show the model's values; an observatory preset fills six numbers from the site's record in the model and the window, and the status line names the preset; a typed zenith angle lands in the model and the summary is the model's own line; Apply marks the plot stale, Apply + Atmos switches the Atmos analysis on once; no Tk window is created; and in the Tk app the Tk window still opens with the same title, note, labels and buttons",
     'KrakenOS.UI.validate_qt_atmosphere_settings',
@@ -17725,6 +17729,7 @@ def main() -> int:
             phase_724_qt_scene_layout,
             phase_725_qt_quick_estimation_windows,
             phase_726_qt_atmosphere_settings,
+            phase_727_solve_review_windows,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

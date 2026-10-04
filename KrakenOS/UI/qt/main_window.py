@@ -141,6 +141,10 @@ class KrakenQtMainWindow(_main_window_class()):
                                       Qt.DockWidgetArea.RightDockWidgetArea, scroll=True)
         # the model says when relevance or a live list may have changed; every form re-reads
         editor.show_control_state = self.refresh_control_panels
+        # a table-cell solve shows its result for review before it applies it (bugs/0955)
+        editor.show_solve_review = self.show_solve_review
+        #: the review dialog last shown, for a guard to read and answer
+        self.last_solve_review_dialog = None
         # Atmospheric Settings: the same catalogue mechanism, in a window of its own (bugs/0954)
         editor.show_atmosphere_settings = self.show_atmosphere_settings
         #: the one Atmospheric Settings window, made the first time it is asked for
@@ -193,6 +197,17 @@ class KrakenQtMainWindow(_main_window_class()):
         if self.atmosphere_dialog is not None:
             self.atmosphere_dialog.panel.refresh_state()
         self._refresh_path_view_choices()
+
+    def show_solve_review(self, review) -> bool:
+        """The model's `show_solve_review` seam (bugs/0955): a solve's result in a modal Qt dialog;
+        True when the user chose Apply."""
+        from PySide6.QtWidgets import QDialog
+
+        from KrakenOS.UI.qt.dialogs.solve_review_dialog import SolveReviewDialog
+
+        dialog = SolveReviewDialog(review, parent=self)
+        self.last_solve_review_dialog = dialog
+        return dialog.exec() == QDialog.DialogCode.Accepted
 
     def show_atmosphere_settings(self):
         """The model's `show_atmosphere_settings` seam (bugs/0954): one window, not modal -- asked
