@@ -34,7 +34,8 @@ class KrakenQtMainWindow(_main_window_class()):
 
     def __init__(self, editor, ui=None) -> None:
         from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import QAbstractItemView, QStackedWidget, QTableView, QVBoxLayout, QWidget
+        from PySide6.QtWidgets import (QAbstractItemView, QApplication, QStackedWidget, QTableView, QVBoxLayout,
+                                       QWidget)
 
         super().__init__()
         self.editor = editor
@@ -165,6 +166,12 @@ class KrakenQtMainWindow(_main_window_class()):
         editor.show_flag_description = self.show_flag_description
         #: the dialog `show_flag_description` last opened, for a guard to drive
         self.last_flag_description_dialog = None
+        # and every flag carries this window: its picture, its dialogs' and its state (bugs/0959)
+        editor.capture_flag_shell = self.capture_flag_shell
+        # Flag Bug must work from a dialog too -- a dialog is often what is wrong -- and a window's
+        # shortcut does not reach one, least of all a modal one: each window that takes the
+        # keyboard is given the action
+        QApplication.instance().focusChanged.connect(self._offer_flag_bug)
         # a form a model command builds itself (the Path-view placements) opens here (bugs/0944)
         editor.show_row_form = self.show_model_row_form
         #: the dialog `show_model_row_form` last opened, for a guard to read and drive
@@ -233,15 +240,61 @@ class KrakenQtMainWindow(_main_window_class()):
 
     def show_flag_description(self, session):
         """The model's `show_flag_description` seam (bugs/0950): the flag's description prompt as
-        a Qt window that is NOT modal -- a carry or a drag stays live while it is open."""
+        a Qt window that is NOT modal -- a carry or a drag stays live while it is open.
+
+        Flagged from a modal dialog, the prompt belongs to that dialog: a window of this one would
+        be shut out by it and could not be typed in (bugs/0959)."""
+        from PySide6.QtWidgets import QApplication, QDialog
+
         from KrakenOS.UI.qt.dialogs.flag_description_dialog import FlagDescriptionDialog
 
-        dialog = FlagDescriptionDialog(session, parent=self)
+        modal = QApplication.activeModalWidget()
+        dialog = FlagDescriptionDialog(session, parent=modal if modal is not None else self)
+        if isinstance(modal, QDialog):
+            # the dialog it belongs to is closing and takes the prompt with it: keep what was typed
+            modal.finished.connect(lambda _result, d=dialog: d.finish("save" if d.text.toPlainText().strip() else "keep"))
         dialog.finished.connect(lambda _result, d=dialog: self._forget_dialog(d))
         self._open_dialogs.append(dialog)
         self.last_flag_description_dialog = dialog
         dialog.show()
         return dialog
+
+    def capture_flag_shell(self, bundle_dir, *, as_screenshot: bool = False) -> dict:
+        """The model's `capture_flag_shell` seam (bugs/0959): this window's pictures into a flag
+        bundle, and its state for the bundle's state.json."""
+        from KrakenOS.UI.qt import flag_capture
+
+        self.ribbon._close_popups()      # a folded ribbon's page is a pop-up over the window
+        return flag_capture.capture(self, bundle_dir, as_screenshot=as_screenshot)
+
+    def flag_bug_action(self):
+        """Flag a bug about the window (bugs/0959): the ribbon, the tables, a panel, a dialog.
+
+        The `s` key flags what is under the pointer in the 3D scene and shows the scene. This shows
+        the window in front -- this one, or the dialog over it -- and works wherever the keyboard
+        is. Both write one kind of bundle, and both carry the scene and the window."""
+        inspector = self._scene_inspector()
+        if inspector is not None:
+            return inspector.flag_bug(subject="window")
+        from KrakenOS.UI.services.shell_flag import flag_shell_window
+
+        return flag_shell_window(self.editor, self.capture_flag_shell, set_status=self.statusBar().showMessage,
+                                 show_description=self.show_flag_description)
+
+    def _offer_flag_bug(self, _old, now) -> None:
+        """Give the window that now has the keyboard the Flag Bug action, so its shortcut works
+        there. Not a flag's own prompt: Ctrl+Shift+B while describing one bug is not another. And
+        not a pop-up: a menu SHOWS its actions, so it would grow a Flag Bug entry."""
+        from PySide6.QtCore import Qt
+
+        top = now.window() if now is not None else None
+        if top is None or top is self or getattr(top, "is_flag_prompt", False):
+            return
+        if top.windowType() in (Qt.WindowType.Popup, Qt.WindowType.ToolTip):
+            return
+        action = self.action_manager["flag_bug"]
+        if action not in top.actions():
+            top.addAction(action)
 
     def show_model_row_form(self, form, *, on_close=None, modal=False, geometry=None, wait=False):
         """The model's `show_row_form` seam (bugs/0944): a form a model command builds itself, in a

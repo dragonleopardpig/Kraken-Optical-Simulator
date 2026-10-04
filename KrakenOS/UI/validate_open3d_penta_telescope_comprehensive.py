@@ -16846,6 +16846,10 @@ phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
     721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
     'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
     'qt_model_forms_open_in_qt')
+phase_729_qt_shell_flag = _phase_from_standalone(
+    729, "a bug flag for the whole Qt window, from anywhere in it (0959): with no inspector Flag Bug still writes a bundle; the real Ctrl+Shift+B in the scene writes ONE bundle whose screenshot is the whole window with the 3D scene painted in and a crosshair at the pointer, whose state names the dock under the pointer, the ribbon's tab and every panel, and whose layout_state.json holds the model's rows; one press is one flag (none inside a flag's own description box); the s flag keeps the 3D render and adds window.png; without the shell's seam the bundle is the three files it was; the key in a report dialog makes that dialog the screenshot; in a MODAL dialog the key works and the description box belongs to the dialog and takes keys; a dialog taller than the screen is flagged and pictured whole; and the ribbon's corner button shows on every tab, folded or open",
+    'KrakenOS.UI.validate_qt_shell_flag',
+    'qt_shell_flag')
 phase_728_soft_step_bodies = _phase_from_standalone(
     728, "imported STEP hardware can be drawn SOFT and the Qt shell's scene does by default (0958): the style function gives a flat body with the two glass edge passes when off and a denser smooth body with ONE thin faint pass when on; in the Qt shell the switch and its Overlays menu entry are on by default, each imported body is smooth with one soft edge actor and no glass pass, and the real menu entry switches to the outlined look and back; the soft edge actor keeps exactly the points of each outlined pass (Alt-hover picks the nearest drawn edge); the rendered scene has at least five times fewer dark-teal outline pixels soft than outlined; and in the Tk app the switch is off by default, a body keeps the two glass passes, and the Overlays menu offers the same entry",
     'KrakenOS.UI.validate_open3d_soft_step_bodies',
@@ -17735,6 +17739,7 @@ def main() -> int:
             phase_726_qt_atmosphere_settings,
             phase_727_solve_review_windows,
             phase_728_soft_step_bodies,
+            phase_729_qt_shell_flag,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

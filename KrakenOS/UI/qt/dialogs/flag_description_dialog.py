@@ -15,6 +15,9 @@ def _dialog_base():
 
 
 class FlagDescriptionDialog(_dialog_base()):
+    #: a flag's own prompt is never what a flag is about, and does not start another (bugs/0959)
+    is_flag_prompt = True
+
     def __init__(self, session, *, parent=None) -> None:
         from PySide6.QtGui import QKeySequence, QShortcut
         from PySide6.QtWidgets import QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout

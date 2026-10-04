@@ -166,6 +166,7 @@ ICONS: dict[str, str] = {
                            f'<path {_OPEN} d="M3 9.5h12M3 14.5h12M9 4v16"/>'
                            f'<path {_LIGHT} d="M17 12h5M19.5 9.5L22 12l-2.5 2.5"/>'),
     # ---- the ribbon's own -------------------------------------------------------------------------
+    "flag_bug": f'<path {_OPEN} d="M5 21V3"/><path {_GLASS} d="M5 4h14l-3.5 4 3.5 4H5z"/>',
     "search": f'<circle {_OPEN} cx="10" cy="10" r="6"/><path {_OPEN} d="M14.5 14.5L20 20"/>',
 }
 

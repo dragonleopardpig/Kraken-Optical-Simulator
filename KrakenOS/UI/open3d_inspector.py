@@ -10693,8 +10693,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             pass
         return identity
 
-    def flag_bug(self) -> Path | None:
+    def flag_bug(self, *, subject: str = "scene") -> Path | None:
         """One-click bug flag: screenshot + scene-state + user description.
+
+        ``subject`` says what the flag is ABOUT. "scene" (the `s` key, the toolbar button): the
+        3D render is ``screenshot.png``. "window" (the Qt shell's own Flag Bug command, bugs/0959):
+        the shell's window in front (the main window, or the dialog over it) is ``screenshot.png``
+        and the 3D render is kept as ``scene_3d.png``. Under a shell every flag also carries the
+        shell's pictures and state -- see ``capture_flag_shell`` below.
 
         Captures the renderer image and scene snapshot *before* opening
         the description prompt so the saved state matches what the user
@@ -10750,7 +10756,14 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             dialog_window = self._focused_foreign_toplevel()
         except Exception:
             dialog_window = None
-        vtk_image_path = scene_3d_path if dialog_window is not None else screenshot_path
+        # A shell with more than a 3D view (the Qt window: ribbon, surface table, edge panels,
+        # dialogs) adds its own pictures and state (bugs/0959). A flag ABOUT the window makes the
+        # window's picture screenshot.png, as a focused dialog's is above.
+        shell_capture = self.editor.__dict__.get("capture_flag_shell") if hasattr(self.editor, "__dict__") else None
+        if not callable(shell_capture):
+            shell_capture = None
+        window_subject = shell_capture is not None and str(subject) == "window"
+        vtk_image_path = scene_3d_path if (dialog_window is not None or window_subject) else screenshot_path
         scene_render_ok = False
         try:
             from vtkmodules.vtkIOImage import vtkPNGWriter  # type: ignore
@@ -10776,7 +10789,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             scene_render_ok = True
         except Exception as exc:
             self.editor.append_debug(f"Open 3D flag 3D-scene capture failed: {exc}")
-            if dialog_window is None:
+            if dialog_window is None and not window_subject:
                 self.status_var.set(f"Flag bug screenshot failed: {_short_error_message(exc)}")
                 return None
         # When a dialog is in front, capture its own pixels as
@@ -10801,12 +10814,27 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self.editor.append_debug(
                     "Open 3D flag: dialog capture unavailable on this platform; saved the 3D render instead."
                 )
+        shell_state: dict[str, object] = {}
+        screenshot_is_window = False
+        if shell_capture is not None:
+            try:
+                shell_state = dict(shell_capture(bundle_dir, as_screenshot=window_subject) or {})
+            except Exception as exc:
+                self.editor.append_debug(f"Open 3D flag shell capture failed: {exc}")
+            if window_subject:
+                screenshot_is_window = screenshot_path.exists()
+                if not screenshot_is_window and scene_render_ok:
+                    # the window could not be drawn: the 3D render is the picture after all
+                    try:
+                        scene_3d_path.replace(screenshot_path)
+                    except Exception:
+                        pass
         if not screenshot_path.exists():
             self.status_var.set("Flag bug screenshot failed.")
             return None
         # The cursor crosshair marks the pointer in the 3D render window, so
         # overlay it onto whichever file holds that render.
-        overlay_target = scene_3d_path if screenshot_is_dialog else screenshot_path
+        overlay_target = scene_3d_path if (screenshot_is_dialog or screenshot_is_window) else screenshot_path
         # 1b. Overlay a cursor crosshair on the PNG so hover-state bugs
         # stay legible. Failures here are non-fatal; the raw screenshot
         # still saves to disk.
@@ -10878,7 +10906,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 "build": _open3d_running_build_stamp(),
                 "description": "",
                 "screenshot": "screenshot.png",
-                "screenshot_kind": "dialog" if screenshot_is_dialog else "scene_3d",
+                # under a shell, a flag about the window shows the window in front: the shell's
+                # own window, or the dialog over it ("window" / "dialog")
+                "screenshot_kind": ("dialog" if screenshot_is_dialog
+                                    else str(shell_state.get("screenshot_of") or "window") if screenshot_is_window
+                                    else "scene_3d"),
                 "cursor": cursor_block,
                 "recording": recording_info,
                 "layout": self._flag_layout_identity(),
@@ -10891,8 +10923,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 # defect -- went unexamined for hours. Record the spec.
                 "inspection_part": self._flag_inspection_part_spec(),
             }
-            if screenshot_is_dialog and scene_3d_path.exists():
+            if (screenshot_is_dialog or screenshot_is_window) and scene_3d_path.exists():
                 payload["scene_3d"] = "scene_3d.png"
+            if shell_state:
+                payload["shell"] = shell_state
             state_path.write_text(
                 json.dumps(payload, indent=2),
                 encoding="utf-8",

@@ -34,7 +34,8 @@ RIBBON = (
                     ("save_as", "S", "Save As"), ("reset", "S", "Reset"))),
         ("Import / Export", (("menu:import", "L", "Import"), ("menu:export", "L", "Export"))),
         # Quit is small and last, on a tab that is not the one shown at start-up
-        ("Application", (("menu:help", "L", "Help"), ("about", "S", "About"), ("quit", "S", "Quit"))),
+        ("Application", (("menu:help", "L", "Help"), ("flag_bug", "S", "Flag Bug"), ("about", "S", "About"),
+                         ("quit", "S", "Quit"))),
     )),
     ("Home", (
         ("Edit", (("undo", "S", "Undo"), ("redo", "S", "Redo"))),
@@ -142,6 +143,13 @@ def ribbon_actions() -> list:
 def plain_text(text: str) -> str:
     """An action's menu text without its mnemonic and ellipsis: "&Open Layout..." -> "Open Layout"."""
     return str(text).replace("&&", "\0").replace("&", "").replace("\0", "&").rstrip(".").rstrip("…").strip()
+
+
+def action_tip(action) -> str:
+    """A button's tooltip: the command's name and shortcut in bold, then what it does."""
+    shortcut = action.shortcut().toString()
+    tip = plain_text(action.text()) + (f"  ({shortcut})" if shortcut else "")
+    return f"<b>{tip}</b><br>{action.toolTip()}" if action.toolTip() else tip
 
 
 class Ribbon:
@@ -265,9 +273,7 @@ class Ribbon:
         button.setIconSize(QSize(LARGE_ICON, LARGE_ICON) if large else QSize(SMALL_ICON, SMALL_ICON))
         button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon if large
                                   else Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        shortcut = action.shortcut().toString()
-        tip = plain_text(action.text()) + (f"  ({shortcut})" if shortcut else "")
-        button.setToolTip(f"<b>{tip}</b><br>{action.toolTip()}" if action.toolTip() else tip)
+        button.setToolTip(action_tip(action))
         if action.isCheckable():
             # one state everywhere: the button mirrors the action, and a click runs trigger() --
             # which toggles the action and hands its handler the NEW state. (Emitting `triggered`
@@ -367,6 +373,15 @@ class Ribbon:
         row.setContentsMargins(0, 0, 2, 0)
         row.setSpacing(4)
         row.addWidget(self._palette())
+        # Flag Bug is here as well as on the File tab: one click from every tab, and with the
+        # ribbon folded it opens no page over the window it is about to picture (bugs/0959)
+        flag = self.flag_button = QToolButton()
+        flag.setAutoRaise(True)
+        flag.setIcon(self.actions["flag_bug"].icon())
+        flag.setToolTip(action_tip(self.actions["flag_bug"]))
+        flag.setFixedSize(22, 20)
+        flag.clicked.connect(lambda _checked=False: self.actions["flag_bug"].trigger())
+        row.addWidget(flag)
         arrow = self.fold_button = QToolButton()
         arrow.setAutoRaise(True)
         arrow.setArrowType(Qt.ArrowType.UpArrow)

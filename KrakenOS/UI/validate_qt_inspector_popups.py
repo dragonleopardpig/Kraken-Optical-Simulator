@@ -43,7 +43,8 @@ SHELL_MARKS = ("shell_host_of(", '"show_flag_description"', '"show_report"')
 #: Toplevel builders that do not ask the shell yet -> why. Exact: a port must delete its entry.
 KNOWN_TK_POPUPS = {
     "layout_bug_recorder.py:_open_2d_flag_description_dialog":
-        "the 2D bug flag has no Qt route yet (a Tk key binding; the shell's editor is headless and skips it)",
+        "the TK editor's own flag (its Ctrl+Shift+B and toolbar button); the Qt shell flags its whole window "
+        "itself (bugs/0959), and its editor is headless, which never opens this",
     "system_selection.py:open_system_selection_dialog":
         "reached from the Tk menu bar only; the Qt action opens the calculator's row form",
 }

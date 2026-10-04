@@ -185,6 +185,10 @@ ACTIONS = (
     ("export_tolerance_overlay_csv", "Export Tolerance Overlay CSV...", None,
      "editor:export_tolerance_overlay_csv", "Write the current tolerance overlay view as CSV"),
     ("about", "&About", None, "about_action", "What this window is"),
+    # Ctrl+Shift+B is the Tk editor's bug-flag key too
+    ("flag_bug", "&Flag Bug", "Ctrl+Shift+B", "flag_bug_action",
+     "Record a bug: a picture of this whole window and of every open dialog, the state of the "
+     "layout and the panels, then a box to say what went wrong"),
     # ---- menu parity (bugs/0942): more Tk menu-bar commands that already work under the Qt shell
     # and only lacked a Qt route (File and Edit ones sit with their neighbours above)
     ("clear_cad_axis_offsets", "Clear CAD Axis Offsets", None, "editor:clear_step_axis_offsets",
