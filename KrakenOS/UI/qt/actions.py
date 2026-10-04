@@ -65,7 +65,7 @@ ACTIONS = (
     ("show_rays", "Show &Rays", "Ctrl+L", "toggle_rays_action",
      "Show or hide the traced light"),
     ("inspector", "3D &Inspector", "Ctrl+I", "inspector_action",
-     "The full 3D inspector -- pick, orbit, pan, drag -- in a dock (bugs/0906)"),
+     "Show the 3D inspector -- the window's 3D scene: pick, orbit, pan, drag (bugs/0906, 0951)"),
     ("paraxial_matrix", "Paraxial &Matrix Report", "Ctrl+M",
      "paraxial_matrix_report_action",
      "The system's paraxial matrices, surface by surface -- the same report the Tk editor shows"),

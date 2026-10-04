@@ -34,13 +34,14 @@ class KrakenQtMainWindow(_main_window_class()):
 
     def __init__(self, editor, ui=None) -> None:
         from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import QAbstractItemView, QTableView, QVBoxLayout, QWidget
+        from PySide6.QtWidgets import QAbstractItemView, QStackedWidget, QTableView, QVBoxLayout, QWidget
 
         super().__init__()
         self.editor = editor
         self.ui = ui if ui is not None else host_of(editor)
+        #: the bare preview of the scene: the fallback when the inspector cannot be built
         self.viewport = None
-        #: the real 3D inspector, hosted in a dock once asked for (bugs/0906)
+        #: the real 3D inspector -- THE 3D scene of the window (bugs/0906; central since 0951)
         self.inspector_view = None
 
         self.setWindowTitle("KrakenOS -- Qt shell")
@@ -62,7 +63,18 @@ class KrakenQtMainWindow(_main_window_class()):
         self.viewport_host = QWidget()
         self.viewport_layout = QVBoxLayout(self.viewport_host)
         self.viewport_layout.setContentsMargins(0, 0, 0, 0)
-        self.setCentralWidget(self.viewport_host)
+        # The centre of the window is ONE 3D scene (bugs/0951): the real inspector, with its Nav
+        # Cube, gizmos and readouts. It used to be a dock in the top area over a bare preview in
+        # the centre -- two 3D views, and the side panels crushed into the band left under the
+        # inspector. The preview keeps its page: it is what shows when the inspector cannot be
+        # built. Both pages are stable parents, made here, for the same reason as above.
+        self.inspector_host = QWidget()
+        self.inspector_layout = QVBoxLayout(self.inspector_host)
+        self.inspector_layout.setContentsMargins(0, 0, 0, 0)
+        self.scene_stack = QStackedWidget()
+        self.scene_stack.addWidget(self.viewport_host)
+        self.scene_stack.addWidget(self.inspector_host)
+        self.setCentralWidget(self.scene_stack)
 
         self.rows_model = make_rows_model(editor)
         self.rows_view = QTableView()
@@ -249,7 +261,9 @@ class KrakenQtMainWindow(_main_window_class()):
 
     # ---- the viewport --------------------------------------------------------------------------
     def build_viewport(self):
-        """Create the 3D viewport. Call this AFTER `show()` -- see the container above."""
+        """Create the bare PREVIEW of the scene -- what shows when the inspector cannot be built
+        (the window's 3D scene is the inspector: `build_scene`). Call this AFTER `show()` -- see
+        the container above."""
         from KrakenOS.UI.qt.viewport import SceneViewport
 
         if self.viewport is None:
@@ -257,44 +271,42 @@ class KrakenQtMainWindow(_main_window_class()):
             self.viewport_layout.addWidget(self.viewport.widget)
         return self.viewport
 
-    def build_inspector_view(self):
-        """Host the real 3D inspector in a dock. Call this AFTER `show()`, like `build_viewport`.
+    def build_scene(self):
+        """The window's 3D scene: the real inspector, or the bare preview when it cannot be built.
+        Call this AFTER `show()`."""
+        view = self.build_inspector_view()
+        if not view.inspector.available:
+            self.build_viewport()
+        return view
 
-        The dock may move between areas but never float: floating makes the dock a new native
-        top-level, and the VTK widget inside was handed its window id when it was built.
+    def build_inspector_view(self):
+        """Host the real 3D inspector as the window's central 3D scene (bugs/0951). Call this
+        AFTER `show()`, like `build_viewport`.
+
+        Its page of the central stack is made current BEFORE the VTK widget is built, so the widget
+        is created under a parent that is on screen.
         """
         if self.inspector_view is not None:
             return self.inspector_view
         from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import QDockWidget, QVBoxLayout, QWidget
 
         from KrakenOS.UI.qt.inspector_view import InspectorView
 
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        # the top area, which nothing else uses: the right one already stacks five docks at
-        # their minimum heights, and the inspector squeezed in there got 0 pixels (measured)
-        dock = self.dock_manager.create_dock(container, "InspectorDock", "3D Inspector",
-                                             area=Qt.DockWidgetArea.TopDockWidgetArea)
-        dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable
-                         | QDockWidget.DockWidgetFeature.DockWidgetClosable)
-        table_dock = self.dock_manager.docks.get("SurfaceTableDock")
-        if table_dock is not None and self.dockWidgetArea(table_dock) == Qt.DockWidgetArea.TopDockWidgetArea:
-            self.splitDockWidget(table_dock, dock, Qt.Orientation.Vertical)   # under the table
-        dock.show()
+        container, layout = self.inspector_host, self.inspector_layout
+        self.scene_stack.setCurrentWidget(container)
         self.inspector_view = InspectorView(self.editor, container,
                                             status=self.statusBar().showMessage)
+        inspector = self.inspector_view.inspector
         # the View / Scene / Carry rows above the viewport, from the same catalogue as Tk (5f)
-        if self.inspector_view.inspector.available:
+        if inspector.available:
             from KrakenOS.UI.qt.inspector_toolbar import build_toolbar
 
-            self.inspector_view.toolbar = build_toolbar(self.inspector_view.inspector, container)
+            self.inspector_view.toolbar = build_toolbar(inspector, container)
             layout.addWidget(self.inspector_view.toolbar)
             # the Live Controls the docks do not already carry, tabbed with them (5f part 2)
             from KrakenOS.UI.qt.live_controls_dock import LiveControlsForm
 
-            self.live_controls = LiveControlsForm(self.inspector_view.inspector,
+            self.live_controls = LiveControlsForm(inspector,
                                                   open_system_selection=self.system_selection_action)
             self.dock_manager.create_dock(self.live_controls.widget, "LiveControlsDock", "3D Live",
                                           Qt.DockWidgetArea.RightDockWidgetArea, scroll=True)
@@ -303,43 +315,77 @@ class KrakenQtMainWindow(_main_window_class()):
             # the Scene Components browser, from the Tk browser's own nodes / selection / menus (5f 3b)
             from KrakenOS.UI.qt.scene_components_dock import SceneComponentsTree
 
-            self.scene_components = SceneComponentsTree(self.inspector_view.inspector)
+            self.scene_components = SceneComponentsTree(inspector)
             self.dock_manager.create_dock(self.scene_components.container, "SceneComponentsDock",
                                           "Scene Components", Qt.DockWidgetArea.LeftDockWidgetArea)
+            # the ribbon's Show Rays and the inspector's own box are one switch
+            inspector.show_rays_var.trace_add("write", lambda *_a: self._follow_inspector_rays())
         layout.addWidget(self.inspector_view.widget)
-        # a VTK widget has no size hint, so the dock would open 0 pixels tall (measured) -- and a
-        # 0-pixel viewport picks nothing
-        self.inspector_view.widget.setMinimumSize(320, 240)
-        self.resize_inspector_dock()
-        if self.inspector_view.inspector.available:
-            self.inspector_view.inspector.refresh_from_editor()
+        # a VTK widget has no size hint, so it would open 0 pixels tall (measured) -- and a
+        # 0-pixel viewport picks nothing. Its WIDTH has a floor too: the scene's readouts do not
+        # shrink (the system box is ~500 px, the banner wraps no narrower than 48 characters,
+        # the Nav Cube takes its corner), so in a small window the panels beside it must give
+        # way first -- measured: at 462 px both texts ran off the edge (bugs/0951).
+        self.inspector_view.widget.setMinimumSize(self.SCENE_MIN_WIDTH, 240)
+        self.fit_side_docks()
+        if inspector.available:
+            inspector.refresh_from_editor()
         else:
-            self.statusBar().showMessage(
-                f"3D inspector unavailable: {self.inspector_view.inspector.unavailable_reason}")
+            self.scene_stack.setCurrentWidget(self.viewport_host)
+            self.statusBar().showMessage(f"3D inspector unavailable: {inspector.unavailable_reason}")
         return self.inspector_view
 
     #: the surface table's starting height at the top: a header and about five rows; drag it
     #: taller (bugs/0940)
     TABLE_DOCK_HEIGHT = 170
+    #: the narrowest the 3D scene may get: its readouts and the Nav Cube side by side
+    SCENE_MIN_WIDTH = 700
+    #: starting sizes of the panels around the 3D scene (bugs/0951); the scene takes the rest
+    BOTTOM_DOCK_HEIGHT = 150
+    LEFT_DOCK_WIDTH = 300
+    RIGHT_DOCK_WIDTH = 400
 
-    def resize_inspector_dock(self) -> None:
-        """Give the inspector two thirds of the height, the surface table above it a few rows --
+    def fit_side_docks(self) -> None:
+        """Give the panels around the 3D scene their starting sizes, so the scene gets the rest --
         once the layout has run, since a `resizeDocks` before it is ignored (measured: the dock
         stayed at its minimum)."""
         from PySide6.QtCore import QTimer, Qt
 
-        dock = self.dock_manager.docks.get("InspectorDock")
-        if dock is None:
+        def area_docks(area):
+            return [dock for dock in self.dock_manager.docks.values()
+                    if self.dockWidgetArea(dock) == area and not dock.isFloating() and dock.isVisible()]
+
+        def fit() -> None:
+            for area, size, orientation in (
+                    (Qt.DockWidgetArea.TopDockWidgetArea, self.TABLE_DOCK_HEIGHT, Qt.Orientation.Vertical),
+                    (Qt.DockWidgetArea.BottomDockWidgetArea, self.BOTTOM_DOCK_HEIGHT, Qt.Orientation.Vertical),
+                    (Qt.DockWidgetArea.LeftDockWidgetArea, self.LEFT_DOCK_WIDTH, Qt.Orientation.Horizontal),
+                    (Qt.DockWidgetArea.RightDockWidgetArea, self.RIGHT_DOCK_WIDTH, Qt.Orientation.Horizontal)):
+                docks = area_docks(area)
+                if docks:
+                    self.resizeDocks(docks, [size] * len(docks), orientation)
+
+        QTimer.singleShot(0, fit)
+
+    def _scene_inspector(self):
+        """The hosted inspector when it is the 3D scene on show, else None."""
+        view = self.inspector_view
+        inspector = getattr(view, "inspector", None)
+        return inspector if inspector is not None and getattr(inspector, "available", False) else None
+
+    def _follow_inspector_rays(self) -> None:
+        inspector = self._scene_inspector()
+        if inspector is None:
             return
-        docks, heights = [dock], [max(420, self.height() * 2 // 3)]
-        table = self.dock_manager.docks.get("SurfaceTableDock")
-        if table is not None and self.dockWidgetArea(table) == Qt.DockWidgetArea.TopDockWidgetArea:
-            docks.insert(0, table)
-            heights.insert(0, self.TABLE_DOCK_HEIGHT)
-        QTimer.singleShot(0, lambda: self.resizeDocks(docks, heights, Qt.Orientation.Vertical))
+        shown = bool(inspector.show_rays_var.get())
+        action = self.action_manager["show_rays"]
+        if action.isChecked() != shown:
+            action.setChecked(shown)       # `toggled`, not `triggered`: the handler does not run again
 
     def inspector_action(self) -> None:
         view = self.build_inspector_view()
+        if view.inspector.available:
+            self.scene_stack.setCurrentWidget(self.inspector_host)
         view.show()
 
     def build_plot2d(self):
@@ -434,20 +480,31 @@ class KrakenQtMainWindow(_main_window_class()):
 
     def redraw_action(self) -> None:
         self.refresh_from_model()
+        inspector = self._scene_inspector()
+        if inspector is not None:
+            inspector.refresh_from_editor()
 
     def toggle_rays_action(self, checked: bool = True) -> None:
         """Show or hide the traced light -- the Tk 3D view has the same switch."""
         if self.viewport is not None:
             self.viewport.set_rays_visible(bool(checked))
             self.viewport.render()
+        inspector = self._scene_inspector()
+        if inspector is not None and bool(inspector.show_rays_var.get()) != bool(checked):
+            inspector.show_rays_var.set(bool(checked))      # the inspector's own Show rays box
+            inspector._on_show_rays_changed()
         self.statusBar().showMessage(
-            f"Rays {'shown' if checked else 'hidden'} "
-            f"({len(self.viewport.ray_actors) if self.viewport else 0} traced).")
+            f"Rays {'shown' if checked else 'hidden'}"
+            + (f" ({len(self.viewport.ray_actors)} traced)." if self.viewport is not None else "."))
 
     def reset_camera_action(self) -> None:
         if self.viewport is not None:
             self.viewport.reset_camera()
             self.viewport.render()
+        inspector = self._scene_inspector()
+        if inspector is not None:
+            # frame the scene without turning the view -- what a Nav Cube snap does (bugs/0160)
+            inspector._on_navigation_cube_snap()
 
     def open_report(self, builder):
         """Open a report dialog: build the data, show it, say what happened.

@@ -13,9 +13,11 @@ The Analysis tab also carries the plot picker, Update and WFront 3D -- the same 
 `AnalysisToolbar`, whose own toolbar row is hidden so the ribbon does not cost the 3D viewport a
 second strip of height.
 
-Folded (the default on a short screen, or double-click a tab), only the tab row shows; clicking a
-tab drops its page over the window as a pop-up, which closes once a command runs -- the 3D view
-keeps its height. Double-click a tab to pin the ribbon open, or folded again.
+Folded (the default on a short screen; the small arrow at the end of the tab row, or a double-click
+on a tab), only the tab row shows; clicking a tab drops its page over the window as a pop-up, which
+closes once a command runs -- the 3D view keeps its height. The arrow, or a double-click on a tab,
+pins the ribbon open or folds it again. Whatever height the ribbon gives up or takes goes to the 3D
+scene: the surface table under it keeps its own (bugs/0951).
 
 It lives in a dock (bugs/0940): the slim title bar down its left edge undocks it (float button or
 double-click) into a window of its own, which opens fully; dragged to the top or bottom edge it
@@ -168,7 +170,7 @@ class Ribbon:
         for tab, groups in RIBBON:
             self.tabs.addTab(self._page(tab, groups), tab)
         self.tabs.setCurrentIndex([tab for tab, _groups in RIBBON].index(START_TAB))
-        self.tabs.setCornerWidget(self._palette(), Qt.Corner.TopRightCorner)
+        self.tabs.setCornerWidget(self._corner(), Qt.Corner.TopRightCorner)
         # double-click a tab to fold the ribbon to its tab row, and again to open it (as Office);
         # folded, a click on a tab shows its page as a pop-up
         self.tabs.tabBarDoubleClicked.connect(lambda _index: self.set_collapsed(not self.collapsed))
@@ -352,6 +354,35 @@ class Ribbon:
         buttons.addLayout(stack)
         return group
 
+    # ---- the tab row's corner: the command palette and the fold arrow ---------------------------
+    def _corner(self):
+        """The search box, then the small arrow that folds the ribbon to its tab row and opens it
+        again (user request, bugs/0952) -- where other ribbons keep theirs."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QHBoxLayout, QToolButton, QWidget
+
+        corner = QWidget()
+        row = QHBoxLayout(corner)
+        row.setContentsMargins(0, 0, 2, 0)
+        row.setSpacing(4)
+        row.addWidget(self._palette())
+        arrow = self.fold_button = QToolButton()
+        arrow.setAutoRaise(True)
+        arrow.setArrowType(Qt.ArrowType.UpArrow)
+        arrow.setFixedSize(20, 20)
+        arrow.clicked.connect(lambda _checked=False: self.set_collapsed(not self.collapsed))
+        row.addWidget(arrow)
+        self._show_fold_state()
+        return corner
+
+    def _show_fold_state(self) -> None:
+        from PySide6.QtCore import Qt
+
+        folded = bool(getattr(self, "collapsed", False))
+        self.fold_button.setArrowType(Qt.ArrowType.DownArrow if folded else Qt.ArrowType.UpArrow)
+        self.fold_button.setToolTip("Show the ribbon's buttons again" if folded
+                                    else "Fold the ribbon to its tab row (more room for the 3D scene)")
+
     # ---- the command palette ----------------------------------------------------------------------
     def _palette(self):
         from PySide6.QtCore import Qt
@@ -412,7 +443,9 @@ class Ribbon:
         """Fold the ribbon to its tab row (more room for the 3D view), or open it again."""
         from PySide6.QtWidgets import QStackedWidget
 
+        kept = self._neighbour_heights()
         self.collapsed = bool(collapsed)
+        self._show_fold_state()
         self._close_popups()
         bar_height = self.tabs.tabBar().sizeHint().height()
         # fold by hiding the tab widget's PAGE STACK: showing each page by hand on unfold made
@@ -423,6 +456,33 @@ class Ribbon:
             stack.setVisible(not self.collapsed)
         self.tabs.setMaximumHeight(bar_height + 4 if self.collapsed else 16777215)
         self._fit_docked_height()
+        self._restore_neighbour_heights(kept)
+
+    def _neighbour_heights(self) -> dict:
+        """The heights of the docks that share the top area with the ribbon (the surface table),
+        read BEFORE the ribbon changes height."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QDockWidget
+
+        window = self.main_window
+        dock = getattr(self, "dock", None)
+        if dock is None or not window.isVisible():
+            return {}
+        return {other: other.height() for other in window.findChildren(QDockWidget)
+                if other is not dock and other.isVisible() and not other.isFloating()
+                and window.dockWidgetArea(other) == Qt.DockWidgetArea.TopDockWidgetArea}
+
+    def _restore_neighbour_heights(self, heights: dict) -> None:
+        """Put those heights back once the layout has run. Qt keeps the top area's total height,
+        so a ribbon that folds would hand its height to the table beside it; the 3D scene is what
+        should gain it, and give it back (bugs/0951 -- measured: the scene lost 40 px to the table
+        each time the ribbon was undocked and docked again)."""
+        if not heights:
+            return
+        from PySide6.QtCore import QTimer, Qt
+
+        QTimer.singleShot(0, lambda: self.main_window.resizeDocks(
+            list(heights), list(heights.values()), Qt.Orientation.Vertical))
 
     def _fit_docked_height(self) -> None:
         """Docked, the ribbon is exactly as tall as its content -- the dock splitter must not hand
@@ -440,12 +500,17 @@ class Ribbon:
 
     def set_floating(self, floating: bool) -> None:
         """Undock the ribbon into a window of its own, or dock it back at the top."""
+        if bool(floating) and not self.dock.isFloating():
+            self._heights_before_floating = self._neighbour_heights()
         self.dock.setFloating(bool(floating))
 
     def _on_floating_changed(self, floating: bool) -> None:
         # a floating ribbon costs the 3D view nothing, so it opens fully; docked again, it goes
         # back to how it was (folded on a short screen)
         if floating:
+            if not getattr(self, "_heights_before_floating", None):
+                self._heights_before_floating = self._neighbour_heights()
+            self._restore_neighbour_heights(self._heights_before_floating)
             self._collapsed_when_docked = self.collapsed
             self.dock.setMinimumHeight(0)
             self.dock.setMaximumHeight(16777215)
@@ -454,6 +519,8 @@ class Ribbon:
             self.dock.adjustSize()
         else:
             self.set_collapsed(self._collapsed_when_docked)
+            self._restore_neighbour_heights(getattr(self, "_heights_before_floating", None) or {})
+            self._heights_before_floating = None
 
     def _tab_clicked(self, index: int) -> None:
         if self.collapsed and index >= 0:

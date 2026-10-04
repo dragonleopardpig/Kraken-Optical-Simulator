@@ -18,8 +18,9 @@ Static (no Qt event loop):
 In a real Qt shell (subprocess, xcb):
   W  the inspector is the editor's, available, on the shell's host, its Toplevel withdrawn; its
      renderer is in the Qt widget's window with the interactor observers and the navigation cube
-  L  the dock is a usable size and the window fits the screen (measured: stacked forms had pushed
-     it to 2141 px and left the inspector 0 px -- where nothing can be picked); it cannot float
+  L  the 3D view is a usable size and the window fits the screen (measured: stacked forms had
+     pushed it to 2141 px and left the inspector 0 px -- where nothing can be picked); since
+     bugs/0951 it is the window's central scene, in no dock, so it cannot float
   O  an orbit (left drag), a Shift+left pan and a middle pan sent as Qt mouse events MOVE the
      camera and leave it where the same gestures dispatched as ViewportEvents leave it
   P  a Qt hover + click on a body selects exactly what the dispatched hover + click selects
@@ -88,12 +89,17 @@ def qt_runtime_checks() -> list:
     # ---- L ---------------------------------------------------------------------------------
     for _ in range(10):
         app.processEvents()
-    dock = window.dock_manager["InspectorDock"]
+    # since bugs/0951 the inspector is the window's CENTRAL 3D scene, not a dock: it cannot float
+    # (floating would recreate the native window VTK was handed), and the panels sit beside it
     screen = window.screen().availableGeometry().height()
-    floatable = bool(dock.features() & QDockWidget.DockWidgetFeature.DockWidgetFloatable)
-    rows.append(["L", widget.height() >= 400 and window.height() <= screen and not floatable,
+    central = (window.centralWidget() is window.scene_stack
+               and window.scene_stack.currentWidget() is window.inspector_host
+               and widget.parentWidget() is window.inspector_host)
+    docked = [dock.objectName() for dock in window.findChildren(QDockWidget) if dock.isAncestorOf(widget)]
+    rows.append(["L", widget.height() >= 400 and window.height() <= screen and central and not docked,
                  f"the viewport is {widget.width()}x{widget.height()} px, the window "
-                 f"{window.height()} px on a {screen} px screen; floatable={floatable}"])
+                 f"{window.height()} px on a {screen} px screen; it is the central scene: {central}; "
+                 f"docks holding it (it must not float): {docked}"])
 
     cam = inspector._renderer.GetActiveCamera()
 

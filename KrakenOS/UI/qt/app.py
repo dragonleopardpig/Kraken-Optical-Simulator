@@ -92,7 +92,7 @@ def run(argv=None) -> int:
     argv = list(sys.argv if argv is None else argv)
     app, window = build(argv)
     window.show()
-    window.build_viewport()
+    window.build_scene()         # the real inspector, central (bugs/0951); the preview if it cannot be built
 
     scene = next((arg for arg in argv[1:] if arg.endswith(".py") and Path(arg).exists()), None)
     if scene:

@@ -3,8 +3,230 @@
 Structure follows `optiland_gui/panel_manager.py` (MIT, (c) 2024 Kramer Harrison): one factory for
 every dock, one place that arranges them, and an object name on each so Qt can save and restore
 the arrangement.
+
+`EdgeRails` (user request, bugs/0952): a slim strip on each window edge with one tab per panel
+docked on that edge -- the text running along the edge, so upright on the left and right -- to hide
+a panel and bring it back. The bottom strip is the status bar itself (its right end): a second row
+there would cost the 3D scene 29 px for nothing.
 """
 from __future__ import annotations
+
+#: rail edge -> (the dock area it serves, the toolbar area its strip sits in -- None: the status
+#: bar), as Qt attribute names
+EDGES = {
+    "left": ("LeftDockWidgetArea", "LeftToolBarArea"),
+    "right": ("RightDockWidgetArea", "RightToolBarArea"),
+    "top": ("TopDockWidgetArea", "TopToolBarArea"),
+    "bottom": ("BottomDockWidgetArea", None),
+}
+
+
+def _tool_button_base():
+    from PySide6.QtWidgets import QToolButton
+
+    return QToolButton
+
+
+class RailTab(_tool_button_base()):
+    """One panel's tab on an edge rail. Checked while the panel is on show."""
+
+    def __init__(self, text: str, edge: str, parent=None) -> None:
+        from PySide6.QtCore import Qt
+
+        super().__init__(parent)
+        self.edge = edge
+        self.setText(text)
+        self.setCheckable(True)
+        self.setAutoRaise(True)
+        self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
+    @property
+    def upright(self) -> bool:
+        return self.edge in ("left", "right")
+
+    def sizeHint(self):  # noqa: N802  (Qt's name)
+        size = super().sizeHint()
+        return size.transposed() if self.upright else size
+
+    def minimumSizeHint(self):  # noqa: N802  (Qt's name)
+        return self.sizeHint()
+
+    def paintEvent(self, event) -> None:  # noqa: N802  (Qt's name)
+        if not self.upright:
+            super().paintEvent(event)
+            return
+        from PySide6.QtWidgets import QStyle, QStyleOptionToolButton, QStylePainter
+
+        painter = QStylePainter(self)
+        option = QStyleOptionToolButton()
+        self.initStyleOption(option)
+        if self.edge == "left":            # reads bottom to top, as on the spine of a book
+            painter.translate(0, self.height())
+            painter.rotate(-90)
+        else:                              # the right edge reads top to bottom
+            painter.translate(self.width(), 0)
+            painter.rotate(90)
+        option.rect = option.rect.transposed()
+        painter.drawComplexControl(QStyle.ComplexControl.CC_ToolButton, option)
+
+
+class EdgeRails:
+    """The four edge strips and the tabs on them.
+
+    A click on a tab:
+      * of a hidden panel shows it (with the panels it was tabbed with, itself in front);
+      * of a panel behind another tab brings it to the front;
+      * of the panel on show hides it -- together with the panels tabbed with it, so one click
+        folds that edge's stack and gives its room to the 3D scene.
+    """
+
+    def __init__(self, main_window) -> None:
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QHBoxLayout, QToolBar, QWidget
+
+        self.main_window = main_window
+        #: edge -> its strip: a toolbar on the left, right and top; a row in the status bar below
+        self.rails: dict[str, object] = {}
+        #: dock object name -> its tab
+        self.tabs: dict[str, object] = {}
+        self._docks: dict[str, object] = {}
+        #: dock -> the docks hidden with it by one click, to show again together
+        self._folded_with: dict = {}
+        #: dock -> its (width, height) when a tab hid it; Qt would bring it back at its minimum
+        self._size_when_hidden: dict = {}
+        for edge, (_dock_area, bar_area) in EDGES.items():
+            if bar_area is None:
+                strip = QWidget()
+                row = QHBoxLayout(strip)
+                row.setContentsMargins(0, 0, 0, 0)
+                row.setSpacing(2)
+                main_window.statusBar().addPermanentWidget(strip)
+            else:
+                strip = QToolBar(f"{edge.title()} panels", main_window)
+                strip.setMovable(False)
+                strip.setFloatable(False)
+                strip.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
+                strip.toggleViewAction().setVisible(False)      # a rail is not itself hidden
+                main_window.addToolBar(getattr(Qt.ToolBarArea, bar_area), strip)
+            strip.setObjectName(f"EdgeRail{edge.title()}")
+            strip.hide()                                         # until a panel lands on that edge
+            self.rails[edge] = strip
+
+    # ---- which edge, and what state -------------------------------------------------------------
+    def edge_of(self, dock) -> "str | None":
+        from PySide6.QtCore import Qt
+
+        area = self.main_window.dockWidgetArea(dock)
+        for edge, (dock_area, _bar_area) in EDGES.items():
+            if area == getattr(Qt.DockWidgetArea, dock_area):
+                return edge
+        return None
+
+    @staticmethod
+    def is_open(dock) -> bool:
+        return not dock.isHidden()
+
+    @staticmethod
+    def is_front(dock) -> bool:
+        """On show: open, and not behind another tab of its stack."""
+        return not dock.isHidden() and (dock.isFloating() or not dock.visibleRegion().isEmpty())
+
+    # ---- building -------------------------------------------------------------------------------
+    def add(self, dock) -> None:
+        """Give ``dock`` a tab on the rail of the edge it is docked on."""
+        name = dock.objectName()
+        if name in self.tabs:
+            return
+        self._docks[name] = dock
+        self._place_tab(dock, self.edge_of(dock) or "left")
+        dock.visibilityChanged.connect(lambda _visible: self.refresh())
+        dock.topLevelChanged.connect(lambda _floating: self.refresh())
+        dock.dockLocationChanged.connect(lambda _area, d=dock: self._moved(d))
+        self.refresh()
+
+    def _place_tab(self, dock, edge: str) -> None:
+        tab = RailTab(dock.windowTitle(), edge)
+        tab.setToolTip(f"Hide or show the {dock.windowTitle()} panel")
+        tab.clicked.connect(lambda _checked=False, d=dock: self.toggle(d))
+        strip = self.rails[edge]
+        if EDGES[edge][1] is None:
+            strip.layout().addWidget(tab)
+            tab._rail_action = None
+        else:
+            tab._rail_action = strip.addWidget(tab)
+        self.tabs[dock.objectName()] = tab
+
+    def _moved(self, dock) -> None:
+        """The user dragged a panel to another edge: its tab follows -- a new one, drawn for that
+        edge, in place of the old."""
+        name = dock.objectName()
+        tab = self.tabs.get(name)
+        edge = self.edge_of(dock)
+        if tab is None or edge is None or edge == tab.edge:
+            return
+        if tab._rail_action is not None:
+            self.rails[tab.edge].removeAction(tab._rail_action)
+        else:
+            self.rails[tab.edge].layout().removeWidget(tab)
+        tab.hide()
+        tab.deleteLater()
+        self._place_tab(dock, edge)
+        self.refresh()
+
+    def refresh(self) -> None:
+        """Tabs follow their panels: checked while on show; a rail with no tab is not drawn."""
+        used = set()
+        for name, tab in self.tabs.items():
+            front = self.is_front(self._docks[name])
+            if tab.isChecked() != front:
+                tab.setChecked(front)
+            used.add(tab.edge)
+        for edge, bar in self.rails.items():
+            if bar.isVisible() != (edge in used):
+                bar.setVisible(edge in used)
+
+    # ---- the click --------------------------------------------------------------------------------
+    def toggle(self, dock) -> None:
+        window = self.main_window
+        if not self.is_open(dock):
+            group = self._folded_with.pop(dock, None) or [dock]
+            for member in group:
+                self._folded_with.pop(member, None)
+                member.show()
+            dock.raise_()
+            self._restore_size(dock)
+        elif not self.is_front(dock):
+            dock.raise_()
+        else:
+            group = [dock] + [other for other in window.tabifiedDockWidgets(dock) if self.is_open(other)]
+            for member in group:
+                self._folded_with[member] = group
+                self._size_when_hidden[member] = (dock.width(), dock.height())
+            for member in group:
+                member.hide()
+        self.refresh()
+
+    def _restore_size(self, dock) -> None:
+        """Back at the size it was hidden at, once the layout has run (measured: the surface table
+        came back 124 px tall, its minimum, where it had been 170)."""
+        size = self._size_when_hidden.pop(dock, None)
+        edge = self.edge_of(dock)
+        if size is None or edge is None or dock.isFloating():
+            return
+        from PySide6.QtCore import QTimer, Qt
+
+        upright = edge in ("left", "right")
+        QTimer.singleShot(0, lambda: self.main_window.resizeDocks(
+            [dock], [size[0] if upright else size[1]],
+            Qt.Orientation.Horizontal if upright else Qt.Orientation.Vertical))
+
+    def set_edge_shown(self, edge: str, shown: bool) -> None:
+        """Hide or show every panel of one edge."""
+        for name, tab in self.tabs.items():
+            if tab.edge == edge and self.is_open(self._docks[name]) != bool(shown):
+                self._docks[name].setVisible(bool(shown))
+        self.refresh()
 
 
 class DockManager:
@@ -13,6 +235,8 @@ class DockManager:
     def __init__(self, main_window) -> None:
         self.main_window = main_window
         self.docks: dict[str, object] = {}
+        #: the edge strips with a tab per panel (bugs/0952)
+        self.rails = EdgeRails(main_window)
 
     def create_dock(self, widget, name: str, title: str, area=None, *, scroll: bool = False):
         """`scroll`: show a tall form in a scroll area, so its full height is not the dock's
@@ -33,6 +257,7 @@ class DockManager:
                          | QDockWidget.DockWidgetFeature.DockWidgetClosable)
         self.main_window.addDockWidget(area or Qt.DockWidgetArea.LeftDockWidgetArea, dock)
         self.docks[name] = dock
+        self.rails.add(dock)
         return dock
 
     def setup_default_layout(self, width_hint: int = 620) -> None:

@@ -16846,6 +16846,10 @@ phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
     721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
     'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
     'qt_model_forms_open_in_qt')
+phase_724_qt_scene_layout = _phase_from_standalone(
+    724, "the Qt shell opens on ONE 3D scene and its panels fold away by edge tabs (0951, 0952): the real inspector is the central widget's page on show with no preview viewport beside it and no dock holding it; the Nav Cube is drawn in the scene's top-right corner (pixel-square, and its pixels change when its renderers are switched off); with every panel open nothing is crushed or overlapping and the 3D view is at least 400 px high; the ribbon's Show Rays / Fit Scene / Redraw drive that scene and Show Rays is one switch with the inspector's own box; each edge carries one tab per panel docked there (upright on the left and right, flat on top, the bottom ones in the status bar), down exactly while its panel is on show; a tab hides its panel and gives the room to the scene, a tab behind comes to the front, the front tab folds its whole stack, and a hidden panel comes back at its size; a moved panel takes its tab along; the small arrow at the end of the ribbon's tab row folds and opens the ribbon, and the height goes to the scene, not the table",
+    'KrakenOS.UI.validate_qt_scene_layout',
+    'qt_scene_layout')
 phase_723_qt_inspector_popups = _phase_from_standalone(
     723, "the inspector's small popups open in the running shell (0950): every function in open3d_inspector.py and services/ that builds a tk.Toplevel asks the shell first or is listed as Tk-only with its reason (an exact list that can only shrink); in a real Qt shell on om05a_folded the centred one-value prompt, LED Edge Distance and Edit Thickness ask through the host (prefilled, and the typed value lands in the model), Resize Solid is a Qt row form (a non-positive size is refused), and the bug-flag description is a non-modal Qt window whose Save / Keep / Discard / close do what the Tk popup's do -- with no Tk popup created and no wait on one; in the Tk app the same five still open their own Tk windows and take the typed value",
     'KrakenOS.UI.validate_qt_inspector_popups',
@@ -17710,6 +17714,7 @@ def main() -> int:
             phase_721_qt_model_forms_open_in_qt,
             phase_722_qt_table_context_menu,
             phase_723_qt_inspector_popups,
+            phase_724_qt_scene_layout,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

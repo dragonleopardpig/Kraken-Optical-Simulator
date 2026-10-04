@@ -25,7 +25,8 @@
      again it returns to the top area, folded to its tab row, and the 3D view gets its height back
   U  docked and unfolded (double-click a tab), exactly one page shows; folded again, none
   T  (bugs/0940) the surface table is across the TOP of the window -- full width, under the ribbon
-     and above the 3D inspector -- so its columns show without sideways scrolling
+     and above the 3D scene (the inspector, central since bugs/0951) -- so its columns show
+     without sideways scrolling
 """
 from __future__ import annotations
 
@@ -282,14 +283,18 @@ def qt_runtime_checks() -> list:
 
     # T -- the surface table across the top
     table = window.dock_manager["SurfaceTableDock"]
-    inspector_dock = window.dock_manager["InspectorDock"]
+    scene = window.scene_stack.geometry()          # the central 3D scene, in window coordinates
     top = window.dockWidgetArea(table) == _Qt.DockWidgetArea.TopDockWidgetArea
     order = (ribbon.dock.geometry().bottom() <= table.geometry().top()
-             and table.geometry().bottom() <= inspector_dock.geometry().top())
-    full = table.width() >= window.width() - 4
+             and table.geometry().bottom() <= scene.top()
+             and window.scene_stack.currentWidget() is window.inspector_host)
+    # full width between the edge strips that carry the panels' tabs (bugs/0952)
+    strips = sum(window.dock_manager.rails.rails[edge].width() for edge in ("left", "right")
+                 if window.dock_manager.rails.rails[edge].isVisible())
+    full = table.width() >= window.width() - strips - 4
     rows.append(["T", top and order and full,
-                 f"table in the top area={top}; ribbon < table < inspector top-to-bottom={order}; "
-                 f"width {table.width()} of the window's {window.width()}"])
+                 f"table in the top area={top}; ribbon < table < the 3D scene top-to-bottom={order}; "
+                 f"width {table.width()} of the window's {window.width()} less {strips} px of edge strips"])
     return rows
 
 

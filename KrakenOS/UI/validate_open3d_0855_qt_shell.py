@@ -81,10 +81,11 @@ def qt_runtime_checks() -> list[list]:
     table = window.findChild(QTableView)
     row("Q1", menu_bars == 0 and tabs == [tab for tab, _groups in RIBBON] and len(tabs) >= 5
         and dock is not None and table is not None
-        and window.centralWidget() is window.viewport_host
+        and window.centralWidget() is window.scene_stack
+        and window.scene_stack.indexOf(window.viewport_host) >= 0
         and window.viewport.widget.parent() is window.viewport_host,
         f"menu bars {menu_bars}; ribbon tabs {tabs} match the declaration; the surface table is docked as "
-        f"{dock.objectName()!r}; the viewport sits in the central container "
+        f"{dock.objectName()!r}; the viewport sits in its own page of the central scene stack "
         f"(never reparented after construction)")
 
     # ---- Q2 the table reads the model -------------------------------------------------------
