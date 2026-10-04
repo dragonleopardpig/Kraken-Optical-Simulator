@@ -23117,6 +23117,13 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         qe = self._quick_estimation_service()
         if not qe.is_enabled():
             self.quick_estimation_var.set(True)
+        if shell_host_of(self) is not None:      # bugs/0953: a shell shows it as a row form
+            from KrakenOS.UI.panels.row_form_view import present_row_form
+            from KrakenOS.UI.row_forms.quick_estimation import build_target_fov_form
+
+            # it WAITS, as the Tk window does: Snap to FOV reads the target straight afterwards
+            present_row_form(self, build_target_fov_form(self), wraplength=320, modal=True, wait=True)
+            return
         wh = qe.object_fov_dimensions()
         w0, h0 = (wh if wh else (0.0, 0.0))
         dialog = tk.Toplevel(self)
@@ -23371,6 +23378,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         qe = self._quick_estimation_service()
         if not qe.is_enabled():
             self.quick_estimation_var.set(True)
+        if shell_host_of(self) is not None:      # bugs/0953: a shell shows it as a row form
+            from KrakenOS.UI.panels.row_form_view import present_row_form
+            from KrakenOS.UI.row_forms.quick_estimation import build_fov_solve_form
+
+            present_row_form(self, build_fov_solve_form(self, plane), wraplength=320, modal=True, wait=True)
+            return
         if plane == "object":
             title = "Object Plane — Field of View (FOV)"
             prompt = "Object field to image (width x height, mm):"
@@ -23800,6 +23813,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 self.quick_estimation_var.set(True)
         except Exception:
             pass
+        if shell_host_of(self) is not None:      # bugs/0953: a shell shows it as a row form
+            from KrakenOS.UI.panels.row_form_view import present_row_form
+            from KrakenOS.UI.row_forms.quick_estimation import build_detector_design_form
+
+            present_row_form(self, build_detector_design_form(self), wraplength=300, modal=False)
+            return
         dialog = tk.Toplevel(self)
         try:
             dialog.withdraw()
@@ -24258,75 +24277,38 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def _show_quick_estimation_config_table(self) -> None:
         """Centred table of conjugate configurations (object distance swept;
         image distance solved for focus) so the user can read the combinations."""
-        import numpy as _np
+        from KrakenOS.UI.reports import quick_estimation_config as config
+        from KrakenOS.UI.reports.base import ReportFailed
 
-        qe = self._quick_estimation_service()
-        f = qe.focal_length()
-        sensor = qe._sensor_semi()
-        if not f or not sensor:
-            self.status_var.set("Configuration table needs a valid lens + sensor.")
-            return
-        rows = self.editor.rows
-        obj_row = qe.object_thickness_row()
-        img_row = qe.image_thickness_row()
-        if obj_row is None or img_row is None:
-            return
-        saved = (float(rows[obj_row].thickness), float(rows[img_row].thickness))
-        records = []
+        # bugs/0953: the sweep and the cells are the report's (`reports/quick_estimation_config`);
+        # a shell shows it in its report dialog, the Tk app in the window below
+        shell = self.editor.__dict__.get("show_report") if hasattr(self.editor, "__dict__") else None
         try:
-            for s in _np.linspace(f * 1.25, f * 5.0, 16):
-                rows[obj_row].thickness = float(s)
-                ok, _note = qe.solve_dependent(obj_row)
-                st = qe.current_state()
-                records.append(
-                    (
-                        float(s),
-                        st.get("image_distance"),
-                        st.get("magnification"),
-                        st.get("fov_full"),
-                        st.get("working_distance"),
-                        not st.get("forbidden"),
-                    )
-                )
-        finally:
-            rows[obj_row].thickness, rows[img_row].thickness = saved
-            try:
-                qe.update_readout()
-            except Exception:
-                pass
+            f, sensor, records = config.conjugate_records(self)
+        except ReportFailed as exc:
+            self.status_var.set(str(exc))
+            return
+        if not records:                          # no object / image gap to sweep
+            return
+        if callable(shell):
+            shell(lambda **_values: config.build_quick_estimation_config_report(self), title=config.TITLE)
+            return
 
         dialog = tk.Toplevel(self)
         try:
             dialog.withdraw()
-            dialog.title("Quick Estimation — configuration table")
+            dialog.title(config.TITLE)
             dialog.transient(self.winfo_toplevel())
         except Exception:
             pass
-        ttk.Label(
-            dialog,
-            text=f"Fixed lens f={f:.4g} mm, sensor semi-height {sensor:.4g} mm. "
-            "Each row is a focused conjugate; drag toward the one you want.",
-            padding=(8, 8, 8, 4),
-        ).grid(row=0, column=0, sticky="w")
-        cols = ("obj", "img", "mag", "fov", "wd", "valid")
-        headers = ("Object dist [mm]", "Image dist [mm]", "Mag |m|", "FOV full [mm]", "Working dist [mm]", "Real image?")
+        ttk.Label(dialog, text=config.summary_text(f, sensor), padding=(8, 8, 8, 4)).grid(row=0, column=0, sticky="w")
+        cols = tuple(column.key for column in config.COLUMNS)
         tree = ttk.Treeview(dialog, columns=cols, show="headings", height=min(len(records), 16))
-        for c, h in zip(cols, headers):
-            tree.heading(c, text=h)
-            tree.column(c, width=120, anchor="center")
-        for obj, img, mag, fov, wd, valid in records:
-            tree.insert(
-                "",
-                "end",
-                values=(
-                    f"{obj:.5g}" if obj is not None else "--",
-                    f"{img:.5g}" if img is not None else "--",
-                    f"{abs(mag):.4g}" if mag is not None else "--",
-                    f"{fov:.5g}" if fov is not None else "--",
-                    f"{wd:.5g}" if wd is not None else "--",
-                    "yes" if valid else "NO (WD<FL)",
-                ),
-            )
+        for column in config.COLUMNS:
+            tree.heading(column.key, text=column.heading)
+            tree.column(column.key, width=120, anchor="center")
+        for record in records:
+            tree.insert("", "end", values=config.display_row(record))
         tree.grid(row=1, column=0, sticky="nsew", padx=8, pady=(0, 6))
         ttk.Button(dialog, text="Close", command=dialog.destroy).grid(row=2, column=0, sticky="e", padx=8, pady=(0, 8))
         dialog.bind("<Escape>", lambda _e: dialog.destroy())

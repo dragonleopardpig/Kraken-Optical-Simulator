@@ -87,7 +87,12 @@ class RowFormDialog(_dialog_class()):
             grid = QFormLayout()
         for field in (() if form.groups else form.fields):
             label, widget = self._build_field(field)
-            grid.addRow(label, widget)
+            if field.kind == "static" and not label.text():
+                # a line of explanation, not a labelled value: across the whole form, where it
+                # wraps to its real height (in the field column it was cut off, bugs/0953)
+                grid.addRow(widget)
+            else:
+                grid.addRow(label, widget)
         if grid is not None:
             if host_widget is not self:
                 # ~30 fields is taller than a laptop screen: give the form its own scroll area
@@ -142,6 +147,27 @@ class RowFormDialog(_dialog_class()):
         self.summary.setWordWrap(True)
         layout.addWidget(self.summary)
 
+        #: panel key -> the block drawn for it (bugs/0953); a name this view does not know is
+        #: left out
+        self.panels: dict = {}
+        for panel in getattr(form, "panels", ()) or ():
+            if panel.key != "design_constraints" or panel.owner is None:
+                continue
+            from KrakenOS.UI.qt.design_constraints_block import DesignConstraintsBlock
+
+            block = DesignConstraintsBlock(
+                panel.owner, title=panel.title or "Solve: constraints", mode=panel.mode, compact=True,
+                context=lambda p=panel: p.context(self.form, self.values()))
+            layout.addWidget(block.box)
+            self.panels[panel.key] = block
+        if self.panels:
+            # what the fields pin for a block follows them as they are typed
+            for widget in self.widgets.values():
+                if hasattr(widget, "textEdited"):
+                    widget.textEdited.connect(lambda _text: self.refresh_panels())
+                elif hasattr(widget, "toggled"):
+                    widget.toggled.connect(lambda _checked: self.refresh_panels())
+
         self.buttons = QDialogButtonBox()
         role = QDialogButtonBox.ButtonRole.ActionRole
         self.action_buttons: dict = {}
@@ -172,6 +198,10 @@ class RowFormDialog(_dialog_class()):
                     widget.toggled.connect(lambda _checked: self.redraw_visuals())
             self.redraw_preview()
             self.redraw_figure()
+
+    def refresh_panels(self) -> None:
+        for block in self.panels.values():
+            block.recompute()
 
     def redraw_visuals(self) -> None:
         """Whatever this form shows beside its fields -- a drawn picture, a plot, or both."""
@@ -257,6 +287,9 @@ class RowFormDialog(_dialog_class()):
         elif field.kind == "bool":
             widget = QCheckBox()
             widget.setChecked(value.strip().lower() in ("1", "true", "yes", "on"))
+            if field.on_change is not None:
+                # a box that locks or unlocks other fields (a pinned fold leg, bugs/0953)
+                widget.toggled.connect(lambda checked, f=field: self.on_box_toggled(f, checked))
         elif field.kind == "static":
             widget = QLabel(value)
             widget.setWordWrap(True)
@@ -284,6 +317,14 @@ class RowFormDialog(_dialog_class()):
         """Every field's text. A static label is shown, never collected back."""
         return {key: self._widget_text(widget) for key, widget in self.widgets.items()
                 if not (hasattr(widget, "setWordWrap") and not hasattr(widget, "isChecked"))}
+
+    def on_box_toggled(self, field, checked: bool) -> str:
+        """A ticked box that rewrites the form. What is typed in the OTHER fields is kept first:
+        the refresh afterwards re-reads every widget from the form, and without this a box ticked
+        after typing a width put the old width back (bugs/0953 -- the guard's parity claim caught
+        Qt sending a different solve than Tk for the same input)."""
+        self.form.values.update(self.values())
+        return self.on_field_changed(field, "true" if checked else "false")
 
     def on_field_changed(self, field, text: str) -> str:
         """A field that rewrites another one -- the model decides what changes."""
@@ -340,8 +381,9 @@ class RowFormDialog(_dialog_class()):
 
     def run_action(self, action) -> str:
         """Run a form action, then show whatever it changed."""
-        if self.form.records is not None:
-            self.form.values.update(self.values())
+        # the action reads what is TYPED, as it does in the Tk view (bugs/0953: this used to be
+        # done for record lists only, so a plain form's verb saw the values the form opened with)
+        self.form.values.update(self.values())
         try:
             message = action.run(self.form, self.host)
         except FormRefused as exc:

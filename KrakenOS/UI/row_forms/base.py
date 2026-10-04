@@ -101,6 +101,27 @@ class FormFigure:
 
 
 @dataclass(frozen=True)
+class FormPanel:
+    """A block of live controls a view draws under the fields (bugs/0953).
+
+    Quick Estimation's FOV form ends in "design a lens for this field": the design-constraint block
+    the 3D Live panel carries, pinned by what is typed in the fields above it. That block is not a
+    field -- it has rows of its own, a result line and its own Apply -- so a form NAMES it and says
+    what it pins. A view that knows the name draws the block; one that does not leaves it out.
+    """
+
+    #: which block: "design_constraints"
+    key: str
+    #: what the block's own model calls act on (the inspector, for the design constraints)
+    owner: Any = None
+    title: str = ""
+    #: the block's starting mode
+    mode: str = "design"
+    #: form, the fields' current values -> {quantity: value} this form pins for the block
+    context: Callable[[Any, dict], dict] = lambda _form, _values: {}
+
+
+@dataclass(frozen=True)
 class RecordList:
     """A master list whose selected item the form edits (docs/design_qt_migration.md phase 3).
 
@@ -153,6 +174,8 @@ class RowForm:
     preview: "FormPreview | None" = None
     #: a matplotlib figure the model draws into, when a plot is what explains the values
     figure: "FormFigure | None" = None
+    #: named blocks of live controls drawn under the fields (the design constraints)
+    panels: tuple = ()
     #: a form that REPORTS rather than edits -- it has inputs and verbs but nothing to write
     #: back, so a view shows neither Validate nor Apply and calls its Cancel button Close
     read_only: bool = False

@@ -39,13 +39,9 @@ SKIP_MARK = "QTPOPUPS_SKIP "
 SCENE = Path("attachment/om05a_folded.py")
 SOURCES = ("KrakenOS/UI/open3d_inspector.py", "KrakenOS/UI/services")
 #: what a function must reach BEFORE its Toplevel to count as asking the shell first
-SHELL_MARKS = ("shell_host_of(", '"show_flag_description"')
+SHELL_MARKS = ("shell_host_of(", '"show_flag_description"', '"show_report"')
 #: Toplevel builders that do not ask the shell yet -> why. Exact: a port must delete its entry.
 KNOWN_TK_POPUPS = {
-    "open3d_inspector.py:_quick_estimation_set_target_fov": "Quick Estimation -- the next step of the plan",
-    "open3d_inspector.py:_open_quick_estimation_fov_popup": "Quick Estimation -- the next step of the plan",
-    "open3d_inspector.py:_open_detector_design_popup": "Quick Estimation -- the next step of the plan",
-    "open3d_inspector.py:_show_quick_estimation_config_table": "Quick Estimation -- the next step of the plan",
     "layout_bug_recorder.py:_open_2d_flag_description_dialog":
         "the 2D bug flag has no Qt route yet (a Tk key binding; the shell's editor is headless and skips it)",
     "system_selection.py:open_system_selection_dialog":

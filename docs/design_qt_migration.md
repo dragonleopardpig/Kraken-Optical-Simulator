@@ -136,6 +136,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0932 | Phase 5f part 3c: the browser's Properties / Selected-Element pane in Qt -- 5f complete | phase 5 |
 | 0933 | Phase 5g part 1: the face-roles editor split into a toolkit-neutral session + VTK preview; the Tk dialog is a view (parity: identical state over 19 steps, pixel-identical preview); two latent Tk defects fixed | phase 5 |
 | 0935 | The Qt shell's ribbon (tabs of icon groups over the shell's own actions) + command palette; folds on short screens | shell |
+| 0953 | Quick Estimation's four windows open in the running shell: three row forms (`FormPanel` for the design block) and a report | phase 5 |
 | 0952 | Edge tabs hide and show the panels (upright on the left / right edges, flat on top, the bottom ones in the status bar); a small arrow folds the ribbon | shell |
 | 0951 | The real inspector is the window's central 3D scene from start-up (Nav Cube and all); the preview is only the fallback; the ribbon's view commands drive it | shell |
 | 0950 | The inspector's five small popups open in the running shell (`shell_host_of`; a row form; a flag-description session) | phase 5 |
@@ -332,10 +333,11 @@ out to hide model state in Tk widgets just as the dialogs did.
 | 6 matplotlib | **done** (2D plot 0893, FormFigure 0887, MTF from image 0938) | -- |
 | 7 validators + gate | **started**: `--shell qt` harness gate 352/352 (0939); 62 validators exercise the Qt shell | 862 validators, 173 in no penta phase; 239 build a real editor (94 already `headless=True`), about 63 touch Tk widgets directly (a source scan); then Qt as the default shell and the Tk-retirement decision |
 
-**Gates.** Full Tk gate **721/721 at 89c64ca9** (2026-10-04, after 0948 and 0949; 1 h 47 min on M90aPro
-in seven sequential chunks, lowest free memory 4.1 GB). Before it: 720/720 at 7e384fdc (2026-10-03,
-after 0947; the one before was 717/717 at
-7ace2ca9); the baseline holds 721 phases, all pass, 722 the newest. On 14 GB hardware the parallel shard gate does
+**Gates.** Full Tk gate **724/724 with 0953** (2026-10-04, on 9aea5eb8 plus 0953; covers 0950-0953;
+1 h 54 min on M90aPro in seven sequential chunks, lowest free memory 2.9 GB -- close to the 2.5 GB
+watchdog, so quit other apps before the next one). Before it: 721/721 at 89c64ca9 (after 0948 and
+0949), 720/720 at 7e384fdc (after 0947), 717/717 at 7ace2ca9. The baseline holds 724 phases, all pass,
+725 the newest. On 14 GB hardware the parallel shard gate does
 not fit (7 GB per shard): run it as sequential `--phases` chunks (1 h 42 min, bugs/0945).
 
 ### What is left, in order
@@ -350,8 +352,10 @@ not fit (7 GB per shard): run it as sequential `--phases` chunks (1 h 42 min, bu
 3. **The inspector's popups.** ~~The small ones~~ -- **done (0950, phase 723):** the centred
    input, LED Edge Distance and Edit Thickness ask through the host, Resize Solid is a row form,
    and the bug-flag description is a session with a Tk and a Qt view. All five froze the Qt shell
-   or were never seen before. **Left:** Quick Estimation's four windows, as a session with two
-   views; and a Qt route for the 2D bug flag (none exists).
+   or were never seen before. ~~Quick Estimation's four windows~~ -- **done (0953, phase 725):**
+   Target FOV, the FOV solve and the detector's design box are row forms (a `FormPanel` carries
+   the design block), and the configuration table is a report. No inspector window a Qt user can
+   reach is a Tk window now. **Left:** a Qt route for the 2D bug flag (none exists).
 4. **Atmospheric Settings** -- menu parity 75 of 75.
 5. Paraxial solve prompts; the 2D-plot toggles; the missing-assets decision.
 6. **Phase 7** -- validators off Tk, Qt the default shell, the Tk-retirement decision.
