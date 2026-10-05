@@ -13,8 +13,8 @@ The Analysis tab also carries the plot picker, Update and WFront 3D -- the same 
 `AnalysisToolbar`, whose own toolbar row is hidden so the ribbon does not cost the 3D viewport a
 second strip of height.
 
-Folded (the default on a short screen; the small arrow at the end of the tab row, or a double-click
-on a tab), only the tab row shows; clicking a tab drops its page over the window as a pop-up, which
+Folded (while the window is short -- bugs/0963; the small arrow at the end of the tab row, or a
+double-click on a tab), only the tab row shows; clicking a tab drops its page over the window as a pop-up, which
 closes once a command runs -- the 3D view keeps its height. The arrow, or a double-click on a tab,
 pins the ribbon open or folds it again. Whatever height the ribbon gives up or takes goes to the 3D
 scene: the surface table under it keeps its own (bugs/0951).
@@ -120,9 +120,11 @@ START_TAB = "Home"
 LARGE_ICON = 26
 SMALL_ICON = 16
 PALETTE_SHORTCUT = "Ctrl+Shift+P"
-#: below this many logical pixels of screen height the ribbon starts folded to its tab row: an open
-#: ribbon is ~110 px, which a 1000-px screen cannot give up without squeezing the 3D view
-FOLD_BELOW_SCREEN_HEIGHT = 1100
+#: below this many logical pixels of WINDOW height the ribbon is folded to its tab row: an open
+#: ribbon is ~110 px, which a 1000-px window cannot give up without squeezing the 3D view. It was the
+#: SCREEN's height (bugs/0963): a 950-px window on a 1440-px screen opened with the ribbon open and
+#: a 339-px 3D view
+FOLD_BELOW_WINDOW_HEIGHT = 1100
 
 
 def ribbon_entries() -> list:
@@ -185,7 +187,7 @@ class Ribbon:
         self.tabs.setCornerWidget(self._corner(), Qt.Corner.TopRightCorner)
         # double-click a tab to fold the ribbon to its tab row, and again to open it (as Office);
         # folded, a click on a tab shows its page as a pop-up
-        self.tabs.tabBarDoubleClicked.connect(lambda _index: self.set_collapsed(not self.collapsed))
+        self.tabs.tabBarDoubleClicked.connect(lambda _index: self.fold_by_hand(not self.collapsed))
         self.tabs.tabBarClicked.connect(self._tab_clicked)
         self.collapsed = False
         # a dock, so it can be undocked (user request, bugs/0940): its title bar runs down the
@@ -201,7 +203,10 @@ class Ribbon:
         main_window.addDockWidget(Qt.DockWidgetArea.TopDockWidgetArea, dock)
         dock.topLevelChanged.connect(self._on_floating_changed)
         self._collapsed_when_docked = False
-        if self._short_screen():
+        #: the ribbon follows the window's height until the user folds or opens it by hand
+        self.follows_window = True
+        self._window_short = self._short_window()
+        if self._window_short:
             self.set_collapsed(True)
         else:
             self._fit_docked_height()
@@ -402,7 +407,7 @@ class Ribbon:
         arrow.setAutoRaise(True)
         arrow.setArrowType(Qt.ArrowType.UpArrow)
         arrow.setFixedSize(20, 20)
-        arrow.clicked.connect(lambda _checked=False: self.set_collapsed(not self.collapsed))
+        arrow.clicked.connect(lambda _checked=False: self.fold_by_hand(not self.collapsed))
         row.addWidget(arrow)
         self._show_fold_state()
         return corner
@@ -467,9 +472,29 @@ class Ribbon:
         return name
 
     # ---- folding + floating --------------------------------------------------------------------
-    def _short_screen(self) -> bool:
-        screen = self.main_window.screen()
-        return screen is not None and screen.availableGeometry().height() < FOLD_BELOW_SCREEN_HEIGHT
+    def _short_window(self) -> bool:
+        return self.main_window.height() < FOLD_BELOW_WINDOW_HEIGHT
+
+    def follow_window_height(self) -> None:
+        """The window was resized: fold the ribbon when the window gets short, open it when it gets
+        tall -- on CROSSING the line only, so a fold made in between is not undone on every resize.
+        Not once the user has folded or opened it by hand, not while it floats, and not while
+        Clean 3D Scene is on (which puts the ribbon back itself) (bugs/0963)."""
+        short = self._short_window()
+        if short == getattr(self, "_window_short", short):
+            return
+        self._window_short = short
+        if not self.follows_window or self.dock.isFloating():
+            return
+        if getattr(self.main_window, "_clean_scene_saved", None) is not None:
+            return
+        if self.collapsed != short:
+            self.set_collapsed(short)
+
+    def fold_by_hand(self, collapsed: bool) -> None:
+        """The arrow, or a double-click on a tab: the user's choice, kept from now on."""
+        self.follows_window = False
+        self.set_collapsed(collapsed)
 
     def set_collapsed(self, collapsed: bool) -> None:
         """Fold the ribbon to its tab row (more room for the 3D view), or open it again."""

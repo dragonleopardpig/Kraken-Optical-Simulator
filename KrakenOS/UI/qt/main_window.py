@@ -1220,6 +1220,13 @@ class KrakenQtMainWindow(_main_window_class()):
     def quit_action(self) -> None:
         self.close()
 
+    def resizeEvent(self, event):  # noqa: N802  (Qt's name)
+        super().resizeEvent(event)
+        # a short window folds the ribbon, a tall one opens it (bugs/0963)
+        ribbon = getattr(self, "ribbon", None)
+        if ribbon is not None:
+            ribbon.follow_window_height()
+
     def closeEvent(self, event):  # noqa: N802  (Qt's name)
         variable = getattr(self.editor, "status_var", None)
         if self._status_trace is not None and variable is not None:

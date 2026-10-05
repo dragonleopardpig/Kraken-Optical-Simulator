@@ -17,7 +17,8 @@
      follows the model's selection
   P  the palette: Ctrl+Shift+P focuses it; "gaussian beam" runs the Gaussian Beam Report action;
      a fragment several commands share runs nothing
-  F  on a 1000-px screen the ribbon starts folded and the 3D view keeps >= 400 px; a tab click drops
+  F  in a window under 1100 px high the ribbon starts folded (bugs/0963: the WINDOW's height, not the
+     screen's) and the 3D view keeps >= 400 px; a tab click drops
      its page as a pop-up, and running a command from it -- a button, or an entry of one of its
      dropdowns -- closes the pop-up
   D  (bugs/0940) the ribbon is a dock: undocked it is a window of its own showing its pages, with
@@ -223,7 +224,7 @@ def qt_runtime_checks() -> list:
                  f"{ribbon.tabs.tabText(widest)!r} at {ribbon.tabs.widget(widest).minimumSizeHint().width()} px"])
 
     # F -- folded on a short screen, the pop-up
-    screen_height = window.screen().availableGeometry().height()
+    window_height = window.height()
     popup = ribbon.show_popup(tabs.index("Home"))
     settle(0.3)
     shown = popup.isVisible()
@@ -243,9 +244,9 @@ def qt_runtime_checks() -> list:
     app.processEvents()
     closed_by_entry = not more_popup.isVisible()
     ribbon_was_folded = ribbon.collapsed
-    rows.append(["F", (screen_height >= 1100 or ribbon.collapsed) and view.widget.height() >= 400
+    rows.append(["F", (window_height >= 1100 or ribbon.collapsed) and view.widget.height() >= 400
                  and shown and closed_by_button and more_shown and closed_by_entry,
-                 f"screen {screen_height} px: folded={ribbon.collapsed}; 3D view {view.widget.height()} px; "
+                 f"window {window_height} px high: folded={ribbon.collapsed}; 3D view {view.widget.height()} px; "
                  f"pop-up shown {shown}, closed after a button's command: {closed_by_button}; the Analysis "
                  f"pop-up shown {more_shown}, closed after a dropdown entry (More > Clear Marks): {closed_by_entry}"])
 

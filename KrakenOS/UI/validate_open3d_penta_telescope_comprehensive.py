@@ -16846,6 +16846,10 @@ phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
     721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
     'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
     'qt_model_forms_open_in_qt')
+phase_732_ribbon_window_height = _phase_from_standalone(
+    732, "the ribbon folds by the WINDOW's height, not the screen's (0963): on a private 2560x1440 screen a 950-px window starts with the ribbon folded; made 1300 px it opens, made 950 it folds again, on crossing the line only (a programmatic open at 950 survives a resize to 940); folded or opened by hand it stays so through resizes; and while Clean 3D Scene is on a resize leaves it folded",
+    'KrakenOS.UI.validate_qt_ribbon_window_height',
+    'ribbon_window_height')
 phase_731_qt_clean_scene = _phase_from_standalone(
     731, "tabbed toolbars that hide, Hide All Panels and a clean 3D scene in one click (0961): the 3D scene's View / Scene / Carry toolbars are ONE strip of tabs at most 40 px tall, a tab click shows that row only, every control sits on its own row's tab, a long row puts its end behind >> without widening the window and its hint comes after its controls; the strip's arrow hides it and the 3D Toolbar switch brings it back; Hide All Panels from an edge's tab strip puts every open panel away and brings back the same ones, the same tab in front, each stack at its size, reads on whenever no panel is open and Ctrl+Shift+H then shows them all; F11 folds the ribbon, hides the 3D toolbar and every panel (the scene 80%+ of the window) and the button by the ribbon's fold arrow puts back exactly what it put away -- a panel closed before stays closed, one opened during stays open, even after Hide All in between",
     'KrakenOS.UI.validate_qt_clean_scene',
@@ -17750,6 +17754,7 @@ def main() -> int:
             phase_729_qt_shell_flag,
             phase_730_snapshot_builds_no_plan,
             phase_731_qt_clean_scene,
+            phase_732_ribbon_window_height,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
