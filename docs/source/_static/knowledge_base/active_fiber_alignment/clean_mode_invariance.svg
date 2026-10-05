@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc">
+  <title id="title">Clean single-mode output preserves its normalized shape while coupling power changes</title>
+  <desc id="desc">Two conceptual single-mode fiber output spots have the same spatial shape but different brightness, representing high and low coupled power. When each image is normalized by its integrated power, both show the same fundamental-mode shape. Normalized clean-mode images do not identify the direction of a launch error. The illustration assumes a fixed guided mode and rejects cladding and stray light.</desc>
+  <defs>
+    <radialGradient id="high-power"><stop offset="0" stop-color="#fffad2"/><stop offset="0.20" stop-color="#f4d269"/><stop offset="0.43" stop-color="#bb702e"/><stop offset="0.65" stop-color="#493a2b"/><stop offset="0.88" stop-color="#15263b"/><stop offset="1" stop-color="#14253a"/></radialGradient>
+    <radialGradient id="low-power"><stop offset="0" stop-color="#8b763f"/><stop offset="0.20" stop-color="#7b663a"/><stop offset="0.43" stop-color="#59442f"/><stop offset="0.65" stop-color="#2d2d2e"/><stop offset="0.88" stop-color="#14253a"/><stop offset="1" stop-color="#14253a"/></radialGradient>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0L9 4.5L0 9Z" fill="#475569"/></marker>
+    <style>
+      text { font-family: sans-serif; fill: #203147; }
+      .heading { font-size: 27px; font-weight: 700; }
+      .label { font-size: 21px; font-weight: 700; }
+      .body { font-size: 18px; }
+      .small { font-size: 16px; }
+      .arrow { fill: none; stroke: #475569; stroke-width: 3; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1200" height="560" fill="#f8fafc"/>
+  <text x="35" y="43" class="heading">A clean SMF output can look Gaussian even when coupling is poor</text>
+  <text x="35" y="76" class="body">Ideal fixed guided mode: alignment changes the amplitude, not the normalized spatial profile.</text>
+
+  <text x="170" y="125" text-anchor="middle" class="label">Better aligned</text>
+  <text x="450" y="125" text-anchor="middle" class="label">Misaligned</text>
+  <rect x="70" y="150" width="200" height="200" rx="10" fill="#14253a"/>
+  <circle cx="170" cy="250" r="95" fill="url(#high-power)"/>
+  <rect x="350" y="150" width="200" height="200" rx="10" fill="#14253a"/>
+  <circle cx="450" cy="250" r="95" fill="url(#low-power)"/>
+  <text x="170" y="384" text-anchor="middle" class="body">Higher guided power</text>
+  <text x="450" y="384" text-anchor="middle" class="body">Lower guided power</text>
+  <text x="310" y="422" text-anchor="middle" class="small">Same detector scale · conceptual intensity images</text>
+
+  <path d="M590 250H740" class="arrow"/>
+  <text x="665" y="202" text-anchor="middle" class="body">Normalize</text>
+  <text x="665" y="225" text-anchor="middle" class="small">each image</text>
+  <text x="665" y="287" text-anchor="middle" class="small">by its total</text>
+  <text x="665" y="310" text-anchor="middle" class="small">guided power</text>
+
+  <text x="970" y="125" text-anchor="middle" class="label">Same normalized profile</text>
+  <rect x="780" y="175" width="175" height="175" rx="10" fill="#14253a"/>
+  <circle cx="867.5" cy="262.5" r="83" fill="url(#high-power)"/>
+  <rect x="985" y="175" width="175" height="175" rx="10" fill="#14253a"/>
+  <circle cx="1072.5" cy="262.5" r="83" fill="url(#high-power)"/>
+  <text x="867.5" y="384" text-anchor="middle" class="body">Better aligned</text>
+  <text x="1072.5" y="384" text-anchor="middle" class="body">Misaligned</text>
+  <text x="970" y="422" text-anchor="middle" class="small">Shape alone loses the coupling-power cue</text>
+
+  <rect x="35" y="461" width="1130" height="67" rx="10" fill="#eaf1fb"/>
+  <text x="600" y="488" text-anchor="middle" class="body">Measure guided power for the objective; observe the launch before mode filtering for spatial clues.</text>
+  <text x="600" y="513" text-anchor="middle" class="small">Assumes fixed fiber/output optics and rejection of cladding and stray light. Illustration is not a simulated result.</text>
+</svg>

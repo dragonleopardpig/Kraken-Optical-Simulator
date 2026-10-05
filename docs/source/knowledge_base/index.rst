@@ -12,6 +12,7 @@ real sensor.
    rules_of_thumb
    formula_plotter
    cardinal_points
+   active_fiber_alignment
    pupil_sampling
    lens_design_intro
    aberration_polynomial

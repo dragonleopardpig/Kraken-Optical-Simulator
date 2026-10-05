@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1300 845" role="img" aria-labelledby="title desc">
+  <title id="title">Proposed architecture for active single-mode fiber alignment</title>
+  <desc id="desc">The laser passes through an input pickoff and power monitor, coupling optics, and a single-mode fiber. A mode-clean measurement path feeds a photodiode. Before the fiber, calibrated near-field and far-field sensing observes position and angle. The controller receives spatial features and input and output power, then commands an XYZ and tip-tilt stage. An optional facet or residual-light camera is an exploratory channel whose usefulness must be validated. This is a proposed arrangement, not implemented hardware support.</desc>
+  <defs>
+    <marker id="optical-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0L9 4.5L0 9Z" fill="#116b62"/></marker>
+    <marker id="signal-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0L9 4.5L0 9Z" fill="#245da1"/></marker>
+    <marker id="motion-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0L9 4.5L0 9Z" fill="#475569"/></marker>
+    <marker id="optional-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0L9 4.5L0 9Z" fill="#75478d"/></marker>
+    <style>
+      text { font-family: sans-serif; fill: #203147; }
+      .heading { font-size: 29px; font-weight: 700; }
+      .subtitle { font-size: 19px; fill: #42566d; }
+      .label { font-size: 20px; font-weight: 700; }
+      .body { font-size: 18px; }
+      .small { font-size: 16px; }
+      .box { fill: #ffffff; stroke: #60778c; stroke-width: 2; }
+      .optical { fill: none; stroke: #116b62; stroke-width: 3; marker-end: url(#optical-arrow); }
+      .signal { fill: none; stroke: #245da1; stroke-width: 2.5; stroke-dasharray: 9 5; marker-end: url(#signal-arrow); }
+      .motion { fill: none; stroke: #475569; stroke-width: 3; marker-end: url(#motion-arrow); }
+      .optional { fill: none; stroke: #75478d; stroke-width: 2.5; stroke-dasharray: 3 6; marker-end: url(#optional-arrow); }
+    </style>
+  </defs>
+  <rect width="1300" height="845" fill="#f8fafc"/>
+  <text x="40" y="44" class="heading">Proposed fiber-alignment architecture</text>
+  <text x="40" y="76" class="subtitle">Spatial sensing supports acquisition; guided power sets the final alignment objective.</text>
+  <text x="40" y="128" class="small">OPTICAL PATH</text>
+
+  <rect x="40" y="150" width="115" height="90" rx="10" class="box"/>
+  <text x="97.5" y="201" text-anchor="middle" class="label">Laser</text>
+  <path d="M155 195H190" class="optical"/>
+  <rect x="190" y="150" width="175" height="90" rx="10" class="box"/>
+  <text x="277.5" y="186" text-anchor="middle" class="label">Pickoff +</text>
+  <text x="277.5" y="214" text-anchor="middle" class="body">monitor P_in</text>
+  <path d="M365 195H405" class="optical"/>
+  <rect x="405" y="150" width="170" height="90" rx="10" class="box"/>
+  <text x="490" y="187" text-anchor="middle" class="label">Coupling</text>
+  <text x="490" y="214" text-anchor="middle" class="body">optics</text>
+  <path d="M575 195H630" class="optical"/>
+  <rect x="630" y="150" width="110" height="90" rx="10" class="box"/>
+  <text x="685" y="201" text-anchor="middle" class="label">SMF</text>
+  <path d="M740 195H790" class="optical"/>
+  <rect x="790" y="150" width="240" height="90" rx="10" class="box"/>
+  <text x="910" y="181" text-anchor="middle" class="label">Mode-clean path</text>
+  <text x="910" y="207" text-anchor="middle" class="small">reject unwanted light</text>
+  <text x="910" y="229" text-anchor="middle" class="small">validated for the setup</text>
+  <path d="M1030 195H1080" class="optical"/>
+  <rect x="1080" y="150" width="180" height="90" rx="10" class="box"/>
+  <text x="1170" y="187" text-anchor="middle" class="label">Photodiode</text>
+  <text x="1170" y="215" text-anchor="middle" class="body">P_out</text>
+
+  <path d="M250 240V345" class="optical"/>
+  <text x="270" y="294" class="small">sample before fiber</text>
+  <rect x="40" y="345" width="455" height="160" rx="12" fill="#edf7f5" stroke="#116b62" stroke-width="2"/>
+  <text x="62" y="379" class="label">Pre-fiber spatial sensing</text>
+  <text x="62" y="413" class="body">Near field: position · Far field: angle</text>
+  <text x="62" y="446" class="body">Relay calibrated to the fiber-facet plane</text>
+  <text x="62" y="479" class="small">Input power monitor also supplies P_in</text>
+
+  <rect x="580" y="345" width="210" height="85" rx="12" fill="#edf1f5" stroke="#475569" stroke-width="2"/>
+  <text x="685" y="379" text-anchor="middle" class="label">XYZ + tip / tilt</text>
+  <text x="685" y="409" text-anchor="middle" class="body">fiber / optics stage</text>
+  <path d="M685 345V240" class="motion"/>
+
+  <path d="M725 240V283H1060V350" class="optional"/>
+  <rect x="875" y="350" width="385" height="145" rx="12" fill="#f6f0fa" stroke="#75478d" stroke-width="2" stroke-dasharray="6 4"/>
+  <text x="897" y="382" class="label">Facet / residual camera</text>
+  <text x="897" y="414" class="body">Optional · exploratory channel</text>
+  <text x="897" y="445" class="small">Test repeatability and error sensitivity;</text>
+  <text x="897" y="472" class="small">do not assume a signed launch error.</text>
+
+  <path d="M250 505V697H530" class="signal"/>
+  <text x="62" y="585" class="body" fill="#245da1">Spatial features</text>
+  <text x="62" y="611" class="body" fill="#245da1">+ P_in</text>
+  <path d="M1170 240V318H1280V730H820" class="signal"/>
+  <text x="1000" y="716" class="body" fill="#245da1">Guided P_out</text>
+  <path d="M1060 495V553H843V697H820" class="optional"/>
+  <path d="M635 650V430" class="motion"/>
+  <text x="652" y="537" class="body" fill="#475569">Motion</text>
+  <text x="652" y="563" class="body" fill="#475569">commands</text>
+
+  <rect x="530" y="650" width="290" height="105" rx="12" fill="#eaf1fb" stroke="#245da1" stroke-width="2"/>
+  <text x="675" y="681" text-anchor="middle" class="label">Controller</text>
+  <text x="675" y="709" text-anchor="middle" class="body">Normalize P_out / P_in</text>
+  <text x="675" y="737" text-anchor="middle" class="small">Acquire → optimize → verify</text>
+
+  <path d="M45 802H100" class="optical"/>
+  <text x="113" y="808" class="small">Light</text>
+  <path d="M225 802H280" class="signal"/>
+  <text x="293" y="808" class="small">Measurement</text>
+  <path d="M475 802H530" class="motion"/>
+  <text x="543" y="808" class="small">Motion</text>
+  <path d="M690 802H745" class="optional"/>
+  <text x="758" y="808" class="small">Exploratory path</text>
+  <text x="1260" y="808" text-anchor="end" class="small">Conceptual arrangement</text>
+</svg>

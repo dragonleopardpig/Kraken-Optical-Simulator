@@ -10,9 +10,9 @@ lengths.
 Method 8: focus into a fiber
 ----------------------------
 
-Start from the focused-spot requirement.  For a circular collimated beam of
-diameter :math:`D` focused by a lens of focal length :math:`f`, the Airy diameter
-is
+Start from the focused-spot requirement. For a uniformly illuminated circular
+pupil of diameter :math:`D` focused by an ideal lens of focal length
+:math:`f`, the Airy diameter is
 
 .. math::
    :label: align-fiber-airy
@@ -35,16 +35,24 @@ The focusing numerical aperture must also fit the fiber acceptance:
 with a 9 micrometre core only if the fiber NA is at least about 0.18; otherwise
 increase :math:`f` or reduce the filled lens diameter.
 
-For matched Gaussian modes with radius :math:`w`, lateral offset alone reduces
-power coupling approximately as
+This Airy-disk and NA check is a geometric starting point. For single-mode
+fiber, match the incident field to the guided mode, including waist size,
+wavefront curvature, position, and angle; fitting a spot inside the core
+is not sufficient.
+
+For matched Gaussian modes with intensity :math:`1/e^2` radius :math:`w`,
+lateral offset alone reduces power coupling approximately as
 
 .. math::
    :label: align-fiber-lateral-coupling
 
-   \eta_x=\exp\!\left[-2\left(\frac{\delta}{w}\right)^2\right].
+   \eta_x=\exp\!\left[-\left(\frac{\delta}{w}\right)^2\right].
 
 If :math:`w=2.5\ \mu\mathrm{m}` and :math:`\delta=1.0\ \mu\mathrm{m}`, only
-72.6% remains before angular, focus, Fresnel, and mode-shape losses.
+85.2% remains before angular, focus, Fresnel, and mode-shape losses. This is
+the squared field-overlap integral, not the intensity at one point in the
+displaced beam. See :doc:`../../active_fiber_alignment` for the derivation,
+directional sensing, and power-gradient control methods.
 
 .. figure:: /_static/knowledge_base/worked_exercises/optical_alignment_methods/fiber_coupling.svg
    :alt: Raster search and fine optimization of focus into an optical fiber
