@@ -52,3 +52,5 @@ On X299-SSD (a 1034-px window) the ribbon starts folded, as before. On M90aPro a
 By the cadence of 2026-10-05: own guard plus the guards that read this code (ribbon 714, scene
 layout 724, clean scene 731, the Qt-hosted inspector, the 5f toolbar guard, the shell flag 729).
 The next batch gate covers this. Full gate owed since 3265c622; it also covers 0962.
+
+**Covered:** full gate 733 of 733 at 8403abde (2026-10-05, M90aPro), Qt-hosted harness 352 of 352 -- the record is in bugs/0965.

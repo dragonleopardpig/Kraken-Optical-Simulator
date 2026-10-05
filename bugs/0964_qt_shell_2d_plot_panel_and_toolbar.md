@@ -79,3 +79,5 @@ By the batch cadence: own guard plus the guards that read this code -- ribbon, s
 scene, Qt-hosted inspector, menu parity, the 5f toolbar, shell flag, ribbon window height, and the
 0893 plot guard. The full gate is owed since 3265c622 and is due now: 0962, 0963 and 0964 are the
 batch.
+
+**Covered:** full gate 733 of 733 at 8403abde (2026-10-05, M90aPro), Qt-hosted harness 352 of 352 -- the record is in bugs/0965.

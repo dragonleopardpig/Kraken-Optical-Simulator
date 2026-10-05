@@ -83,5 +83,26 @@ git whether the tree is clean.
 **Baseline:** phase 734 is recorded (`penta_validator_gate.py --phases 734 --update-baseline`: 1 pass,
 0 fail) -- so it passes inside the harness as well as alone.
 
-**Full gate still owed** for 0962-0965 (last full gate: 730/730 at 3265c622). Run it only when the
-user asks, possibly on another host.
+## Full gate for the batch 0962-0965 (2026-10-05 evening, M90aPro, at 8403abde; the user's go)
+
+**Tk: 733 of 733. Qt-hosted harness (`--shell qt`): 352 of 352.** Nothing is owed through 0965.
+
+The Tk gate took two passes, and the reason is worth keeping:
+
+- `tools/penta_parallel_gate.py --jobs 4`: 701 pass, 1 fail, **31 phases not reported**, 35.1 min.
+  Another session started a test run in a different project while it ran (four workers, about
+  8.5 GB of this machine's 15). Free memory fell to 2.0 GB; the watchdog requeued three groups and
+  then gave up on seven that it had killed while each ran ALONE (448-456, 705-708, 717-734).
+- The one failure, phase 704 claim W (the dispatched press-hold-drag carried the promoted row by
+  nothing; the same gesture with Qt input carried it 8.901 mm), was the load: the guard passes
+  alone, and passes in the harness in the second pass.
+- Second pass, once that test run had ended: each unreported group through
+  `penta_parallel_gate.py --jobs 1 --phases <group>`, started only above 7 GB free -- 448-456,
+  701-704, 705-708, 717-720, 721-724, 725-728, 729-732, 733-734: **35 of 35 pass**. Counted from the
+  `[PASS] Phase N` lines of both passes: every one of the baseline's 733 phases ends on a pass.
+
+Two things about the tool this showed (not changed here):
+- with nothing running it starts a group WHATEVER the free memory is (`not running or free >=
+  start_gb`), so it cannot wait out another job's memory -- the caller has to;
+- a group killed by the watchdog leaves its Xvfb's lock and socket behind (`/tmp/.X150-lock`,
+  `/tmp/.X11-unix/X172` ...); they were removed by hand.

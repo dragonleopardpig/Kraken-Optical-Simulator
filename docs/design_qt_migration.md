@@ -345,7 +345,10 @@ out to hide model state in Tk widgets just as the dialogs did.
 | 6 matplotlib | **done** (2D plot 0893, FormFigure 0887, MTF from image 0938) | -- |
 | 7 validators + gate | **started**: `--shell qt` harness gate 352/352 (0939); 62 validators exercise the Qt shell | 862 validators, 173 in no penta phase; 239 build a real editor (94 already `headless=True`), about 63 touch Tk widgets directly (a source scan); then Qt as the default shell and the Tk-retirement decision |
 
-**Gates.** Full Tk gate **728/728 with 0959** (2026-10-04, on 5b070cd0 plus 0959), run in parallel
+**Gates.** Full Tk gate **733/733 at 8403abde** (2026-10-05, M90aPro; covers 0962-0965 and the fix to
+0965), Qt-hosted harness 352/352. It took two passes -- another session's test run took the memory
+and 31 phases went unreported; they were re-run one group at a time (bugs/0965 has the record).
+Before it: 730/730 at 3265c622 (0961, X299-SSD), and **728/728 with 0959** (2026-10-04, on 5b070cd0 plus 0959), run in parallel
 with `tools/penta_parallel_gate.py --jobs 4` (bugs/0956): 41.9 min, no group killed at the 6.5 GB
 admission mark (lowest free memory 3.2 GB). The Qt-hosted harness (`--shell qt`): 352/352. Before it:
 727/727 with 0958 (41.6 min), 726/726 at c45e41f6 (after 0954 and 0955), 44.5 min in

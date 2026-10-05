@@ -66,3 +66,5 @@ think this slows down a lot. Why can't run after a few round of fix?"). A fix no
 The full gate runs every few fixes, and the next one covers 0962. The last full gate: 730 of 730
 at 3265c622 (0961).
 
+**Covered:** full gate 733 of 733 at 8403abde (2026-10-05, M90aPro), Qt-hosted harness 352 of 352 -- the record is in bugs/0965.
+
