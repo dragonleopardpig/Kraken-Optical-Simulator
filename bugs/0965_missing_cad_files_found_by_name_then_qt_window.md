@@ -29,15 +29,59 @@ no way to fix it.
 
 ## Guard: `validate_missing_assets_found_by_name` (phase 734)
 
-P1, P2 (the session), L (the load's step), Q (the Qt shell) and T (the Tk window) all pass,
-run once, alone, at low priority.
+P1, P2 (the session), L (the load's step), Q (the Qt shell) and T (the Tk window) all pass.
 
-**NOT yet done** (the user stopped the session to leave):
-- the mutation checks;
-- the neighbouring guards: 0810 (it drives `MissingAssetsDialog.run(..., assets=...)` -- the call
-  shape is kept), the model-forms census (validate_qt_model_forms_open_in_qt; its entry updated to
-  the new count, 6 tkinter calls), the ribbon guard (a new action and icon), and the inspector
-  popups guard;
-- recording phase 734 in the baseline.
+## The commit shipped with a mutation in it (fixed, 6b44cf8f)
 
-**Full gate still owed** for 0962-0965. Run it only when the user asks, possibly on another host.
+55af895d was committed while the mutation checks were under way (the user stopped the session to
+leave), and one mutation was never undone: `_prompt_for_missing_cad_assets` read `shell = None`, so
+the shell's `show_missing_assets` seam was never asked. In the Qt shell a layout with a missing CAD
+file still opened the Tk window on the hidden Tk root -- the bug this report is about. Run at
+55af895d the guard says so: **L, T and Q fail.**
+
+6b44cf8f reads the seam off the editor again (`self.__dict__.get("show_missing_assets")`, the way
+the sibling seams do); P1 P2 L T Q pass. The rest of the commit was read line by line and holds no
+other leftover.
+
+The rule it leaves: after a mutation check, `git diff` shows the fix and nothing else BEFORE the
+commit. The checks below restore each mutation from a copy on every exit path, and end by asking
+git whether the tree is clean.
+
+## Checks (2026-10-05, M90aPro; every run alone, at low priority)
+
+**Mutations: 28 of 28 caught, each by the claim it targets**; the tree was clean afterwards.
+
+| Mutation | Caught by |
+|---|---|
+| an ambiguous name is guessed (`len(candidates) >= 1`) | P1 |
+| an overlay's path is not rewritten; a row's path is not rewritten | P1 |
+| Locate takes a folder; Skip writes no placeholder; Reset keeps the placeholder | P2 |
+| `close()` redraws every time it is called; Locate folder resolves nothing | P2 |
+| the layout's own folder is not searched | L |
+| the load does not search by name; a file found by name is not logged; the status line does not say what was found | L |
+| nothing left to ask: no redraw; a window opens although nothing is left | L |
+| the shell is not asked (what 55af895d shipped) | L, Q |
+| the Qt window does not install the seam; the window is made but never shown; it is modal | Q |
+| the Qt Skip does nothing; Locate ignores the picked file; the list shows only the first entry | Q |
+| closing the Qt window does not end the session (both `closeEvent` and `reject`) | Q |
+| "nothing missing" is not said (the model's branch; the ribbon command's argument) | Q |
+| the Tk Skip all does nothing; Continue does not end the session; the list is empty | T |
+| the Tk window works on a session of its own instead of the one it was handed | T |
+
+**Neighbouring guards, all pass:**
+- phase 593 (0810): E1 the load still opens the Tk window non-modal, E2 it returns at once, F1 a
+  real load rebuilds a moved-aside body with no dialog wait -- the search by name did not get in
+  the way of the cache rebuild;
+- phase 721 (model forms open in Qt): the census holds at 17 Tk-only calls in 7 listed windows (6 in
+  `panels/missing_assets_dialog.py`); 20 form commands, 0 Tk windows;
+- phase 714 (ribbon): 68 buttons + 6 dropdowns reach 101 of 101 actions, no blank or identical
+  icon. The window's minimum width is 1234 px against the guard's 1240 cap -- 6 px left for the
+  next ribbon button;
+- phase 723 (inspector popups): 0 Tk popups, 0 waits on a Tk window;
+- phase 718 (menu parity): 75 of 75.
+
+**Baseline:** phase 734 is recorded (`penta_validator_gate.py --phases 734 --update-baseline`: 1 pass,
+0 fail) -- so it passes inside the harness as well as alone.
+
+**Full gate still owed** for 0962-0965 (last full gate: 730/730 at 3265c622). Run it only when the
+user asks, possibly on another host.

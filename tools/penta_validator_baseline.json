@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-10-05T07:15:10+00:00",
+  "generated_at": "2026-10-05T12:41:12+00:00",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -733,7 +733,8 @@
     "730": "pass",
     "731": "pass",
     "732": "pass",
-    "733": "pass"
+    "733": "pass",
+    "734": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -1467,6 +1468,7 @@
     "730": "a flag and a recorded event build no STEP trace plan, and a refused plan is kept (0960): a plan whose injection is refused is built ONCE over three traces with the overlay (the model's rows returned unchanged, no record) and again only when the rows change; an accepted plan is built once too; a recorder snapshot builds no plan -- it records live_trace_known False with nothing known, the refusal's reason after a refused trace, the record's decenter and pose source after an accepted one; a flag builds no plan; and on om05a_folded (vendor CAD present) the first snapshot after a load builds nothing and takes under 2 s, the first trace with the overlay builds the real plan once and the second takes under 2 s",
     "731": "tabbed toolbars that hide, Hide All Panels and a clean 3D scene in one click (0961): the 3D scene's View / Scene / Carry toolbars are ONE strip of tabs at most 40 px tall, a tab click shows that row only, every control sits on its own row's tab, a long row puts its end behind >> without widening the window and its hint comes after its controls; the strip's arrow hides it and the 3D Toolbar switch brings it back; Hide All Panels from an edge's tab strip puts every open panel away and brings back the same ones, the same tab in front, each stack at its size, reads on whenever no panel is open and Ctrl+Shift+H then shows them all; F11 folds the ribbon, hides the 3D toolbar and every panel (the scene 80%+ of the window) and the button by the ribbon's fold arrow puts back exactly what it put away -- a panel closed before stays closed, one opened during stays open, even after Hide All in between",
     "732": "the ribbon folds by the WINDOW's height, not the screen's (0963): on a private 2560x1440 screen a 950-px window starts with the ribbon folded; made 1300 px it opens, made 950 it folds again, on crossing the line only (a programmatic open at 950 survives a resize to 940); folded or opened by hand it stays so through resizes; and while Clean 3D Scene is on a resize leaves it folded",
-    "733": "the Qt shell has its 2D plot, with the Tk plot toolbar's controls and Trace Now (0964): the Tk plot toolbar still binds each of its six variables to its commit and the Qt row binds the same pairs; build_scene builds a 2D Plot panel on the right, tabbed behind System, whose figure and canvas the editor draws into; each control writes its variable and runs its commit once (PP / EP / XP markers off and on, Physical Distance annotations drawn and cleared); an analysis Update brings the plot to the front; and Trace Now is on its toolbar and the ribbon and runs the model's deferred trace"
+    "733": "the Qt shell has its 2D plot, with the Tk plot toolbar's controls and Trace Now (0964): the Tk plot toolbar still binds each of its six variables to its commit and the Qt row binds the same pairs; build_scene builds a 2D Plot panel on the right, tabbed behind System, whose figure and canvas the editor draws into; each control writes its variable and runs its commit once (PP / EP / XP markers off and on, Physical Distance annotations drawn and cleared); an analysis Update brings the plot to the front; and Trace Now is on its toolbar and the ribbon and runs the model's deferred trace",
+    "734": "missing CAD files are found by name first and a Qt window asks about the rest (0965): the session points a missing file at the ONE file of that name under the layout's folder or attachment/ (an ambiguous name is left alone), Locate refuses a folder and takes a file, Skip and Reset round-trip the placeholder, Locate folder resolves from the picked folder, close redraws once; the load repoints a file found next to the layout with no window and logs it; the Qt shell asks in a non-modal Qt dialog (no Tk window), whose Locate / Skip / Continue drive the session, and the ribbon command reopens it or says nothing is missing; the Tk window is a view of the same session"
   }
 }
