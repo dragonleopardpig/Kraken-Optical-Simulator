@@ -161,6 +161,11 @@ class KrakenQtMainWindow(_main_window_class()):
         editor.show_atmosphere_settings = self.show_atmosphere_settings
         #: the one Atmospheric Settings window, made the first time it is asked for
         self.atmosphere_dialog = None
+        # the layout's missing CAD files -- what the search by name could not find -- are asked
+        # about in a Qt window (bugs/0965): the Tk one was a window on the hidden Tk root here
+        editor.show_missing_assets = self.show_missing_assets
+        #: the window `show_missing_assets` last opened, for a guard to drive
+        self.last_missing_assets_dialog = None
         # the CAD/STL face-roles editor opens here, over the model's session (bugs/0934)
         editor.show_face_roles_dialog = self.show_face_roles_dialog
         # a report a model command opens -- the table menu's Diagnostics, the inspector's verbs --
@@ -238,6 +243,22 @@ class KrakenQtMainWindow(_main_window_class()):
         self.atmosphere_dialog.raise_()
         self.atmosphere_dialog.activateWindow()
         return self.atmosphere_dialog
+
+    def show_missing_assets(self, session):
+        """The model's `show_missing_assets` seam (bugs/0965): the missing-CAD-assets window, not
+        modal -- the layout has loaded with placeholders and the scene stays usable."""
+        from KrakenOS.UI.qt.dialogs.missing_assets_dialog import MissingAssetsDialog
+
+        dialog = MissingAssetsDialog(session, host=host_of(self), parent=self)
+        dialog.finished.connect(lambda _result, d=dialog: self._forget_dialog(d))
+        self._open_dialogs.append(dialog)
+        self.last_missing_assets_dialog = dialog
+        dialog.show()
+        return dialog
+
+    def missing_assets_action(self) -> None:
+        """Ask about the layout's missing CAD files again -- or say that none are missing."""
+        self.editor._prompt_for_missing_cad_assets(announce_none=True)
 
     def show_lens_drawing_properties(self, session) -> bool:
         """The model's `show_lens_drawing_properties` seam (bugs/0945): the session in a modal Qt

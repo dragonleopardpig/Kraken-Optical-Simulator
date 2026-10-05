@@ -45,7 +45,7 @@ TK_ONLY = {
     "panels/main_paraxial_analysis_dialogs.py": (0, 1),        # inside the Tk paraxial calculator
     "panels/optical_stl_placement_dialog.py": (0, 2),          # the Tk visual placement window
     "panels/inspection_cell_window.py": (0, 1),                # the Tk inspection-cell window
-    "panels/missing_assets_dialog.py": (0, 9),                 # no Qt counterpart yet (decision owed)
+    "panels/missing_assets_dialog.py": (0, 6),                 # Tk view of missing_assets_session (0965)
 }
 
 #: (command, arguments, the form's title or "" when the scene makes it refuse)

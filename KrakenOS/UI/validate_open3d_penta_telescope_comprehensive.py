@@ -16846,6 +16846,10 @@ phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
     721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
     'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
     'qt_model_forms_open_in_qt')
+phase_734_missing_assets_found_by_name = _phase_from_standalone(
+    734, "missing CAD files are found by name first and a Qt window asks about the rest (0965): the session points a missing file at the ONE file of that name under the layout's folder or attachment/ (an ambiguous name is left alone), Locate refuses a folder and takes a file, Skip and Reset round-trip the placeholder, Locate folder resolves from the picked folder, close redraws once; the load repoints a file found next to the layout with no window and logs it; the Qt shell asks in a non-modal Qt dialog (no Tk window), whose Locate / Skip / Continue drive the session, and the ribbon command reopens it or says nothing is missing; the Tk window is a view of the same session",
+    'KrakenOS.UI.validate_missing_assets_found_by_name',
+    'missing_assets_found_by_name')
 phase_733_qt_plot2d_panel = _phase_from_standalone(
     733, "the Qt shell has its 2D plot, with the Tk plot toolbar's controls and Trace Now (0964): the Tk plot toolbar still binds each of its six variables to its commit and the Qt row binds the same pairs; build_scene builds a 2D Plot panel on the right, tabbed behind System, whose figure and canvas the editor draws into; each control writes its variable and runs its commit once (PP / EP / XP markers off and on, Physical Distance annotations drawn and cleared); an analysis Update brings the plot to the front; and Trace Now is on its toolbar and the ribbon and runs the model's deferred trace",
     'KrakenOS.UI.validate_qt_plot2d_panel',
@@ -17760,6 +17764,7 @@ def main() -> int:
             phase_731_qt_clean_scene,
             phase_732_ribbon_window_height,
             phase_733_qt_plot2d_panel,
+            phase_734_missing_assets_found_by_name,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

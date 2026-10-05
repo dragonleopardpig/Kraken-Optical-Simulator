@@ -26,6 +26,9 @@ ICONS: dict[str, str] = {
     "inspector": (f'<path {_GLASS} d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/>'
                   f'<path {_OPEN} d="M4 7.5l8 4.5 8-4.5M12 12v9"/>'),
     "about": f'<circle {_OPEN} cx="12" cy="12" r="9"/><path {_OPEN} d="M12 11v6M12 7.5v.5"/>',
+    # bugs/0965: a missing file
+    "missing_assets": (f'<path {_OPEN} d="M6 3h8l4 4v14H6z" stroke-dasharray="2.5 2"/>'
+                       f'<path {_LIGHT} d="M10 12a2 2 0 1 1 2.6 1.9c-.4.2-.6.5-.6.9v.7M12 17.5v.5"/>'),
     # bugs/0964: the 2D plot; the explicit first trace
     "plot_2d": (f'<path {_OPEN} d="M3 3v18h18"/><path {_LIGHT} d="M5 17l5-6 4 3 6-9"/>'
                 f'<circle {_GLASS} cx="10" cy="11" r="1.6"/>'),

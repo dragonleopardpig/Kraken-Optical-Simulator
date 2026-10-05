@@ -64,7 +64,8 @@ RIBBON = (
         ("Path view", (("add_path_component", "S", "Add Component"), ("add_path_stock_lens", "S", "Add Stock Lens"))),
         ("Sources", (("scene_sources", "L", "Source\nManager"), ("source_edit", "L", "Edit\nSource"))),
         ("CAD", (("face_roles", "L", "Optical\nFaces"), ("optical_solid_diagnostics", "L", "Inspect\nSolids"),
-                 ("place_cad_solid", "S", "Place / Orient"), ("menu:cad_clear", "S", "Clear"))),
+                 ("place_cad_solid", "S", "Place / Orient"), ("menu:cad_clear", "S", "Clear"),
+                 ("missing_assets", "S", "Missing Files"))),
         ("Inspection", (("inspection_cell", "L", "Inspection\nCell"), ("inspection_part", "L", "Inspection\nPart"))),
     )),
     ("Analysis", (

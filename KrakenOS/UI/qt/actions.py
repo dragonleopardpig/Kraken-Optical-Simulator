@@ -163,6 +163,10 @@ ACTIONS = (
      "FOV + resolution + minimum working distance -> the camera pixels and the lens EFL / magnification"),
     ("optical_solid_diagnostics", "Inspect Optical CAD/STL &Solids", None, "optical_solid_diagnostics_action",
      "Check every CAD/STL solid row can be traced: closed, manifold, outward winding, size, CAD source"),
+    # bugs/0965: the layout's missing CAD files -- found by name on load; this asks about the rest
+    ("missing_assets", "Resolve Missing CAD Files...", None, "missing_assets_action",
+     "List the STEP / STL files this layout names that are not on disk; locate, batch-locate by "
+     "folder, or skip them"),
     ("face_roles", "Assign CAD/STL &Optical Faces...", None, "face_roles_action",
      "Assign 2D sides, coatings and port roles to the faces of the selected CAD/STL solid row"),
     ("galvo_scan", "&Galvo Scan Overlay...", None, "galvo_scan_action",

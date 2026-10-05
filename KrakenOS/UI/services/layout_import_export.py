@@ -751,17 +751,48 @@ class LayoutImportExportMixin:
             pass
         return f"{cache_path.name}: re-meshed from {source_path.name} -> {Path(new_stl).name}"
 
-    def _prompt_for_missing_cad_assets(self) -> None:
-        """Show the Missing CAD assets dialog if the layout has any.
+    def _prompt_for_missing_cad_assets(self, *, announce_none: bool = False) -> None:
+        """The layout names CAD files that are not on disk: find what can be found, ask about the rest.
 
-        Imported lazily so headless harnesses (no Tk display) that call
-        ``open_layout`` only to verify parsing don't drag in the panel
-        module just to confirm the scanner found zero entries.
+        bugs/0965 (the user chose it): first FIND BY NAME -- each missing file whose name matches
+        exactly one file in the layout's folder or the project's attachment/ folder is pointed at it,
+        and the progress log says so. Only what is still missing opens the window: the shell's
+        (`show_missing_assets`, a Qt window in the Qt shell -- the Tk one was a window on the hidden
+        Tk root there, invisible or frozen) or the Tk one. ``announce_none``: say so when nothing is
+        missing (the Qt shell's "Resolve Missing CAD Files..." command).
+
+        The panel modules are imported lazily, so a headless harness that only opens a layout to
+        check its parsing does not import them when nothing is missing.
         """
         from KrakenOS.UI.services.missing_assets_scan import scan_missing_assets
 
         assets = scan_missing_assets(self.rows, editor=self)
         if not assets:
+            if announce_none:
+                self.status_var.set("No missing CAD files in this layout.")
+            return
+        from KrakenOS.UI.services.missing_assets_session import MissingAssetsSession, auto_locate_roots
+
+        session = MissingAssetsSession(self, assets, on_resolve=self._after_missing_assets_dialog)
+        try:
+            found = session.auto_locate(auto_locate_roots(self))
+        except Exception as exc:
+            found = []
+            self.append_debug(f"Missing CAD files: the search by name failed ({exc})")
+        for index, path in found:
+            asset = session.assets[index]
+            self.append_progress(f"Missing CAD file found by name: {session.where(index)} [{asset.key}] "
+                                 f"{asset.expected_path} -> {path}")
+        left = session.unresolved()
+        if found:
+            self.status_var.set(f"Found {len(found)} missing CAD file(s) by name"
+                                + (f"; {len(left)} still missing." if left else ". Save the layout to keep the new paths."))
+        if not left:
+            session.close()               # nothing to ask: rebuild what the relocations allow, redraw
+            return
+        shell = None
+        if callable(shell):
+            shell(session)
             return
         from KrakenOS.UI.panels.missing_assets_dialog import MissingAssetsDialog
 
@@ -769,9 +800,7 @@ class LayoutImportExportMixin:
         # screen -- penta phases 449-452 hung for their whole deadline on this dialog -- and the scene
         # was invisible behind it anyway. The load finishes with placeholders; relocating a file
         # rebuilds and redraws when the dialog closes.
-        MissingAssetsDialog.run(
-            self, editor=self, assets=assets, modal=False, on_resolve=self._after_missing_assets_dialog
-        )
+        MissingAssetsDialog.run(self, session=session, modal=False)
 
     def _after_missing_assets_dialog(self) -> None:
         """bugs/0810: the dialog closed -- rebuild what the relocations made possible and redraw."""

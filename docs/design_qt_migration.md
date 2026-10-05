@@ -136,6 +136,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0932 | Phase 5f part 3c: the browser's Properties / Selected-Element pane in Qt -- 5f complete | phase 5 |
 | 0933 | Phase 5g part 1: the face-roles editor split into a toolkit-neutral session + VTK preview; the Tk dialog is a view (parity: identical state over 19 steps, pixel-identical preview); two latent Tk defects fixed | phase 5 |
 | 0935 | The Qt shell's ribbon (tabs of icon groups over the shell's own actions) + command palette; folds on short screens | shell |
+| 0965 | Missing CAD files: found by name first (layout folder, attachment/; unique names only), then a non-modal Qt window for the rest (a session shared with the Tk window); ribbon Scene > CAD > Missing Files | phase 3 |
 | 0964 | The Qt shell had NO 2D plot (built only by its guard): now a 2D Plot panel with the Tk plot toolbar's six controls (plot2d_toolbar.PLOT_2D), Trace Now, Update, Ray Inspector; an Update shows it | phase 6 |
 | 0963 | The ribbon folds by the WINDOW's height (on crossing 1100 px), not the screen's; a fold by hand is kept | shell |
 | 0962 | The top edge's panel tabs ride in the ribbon's tab row, no row of their own | shell |
