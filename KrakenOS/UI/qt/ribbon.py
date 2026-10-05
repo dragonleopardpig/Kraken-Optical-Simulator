@@ -372,7 +372,7 @@ class Ribbon:
         from PySide6.QtWidgets import QHBoxLayout, QToolButton, QWidget
 
         corner = QWidget()
-        row = QHBoxLayout(corner)
+        row = self.corner_row = QHBoxLayout(corner)
         row.setContentsMargins(0, 0, 2, 0)
         row.setSpacing(4)
         row.addWidget(self._palette())

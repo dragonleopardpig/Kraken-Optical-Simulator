@@ -17,8 +17,8 @@ the preview and the side panels into a 112-px band. In a real Qt shell on om05a_
   V  the ribbon's view commands drive that scene: Show Rays and the inspector's own box are one
      switch (either way), Fit Scene frames it again after a zoom, Redraw refreshes it
   R  (0952) each edge carries one tab per panel docked there -- upright on the left and right, flat
-     on the top and bottom, the bottom ones in the status bar -- and a tab is down exactly while its
-     panel is on show
+     on the top and bottom, the bottom ones in the status bar, the top ones in the ribbon's tab row
+     while the ribbon is docked (0962) -- and a tab is down exactly while its panel is on show
   H  a click on a tab hides its panel and gives the room to the scene; a second click brings it
      back. For a tabbed stack: a tab behind comes to the front; the front tab folds the whole
      stack; any tab of a folded stack brings the stack back with that panel in front
@@ -215,7 +215,9 @@ def qt_runtime_checks() -> list:
     at_edge = {
         "left": strips["left"].mapTo(window, strips["left"].rect().topLeft()).x() == 0,
         "right": strips["right"].mapTo(window, strips["right"].rect().topRight()).x() >= window.width() - 2,
-        "top": strips["top"].mapTo(window, strips["top"].rect().topLeft()).y() <= 2,
+        # bugs/0962: in the ribbon's tab row while the ribbon is docked, else the window's top edge
+        "top": (window.ribbon.tabs.isAncestorOf(strips["top"]) if not window.ribbon.dock.isFloating()
+                else strips["top"].mapTo(window, strips["top"].rect().topLeft()).y() <= 2),
         "bottom": strips["bottom"].window() is window and window.statusBar().isAncestorOf(strips["bottom"]),
     }
     by_title = {tab.text(): tab for tab in rails.tabs.values()}

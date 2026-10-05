@@ -131,6 +131,11 @@ class KrakenQtMainWindow(_main_window_class()):
         from KrakenOS.UI.qt.ribbon import Ribbon
 
         self.ribbon = Ribbon(self)
+        # the top edge's panel tabs ride in the ribbon's tab row -- not a 36-px row of their own --
+        # while the ribbon is docked at the top; undocked or at the bottom, they go back (bugs/0962)
+        self.ribbon.dock.topLevelChanged.connect(lambda *_a: self._place_top_rail())
+        self.ribbon.dock.dockLocationChanged.connect(lambda *_a: self._place_top_rail())
+        self._place_top_rail()
         # the top area, top to bottom: ribbon, surface table, then the 3D inspector (built later)
         self.splitDockWidget(self.ribbon.dock, self.dock_manager["SurfaceTableDock"], Qt.Orientation.Vertical)
         # the inputs that define the system: the Qt shell could analyse a loaded layout but not
@@ -1071,6 +1076,30 @@ class KrakenQtMainWindow(_main_window_class()):
         else:
             self._show_layout_title()  # Save / Save As may have named the layout
         return result
+
+    def _place_top_rail(self) -> None:
+        """The top edge's tab strip: in the ribbon's tab row, beside the search box, while the
+        ribbon is docked at the top; its own row at the top of the window otherwise."""
+        from PySide6.QtCore import QSize, Qt
+
+        rails = self.dock_manager.rails
+        strip = rails.rails["top"]
+        ribbon = self.ribbon
+        inside = (not ribbon.dock.isFloating()
+                  and self.dockWidgetArea(ribbon.dock) == Qt.DockWidgetArea.TopDockWidgetArea)
+        hosted = ribbon.corner_row.indexOf(strip) >= 0
+        if inside and not hosted:
+            self.removeToolBar(strip)
+            ribbon.corner_row.insertWidget(0, strip)
+            strip.setIconSize(QSize(16, 16))
+            strip.setFixedHeight(ribbon.tabs.tabBar().sizeHint().height())
+        elif not inside and hosted:
+            ribbon.corner_row.removeWidget(strip)
+            strip.setMinimumHeight(0)
+            strip.setMaximumHeight(16777215)
+            self.addToolBar(Qt.ToolBarArea.TopToolBarArea, strip)
+        strip.setVisible(False)          # `refresh` shows it again when the edge has a tab
+        rails.refresh()
 
     # ---- a big clean 3D scene (bugs/0961) -------------------------------------------------------
     def toolbar_3d_action(self, checked: bool = True) -> None:

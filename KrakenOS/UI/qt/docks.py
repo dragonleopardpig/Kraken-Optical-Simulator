@@ -7,7 +7,9 @@ the arrangement.
 `EdgeRails` (user request, bugs/0952): a slim strip on each window edge with one tab per panel
 docked on that edge -- the text running along the edge, so upright on the left and right -- to hide
 a panel and bring it back. The bottom strip is the status bar itself (its right end): a second row
-there would cost the 3D scene 29 px for nothing.
+there would cost the 3D scene 29 px for nothing. For the same reason the TOP strip rides in the
+ribbon's tab row while the ribbon is docked at the top (bugs/0962): a row of its own took 36 px for
+one tab, in a Clean 3D Scene as well.
 
 Each strip starts with one more button, Hide All Panels (user request, bugs/0961: "the side tabs,
 can have 'one click hide all' option?"): one click puts every open panel away, the next brings

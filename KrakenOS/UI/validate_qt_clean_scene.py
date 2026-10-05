@@ -16,10 +16,15 @@ In a real Qt shell on the two-arm doublets example (in git), driven by real clic
      front of each stack, each stack at its size; the switch reads "on" whenever no panel is open,
      also when they were closed one by one, and Ctrl+Shift+H then shows them all
   C  Clean 3D Scene: F11 folds the ribbon, hides the 3D toolbar and every panel -- the scene gets
-     at least 80 % of the window (the rest: the edges' tab strips and the status line); the button by the ribbon's fold arrow shows it is on; clicked, it
+     at least 85 % of the window (the rest: the ribbon's tab row, the side tab strips, the status
+     line -- 90 % measured at 1500x950 since the top edge's tab left its own 30-36 px row, E); the button by the ribbon's fold arrow shows it is on; clicked, it
      puts back what it put away: the ribbon unfolded again, the toolbar, the panels at their sizes --
      a panel closed BEFORE stays closed, one opened DURING stays open, even after Hide All was used
      in between
+  E  (bugs/0962) the top edge's tab strip rides in the ribbon's tab row -- no row of its own above
+     the window -- no taller than that row; its Surface Table tab still hides the table (the scene
+     takes its height) and brings it back; undocked, the ribbon leaves the strip at the window's
+     top edge, and docked again takes it back, the scene at the height it had
 """
 from __future__ import annotations
 
@@ -207,7 +212,7 @@ def qt_runtime_checks() -> dict:
     kept_sizes = {name: after_sizes[name] for name in before_sizes if name in after_sizes}
     before_sizes, kept_sizes = depths(before_sizes), depths(kept_sizes)
     rows.append(["C", clean_state == {"ribbon folded": True, "toolbar shown": False, "open": [], "corner button on": True}
-                 and share >= 0.80 and "DebugDock" not in before_open and "ProgressDock" not in before_open
+                 and share >= 0.85 and "DebugDock" not in before_open and "ProgressDock" not in before_open
                  and restored == {"ribbon folded": False, "toolbar shown": True,
                                   "open": sorted(before_open + ["ProgressDock"]), "corner button on": False}
                  and close_to(before_sizes, kept_sizes),
@@ -215,6 +220,48 @@ def qt_runtime_checks() -> dict:
                  f"{'DebugDock' not in before_open and 'ProgressDock' not in before_open}); F11: {clean_state}, scene "
                  f"{clean_scene} = {share:.0%} of the window; Progress opened during, Ctrl+Shift+H twice; the corner "
                  f"button: {restored}, depth into the scene {before_sizes} -> {kept_sizes}, scene {scene_size()}"])
+
+    # ---- E: the top edge's tabs in the ribbon's tab row (bugs/0962) ---------------------------
+    from PySide6.QtWidgets import QToolBar
+
+    top = rails.rails["top"]
+    tab = rails.tabs["SurfaceTableDock"]
+    table = window.dock_manager["SurfaceTableDock"]
+    bar = ribbon.tabs.tabBar()
+
+    def own_rows() -> list:
+        return [strip.objectName() for strip in window.findChildren(QToolBar)
+                if strip.parentWidget() is window and strip.isVisible()
+                and window.toolBarArea(strip) == Qt.ToolBarArea.TopToolBarArea]
+
+    def placed() -> dict:
+        settle(0.3)
+        return {"in ribbon row": ribbon.tabs.isAncestorOf(top), "shown": top.isVisible(),
+                "rows above the window": own_rows(),
+                "top y": top.mapTo(window, top.rect().topLeft()).y(),
+                "row y": bar.mapTo(window, bar.rect().topLeft()).y()}
+
+    docked = placed()
+    fits = top.height() <= bar.height()
+    height = scene_size()[1]
+    QTest.mouseClick(tab, Qt.MouseButton.LeftButton)
+    hidden = (table.isHidden(), scene_size()[1] - height)
+    QTest.mouseClick(tab, Qt.MouseButton.LeftButton)
+    shown = (table.isHidden(), scene_size()[1] - height)
+    ribbon.set_floating(True)
+    floating = placed()
+    ribbon.set_floating(False)
+    settle(0.6)
+    redocked, height_back = placed(), scene_size()[1]
+    rows.append(["E", docked["in ribbon row"] and docked["shown"] and docked["rows above the window"] == []
+                 and abs(docked["top y"] - docked["row y"]) <= 2 and fits
+                 and hidden[0] and hidden[1] >= table.height() - 12 and shown == (False, 0)
+                 and not floating["in ribbon row"] and floating["shown"] and floating["top y"] <= 2
+                 and floating["rows above the window"] == ["EdgeRailTop"]
+                 and redocked["in ribbon row"] and redocked["rows above the window"] == [] and height_back == height,
+                 f"docked: {docked}, strip {top.height()} px in a {bar.height()}-px row; its Surface Table tab: "
+                 f"table hidden {hidden[0]}, scene {hidden[1]:+d} px, then {shown}; ribbon undocked: {floating}; "
+                 f"docked again: {redocked}, scene {height} -> {height_back} px high"])
     return {"rows": rows}
 
 
