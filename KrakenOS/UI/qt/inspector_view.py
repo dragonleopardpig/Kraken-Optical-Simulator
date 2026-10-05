@@ -89,6 +89,11 @@ class InspectorView:
         # two and called the outlined look "a TK version, not qt". Overlays > Soft STEP bodies
         # switches it either way; the Tk app's default is unchanged.
         self.inspector.soft_step_bodies_var.set(True)
+        # ... and the table's elements and the rays in the MODERN look (bugs/0966): the user called
+        # everything but the STEP bodies "old TK" and pointed at Optiland's display. Overlays >
+        # Modern look switches it either way; the Tk app's default is unchanged.
+        self.inspector.modern_look_var.set(True)
+        self.inspector._apply_scene_backdrop()
         self.inspector.set_viewport_cursor = self.set_cursor
         self.inspector.viewport_pointer = self.pointer
         self.inspector.show_in_shell = self.show

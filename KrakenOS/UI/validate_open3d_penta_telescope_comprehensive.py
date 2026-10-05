@@ -16846,6 +16846,10 @@ phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
     721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
     'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
     'qt_model_forms_open_in_qt')
+phase_735_modern_look = _phase_from_standalone(
+    735, "the 3D scene's modern look (0966): asked for in the classic palette, the table's default glass becomes pale glass with a highlight inside the glass opacity range (an element hidden on purpose stays hidden), the triangle wires are dropped, the two glass outline passes become one quiet colour at 1.2 px and a user's own surface colour is left alone; a ray keeps its hue, loses saturation and fades as 1/sqrt(n) past 36 rays while a miss or a clipped stub keeps its width and most of its opacity; in the Qt shell the look is on by default (gradient backdrop, no classic outline tone, no ray above the saturation cap) and the real Overlays entry switches to the classic look and back; both looks draw the same actors, points and rays; the classic picture has at least five times the vivid pixels; the Tk app is unchanged",
+    'KrakenOS.UI.validate_open3d_modern_look',
+    'modern_look')
 phase_734_missing_assets_found_by_name = _phase_from_standalone(
     734, "missing CAD files are found by name first and a Qt window asks about the rest (0965): the session points a missing file at the ONE file of that name under the layout's folder or attachment/ (an ambiguous name is left alone), Locate refuses a folder and takes a file, Skip and Reset round-trip the placeholder, Locate folder resolves from the picked folder, close redraws once; the load repoints a file found next to the layout with no window and logs it; the Qt shell asks in a non-modal Qt dialog (no Tk window), whose Locate / Skip / Continue drive the session, and the ribbon command reopens it or says nothing is missing; the Tk window is a view of the same session",
     'KrakenOS.UI.validate_missing_assets_found_by_name',
@@ -17765,6 +17769,7 @@ def main() -> int:
             phase_732_ribbon_window_height,
             phase_733_qt_plot2d_panel,
             phase_734_missing_assets_found_by_name,
+            phase_735_modern_look,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

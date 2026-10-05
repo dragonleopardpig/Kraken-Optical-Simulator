@@ -51,6 +51,7 @@ from KrakenOS.UI.services.open3d_interaction import Open3DInteractionService
 from KrakenOS.UI.services.open3d_live_refresh import DEFAULT_LIVE_REFRESH_DELAY_MS, Open3DLiveRefreshService
 from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService
 from KrakenOS.UI.services.open3d_round_lens_pick import step_feature_pick_for_display_xy
+from KrakenOS.UI.services import open3d_scene_look as scene_look
 from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
 from KrakenOS.UI.services.open3d_abstract_widget import WidgetRegistry
 from KrakenOS.UI.services.open3d_application_logic import Open3DApplicationLogic
@@ -930,6 +931,10 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         # their edges -- instead of the two-pass glass outline. Off here: the Tk app keeps the look
         # it has had since bugs/0020. A shell may switch it on for its scene (the Qt shell does).
         self.soft_step_bodies_var = self.ui.boolean_var(value=False)
+        # bugs/0966: the MODERN look for the table's elements and the rays -- pale glass with a
+        # highlight, one quiet outline, rays that read as light, a soft backdrop (after Optiland's
+        # viewer). Off here for the same reason as the switch above; the Qt shell turns it on.
+        self.modern_look_var = self.ui.boolean_var(value=False)
         # bugs/0732 (user: "the red banner is kind of static on the screen, blocking the view"):
         # the solve/focus banner is a fixed viewport actor, so give it an off switch.
         self.show_solve_banner_var = self.ui.boolean_var(value=True)
@@ -1610,7 +1615,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         """
         self._renderer = vtkRenderer()
         render_window.AddRenderer(self._renderer)
-        self._renderer.SetBackground(1.0, 1.0, 1.0)
+        scene_look.apply_backdrop(self._renderer, scene_look.is_modern(self))
 
         self._vtk_interactor = render_window.GetInteractor()
         if self._vtk_interactor is not None:
@@ -2135,6 +2140,18 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         soft = bool(self.soft_step_bodies_var.get())
         self.status_var.set("STEP bodies drawn soft (smooth, faint edges)." if soft
                             else "STEP bodies drawn outlined (the glass edge palette).")
+
+    def _apply_scene_backdrop(self) -> None:
+        """The sheet behind the scene follows the look (bugs/0966): white, or a soft gradient."""
+        scene_look.apply_backdrop(self._renderer, scene_look.is_modern(self))
+
+    def _on_scene_look_changed(self) -> None:
+        """Overlays > "Modern look" (bugs/0966): redraw the table's elements and the rays in the
+        chosen look. Display only -- the cached scene is drawn again, nothing is traced."""
+        self._apply_scene_backdrop()
+        self._on_scene_visibility_changed()
+        self.status_var.set("Scene drawn in the modern look (glass, soft rays, a soft backdrop)."
+                            if scene_look.is_modern(self) else "Scene drawn in the classic look.")
 
     def _on_show_rays_changed(self) -> None:
         self._debug_trace("show_rays_toggled", show_rays=bool(self.show_rays_var.get()), counts=self._debug_actor_counts())
@@ -6272,8 +6289,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     @staticmethod
     def _surface_color(surface) -> tuple[float, float, float]:
         absorb_color = (10 / 256.0, 23 / 256.0, 24 / 256.0)
-        mirror_color = (189 / 256.0, 189 / 256.0, 189 / 256.0)
-        glass_color = (12 / 256.0, 238 / 256.0, 246 / 256.0)
+        mirror_color = scene_look.CLASSIC_MIRROR_COLOR
+        glass_color = scene_look.CLASSIC_GLASS_COLOR
         try:
             color = tuple(float(v) for v in surface.Color)
             if len(color) == 3 and any(abs(v) > 1e-9 for v in color):
@@ -6618,6 +6635,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     ):
         if self._renderer is None or vtkActor is None or vtkDataSetMapper is None:
             return None
+        # bugs/0966: a TABLE element's actor (one tied to a row) asked for in the classic palette is
+        # drawn in the modern one when that look is on. Imported STEP hardware has no row and
+        # keeps its own switch (bugs/0958).
+        look = None
+        if (pick_row_index is not None or track_row_index is not None) and not direct_point_scalars \
+                and scene_look.is_modern(self):
+            look = scene_look.mesh_look(color, opacity, line_width, wireframe=wireframe)
+            if look is not None:
+                color, opacity, line_width = look.color, look.opacity, look.line_width
         mapper = vtkDataSetMapper()
         mapper.SetInputData(mesh)
         if direct_point_scalars:
@@ -6668,6 +6694,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 prop.SetInterpolationToPhong()
                 prop.SetSpecular(0.18)
                 prop.SetSpecularPower(12.0)
+            if look is not None and look.material is not None:
+                scene_look.apply_material(prop, look.material)
         if direct_point_scalars:
             # A baked heatmap must show its exact per-point colour: centre (relative 1.0) reads as
             # full white, the fold edges as their true grey. Scene lighting would multiply that by a
@@ -11792,6 +11820,8 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if ray_index is None:
             if vtkDataSetMapper is None:
                 return
+            if scene_look.is_modern(self):          # bugs/0966
+                color, opacity, line_width = scene_look.ray_look(color, opacity, line_width, 1)
             actor = vtkActor()
             mapper = vtkDataSetMapper()
             mapper.SetInputData(mesh)
@@ -11821,9 +11851,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             from vtkmodules.vtkRenderingCore import vtkPolyDataMapper
         except Exception:
             vtkAppendPolyData = vtkPolyDataMapper = None
+        # bugs/0966: in the modern look a ray's colour is softened and its opacity falls with the
+        # number of rays drawn, so a dense bundle reads as a beam of light. Decided HERE, where the
+        # count is known; the geometry and the cell -> ray bookkeeping below are untouched.
+        modern = scene_look.is_modern(self)
         groups: dict[tuple, list[tuple]] = {}
         for spec in specs:
             _mesh, _ray, color, opacity, line_width = spec
+            if modern:
+                color, opacity, line_width = scene_look.ray_look(color, opacity, line_width, len(specs))
+                opacity = round(float(opacity), 4)      # nearly equal opacities share one actor
             groups.setdefault((color, opacity, line_width), []).append(spec)
         for (color, opacity, line_width), group in groups.items():
             if vtkAppendPolyData is None or vtkPolyDataMapper is None:

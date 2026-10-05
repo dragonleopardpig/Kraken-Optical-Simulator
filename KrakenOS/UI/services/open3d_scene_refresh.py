@@ -8,14 +8,18 @@ from typing import Any
 import numpy as np
 
 
-_OPTICAL_STEP_BODY_COLOR = (0.10, 0.62, 0.72)
+from KrakenOS.UI.services import open3d_scene_look as scene_look
+
+# The CLASSIC palette lives in `open3d_scene_look` (bugs/0966), which also knows how each of
+# these is drawn in the modern look; the names below are what this module has always called them.
+_OPTICAL_STEP_BODY_COLOR = scene_look.CLASSIC_STEP_BODY_COLOR
 # Shared "glass" edge palette: deep-teal tones derived from the analytic
 # glass body colour, used for BOTH imported file-backed STEP solids (the
 # prisms) and analytic optic surfaces so every glass element outlines with
 # the same colour and weight. The silhouette tone is the deepest; the edge
 # tone is the brighter highlight line drawn on top.
-_OPTICAL_STEP_EDGE_COLOR = (0.026, 0.512, 0.528)
-_OPTICAL_STEP_SILHOUETTE_COLOR = (0.014, 0.279, 0.288)
+_OPTICAL_STEP_EDGE_COLOR = scene_look.CLASSIC_EDGE_COLOR
+_OPTICAL_STEP_SILHOUETTE_COLOR = scene_look.CLASSIC_SILHOUETTE_COLOR
 # Shared outline weights (line widths) for glass elements.
 _GLASS_EDGE_SILHOUETTE_WIDTH = 2.8
 _GLASS_EDGE_LINE_WIDTH = 2.0
@@ -229,6 +233,8 @@ class Open3DSceneRefreshService:
         scene_display_center_radius = le.scene_display_center_radius
         if self._renderer is None:
             raise RuntimeError(_VTK_TK_UNAVAILABLE_REASON or "Embedded VTK/Tk viewer unavailable")
+        # bugs/0966: the backdrop follows the look on every refresh, however the switch was set
+        scene_look.apply_backdrop(self._renderer, scene_look.is_modern(self))
         self._current_scene_bundle = scene_bundle
         self._current_system = system
         self._current_rays = rays
@@ -767,7 +773,7 @@ class Open3DSceneRefreshService:
                         manifold_edges=False,
                     )
                     if int(getattr(edges, "n_points", 0)) > 0:
-                        edge_color = file_backed_edge_color if row_index in file_backed_rows else (0.15, 0.15, 0.15)
+                        edge_color = file_backed_edge_color if row_index in file_backed_rows else scene_look.CLASSIC_OUTLINE_COLOR
                         edge_width = 3.2 if row_index in file_backed_rows else 1.0
                         if row_index in file_backed_rows:
                             self._add_mesh_actor(edges, color=file_backed_silhouette_color, opacity=1.0, line_width=5.0, track_row_index=row_index, follow_step_label=transient_step_label)
@@ -780,7 +786,7 @@ class Open3DSceneRefreshService:
                             ray_surface_edge_overlays.append(
                                 (
                                     edges,
-                                    file_backed_silhouette_color if row_index in file_backed_rows else (0.02, 0.03, 0.05),
+                                    file_backed_silhouette_color if row_index in file_backed_rows else scene_look.CLASSIC_OUTLINE_OVERLAY_COLOR,
                                     5.4 if row_index in file_backed_rows else 1.6,
                                     row_index if row_index >= 0 else None,
                                 )
