@@ -327,10 +327,12 @@ the same `get` / `set` / `trace_add`). The 35 view-only variables stay where the
 | 6 | matplotlib embeds -> `FigureCanvasQTAgg` | Qt | days |
 | 7 | editor-instantiating validators repointed; penta gate re-baselined | Qt | 1-2 wk |
 
-## Status and remaining work (re-measured 2026-10-03, after 0945)
+## Status and remaining work (re-measured 2026-10-06, after 0965)
 
 The phase table above is the original estimate. Where each phase stands, and what is left, measured
-against the code rather than remembered (the previous measurement was 2026-09-27, after 0904).
+against the code rather than remembered (earlier measurements: 2026-09-27 after 0904, 2026-10-03
+after 0945). The counts are a source scan of `KrakenOS/UI` with validators, captures and `archive/`
+left out: 342 product modules.
 "Shell parity" is work the table never had a row for: the main window's own panels, which turned
 out to hide model state in Tk widgets just as the dialogs did.
 
@@ -338,12 +340,12 @@ out to hide model state in Tk widgets just as the dialogs did.
 |---|---|---|
 | 1a-1d seam | **done** (0851-0853) | -- |
 | 2 shell + viewport | **done** (0854-0858) | -- |
-| 3 dialogs | **done but four** (0859-0897 reports and row forms; 0933-0938 face roles, diagnostics, MTF from image; 0945 lens drawing) | Atmospheric Settings (`main_atmosphere_panel`, a Tk window -- the LAST of the 75 menu-bar commands); the three paraxial solve prompts (`_show_paraxial_solve_dialog`, folded mirror, best focus: 207 lines); missing-assets (559 lines, 9 direct tkinter dialog calls) -- a resolution workflow, decision still owed; the 2D bug-flag description dialog |
-| 4 tables -> model/view | **mostly done** (reports 0894-0897, surface table 0903, Path view on the table toolbar 0944) | ~~the table's right-click menu~~ **done (0948)**: the Tk builder fills a `tk.Menu` or a recording `MenuModel`, so the Qt table shows the same 100+ commands in 13 submenus (it had 3); the Tk table is still the cell PARSER (`_read_rows_from_table`), the seam that must move before Tk can go; Group / Ungroup Element read the shell's selection since 0948 |
-| shell parity | **Tk menu-bar commands routed: 75 of 75** (0942-0945, 0954; phase 718 holds it: `KNOWN_GAPS` is empty); **ribbon only since 0949** -- no menu bar, 6 tabs (File first, opens on Home), 61 buttons + 6 dropdowns reach all 93 actions, a command palette and a fold arrow (0935, 0940, 0943, 0952); **one 3D scene** -- the real inspector, central (0951) -- with the panels around it and a tab per panel on the window edges (0952); docks, undo/redo, save, table copy/paste | 2D-plot toolbar toggles (cardinals, thickness); `_refresh_operand_surface_choices` still walks every Tk widget; the `self.__dict__.get` sweep (0901) |
-| **5 interaction layer** | **done** (0905-0939): the real inspector runs in a Qt dock and the harness's 352 phases pass with it there | what a USER still cannot see in the Qt shell -- the inspector's own popups are Tk windows and not one is shell-aware: Quick Estimation's FOV popup (428 lines), target-FOV, detector-design and configuration-table popups; Edit Thickness (a dimension double-click, 139); STEP Resize Solid (123); LED Edge Distance; the centred input dialog (2 callers); the bug-flag description. The harness drives them programmatically, which is why it passes. The row forms the model opens are done (0947): all 19 call sites go through the shell-aware `present_row_form` and 18 dialog calls through the host; what stays Tk is a listed set of Tk-only windows (phase 721, may only shrink) |
+| 3 dialogs | **done but one** (0859-0897 reports and row forms; 0933-0938 face roles, diagnostics, MTF from image; 0945 lens drawing; 0947 the sweep; 0950 + 0953 the inspector's popups; 0954 Atmospheric Settings; 0955 the solve reviews; 0965 missing CAD files) | **the Inspection Cell VIEW** (`panels/inspection_cell_window.py`, 282 lines): a `tk.Toplevel` holding a VTK widget, opened by the form's action in both shells -- in the Qt shell that is a Tk window on the hidden root (read from the code, not run). 14 more Tk-only `Toplevel` builders are each the Tk VIEW of something the Qt shell shows its own way (row forms, reports, face roles and its coating table, MTF from image, lens drawing, CAD/STL placement, missing files, the calculator, Atmospheric Settings, the plot chooser, tooltips, the Tk editor's own flag and System Selection window) and go when Tk goes. 26 builders in all: those 15, 10 that ask the shell first, and the inspector itself (phase 5's row); 16 direct tkinter dialog calls remain, all inside those Tk views (phase 721 holds the count) |
+| 4 tables -> model/view | **mostly done** (reports 0894-0897, surface table 0903, Path view on the table toolbar 0944, the right-click menu 0948: all 118 entries run in Qt with no Tk window since 0955) | **the Tk table is still the cell PARSER**: `_read_rows_from_table` is named 57 times in 24 files (23 in `services/layout_table_workbench.py`), and that module still asks the hidden Tk table for its selection in 10 places. This is the seam that must move before Tk can go |
+| shell parity | **done.** Tk menu-bar commands routed 75 of 75 (0942-0945, 0954; phase 718); ribbon only since 0949 -- 6 tabs, 68 buttons + 6 dropdowns reach all 101 actions, a command palette, a fold arrow, and it folds by the window's height (0963); one 3D scene, the real inspector, central (0951), panels around it on edge tabs (0952) whose top strip rides in the ribbon's tab row (0962); a tabbed 3D toolbar that hides, Hide All Panels, Clean 3D Scene (0961); the 2D plot with the Tk plot toolbar's controls (0964); Flag Bug for the whole window (0959); docks, undo/redo, save, table copy/paste | `_refresh_operand_surface_choices` still walks every Tk widget; **7 model variables are read through `self.__dict__.get("..._var")` and are not in `MODEL_VARIABLES`** (the 0901 sweep): `atmosphere_summary_var`, `source_summary_var`, `show_layout_2d_var`, `trace_state_badge_var` (each made only by a Tk panel), `emit_full_ray_var`, `nonseq_energy_probability_var`, `show_terminal_diagnostics_var`. The ribbon window's minimum width is 1234 px of the guard's 1240 |
+| **5 interaction layer** | **done** (0905-0939, and the popups: 0950, 0953, 0959): the real inspector is the Qt shell's 3D scene, the harness's 352 phases pass with it there, and no inspector window a Qt user can reach is a Tk window | the inspector still IS a `tk.Toplevel` (`class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel)`, 26 058 lines, 129 `tk.`/`ttk.` references) -- its own step 1d, deferred since 0853; and the cursor decision below |
 | 6 matplotlib | **done** (2D plot 0893, FormFigure 0887, MTF from image 0938) | -- |
-| 7 validators + gate | **started**: `--shell qt` harness gate 352/352 (0939); 62 validators exercise the Qt shell | 862 validators, 173 in no penta phase; 239 build a real editor (94 already `headless=True`), about 63 touch Tk widgets directly (a source scan); then Qt as the default shell and the Tk-retirement decision |
+| 7 validators + gate | **started**: `--shell qt` harness gate 352/352 (0939, last run 2026-10-05); 76 validators exercise the Qt shell | **validators:** 876 under `KrakenOS/UI`, 162 in no penta phase; 247 build a real editor (94 of them `headless=True`); 78 touch Tk directly (they import tkinter or call `winfo_*`, `event_generate`, `wait_window`, `nametowidget`, `tk.Toplevel`, `ttk.*` -- a wider net than the 63 counted on 10-03); 7 drive the model through `ScriptedUiHost`, 5 build a toolkit-free editor. **product code:** 50 of 342 modules import tkinter -- 26 of 44 panels and 5 of 7 widgets (views: expected), `uihost/tk_host.py`, 4 top-level modules (`layout_editor`, `open3d_inspector`, `context_menu`, `modern_ttk_theme`) and **14 of 151 services** (5 never use it; the other 9 hold 76 references). The editor makes a `tk.Tk()` root whatever the shell, so under Qt every Tk panel is still built, hidden. Then Qt as the default shell and the Tk-retirement decision |
 
 **Gates.** Full Tk gate **733/733 at 8403abde** (2026-10-05, M90aPro; covers 0962-0965 and the fix to
 0965), Qt-hosted harness 352/352. It took two passes -- another session's test run took the memory
@@ -356,8 +358,8 @@ parallel where the sequential run took 1 h 54 min.
 Before it: **724/724 with 0953** (2026-10-04, on 9aea5eb8 plus 0953; covers 0950-0953;
 1 h 54 min on M90aPro in seven sequential chunks, lowest free memory 2.9 GB -- close to the 2.5 GB
 watchdog, so quit other apps before the next one). Before it: 721/721 at 89c64ca9 (after 0948 and
-0949), 720/720 at 7e384fdc (after 0947), 717/717 at 7ace2ca9. The baseline holds 724 phases, all pass,
-725 the newest. On 14 GB hardware the parallel shard gate does
+0949), 720/720 at 7e384fdc (after 0947), 717/717 at 7ace2ca9. The baseline holds 733 phases, all pass,
+734 the newest. On 14 GB hardware the parallel shard gate does
 not fit (7 GB per shard): run it as sequential `--phases` chunks (1 h 42 min, bugs/0945).
 
 ### What is left, in order
@@ -384,10 +386,37 @@ not fit (7 GB per shard): run it as sequential `--phases` chunks (1 h 42 min, bu
 5. ~~Paraxial solve prompts~~ -- **done (0955, phase 727).** The three "apply this?" windows are
    one description (`solve_reviews`) with a Tk window and a modal Qt dialog. They had been broken
    in the Tk app itself since 2026-05-24 (a non-widget handed to Tk as the parent). The table's
-   right-click menu now has no entry that ends in Tk. **Left in this step:** the 2D-plot toggles
-   (cardinals, thickness) -- **done (0964, phase 733)**, with the 2D plot itself, which the running
-   Qt shell had never built; the missing-assets decision.
-6. **Phase 7** -- validators off Tk, Qt the default shell, the Tk-retirement decision.
+   right-click menu now has no entry that ends in Tk. ~~The 2D-plot toggles (cardinals,
+   thickness)~~ -- **done (0964, phase 733)**, with the 2D plot itself, which the running Qt shell
+   had never built. ~~The missing-assets decision~~ -- **done (0965, phase 734):** the user chose
+   "find by name first, then a Qt window for the rest".
+6. **Phase 7** -- validators off Tk, Qt the default shell, the Tk-retirement decision. Broken
+   down below.
+
+### Phase 7, broken down (measured 2026-10-06; the ORDER is a proposal, not yet agreed)
+
+Everything a user does in the Qt shell now happens in Qt windows. What phase 7 has to change is
+underneath: the Qt shell is still a set of Qt views over a model that keeps part of its state in
+hidden Tk widgets, and the tests still reach the model through Tk.
+
+| Step | What | Size |
+|---|---|---|
+| 7a | **The last window:** the Inspection Cell view as a Qt window (the scene is already composed apart from the window: `compose_cell_plotter`) | 282 lines, 1 window |
+| 7b | **The model off the hidden Tk table:** the cell parser reads the rows from the model, not from a `ttk.Treeview`; the selection is asked of the shell (`_table_has_selection()` already does it for Group / Ungroup, 0948) | `_read_rows_from_table`: 57 references in 24 files; 10 `self.table.selection()` |
+| 7c | **The variable sweep (0901):** the 7 undeclared variables join `MODEL_VARIABLES`; `_refresh_operand_surface_choices` reads the model instead of walking widgets | 7 names, 1 function |
+| 7d | **Services import no tkinter:** delete the 5 dead imports; move the 9 live uses behind the host or into a panel | 14 files, 76 references |
+| 7e | **The inspector owns its window** instead of being a `tk.Toplevel` -- step 1d for the inspector, as 0853 was for the editor | 1 class, 129 references |
+| 7f | **The editor builds without a Tk root** under a host that is not Tk, so the Tk panels are not built in the Qt shell at all. Needs 7b-7e first | `layout_editor.py`: 39 references |
+| 7g | **Validators off Tk:** the 78 that touch Tk directly are repointed (the model through `ScriptedUiHost`, a view through its own shell); the 247 that build an editor follow 7f | 78 + 247 validators |
+| 7h | **Qt is the default shell:** the documented start is `python -m KrakenOS.UI.layout_editor` (Tk) today, the Qt shell is `python -m KrakenOS.UI.qt.app`; the gate's default baseline becomes the Qt one | a launcher and the docs |
+| 7i | **The Tk-retirement decision** -- keep both shells behind the seam, or delete `panels/` (44 files, 13 357 lines) and the Tk views | the user's |
+
+7a-7d are independent of each other and each lands with the gate green on Tk; 7e and 7f are the
+two structural steps; 7h can be decided at any point after 7a, because the user already works in
+the Qt shell (the reports since 0957 are about it).
+
+**Decisions owed (the user's):** when Qt becomes the default start; whether Tk is retired or
+kept; and the cursor cues (below).
 
 ### Phase 5, broken down
 
