@@ -616,12 +616,20 @@ class Open3DEventRecorder:
                     except Exception:
                         pass
                 if label == "optical":
+                    # bugs/0960: what the trace KNOWS, never worked out here. Asking the trace
+                    # (`_live_step_overlay_trace_rows`) built the overlay's trace plan -- 8-12 s on
+                    # om05a -- on every flag and every recorded mouse / key event
                     try:
-                        _rows, records = editor._live_step_overlay_trace_rows()
-                        rec = records[0] if records else {}
-                        if isinstance(rec, dict):
-                            pose["live_trace_row_decenter_mm"] = [round(float(v), 4) for v in (rec.get("row_decenter_mm") or [])][:3]
-                            pose["live_trace_pose_source"] = str(rec.get("pose_source", "") or "")
+                        known = editor._known_live_step_overlay_trace()
+                        pose["live_trace_known"] = known is not None
+                        if known is not None:
+                            records = list(known.get("records") or [])
+                            rec = records[0] if records else {}
+                            if isinstance(rec, dict):
+                                pose["live_trace_row_decenter_mm"] = [round(float(v), 4) for v in (rec.get("row_decenter_mm") or [])][:3]
+                                pose["live_trace_pose_source"] = str(rec.get("pose_source", "") or "")
+                            if known.get("refused"):
+                                pose["live_trace_refused"] = str(known["refused"])
                     except Exception:
                         pass
                 if pose:

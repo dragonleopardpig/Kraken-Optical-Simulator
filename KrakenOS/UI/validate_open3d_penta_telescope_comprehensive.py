@@ -16846,6 +16846,10 @@ phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
     721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
     'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
     'qt_model_forms_open_in_qt')
+phase_730_snapshot_builds_no_plan = _phase_from_standalone(
+    730, "a flag and a recorded event build no STEP trace plan, and a refused plan is kept (0960): a plan whose injection is refused is built ONCE over three traces with the overlay (the model's rows returned unchanged, no record) and again only when the rows change; an accepted plan is built once too; a recorder snapshot builds no plan -- it records live_trace_known False with nothing known, the refusal's reason after a refused trace, the record's decenter and pose source after an accepted one; a flag builds no plan; and on om05a_folded (vendor CAD present) the first snapshot after a load builds nothing and takes under 2 s, the first trace with the overlay builds the real plan once and the second takes under 2 s",
+    'KrakenOS.UI.validate_open3d_0960_snapshot_builds_no_plan',
+    'snapshot_builds_no_plan')
 phase_729_qt_shell_flag = _phase_from_standalone(
     729, "a bug flag for the whole Qt window, from anywhere in it (0959): with no inspector Flag Bug still writes a bundle; the real Ctrl+Shift+B in the scene writes ONE bundle whose screenshot is the whole window with the 3D scene painted in and a crosshair at the pointer, whose state names the dock under the pointer, the ribbon's tab and every panel, and whose layout_state.json holds the model's rows; one press is one flag (none inside a flag's own description box); the s flag keeps the 3D render and adds window.png; without the shell's seam the bundle is the three files it was; the key in a report dialog makes that dialog the screenshot; in a MODAL dialog the key works and the description box belongs to the dialog and takes keys; a dialog taller than the screen is flagged and pictured whole; and the ribbon's corner button shows on every tab, folded or open",
     'KrakenOS.UI.validate_qt_shell_flag',
@@ -17740,6 +17744,7 @@ def main() -> int:
             phase_727_solve_review_windows,
             phase_728_soft_step_bodies,
             phase_729_qt_shell_flag,
+            phase_730_snapshot_builds_no_plan,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

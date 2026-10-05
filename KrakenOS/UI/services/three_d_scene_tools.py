@@ -1813,6 +1813,7 @@ class ThreeDSceneToolsMixin:
                     self.rows, base_rows, insert_at, inserted
                 )
                 if reason:
+                    self._remember_live_step_overlay_trace_plan(cache_key, cached_plan, refused=reason)
                     self._note_live_step_overlay_injection_refused(reason)
                     return self.rows, []
                 return base_rows, [cached_plan]
@@ -1825,6 +1826,7 @@ class ThreeDSceneToolsMixin:
                     self.rows, base_rows, insert_at, 1
                 )
                 if reason:
+                    self._remember_live_step_overlay_trace_plan(cache_key, cached_plan, refused=reason)
                     self._note_live_step_overlay_injection_refused(reason)
                     return self.rows, []
                 return base_rows, [cached_plan]
@@ -1854,6 +1856,7 @@ class ThreeDSceneToolsMixin:
                         original_rows, base_rows, insert_at, inserted
                     )
                     if reason:
+                        self._remember_live_step_overlay_trace_plan(cache_key, plan, refused=reason)
                         self._note_live_step_overlay_injection_refused(reason)
                         return original_rows, []
                     self._remember_live_step_overlay_trace_plan(cache_key, plan)
@@ -1869,6 +1872,10 @@ class ThreeDSceneToolsMixin:
                 original_rows, base_rows, insert_at, 1
             )
             if reason:
+                # bugs/0960: remember the plan even though it is not traced. A refused plan was
+                # never cached, so every trace with the overlay and every recorder snapshot built
+                # it again -- 8-12 s on om05a, for a body that is then left out
+                self._remember_live_step_overlay_trace_plan(cache_key, plan, refused=reason)
                 self._note_live_step_overlay_injection_refused(reason)
                 return original_rows, []
             self._remember_live_step_overlay_trace_plan(cache_key, plan)
@@ -1922,7 +1929,12 @@ class ThreeDSceneToolsMixin:
         copied["cache_hit"] = True
         return copied
 
-    def _remember_live_step_overlay_trace_plan(self, cache_key: object | None, plan: dict[str, object]) -> None:
+    def _remember_live_step_overlay_trace_plan(
+        self, cache_key: object | None, plan: dict[str, object], *, refused: str = ""
+    ) -> None:
+        """Keep a built plan for its key. ``refused``: the plan was built but its injection was
+        refused (bugs/0725) -- kept all the same, with the reason, so the same rows do not build
+        it again (bugs/0960)."""
         if cache_key is None or not isinstance(plan, dict):
             return
         row = plan.get("row")
@@ -1930,7 +1942,12 @@ class ThreeDSceneToolsMixin:
             return
         cache = dict(getattr(self, "_live_step_overlay_trace_plan_cache", {}) or {})
         cached = dict(plan)
+        cached.pop("cache_hit", None)
         cached["row"] = SurfaceRow(**asdict(row))
+        if refused:
+            cached["injection_refused"] = str(refused)
+        else:
+            cached.pop("injection_refused", None)
         cache[cache_key] = cached
         while len(cache) > 4:
             try:
@@ -1938,6 +1955,24 @@ class ThreeDSceneToolsMixin:
             except Exception:
                 break
         self._live_step_overlay_trace_plan_cache = cache
+
+    def _known_live_step_overlay_trace(self) -> dict[str, object] | None:
+        """What tracing the optical STEP overlay does for the rows as they are NOW -- only if it is
+        already known; never worked out here (bugs/0960).
+
+        For a recorder snapshot, which runs on every flag and on every recorded mouse and key
+        event: working it out builds the overlay's trace plan, 8-12 s on om05a. Returns None when
+        nothing has traced these rows with the overlay yet; else ``{"records": [...], "refused":
+        reason}`` -- one record when the overlay is traced, none (and the reason) when it is
+        refused."""
+        if self._step_path_for_label("optical") is None:
+            return {"records": [], "refused": ""}
+        cache_key = self._live_step_overlay_trace_cache_key("optical", list(self.rows))
+        cached = (getattr(self, "_live_step_overlay_trace_plan_cache", {}) or {}).get(cache_key)
+        if not isinstance(cached, dict):
+            return None
+        refused = str(cached.get("injection_refused", "") or "")
+        return {"records": [] if refused else [dict(cached)], "refused": refused}
 
     def _preview_render_rows(self, scene_bundle: SceneBundle | None = None) -> list[SurfaceRow]:
         if (
