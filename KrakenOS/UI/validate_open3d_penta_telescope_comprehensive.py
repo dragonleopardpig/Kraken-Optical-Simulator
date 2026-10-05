@@ -16846,6 +16846,10 @@ phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
     721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
     'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
     'qt_model_forms_open_in_qt')
+phase_733_qt_plot2d_panel = _phase_from_standalone(
+    733, "the Qt shell has its 2D plot, with the Tk plot toolbar's controls and Trace Now (0964): the Tk plot toolbar still binds each of its six variables to its commit and the Qt row binds the same pairs; build_scene builds a 2D Plot panel on the right, tabbed behind System, whose figure and canvas the editor draws into; each control writes its variable and runs its commit once (PP / EP / XP markers off and on, Physical Distance annotations drawn and cleared); an analysis Update brings the plot to the front; and Trace Now is on its toolbar and the ribbon and runs the model's deferred trace",
+    'KrakenOS.UI.validate_qt_plot2d_panel',
+    'qt_plot2d_panel')
 phase_732_ribbon_window_height = _phase_from_standalone(
     732, "the ribbon folds by the WINDOW's height, not the screen's (0963): on a private 2560x1440 screen a 950-px window starts with the ribbon folded; made 1300 px it opens, made 950 it folds again, on crossing the line only (a programmatic open at 950 survives a resize to 940); folded or opened by hand it stays so through resizes; and while Clean 3D Scene is on a resize leaves it folded",
     'KrakenOS.UI.validate_qt_ribbon_window_height',
@@ -17755,6 +17759,7 @@ def main() -> int:
             phase_730_snapshot_builds_no_plan,
             phase_731_qt_clean_scene,
             phase_732_ribbon_window_height,
+            phase_733_qt_plot2d_panel,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

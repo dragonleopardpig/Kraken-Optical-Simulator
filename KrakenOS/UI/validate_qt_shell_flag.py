@@ -226,7 +226,9 @@ def qt_runtime_checks() -> dict:
             layout_rows = json.loads((bundle / "layout_state.json").read_text(encoding="utf-8")).get("rows", [])
             prompt = window.last_flag_description_dialog
             asked = prompt is not None and prompt.isVisible() and not prompt.isModal()
-            ok_w = (files(bundle) == ["description.txt", "layout_state.json", "scene_3d.png", "screenshot.png", "state.json"]
+            # layout_2d.png since bugs/0964: the shell has its 2D plot, and a flag pictures it
+            ok_w = (files(bundle) == ["description.txt", "layout_2d.png", "layout_state.json", "scene_3d.png",
+                                      "screenshot.png", "state.json"]
                     and whole and same >= 0.97 and drawn > 3.0 and chrome > 10.0 and ring_ok
                     and told.get("window_xy") == [pointer.x(), pointer.y()] and "QDockWidget(SurfaceTableDock)" in over
                     and data.get("screenshot_kind") == "window" and data.get("scene_3d") == "scene_3d.png"
@@ -291,7 +293,8 @@ def qt_runtime_checks() -> dict:
         if len(made) == 1:
             bundle, data = made[0], state(made[0])
             render_size = tuple(int(v) for v in view.widget.GetRenderWindow().GetSize())
-            ok_s = (files(bundle) == ["description.txt", "layout_state.json", "screenshot.png", "state.json", "window.png"]
+            ok_s = (files(bundle) == ["description.txt", "layout_2d.png", "layout_state.json", "screenshot.png",
+                                      "state.json", "window.png"]
                     and size(bundle / "screenshot.png") == render_size and size(bundle / "window.png") == widget_size(window)
                     and data.get("screenshot_kind") == "scene_3d" and data.get("shell", {}).get("screenshot_of") is None
                     and data.get("shell", {}).get("window_png") == "window.png")

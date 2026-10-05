@@ -26,6 +26,11 @@ ICONS: dict[str, str] = {
     "inspector": (f'<path {_GLASS} d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/>'
                   f'<path {_OPEN} d="M4 7.5l8 4.5 8-4.5M12 12v9"/>'),
     "about": f'<circle {_OPEN} cx="12" cy="12" r="9"/><path {_OPEN} d="M12 11v6M12 7.5v.5"/>',
+    # bugs/0964: the 2D plot; the explicit first trace
+    "plot_2d": (f'<path {_OPEN} d="M3 3v18h18"/><path {_LIGHT} d="M5 17l5-6 4 3 6-9"/>'
+                f'<circle {_GLASS} cx="10" cy="11" r="1.6"/>'),
+    "trace_now": (f'<path {_LIGHT} d="M2 12h12"/><path {_LIGHT} d="M2 7l12 5M2 17l12-5"/>'
+                  f'<path {_OPEN} d="M15 6l6 6-6 6z"/>'),
     # bugs/0961: the scene alone; the panels put away; the 3D toolbar
     "clean_scene": (f'<rect {_OPEN} x="2.5" y="4" width="19" height="16" rx="1.5"/>'
                     f'<path {_LIGHT} d="M7 9l2.5 2.5M17 9l-2.5 2.5M7 15l2.5-2.5M17 15l-2.5-2.5"/>'),

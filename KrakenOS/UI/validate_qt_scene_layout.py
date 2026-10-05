@@ -40,7 +40,7 @@ SKIP_MARK = "QTLAYOUT_SKIP "
 SCENE = Path("attachment/om05a_folded.py")
 EXPECTED_TABS = {
     "left": ["Scene Components"],
-    "right": ["System", "Source", "Trace", "Optimization", "3D Live"],
+    "right": ["System", "Source", "Trace", "Optimization", "3D Live", "2D Plot"],   # 2D Plot: bugs/0964
     "top": ["Surface Table"],
     "bottom": ["Debug", "Progress", "Results"],
 }

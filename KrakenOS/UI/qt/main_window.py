@@ -369,11 +369,12 @@ class KrakenQtMainWindow(_main_window_class()):
         return self.viewport
 
     def build_scene(self):
-        """The window's 3D scene: the real inspector, or the bare preview when it cannot be built.
-        Call this AFTER `show()`."""
+        """The window's 3D scene: the real inspector, or the bare preview when it cannot be built --
+        and the 2D plot beside it (bugs/0964). Call this AFTER `show()`."""
         view = self.build_inspector_view()
         if not view.inspector.available:
             self.build_viewport()
+        self.build_plot2d()
         return view
 
     def build_inspector_view(self):
@@ -494,17 +495,57 @@ class KrakenQtMainWindow(_main_window_class()):
         """Create the 2D layout plot and hand the editor its figure (bugs/0893).
 
         The model draws into `editor.ax`; this only supplies the canvas and connects the three
-        matplotlib events both shells use. It lives in a dock so the 3D view keeps the centre.
+        matplotlib events both shells use. It lives in a dock so the 3D view keeps the centre:
+        tabbed behind the System panel on the right, its own tab on the right edge.
+
+        Until bugs/0964 only its guard built it: the running shell had NO 2D plot, and every
+        analysis plot (MTF, spot, ...) was drawn into the hidden Tk window. Its toolbar is the Tk
+        plot toolbar's controls (`plot2d_toolbar.PLOT_2D`) and the shell's Trace Now, Update and
+        Ray Inspector.
         """
         from KrakenOS.UI.qt.plot2d import LayoutPlot2D
 
         if self.plot2d is None:
-            self.plot2d = LayoutPlot2D(self.editor)
-            from PySide6.QtCore import Qt
+            from types import SimpleNamespace
 
-            self.dock_manager.create_dock(self.plot2d.widget, "plot2d", "2D Layout",
+            from PySide6.QtCore import Qt
+            from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+            from KrakenOS.UI.plot2d_toolbar import PLOT_2D
+            from KrakenOS.UI.qt.inspector_toolbar import row_toolbar
+
+            self.plot2d = LayoutPlot2D(self.editor)
+            panel = QWidget()
+            column = QVBoxLayout(panel)
+            column.setContentsMargins(0, 0, 0, 0)
+            column.setSpacing(0)
+            self.plot2d.controls = {}
+            bar, _hints = row_toolbar(SimpleNamespace(editor=self.editor), PLOT_2D, self.plot2d.controls)
+            bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)   # named, not bare icons
+            for action in (self.action_manager["trace_now"], self.analysis_toolbar.update_action,
+                           self.action_manager["ray_inspector"]):
+                bar.addAction(action)
+            self.plot2d.toolbar = bar
+            column.addWidget(bar)
+            self.plot2d.canvas.setParent(panel)
+            column.addWidget(self.plot2d.canvas, 1)
+            self.dock_manager.create_dock(panel, "plot2d", "2D Plot",
                                           area=Qt.DockWidgetArea.RightDockWidgetArea)
+            if "SystemDock" in self.dock_manager.docks:
+                self.dock_manager.tabify(("SystemDock", "plot2d"))
+            # an analysis run draws into the 2D plot: show it, or the user sees nothing happen
+            self.analysis_toolbar.update_action.triggered.connect(lambda *_a: self.plot_2d_action())
         return self.plot2d
+
+    def plot_2d_action(self) -> None:
+        """Bring the 2D plot to the front -- shown, and in front of the panels tabbed with it."""
+        plot = self.build_plot2d()
+        dock = self.dock_manager["plot2d"]
+        if dock.isHidden():
+            self.dock_manager.rails.toggle(dock)
+        dock.raise_()
+        self.dock_manager.rails.refresh()
+        plot.canvas.draw_idle()
 
     def refresh_from_model(self) -> dict:
         """Rebuild every view from the editor: the table, the scene, the window title."""

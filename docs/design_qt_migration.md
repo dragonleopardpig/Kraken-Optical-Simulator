@@ -136,6 +136,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0932 | Phase 5f part 3c: the browser's Properties / Selected-Element pane in Qt -- 5f complete | phase 5 |
 | 0933 | Phase 5g part 1: the face-roles editor split into a toolkit-neutral session + VTK preview; the Tk dialog is a view (parity: identical state over 19 steps, pixel-identical preview); two latent Tk defects fixed | phase 5 |
 | 0935 | The Qt shell's ribbon (tabs of icon groups over the shell's own actions) + command palette; folds on short screens | shell |
+| 0964 | The Qt shell had NO 2D plot (built only by its guard): now a 2D Plot panel with the Tk plot toolbar's six controls (plot2d_toolbar.PLOT_2D), Trace Now, Update, Ray Inspector; an Update shows it | phase 6 |
 | 0963 | The ribbon folds by the WINDOW's height (on crossing 1100 px), not the screen's; a fold by hand is kept | shell |
 | 0962 | The top edge's panel tabs ride in the ribbon's tab row, no row of their own | shell |
 | 0961 | The 3D toolbar is one tabbed strip (34 px, was 96) that hides; Hide All Panels on every edge strip (Ctrl+Shift+H); Clean 3D Scene (F11, ribbon corner) folds and hides everything and puts it back; phase 722 counts only the menu's own entries | shell |
@@ -380,7 +381,8 @@ not fit (7 GB per shard): run it as sequential `--phases` chunks (1 h 42 min, bu
    one description (`solve_reviews`) with a Tk window and a modal Qt dialog. They had been broken
    in the Tk app itself since 2026-05-24 (a non-widget handed to Tk as the parent). The table's
    right-click menu now has no entry that ends in Tk. **Left in this step:** the 2D-plot toggles
-   (cardinals, thickness); the missing-assets decision.
+   (cardinals, thickness) -- **done (0964, phase 733)**, with the 2D plot itself, which the running
+   Qt shell had never built; the missing-assets decision.
 6. **Phase 7** -- validators off Tk, Qt the default shell, the Tk-retirement decision.
 
 ### Phase 5, broken down

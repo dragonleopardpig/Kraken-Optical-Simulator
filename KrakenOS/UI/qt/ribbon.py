@@ -42,7 +42,8 @@ RIBBON = (
         ("Rows", (("copy_rows", "S", "Copy"), ("paste_rows", "S", "Paste"))),
         ("View", (("reset_camera", "L", "Fit\nScene"), ("inspector", "L", "3D\nInspector"),
                   ("folded_assembly", "L", "Folded\nAssembly"), ("show_rays", "S", "Show Rays"),
-                  ("redraw", "S", "Redraw"), ("refresh_plot", "S", "Refresh Plot"))),
+                  ("redraw", "S", "Redraw"), ("refresh_plot", "S", "Refresh Plot"),
+                  ("trace_now", "S", "Trace Now"), ("plot_2d", "S", "2D Plot"))),
         # a big clean 3D scene, and its parts one at a time (bugs/0961)
         ("Workspace", (("clean_scene", "L", "Clean\n3D Scene"), ("hide_panels", "S", "Hide Panels"),
                        ("toolbar_3d", "S", "3D Toolbar"))),

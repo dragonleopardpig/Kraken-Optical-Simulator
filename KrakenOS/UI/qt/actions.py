@@ -62,6 +62,12 @@ ACTIONS = (
     ("reset_camera", "&Fit Scene", "Ctrl+0", "reset_camera_action",
      "Frame every drawn body"),
     ("redraw", "&Redraw", "F5", "redraw_action", "Rebuild the scene from the model"),
+    # the 2D plot and the explicit first trace -- on the Tk plot toolbar, nowhere in the Qt shell
+    # until bugs/0964
+    ("plot_2d", "2D &Plot", None, "plot_2d_action",
+     "Show the 2D layout plot -- where the analysis plots (MTF, spot, ...) are drawn too"),
+    ("trace_now", "Trace &Now", None, "editor:_trace_now",
+     "Trace the rays a fast load deferred (bugs/0646), without the analysis panels"),
     ("show_rays", "Show &Rays", "Ctrl+L", "toggle_rays_action",
      "Show or hide the traced light"),
     # a big clean 3D scene in one click, and the parts of it one at a time (user request, bugs/0961)

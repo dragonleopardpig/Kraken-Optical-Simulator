@@ -33,17 +33,14 @@ def _watch(variable, repaint) -> None:
         pass
 
 
-def build_toolbar(inspector, parent=None):
-    """The rows as one tabbed strip. ``strip.controls`` maps a label to its widget/action;
-    ``strip.tabs`` is the tab bar (one tab per row), ``strip.pages`` the stack of rows and
-    ``strip.hide_button`` the arrow at its right end that asks for the strip to be hidden."""
-    from PySide6.QtCore import Qt
+def _adder(inspector, controls: dict):
+    """``add(layout, row_widget, item)``: lay a catalogue item out as a Qt control bound to the
+    variable it names, recording it in ``controls``. ``inspector`` is what the item's targets
+    resolve against: the inspector, or anything with an ``editor`` attribute ("editor.x")."""
     from PySide6.QtGui import QAction, QActionGroup
-    from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu,
-                                   QPushButton, QSizePolicy, QStackedWidget, QTabBar, QToolBar, QToolButton,
-                                   QWidget)
+    from PySide6.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton,
+                                   QToolButton, QWidget)
 
-    controls: dict = {}
 
     def run(target, args=()):
         return catalogue.callback(inspector, target, args)
@@ -206,6 +203,54 @@ def build_toolbar(inspector, parent=None):
             layout.addWidget(tool)
             controls[item.label] = tool
 
+    return add
+
+
+def row_toolbar(inspector, row, controls: dict, add=None):
+    """One catalogue row as a QToolBar: its controls, then its hint text, a stretch, then its right
+    group. A toolbar too short for the row puts its END behind >>. Returns (toolbar, hints)."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QToolBar, QWidget
+
+    add = add or _adder(inspector, controls)
+    # the row is laid out as before, then handed to a toolbar widget by widget: the stretch
+    # between its left and right groups becomes an expanding spacer
+    row_widget = QWidget()
+    layout = QHBoxLayout(row_widget)
+    # a row's hint text goes after its controls: a toolbar too short for the row puts its END
+    # behind », and the controls are what must stay in reach (Carry's 70-character hint came
+    # first and pushed every control behind it in a 700-px scene)
+    hints = [item for item in row.left if isinstance(item, catalogue.Text)]
+    for item in [item for item in row.left if not isinstance(item, catalogue.Text)] + hints:
+        add(layout, row_widget, item)
+    layout.addStretch(1)
+    for item in row.right:
+        add(layout, row_widget, item)
+    bar = QToolBar(row.title)
+    bar.setMovable(False)
+    bar.setFloatable(False)
+    bar.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
+    while layout.count():
+        entry = layout.takeAt(0)
+        if entry.widget() is not None:
+            bar.addWidget(entry.widget())
+        elif entry.spacerItem() is not None:
+            spacer = QWidget()
+            spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+            bar.addWidget(spacer)
+    row_widget.deleteLater()
+    return bar, hints
+
+
+def build_toolbar(inspector, parent=None):
+    """The rows as one tabbed strip. ``strip.controls`` maps a label to its widget/action;
+    ``strip.tabs`` is the tab bar (one tab per row), ``strip.pages`` the stack of rows and
+    ``strip.hide_button`` the arrow at its right end that asks for the strip to be hidden."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QFrame, QHBoxLayout, QStackedWidget, QTabBar, QToolButton
+
+    controls: dict = {}
+    add = _adder(inspector, controls)
     strip = QFrame(parent)
     strip.setObjectName("Inspector3DToolbar")
     strip.setFrameShape(QFrame.Shape.NoFrame)
@@ -219,32 +264,7 @@ def build_toolbar(inspector, parent=None):
     pages = QStackedWidget(strip)
     tallest = 0
     for row in catalogue.ROWS:
-        # the row is laid out as before, then handed to a toolbar widget by widget: the stretch
-        # between its left and right groups becomes an expanding spacer
-        row_widget = QWidget()
-        layout = QHBoxLayout(row_widget)
-        # a row's hint text goes after its controls: a toolbar too short for the row puts its END
-        # behind », and the controls are what must stay in reach (Carry's 70-character hint came
-        # first and pushed every control behind it in a 700-px scene)
-        hints = [item for item in row.left if isinstance(item, catalogue.Text)]
-        for item in [item for item in row.left if not isinstance(item, catalogue.Text)] + hints:
-            add(layout, row_widget, item)
-        layout.addStretch(1)
-        for item in row.right:
-            add(layout, row_widget, item)
-        bar = QToolBar(row.title)
-        bar.setMovable(False)
-        bar.setFloatable(False)
-        bar.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
-        while layout.count():
-            entry = layout.takeAt(0)
-            if entry.widget() is not None:
-                bar.addWidget(entry.widget())
-            elif entry.spacerItem() is not None:
-                spacer = QWidget()
-                spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-                bar.addWidget(spacer)
-        row_widget.deleteLater()
+        bar, hints = row_toolbar(inspector, row, controls, add)
         tallest = max(tallest, bar.sizeHint().height())
         tabs.addTab(row.title)
         tabs.setTabToolTip(tabs.count() - 1, " ".join([f"The 3D scene's {row.title} controls."]
