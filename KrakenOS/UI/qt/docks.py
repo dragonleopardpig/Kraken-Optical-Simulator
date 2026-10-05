@@ -8,6 +8,10 @@ the arrangement.
 docked on that edge -- the text running along the edge, so upright on the left and right -- to hide
 a panel and bring it back. The bottom strip is the status bar itself (its right end): a second row
 there would cost the 3D scene 29 px for nothing.
+
+Each strip starts with one more button, Hide All Panels (user request, bugs/0961: "the side tabs,
+can have 'one click hide all' option?"): one click puts every open panel away, the next brings
+back the same ones -- each in its place, at its size, the same tab in front.
 """
 from __future__ import annotations
 
@@ -95,6 +99,12 @@ class EdgeRails:
         self._folded_with: dict = {}
         #: dock -> its (width, height) when a tab hid it; Qt would bring it back at its minimum
         self._size_when_hidden: dict = {}
+        #: (dock, was in front) for each panel Hide All put away, to bring back the same ones
+        self._all_hidden: list = []
+        #: callables run after every refresh -- the shell keeps its Hide All switch in step
+        self.listeners: list = []
+        #: edge -> its Hide All button
+        self.hide_all_buttons: dict = {}
         for edge, (_dock_area, bar_area) in EDGES.items():
             if bar_area is None:
                 strip = QWidget()
@@ -185,6 +195,8 @@ class EdgeRails:
         for edge, bar in self.rails.items():
             if bar.isVisible() != (edge in used):
                 bar.setVisible(edge in used)
+        for listener in self.listeners:
+            listener()
 
     # ---- the click --------------------------------------------------------------------------------
     def toggle(self, dock) -> None:
@@ -220,6 +232,93 @@ class EdgeRails:
         QTimer.singleShot(0, lambda: self.main_window.resizeDocks(
             [dock], [size[0] if upright else size[1]],
             Qt.Orientation.Horizontal if upright else Qt.Orientation.Vertical))
+
+    # ---- every panel at once (bugs/0961) -----------------------------------------------------------
+    def add_hide_all_button(self, action) -> None:
+        """Put ``action`` -- the shell's Hide All Panels switch -- first on every strip."""
+        from PySide6.QtCore import QSize, Qt
+        from PySide6.QtWidgets import QToolButton
+
+        for edge, strip in self.rails.items():
+            button = QToolButton(strip)
+            button.setDefaultAction(action)
+            button.setAutoRaise(True)
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            # no wider than a tab: a 32-px button made each side strip 11 px wider, and the
+            # window's minimum width with it (measured 1232 -> 1254 px)
+            button.setIconSize(QSize(16, 16))
+            button.setFixedSize(22, 22)
+            if EDGES[edge][1] is None:
+                strip.layout().insertWidget(0, button)
+            else:
+                first = strip.actions()[0] if strip.actions() else None
+                if first is None:
+                    strip.addWidget(button)
+                else:
+                    strip.insertWidget(first, button)
+            self.hide_all_buttons[edge] = button
+
+    def any_open(self) -> bool:
+        return any(self.is_open(dock) for dock in self._docks.values())
+
+    def hide_all(self) -> list:
+        """Put every open panel away; returns them. Remembers which were open, which was in front
+        of its stack, and each one's size."""
+        open_docks = [dock for dock in self._docks.values() if self.is_open(dock)]
+        if not open_docks:
+            return []
+        self._all_hidden = [(dock, self.is_front(dock)) for dock in open_docks]
+        for dock, front in self._all_hidden:
+            # the size of the panel in FRONT is its stack's; one behind a tab keeps a stale size
+            # (measured: 100 px) that would shrink the whole stack when it came back
+            if front:
+                self._size_when_hidden[dock] = (dock.width(), dock.height())
+            else:
+                self._size_when_hidden.pop(dock, None)
+            self._folded_with.pop(dock, None)
+        for dock in open_docks:
+            dock.hide()
+        self.refresh()
+        return open_docks
+
+    def show_all(self, only=None) -> list:
+        """Bring back what `hide_all` put away -- or, when it put nothing away (the panels were
+        closed one by one), every panel. ``only``: bring back just these, those still closed
+        (Clean 3D Scene puts back its own, whatever happened since). Returns the panels shown."""
+        if only is not None:
+            fronts = dict(self._all_hidden)
+            remembered = [(dock, fronts.get(dock, True)) for dock in only if not self.is_open(dock)]
+        else:
+            remembered = self._all_hidden or [(dock, True) for dock in self._docks.values() if not self.is_open(dock)]
+        self._all_hidden = []
+        for dock, _front in remembered:
+            self._folded_with.pop(dock, None)
+            dock.show()
+        for dock, front in remembered:
+            if front:
+                dock.raise_()
+        self._restore_sizes([dock for dock, _front in remembered])
+        self.refresh()
+        return [dock for dock, _front in remembered]
+
+    def _restore_sizes(self, docks) -> None:
+        """Every panel back at its size, BOTH ways and in one pass, once the layout has run: panels
+        side by side on one edge share its length (measured: the bottom row's Debug came back
+        628 px wide where it had been 470, its height right)."""
+        sized = [(dock, self._size_when_hidden.pop(dock)) for dock in docks
+                 if dock in self._size_when_hidden and not dock.isFloating()]
+        if not sized:
+            return
+        from PySide6.QtCore import QTimer, Qt
+
+        def resize() -> None:
+            window = self.main_window
+            panels = [dock for dock, _size in sized]
+            window.resizeDocks(panels, [size[0] for _dock, size in sized], Qt.Orientation.Horizontal)
+            window.resizeDocks(panels, [size[1] for _dock, size in sized], Qt.Orientation.Vertical)
+
+        QTimer.singleShot(0, resize)
 
     def set_edge_shown(self, edge: str, shown: bool) -> None:
         """Hide or show every panel of one edge."""

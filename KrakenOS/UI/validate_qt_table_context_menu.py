@@ -7,14 +7,15 @@ recording `MenuModel` for a shell -- so the Qt table shows the same menu without
 implementation. On the two-arm doublets example, for seven cells:
 
   B  the menu the REAL Tk right-click builds and the model a shell is handed have identical
-     outlines (labels, enabled states, nesting): 100+ commands in 13 submenus each
+     outlines (labels, enabled states, nesting): 80+ commands of its own in 13 submenus each
   Q  a right-click on the Qt table shows a QMenu with exactly that outline -- the model's, and
      the Tk shell's for the same cell
   R  entries RUN from the Qt menu: Convert Type -> Mirror changes the row in the model and in
      the Qt table (Undo restores it); Coating / Material Editor opens a QT dialog; Select ... for
      optimization marks the cell; Set bounds opens its dialog and waits for it
   N  none of it creates a Tk window or calls a tkinter dialog
-  E  EVERY entry: each distinct command of those menus (about 118), run once in a throwaway Qt
+  E  EVERY entry: each distinct command of those menus (103 of the menu's own, plus one per
+     machine-vision layout file on disk -- bugs/0961), run once in a throwaway Qt
      shell with the layout reloaded before it and every question cancelled, raises nothing, calls no
      tkinter dialog and creates no Tk window -- reports included, which open in the Qt report
      dialog through the `show_report` seam -- except the entries in `KNOWN_TK_ENTRIES`, a list that
@@ -38,15 +39,33 @@ LENS = 2
 #: menu entries that still end in a Tk window -> why. An entry that stops doing so fails the guard
 #: until it is deleted here, so this can only shrink.
 KNOWN_TK_ENTRIES: dict = {}          # bugs/0955 gave the solve review windows a Qt dialog: none left
+#: E's floor: entries run that are the menu's OWN (bugs/0961). The "Machine Vision Lens" submenu
+#: lists every layout file in `common_optical_layouts/` -- on the user's machines that includes
+#: layouts not in git, so a count of ALL entries passed there (112 run) and failed on a clean
+#: checkout (98). Of the menu's own 103 entries, 88 are enabled on this scene.
+OWN_ENTRIES_RUN_FLOOR = 85
+#: B and Q: each cell's menu has at least this many of its OWN commands (88-98 on this scene; the
+#: count of every command, 97-121, depended on the layout files on disk)
+OWN_COMMANDS_FLOOR = 80
+#: E runs every entry in a throwaway shell, the layout reloaded before each: a hang guard, not a
+#: speed test. 900 s passed on M90aPro; X299-SSD's i7-7820X needs ~1100 s (bugs/0961).
+EVERY_ENTRY_TIMEOUT_S = 2400
 
 
-def _counts(outline) -> tuple[int, int]:
+def listed_from_files(path) -> bool:
+    """An entry the menu lists from the layout files on disk, one per file (bugs/0961)."""
+    return len(path) >= 2 and path[-2] == "Machine Vision Lens" and path[-1].startswith("Machine Vision ")
+
+
+def _counts(outline, parent: str = "") -> tuple[int, int]:
+    """(commands, submenus) of an outline -- the menu's OWN commands: an entry listed from a layout
+    file on disk is not counted (bugs/0961; see `listed_from_files`)."""
     commands = submenus = 0
     for entry in outline:
         if entry[0] == "cascade":
-            inner = _counts(entry[3])
+            inner = _counts(entry[3], entry[1])
             commands, submenus = commands + inner[0], submenus + inner[1] + 1
-        elif entry[0] != "separator":
+        elif entry[0] != "separator" and not listed_from_files((parent, entry[1])):
             commands += 1
     return commands, submenus
 
@@ -84,7 +103,8 @@ def tk_runtime_checks() -> list:
         if tk_outline is None or tk_outline != model_outline:
             differ.append(key)
     sizes = {key: _counts(outline or []) for key, outline in shown.items()}
-    return [["B", not differ and all(commands >= 100 and submenus == 13 for commands, submenus in sizes.values()),
+    return [["B", not differ and all(commands >= OWN_COMMANDS_FLOOR and submenus == 13
+                                     for commands, submenus in sizes.values()),
              f"{len(CELLS)} cells: the Tk menu and the shell's model differ for {differ}; (commands, submenus) "
              f"{sizes}"],
             ["_tk", True, json.dumps(shown)]]
@@ -149,7 +169,7 @@ def qt_runtime_checks() -> list:
         if outline != expected:
             differ.append(f"{row}:{field}")
         menu.close()
-    rows.append(["Q", not differ and all(_counts(o)[0] >= 100 for o in shown.values()),
+    rows.append(["Q", not differ and all(_counts(o)[0] >= OWN_COMMANDS_FLOOR for o in shown.values()),
                  f"{len(CELLS)} Qt right-clicks: menus differing from the model's {differ}; commands "
                  f"{[_counts(o)[0] for o in shown.values()]}"])
 
@@ -262,7 +282,7 @@ def qt_every_entry_checks() -> list:
                 todo[path] = (row, field, entry.enabled)
     tk_ending: list = []
     raised: list = []
-    ran = 0
+    ran = own_ran = 0
     for path, (row, field, _enabled) in todo.items():
         window.load_layout_path(LAYOUT)
         window.select_rows([row], row)
@@ -281,6 +301,7 @@ def qt_every_entry_checks() -> list:
             raised.append((" > ".join(path), f"{type(exc).__name__}: {str(exc)[:60]}"))
         app.processEvents()
         ran += 1
+        own_ran += not listed_from_files(path)
         for widget in QApplication.topLevelWidgets():
             if widget.isVisible() and id(widget) not in before and widget is not window:
                 widget.close()
@@ -288,13 +309,15 @@ def qt_every_entry_checks() -> list:
             tk_ending.append(" > ".join(path))
     unexpected = sorted(set(tk_ending) - set(KNOWN_TK_ENTRIES))
     fixed = sorted(set(KNOWN_TK_ENTRIES) - set(tk_ending))
-    return [["E", ran >= 100 and not unexpected and not fixed and not raised,
-             f"{len(todo)} distinct entries, {ran} run (the rest disabled on this scene); ending in Tk and not "
+    own = sum(not listed_from_files(path) for path in todo)
+    return [["E", own_ran >= OWN_ENTRIES_RUN_FLOOR and not unexpected and not fixed and not raised,
+             f"{len(todo)} distinct entries ({own} the menu's own, {len(todo) - own} listed from layout files), "
+             f"{ran} run, {own_ran} of them the menu's own (the rest disabled on this scene); ending in Tk and not "
              f"listed: {unexpected}; listed but no longer Tk (delete them): {fixed}; raised: {raised}; known Tk "
              f"entries: {sorted(KNOWN_TK_ENTRIES)}"]]
 
 
-def _run(call: str) -> list:
+def _run(call: str, timeout: float = 900) -> list:
     driver = (
         "import json, os\n"
         "try:\n"
@@ -315,10 +338,10 @@ def _run(call: str) -> list:
     env.pop("WAYLAND_DISPLAY", None)
     env["QT_QPA_PLATFORM"] = "xcb"
     try:
-        proc = subprocess.run([sys.executable, "-c", driver], capture_output=True, text=True, timeout=900,
+        proc = subprocess.run([sys.executable, "-c", driver], capture_output=True, text=True, timeout=timeout,
                               env=env, cwd=str(Path.cwd()))
     except subprocess.TimeoutExpired:
-        return [["X", False, f"{call} timed out"]]
+        return [["X", False, f"{call} timed out after {timeout:.0f} s"]]
     for line in proc.stdout.splitlines():
         if line.startswith(RESULT_MARK):
             return json.loads(line[len(RESULT_MARK):])
@@ -330,7 +353,7 @@ def _run(call: str) -> list:
 
 def run_checks() -> tuple[bool, list[str]]:
     tk_rows = _run("tk_runtime_checks()")
-    qt_rows = _run("qt_runtime_checks()") + _run("qt_every_entry_checks()")
+    qt_rows = _run("qt_runtime_checks()") + _run("qt_every_entry_checks()", timeout=EVERY_ENTRY_TIMEOUT_S)
     tk_shown = next((json.loads(d) for k, _o, d in tk_rows if k == "_tk"), None)
     qt_shown = next((json.loads(d) for k, _o, d in qt_rows if k == "_qt"), None)
     rows = [r for r in tk_rows + qt_rows if not r[0].startswith("_")]

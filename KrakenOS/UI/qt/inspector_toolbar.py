@@ -5,8 +5,15 @@ variables the Tk rows bind to. A widget writes its variable and then runs the mo
 way a Tk checkbutton sets its variable before its command; a model write reaches the widget
 through the variable's ``trace_add`` (signals blocked, so a repaint never commits again).
 
-The rows sit in a horizontal scroll area: a long row must not force the main window wider than
-the screen (0906 measured a window pushed past it by stacked minimum sizes).
+The rows are TABS of one strip (user request, bugs/0961: "make all toolbars tabbed and can be
+hide/unhide. Give user chance to have big clean 3D scene"): the tab names at its left, the chosen
+row beside them. Three stacked rows took 96 px from the 3D scene; one row takes about a third of
+that, and the strip's own arrow hides it altogether (the shell's 3D Toolbar switch brings it back).
+
+Each row is a QToolBar: a row longer than the scene is wide puts what does not fit behind its »
+button, as toolbars do -- it must not force the main window wider than the screen (0906 measured
+a window pushed past it by stacked minimum sizes), and a scroll bar cost height and hid the end
+of the row.
 """
 from __future__ import annotations
 
@@ -27,11 +34,14 @@ def _watch(variable, repaint) -> None:
 
 
 def build_toolbar(inspector, parent=None):
-    """The three rows as one widget; ``widget.controls`` maps a label to its widget/action."""
+    """The rows as one tabbed strip. ``strip.controls`` maps a label to its widget/action;
+    ``strip.tabs`` is the tab bar (one tab per row), ``strip.pages`` the stack of rows and
+    ``strip.hide_button`` the arrow at its right end that asks for the strip to be hidden."""
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QAction, QActionGroup
     from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu,
-                                   QPushButton, QScrollArea, QToolButton, QVBoxLayout, QWidget)
+                                   QPushButton, QSizePolicy, QStackedWidget, QTabBar, QToolBar, QToolButton,
+                                   QWidget)
 
     controls: dict = {}
 
@@ -113,8 +123,11 @@ def build_toolbar(inspector, parent=None):
             variable = catalogue.resolve(inspector, item.var)
             if variable is None:
                 return
-            layout.addWidget(QLabel(item.label, row_widget))
-            combo = QComboBox(row_widget)
+            holder = QWidget(row_widget)     # the label and its box stay together, also behind »
+            pair = QHBoxLayout(holder)
+            pair.setContentsMargins(0, 0, 0, 0)
+            pair.addWidget(QLabel(item.label, holder))
+            combo = QComboBox(holder)
             combo.addItems(list(catalogue.choices_for(inspector, item)))
             combo.setCurrentText(str(variable.get()))
 
@@ -133,18 +146,23 @@ def build_toolbar(inspector, parent=None):
                     c.blockSignals(blocker)
 
             _watch(variable, repaint)
-            layout.addWidget(combo)
+            pair.addWidget(combo)
+            layout.addWidget(holder)
             controls[item.label] = combo
         elif isinstance(item, catalogue.Entry):
             variable = catalogue.resolve(inspector, item.var)
             if variable is None:
                 return
-            layout.addWidget(QLabel(item.label, row_widget))
-            edit = QLineEdit(str(variable.get()), row_widget)
+            holder = QWidget(row_widget)
+            pair = QHBoxLayout(holder)
+            pair.setContentsMargins(0, 0, 0, 0)
+            pair.addWidget(QLabel(item.label, holder))
+            edit = QLineEdit(str(variable.get()), holder)
             edit.setMaximumWidth(12 * max(int(item.width), 4))
             edit.editingFinished.connect(lambda e=edit, v=variable: v.set(e.text()))
             _watch(variable, lambda e=edit, v=variable: e.setText(str(v.get())) if e.text() != str(v.get()) else None)
-            layout.addWidget(edit)
+            pair.addWidget(edit)
+            layout.addWidget(holder)
             controls[item.label] = edit
         elif isinstance(item, catalogue.Text):
             layout.addWidget(QLabel(item.text, row_widget))
@@ -188,29 +206,62 @@ def build_toolbar(inspector, parent=None):
             layout.addWidget(tool)
             controls[item.label] = tool
 
-    inner = QWidget()
-    rows_layout = QVBoxLayout(inner)
-    rows_layout.setContentsMargins(6, 4, 6, 4)
-    rows_layout.setSpacing(2)
+    strip = QFrame(parent)
+    strip.setObjectName("Inspector3DToolbar")
+    strip.setFrameShape(QFrame.Shape.NoFrame)
+    line = QHBoxLayout(strip)
+    line.setContentsMargins(4, 2, 2, 2)
+    line.setSpacing(6)
+    tabs = QTabBar(strip)
+    tabs.setDrawBase(False)
+    tabs.setExpanding(False)
+    tabs.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    pages = QStackedWidget(strip)
+    tallest = 0
     for row in catalogue.ROWS:
-        row_widget = QWidget(inner)
+        # the row is laid out as before, then handed to a toolbar widget by widget: the stretch
+        # between its left and right groups becomes an expanding spacer
+        row_widget = QWidget()
         layout = QHBoxLayout(row_widget)
-        layout.setContentsMargins(0, 0, 0, 0)
-        title = QLabel(f"<b>{row.title}</b>", row_widget)
-        layout.addWidget(title)
-        for item in row.left:
+        # a row's hint text goes after its controls: a toolbar too short for the row puts its END
+        # behind », and the controls are what must stay in reach (Carry's 70-character hint came
+        # first and pushed every control behind it in a 700-px scene)
+        hints = [item for item in row.left if isinstance(item, catalogue.Text)]
+        for item in [item for item in row.left if not isinstance(item, catalogue.Text)] + hints:
             add(layout, row_widget, item)
         layout.addStretch(1)
         for item in row.right:
             add(layout, row_widget, item)
-        rows_layout.addWidget(row_widget)
-
-    scroll = QScrollArea(parent)
-    scroll.setWidget(inner)
-    scroll.setWidgetResizable(True)
-    scroll.setFrameShape(QFrame.Shape.NoFrame)
-    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-    scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-    scroll.setFixedHeight(inner.sizeHint().height() + scroll.horizontalScrollBar().sizeHint().height() + 4)
-    scroll.controls = controls
-    return scroll
+        bar = QToolBar(row.title)
+        bar.setMovable(False)
+        bar.setFloatable(False)
+        bar.setContextMenuPolicy(Qt.ContextMenuPolicy.PreventContextMenu)
+        while layout.count():
+            entry = layout.takeAt(0)
+            if entry.widget() is not None:
+                bar.addWidget(entry.widget())
+            elif entry.spacerItem() is not None:
+                spacer = QWidget()
+                spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+                bar.addWidget(spacer)
+        row_widget.deleteLater()
+        tallest = max(tallest, bar.sizeHint().height())
+        tabs.addTab(row.title)
+        tabs.setTabToolTip(tabs.count() - 1, " ".join([f"The 3D scene's {row.title} controls."]
+                                                       + [hint.text for hint in hints]))
+        pages.addWidget(bar)
+    tabs.currentChanged.connect(pages.setCurrentIndex)
+    hide_button = QToolButton(strip)
+    hide_button.setAutoRaise(True)
+    hide_button.setArrowType(Qt.ArrowType.UpArrow)
+    hide_button.setFixedSize(20, 20)
+    hide_button.setToolTip("Hide this toolbar (more room for the 3D scene)")
+    line.addWidget(tabs, 0, Qt.AlignmentFlag.AlignVCenter)
+    line.addWidget(pages, 1)
+    line.addWidget(hide_button, 0, Qt.AlignmentFlag.AlignVCenter)
+    strip.setFixedHeight(max(tallest, tabs.sizeHint().height()) + 4)
+    strip.controls = controls
+    strip.tabs = tabs
+    strip.pages = pages
+    strip.hide_button = hide_button
+    return strip

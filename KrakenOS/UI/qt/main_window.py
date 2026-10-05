@@ -101,6 +101,12 @@ class KrakenQtMainWindow(_main_window_class()):
             self.rows_view.addAction(action)
 
         self.dock_manager = DockManager(self)
+        # one click puts every panel away, the next brings the same ones back (bugs/0961)
+        self.dock_manager.rails.add_hide_all_button(self.action_manager["hide_panels"])
+        self.dock_manager.rails.listeners.append(self._follow_panels)
+        #: what Clean 3D Scene put away, to put back; None while it is off
+        self._clean_scene_saved = None
+        self.action_manager["toolbar_3d"].setEnabled(False)     # until the 3D scene has its toolbar
         # the table is many columns wide: across the top of the window it shows them all and its
         # rows run DOWN, where the left column made it scroll sideways (user request, bugs/0940)
         self.dock_manager.create_dock(self.table_widget, "SurfaceTableDock", "Surface Table",
@@ -389,6 +395,11 @@ class KrakenQtMainWindow(_main_window_class()):
 
             self.inspector_view.toolbar = build_toolbar(inspector, container)
             layout.addWidget(self.inspector_view.toolbar)
+            # its arrow hides it; the 3D Toolbar switch (Home > Workspace) brings it back (bugs/0961)
+            toolbar_switch = self.action_manager["toolbar_3d"]
+            toolbar_switch.setEnabled(True)
+            self.inspector_view.toolbar.setVisible(toolbar_switch.isChecked())
+            self.inspector_view.toolbar.hide_button.clicked.connect(lambda _checked=False: toolbar_switch.trigger())
             # the Live Controls the docks do not already carry, tabbed with them (5f part 2)
             from KrakenOS.UI.qt.live_controls_dock import LiveControlsForm
 
@@ -1060,6 +1071,63 @@ class KrakenQtMainWindow(_main_window_class()):
         else:
             self._show_layout_title()  # Save / Save As may have named the layout
         return result
+
+    # ---- a big clean 3D scene (bugs/0961) -------------------------------------------------------
+    def toolbar_3d_action(self, checked: bool = True) -> None:
+        """Show or hide the 3D scene's tabbed View / Scene / Carry toolbar."""
+        toolbar = getattr(self.inspector_view, "toolbar", None)
+        if toolbar is not None:
+            toolbar.setVisible(bool(checked))
+
+    def hide_panels_action(self, checked: bool = True) -> None:
+        """Put every panel away, or bring back the ones that were put away."""
+        rails = self.dock_manager.rails
+        if checked:
+            rails.hide_all()
+        else:
+            rails.show_all()
+        self._follow_panels()
+
+    def _follow_panels(self) -> None:
+        """Hide All Panels reads as on while no panel is open, however they were closed."""
+        action = self.action_manager.actions.get("hide_panels")
+        if action is not None:
+            hidden = not self.dock_manager.rails.any_open()
+            if action.isChecked() != hidden:
+                action.setChecked(hidden)
+
+    def clean_scene_action(self, checked: bool = True) -> None:
+        """Only the 3D scene: fold the ribbon, hide the 3D toolbar and every panel -- and, switched
+        off, put back exactly what it put away (a panel already closed stays closed)."""
+        toolbar_switch = self.action_manager["toolbar_3d"]
+        if checked:
+            if self._clean_scene_saved is not None:
+                return
+            ribbon = self.ribbon
+            self._clean_scene_saved = {
+                "ribbon_folded": bool(ribbon.collapsed),
+                "toolbar_shown": bool(toolbar_switch.isChecked()),
+                "panels": self.dock_manager.rails.hide_all(),
+            }
+            if not ribbon.dock.isFloating() and not ribbon.collapsed:
+                ribbon.set_collapsed(True)
+            if toolbar_switch.isChecked():
+                toolbar_switch.trigger()
+            self.statusBar().showMessage("Clean 3D scene -- F11, or the button by the ribbon's fold arrow, "
+                                         "puts the toolbars and panels back.")
+        else:
+            saved, self._clean_scene_saved = self._clean_scene_saved, None
+            if saved is None:
+                return
+            # the ribbon first, while its neighbours are still away: it settles the top area's height
+            # (its own fold keeps the heights of the docks beside it), then the panels take theirs
+            if not self.ribbon.dock.isFloating() and self.ribbon.collapsed != saved["ribbon_folded"]:
+                self.ribbon.set_collapsed(saved["ribbon_folded"])
+            if saved["toolbar_shown"] and not toolbar_switch.isChecked():
+                toolbar_switch.trigger()
+            if saved["panels"]:
+                self.dock_manager.rails.show_all(only=saved["panels"])
+        self._follow_panels()
 
     def show_undo_state(self, can_undo: bool, can_redo: bool) -> None:
         """The model's `show_undo_state` seam: Undo / Redo enabled as its history allows."""

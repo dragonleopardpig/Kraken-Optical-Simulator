@@ -43,6 +43,9 @@ RIBBON = (
         ("View", (("reset_camera", "L", "Fit\nScene"), ("inspector", "L", "3D\nInspector"),
                   ("folded_assembly", "L", "Folded\nAssembly"), ("show_rays", "S", "Show Rays"),
                   ("redraw", "S", "Redraw"), ("refresh_plot", "S", "Refresh Plot"))),
+        # a big clean 3D scene, and its parts one at a time (bugs/0961)
+        ("Workspace", (("clean_scene", "L", "Clean\n3D Scene"), ("hide_panels", "S", "Hide Panels"),
+                       ("toolbar_3d", "S", "3D Toolbar"))),
     )),
     ("Surfaces", (
         ("Surface", (("advanced_surface", "L", "Advanced\nSurface"), ("surface_shape", "L", "Shape\nBuilder"),
@@ -382,6 +385,19 @@ class Ribbon:
         flag.setFixedSize(22, 20)
         flag.clicked.connect(lambda _checked=False: self.actions["flag_bug"].trigger())
         row.addWidget(flag)
+        # and Clean 3D Scene, where the ribbon's own fold is: one click from the scene alone and
+        # back, on every tab (bugs/0961)
+        clean_action = self.actions["clean_scene"]
+        clean = self.clean_button = QToolButton()
+        clean.setAutoRaise(True)
+        clean.setCheckable(True)
+        clean.setChecked(clean_action.isChecked())
+        clean.setIcon(clean_action.icon())
+        clean.setToolTip(action_tip(clean_action))
+        clean.setFixedSize(22, 20)
+        clean.clicked.connect(lambda _checked=False: clean_action.trigger())
+        clean_action.toggled.connect(clean.setChecked)
+        row.addWidget(clean)
         arrow = self.fold_button = QToolButton()
         arrow.setAutoRaise(True)
         arrow.setArrowType(Qt.ArrowType.UpArrow)

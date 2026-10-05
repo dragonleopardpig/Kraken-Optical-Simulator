@@ -85,6 +85,57 @@ def parse_phases(spec: "str | None", known: list[int]) -> list[int]:
     return [phase for phase in known if phase in wanted]
 
 
+def parse_cpu_list(spec: str) -> list[int]:
+    """"0-5,8-13" or "0,8,1,9" -> the CPUs, in the order given."""
+    cpus: list[int] = []
+    for part in str(spec).split(","):
+        part = part.strip()
+        if "-" in part:
+            low, high = part.split("-", 1)
+            cpus.extend(range(int(low), int(high) + 1))
+        elif part:
+            cpus.append(int(part))
+    return cpus
+
+
+def physical_cores() -> list[list[int]]:
+    """The CPUs grouped by physical core -- hyperthread siblings together -- in core order. On
+    X299-SSD (i7-7820X) CPU N and N+8 are ONE core: groups handed "two cores" that were siblings
+    each got about one, and the run took 90 min instead of ~45 (bugs/0961)."""
+    cores: dict = {}
+    for path in Path("/sys/devices/system/cpu").glob("cpu[0-9]*/topology/thread_siblings_list"):
+        try:
+            siblings = tuple(parse_cpu_list(path.read_text().strip()))
+        except (OSError, ValueError):
+            continue
+        cores.setdefault(siblings, None)
+    if not cores:
+        return [[cpu] for cpu in range(os.cpu_count() or 4)]
+    return [list(siblings) for siblings in sorted(cores)]
+
+
+def core_sets_for(jobs: int, cores_spec: "str | None") -> list[str]:
+    """Each group's CPUs. Given ``--cores``, its CPUs in the order given, dealt out in equal runs.
+    Otherwise whole physical cores per group (both threads of each), leaving the last physical
+    core(s) -- at least two CPUs -- for the desktop."""
+    if cores_spec:
+        cpus = parse_cpu_list(cores_spec)
+        jobs = max(1, min(int(jobs), len(cpus)))
+        per_job = len(cpus) // jobs
+        return [",".join(str(cpu) for cpu in cpus[slot * per_job:(slot + 1) * per_job]) for slot in range(jobs)]
+    physical = physical_cores()
+    spare = 0
+    while physical and spare < 2 and len(physical) > 1:
+        spare += len(physical.pop())
+    jobs = max(1, min(int(jobs), len(physical)))
+    sets, start = [], 0
+    for slot in range(jobs):                    # the remainder goes one core each to the first groups
+        size = len(physical) // jobs + (1 if slot < len(physical) % jobs else 0)
+        sets.append(",".join(str(cpu) for core in physical[start:start + size] for cpu in core))
+        start += size
+    return sets
+
+
 def plan_groups(phases: list[int]) -> list[list[int]]:
     """Contiguous groups, sized by the band their first phase falls in."""
     groups: list[list[int]] = []
@@ -120,7 +171,9 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--jobs", type=int, default=3, help="groups run at the same time (default 3)")
     parser.add_argument("--cores", default=None,
-                        help='the cores to share out, e.g. "0-11" (default: all but the last two)')
+                        help='the CPUs to share out, e.g. "0-11" or "0,8,1,9" (default: whole physical '
+                             'cores per group, hyperthread siblings together, the last core left for the '
+                             'desktop)')
     # 6.5, not 5.5: with four groups in the Qt tail the watchdog fired twice in one run (2026-10-04);
     # a higher admission mark keeps the fourth out until there is room, which costs less than a
     # killed group's re-run
@@ -137,15 +190,8 @@ def main(argv=None) -> int:
 
     phases = parse_phases(args.phases, all_phases())
     groups = plan_groups(phases)
-    count = os.cpu_count() or 4
-    if args.cores:
-        low, _sep, high = args.cores.partition("-")
-        cores = list(range(int(low), int(high or low) + 1))
-    else:
-        cores = list(range(max(1, count - 2)))           # leave two for the desktop
-    jobs = max(1, min(int(args.jobs), len(cores)))
-    per_job = len(cores) // jobs
-    core_sets = [",".join(str(core) for core in cores[slot * per_job:(slot + 1) * per_job]) for slot in range(jobs)]
+    core_sets = core_sets_for(int(args.jobs), args.cores)
+    jobs = len(core_sets)
     out = args.out or Path(tempfile.mkdtemp(prefix="penta_parallel_"))
     out.mkdir(parents=True, exist_ok=True)
     print(f"[parallel] {len(phases)} phases in {len(groups)} groups, {jobs} at a time on cores {core_sets}; "

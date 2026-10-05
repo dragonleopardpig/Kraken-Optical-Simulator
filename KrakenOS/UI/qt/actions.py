@@ -64,6 +64,15 @@ ACTIONS = (
     ("redraw", "&Redraw", "F5", "redraw_action", "Rebuild the scene from the model"),
     ("show_rays", "Show &Rays", "Ctrl+L", "toggle_rays_action",
      "Show or hide the traced light"),
+    # a big clean 3D scene in one click, and the parts of it one at a time (user request, bugs/0961)
+    ("clean_scene", "Clean 3D Scene", "F11", "clean_scene_action",
+     "Only the 3D scene: fold the ribbon, hide the 3D toolbar and every panel. Again: put them all "
+     "back as they were"),
+    ("hide_panels", "Hide All Panels", "Ctrl+Shift+H", "hide_panels_action",
+     "Put every panel away in one click; again brings back the same ones (also first on each edge's "
+     "tab strip)"),
+    ("toolbar_3d", "3D Toolbar", None, "toolbar_3d_action",
+     "Show or hide the 3D scene's View / Scene / Carry toolbar"),
     ("inspector", "3D &Inspector", "Ctrl+I", "inspector_action",
      "Show the 3D inspector -- the window's 3D scene: pick, orbit, pan, drag (bugs/0906, 0951)"),
     ("paraxial_matrix", "Paraxial &Matrix Report", "Ctrl+M",
@@ -237,7 +246,7 @@ def editor_command(method: str) -> str | None:
 
 
 #: checkable actions -> their state at start-up
-CHECKABLE = {"show_rays": True}
+CHECKABLE = {"show_rays": True, "clean_scene": False, "hide_panels": False, "toolbar_3d": True}
 
 
 class ActionManager:
