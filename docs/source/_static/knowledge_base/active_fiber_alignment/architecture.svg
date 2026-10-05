@@ -30,7 +30,7 @@
   <path d="M155 195H190" class="optical"/>
   <rect x="190" y="150" width="175" height="90" rx="10" class="box"/>
   <text x="277.5" y="186" text-anchor="middle" class="label">Pickoff +</text>
-  <text x="277.5" y="214" text-anchor="middle" class="body">monitor P_in</text>
+  <text x="277.5" y="214" text-anchor="middle" class="body">monitor <tspan font-style="italic">P</tspan><tspan baseline-shift="sub" font-size="75%">in</tspan></text>
   <path d="M365 195H405" class="optical"/>
   <rect x="405" y="150" width="170" height="90" rx="10" class="box"/>
   <text x="490" y="187" text-anchor="middle" class="label">Coupling</text>
@@ -46,7 +46,7 @@
   <path d="M1030 195H1080" class="optical"/>
   <rect x="1080" y="150" width="180" height="90" rx="10" class="box"/>
   <text x="1170" y="187" text-anchor="middle" class="label">Photodiode</text>
-  <text x="1170" y="215" text-anchor="middle" class="body">P_out</text>
+  <text x="1170" y="215" text-anchor="middle" class="body"><tspan font-style="italic">P</tspan><tspan baseline-shift="sub" font-size="75%">out</tspan></text>
 
   <path d="M250 240V345" class="optical"/>
   <text x="270" y="294" class="small">sample before fiber</text>
@@ -54,7 +54,7 @@
   <text x="62" y="379" class="label">Pre-fiber spatial sensing</text>
   <text x="62" y="413" class="body">Near field: position · Far field: angle</text>
   <text x="62" y="446" class="body">Relay calibrated to the fiber-facet plane</text>
-  <text x="62" y="479" class="small">Input power monitor also supplies P_in</text>
+  <text x="62" y="479" class="small">Input power monitor also supplies <tspan font-style="italic">P</tspan><tspan baseline-shift="sub" font-size="75%">in</tspan></text>
 
   <rect x="580" y="345" width="210" height="85" rx="12" fill="#edf1f5" stroke="#475569" stroke-width="2"/>
   <text x="685" y="379" text-anchor="middle" class="label">XYZ + tip / tilt</text>
@@ -70,9 +70,9 @@
 
   <path d="M250 505V697H530" class="signal"/>
   <text x="62" y="585" class="body" fill="#245da1">Spatial features</text>
-  <text x="62" y="611" class="body" fill="#245da1">+ P_in</text>
+  <text x="62" y="611" class="body" fill="#245da1">+ <tspan font-style="italic">P</tspan><tspan baseline-shift="sub" font-size="75%">in</tspan></text>
   <path d="M1170 240V318H1280V730H820" class="signal"/>
-  <text x="1000" y="716" class="body" fill="#245da1">Guided P_out</text>
+  <text x="1000" y="716" class="body" fill="#245da1">Guided <tspan font-style="italic">P</tspan><tspan baseline-shift="sub" font-size="75%">out</tspan></text>
   <path d="M1060 495V553H843V697H820" class="optional"/>
   <path d="M635 650V430" class="motion"/>
   <text x="652" y="537" class="body" fill="#475569">Motion</text>
@@ -80,7 +80,7 @@
 
   <rect x="530" y="650" width="290" height="105" rx="12" fill="#eaf1fb" stroke="#245da1" stroke-width="2"/>
   <text x="675" y="681" text-anchor="middle" class="label">Controller</text>
-  <text x="675" y="709" text-anchor="middle" class="body">Normalize P_out / P_in</text>
+  <text x="675" y="709" text-anchor="middle" class="body">Normalize <tspan font-style="italic">P</tspan><tspan baseline-shift="sub" font-size="75%">out</tspan> / <tspan font-style="italic">P</tspan><tspan baseline-shift="sub" font-size="75%">in</tspan></text>
   <text x="675" y="737" text-anchor="middle" class="small">Acquire → optimize → verify</text>
 
   <path d="M45 802H100" class="optical"/>
