@@ -790,7 +790,7 @@ class LayoutImportExportMixin:
         if not left:
             session.close()               # nothing to ask: rebuild what the relocations allow, redraw
             return
-        shell = None
+        shell = self.__dict__.get("show_missing_assets")
         if callable(shell):
             shell(session)
             return
