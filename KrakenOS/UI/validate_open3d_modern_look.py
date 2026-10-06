@@ -23,6 +23,10 @@ saturated (hundreds per field: a painted fan), all on a white sheet.
      fully saturated again -- and back
   E  display only: both looks draw the SAME actors per row with the same points, and the same rays
      with the same cells -- so picking and "the nearest DRAWN edge" cannot differ
+  S  the look is for the TABLE's elements: through the real actor factory, a glass-toned line tied
+     to a row is drawn modern, the same line with no row (imported STEP hardware, which has its own
+     switch -- bugs/0958) is left as asked
+  D  the number of rays reaches the law: 144 rays through the real merge come out at half opacity
   I  by the picture: the classic render is full of vivid pixels (neon rays, cyan glass), the modern
      one has almost none; the modern backdrop is darker and bluer at the top than at the bottom
   T  the Tk app is unchanged: the switch is off, the scene is the classic one, and its Overlays menu
@@ -134,7 +138,9 @@ def _describe(inspector) -> dict:
                 continue
             prop, data = actor.GetProperty(), actor.GetMapper().GetInput()
             items.append({"color": [round(float(c), 3) for c in prop.GetColor()], "opacity": round(float(prop.GetOpacity()), 3),
-                          "width": round(float(prop.GetLineWidth()), 2), "points": int(data.GetNumberOfPoints())})
+                          "width": round(float(prop.GetLineWidth()), 2), "points": int(data.GetNumberOfPoints()),
+                          "material": [round(float(prop.GetAmbient()), 2), round(float(prop.GetDiffuse()), 2),
+                                       round(float(prop.GetSpecular()), 2), round(float(prop.GetSpecularPower()), 1)]})
         rows[str(int(row))] = items
     ray_keys = set((inspector.__dict__.get("_merged_ray_cell_index") or {}).keys())
     rays = []
@@ -232,16 +238,18 @@ def qt_runtime_checks() -> dict:
                 "classic_tones": _has(items, look.CLASSIC_SILHOUETTE_COLOR) + _has(items, look.CLASSIC_EDGE_COLOR)
                                  + _has(items, look.CLASSIC_OUTLINE_COLOR) + _has(items, look.CLASSIC_OUTLINE_OVERLAY_COLOR),
                 "modern_edge_1.2": _has(items, look.MODERN_EDGE_COLOR, look.MODERN_EDGE_WIDTH),
+                "glass_material": sum(1 for item in items if _close(item["material"], look.GLASS_MATERIAL, 0.02)),
                 "ray_actors": len(scene["rays"]),
                 "max_ray_saturation": round(max((_saturation(ray["color"]) for ray in scene["rays"]), default=0.0), 3),
                 "gradient": scene["gradient"], "background": scene["background"]}
 
     m, c, a = summary(modern), summary(classic), summary(again)
     cap = look.RAY_MAX_SATURATION + 0.01
-    is_modern = lambda s: (s["gradient"] and s["classic_tones"] == 0 and s["modern_edge_1.2"] >= 2
+    is_modern = lambda s: (s["gradient"] and s["classic_tones"] == 0 and s["modern_edge_1.2"] >= 2 and s["glass_material"] >= 1
                            and s["ray_actors"] >= 1 and s["max_ray_saturation"] <= cap)
     is_classic = lambda s: (not s["gradient"] and _close(s["background"], look.CLASSIC_BACKGROUND)
                             and s["classic_silhouette_2.8"] >= 1 and s["classic_edge_2.0"] >= 1 and s["modern_edge_1.2"] == 0
+                            and s["glass_material"] == 0
                             and s["ray_actors"] >= 1 and s["max_ray_saturation"] > cap)
     rows = [["Q", default == (True, True) and is_modern(m) and off_state == (False, False) and is_classic(c)
              and is_modern(a) and "classic" in classic_status,
@@ -269,6 +277,34 @@ def qt_runtime_checks() -> dict:
                  f"vivid pixels: classic {classic_picture['vivid']}, modern {modern_picture['vivid']}; the modern backdrop is "
                  f"{modern_picture['top']} at the top and {modern_picture['bottom']} at the bottom, the classic one "
                  f"{classic_picture['top']} and {classic_picture['bottom']}"])
+    # S and D go through the inspector's own two factories, last: they add actors to the scene
+    import pyvista as pv
+
+    line = pv.Line((0.0, 0.0, 0.0), (1.0, 0.0, 0.0))
+    asked = dict(color=look.CLASSIC_EDGE_COLOR, opacity=1.0, line_width=refresh._GLASS_EDGE_LINE_WIDTH)
+    free = inspector._add_mesh_actor(line, **asked)
+    tied = inspector._add_mesh_actor(line, track_row_index=0, **asked)
+    drawn = lambda actor: ([round(float(c), 3) for c in actor.GetProperty().GetColor()],
+                           round(float(actor.GetProperty().GetLineWidth()), 2))
+    rows.append(["S", free is not None and tied is not None
+                 and _close(drawn(free)[0], look.CLASSIC_EDGE_COLOR) and drawn(free)[1] == refresh._GLASS_EDGE_LINE_WIDTH
+                 and _close(drawn(tied)[0], look.MODERN_EDGE_COLOR) and drawn(tied)[1] == look.MODERN_EDGE_WIDTH,
+                 f"a glass-edge line asked at {refresh._GLASS_EDGE_LINE_WIDTH} px: with no row it is drawn "
+                 f"{drawn(free) if free is not None else None}, tied to a row {drawn(tied) if tied is not None else None}"])
+
+    known = set(inspector._merged_ray_cell_index)
+    inspector._pending_ray_specs = [(line, 100000 + index, (0.2, 1.0, 0.1), 0.88, 1.0) for index in range(144)]
+    inspector._flush_merged_ray_actors()
+    added = set(inspector._merged_ray_cell_index) - known
+    merged = []
+    actors = inspector._renderer.GetActors()
+    actors.InitTraversal()
+    for _ in range(actors.GetNumberOfItems()):
+        actor = actors.GetNextActor()
+        if inspector._actor_key(actor) in added:
+            merged.append((round(float(actor.GetProperty().GetOpacity()), 3), int(actor.GetMapper().GetInput().GetNumberOfCells())))
+    rows.append(["D", merged == [(round(0.88 * look.ray_density_factor(144), 3), 144)] and look.ray_density_factor(144) == 0.5,
+                 f"144 rays asked at 0.88 through the real merge: (opacity, cells) {merged}"])
     return {"rows": rows}
 
 
