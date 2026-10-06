@@ -16846,6 +16846,10 @@ phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
     721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
     'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
     'qt_model_forms_open_in_qt')
+phase_741_appended_layout_keeps_scene_file = _phase_from_standalone(
+    741, "a layout appended to the open scene leaves the scene's own file alone (0973): an insertable layout chosen over a scene opened from the user's file is appended and the scene keeps its file, title and selector names, so Save asks nothing, writes the user's file with the merged rows and leaves the appended layout's shipped file byte for byte as it was; an untitled scene stays untitled and a transient import stays one, so Save asks; undo and redo keep the file; a load that replaces the scene still takes the loaded layout's file, name and a clean mark; and through the real menu entries of both interfaces the title stays the scene's and Save writes the scene's file",
+    'KrakenOS.UI.validate_appended_layout_keeps_scene_file',
+    'appended_layout_keeps_scene_file')
 phase_740_selector_menus = _phase_from_standalone(
     740, "the Layouts / Machine Vision / Examples / Common Component menus are model data both interfaces show (0972): a submenu per category in the declared order with empty ones left out, the Zemax prescriptions as a tree with folders before files and Top Level first, one disabled line when a list is empty, and each entry's command the model's own loader with the right argument; a real Tk editor's four menus show exactly the model's menus, follow a refresh and load a layout from a real entry; the Qt ribbon has the four buttons with icons, each showing the model's menu as it is at the moment it is opened, a real entry loads its layout with the table and title following and no Tk window, a component is inserted into the rows, and the window is no wider",
     'KrakenOS.UI.validate_selector_menus',
@@ -17795,6 +17799,7 @@ def main() -> int:
             phase_738_services_import_no_tkinter,
             phase_739_interface_preference,
             phase_740_selector_menus,
+            phase_741_appended_layout_keeps_scene_file,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

@@ -23,8 +23,8 @@ show it.
   T  a real Tk editor: each of its four menus shows exactly the model's menu; a name added to the
      library appears after a refresh, and an emptied list is one DISABLED line; a real menu entry
      loads its layout; a real Insert entry INSERTS -- the rows grow and the scene is no longer that
-     of a file (loading an insertable layout over a scene appends it too, and ties the scene to
-     the component's file: the row count alone cannot tell a load from an insert)
+     of a file (loading an insertable layout over a scene appends it too, and the scene keeps its
+     file, bugs/0973: the row count alone cannot tell a load from an insert)
   Q  a real Qt shell: the ribbon has the four buttons (three under File > Library, one under
      Surfaces > Catalogs), each with an icon; opened, each shows exactly the model's menu -- as it
      is NOW, so a name added since the last opening is there; a real entry loads its layout with the
@@ -210,8 +210,8 @@ def tk_checks() -> list:
         editor.update()
     loaded = (Path(str(editor.current_layout_file or "")).name, len(editor.rows))
     # a real Insert > Common Component entry INSERTS: the rows grow and the scene is no longer that
-    # of a file. (Loading an insertable layout over a scene appends it too -- but ties the scene to
-    # the component's own file; the file is what tells the two apart. Not the status line: the plot
+    # of a file. (Loading an insertable layout over a scene appends it too -- but the scene keeps
+    # its file, bugs/0973; the file is what tells the two apart. Not the status line: the plot
     # refresh that follows overwrites it, in both interfaces.)
     component = editor._insert_component_menu.entrycget(0, "label")
     editor._insert_component_menu.invoke(0)
@@ -300,8 +300,11 @@ def qt_checks() -> list:
         popup_button = next((b for b in popup.findChildren(QToolButton) if b.text() == "Layouts"), None)
         if popup_button is not None:
             popup_button.menu().aboutToShow.emit()
+            # a layout that REPLACES the scene: an insertable one would be appended to the untitled
+            # scene above and leave it untitled (bugs/0973), and there would be no file to see
+            insertable = set(editor._insertable_common_layout_names())
             choice = next((entry for action in popup_button.menu().actions() if action.menu() is not None
-                           for entry in action.menu().actions()), None)
+                           for entry in action.menu().actions() if entry.text() not in insertable), None)
             if choice is not None:
                 choice.trigger()
                 settle(1.5)

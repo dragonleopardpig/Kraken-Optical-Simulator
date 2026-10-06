@@ -527,6 +527,11 @@ class LayoutTableWorkbenchMixin:
             return
         if self.rows:
             self._begin_history_capture()
+        # bugs/0973: what the scene IS before this call. An insertable layout chosen over an open
+        # scene is APPENDED to it (decided below, once its file is read) -- and then the scene is
+        # still the scene it was.
+        scene_file_before = getattr(self, "current_layout_file", None)
+        scene_was_unsaved_import = bool(getattr(self, "_layout_is_unsaved_import", False))
         self.current_layout_file = path
         # bugs/0489: hand-placed section pins belong to the editing session, not the
         # prescription -- a freshly loaded scene must never arrive silently over-constrained.
@@ -575,6 +580,12 @@ class LayoutTableWorkbenchMixin:
         )
         insert_after = self._selected_insert_index() if append_to_existing else None
         if append_to_existing:
+            # bugs/0973: the scene took in a component; it did not become that component's file.
+            # Left pointing at it, File > Save overwrote the SHIPPED layout with the merged scene
+            # and never saved the file the user was working in (measured: Single Lens, then
+            # Layouts > Doublet Lens, then Save rewrote doublet_lens.py with seven rows).
+            self.current_layout_file = scene_file_before
+            self._layout_is_unsaved_import = scene_was_unsaved_import
             self.rows = self._append_layout_rows(
                 self.rows,
                 loaded_rows,
@@ -649,13 +660,16 @@ class LayoutTableWorkbenchMixin:
             # bugs/0646: a load draws geometry only -- the ~18 s preview trace waits for
             # an explicit Trace Now / the 3D view / a solve.
             self.refresh_plot(suppress_analysis=True, defer_trace=True)
-        if path.stem.startswith("machine_vision_"):
+        if append_to_existing:
+            pass          # bugs/0973: nor did it take that layout's name -- the three selectors stay
+        elif path.stem.startswith("machine_vision_"):
             self.layout_var.set("Common Optical Layout")
             self.machine_vision_var.set(name)
+            self.example_var.set("Examples")
         else:
             self.layout_var.set(name)
             self.machine_vision_var.set("Machine Vision Lens")
-        self.example_var.set("Examples")
+            self.example_var.set("Examples")
         action = "Appended" if append_to_existing else "Loaded"
         self.status_var.set(
             f"{action} {name} (rays not traced -- fast load). Click Trace Now for rays, "
