@@ -16846,6 +16846,10 @@ phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
     721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
     'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
     'qt_model_forms_open_in_qt')
+phase_737_operand_surface_choices = _phase_from_standalone(
+    737, "an operand's surface choices are model data handed to each shell's pickers (0969): the list is Auto and then every row that is neither the object nor the image; a refresh puts an operand aimed at a vanished surface back to Auto, hands the list to the pickers the Tk panel registered and to the shell's seam, and asks the window for its widgets not once (it walked all 409 on every table sync); the catalogue's surface setting names the model's method; a real Tk editor's eight pickers follow a rename; in the Qt shell an operand given a surface setting offers the model's list, a choice writes its variable, and removing that row puts both the variable and the open picker back to Auto",
+    'KrakenOS.UI.validate_operand_surface_choices',
+    'operand_surface_choices')
 phase_736_qt_inspection_cell_view = _phase_from_standalone(
     736, "the Inspection Cell view is a Qt window in the Qt shell, over one session (0967): the session composes off screen and transplants every actor into the view's renderer, maps the stations' actors to their faces and closes the previous plotter only once its actors are replaced; a station opens through the shell's own layout loader when it gave one; the watch is one timer on the host at 2000 ms that composes only when a station file changed and stops on close; the STEP export asks through the host; in the Qt shell the form's own Open Cell View opens a non-modal Qt dialog with a real OpenGL view and no Tk window, a real double-click opens that station in the shell, touching its file re-composes on Qt's clock, and Close ends the session with the shell still drawing; the Tk window is a view of the same session",
     'KrakenOS.UI.validate_qt_inspection_cell_view',
@@ -17775,6 +17779,7 @@ def main() -> int:
             phase_734_missing_assets_found_by_name,
             phase_735_modern_look,
             phase_736_qt_inspection_cell_view,
+            phase_737_operand_surface_choices,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

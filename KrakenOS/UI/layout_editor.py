@@ -2843,6 +2843,9 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         self.operand_field_x_vars: dict[str, tk.StringVar] = {}
         self.operand_field_y_vars: dict[str, tk.StringVar] = {}
         self.operand_surface_vars: dict[str, tk.StringVar] = {}
+        #: operand label -> the Tk card's "Surf" picker, registered by the Tk panel so the model
+        #: can hand it the surface list without walking the window's widgets (bugs/0969)
+        self.operand_surface_menus: dict = {}
         self.operand_aperture_type_vars: dict[str, tk.StringVar] = {}
         self.operand_aperture_value_vars: dict[str, tk.StringVar] = {}
         self.operand_frequency_vars: dict[str, tk.StringVar] = {}

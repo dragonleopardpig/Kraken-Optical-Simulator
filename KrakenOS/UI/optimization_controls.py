@@ -22,6 +22,8 @@ class OperandControl:
     variables: str
     kind: str = "text"
     choices: tuple = ()
+    #: the editor method that returns the choices when they depend on the layout (bugs/0969)
+    options: str = ""
 
 
 #: every setting an OperandSpec may name in its `controls`, in the order the Tk card lays them out
@@ -30,7 +32,7 @@ OPERAND_CONTROLS = (
     OperandControl("target", "Target", "operand_target_vars"),
     OperandControl("wavelength", "Wvl", "operand_wavelength_vars"),
     OperandControl("field", "Field", "operand_field_vars"),
-    OperandControl("surface", "Surf", "operand_surface_vars", "choice", ("Auto",)),
+    OperandControl("surface", "Surf", "operand_surface_vars", "choice", ("Auto",), "operand_surface_options"),
     OperandControl("frequency", "Freq", "operand_frequency_vars"),
     OperandControl("mtf_mode", "Mode", "operand_mtf_mode_vars", "choice", MTF_MODES),
     OperandControl("mtf_algorithm", "Alg", "operand_mtf_algorithm_vars", "choice", MTF_ALGORITHMS),
@@ -40,6 +42,18 @@ FIELD_XY_CONTROLS = (
     OperandControl("field_x", "Field X", "operand_field_x_vars"),
     OperandControl("field_y", "Field Y(s)", "operand_field_y_vars"),
 )
+
+
+def choices_for(control, editor) -> list:
+    """What a choice setting offers NOW: the model's own list when the setting names one, else its
+    fixed choices."""
+    method = getattr(editor, control.options, None) if control.options else None
+    if callable(method):
+        try:
+            return [str(value) for value in method()]
+        except Exception:
+            pass
+    return [str(value) for value in control.choices]
 
 
 def controls_for(spec) -> tuple:

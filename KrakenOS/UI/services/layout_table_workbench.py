@@ -5175,28 +5175,38 @@ class LayoutTableWorkbenchMixin:
         self._schedule_active_cell_border_update()
         return "break"
 
-    def _refresh_operand_surface_choices(self) -> None:
+    def operand_surface_options(self) -> list[str]:
+        """What an operand's "Surf" picker offers: Auto, then every surface that is neither the
+        object nor the image, as "index: name". Model data -- each shell's picker shows this list
+        (bugs/0969)."""
         values = ["Auto"]
         for index, row in enumerate(self.rows):
             if row.surface in {"Object", "Image"}:
                 continue
             values.append(f"{index}: {row.name}")
+        return values
+
+    def _refresh_operand_surface_choices(self) -> None:
+        """The rows changed: an operand aimed at a surface that is gone goes back to Auto, and the
+        pickers are handed the new list.
+
+        bugs/0969: this used to find the Tk pickers by walking EVERY widget of the window (409 of
+        them, on every table sync) and comparing each combobox's variable name. The Tk panel now
+        registers its pickers (`operand_surface_menus`), and a shell with its own gets the list
+        through `show_operand_surface_choices`."""
+        values = self.operand_surface_options()
         for label, var in self.operand_surface_vars.items():
             current = var.get().strip() if var.get() else "Auto"
             if current not in values:
                 var.set("Auto")
-        for widget in self.winfo_children():
-            self._apply_surface_values_to_descendants(widget, values)
-
-    def _apply_surface_values_to_descendants(self, widget, values) -> None:
-        if isinstance(widget, ttk.Combobox):
-            textvar = widget.cget("textvariable")
-            for var in self.operand_surface_vars.values():
-                if str(var) == textvar:
-                    widget["values"] = values
-                    break
-        for child in widget.winfo_children():
-            self._apply_surface_values_to_descendants(child, values)
+        for menu in (self.__dict__.get("operand_surface_menus") or {}).values():
+            try:
+                menu["values"] = values
+            except Exception:
+                pass
+        shell = self.__dict__.get("show_operand_surface_choices")
+        if callable(shell):
+            shell(values)
 
     def _sync_object_controls(self) -> None:
         if not hasattr(self, "field_summary_var"):

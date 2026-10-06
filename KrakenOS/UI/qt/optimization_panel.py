@@ -9,7 +9,7 @@ variables, which this binds to exactly as the System dock binds to its inputs.
 """
 from __future__ import annotations
 
-from KrakenOS.UI.optimization_controls import controls_for, worker_choices
+from KrakenOS.UI.optimization_controls import choices_for, controls_for, worker_choices
 
 
 class OptimizationPanel:
@@ -61,6 +61,8 @@ class OptimizationPanel:
         editor.selected_merit_operands = self.selected_labels
         editor.select_merit_operands = self._select_labels
         editor.show_optimization_state = self.show_state
+        # the rows changed: an open "Surf" picker shows the model's new list (bugs/0969)
+        editor.show_operand_surface_choices = self.show_surface_choices
         self.show_state(bool(getattr(editor, "optimization_running", False)))
 
     # ---- the operand list ---------------------------------------------------------------------
@@ -108,7 +110,7 @@ class OptimizationPanel:
                     continue
                 if control.kind == "choice":
                     field = QComboBox()
-                    field.addItems(list(control.choices))
+                    field.addItems(choices_for(control, self.editor))
                     field.setCurrentText(str(variable.get()))
                     field.currentTextChanged.connect(
                         lambda text, variable=variable: self._commit(variable, text))
@@ -120,6 +122,23 @@ class OptimizationPanel:
                 self.fields[(spec.label, control.name)] = field
             self.settings_layout.addWidget(box)
         self.settings_layout.addStretch(1)
+
+    def show_surface_choices(self, values) -> None:
+        """The model's `show_operand_surface_choices` seam: every open "Surf" picker offers
+        ``values`` and shows its operand's variable (which the model has already put back to
+        Auto if its surface is gone). No write goes back to the model from here."""
+        for (label, name), field in list(self.fields.items()):
+            if name != "surface":
+                continue
+            variable = (getattr(self.editor, "operand_surface_vars", None) or {}).get(label)
+            field.blockSignals(True)
+            try:
+                field.clear()
+                field.addItems([str(value) for value in values])
+                if variable is not None:
+                    field.setCurrentText(str(variable.get()))
+            finally:
+                field.blockSignals(False)
 
     def _commit(self, variable, text) -> None:
         """What a Tk card entry does on commit: capture, write, and mark the plot stale."""

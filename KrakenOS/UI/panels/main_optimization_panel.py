@@ -184,6 +184,7 @@ class MainOptimizationPanel:
             surface_menu.bind("<FocusIn>", self._begin_history_capture, add="+")
             surface_menu.bind("<<ComboboxSelected>>", self._mark_plot_update_pending)
             control_widgets["surface"] = (surface_label, surface_menu)
+            self.operand_surface_menus[spec.label] = surface_menu     # bugs/0969: the model fills it
 
             if spec.label == "MTF @ freq":
                 frequency_var = tk.StringVar(value="5")
