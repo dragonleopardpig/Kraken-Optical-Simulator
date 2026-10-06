@@ -191,6 +191,10 @@ def main(argv: Optional[list] = None) -> int:
     argv = list(sys.argv if argv is None else argv)
     try:
         shell, source, rest = resolve_shell(argv)
+        if not shell and os.environ.get("KRAKEN_LAUNCHER_DRY_RUN"):
+            # a dry run reports and stops: it must never put a window up and wait on it
+            print(f"[KrakenOS] dry run: shell=(ask) arguments={rest[1:]}")
+            return 0
         if not shell:
             shell = first_run_choice(ask_which_shell)
             source = "your answer"

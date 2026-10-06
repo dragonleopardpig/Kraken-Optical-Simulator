@@ -21,10 +21,11 @@ is never read or written.
   P4 the form both interfaces show: it offers the interfaces that can run here and "ask me"; it
      opens on the saved choice; Apply writes the file -- read back THROUGH the start decision -- and
      "ask me" removes it; an unknown choice is refused
-  L  the launcher, run as the real command with nothing started (a dry run): it reports the
-     interface and passes the layout on, for the command line, the environment and the saved
-     preference; an unknown interface exits 2 with a message. And the dispatch: "qt" runs the Qt
-     entry with the arguments, "tk" the Tk entry with the layout
+  L  the launcher, run as the real command with nothing started (a dry run): with nothing set it
+     says it would ask -- and asks nothing; it reports the interface and passes the layout on for
+     the command line, the environment and the saved preference; an unknown interface exits 2
+     with a message. And the dispatch: "qt" runs the Qt entry with the arguments, "tk" the Tk
+     entry with the layout
   W  the first-run window itself (Tk): a radio per interface, Qt selected, "Remember my choice"
      ticked; Open returns the selection; closing it returns no interface
   T  the Tk interface: File > Interface Preference... is there, and it opens the form's window with
@@ -62,7 +63,16 @@ def pure_checks() -> list:
 
     rows = []
     both = {"qt": "", "tk": ""}
+    claim = "P1"
+    try:
+        _pure_claims(rows, both, launcher, user_preferences, form_module, FormRefused, SimpleNamespace, ScriptedUiHost)
+    except Exception as exc:
+        claim = ("P1", "P2", "P3", "P4")[min(len(rows), 3)]
+        rows.append([claim, False, f"raised {type(exc).__name__}: {exc}"])
+    return rows
 
+
+def _pure_claims(rows, both, launcher, user_preferences, form_module, FormRefused, SimpleNamespace, ScriptedUiHost) -> None:
     # ---- P1
     folder = _fresh_config()
     empty = user_preferences.load()
@@ -172,7 +182,6 @@ def pure_checks() -> list:
                  f"the form offers {offered} and opens on {opened_on!r}; Apply says {message!r} and the start decision reads "
                  f"{through_start}; reopened it shows {reopened!r}; 'ask me' leaves {asks_again}; an unknown choice: "
                  f"{refused_choice!r}"])
-    return rows
 
 
 def launcher_checks() -> list:
@@ -185,12 +194,16 @@ def launcher_checks() -> list:
         env.pop("KRAKEN_UI_SHELL", None)
         env.update(KRAKEN_CONFIG_DIR=str(folder), KRAKEN_LAUNCHER_DRY_RUN="1")
         env.update(environment or {})
-        proc = subprocess.run([sys.executable, "-m", "KrakenOS.UI", *arguments], capture_output=True, text=True,
-                              timeout=300, env=env, cwd=str(Path.cwd()))
+        try:
+            proc = subprocess.run([sys.executable, "-m", "KrakenOS.UI", *arguments], capture_output=True, text=True,
+                                  timeout=90, env=env, cwd=str(Path.cwd()))
+        except subprocess.TimeoutExpired:
+            return -1, "TIMED OUT (a dry run must start nothing and ask nothing)", "", [""]
         line = next((text for text in proc.stdout.splitlines() if "dry run:" in text), "")
         said = next((text for text in proc.stdout.splitlines() if "opening the" in text), "")
         return proc.returncode, line.split("dry run: ", 1)[-1], said, proc.stderr.strip().splitlines()[-1:] or [""]
 
+    nothing_set = dry([str(SCENE)])              # nothing decides: a dry run says so and asks nothing
     by_flag = dry(["--shell", "tk", str(SCENE)])
     by_environment = dry([str(SCENE)], {"KRAKEN_UI_SHELL": "qt"})
     user_preferences.set_value("shell", "qt")
@@ -210,11 +223,13 @@ def launcher_checks() -> list:
         launcher.start("tk", ["prog"])
     finally:
         tk_entry.main, qt_entry.run = real_tk, real_qt
-    return [["L", by_flag[:2] == (0, f"shell=tk arguments={[str(SCENE)]}") and "the command line" in by_flag[2]
+    return [["L", nothing_set[:2] == (0, f"shell=(ask) arguments={[str(SCENE)]}")
+             and by_flag[:2] == (0, f"shell=tk arguments={[str(SCENE)]}") and "the command line" in by_flag[2]
              and by_environment[:2] == (0, f"shell=qt arguments={[str(SCENE)]}") and "KRAKEN_UI_SHELL" in by_environment[2]
              and by_file[:2] == (0, "shell=qt arguments=[]") and "your saved preference" in by_file[2]
              and unknown[0] == 2 and "gtk" in unknown[3][0]
              and ran == [("qt", ["prog", str(SCENE)]), ("tk", str(SCENE)), ("tk", None)],
+             f"with nothing set -> {nothing_set[1]!r} (it would ask; a dry run does not); "
              f"`python -m KrakenOS.UI --shell tk <layout>` -> {by_flag[1]!r}; with KRAKEN_UI_SHELL=qt -> {by_environment[1]!r}; "
              f"with the preference saved -> {by_file[1]!r} ({by_file[2].split('(')[-1].split(')')[0]}); --shell gtk exits "
              f"{unknown[0]} saying {unknown[3][0][:60]!r}; the dispatch ran {[(s, bool(a)) for s, a in ran]}"]]
@@ -374,7 +389,7 @@ def qt_checks() -> list:
              f"Apply writes {wrote} and closes it: {not dialog.isVisible()}"]]
 
 
-def _run(call: str, needs: str) -> list:
+def _run(call: str, needs: str, claim: str) -> list:
     driver = (
         "import json, os\n"
         "if not os.environ.get('DISPLAY'):\n"
@@ -395,26 +410,31 @@ def _run(call: str, needs: str) -> list:
         proc = subprocess.run([sys.executable, "-c", driver], capture_output=True, text=True, timeout=900,
                               env=env, cwd=str(Path.cwd()))
     except subprocess.TimeoutExpired:
-        return [["X", False, f"{call} timed out"]]
+        return [[claim, False, f"{call} timed out"]]
     for line in proc.stdout.splitlines():
         if line.startswith(RESULT_MARK):
             return json.loads(line[len(RESULT_MARK):])
         if line.startswith(SKIP_MARK):
             return [["X", True, f"SKIP {call}: " + line[len(SKIP_MARK):]]]
     tail = (proc.stderr or proc.stdout or "").strip().splitlines()[-8:]
-    return [["X", False, f"{call} exit {proc.returncode}; " + " | ".join(tail)]]
+    return [[claim, False, f"{call} exit {proc.returncode}; " + " | ".join(tail)]]
 
 
 def run_checks() -> tuple[bool, list[str]]:
     real = os.environ.get("KRAKEN_CONFIG_DIR")
     try:
-        rows = pure_checks() + launcher_checks()
+        rows = pure_checks()
+        try:
+            rows += launcher_checks()
+        except Exception as exc:
+            rows.append(["L", False, f"raised {type(exc).__name__}: {exc}"])
     finally:
         if real is None:
             os.environ.pop("KRAKEN_CONFIG_DIR", None)
         else:
             os.environ["KRAKEN_CONFIG_DIR"] = real
-    rows += _run("window_checks()", "") + _run("tk_checks()", "") + _run("qt_checks()", "import PySide6\n")
+    rows += (_run("window_checks()", "", "W") + _run("tk_checks()", "", "T")
+             + _run("qt_checks()", "import PySide6\n", "Q"))
     return all(ok for _k, ok, _d in rows), [f"{k} = {d}" if ok else f"{k} FAILED: {d}" for k, ok, d in rows]
 
 
