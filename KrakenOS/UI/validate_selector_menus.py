@@ -21,7 +21,8 @@ show it.
        P4 an entry's command is the model's own loader, with the right argument, for each of the
           four kinds of entry
   T  a real Tk editor: each of its four menus shows exactly the model's menu; a name added to the
-     library appears after a refresh; a real menu entry loads its layout
+     library appears after a refresh, and an emptied list is one DISABLED line; a real menu entry
+     loads its layout
   Q  a real Qt shell: the ribbon has the four buttons (three under File > Library, one under
      Surfaces > Catalogs), each with an icon; opened, each shows exactly the model's menu -- as it
      is NOW, so a name added since the last opening is there; a real entry loads its layout with the
@@ -163,7 +164,13 @@ def tk_checks() -> list:
     for _ in range(2):
         editor.update()
     grown = [row[1] for row in tk_menu_outline(editor.machine_vision_menu)]
-    editor.machine_vision_names = editor.machine_vision_names[:-1]
+    kept_names = editor.machine_vision_names[:-1]
+    editor.machine_vision_names = []
+    editor._refresh_selector_menus()
+    for _ in range(2):
+        editor.update()
+    emptied = tk_menu_outline(editor.machine_vision_menu)
+    editor.machine_vision_names = kept_names
     editor._refresh_selector_menus()
     # a real menu entry loads its layout
     category = editor.layout_menu.nametowidget(editor.layout_menu.entrycget(0, "menu"))
@@ -175,10 +182,12 @@ def tk_checks() -> list:
     loaded = (Path(str(editor.current_layout_file or "")).name, len(editor.rows))
     return [["T", all(same.values()) and counts["layouts"] >= 100 and counts["machine_vision"] >= 6
              and counts["examples"] >= 30 and counts["insert_component"] >= 1
-             and grown[-1] == "Machine Vision added by the guard" and loaded[0].endswith(".py") and loaded[1] > 2
-             and loaded[1] != rows_before,
+             and grown[-1] == "Machine Vision added by the guard"
+             and emptied == [("command", "No machine-vision layouts found", False)]
+             and loaded[0].endswith(".py") and loaded[1] > 2 and loaded[1] != rows_before,
              f"each Tk menu shows the model's menu: {same}; entries {counts}; a name added to the library is the last "
-             f"entry after a refresh: {grown[-1]!r}; the real entry {label!r} loaded {loaded[0]} ({rows_before} -> "
+             f"entry after a refresh: {grown[-1]!r}; with none, the menu is {emptied}; the real entry {label!r} "
+             f"loaded {loaded[0]} ({rows_before} -> "
              f"{loaded[1]} rows)"]]
 
 
@@ -219,7 +228,10 @@ def qt_checks() -> list:
     # never stale: a name added since the last opening is there at the next
     editor.machine_vision_names = list(editor.machine_vision_names) + ["Machine Vision added by the guard"]
     fresh = [action.text() for action in opened("model:machine_vision").actions()][-1]
-    editor.machine_vision_names = editor.machine_vision_names[:-1]
+    kept_names = editor.machine_vision_names[:-1]
+    editor.machine_vision_names = []
+    emptied = qmenu_outline(opened("model:machine_vision"))
+    editor.machine_vision_names = kept_names
 
     tk_windows: list = []
     init = tk.Toplevel.__init__
@@ -246,12 +258,14 @@ def qt_checks() -> list:
              and built == sorted(MODEL_MENUS) and all(icons.values()) and all(same.values())
              and counts["layouts"] >= 100 and counts["machine_vision"] >= 6 and counts["examples"] >= 30
              and counts["insert_component"] >= 1 and fresh == "Machine Vision added by the guard"
+             and emptied == [("command", "No machine-vision layouts found", False)]
              and loaded[0].endswith(".py") and loaded[1] > 2 and loaded[1] != rows_before and loaded[2] == loaded[1]
              and loaded[0] in loaded[3] and inserted[1] > rows_loaded and inserted[2] == inserted[1]
              and tk_windows == [] and width <= 1240,
              f"the ribbon places them {sorted(set(placed.values()))} and built {len(built)}, each with an icon: "
              f"{all(icons.values())}; opened, each shows the model's menu: {same}; entries {counts}; a name added since "
-             f"the last opening is there: {fresh!r}; the real entry {category.text()!r} > {entry.text()!r} loaded "
+             f"the last opening is there: {fresh!r}; with none, the menu is {emptied}; the real entry "
+             f"{category.text()!r} > {entry.text()!r} loaded "
              f"{loaded[0]} ({rows_before} -> {loaded[1]} rows, table {loaded[2]}, title {loaded[3]!r}); the component "
              f"{inserted[0]!r} took the rows {rows_loaded} -> {inserted[1]} (table {inserted[2]}); Tk windows "
              f"{tk_windows}; window minimum width {width} px"]]
