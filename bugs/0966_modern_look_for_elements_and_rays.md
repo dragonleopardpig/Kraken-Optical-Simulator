@@ -85,6 +85,9 @@ inspector's default surface colours are the look module's constants.
   silhouette passes at 2.8 px and 9 edge passes at 2.0 px, rays at saturation 1.0) and back.
 - **E:** both looks draw the same 55 element actors with the same points per row, the same 18 rays,
   the same 297 ray cells.
+- **S:** through the real actor factory, a glass-edge line asked at 2.0 px is drawn modern when tied
+  to a row and left exactly as asked with no row -- which is how imported STEP hardware is drawn.
+- **D:** 144 rays asked at 0.88 through the real ray merge come out as one actor at 0.44.
 - **I:** by the picture: 11 307 vivid pixels classic, 953 modern (what is left is the Nav Cube's
   arrows, the optical axis and the axes triad); the modern backdrop is darker and bluer at the top.
 - **T:** in the Tk app the switch is off, the scene is the classic one on white, and the Overlays
@@ -94,3 +97,48 @@ inspector's default surface colours are the look module's constants.
 scene from the flag's own camera, the doublets table, `om05a_folded`, two fold mirrors in a
 three-quarter view, a selected lens (the pink selection tint reads clearly on the pale glass).
 Pictures: `0966_modern_pyrite.png`, `0966_modern_doublets.png`.
+
+**Mutation-checked: 25 of 25 caught, each by the claims it targets** (every mutation restored from a
+copy; the tree clean afterwards):
+
+| Mutation | Caught by |
+|---|---|
+| default glass keeps the classic cyan; its opacity is not kept in range; an element hidden on purpose becomes visible | P1 |
+| the triangle wires stay drawn; a mirror gets no material; any colour is taken for default glass | P1 |
+| the classic palette gets a second source | P1 |
+| the outline keeps its classic widths | P1, Q, S |
+| glass gets no material; the material is never applied to an actor | P1 and Q; Q |
+| ray saturation is not capped | P2, Q, I |
+| a diagnostic ray fades like the rest; a grey stub is recoloured; lightness is not drawn to the middle | P2 |
+| ray opacity does not fall with the count | P2, D |
+| the ray count does not reach the law (the merge passes 1) | D |
+| the ray merge ignores the look | Q, D, I |
+| the modern backdrop stays flat; the classic look keeps the gradient | Q, I |
+| the actor factory ignores the look | Q, S, I |
+| the look reaches actors with no row (STEP hardware) | S |
+| switching the look does not redraw the scene | Q, I |
+| the Qt shell does not turn the look on | Q, S, D, I |
+| the Tk app starts in the modern look | T |
+| the Overlays menu loses the entry | Q, T |
+
+## Gates
+
+By the cadence of 2026-10-05: its own guard, plus the guards that read this code, one at a time at
+low priority on X299-SSD.
+
+- **Phase 735** recorded in the baseline (1 pass, 0 fail) -- it passes inside the harness as well as
+  alone.
+- **Neighbours, all pass:** the interaction contract (phase 655, 259 checks -- its source pins on the
+  scene refresh still hold), soft STEP bodies (728: the STEP switch still gives the two glass passes
+  with the modern look on), the scene layout (724), the 3D toolbar catalogue (707), the shell flag
+  (729), the 5e tools and readouts (706), the phase-2 preview's elements and rays (0857, 0858), the
+  DXF export's menu wiring (0650) and the fold-mirror guard that reads the Overlays menu.
+- **Skipped, not passed:** `validate_open3d_step_edges_glass_palette` -- its repro scene
+  (`machine_vision_150mm_measured_test.py`) is not on this machine.
+
+**Owed, on the user's go:** the Qt-hosted harness (`--shell qt`, 352 phases, about 15 minutes) is the
+run that would notice a phase minding the look, because the look is on by default there. A source scan
+found little to mind (7 colour or opacity reads in the harness, no pixel reads), but that is a scan,
+not a run. The full Tk gate is owed since 8403abde; the look is off in the Tk app, so it covers the
+classic path.
+
