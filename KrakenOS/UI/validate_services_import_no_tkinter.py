@@ -4,8 +4,8 @@ Phase 7d of the Qt migration. `services/`, `reports/`, `row_forms/`, `uihost/` a
 hold no toolkit code but the Tk host itself. Measured 2026-10-06: 14 of 151 service modules imported
 tkinter. Six did not need to -- five never used what they imported, one used it only to annotate a
 dialog's parent (which is a Qt widget under the Qt shell) -- and a seventh made two `tk.BooleanVar`s
-that no other host can make. The seven left each hold a real Tk window or menu; they are listed
-here with what they hold, and move out one at a time.
+that no other host can make. The seven left each held a real Tk window or menu; they are listed
+here with what they hold, and move out one at a time (bugs/0972 moved the first: six left).
 
   I  the other way in: a service that imports a Tk VIEW module (`panels/`, `widgets/`) at module
      level reaches tkinter without naming it. Those are counted too, against their own exact list

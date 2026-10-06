@@ -62,3 +62,32 @@ picture: after this, **six import tkinter directly and five import a Tk view pac
   inserted into the rows; the window's minimum width is 1234 px.
 
 **Seen by eye:** the File tab with its Library group, and the Layouts menu open on a category.
+(`0972_qt_layouts_menu.png`)
+
+## Checks
+
+**Mutations: 20 of 20 caught, each by the claim meant to catch it** -- among them an empty category
+given a submenu, the separator dropped, "Top Level" not floated, case-sensitive sorting, an example
+entry running the layout loader, the Tk menus not refilled or not cleared first, a disabled line
+drawn enabled (Tk, and Qt), the Qt menu filled once instead of at each opening, the window not
+following the model, an entry running nothing, a button missing from the ribbon, a button without
+an icon, and a choice on the folded ribbon's pop-up page leaving the page open.
+
+The first run of them found two things wrong with the guard itself, both fixed:
+
+- three mutations **crashed** the model claims (an index into a menu that was no longer there)
+  instead of failing one. Each claim now fails on its own;
+- one -- a Common Component entry that **loads** instead of inserting -- passed the Qt claim,
+  because loading an insertable layout over an open scene appends it: the rows grow by the same
+  three either way. What tells the two apart is the scene's file, so that is what T and Q now
+  check (an insert leaves the scene untitled). Not the status line: the plot refresh that follows
+  an insert overwrites its "Inserted ..." message, in both interfaces.
+
+That second one led to **bugs/0973 (open)**: after such an append the scene points at the appended
+layout's own file, and Save overwrites the shipped layout.
+
+**Neighbouring guards, all pass:** the ribbon (714) -- 68 buttons + 4 model menus + 6 dropdowns
+listing 34 commands reach 102 of 102 actions, window minimum width 1234 px; menu parity (718) --
+76 of 76; the interaction contract (655); the tkinter-import list (738).
+
+**Baseline:** phases 740 and 738 recorded (pass). The full Tk gate is owed since 8403abde.
