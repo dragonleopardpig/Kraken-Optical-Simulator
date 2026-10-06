@@ -51,3 +51,24 @@ second part of 7d.
 The guard earned its keep on its first run: it found a second `from tkinter import messagebox`
 inside `open3d_face_assignment.py` that my own survey had missed (the survey kept one line per
 imported name).
+
+## Checks (2026-10-06, X299-SSD; every run alone, at low priority)
+
+**Mutations: 3 of 3 caught**, each restored from a copy, the tree clean afterwards.
+
+| Mutation | Caught by |
+|---|---|
+| a cleaned service imports tkinter again | S, M |
+| the station's switches are `tk.BooleanVar`s again | S, M, V |
+| an existing switch is replaced | V |
+
+**Neighbouring guards -- the ones that exercise the cleaned modules -- all pass, none skipped:**
+the interaction contract (655), the cell composition that calls `load_station` (496) and the Qt
+cell view over it (736), missing CAD files through `layout_import_export` (734), the model-forms
+census (721: still 16 Tk-only calls in 6 windows), soft STEP bodies over a scene with imported
+STEP (728), the two right-click verbs in `open3d_face_assignment` whose dead imports went (0817
+re-record the seat, 0819 refit the glass), and menu parity (718), which runs the tolerance
+commands.
+
+**Baseline:** phase 738 recorded (1 pass, 0 fail). The full Tk gate is owed since 8403abde.
+
