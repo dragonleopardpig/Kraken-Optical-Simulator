@@ -18,9 +18,9 @@ today). It also tied model code to a Tk widget tree, which phase 7f removes.
      after a row is renamed and the table synced they offer the new list; a refresh makes no
      `winfo_children` call on the editor
   Q  a real Qt shell, with one operand given a surface setting: the seam is the panel's; its "Surf"
-     picker offers the model's list; choosing an entry writes that operand's variable; when that
-     surface's row is removed the model puts the variable back to Auto and the OPEN picker shows the
-     new list and Auto
+     picker offers the model's list; choosing an entry writes that operand's variable; when ANOTHER
+     row is renamed the OPEN picker shows the new list and still that entry; when that surface's own
+     row is removed the model puts the variable back to Auto and the open picker shows Auto
 """
 from __future__ import annotations
 
@@ -71,14 +71,18 @@ def pure_checks() -> list:
     # an owner with nothing registered and no shell (a stripped snapshot editor): nothing raises
     bare = SimpleNamespace(rows=rows, operand_surface_vars={"A": _Var("9: gone")})
     bare.operand_surface_options = lambda: Model.operand_surface_options(bare)
-    Model._refresh_operand_surface_choices(bare)
+    try:
+        Model._refresh_operand_surface_choices(bare)
+        bare_raised = ""
+    except Exception as exc:
+        bare_raised = f"{type(exc).__name__}: {exc}"
     out = [["P1", options == ["Auto", "1: front", "2: back"] and after == {"A": "2: back", "B": "Auto", "C": ""}
             and all(menu.get("values") == options for menu in menus.values()) and handed == [options] and walked == []
-            and bare.operand_surface_vars["A"].get() == "Auto",
+            and not bare_raised and bare.operand_surface_vars["A"].get() == "Auto",
             f"the list {options}; after a refresh the operands' surfaces are {after}; each of {len(menus)} registered "
             f"pickers got the list {all(menu.get('values') == options for menu in menus.values())}; the shell was handed it "
             f"{len(handed)}x; the window was asked for its widgets {len(walked)}x; an owner with no picker and no shell: "
-            f"{bare.operand_surface_vars['A'].get()!r}"]]
+            f"{bare.operand_surface_vars['A'].get()!r}{' -- RAISED ' + bare_raised if bare_raised else ''}"]]
 
     surface = next(control for control in catalogue.OPERAND_CONTROLS if control.name == "surface")
     fixed = next(control for control in catalogue.OPERAND_CONTROLS if control.name == "mtf_mode")
@@ -169,6 +173,19 @@ def qt_checks() -> list:
     settle()
     chosen = (str(variable.get()), field.currentText())
     row_index = int(target.split(":", 1)[0])
+    # another row is renamed: the list changes, this operand's surface is still in it
+    other = int(options[-1].split(":", 1)[0])
+    other_name = editor.rows[other].name
+    editor.rows[other].name = "renamed for the guard"
+    try:
+        editor._sync_table()
+        settle()
+        renamed_options = editor.operand_surface_options()
+        kept = (str(variable.get()), field.currentText(), [field.itemText(i) for i in range(field.count())] == renamed_options)
+    finally:
+        editor.rows[other].name = other_name
+        editor._sync_table()
+        settle()
     removed = editor.rows.pop(row_index)
     try:
         editor._sync_table()
@@ -180,10 +197,12 @@ def qt_checks() -> list:
         editor.rows.insert(row_index, removed)
         editor._sync_table()
     return [["Q", seam_is_panel and len(options) >= 4 and offered == options and chosen == (target, target)
+             and other != row_index and renamed_options != options and kept == (target, target, True)
              and target not in new_options and offered_after == new_options and after == ("Auto", "Auto"),
              f"the seam is the Qt panel's: {seam_is_panel}; operands declaring a surface setting today: {declared_today}; "
              f"given one, {first.label!r} offers the model's {len(options)} choices: {offered == options}; choosing "
-             f"{target!r} -> (variable, picker) {chosen}; with that row removed the model's list has {len(new_options)}, "
+             f"{target!r} -> (variable, picker) {chosen}; with ANOTHER row renamed the list changes and the open picker "
+             f"still shows it: (variable, picker, new list shown) {kept}; with that row removed the model's list has {len(new_options)}, "
              f"the open picker shows it: {offered_after == new_options}, and (variable, picker) are {after}"]]
 
 
