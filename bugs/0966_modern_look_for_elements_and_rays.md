@@ -74,6 +74,13 @@ inspector's default surface colours are the look module's constants.
 - The optical axis, the FOV box, the readouts, the labels and the solve banner.
 - The 2D plot's ray colours (the 3D rays keep the same hues, so the two still correspond).
 
+## Confirmed by the user
+
+`flag_20261006_083955_746` (2026-10-06 08:39, the Qt shell at febaa070, `om05a_folded`): "Look nicer now."
+Its screenshot shows the look in the real app: gradient backdrop, pale prisms under thin outlines,
+translucent beams. The un-promoted "optical" STEP import (the device handler) is the one teal body
+left in the picture -- see "Not changed".
+
 ## Guard: `validate_open3d_modern_look` (phase 735)
 
 - **P1, P2:** the look as numbers, no display -- each row of the table above, the ray law at
