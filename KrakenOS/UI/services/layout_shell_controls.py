@@ -520,6 +520,14 @@ class LayoutShellControlsMixin:
     def _build_atmosphere_panel(self, parent) -> None:
         self._main_atmosphere_panel().build_hidden_panel(parent)
 
+    def open_interface_preference(self):
+        """File > Interface Preference... (bugs/0971): which interface KrakenOS opens in. The same
+        form in both; it changes the saved preference, not the running window."""
+        from KrakenOS.UI.panels.row_form_view import present_row_form
+        from KrakenOS.UI.row_forms.interface_preference import build_interface_preference_form
+
+        return present_row_form(self, build_interface_preference_form(self), wraplength=520)
+
     def open_atmosphere_settings_dialog(self) -> None:
         shell = self.__dict__.get("show_atmosphere_settings")
         if callable(shell):          # bugs/0954: the shell's own window over the same variables

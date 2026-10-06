@@ -142,6 +142,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0968 | Four panel-made model variables reached only by name (`__dict__.get`, a catalogue's string) are declared; the registry guard's scan sees that kind of use now | phase 7c |
 | 0969 | An operand's surface choices are model data (`operand_surface_options`); the Tk panel registers its pickers and the Qt panel takes the list through a seam -- the model no longer walks the window's 409 widgets on every table sync | phase 7c |
 | 0970 | Services that import tkinter: 14 -> 7. Six never needed it (dead imports, an annotation), `inspection_cell` makes its station's switches through the host; the seven left hold real Tk windows or menus and are pinned by a list that can only shrink | phase 7d |
+| 0971 | Both interfaces stay (the user's decision). `python -m KrakenOS.UI` opens the preferred one: command line, then environment, then a saved per-user preference, else a question asked once; Interface Preference... is one form in both interfaces | phase 7h, 7i |
 | 0964 | The Qt shell had NO 2D plot (built only by its guard): now a 2D Plot panel with the Tk plot toolbar's six controls (plot2d_toolbar.PLOT_2D), Trace Now, Update, Ray Inspector; an Update shows it | phase 6 |
 | 0963 | The ribbon folds by the WINDOW's height (on crossing 1100 px), not the screen's; a fold by hand is kept | shell |
 | 0962 | The top edge's panel tabs ride in the ribbon's tab row, no row of their own | shell |
@@ -414,15 +415,17 @@ hidden Tk widgets, and the tests still reach the model through Tk.
 | 7e | **The inspector owns its window** instead of being a `tk.Toplevel` -- step 1d for the inspector, as 0853 was for the editor | 1 class, 129 references |
 | 7f | **The editor builds without a Tk root** under a host that is not Tk, so the Tk panels are not built in the Qt shell at all. Needs 7b-7e first | `layout_editor.py`: 39 references |
 | 7g | **Validators off Tk:** the 78 that touch Tk directly are repointed (the model through `ScriptedUiHost`, a view through its own shell); the 247 that build an editor follow 7f | 78 + 247 validators |
-| 7h | **Qt is the default shell:** the documented start is `python -m KrakenOS.UI.layout_editor` (Tk) today, the Qt shell is `python -m KrakenOS.UI.qt.app`; the gate's default baseline becomes the Qt one | a launcher and the docs |
-| 7i | **The Tk-retirement decision** -- keep both shells behind the seam, or delete `panels/` (44 files, 13 357 lines) and the Tk views | the user's |
+| 7h | ~~Qt is the default shell~~ -- **replaced by the user's decision and done (0971, phase 739): the user chooses.** `python -m KrakenOS.UI` opens the preferred interface -- command line, environment, a saved per-user preference, else a question asked once | done |
+| 7i | ~~The Tk-retirement decision~~ -- **decided 2026-10-06: Tk is NOT retired.** "I would like to have both TK and QT available, let user to choose his usage preference." The seam -- one model, a Tk view and a Qt view -- is permanent; `panels/` stays | decided |
 
 7a-7d are independent of each other and each lands with the gate green on Tk; 7e and 7f are the
 two structural steps; 7h can be decided at any point after 7a, because the user already works in
 the Qt shell (the reports since 0957 are about it).
 
-**Decisions owed (the user's):** when Qt becomes the default start; whether Tk is retired or
-kept; and the cursor cues (below).
+**Decided (the user, 2026-10-06):** both interfaces stay and the user chooses which opens (0971).
+What that changes below: 7d part 2 is worth doing (Tk view code belongs in `panels/`, not in
+`services/`); 7g is "both interfaces gated" rather than "validators off Tk"; 7e and 7f still
+stand -- the Qt interface should not need a hidden Tk tree. **Still owed:** the cursor cues (below).
 
 ### Phase 5, broken down
 

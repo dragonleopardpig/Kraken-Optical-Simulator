@@ -64,6 +64,7 @@ class MainWindowBuilder:
         file_menu.add_command(label="Export 3D STEP...", command=self.export_3d_step)
         file_menu.add_command(label="Export 3D View DXF...", command=self.export_3d_view_dxf)
         file_menu.add_separator()
+        file_menu.add_command(label="Interface Preference...", command=self.open_interface_preference)
         file_menu.add_command(label="Quit", command=self.request_quit)
         menubar.add_cascade(label="File", menu=file_menu)
 

@@ -16846,6 +16846,10 @@ phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
     721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
     'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
     'qt_model_forms_open_in_qt')
+phase_739_interface_preference = _phase_from_standalone(
+    739, "both interfaces stay and the user chooses which one opens (0971): the per-user preferences file round-trips, survives a file that is not JSON and reports a folder it cannot write; the command line beats the environment beats the saved preference, the request is removed from the arguments passed on, an unknown name is refused on the command line and ignored elsewhere, and an interface that cannot run here falls back with a note; the first-run question offers both, remembers only when told to and asks nothing with one interface installed; the form both interfaces show writes the file that the start decision then reads; the launcher run as the real command reports the interface for each source and exits 2 on an unknown one; the first-run window, the Tk File menu entry and the Qt Help-dropdown action each open and write the preference",
+    'KrakenOS.UI.validate_interface_preference',
+    'interface_preference')
 phase_738_services_import_no_tkinter = _phase_from_standalone(
     738, "the toolkit-free layers import no tkinter, by a list that may only shrink (0970): every module of services, reports, row_forms, uihost and qt that imports tkinter at run time is in the guard's exact list with what Tk code it still holds -- seven services and the Tk host, down from fourteen services; the seven cleaned modules import and refer to no tkinter name; and a station loaded with no inspector gets its two inspector switches from the editor's UI host, so a toolkit-free owner gets both where the old tk.BooleanVar code made none",
     'KrakenOS.UI.validate_services_import_no_tkinter',
@@ -17785,6 +17789,7 @@ def main() -> int:
             phase_736_qt_inspection_cell_view,
             phase_737_operand_surface_choices,
             phase_738_services_import_no_tkinter,
+            phase_739_interface_preference,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

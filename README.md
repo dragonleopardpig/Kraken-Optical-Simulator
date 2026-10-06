@@ -51,8 +51,14 @@ All dependencies are declared in `pyproject.toml`, so the old per-package `pip i
 ### Running the layout editor
 With the environment active:
 ```bash
-python -m KrakenOS.UI.layout_editor
+python -m KrakenOS.UI
 ```
+
+KrakenOS has two interfaces over the same program: the **Qt interface** (a ribbon, panels that fold away, one
+large 3D scene) and the **Tk interface** (a menu bar, the 2D layout, a separate 3D window). The first start asks
+which one to open and remembers the answer; change it any time with **Interface Preference...** (File menu in
+Tk, Help in the Qt ribbon), or for one run with `--shell tk` or `--shell qt`. A layout file may follow:
+`python -m KrakenOS.UI my_layout.py`.
 
 - Or clone the repository and place the directory "KrakenOS" in the same path where the code to be executed is located.
 

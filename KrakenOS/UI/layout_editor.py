@@ -3214,7 +3214,7 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
 
 
 
-def main() -> None:
+def main(scene: "str | None" = None) -> None:
     # bugs/0536 (live report "drag gizmo is very lag"): under Hyprland/XWayland the
     # compositor withholds frame callbacks from the (partially occluded) 3D surface and
     # Mesa's swap then blocks for its FULL 1 s timeout -- every VTK render measured a
@@ -3223,6 +3223,10 @@ def main() -> None:
     os.environ.setdefault("vblank_mode", "0")            # Mesa GLX/EGL
     os.environ.setdefault("__GL_SYNC_TO_VBLANK", "0")    # NVIDIA
     app = KrakenLayoutEditor()
+    if scene:                       # bugs/0971: `python -m KrakenOS.UI layout.py`, as the Qt shell takes
+        path = Path(scene)
+        app.layout_files[path.stem] = path
+        app.load_layout_by_name(path.stem)
     app.mainloop()
 
 
