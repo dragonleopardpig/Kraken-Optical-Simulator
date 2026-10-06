@@ -72,13 +72,20 @@ def pure_checks() -> list:
     user_preferences.set_value("shell", None)
     removed = dict(user_preferences.load())
     user_preferences.path().write_text("{not json", encoding="utf-8")
-    corrupt = user_preferences.load()
+    try:
+        corrupt = user_preferences.load()
+    except Exception as exc:
+        corrupt = f"RAISED {type(exc).__name__}"
     over = user_preferences.set_value("shell", "tk")
     recovered = dict(user_preferences.load())
     blocker = folder / "a_file"
     blocker.write_text("x", encoding="utf-8")
     os.environ["KRAKEN_CONFIG_DIR"] = str(blocker / "below")
-    refused = user_preferences.set_value("shell", "qt")
+    try:
+        refused = user_preferences.set_value("shell", "qt")
+    except Exception as exc:
+        refused = ""
+        corrupt = f"an unwritable folder RAISED {type(exc).__name__}"
     unread = user_preferences.load()
     rows.append(["P1", empty == {} and saved == "" and after == {"shell": "qt", "other": 7} and removed == {"other": 7}
                  and corrupt == {} and over == "" and recovered == {"shell": "tk"} and bool(refused) and unread == {}
