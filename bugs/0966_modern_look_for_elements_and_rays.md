@@ -143,9 +143,10 @@ low priority on X299-SSD.
 - **Skipped, not passed:** `validate_open3d_step_edges_glass_palette` -- its repro scene
   (`machine_vision_150mm_measured_test.py`) is not on this machine.
 
-**Owed, on the user's go:** the Qt-hosted harness (`--shell qt`, 352 phases, about 15 minutes) is the
-run that would notice a phase minding the look, because the look is on by default there. A source scan
-found little to mind (7 colour or opacity reads in the harness, no pixel reads), but that is a scan,
-not a run. The full Tk gate is owed since 8403abde; the look is off in the Tk app, so it covers the
-classic path.
+- **The Qt-hosted harness (`--shell qt`): 352 of 352** (2026-10-06, X299-SSD, at 45b312f5, on the
+  user's go; 43 minutes in one low-priority process). This is the run that would notice a phase
+  minding the look, because the look is on by default there. None does.
+
+**Owed, on the user's go:** the full Tk gate, since 8403abde. The look is off in the Tk app, so that
+gate covers the classic path.
 
