@@ -292,6 +292,9 @@ def qt_checks() -> list:
         faces = sorted(set(session.actor_face.values()))
         buttons = list(dialog.buttons)
         status_shown = dialog.status.text()
+        expected_buttons = [label for label, _method in session.BUTTONS] + ["Close"]
+        if buttons != expected_buttons:
+            return [["Q", False, f"the Qt window's buttons are {buttons}, the session's are {expected_buttons}"]]
 
         # a REAL double-click on the top station's body
         top = next(station for station in session.report["stations"] if station["face"] == "top")
@@ -353,7 +356,7 @@ def qt_checks() -> list:
             drew_after = True
         rows.append(["Q", opened and tk_windows == [] and render_window.GetClassName() == "vtkXOpenGLRenderWindow"
                      and props > 10 and faces == ["front", "top"]
-                     and buttons == [label for label, _method in session.BUTTONS] + ["Close"]
+                     and buttons == expected_buttons
                      and "front" in status_shown and "top" in status_shown
                      and loads == [copies["top"]] and opened_file.resolve() == copies["top"].resolve()
                      and table_rows == len(editor.rows) > 2 and "Opened the top station" in after_click
@@ -420,7 +423,7 @@ def tk_checks() -> list:
     return [["T", same and buttons == [label for label, _method in session.BUTTONS] + ["Close"] and props == 3
              and status_shown == session.status and "front" in status_shown and closed == (True, True),
              f"the Tk window shows the session it was handed: {same}; buttons {buttons}; {props} actors in its view; its "
-             f"status line is the session's ({status_shown.splitlines()[0]!r}); destroying it: (session closed, every "
+             f"status line is the session's ({(status_shown.splitlines() or [''])[0]!r}); destroying it: (session closed, every "
              f"plotter closed) {closed}"]]
 
 
