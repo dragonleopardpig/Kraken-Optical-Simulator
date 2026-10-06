@@ -5,7 +5,7 @@ through their delegation shells onto the editor, and model code reads or writes 
 (1174 ``set`` and 191 ``get`` calls). The model's state lived in view-made objects: a Qt view
 cannot create a ``tk.StringVar``, and without the Tk panels these attributes would not exist.
 
-This registry declares the 64 such variables a freshly built editor has, with their values after
+This registry declares the 69 such variables a freshly built editor has, with their values after
 start-up. :func:`ensure_model_variables` creates any that are MISSING through the owner's UI host.
 Under Tk the panels have already created every one, so it creates nothing and Tk behaviour does not
 change; without Tk panels (a Qt shell, a scripted guard) it creates all of them -- a real
@@ -27,6 +27,10 @@ MODEL_VARIABLES: dict[str, tuple[str, Any]] = {
     'analysis_surface_var': ('string', 'Auto'),
     'aperture_type_var': ('string', 'EPD'),
     'aperture_value_var': ('string', '4.0'),
+    # the next and three more below (`show_layout_2d_var`, `source_summary_var`,
+    # `trace_state_badge_var`) are reached only by NAME -- `self.__dict__.get("...")`, a catalogue's
+    # "editor...." -- so the 0852 scan, which looked for attributes, never saw them (bugs/0968)
+    'atmosphere_summary_var': ('string', 'Refraction / dispersion; 0.45-0.75 um, Z=45 deg, T=283.1 K, P=1.013e+05 Pa, RH=0.5.'),
     'atmos_observatory_var': ('string', 'Manual'),
     'atmos_plot_mode_var': ('string', 'Refraction / dispersion'),
     'branch_field_propagation_mm_var': ('string', '0.0'),
@@ -67,6 +71,7 @@ MODEL_VARIABLES: dict[str, tuple[str, Any]] = {
     'ray_count_var': ('string', '31'),
     'ray_height_factor_var': ('string', '0.8'),
     'show_cardinals_var': ('boolean', True),
+    'show_layout_2d_var': ('boolean', True),
     'show_physical_distances_var': ('boolean', False),
     'source_angular_weight_var': ('string', 'Uniform solid angle'),
     'source_cone_angle_var': ('string', '0.0'),
@@ -80,6 +85,7 @@ MODEL_VARIABLES: dict[str, tuple[str, Any]] = {
     'source_power_var': ('string', '1.0'),
     'source_radius_var': ('string', '5.0'),
     'source_seed_var': ('string', '1'),
+    'source_summary_var': ('string', 'Pupil / field source: ideal rays. Use Object Mode=Infinity, Field type=Angle, and Field value to tilt the ideal launch.'),
     'source_x_var': ('string', '0.0'),
     'source_y_var': ('string', '0.0'),
     'source_z_var': ('string', '0.0'),
@@ -90,6 +96,7 @@ MODEL_VARIABLES: dict[str, tuple[str, Any]] = {
     'status_hint_var': ('string', 'Preferred: Field half-angle for infinity object. Image semi-height modes are derived targets.  ||  Field samples: NA while angle span is 0 deg.'),
     'tolerance_compare_view_var': ('string', 'Spot overlay'),
     'trace_mode_var': ('string', 'Auto'),
+    'trace_state_badge_var': ('string', 'Scene: Auto'),
     'wavefront_style_var': ('string', 'Wavefront Function'),
     'wavelength_var': ('string', '0.55'),
 }

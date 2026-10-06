@@ -8,19 +8,24 @@ panels those attributes would not exist, and a Qt view cannot create a ``tk.Stri
 Now the hosts make variables (``string_var`` / ``int_var`` / ``double_var`` / ``boolean_var``: a
 real ``tk.*Var`` from TkUiHost, an ``ObservableValue`` otherwise), the editor's and inspector's
 constructors create theirs through ``self.ui``, and ``model_variables.MODEL_VARIABLES`` declares
-the 64 panel-made variables the model uses; ``ensure_model_variables`` creates whichever are
+the 69 panel-made variables the model uses; ``ensure_model_variables`` creates whichever are
 missing, never replacing one. Under Tk the panels have made them all, so nothing changes.
 
   V  ObservableValue behaves like a real tk variable, side by side: coercion on get for each
      kind, write traces with tk's (name, index, mode) signature, trace_remove
   F  the host factories: real tk variables of the right class from TkUiHost, ObservableValues of
      the right kind from ScriptedUiHost
-  R  the registry: a toolkit-free owner gets all 64 with their kinds and start-up values; an
+  R  the registry: a toolkit-free owner gets all 69 with their kinds and start-up values; an
      existing variable (and its trace) is never replaced; a REAL editor has every one after
      start-up as a tk variable, holding exactly the registry value -- so the registry is current
   C  completeness: every panel-made variable model code uses is registered or named
      dialog-scoped, and every registered one is still made by a panel -- a new unregistered
-     one fails here
+     one fails here. "Uses" includes reaching it by NAME (bugs/0968): ``self.__dict__.get("x_var")``,
+     ``getattr(editor, "x_var", None)``, a catalogue's ``"editor.x_var"`` -- four variables had
+     slipped past a scan that looked for attributes only
+  D  what the four are for, on an owner with NO Tk panel: the model's atmosphere and source
+     summaries and its trace badge are written into the registry's variables (they were dropped:
+     no variable, no write), and the 2D-layout switch is read from one
   H  the editor's and inspector's constructors create no tk variable directly
 """
 from __future__ import annotations
@@ -52,9 +57,14 @@ def _panel_made_model_used() -> tuple[set[str], set[str]]:
     for path in files:
         if "panels" in path.parts or "widgets" in path.parts:
             continue
+        registry = path.name == "model_variables.py"      # its keys are declarations, not uses
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8", errors="replace"))):
             if isinstance(node, ast.Attribute) and node.attr in made_by_panel:
                 used[node.attr] += 1
+            # reached by NAME (bugs/0968): __dict__.get("x_var"), getattr(o, "x_var"), "editor.x_var"
+            elif (not registry and isinstance(node, ast.Constant) and isinstance(node.value, str)
+                  and node.value.rpartition(".")[2] in made_by_panel):
+                used[node.value.rpartition(".")[2]] += 1
     return {name for name in made_by_panel if used[name]}, made_by_panel
 
 
@@ -115,8 +125,9 @@ def run_checks() -> tuple[bool, list[str]]:
              if not isinstance(getattr(owner, n), ObservableValue) or getattr(owner, n).kind != kind
              or getattr(owner, n).get() != value]
     # 65 since bugs/0901 added source_direction_preset_var, which model code reads through
-    # self.__dict__.get(...) so the C scan below never saw it was missing
-    ok(len(created) == len(MODEL_VARIABLES) == 65 and not wrong,
+    # self.__dict__.get(...); 69 since bugs/0968 taught the C scan to see that kind of read and
+    # it found four more
+    ok(len(created) == len(MODEL_VARIABLES) == 69 and not wrong,
        f"R1: a toolkit-free owner gets all {len(created)} declared variables with their kinds and "
        f"start-up values ({wrong or 'all right'})")
     keep = ObservableValue("string", "user text")
@@ -151,6 +162,41 @@ def run_checks() -> tuple[bool, list[str]]:
     ok(not unregistered and not stale,
        f"C: every panel-made variable model code uses is registered or dialog-scoped "
        f"(unregistered: {unregistered or 'none'}), and none registered is stale ({stale or 'none'})")
+
+    # ---- D: what the four are for, with no Tk panel ---------------------------------------------------
+    from KrakenOS.UI.services.layout_scene_projection import LayoutSceneProjectionMixin
+    from KrakenOS.UI.services.layout_shell_controls import LayoutShellControlsMixin
+    from KrakenOS.UI.services.source_modeling import SourceModelingMixin
+
+    def panelless(**extra):
+        bare = SimpleNamespace(ui=ScriptedUiHost(), **extra)
+        ensure_model_variables(bare)
+        return bare
+
+    try:        # a missing variable is a FAILED claim here, not a crash that loses the others
+        bare = panelless(_format_atmosphere_summary=lambda: "atmosphere says so",
+                         _format_source_summary=lambda: "source says so")
+        SourceModelingMixin._update_atmosphere_summary(bare)
+        SourceModelingMixin._update_source_summary(bare)
+        LayoutShellControlsMixin._sync_trace_state_badge(bare, {"requested": "Auto", "active": "Non-sequential"})
+        written = (bare.atmosphere_summary_var.get(), bare.source_summary_var.get(), bare.trace_state_badge_var.get())
+        shown_default = LayoutSceneProjectionMixin._show_layout_2d(bare)
+        bare.show_layout_2d_var.set(False)
+        shown_off = LayoutSceneProjectionMixin._show_layout_2d(bare)
+        # before bugs/0968: the same calls on an owner WITHOUT the four variables
+        old = SimpleNamespace(ui=ScriptedUiHost(), _format_atmosphere_summary=lambda: "x", _format_source_summary=lambda: "x")
+        SourceModelingMixin._update_atmosphere_summary(old)
+        SourceModelingMixin._update_source_summary(old)
+        LayoutShellControlsMixin._sync_trace_state_badge(old, {"requested": "Auto", "active": "Non-sequential"})
+        dropped = [name for name in ("atmosphere_summary_var", "source_summary_var", "trace_state_badge_var")
+                   if name not in old.__dict__]
+        ok(written == ("atmosphere says so", "source says so", "Scene: Auto -> Non-sequential")
+           and shown_default is True and shown_off is False and len(dropped) == 3,
+           f"D: with no Tk panel the model writes its summaries and badge into the registry's variables "
+           f"{written} and reads the 2D-layout switch from one (on {shown_default}, off {shown_off}); without "
+           f"them the same three writes went nowhere ({dropped})")
+    except Exception as exc:
+        ok(False, f"D: with no Tk panel the model's writes need the registry's variables -- raised {type(exc).__name__}: {exc}")
 
     # ---- H: the constructors ------------------------------------------------------------------------
     direct = []
