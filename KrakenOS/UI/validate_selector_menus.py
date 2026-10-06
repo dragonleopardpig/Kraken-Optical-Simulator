@@ -29,7 +29,8 @@ show it.
      Surfaces > Catalogs), each with an icon; opened, each shows exactly the model's menu -- as it
      is NOW, so a name added since the last opening is there; a real entry loads its layout with the
      table and the title following and no Tk window; a common component is INSERTED, as in T, and
-     the title drops the file's name; and the window is no wider than before
+     the title drops the file's name; on the FOLDED ribbon's pop-up page a chosen layout loads and
+     the page closes; and the window is no wider than before
 
 Each claim fails on its own: one that raises is reported as that claim's failure.
 """
@@ -289,6 +290,23 @@ def qt_checks() -> list:
         settle(1.5)
         inserted = (component.text(), len(editor.rows), window.rows_model.rowCount(),
                     editor.current_layout_file is None, window.windowTitle())
+        # folded, a tab's page is a pop-up: choosing a layout there loads it AND closes the page
+        from PySide6.QtWidgets import QToolButton
+
+        tabs = [ribbon.tabs.tabText(index) for index in range(ribbon.tabs.count())]
+        popup = ribbon.show_popup(tabs.index("File"))
+        settle(0.3)
+        folded = [popup.isVisible(), False, ""]
+        popup_button = next((b for b in popup.findChildren(QToolButton) if b.text() == "Layouts"), None)
+        if popup_button is not None:
+            popup_button.menu().aboutToShow.emit()
+            choice = next((entry for action in popup_button.menu().actions() if action.menu() is not None
+                           for entry in action.menu().actions()), None)
+            if choice is not None:
+                choice.trigger()
+                settle(1.5)
+                folded[2] = Path(str(editor.current_layout_file or "")).name
+        folded[1] = not popup.isVisible()
     finally:
         tk.Toplevel.__init__ = init
     width = window.minimumSizeHint().width()
@@ -301,6 +319,7 @@ def qt_checks() -> list:
              and loaded[0].endswith(".py") and loaded[1] > 2 and loaded[1] != rows_before and loaded[2] == loaded[1]
              and loaded[0] in loaded[3] and inserted[1] > rows_loaded and inserted[2] == inserted[1]
              and inserted[3] and loaded[0] not in inserted[4]
+             and folded[0] and folded[1] and folded[2].endswith(".py")
              and tk_windows == [] and width <= 1240,
              f"the ribbon places them {sorted(set(placed.values()))} and built {len(built)}, each with an icon: "
              f"{all(icons.values())}; opened, each shows the model's menu: {same}; entries {counts}; a name added since "
@@ -308,7 +327,8 @@ def qt_checks() -> list:
              f"{category.text()!r} > {entry.text()!r} loaded "
              f"{loaded[0]} ({rows_before} -> {loaded[1]} rows, table {loaded[2]}, title {loaded[3]!r}); the component "
              f"{inserted[0]!r} took the rows {rows_loaded} -> {inserted[1]} (table {inserted[2]}), the scene is no "
-             f"longer a file's: {inserted[3]}, title {inserted[4]!r}; Tk windows "
+             f"longer a file's: {inserted[3]}, title {inserted[4]!r}; folded, the File page pops up: {folded[0]}, and "
+             f"a layout chosen there loads ({folded[2]}) and closes the page: {folded[1]}; Tk windows "
              f"{tk_windows}; window minimum width {width} px"]]
 
 
