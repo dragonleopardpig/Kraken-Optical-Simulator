@@ -49,3 +49,24 @@ an existing one.
   `_show_layout_2d` follows the switch; on an owner without the four, the same three writes go
   nowhere.
 - R1 / R3: 69 variables, and a real editor holds exactly the registry's value for each.
+
+## Checks (2026-10-06, X299-SSD; every run alone, at low priority)
+
+**Mutations: 7 of 7 caught**, each restored from a copy, the tree clean afterwards.
+
+| Mutation | Caught by |
+|---|---|
+| one of the four is not declared | R1, C, D |
+| one is not declared AND the count in the guard is adjusted to hide it | C, D -- the scan by name is what catches it |
+| a declared start-up value is wrong | R3 |
+| the source summary is not written; the atmosphere summary is not written | D (and R3: the real editor's value drifts) |
+| the trace badge is not written | D |
+| the 2D-layout switch is not read from its variable | D |
+
+**Neighbouring guards, all pass, none skipped:** the UI host seam (0851) and the three guards that
+build an editor on a scripted host (0871, 0872, 0904 -- they now get the four variables too), the
+interaction contract (655), and the two Qt views that read these variables: Atmospheric Settings
+(726) and the 2D plot panel (733).
+
+Phase 631 was already in the baseline and stays a pass. The full Tk gate is owed since 8403abde.
+
