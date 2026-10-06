@@ -240,8 +240,13 @@ def _section2(failures: list[str]) -> None:
         def unbind(self, seq, bind_id):
             pass
 
-    original_menu = fa_mod.tk.Menu
-    fa_mod.tk.Menu = _FakeMenu
+    # The service asks `context_menu.new_context_menu` for its menus, which makes a `tkinter.Menu`.
+    # This used to reach it as `fa_mod.tk.Menu` -- the service module's own tkinter import, which
+    # bugs/0970 removed as dead (the full Tk gate found this guard raising AttributeError).
+    import tkinter
+
+    original_menu = tkinter.Menu
+    tkinter.Menu = _FakeMenu
     try:
         fake = types.SimpleNamespace(
             _selected_opening_label="led",
@@ -289,7 +294,7 @@ def _section2(failures: list[str]) -> None:
         if fake._active_context_menu is not None:
             failures.append("FAIL(2b): opening menu must not post a menu when geometry is unresolved")
     finally:
-        fa_mod.tk.Menu = original_menu
+        tkinter.Menu = original_menu
 
 
 def _section3(failures: list[str]) -> None:

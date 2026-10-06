@@ -60,7 +60,6 @@ class _FakeMenu:
 
 def _build_opening_menu(label: str) -> list[str]:
     """Return the command labels the opening menu builds for a pinned ``label`` opening."""
-    import KrakenOS.UI.services.open3d_face_assignment as fa_mod
     from KrakenOS.UI.services.open3d_face_assignment import Open3DFaceAssignmentService as FA
 
     captured: dict[str, object] = {}
@@ -81,12 +80,16 @@ def _build_opening_menu(label: str) -> list[str]:
         lambda self, menu, event: captured.__setitem__("menu", menu), svc
     )
 
-    orig_menu = fa_mod.tk.Menu
-    fa_mod.tk.Menu = lambda *a, **k: _FakeMenu()
+    # `tkinter.Menu` itself, where `context_menu.new_context_menu` finds it -- not `fa_mod.tk.Menu`:
+    # the service module's tkinter import was dead and bugs/0970 removed it
+    import tkinter
+
+    orig_menu = tkinter.Menu
+    tkinter.Menu = lambda *a, **k: _FakeMenu()
     try:
         ok = svc._show_selected_opening_context_menu(event=types.SimpleNamespace(x=0, y=0, x_root=0, y_root=0))
     finally:
-        fa_mod.tk.Menu = orig_menu
+        tkinter.Menu = orig_menu
     if not ok or "menu" not in captured:
         return []
     return captured["menu"].labels()

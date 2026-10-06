@@ -72,3 +72,19 @@ commands.
 
 **Baseline:** phase 738 recorded (1 pass, 0 fail). The full Tk gate is owed since 8403abde.
 
+## Found by the full Tk gate (2026-10-06, M90aPro, at ff4c2088)
+
+738 of 740 phases passed. The two that failed, **293** and **296**, both raised
+`AttributeError: module 'KrakenOS.UI.services.open3d_face_assignment' has no attribute 'tk'`.
+
+The application was not broken; the two guards were. They fake Tk's menu to read what the opening
+menu offers, and they reached it as `fa_mod.tk.Menu` -- through the service module's own
+`import tkinter as tk`. That import was one of the dead ones this bug removed. (The service gets
+its menus from `context_menu.new_context_menu`, which is where `tkinter.Menu` is really used.) The
+per-fix checks ran this bug's own guard and five neighbours; neither of these two was among them.
+
+- `validate_open3d_led_ca_persistent_select` and `validate_open3d_opening_menu_add_bs` now fake
+  `tkinter.Menu` itself.
+- So that this does not need a full gate to be seen again, phase 738 has a new claim **G**: it scans
+  all 883 guards for a tkinter name reached through a module of the toolkit-free layers that does
+  not import tkinter. None now; with the old line put back in one guard, G fails and names it.
