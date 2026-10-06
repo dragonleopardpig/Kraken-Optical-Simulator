@@ -15,8 +15,6 @@ import shutil
 import signal
 import subprocess
 import time
-import tkinter as tk
-from tkinter import filedialog, messagebox
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing as mp
 
@@ -98,105 +96,31 @@ class AnalysisComputeWorkflowMixin:
             show(line)
             host_of(self).update_idletasks()
 
-    def _bind_text_copy_shortcuts(self, widget: tk.Text) -> None:
-        for sequence in ("<Control-c>", "<Control-C>", "<Control-Insert>", "<<Copy>>", "<Control-KeyPress-c>", "<Control-KeyPress-C>"):
-            widget.bind(sequence, lambda _e, w=widget: self._copy_selection_from_text_widget(w), add="+")
-
-    def _bind_text_context_menu(self, widget: tk.Text) -> None:
-        widget.bind("<Button-3>", lambda e, w=widget: self._show_text_context_menu(e, w), add="+")
-
-    def _bind_global_copy_shortcuts(self) -> None:
-        for sequence in ("<Control-c>", "<Control-C>", "<Control-Insert>"):
-            self.bind_all(sequence, self._copy_selection_from_focus, add="+")
-        for sequence in ("<Control-v>", "<Control-V>", "<Shift-Insert>"):
-            self.bind_all(sequence, self._paste_rows_from_focus, add="+")
-
-    def _show_text_context_menu(self, event, widget: tk.Text):
-        if self._text_popup_menu is None:
-            menu = tk.Menu(self, tearoff=0)
-            menu.add_command(label="Copy Selected", command=lambda: self._copy_selection_from_text_widget(widget))
-            menu.add_command(label="Copy All", command=lambda: self._copy_all_from_text_widget(widget))
-            self._text_popup_menu = menu
-        else:
-            self._text_popup_menu.entryconfigure(0, command=lambda: self._copy_selection_from_text_widget(widget))
-            self._text_popup_menu.entryconfigure(1, command=lambda: self._copy_all_from_text_widget(widget))
-        self._text_popup_menu.tk_popup(event.x_root, event.y_root)
-        return "break"
-
-    def _safe_focus_get(self):
-        try:
-            return self.focus_get()
-        except (KeyError, tk.TclError):
-            return None
-
-    def _copy_selection_from_focus(self, _event=None):
-        candidates = []
-        focused = self._safe_focus_get()
-        if focused is getattr(self, "table", None):
-            return self.copy_selected_rows_to_clipboard(_event)
-        if isinstance(focused, tk.Text):
-            candidates.append(focused)
-        for widget in (getattr(self, "debug_text", None), getattr(self, "progress_text", None)):
-            if isinstance(widget, tk.Text) and widget not in candidates:
-                candidates.append(widget)
-        for widget in candidates:
-            try:
-                text = widget.get("sel.first", "sel.last")
-            except tk.TclError:
-                continue
-            if not text:
-                continue
-            try:
-                ok, backend = self._copy_text_to_clipboard(text)
-                if ok:
-                    self.status_var.set(f"Selected text copied to clipboard ({backend})")
-                else:
-                    self.status_var.set("Copy failed")
-                return "break"
-            except Exception as exc:
-                self.append_debug(f"Copy selected text failed: {exc}")
-                return "break"
-        return None
-
-    def _paste_rows_from_focus(self, _event=None):
-        focused = self._safe_focus_get()
-        if focused is getattr(self, "table", None):
-            return self.paste_rows_from_clipboard(_event)
-        return None
-
-    def _copy_selection_from_text_widget(self, widget: tk.Text) -> str:
-        try:
-            text = widget.get("sel.first", "sel.last")
-        except tk.TclError:
-            self.status_var.set("No text selected")
-            return "break"
+    # ---- copy this text (bugs/0976) ----------------------------------------------------------------
+    # WHICH text is selected is a view's to know (`panels/main_text_copy.py` reads a Tk text box; a
+    # Qt panel reads its own). Copying it to the system clipboard and saying so is the model's.
+    def copy_selected_text(self, text: "str | None") -> bool:
+        """Copy the text a view has selected; with none, say so. True when it was copied."""
         if not text:
             self.status_var.set("No text selected")
-            return "break"
-        try:
-            ok, backend = self._copy_text_to_clipboard(text)
-            if ok:
-                self.status_var.set(f"Selected text copied to clipboard ({backend})")
-            else:
-                self.status_var.set("Copy failed")
-        except Exception as exc:
-            self.append_debug(f"Copy selected text failed: {exc}")
-        return "break"
+            return False
+        return self._copy_text_and_report(text, "Selected text")
 
-    def _copy_all_from_text_widget(self, widget: tk.Text) -> str:
-        text = widget.get("1.0", "end-1c")
+    def copy_all_text(self, text: "str | None") -> bool:
+        """Copy the whole of a view's text; when it is empty, say so. True when it was copied."""
         if not text:
             self.status_var.set("No text to copy")
-            return "break"
+            return False
+        return self._copy_text_and_report(text, "All text")
+
+    def _copy_text_and_report(self, text: str, what: str) -> bool:
         try:
             ok, backend = self._copy_text_to_clipboard(text)
-            if ok:
-                self.status_var.set(f"All text copied to clipboard ({backend})")
-            else:
-                self.status_var.set("Copy failed")
         except Exception as exc:
-            self.append_debug(f"Copy all text failed: {exc}")
-        return "break"
+            self.append_debug(f"Copy {what.lower()} failed: {exc}")
+            return False
+        self.status_var.set(f"{what} copied to clipboard ({backend})" if ok else "Copy failed")
+        return bool(ok)
 
     def _copy_text_to_clipboard(self, text: str) -> tuple[bool, str]:
         tools = (

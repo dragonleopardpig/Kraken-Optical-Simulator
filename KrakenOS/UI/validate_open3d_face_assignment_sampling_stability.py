@@ -303,7 +303,11 @@ def _validate_focus_and_vtk_teardown_are_guarded() -> None:
     editor_source = _editor_contract_source()
     close_source = inspect.getsource(Kraken3DInspector._on_close)
     destroy_source = inspect.getsource(Kraken3DInspector._destroy_vtk_render_window)
-    if "def _safe_focus_get" not in editor_source or "except (KeyError, tk.TclError)" not in editor_source:
+    # the guarded lookup is Tk view code: it moved to panels/main_text_copy.py with bugs/0976
+    from KrakenOS.UI.panels.main_text_copy import MainTextCopy
+
+    focus_source = inspect.getsource(MainTextCopy._safe_focus_get)
+    if "def _safe_focus_get" not in editor_source or "except (KeyError, tk.TclError)" not in focus_source:
         raise AssertionError("Global copy/paste focus lookup is not guarded against transient Tk dialog widgets.")
     if "_destroy_vtk_render_window()" not in close_source:
         raise AssertionError("Open 3D close does not finalize the VTK render window before Tk destroys the widget.")

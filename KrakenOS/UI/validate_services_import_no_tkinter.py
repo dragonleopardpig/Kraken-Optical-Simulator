@@ -5,7 +5,8 @@ hold no toolkit code but the Tk host itself. Measured 2026-10-06: 14 of 151 serv
 tkinter. Six did not need to -- five never used what they imported, one used it only to annotate a
 dialog's parent (which is a Qt widget under the Qt shell) -- and a seventh made two `tk.BooleanVar`s
 that no other host can make. The seven left each held a real Tk window or menu; they are listed
-here with what they hold, and move out one at a time (bugs/0972 moved the first: six left).
+here with what they hold, and move out one at a time (bugs/0972 moved the first, bugs/0976 the
+second: five left).
 
   I  the other way in: a service that imports a Tk VIEW module (`panels/`, `widgets/`) at module
      level reaches tkinter without naming it. Those are counted too, against their own exact list
@@ -33,7 +34,6 @@ ROOT = Path("KrakenOS/UI")
 LAYERS = ("services", "reports", "row_forms", "uihost", "qt")
 #: module -> the Tk code it still holds. EXACT: a port deletes its entry.
 TK_IMPORTERS = {
-    "services/analysis_compute_workflow.py": "the Tk text widgets' copy shortcuts and context menu",
     "services/layout_bug_recorder.py": "the Tk editor's own flag popup, and its scan of open Tk windows",
     "services/open3d_thickness_dimensions.py": "the Tk inline thickness editor (the shell is asked first, bugs/0950)",
     "services/paraxial_tools.py": "Tk popup-menu and dialog-centring helpers",

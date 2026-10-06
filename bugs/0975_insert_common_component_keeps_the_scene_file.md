@@ -14,7 +14,8 @@ file name, and the title bar lost the file.
 
 `insert_layout_component_by_name` no longer touches the scene's file, its transient-import mark or
 its selector names. Inserting a component and appending a layout now leave the scene the same way.
-The same function serves "insert a machine-vision lens" and the fold-mirror helper, so they follow.
+The same function serves "insert a machine-vision lens" and the surface table's right-click
+insert-a-component entries, so they follow.
 
 A component inserted into the empty starter still gives an untitled scene: the starter has no file.
 
@@ -28,3 +29,11 @@ A component inserted into the empty starter still gives an untitled scene: the s
   afterwards". Over an open scene the two can no longer be told apart -- which is the point -- so it
   now inserts from the empty starter (an insert makes rows and no file; a load there would take the
   layout's file) and then loads a layout that is not insertable.
+
+## Checks
+
+Both mutations caught by N (the insert untitling the scene again; the insert resetting the selector
+names again). The 0972 mutation that started this -- a Common Component entry that loads instead of
+inserting -- is still caught by the reworked guard (P4, T, Q). The table component workflow guard
+passes.
+

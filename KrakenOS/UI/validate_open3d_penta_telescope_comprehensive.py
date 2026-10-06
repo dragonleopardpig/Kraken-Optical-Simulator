@@ -16846,6 +16846,10 @@ phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
     721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
     'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
     'qt_model_forms_open_in_qt')
+phase_743_text_copy_view = _phase_from_standalone(
+    743, "copy this text is a toolkit-free model command with a Tk view (0976): selected text and a whole text are copied and the status line says with what, no selection and an empty text say so, a failing clipboard says Copy failed and a raising one is a debug line; the service imports and names no tkinter and each of the editor's nine view methods is a delegation the panel class defines; in a real Tk editor both logs carry the copy shortcuts and the right-click binding, the one two-entry menu is re-aimed at the box it was opened on, the window-wide copy and paste follow the focus and a focus Tk can no longer name is no focus; in the Qt shell the model command works and the window's status line says what was copied",
+    'KrakenOS.UI.validate_text_copy_view',
+    'text_copy_view')
 phase_742_unpromoted_step_look = _phase_from_standalone(
     742, "the un-promoted optical STEP body in the modern look contrasts with the promoted prisms within it (0974): asked for in the classic teal it is drawn a smoked bronze with a satin material, opacity kept in range and a hidden body left hidden, hardware and other colours left alone; the colour is farther from the modern glass and mirror than the teal is from the glass by a clear margin; in the Qt shell the real Overlays entry switches the body between the two looks with the hardware bodies unchanged, the single-body refresh draws it as the full one, the import draws the same actors and points in both looks, a selected body and a selected prism get their own three colours back when deselected, and by the picture drawing the promoted prisms changes the pixels within the body clearly more than with the body in teal and several times more than in the pale glass colour; the Tk app keeps the teal until the look is switched on",
     'KrakenOS.UI.validate_open3d_unpromoted_step_look',
@@ -16863,7 +16867,7 @@ phase_739_interface_preference = _phase_from_standalone(
     'KrakenOS.UI.validate_interface_preference',
     'interface_preference')
 phase_738_services_import_no_tkinter = _phase_from_standalone(
-    738, "the toolkit-free layers import no tkinter, by a list that may only shrink (0970): every module of services, reports, row_forms, uihost and qt that imports tkinter at run time is in the guard's exact list with what Tk code it still holds -- six services and the Tk host, down from fourteen services (seven until 0972); the services that import a Tk view package (panels, widgets) at module level are in a second exact list, five of them; no guard reaches for a tkinter name through a module that does not import it (the full Tk gate found two that did, phases 293 and 296); the seven cleaned modules import and refer to no tkinter name; and a station loaded with no inspector gets its two inspector switches from the editor's UI host, so a toolkit-free owner gets both where the old tk.BooleanVar code made none",
+    738, "the toolkit-free layers import no tkinter, by a list that may only shrink (0970): every module of services, reports, row_forms, uihost and qt that imports tkinter at run time is in the guard's exact list with what Tk code it still holds -- five services and the Tk host, down from fourteen services (seven until 0972, six until 0976); the services that import a Tk view package (panels, widgets) at module level are in a second exact list, five of them; no guard reaches for a tkinter name through a module that does not import it (the full Tk gate found two that did, phases 293 and 296); the seven cleaned modules import and refer to no tkinter name; and a station loaded with no inspector gets its two inspector switches from the editor's UI host, so a toolkit-free owner gets both where the old tk.BooleanVar code made none",
     'KrakenOS.UI.validate_services_import_no_tkinter',
     'services_import_no_tkinter')
 phase_737_operand_surface_choices = _phase_from_standalone(
@@ -17805,6 +17809,7 @@ def main() -> int:
             phase_740_selector_menus,
             phase_741_appended_layout_keeps_scene_file,
             phase_742_unpromoted_step_look,
+            phase_743_text_copy_view,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

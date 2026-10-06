@@ -263,6 +263,7 @@ from KrakenOS.UI.panels.main_glass_catalog_browser_dialog import MainGlassCatalo
 from KrakenOS.UI.panels.main_lens_drawing_dialogs import MainLensDrawingDialogs
 from KrakenOS.UI.panels.main_nonseq_scene_graph_dialog import MainNonSequentialSceneGraphDialog
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
+from KrakenOS.UI.panels.main_text_copy import MainTextCopy
 from KrakenOS.UI.panels.main_window import MainWindowBuilder
 from KrakenOS.UI.panels.main_optical_solid_face_roles_dialog import MainOpticalSolidFaceRolesDialog
 from KrakenOS.UI.panels.main_optical_solid_dialogs import MainOpticalSolidDialogs
@@ -3084,6 +3085,41 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
 
     def _build_menu(self) -> None:
         self._main_window_builder()._build_menu()
+
+    # ---- copy / paste on the Tk widgets: the view lives in panels/main_text_copy.py (bugs/0976) ----
+    def _main_text_copy(self) -> MainTextCopy:
+        panel = self.__dict__.get("_main_text_copy_instance")
+        if panel is None:
+            panel = MainTextCopy(self)
+            self._main_text_copy_instance = panel
+        return panel
+
+    def _bind_text_copy_shortcuts(self, widget) -> None:
+        self._main_text_copy()._bind_text_copy_shortcuts(widget)
+
+    def _bind_text_context_menu(self, widget) -> None:
+        self._main_text_copy()._bind_text_context_menu(widget)
+
+    def _bind_global_copy_shortcuts(self) -> None:
+        self._main_text_copy()._bind_global_copy_shortcuts()
+
+    def _show_text_context_menu(self, event, widget):
+        return self._main_text_copy()._show_text_context_menu(event, widget)
+
+    def _safe_focus_get(self):
+        return self._main_text_copy()._safe_focus_get()
+
+    def _copy_selection_from_focus(self, _event=None):
+        return self._main_text_copy()._copy_selection_from_focus(_event)
+
+    def _paste_rows_from_focus(self, _event=None):
+        return self._main_text_copy()._paste_rows_from_focus(_event)
+
+    def _copy_selection_from_text_widget(self, widget) -> str:
+        return self._main_text_copy()._copy_selection_from_text_widget(widget)
+
+    def _copy_all_from_text_widget(self, widget) -> str:
+        return self._main_text_copy()._copy_all_from_text_widget(widget)
 
     def _build_ui(self) -> None:
         self._main_window_builder()._build_ui()
