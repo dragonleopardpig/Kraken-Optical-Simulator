@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-10-06T13:28:59+00:00",
+  "generated_at": "2026-10-06T13:59:11+00:00",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -741,7 +741,8 @@
     "738": "pass",
     "739": "pass",
     "740": "pass",
-    "741": "pass"
+    "741": "pass",
+    "742": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -1483,6 +1484,7 @@
     "738": "the toolkit-free layers import no tkinter, by a list that may only shrink (0970): every module of services, reports, row_forms, uihost and qt that imports tkinter at run time is in the guard's exact list with what Tk code it still holds -- six services and the Tk host, down from fourteen services (seven until 0972); the services that import a Tk view package (panels, widgets) at module level are in a second exact list, five of them; no guard reaches for a tkinter name through a module that does not import it (the full Tk gate found two that did, phases 293 and 296); the seven cleaned modules import and refer to no tkinter name; and a station loaded with no inspector gets its two inspector switches from the editor's UI host, so a toolkit-free owner gets both where the old tk.BooleanVar code made none",
     "739": "both interfaces stay and the user chooses which one opens (0971): the per-user preferences file round-trips, survives a file that is not JSON and reports a folder it cannot write; the command line beats the environment beats the saved preference, the request is removed from the arguments passed on, an unknown name is refused on the command line and ignored elsewhere, and an interface that cannot run here falls back with a note; the first-run question offers both, remembers only when told to and asks nothing with one interface installed; the form both interfaces show writes the file that the start decision then reads; the launcher run as the real command reports the interface for each source and exits 2 on an unknown one; the first-run window, the Tk File menu entry and the Qt Help-dropdown action each open and write the preference",
     "740": "the Layouts / Machine Vision / Examples / Common Component menus are model data both interfaces show (0972): a submenu per category in the declared order with empty ones left out, the Zemax prescriptions as a tree with folders before files and Top Level first, one disabled line when a list is empty, and each entry's command the model's own loader with the right argument; a real Tk editor's four menus show exactly the model's menus, follow a refresh and load a layout from a real entry; the Qt ribbon has the four buttons with icons, each showing the model's menu as it is at the moment it is opened, a real entry loads its layout with the table and title following and no Tk window, a component is inserted into the rows, and the window is no wider",
-    "741": "a layout appended to the open scene leaves the scene's own file alone (0973): an insertable layout chosen over a scene opened from the user's file is appended and the scene keeps its file, title and selector names, so Save asks nothing, writes the user's file with the merged rows and leaves the appended layout's shipped file byte for byte as it was; an untitled scene stays untitled and a transient import stays one, so Save asks; undo and redo keep the file; a load that replaces the scene still takes the loaded layout's file, name and a clean mark; and through the real menu entries of both interfaces the title stays the scene's and Save writes the scene's file"
+    "741": "a layout appended to the open scene leaves the scene's own file alone (0973): an insertable layout chosen over a scene opened from the user's file is appended and the scene keeps its file, title and selector names, so Save asks nothing, writes the user's file with the merged rows and leaves the appended layout's shipped file byte for byte as it was; an untitled scene stays untitled and a transient import stays one, so Save asks; undo and redo keep the file; a load that replaces the scene still takes the loaded layout's file, name and a clean mark; and through the real menu entries of both interfaces the title stays the scene's and Save writes the scene's file",
+    "742": "the un-promoted optical STEP body in the modern look contrasts with the promoted prisms within it (0974): asked for in the classic teal it is drawn a smoked bronze with a satin material, opacity kept in range and a hidden body left hidden, hardware and other colours left alone; the colour is farther from the modern glass and mirror than the teal is from the glass by a clear margin; in the Qt shell the real Overlays entry switches the body between the two looks with the hardware bodies unchanged, the single-body refresh draws it as the full one, the import draws the same actors and points in both looks, a selected body and a selected prism get their own three colours back when deselected, and by the picture drawing the promoted prisms changes the pixels within the body clearly more than with the body in teal and several times more than in the pale glass colour; the Tk app keeps the teal until the look is switched on"
   }
 }

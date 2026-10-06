@@ -74,3 +74,19 @@ restores the three colours one by one, for table elements and for STEP bodies al
 - **T:** the Tk app keeps the teal until the look is switched on, then takes the bronze too.
 
 `om05a_folded` needs the vendor STEP files, which are not in git: without them Q to T skip.
+
+## Checks
+
+**Mutations: 14 of 14 caught, each by the claims meant to catch it** -- the body in the pale glass
+colour, left teal, or a neutral warm grey; no material; opacity not kept in range; a hidden body
+shown; hardware or any other colour restyled too; the actor factory not asking the look module; the
+classic look restyling the body; either selection saving the blended colour again; a deselected
+actor not getting its highlight colour back; the single-body refresh asking for another colour.
+
+**Neighbouring guards, all pass:** the modern look (735), soft STEP bodies (728), the STEP
+selection pink snapshot (56), the analytic lens selection, the STEP edge palette, the interaction
+contract (655).
+
+**Baseline:** phase 742 recorded (pass; 741 phases). The full Tk gate ran at ff4c2088, before this
+change; it has not been run again since.
+
