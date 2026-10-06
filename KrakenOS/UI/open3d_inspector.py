@@ -6345,6 +6345,37 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         self.render()
 
     @staticmethod
+    def _own_colors(prop) -> dict:
+        """An actor's own colours, one component at a time, for a selection to put back.
+
+        NOT `prop.GetColor()`: once a material gives the highlight its own colour -- the modern
+        look's glass and mirrors have a white one (bugs/0966) -- VTK's `GetColor` returns the
+        ambient/diffuse/specular BLEND, and `SetColor` of that blend paints all three with it. A
+        lens selected and deselected came back paler, (0.66, 0.83, 0.98) as (0.84, 0.92, 0.99),
+        and without its highlight, until the next redraw (bugs/0974)."""
+        try:
+            return {
+                "ambient_color": tuple(float(value) for value in prop.GetAmbientColor()),
+                "diffuse_color": tuple(float(value) for value in prop.GetDiffuseColor()),
+                "specular_color": tuple(float(value) for value in prop.GetSpecularColor()),
+            }
+        except AttributeError:      # a property with the one colour only (a guard's stand-in)
+            return {"color": tuple(float(value) for value in prop.GetColor())}
+
+    @staticmethod
+    def _restore_own_colors(prop, base: dict) -> None:
+        """Put back what `_own_colors` saved (or, for a style saved without them, the one colour)."""
+        parts = [tuple(base.get(name, ())) for name in ("ambient_color", "diffuse_color", "specular_color")]
+        if all(len(part) == 3 for part in parts):
+            prop.SetAmbientColor(*parts[0])
+            prop.SetDiffuseColor(*parts[1])
+            prop.SetSpecularColor(*parts[2])
+            return
+        color = tuple(base.get("color", ()))
+        if len(color) == 3:
+            prop.SetColor(*color)
+
+    @staticmethod
     def _set_row_actor_selected(actor, selected: bool) -> None:
         if actor is None:
             return
@@ -6364,7 +6395,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                     "opacity": float(prop.GetOpacity()),
                     "ambient": float(prop.GetAmbient()),
                     "diffuse": float(prop.GetDiffuse()),
-                    "color": tuple(float(value) for value in prop.GetColor()),
+                    **Kraken3DInspector._own_colors(prop),
                 }
                 actor._kraken_row_select_style = base
             except Exception:
@@ -6434,9 +6465,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             prop.SetOpacity(float(base.get("opacity", 1.0)))
             prop.SetAmbient(float(base.get("ambient", 0.0)))
             prop.SetDiffuse(float(base.get("diffuse", 1.0)))
-            base_color = tuple(base.get("color", ()))
-            if len(base_color) == 3:
-                prop.SetColor(*base_color)
+            Kraken3DInspector._restore_own_colors(prop, base)
         except Exception:
             pass
 
@@ -6644,6 +6673,12 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             look = scene_look.mesh_look(color, opacity, line_width, wireframe=wireframe)
             if look is not None:
                 color, opacity, line_width = look.color, look.opacity, look.line_width
+        elif pick_step_label is not None and not wireframe and not direct_point_scalars and scene_look.is_modern(self):
+            # bugs/0974: the BODY of an imported STEP (its edges carry no pick label) -- the look
+            # module says which imports the modern look restyles
+            look = scene_look.step_body_look(pick_step_label, color, opacity)
+            if look is not None:
+                color, opacity = look.color, look.opacity
         mapper = vtkDataSetMapper()
         mapper.SetInputData(mesh)
         if direct_point_scalars:
@@ -26142,7 +26177,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
                 base = {
                     "edge_visibility": int(prop.GetEdgeVisibility()),
                     "edge_color": tuple(float(value) for value in prop.GetEdgeColor()),
-                    "color": tuple(float(value) for value in prop.GetColor()),
+                    **Kraken3DInspector._own_colors(prop),
                     "line_width": float(prop.GetLineWidth()),
                     "opacity": float(prop.GetOpacity()),
                     "ambient": float(prop.GetAmbient()),
@@ -26177,9 +26212,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
             edge_color = tuple(base.get("edge_color", (0.0, 0.0, 0.0)))
             if len(edge_color) == 3:
                 prop.SetEdgeColor(*edge_color)
-            color = tuple(base.get("color", (1.0, 1.0, 1.0)))
-            if len(color) == 3:
-                prop.SetColor(*color)
+            Kraken3DInspector._restore_own_colors(prop, base)
             prop.SetLineWidth(float(base.get("line_width", 1.0)))
             prop.SetOpacity(float(base.get("opacity", 1.0)))
             prop.SetAmbient(float(base.get("ambient", 0.0)))

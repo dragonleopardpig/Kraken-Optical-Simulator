@@ -16846,6 +16846,10 @@ phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
     721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
     'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
     'qt_model_forms_open_in_qt')
+phase_742_unpromoted_step_look = _phase_from_standalone(
+    742, "the un-promoted optical STEP body in the modern look contrasts with the promoted prisms within it (0974): asked for in the classic teal it is drawn a smoked bronze with a satin material, opacity kept in range and a hidden body left hidden, hardware and other colours left alone; the colour is farther from the modern glass and mirror than the teal is from the glass by a clear margin; in the Qt shell the real Overlays entry switches the body between the two looks with the hardware bodies unchanged, the single-body refresh draws it as the full one, the import draws the same actors and points in both looks, a selected body and a selected prism get their own three colours back when deselected, and by the picture drawing the promoted prisms changes the pixels within the body clearly more than with the body in teal and several times more than in the pale glass colour; the Tk app keeps the teal until the look is switched on",
+    'KrakenOS.UI.validate_open3d_unpromoted_step_look',
+    'unpromoted_step_look')
 phase_741_appended_layout_keeps_scene_file = _phase_from_standalone(
     741, "a layout appended to the open scene leaves the scene's own file alone (0973): an insertable layout chosen over a scene opened from the user's file is appended and the scene keeps its file, title and selector names, so Save asks nothing, writes the user's file with the merged rows and leaves the appended layout's shipped file byte for byte as it was; an untitled scene stays untitled and a transient import stays one, so Save asks; undo and redo keep the file; a load that replaces the scene still takes the loaded layout's file, name and a clean mark; and through the real menu entries of both interfaces the title stays the scene's and Save writes the scene's file",
     'KrakenOS.UI.validate_appended_layout_keeps_scene_file',
@@ -17800,6 +17804,7 @@ def main() -> int:
             phase_739_interface_preference,
             phase_740_selector_menus,
             phase_741_appended_layout_keeps_scene_file,
+            phase_742_unpromoted_step_look,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

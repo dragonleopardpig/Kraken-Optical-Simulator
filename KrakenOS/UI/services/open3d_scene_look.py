@@ -16,6 +16,11 @@ already draws. It adds and removes no actor and moves no point, so picking, the 
 and "Alt picks the nearest DRAWN edge" (bugs/0323) are the same in both looks. It restyles the
 TABLE's elements and the traced rays; imported STEP hardware has its own switch (bugs/0958).
 
+One imported body is the look's business all the same (bugs/0974): the UN-PROMOTED part of an
+"optical" import -- the fixture the prisms are promoted out of. In the classic palette it is a
+saturated teal. The user: "You can make it modern look for the unpromoted STEP, but the color
+should be well contrast to all the promoted prism within it."
+
 Nothing here is toolkit or VTK code except `apply_backdrop` and `apply_material`, which take the
 renderer / property they are handed.
 """
@@ -56,6 +61,19 @@ MODERN_BACKGROUND = ((0.96, 0.97, 0.99), (0.73, 0.80, 0.89))
 #: (ambient, diffuse, specular, specular power)
 GLASS_MATERIAL = (0.62, 0.28, 1.0, 50.0)
 MIRROR_MATERIAL = (0.62, 0.30, 1.0, 100.0)
+#: the UN-PROMOTED part of an "optical" STEP import -- the body the prisms are promoted out of
+#: (bugs/0974): a smoked bronze. Chosen by measurement on om05a_folded -- how much drawing the
+#: promoted prisms changes the pixels where they lie WITHIN this body, as a CIE76 colour
+#: difference, over fourteen candidates at the same opacity: the pale glass colour itself 2.6 (the
+#: prisms vanish), the classic teal 7.1, a neutral warm grey 7.8, the hardware's slate 10.9, this
+#: family 10 to 12. Warm and mid-dark is what the pale blue prisms stand out against. Copper
+#: scored highest (14.1) but swallows an orange ray bundle, as the amber LED once did (bugs/0052).
+MODERN_UNPROMOTED_STEP_COLOR = (0.52, 0.42, 0.33)
+MODERN_UNPROMOTED_STEP_OPACITY = (0.30, 0.46)
+#: satin, not glassy: it is a fixture, and a strong highlight would compete with the prisms'
+UNPROMOTED_STEP_MATERIAL = (0.55, 0.40, 0.45, 30.0)
+#: the import label of that body
+UNPROMOTED_STEP_LABEL = "optical"
 
 #: rays: up to this many are drawn at their full opacity; beyond it opacity falls as 1/sqrt(n)
 RAY_FULL_OPACITY_COUNT = 36
@@ -118,6 +136,33 @@ def mesh_look(color, opacity: float, line_width: float, *, wireframe: bool = Fal
     if _same(color, CLASSIC_OUTLINE_COLOR) or _same(color, CLASSIC_OUTLINE_OVERLAY_COLOR):
         return MeshLook(MODERN_OUTLINE_COLOR, opacity, min(float(line_width), MODERN_EDGE_WIDTH), None)
     return None
+
+
+def color_difference(color_a, color_b) -> float:
+    """The CIE76 difference of two sRGB colours (components 0..1): about 2 is the least the eye
+    notices, 10 is plain, 30 and more is a different colour altogether."""
+    def lab(color):
+        linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in (float(v) for v in color)]
+        x = (0.4124564 * linear[0] + 0.3575761 * linear[1] + 0.1804375 * linear[2]) / 0.95047
+        y = 0.2126729 * linear[0] + 0.7151522 * linear[1] + 0.0721750 * linear[2]
+        z = (0.0193339 * linear[0] + 0.1191920 * linear[1] + 0.9503041 * linear[2]) / 1.08883
+        fx, fy, fz = (v ** (1.0 / 3.0) if v > 216.0 / 24389.0 else (24389.0 / 27.0 * v + 16.0) / 116.0 for v in (x, y, z))
+        return 116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz)
+
+    return math.dist(lab(color_a), lab(color_b))
+
+
+def step_body_look(label, color, opacity: float) -> Optional[MeshLook]:
+    """The MODERN drawing of an imported STEP BODY, by its import label, or None when the modern
+    look leaves it as asked -- lens, camera and LED hardware keep the look bugs/0958 gave them.
+
+    The one it restyles is the un-promoted "optical" import (bugs/0974)."""
+    if str(label or "").strip().lower() != UNPROMOTED_STEP_LABEL or not _same(color, CLASSIC_STEP_BODY_COLOR):
+        return None
+    low, high = MODERN_UNPROMOTED_STEP_OPACITY
+    opacity = float(opacity)
+    return MeshLook(MODERN_UNPROMOTED_STEP_COLOR, min(max(opacity, low), high) if opacity > 1e-3 else 0.0,
+                    1.0, UNPROMOTED_STEP_MATERIAL)
 
 
 def soften_ray_color(color) -> tuple:

@@ -71,6 +71,7 @@ inspector's default surface colours are the look module's constants.
 - **Imported STEP hardware** keeps its own switch (bugs/0958). Seen on `om05a_folded`: an
   un-promoted "optical" STEP import keeps its teal body, which now stands out beside the pale
   promoted prisms. Whether that body should take the glass colour too is a separate choice.
+  **Decided and done in bugs/0974:** a smoked bronze, chosen for contrast with the prisms within it.
 - The optical axis, the FOV box, the readouts, the labels and the solve banner.
 - The 2D plot's ray colours (the 3D rays keep the same hues, so the two still correspond).
 
