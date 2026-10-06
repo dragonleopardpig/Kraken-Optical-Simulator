@@ -260,6 +260,14 @@ class KrakenQtMainWindow(_main_window_class()):
         dialog.show()
         return dialog
 
+    def run_model_menu_entry(self, model, entry):
+        """Run one entry of a menu the MODEL built (a layout, an example, a component to insert --
+        bugs/0972), then draw what it left: these are the model's own loaders, which change the
+        rows under the shell's views."""
+        result = model.run(entry)
+        self.refresh_from_model()
+        return result
+
     def show_inspection_cell(self, session):
         """The model's `show_inspection_cell` seam (bugs/0967): the cell's view as a Qt window, not
         modal. A station opened from it loads through THIS window's loader, so the table and the

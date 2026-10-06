@@ -7,6 +7,9 @@ dialog's parent (which is a Qt widget under the Qt shell) -- and a seventh made 
 that no other host can make. The seven left each hold a real Tk window or menu; they are listed
 here with what they hold, and move out one at a time.
 
+  I  the other way in: a service that imports a Tk VIEW module (`panels/`, `widgets/`) at module
+     level reaches tkinter without naming it. Those are counted too, against their own exact list
+     (bugs/0972) -- five services, each building a Tk delegation panel or binding a Tk widget
   S  the scan: every module of those layers that imports tkinter at run time is in `TK_IMPORTERS`,
      and every entry there still does. A new importer fails here; a cleaned module must be deleted
      from the list -- so it can only shrink. (An import under `if TYPE_CHECKING:` is not a run-time
@@ -28,12 +31,21 @@ LAYERS = ("services", "reports", "row_forms", "uihost", "qt")
 TK_IMPORTERS = {
     "services/analysis_compute_workflow.py": "the Tk text widgets' copy shortcuts and context menu",
     "services/layout_bug_recorder.py": "the Tk editor's own flag popup, and its scan of open Tk windows",
-    "services/layout_shell_controls.py": "fills the Tk menu bar's layout / example / Zemax submenus",
     "services/open3d_thickness_dimensions.py": "the Tk inline thickness editor (the shell is asked first, bugs/0950)",
     "services/paraxial_tools.py": "Tk popup-menu and dialog-centring helpers",
     "services/scene_placement_commands.py": "the Tk LED edge-distance prompt (the shell is asked first, bugs/0950)",
     "services/system_selection.py": "the Tk System Selection window",
     "uihost/tk_host.py": "the Tk host itself",
+}
+#: A service can also reach Tk WITHOUT naming it: by importing a Tk view module (`panels/`,
+#: `widgets/`) at module level. Counted separately, and as exactly (bugs/0972).
+TK_VIEW_PACKAGES = ("KrakenOS.UI.panels", "KrakenOS.UI.widgets")
+TK_VIEW_IMPORTERS = {
+    "services/analysis_reports.py": "builds the seven Tk report / inspector delegation panels",
+    "services/layout_import_export.py": "builds the Tk glass-catalogue, lens-drawing and stock-lens panels",
+    "services/layout_shell_controls.py": "binds Tk entries' commit keys (`bind_entry_commit`)",
+    "services/layout_table_workbench.py": "places the Tk table's in-cell entry (`place_commit_cell_entry`)",
+    "services/tolerance_modeling.py": "builds the Tk tolerance-report panel",
 }
 #: the modules bugs/0970 cleaned
 CLEANED = ("services/tolerance_modeling.py", "services/open3d_face_assignment.py", "services/layout_import_export.py",
@@ -74,6 +86,29 @@ def tkinter_importers() -> dict:
     return found
 
 
+def tk_view_importers() -> dict:
+    """module -> the line numbers where it imports a Tk view package at MODULE level (an import
+    inside a function is how a service asks a view to do something, and runs only when asked)."""
+    found: dict = {}
+    for layer in LAYERS:
+        if layer == "qt":
+            continue
+        for path in sorted((ROOT / layer).rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+            lines = []
+            for node in tree.body:
+                names = []
+                if node.__class__ is ast.Import:
+                    names = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom) and node.level == 0:
+                    names = [node.module or ""] + [f"{node.module}.{alias.name}" for alias in node.names]
+                if any(name == package or name.startswith(package + ".") for name in names for package in TK_VIEW_PACKAGES):
+                    lines.append(node.lineno)
+            if lines:
+                found[path.relative_to(ROOT).as_posix()] = lines
+    return found
+
+
 def run_checks() -> tuple[bool, list[str]]:
     from types import SimpleNamespace
 
@@ -85,10 +120,17 @@ def run_checks() -> tuple[bool, list[str]]:
     unlisted = sorted(set(found) - set(TK_IMPORTERS))
     stale = sorted(set(TK_IMPORTERS) - set(found))
     services = sorted(name for name in found if name.startswith("services/"))
-    rows.append(["S", not unlisted and not stale and len(services) == 7,
+    rows.append(["S", not unlisted and not stale and len(services) == len([n for n in TK_IMPORTERS if n.startswith("services/")]),
                  f"{len(found)} modules of {'/'.join(LAYERS)} import tkinter at run time, {len(services)} of them services "
                  f"(14 before bugs/0970); not in the list: {unlisted or 'none'}; listed but clean now (delete the entry): "
                  f"{stale or 'none'}"])
+    indirect = tk_view_importers()
+    unlisted_views = sorted(set(indirect) - set(TK_VIEW_IMPORTERS))
+    stale_views = sorted(set(TK_VIEW_IMPORTERS) - set(indirect))
+    rows.append(["I", not unlisted_views and not stale_views,
+                 f"{len(indirect)} modules import a Tk view package (panels, widgets) at module level: "
+                 f"{sorted(name.split('/')[-1] for name in indirect)}; not in the list: {unlisted_views or 'none'}; listed "
+                 f"but clean now (delete the entry): {stale_views or 'none'}"])
 
     problems = []
     for name in CLEANED:

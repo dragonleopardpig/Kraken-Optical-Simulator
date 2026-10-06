@@ -180,6 +180,21 @@ ICONS: dict[str, str] = {
     "menu_tolerance_csv": (f'<rect {_GLASS} x="3" y="4" width="12" height="16"/>'
                            f'<path {_OPEN} d="M3 9.5h12M3 14.5h12M9 4v16"/>'
                            f'<path {_LIGHT} d="M17 12h5M19.5 9.5L22 12l-2.5 2.5"/>'),
+    # ---- the model's menus (bugs/0972) -------------------------------------------------------------
+    # a shelf of layouts
+    "model_layouts": (f'<path {_OPEN} d="M3 20h18M5 20V6h4v14M10 20V4h4v16M15 20V8h4v12"/>'
+                      f'<path {_LIGHT} d="M6.5 9h1M11.5 7h1M16.5 11h1"/>'),
+    # a camera looking through a lens
+    "model_machine_vision": (f'<rect {_OPEN} x="13" y="7" width="8" height="10" rx="1"/>'
+                             f'<ellipse {_GLASS} cx="8" cy="12" rx="2" ry="6"/>'
+                             f'<path {_LIGHT} d="M2 12h4M10 12h3"/>'),
+    # an open book
+    "model_examples": (f'<path {_OPEN} d="M12 6c-2-1.5-5-2-8-1.5v13c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5v-13c-3-.5-6 0-8 1.5zM12 6v13"/>'
+                       f'<path {_LIGHT} d="M6.5 9h3M6.5 12h3M14.5 9h3M14.5 12h3"/>'),
+    # a lens dropped into a row of surfaces
+    "model_insert_component": (f'<path {_OPEN} d="M3 19h18M5 19v-4M19 19v-4"/>'
+                               f'<ellipse {_GLASS} cx="12" cy="14" rx="2" ry="5"/>'
+                               f'<path {_LIGHT} d="M12 2v5M9.5 4.5L12 7l2.5-2.5"/>'),
     # ---- the ribbon's own -------------------------------------------------------------------------
     "flag_bug": f'<path {_OPEN} d="M5 21V3"/><path {_GLASS} d="M5 4h14l-3.5 4 3.5 4H5z"/>',
     "search": f'<circle {_OPEN} cx="10" cy="10" r="6"/><path {_OPEN} d="M14.5 14.5L20 20"/>',

@@ -51,7 +51,7 @@ def qt_runtime_checks() -> list:
 
     from KrakenOS.UI.qt.actions import ACTIONS
     from KrakenOS.UI.qt.app import build
-    from KrakenOS.UI.qt.ribbon import DROPDOWNS, RIBBON, START_TAB, ribbon_actions, ribbon_entries
+    from KrakenOS.UI.qt.ribbon import DROPDOWNS, MODEL_MENUS, RIBBON, START_TAB, ribbon_actions, ribbon_entries
 
     app, window = build(["guard"])
     window.show()
@@ -83,17 +83,22 @@ def qt_runtime_checks() -> list:
 
     # C -- coverage, uniqueness, icons that draw and differ
     on_ribbon = [name for _t, _g, name, _s, _l in ribbon_entries()]
-    buttons_declared = [name for name in on_ribbon if name not in DROPDOWNS]
+    # a third kind of entry since bugs/0972: a button whose menu the MODEL fills (the layouts and
+    # examples on disk) -- it holds no actions, but it must be built and have its own icon
+    buttons_declared = [name for name in on_ribbon if name not in DROPDOWNS and name not in MODEL_MENUS]
     reached = ribbon_actions()
     declared = [a[0] for a in ACTIONS]
     missing = sorted(set(declared) - set(reached))
     unknown = sorted(set(reached) - set(declared))
     twice = sorted({n for n in reached if reached.count(n) > 1})
-    unbuilt = sorted((set(buttons_declared) - set(ribbon.buttons)) | (set(DROPDOWNS) - set(ribbon.dropdowns)))
+    unbuilt = sorted((set(buttons_declared) - set(ribbon.buttons)) | (set(DROPDOWNS) - set(ribbon.dropdowns))
+                     | (set(MODEL_MENUS) - set(ribbon.model_menus))
+                     | ({name for name in on_ribbon if name.startswith("model:")} - set(MODEL_MENUS)))
     images = {}
     # every BUTTON needs its own icon -- a command's, or a dropdown's; an entry of a list may have none
     faces = [(name, actions[name].icon()) for name in buttons_declared if name in actions]
     faces += [(name, button.icon()) for name, button in ribbon.dropdowns.items()]
+    faces += [(name, button.icon()) for name, button in ribbon.model_menus.items()]
     for name, face in faces:
         image = face.pixmap(32, 32).toImage().convertToFormat(QImage.Format.Format_ARGB32)
         drawn = sum(1 for y in range(image.height()) for x in range(image.width()) if image.pixelColor(x, y).alpha() > 40)
@@ -104,7 +109,7 @@ def qt_runtime_checks() -> list:
         by_bits.setdefault(bits, []).append(name)
     same = [names for names in by_bits.values() if len(names) > 1]
     rows.append(["C", not missing and not unknown and not twice and not unbuilt and not blank and not same,
-                 f"{len(buttons_declared)} buttons + {len(DROPDOWNS)} dropdowns listing "
+                 f"{len(buttons_declared)} buttons + {len(MODEL_MENUS)} model menus + {len(DROPDOWNS)} dropdowns listing "
                  f"{len(reached) - len(buttons_declared)} commands reach {len(set(reached))} of {len(declared)} "
                  f"actions; missing {missing}, unknown {unknown}, twice {twice}, declared but not built {unbuilt}; "
                  f"blank icons {blank}; identical icons {same}"])

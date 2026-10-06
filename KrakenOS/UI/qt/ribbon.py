@@ -32,6 +32,10 @@ RIBBON = (
     ("File", (
         ("Layout", (("open", "L", "Open\nLayout"), ("reload", "L", "Reload"), ("save", "S", "Save"),
                     ("save_as", "S", "Save As"), ("reset", "S", "Reset"))),
+        # what ships with the program, by name (bugs/0972): the Tk menu bar's Layouts / Machine Vision /
+        # Examples menus -- the Qt shell had none of them
+        ("Library", (("model:layouts", "L", "Layouts"), ("model:machine_vision", "L", "Machine\nVision"),
+                     ("model:examples", "L", "Examples"))),
         ("Import / Export", (("menu:import", "L", "Import"), ("menu:export", "L", "Export"))),
         # Quit is small and last, on a tab that is not the one shown at start-up
         ("Application", (("menu:help", "L", "Help"), ("flag_bug", "S", "Flag Bug"), ("about", "S", "About"),
@@ -55,7 +59,8 @@ RIBBON = (
         ("Special rows", (("beam_splitter", "S", "Beam Splitter"), ("diffuse_scatter", "S", "Diffuse / BRDF"),
                           ("grating_settings", "S", "Grating"), ("detector_settings", "S", "Detector"),
                           ("galvo_scan", "S", "Galvo Scan"))),
-        ("Catalogs", (("glass_catalog", "L", "Glass\nCatalog"), ("stock_lens", "L", "Stock\nLens"))),
+        ("Catalogs", (("glass_catalog", "L", "Glass\nCatalog"), ("stock_lens", "L", "Stock\nLens"),
+                      ("model:insert_component", "L", "Common\nComponent"))),
     )),
     ("Scene", (
         ("Placement", (("scene_target", "L", "Scene\nTarget"), ("path_local_pose", "S", "Path-Local Pose"),
@@ -91,6 +96,15 @@ RIBBON = (
         ("Export", (("menu:tolerance_csv", "L", "Export\nCSV"),)),
     )),
 )
+
+#: a button whose menu the MODEL fills each time it is opened -> (the model's selector menu, what
+#: it holds). What they list is whatever is on disk, so the entries are not actions (bugs/0972).
+MODEL_MENUS = {
+    "model:layouts": ("layouts", "Open one of the common layouts that ship with KrakenOS, by category"),
+    "model:machine_vision": ("machine_vision", "Open a machine-vision lens layout"),
+    "model:examples": ("examples", "Open a worked example, or a Zemax prescription from the attachment folder"),
+    "model:insert_component": ("insert_component", "Insert a common component -- a lens, a mirror -- into the layout"),
+}
 
 #: dropdown button -> (what it holds, its actions in order; None is a separator). These are the
 #: long, occasional lists -- a button each would only widen the ribbon.
@@ -142,7 +156,7 @@ def ribbon_actions() -> list:
     for _tab, _group, name, _size, _label in ribbon_entries():
         if name in DROPDOWNS:
             names.extend(member for member in DROPDOWNS[name][1] if member is not None)
-        else:
+        elif name not in MODEL_MENUS:          # a model's menu holds no actions
             names.append(name)
     return names
 
@@ -174,6 +188,8 @@ class Ribbon:
         self.buttons: dict[str, object] = {}
         #: "menu:..." key -> its dropdown button (on the docked pages)
         self.dropdowns: dict[str, object] = {}
+        #: "model:..." key -> the button whose menu the model fills (on the docked pages)
+        self.model_menus: dict[str, object] = {}
         #: tab index -> its pop-up page, built the first time it is shown folded
         self.popups: dict[int, object] = {}
         self._building_popup = False
@@ -274,6 +290,8 @@ class Ribbon:
 
         if name in DROPDOWNS:
             return self._dropdown(name, size, label)
+        if name in MODEL_MENUS:
+            return self._model_menu(name, size, label)
         action = self.actions[name]
         button = QToolButton()
         button.setAutoRaise(True)
@@ -331,6 +349,43 @@ class Ribbon:
         if not self._building_popup:
             self.dropdowns[name] = button
         return button
+
+    def _model_menu(self, name: str, size: str, label: str):
+        """A button that drops one of the MODEL's menus -- the layouts, the examples, the common
+        components on disk (bugs/0972). Filled from `editor.selector_menu` every time it opens, so
+        it is never stale; an entry runs the model's own loader, then the shell follows the model."""
+        from PySide6.QtCore import QSize, Qt
+        from PySide6.QtWidgets import QMenu, QToolButton
+
+        from KrakenOS.UI.qt.icons import icon
+
+        kind, about = MODEL_MENUS[name]
+        button = QToolButton()
+        button.setAutoRaise(True)
+        button.setIcon(icon(name.replace(":", "_")))
+        button.setText(label)
+        large = size == "L"
+        button.setIconSize(QSize(LARGE_ICON, LARGE_ICON) if large else QSize(SMALL_ICON, SMALL_ICON))
+        button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon if large
+                                  else Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        menu = QMenu(button)
+        menu.aboutToShow.connect(lambda m=menu, k=kind: self.fill_model_menu(m, k))
+        button.setMenu(menu)
+        button.setToolTip(f"<b>{label.replace(chr(10), ' ')}</b><br>{about}")
+        if not self._building_popup:
+            self.model_menus[name] = button
+        return button
+
+    def fill_model_menu(self, menu, kind: str):
+        """Put the model's ``kind`` menu into ``menu``, as it is now."""
+        from KrakenOS.UI.qt.inspector_view import fill_qmenu
+
+        return fill_qmenu(menu, self.main_window.editor.selector_menu(kind), self._run_model_entry)
+
+    def _run_model_entry(self, model, entry) -> None:
+        self._close_popups()          # folded, the page is a pop-up: a choice closes it, as a button does
+        self.main_window.run_model_menu_entry(model, entry)
 
     def _plots_group(self):
         """The Analysis picker as a ribbon group: its "Select plots" menu, Update and WFront 3D --

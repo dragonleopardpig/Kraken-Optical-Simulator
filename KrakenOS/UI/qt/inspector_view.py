@@ -283,11 +283,19 @@ def qt_menu_text(label: str, accelerator: str = "") -> str:
     return f"{text}\t{accelerator}" if accelerator else text
 
 
-def build_qmenu(model, parent=None):
+def build_qmenu(model, parent=None, run=None):
     """A QMenu showing `model`'s entries, in order; each action runs its entry via the model."""
     from PySide6.QtWidgets import QMenu
 
-    menu = QMenu(parent)
+    return fill_qmenu(QMenu(parent), model, run)
+
+
+def fill_qmenu(menu, model, run=None):
+    """Replace ``menu``'s entries by `model`'s, cascades and all, and return it. ``run(model,
+    entry)`` is what a click does -- by default the model's own `run`; a shell that must follow
+    the model afterwards passes its own (bugs/0972: the ribbon's Layouts / Examples menus are
+    filled this way each time they open)."""
+    menu.clear()
     for entry in model.entries:
         if entry.kind == "separator":
             menu.addSeparator()
@@ -295,7 +303,7 @@ def build_qmenu(model, parent=None):
         if entry.kind == "cascade":
             if entry.submenu is None:
                 continue
-            submenu = build_qmenu(entry.submenu, menu)
+            submenu = build_qmenu(entry.submenu, menu, run)
             submenu.setTitle(qt_menu_text(entry.label))
             submenu.setEnabled(entry.enabled)
             menu.addMenu(submenu)
@@ -306,7 +314,10 @@ def build_qmenu(model, parent=None):
         if entry.kind in ("checkbutton", "radiobutton"):
             action.setCheckable(True)
             action.setChecked(entry.checked())
-        action.triggered.connect(lambda _checked=False, e=entry: model.run(e))
+        if run is None:
+            action.triggered.connect(lambda _checked=False, e=entry: model.run(e))
+        else:
+            action.triggered.connect(lambda _checked=False, e=entry, m=model: run(m, e))
     return menu
 
 

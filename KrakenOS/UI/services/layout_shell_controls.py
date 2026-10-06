@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import tkinter as tk
 
 from KrakenOS.UI.analysis_modes import selection_label
 from KrakenOS.UI.system_controls import control_for
@@ -328,7 +327,7 @@ class LayoutShellControlsMixin:
             for widget in (control.get("managed_widgets") or ())
             if widget is not None
         }
-        parent_controls: dict[tk.Widget, list[dict[str, object]]] = {}
+        parent_controls: dict[Any, list[dict[str, object]]] = {}
         for index, control in enumerate(controls):
             visible = bool(control.get("visible", True))
             records = []
@@ -628,14 +627,14 @@ class LayoutShellControlsMixin:
     def _build_results_panel(self, parent) -> None:
         self._main_information_panel().build(parent)
 
-    def _bind_deferred_refresh(self, widget: tk.Widget) -> None:
+    def _bind_deferred_refresh(self, widget: Any) -> None:
         bind_entry_commit(
             widget,
             self._mark_plot_update_pending,
             on_focus_in=self._begin_history_capture,
         )
 
-    def _bind_deferred_manual_update(self, widget: tk.Widget, *, sync_fields: bool = False) -> None:
+    def _bind_deferred_manual_update(self, widget: Any, *, sync_fields: bool = False) -> None:
         def _on_commit(_event=None):
             if sync_fields:
                 self._sync_object_controls()
@@ -757,7 +756,7 @@ class LayoutShellControlsMixin:
             else:
                 frame.grid_remove()
 
-    def _pane_present(self, widget: tk.Widget) -> bool:
+    def _pane_present(self, widget: Any) -> bool:
         if not hasattr(self, "main_pane"):
             return False
         widget_name = str(widget)
@@ -845,112 +844,74 @@ class LayoutShellControlsMixin:
     def _example_menu_category(self, name: str) -> str:
         return example_menu_category(name, self.example_files.get(name))
 
-    def _refresh_selector_menus(self) -> None:
-        if self.layout_menu is not None:
-            self.layout_menu.delete(0, "end")
-            self._layout_category_menus = []
-            if self.layout_names:
-                categories = {category: [] for category in LAYOUT_CATEGORY_ORDER}
-                for name in self.layout_names:
-                    category = self._layout_menu_category(name)
-                    categories.setdefault(category, []).append(name)
-                for category, names in categories.items():
-                    if not names:
-                        continue
-                    submenu = tk.Menu(self.layout_menu, tearoff=0)
-                    self._layout_category_menus.append(submenu)
-                    for name in names:
-                        submenu.add_command(
-                            label=name,
-                            command=lambda value=name: self.load_layout_by_name(value),
-                        )
-                    self.layout_menu.add_cascade(label=category, menu=submenu)
-            else:
-                self.layout_menu.add_command(label="No common layouts found", state="disabled")
+    #: the menus filled from the files on disk (bugs/0972)
+    SELECTOR_MENUS = ("layouts", "machine_vision", "examples", "insert_component")
 
-        self._refresh_insert_component_menu()
+    def selector_menu(self, kind: str):
+        """One of the menus filled from the files on disk, as DATA (bugs/0972): "layouts" (the common
+        layouts, by category), "machine_vision", "examples" (by category, then the Zemax
+        prescriptions as a tree of folders) and "insert_component" (the common layouts that can be
+        inserted as a component).
 
-        if self.machine_vision_menu is not None:
-            self.machine_vision_menu.delete(0, "end")
-            if self.machine_vision_names:
-                for name in self.machine_vision_names:
-                    self.machine_vision_menu.add_command(
-                        label=name,
-                        command=lambda value=name: self.load_layout_by_name(value),
-                    )
-            else:
-                self.machine_vision_menu.add_command(label="No machine-vision layouts found", state="disabled")
+        A `MenuModel`: the Tk menu bar and the Qt ribbon both show it, and each entry's command is
+        the model's own loader. Until bugs/0972 this was `tk.Menu` code here, and the Qt shell had
+        none of the four menus."""
+        from KrakenOS.UI.context_menu import MenuModel
 
-        if self.example_menu is not None:
-            self.example_menu.delete(0, "end")
-            self._example_category_menus = []
-            self._zemax_example_category_menus = []
-            if self.example_names:
-                categories = {category: [] for category in EXAMPLE_CATEGORY_ORDER}
-                for name in self.example_names:
-                    category = self._example_menu_category(name)
-                    categories.setdefault(category, []).append(name)
-                for category, names in categories.items():
-                    if not names:
-                        continue
-                    submenu = tk.Menu(self.example_menu, tearoff=0)
-                    self._example_category_menus.append(submenu)
-                    for name in names:
-                        submenu.add_command(
-                            label=name,
-                            command=lambda value=name: self.load_example_by_name(value),
-                        )
-                    self.example_menu.add_cascade(label=category, menu=submenu)
+        menu = MenuModel()
+        if kind == "layouts":
+            self._fill_category_menu(menu, self.layout_names, LAYOUT_CATEGORY_ORDER,
+                                     self._layout_menu_category, self.load_layout_by_name)
+            if not self.layout_names:
+                menu.add_command(label="No common layouts found", state="disabled")
+        elif kind == "machine_vision":
+            for name in self.machine_vision_names:
+                menu.add_command(label=name, command=lambda value=name: self.load_layout_by_name(value))
+            if not self.machine_vision_names:
+                menu.add_command(label="No machine-vision layouts found", state="disabled")
+        elif kind == "examples":
+            self._fill_category_menu(menu, self.example_names, EXAMPLE_CATEGORY_ORDER,
+                                     self._example_menu_category, self.load_example_by_name)
             if self.example_names and self.zemax_example_files:
-                self.example_menu.add_separator()
+                menu.add_separator()
             if self.zemax_example_files:
-                self._refresh_zemax_example_menu(self.example_menu)
+                zemax_menu = MenuModel(menu)
+                self._fill_zemax_tree_menu(zemax_menu, self._zemax_example_tree())
+                menu.add_cascade(label="Zemax Prescriptions (attachment)", menu=zemax_menu)
             elif not self.example_names:
-                self.example_menu.add_command(label="No examples found", state="disabled")
+                menu.add_command(label="No examples found", state="disabled")
+        elif kind == "insert_component":
+            names = self._insertable_common_layout_names()
+            for name in names:
+                menu.add_command(label=name, command=lambda value=name: self.insert_layout_component_by_name(value))
+            if not names:
+                menu.add_command(label="No insertable common components found", state="disabled")
+        else:
+            raise KeyError(f"no selector menu named {kind!r}")
+        return menu
 
-    def _insertable_common_layout_names(self) -> list[str]:
-        names: list[str] = []
-        for name in self.layout_names:
-            path = self.layout_files.get(name)
-            if path is None:
-                continue
-            info: dict[str, object] = {}
-            try:
-                info = _load_python_data(path)
-            except Exception:
-                info = {}
-            if self._is_insertable_common_layout(name, [], info):
-                names.append(name)
-        return sorted(names, key=str.lower)
+    @staticmethod
+    def _fill_category_menu(menu, names, order, category_of, load) -> None:
+        """A submenu per category, in ``order`` (a category not listed there comes after), each
+        holding its names; an empty category is left out."""
+        from KrakenOS.UI.context_menu import MenuModel
 
-    def _refresh_insert_component_menu(self) -> None:
-        menu = self._insert_component_menu
-        if menu is None:
-            return
-        menu.delete(0, "end")
-        names = self._insertable_common_layout_names()
-        if not names:
-            menu.add_command(label="No insertable common components found", state="disabled")
-            return
+        categories = {category: [] for category in order}
         for name in names:
-            menu.add_command(
-                label=name,
-                command=lambda value=name: self.insert_layout_component_by_name(value),
-            )
+            categories.setdefault(category_of(name), []).append(name)
+        for category, members in categories.items():
+            if not members:
+                continue
+            submenu = MenuModel(menu)
+            for name in members:
+                submenu.add_command(label=name, command=lambda value=name: load(value))
+            menu.add_cascade(label=category, menu=submenu)
 
-    def _refresh_zemax_example_menu(self, parent_menu: tk.Menu) -> None:
-        zemax_menu = tk.Menu(parent_menu, tearoff=0)
-        self._zemax_example_category_menus.append(zemax_menu)
-        if not self.zemax_example_files:
-            zemax_menu.add_command(label=f"No .zmx files found in {ZEMAX_ATTACHMENT_DIR}", state="disabled")
-            parent_menu.add_cascade(label="Zemax Prescriptions (attachment)", menu=zemax_menu)
-            return
-
-        # Build a tree mirroring the on-disk directory structure so deep
-        # collections (e.g. Sequential/<category>, Short course/<category>)
-        # nest as browsable submenus instead of a flat list of long
-        # slash-joined group labels. Loose files at the zemax root live under
-        # a "Top Level" submenu so they don't crowd out the category folders.
+    def _zemax_example_tree(self) -> dict:
+        """The Zemax prescriptions as a {dirs, files} tree mirroring the folders on disk, so deep
+        collections (Sequential/<category>, Short course/<category>) nest as browsable submenus
+        instead of a flat list of long slash-joined labels. Loose files at the root live under
+        "Top Level" so they do not crowd out the category folders."""
         tree: dict[str, object] = {"dirs": {}, "files": []}
         for label, path in self.zemax_example_files.items():
             try:
@@ -966,26 +927,53 @@ class LayoutShellControlsMixin:
             for part in parts[:-1]:
                 node = node["dirs"].setdefault(part, {"dirs": {}, "files": []})
             node["files"].append((parts[-1], path))
+        return tree
 
-        self._populate_zemax_tree_menu(zemax_menu, tree)
-        parent_menu.add_cascade(label="Zemax Prescriptions (attachment)", menu=zemax_menu)
+    def _fill_zemax_tree_menu(self, menu, node: dict) -> None:
+        """Fill ``menu`` from a {dirs, files} tree node: folders first (as submenus, "Top Level"
+        floated to the top), then files as load commands -- both alphabetised."""
+        from KrakenOS.UI.context_menu import MenuModel
 
-    def _populate_zemax_tree_menu(self, menu: tk.Menu, node: dict[str, object]) -> None:
-        """Recursively fill ``menu`` from a {dirs, files} tree node.
-
-        Directories come first (as cascading submenus, "Top Level" floated to
-        the top), then files as load commands -- both alphabetised.
-        """
         for dir_name in sorted(node["dirs"], key=lambda value: (value != "Top Level", value.lower())):
-            submenu = tk.Menu(menu, tearoff=0)
-            self._zemax_example_category_menus.append(submenu)
-            self._populate_zemax_tree_menu(submenu, node["dirs"][dir_name])
+            submenu = MenuModel(menu)
+            self._fill_zemax_tree_menu(submenu, node["dirs"][dir_name])
             menu.add_cascade(label=dir_name, menu=submenu)
         for item_label, path in sorted(node["files"], key=lambda item: item[0].lower()):
-            menu.add_command(
-                label=item_label,
-                command=lambda value=path: self.load_zemax_example_file(value),
-            )
+            menu.add_command(label=item_label, command=lambda value=path: self.load_zemax_example_file(value))
+
+    def _refresh_selector_menus(self) -> None:
+        """The layouts and examples on disk were listed again: every shell shows its menus again.
+
+        The Tk menu bar's four menus are refilled from `selector_menu` (bugs/0972); a shell that
+        keeps menus of its own open is told through `show_selector_menus` (the Qt ribbon needs no
+        telling: it asks for the menu each time one is opened)."""
+        targets = {"layouts": self.layout_menu, "machine_vision": self.machine_vision_menu,
+                   "examples": self.example_menu, "insert_component": self._insert_component_menu}
+        if any(target is not None for target in targets.values()):
+            from KrakenOS.UI.context_menu import fill_tk_menu
+
+            kept = self.__dict__.setdefault("_selector_submenus", {})
+            for kind, target in targets.items():
+                if target is not None:
+                    kept[kind] = fill_tk_menu(target, self.selector_menu(kind))
+        shell = self.__dict__.get("show_selector_menus")
+        if callable(shell):
+            shell()
+
+    def _insertable_common_layout_names(self) -> list[str]:
+        names: list[str] = []
+        for name in self.layout_names:
+            path = self.layout_files.get(name)
+            if path is None:
+                continue
+            info: dict[str, object] = {}
+            try:
+                info = _load_python_data(path)
+            except Exception:
+                info = {}
+            if self._is_insertable_common_layout(name, [], info):
+                names.append(name)
+        return sorted(names, key=str.lower)
 
     def load_layouts(self) -> None:
         discovered = _discover_layouts(LAYOUTS_DIR, default_layout_title=DEFAULT_LAYOUT_TITLE)

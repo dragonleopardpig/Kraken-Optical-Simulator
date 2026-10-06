@@ -2816,11 +2816,10 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         self.arm_view_var = self.ui.string_var(value=ARM_VIEW_DEFAULT)
         self.ray_display_mode_var = self.ui.string_var(value=RAY_DISPLAY_DEFAULT)
         self.layout_menu: tk.Menu | None = None
-        self._layout_category_menus: list[tk.Menu] = []
+        #: selector menu -> the Tk submenus made for it (bugs/0972: filled from `selector_menu`)
+        self._selector_submenus: dict = {}
         self.machine_vision_menu: tk.Menu | None = None
         self.example_menu: tk.Menu | None = None
-        self._example_category_menus: list[tk.Menu] = []
-        self._zemax_example_category_menus: list[tk.Menu] = []
         self.layout_preview_mode = "none"
         self.show_layout_2d = True
         self.trace_mode = "Auto"

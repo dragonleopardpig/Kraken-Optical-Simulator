@@ -151,6 +151,34 @@ def new_context_menu(owner, master):
     return tk.Menu(master, tearoff=False)
 
 
+def fill_tk_menu(menu, model) -> list:
+    """Replace a real `tk.Menu`'s entries by `model`'s, cascades and all (bugs/0972: the menu bar's
+    Layouts / Examples menus are model data now). Returns the submenus it made -- the caller keeps
+    them, as the menu bar always kept its category menus."""
+    import tkinter as tk
+
+    menu.delete(0, "end")
+    made = []
+    for entry in model.entries:
+        if entry.kind == "separator":
+            menu.add_separator()
+        elif entry.kind == "cascade":
+            submenu = tk.Menu(menu, tearoff=0)
+            made.append(submenu)
+            if entry.submenu is not None:
+                made.extend(fill_tk_menu(submenu, entry.submenu))
+            menu.add_cascade(label=entry.label, menu=submenu, state=entry.state)
+        elif entry.kind == "checkbutton":
+            menu.add_checkbutton(label=entry.label, variable=entry.variable, command=entry.command,
+                                 onvalue=entry.onvalue, offvalue=entry.offvalue, state=entry.state)
+        elif entry.kind == "radiobutton":
+            menu.add_radiobutton(label=entry.label, variable=entry.variable, value=entry.value,
+                                 command=entry.command, state=entry.state)
+        else:
+            menu.add_command(label=entry.label, command=entry.command, state=entry.state)
+    return made
+
+
 def tk_menu_outline(menu) -> list:
     """The same outline, read back from a REAL posted `tk.Menu` -- so a guard can compare what
     the Tk shell showed with what a shell was handed."""
