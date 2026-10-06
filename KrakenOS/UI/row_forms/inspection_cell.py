@@ -8,8 +8,8 @@ The six faces ARE the record list, which is what makes this a record-list form r
 twelve loose fields: selecting a face and pressing "Browse Layout..." replaces six per-face
 Browse buttons with one verb that acts on the face you picked.
 
-The embedded cell VIEW (`panels/inspection_cell_window.py`) is a VTK plotter and stays in phase 5
--- this form only asks it to open.
+The cell VIEW is a VTK scene with its own session (`services/inspection_cell_session.py`, bugs/0967)
+and a window in each toolkit -- this form only asks it to open.
 """
 from __future__ import annotations
 
@@ -254,18 +254,20 @@ def _solve_and_build(form, host) -> str:
 
 
 def _open_cell_view(form, _host) -> str:
-    from KrakenOS.UI.panels.inspection_cell_window import open_inspection_cell_window
+    # bugs/0967: the view opens in whichever shell is running -- the Qt shell's own window, or
+    # the Tk one -- over one session
+    from KrakenOS.UI.services.inspection_cell_session import open_inspection_cell_view
 
     owner = form.state["owner"]
     cell = _cell_from_values(form, dict(form.values))
     try:
-        window = open_inspection_cell_window(owner, cell)
+        session = open_inspection_cell_view(owner, cell)
     except Exception as exc:
         raise FormRefused(f"Cell view failed: {exc}") from exc
-    if window is None:
+    if session is None:
         return "Cell shown in the pyvista window (embedded view unavailable)."
-    owner.inspection_cell_window = window
-    return window.status_var.get() or "Cell view open."
+    owner.inspection_cell_view = session
+    return session.status or "Cell view open."
 
 
 def _interference_report(form, _host) -> str:

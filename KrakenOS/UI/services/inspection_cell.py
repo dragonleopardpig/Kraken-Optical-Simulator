@@ -498,7 +498,8 @@ def open_inspection_cell_dialog(editor):
 
     docs/design_qt_migration.md phase 3 (bugs/0883): the six faces are a RECORD LIST and every
     verb is a FormAction in ``KrakenOS/UI/row_forms/inspection_cell.py``, which the Qt dialog
-    uses too. The embedded cell VIEW stays a VTK plotter -- this only asks it to open.
+    uses too. The cell VIEW has its own session and a window in each toolkit
+    (`inspection_cell_session.py`, bugs/0967) -- this only asks it to open.
     """
     from KrakenOS.UI.panels.row_form_view import present_row_form
     from KrakenOS.UI.row_forms import FormRefused

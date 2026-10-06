@@ -44,7 +44,6 @@ TK_ONLY = {
     "panels/main_optical_solid_face_roles_dialog.py": (0, 1),  # Tk view of face_roles_session
     "panels/main_paraxial_analysis_dialogs.py": (0, 1),        # inside the Tk paraxial calculator
     "panels/optical_stl_placement_dialog.py": (0, 2),          # the Tk visual placement window
-    "panels/inspection_cell_window.py": (0, 1),                # the Tk inspection-cell window
     "panels/missing_assets_dialog.py": (0, 6),                 # Tk view of missing_assets_session (0965)
 }
 

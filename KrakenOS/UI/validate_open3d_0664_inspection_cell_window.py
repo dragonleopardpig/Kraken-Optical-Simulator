@@ -11,7 +11,8 @@ Checks:
      `check_station_files` re-compose (compose count increments).
   B  WIRING: the cell dialog's "Open Cell View" goes through the embedded window with
      the pyvista fallback; the composition records per-station actor keys; the window
-     watches station files and handles double-click.
+     hands a double-click to its session, which watches the station files (bugs/0967:
+     the window is a view over `services/inspection_cell_session.py`).
 
 Inside the penta harness the window section is SKIPPED (the harness owns the single
 embedded inspector; a second VTK/Tk widget is not opened there) -- run this module
@@ -149,10 +150,23 @@ def _check_wiring(ok, notes) -> None:
     )
     compose_src = inspect.getsource(ic.compose_cell_plotter)
     ok("station_actor_keys" in compose_src, "B2: the composition records per-station actor keys for picking")
+    # bugs/0967: the window is a VIEW now -- what it watches and what a double-click means live in
+    # the session, so the watch is MEASURED on a scripted clock instead of read from the source
+    from KrakenOS.UI.services.inspection_cell_session import InspectionCellSession
+    from KrakenOS.UI.uihost import ScriptedUiHost
+
+    clock = ScriptedUiHost()
+    watcher = InspectionCellSession(SimpleNamespace(), {}, host=clock)
+    watcher.start_watching()
+    armed = clock.pending()
+    ran = clock.run_due(InspectionCellSession.POLL_MS)
     win_src = inspect.getsource(icw.InspectionCellWindow)
     ok(
-        "GetRepeatCount" in win_src and "_poll_station_files" in win_src and "SetInteractorStyle" in win_src,
-        "B3: double-click opens a station; station files are watched; trackball camera",
+        "GetRepeatCount" in win_src and "session.double_click" in win_src and "SetInteractorStyle" in win_src
+        and armed == 1 and ran == 1 and clock.pending() == 1,
+        "B3: double-click opens a station (the window hands the point to its session); station files are "
+        f"watched (one timer armed, it ran {ran}x at {InspectionCellSession.POLL_MS} ms and re-armed: "
+        f"{clock.pending()}); trackball camera",
     )
     ok("plotter.show" in inspect.getsource(icw.open_inspection_cell_window), "B4: the pyvista fallback survives")
 

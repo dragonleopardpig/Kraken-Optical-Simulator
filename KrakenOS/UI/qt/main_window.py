@@ -166,6 +166,10 @@ class KrakenQtMainWindow(_main_window_class()):
         editor.show_missing_assets = self.show_missing_assets
         #: the window `show_missing_assets` last opened, for a guard to drive
         self.last_missing_assets_dialog = None
+        # the Inspection Cell VIEW is a Qt window here (bugs/0967): the Tk one was on screen and
+        # dead -- nothing pumps Tk under this shell
+        editor.show_inspection_cell = self.show_inspection_cell
+        self.last_inspection_cell_dialog = None
         # the CAD/STL face-roles editor opens here, over the model's session (bugs/0934)
         editor.show_face_roles_dialog = self.show_face_roles_dialog
         # a report a model command opens -- the table menu's Diagnostics, the inspector's verbs --
@@ -255,6 +259,26 @@ class KrakenQtMainWindow(_main_window_class()):
         self.last_missing_assets_dialog = dialog
         dialog.show()
         return dialog
+
+    def show_inspection_cell(self, session):
+        """The model's `show_inspection_cell` seam (bugs/0967): the cell's view as a Qt window, not
+        modal. A station opened from it loads through THIS window's loader, so the table and the
+        scene follow. Returns the session, as the model's opener does."""
+        from KrakenOS.UI.qt.dialogs.inspection_cell_dialog import InspectionCellDialog
+
+        session.open_layout = self.load_layout_path
+        session.raise_editor = self._come_forward
+        dialog = InspectionCellDialog(session, host=host_of(self), parent=self)
+        dialog.finished.connect(lambda _result, d=dialog: self._forget_dialog(d))
+        self._open_dialogs.append(dialog)
+        self.last_inspection_cell_dialog = dialog
+        dialog.show()
+        dialog.build_view()           # VTK takes the shown window's native id
+        return session
+
+    def _come_forward(self) -> None:
+        self.raise_()
+        self.activateWindow()
 
     def missing_assets_action(self) -> None:
         """Ask about the layout's missing CAD files again -- or say that none are missing."""
