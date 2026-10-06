@@ -39,3 +39,20 @@ Nothing a user sees changes: the same keys, the same menu, the same status messa
 One claim I first wrote was wrong and is gone: that the Qt shell's editor never builds this panel.
 It does -- the Qt shell's editor still builds its hidden Tk window, which binds its own keys. That
 ends with phase 7f, not here.
+
+## Checks
+
+**Mutations: 14 of 14 caught, each by the claims meant to catch it** -- the model copying with no
+selection, not catching a clipboard that raises, reporting a failed copy as done, calling "all" a
+selection; a text box with no selection raising; the menu rebuilt every time, or not re-aimed; a
+focused table not handed to the row copy; a focus Tk cannot name not caught; the right-click
+binding, a copy shortcut, or the window-wide paste missing; an editor method no longer delegating;
+the service importing tkinter again.
+
+**Neighbouring guards, all pass:** the tkinter-import list (738: five services now), the panel
+delegations (145 of them, none targeting a method its panel lacks), the results and debug panels
+(686), the sampling-stability contract, the table component workflow, the interaction contract (655).
+
+**Baseline:** phases 743 and 738 recorded (pass; 742 phases). The full Tk gate ran at ff4c2088; it
+has not been run again since (0974, 0975 and this came after).
+
