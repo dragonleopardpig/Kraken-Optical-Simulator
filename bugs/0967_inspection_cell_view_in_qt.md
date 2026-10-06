@@ -71,3 +71,43 @@ axes, the summary under the view.
   against the new view -- that is the old-against-new proof for the Tk side.
 - `validate_qt_model_forms_open_in_qt` (phase 721): `panels/inspection_cell_window.py` leaves the
   Tk-only list -- it has no tkinter dialog call any more. The list is 16 calls in 6 windows (was 17 in 7).
+
+## Checks (2026-10-06, X299-SSD; every run alone, at low priority)
+
+**Mutations: 27 of 27 caught, each by the claim it targets**; every one restored from a copy, the
+tree clean afterwards.
+
+| Mutation | Caught by |
+|---|---|
+| station actors are not mapped to their faces; compositions are not counted | P1 (and P3) |
+| the NEW plotter is closed while its actors are in the view; a failed composition empties the scene | P1 |
+| a station ignores the shell's loader | P2, Q |
+| the editor is not brought forward; a face with no layout is "opened" | P2 |
+| the watch does not re-arm; it composes on every poll; `start_watching` arms a second timer | P3 |
+| close does not cancel the watch; close does not close the plotter | P3 |
+| the export's question has no parent; a cancelled export still writes | P4 |
+| the opener ignores the shell | P5, Q |
+| the Tk window makes a session of its own; destroying it does not close the session | T |
+| the Tk window drops a session button; it never hands the session its renderer | T |
+| the Qt window is modal; a double-click is not handed to the session | Q |
+| closing the Qt window does not end the session; it never starts the watch | Q |
+| the Qt window drops the session's buttons | Q |
+| the Qt shell does not install the seam; it does not lend its layout loader | Q |
+| the form opens the Tk window directly | Q |
+
+Two of these were first caught only because the guard RAISED (a dropped button, an empty status
+line). The guard now fails those claims cleanly (2a2d4f13), and both were run again.
+
+**Neighbouring guards, all pass, none skipped:**
+- phase 497 (0664, the Tk window): A1-A5 unchanged against the new view -- 153 actors, both stations
+  reachable, a geometric pick resolves to the top station, a station opens, a saved layout
+  re-composes; B3 measured on a scripted clock;
+- phase 721 (model forms open in Qt): 16 Tk-only calls in 6 listed windows, nothing outside them;
+- phase 671 (0883, the cell's record-list form) and phase 496 (0663, the cell composition);
+- phase 723 (inspector popups): 11 Toplevel builders, 9 ask the shell first, 2 known;
+- phase 655 (the interaction contract): 259 checks.
+
+**Baseline:** phase 736 recorded (1 pass, 0 fail), so it passes inside the harness as well as alone.
+
+**Owed, on the user's go:** the full Tk gate, since 8403abde (it now covers 0966 and 0967).
+
