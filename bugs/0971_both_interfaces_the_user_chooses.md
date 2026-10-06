@@ -54,11 +54,53 @@ The README's "Running" section names the new command.
   it starts nothing; with one interface installed nothing is asked.
 - **P4:** the form -- what it offers, what it opens on; Apply writes the file and the START
   DECISION reads it back; "ask me" removes it; an unknown choice refused.
-- **L:** the launcher run as the real command (a dry run that starts nothing) for each source, exit
-  2 on an unknown interface; and the dispatch to each interface's entry point.
+- **L:** the launcher run as the real command (a dry run that starts nothing): with nothing set it
+  says it would ask and asks nothing; each source; exit 2 on an unknown interface; and the dispatch
+  to each interface's entry point.
 - **W:** the first-run window itself.
 - **T:** the Tk File menu's entry opens the form's window; Apply there writes the file.
 - **Q:** the Qt action is in the Help dropdown, opens a Qt dialog and no Tk window, on the saved
   choice and naming the running interface; a real click on Apply writes the file.
 
 **Seen by eye:** the first-run window and the form in the Qt interface.
+
+## Checks (2026-10-06, X299-SSD; every run alone, at low priority)
+
+**Mutations: 19 of 19 caught, each by the claim it targets**; every one restored from a copy, the
+tree clean afterwards.
+
+| Mutation | Caught by |
+|---|---|
+| a preferences file that is not JSON is fatal; saving one preference drops the others; an unwritable folder raises | P1 |
+| the command line does not decide; the environment is ignored | P2, L |
+| the request is passed on to the interface; an interface that cannot run here is started anyway | P2 |
+| the first-run answer is saved though "remember" is unticked; asked with one interface installed; the question opens on Tk | P3 |
+| the form does not save | P4, T, Q |
+| the form opens on "ask me" whatever is saved | P4, Q |
+| the form does not name the running interface | Q |
+| asking for Qt starts Tk; the Tk interface is started without the layout | L |
+| "Remember my choice" starts unticked | W |
+| the Tk File menu loses the entry | T |
+| the Qt action is in no dropdown | Q |
+| the editor's command opens nothing | T, Q |
+
+**What the first mutation run found, in the program and in the guard** (dc16f325):
+- with the command line or the environment not deciding, the launcher's DRY RUN opened the first-run
+  question and waited on it. A dry run must start nothing and ask nothing: it now reports
+  `shell=(ask)` and stops. (The guard hung five minutes on it, then crashed.)
+- a claim that raised took the whole guard down with it. Each claim now fails on its own, a hung
+  dry run is a failed claim after 90 s, and a view's check that crashes is reported under its own
+  letter.
+
+**Neighbouring guards, all pass:**
+- the ribbon (714): 68 buttons + 6 dropdowns listing 34 commands reach 102 of 102 actions; the
+  window's minimum width is unchanged at 1234 px (the command sits in a dropdown);
+- menu parity (718): 76 Tk menu-bar commands, 76 routed in Qt;
+- the model-forms census (721), the interaction contract (655), the tkinter-import list (738) and
+  the model-variable registry (631).
+
+**The real preferences folder was never touched** (`~/.config/krakenos` does not exist after all of
+this): every run pointed `KRAKEN_CONFIG_DIR` at a temp folder.
+
+**Baseline:** phase 739 recorded (1 pass, 0 fail). The full Tk gate is owed since 8403abde.
+

@@ -1,6 +1,6 @@
 {
   "_comment": "Baseline phase states for the penta-telescope pre-push gate. A push is blocked only when a phase that is 'pass' here flips to 'fail'. Regenerate with: python tools/penta_validator_gate.py --update-baseline",
-  "generated_at": "2026-10-06T04:23:48+00:00",
+  "generated_at": "2026-10-06T05:59:48+00:00",
   "phases": {
     "0": "pass",
     "1": "pass",
@@ -738,7 +738,8 @@
     "735": "pass",
     "736": "pass",
     "737": "pass",
-    "738": "pass"
+    "738": "pass",
+    "739": "pass"
   },
   "titles": {
     "0": "load 5-penta-prism cascade",
@@ -1477,6 +1478,7 @@
     "735": "the 3D scene's modern look (0966): asked for in the classic palette, the table's default glass becomes pale glass with a highlight inside the glass opacity range (an element hidden on purpose stays hidden), the triangle wires are dropped, the two glass outline passes become one quiet colour at 1.2 px and a user's own surface colour is left alone; a ray keeps its hue, loses saturation and fades as 1/sqrt(n) past 36 rays while a miss or a clipped stub keeps its width and most of its opacity; in the Qt shell the look is on by default (gradient backdrop, no classic outline tone, no ray above the saturation cap) and the real Overlays entry switches to the classic look and back; both looks draw the same actors, points and rays; the classic picture has at least five times the vivid pixels; the Tk app is unchanged",
     "736": "the Inspection Cell view is a Qt window in the Qt shell, over one session (0967): the session composes off screen and transplants every actor into the view's renderer, maps the stations' actors to their faces and closes the previous plotter only once its actors are replaced; a station opens through the shell's own layout loader when it gave one; the watch is one timer on the host at 2000 ms that composes only when a station file changed and stops on close; the STEP export asks through the host; in the Qt shell the form's own Open Cell View opens a non-modal Qt dialog with a real OpenGL view and no Tk window, a real double-click opens that station in the shell, touching its file re-composes on Qt's clock, and Close ends the session with the shell still drawing; the Tk window is a view of the same session",
     "737": "an operand's surface choices are model data handed to each shell's pickers (0969): the list is Auto and then every row that is neither the object nor the image; a refresh puts an operand aimed at a vanished surface back to Auto, hands the list to the pickers the Tk panel registered and to the shell's seam, and asks the window for its widgets not once (it walked all 409 on every table sync); the catalogue's surface setting names the model's method; a real Tk editor's eight pickers follow a rename; in the Qt shell an operand given a surface setting offers the model's list, a choice writes its variable, and removing that row puts both the variable and the open picker back to Auto",
-    "738": "the toolkit-free layers import no tkinter, by a list that may only shrink (0970): every module of services, reports, row_forms, uihost and qt that imports tkinter at run time is in the guard's exact list with what Tk code it still holds -- seven services and the Tk host, down from fourteen services; the seven cleaned modules import and refer to no tkinter name; and a station loaded with no inspector gets its two inspector switches from the editor's UI host, so a toolkit-free owner gets both where the old tk.BooleanVar code made none"
+    "738": "the toolkit-free layers import no tkinter, by a list that may only shrink (0970): every module of services, reports, row_forms, uihost and qt that imports tkinter at run time is in the guard's exact list with what Tk code it still holds -- seven services and the Tk host, down from fourteen services; the seven cleaned modules import and refer to no tkinter name; and a station loaded with no inspector gets its two inspector switches from the editor's UI host, so a toolkit-free owner gets both where the old tk.BooleanVar code made none",
+    "739": "both interfaces stay and the user chooses which one opens (0971): the per-user preferences file round-trips, survives a file that is not JSON and reports a folder it cannot write; the command line beats the environment beats the saved preference, the request is removed from the arguments passed on, an unknown name is refused on the command line and ignored elsewhere, and an interface that cannot run here falls back with a note; the first-run question offers both, remembers only when told to and asks nothing with one interface installed; the form both interfaces show writes the file that the start decision then reads; the launcher run as the real command reports the interface for each source and exits 2 on an unknown one; the first-run window, the Tk File menu entry and the Qt Help-dropdown action each open and write the preference"
   }
 }
