@@ -1622,8 +1622,6 @@ class LayoutAnalysisDisplayMixin:
         payload = w3d.write_wavefront_payload_npz(samples, title="KrakenOS Wavefront 3D")
         if payload is None:
             try:
-                from tkinter import messagebox
-
                 host_of(self).showinfo(
                     "Wavefront 3D",
                     "No wavefront samples yet.\n\nRun the Wavefront analysis first, "

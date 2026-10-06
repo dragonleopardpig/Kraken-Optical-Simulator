@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import tkinter as tk
-from tkinter import ttk
 from typing import Any
 
 import numpy as np
@@ -64,7 +62,7 @@ class StepOverlayImportService:
 
     def import_lens_step(
         self,
-        dialog_parent: tk.Misc | None = None,
+        dialog_parent: Any | None = None,
         *,
         title: str = "Import Imaging Lens STEP",
         display_label: str = "Imaging Lens STEP",
@@ -158,7 +156,7 @@ class StepOverlayImportService:
 
     def import_optical_step(
         self,
-        dialog_parent: tk.Misc | None = None,
+        dialog_parent: Any | None = None,
         *,
         path: Path | str | None = None,
         refresh_open_3d: bool = True,
@@ -219,7 +217,7 @@ class StepOverlayImportService:
 
     def import_camera_step(
         self,
-        dialog_parent: tk.Misc | None = None,
+        dialog_parent: Any | None = None,
         *,
         path: Path | str | None = None,
         refresh_open_3d: bool = True,
@@ -280,7 +278,7 @@ class StepOverlayImportService:
 
     def import_led_step(
         self,
-        dialog_parent: tk.Misc | None = None,
+        dialog_parent: Any | None = None,
         *,
         refresh_open_3d: bool = True,
     ) -> Path | None:

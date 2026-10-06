@@ -6,7 +6,6 @@ import os
 import time
 from typing import Any
 
-import tkinter as tk
 
 import numpy as np
 from KrakenOS.UI.context_menu import MenuModel, new_context_menu
@@ -2209,8 +2208,6 @@ class Open3DFaceAssignmentService:
         gaps, the stop -- is untouched; only how wide the glass is DRAWN changes, and with it
         the vignette the scene shows honestly."""
         try:
-            from tkinter import messagebox
-
             glass = self.editor.lens_surrogate_glass_aperture_mm()
             if not glass:
                 return
@@ -2270,8 +2267,6 @@ class Open3DFaceAssignmentService:
         """Right-click "Pin Current Placement as Authored": show both poses, then record the
         live one on the user's say-so. Nothing moves (bugs/0817)."""
         try:
-            from tkinter import messagebox
-
             from KrakenOS.UI.services.scene_placement_audit import pinned_placement_drifts
 
             rows = list(getattr(self.editor, "rows", None) or [])

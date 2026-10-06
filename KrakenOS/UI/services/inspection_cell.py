@@ -170,6 +170,28 @@ class StationScene:
     notes: list[str] = field(default_factory=list)
 
 
+#: the INSPECTOR-owned switches the legacy scene populator reads through the editor
+STATION_INSPECTOR_VARIABLES = (("show_terminal_diagnostics_var", False), ("show_reference_surfaces_var", False))
+
+
+def seed_inspector_variables(editor) -> list[str]:
+    """A station is loaded with no inspector, so the switches the scene populator reads from one
+    are made here -- through the editor's UI HOST (bugs/0970; they were `tk.BooleanVar`s, which no
+    other host can make). Checked through ``__dict__``: a Tk widget's ``__getattr__`` delegates to
+    ``self.tk`` and recurses on a missing attribute (the bugs/0594 trap). Returns the names made."""
+    from KrakenOS.UI.uihost import host_of
+
+    made = []
+    for name, default in STATION_INSPECTOR_VARIABLES:
+        if editor.__dict__.get(name) is None:
+            try:
+                setattr(editor, name, host_of(editor).boolean_var(value=default))
+                made.append(name)
+            except Exception:
+                pass
+    return made
+
+
 def load_station(layout_path: str | Path, face: str, part_spec: dict[str, Any], *, trace_rays: bool = True) -> StationScene:
     """Load one station layout HEADLESS (no embedded inspector), trace it, and derive
     its face transform. The caller owns ``editor`` (call ``.destroy()``)."""
@@ -180,18 +202,7 @@ def load_station(layout_path: str | Path, face: str, part_spec: dict[str, Any], 
         raise FileNotFoundError(f"station layout not found: {layout}")
     editor = KrakenLayoutEditor()
     editor._prompt_for_missing_cad_assets = lambda: None
-    # The legacy scene populator reads a few INSPECTOR-owned Tk vars through the
-    # editor; a headless station has no inspector, so seed them (checked through
-    # __dict__: a Tk widget's __getattr__ delegates to self.tk and recurses on a
-    # missing attribute, the bugs/0594 trap).
-    import tkinter as _tk
-
-    for name, default in (("show_terminal_diagnostics_var", False), ("show_reference_surfaces_var", False)):
-        if editor.__dict__.get(name) is None:
-            try:
-                setattr(editor, name, _tk.BooleanVar(master=editor, value=default))
-            except Exception:
-                pass
+    seed_inspector_variables(editor)
     editor.layout_files[f"cell_{face}"] = layout
     editor.load_layout_by_name(f"cell_{face}")
     try:

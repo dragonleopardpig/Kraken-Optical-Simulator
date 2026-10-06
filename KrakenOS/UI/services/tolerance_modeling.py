@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 import re
 from contextlib import redirect_stderr, redirect_stdout
-from tkinter import messagebox, simpledialog
 
 import numpy as np
 

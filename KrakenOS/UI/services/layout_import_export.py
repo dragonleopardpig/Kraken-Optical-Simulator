@@ -19,8 +19,6 @@ import re
 import sys
 import threading
 import traceback
-import tkinter as tk
-from tkinter import filedialog, messagebox
 import warnings
 
 import numpy as np
