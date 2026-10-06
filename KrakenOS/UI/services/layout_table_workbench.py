@@ -734,10 +734,10 @@ class LayoutTableWorkbenchMixin:
         self._begin_history_capture()
         insert_at = self._insert_surface_rows(additions, insert_after=insert_after)
         self._commit_history_capture()
-        self.current_layout_file = None
-        self.layout_var.set("Common Optical Layout")
-        self.machine_vision_var.set("Machine Vision Lens")
-        self.example_var.set("Examples")
+        # bugs/0975: the scene took in a component and is still the scene it was -- its file, its
+        # transient-import mark and its selector names stay, exactly as when the Layouts menu
+        # appends the same layout (bugs/0973). This used to UNTITLE the scene, so a Save after
+        # an insert asked for a file name although the scene had one.
         message = (
             f"Inserted {name} as {len(additions)} surface row(s) at S{insert_at}; "
             "source, field, pupil, and analysis settings were not changed."

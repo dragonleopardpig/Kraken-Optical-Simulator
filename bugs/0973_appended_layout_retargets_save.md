@@ -44,8 +44,8 @@ appended layout is a component the scene took in; the scene did not become that 
 
 ## Not changed
 
-- **Insert > Common Component still untitles the scene** (`current_layout_file = None`), even one
-  that had a file. With this fix it is the odd one out; left as it is until asked.
+- ~~Insert > Common Component still untitles the scene~~ -- **changed in bugs/0975** on the user's
+  word: it keeps the scene's file too.
 - A scene opened from the Layouts menu and then saved still writes the shipped layout's file, as it
   always has: that is the file the scene was opened from.
 - The append also clears the learned folded-magnification state at the top of the loader and, unlike

@@ -18,6 +18,10 @@ Every claim works on temp COPIES of the layouts: nothing under the repository ca
      three selector names are what they were
   S  Save then asks nothing, writes the user's file -- the scene emptied and the file opened again
      gives the merged rows -- and leaves the appended layout's file byte for byte as it was
+  N  Insert > Common Component does the same (bugs/0975, the user 2026-10-07: "Insert --> Common
+     Component should append layout"): over a scene opened from the user's file the rows grow and
+     the file, the title and the selector names stay; Save asks nothing and writes the user's
+     file. It used to untitle the scene
   U  an UNTITLED scene (rows, no file) stays untitled: Save asks where, writes there, and the
      appended layout's file is untouched
   I  a transient import (bugs/0375: Save must ask rather than overwrite the generated file) is
@@ -159,6 +163,34 @@ def model_checks() -> list:
                 f"the scene emptied ({emptied} rows) and the file opened again gives {len(read_back)} rows, the merged "
                 f"scene: {read_back == merged}; {copies[COMPONENT].name} unchanged: {after[1] == before[1]}")
 
+    def claim_n():
+        asked = fresh()
+        before = (len(editor.rows), _name(editor.current_layout_file), editor.title(), selectors())
+        editor.insert_layout_component_by_name(COMPONENT)      # what Insert > Common Component runs
+        after = (len(editor.rows), _name(editor.current_layout_file), editor.title(), selectors())
+        merged = names()
+        digests = (_digest(mine), _digest(copies[COMPONENT]))
+        saved = editor.save_layout()
+        questions = asked_since(asked)
+        written = (_digest(mine) != digests[0], _digest(copies[COMPONENT]) == digests[1])
+        editor.reset_layout()
+        editor.open_layout()
+        reopened = names() == merged
+        # ... and a scene opened from the Layouts menu keeps its NAME (the selectors) as well
+        fresh(open_mine=False)
+        editor.load_layout_by_name(SCENE)
+        named_before = (selectors(), _name(editor.current_layout_file))
+        editor.insert_layout_component_by_name(COMPONENT)
+        named_after = (selectors(), _name(editor.current_layout_file))
+        return (before[1] == "my_bench.py" and after[0] > before[0] > 2 and after[1:] == before[1:]
+                and saved is True and questions == 0 and written == (True, True) and reopened
+                and not asked_file.exists() and named_before[0][0] == SCENE and named_after == named_before,
+                f"{before[1]} ({before[0]} rows) takes in {COMPONENT} through Insert: {after[0]} rows, file {after[1]}, "
+                f"title {after[2]!r}, selectors unchanged {after[3] == before[3]}; Save asked {questions} question(s), "
+                f"rewrote my_bench.py: {written[0]} (opened again it is the merged scene: {reopened}), left "
+                f"{copies[COMPONENT].name} as it was: {written[1]}; a scene opened from the Layouts menu as "
+                f"{named_before[0][0]!r} ({named_before[1]}) is {named_after[0][0]!r} ({named_after[1]}) after an insert")
+
     def claim_u():
         asked = fresh(open_mine=False)
         editor.insert_layout_component_by_name(SCENE)          # rows, and no file: an untitled scene
@@ -224,7 +256,8 @@ def model_checks() -> list:
                 f"replaces that: takes its file {second[0]}, name {second[1]!r}, mark {second[2]}, status {second[3]!r}, "
                 f"title {second[4]!r}")
 
-    return _claims((("A", claim_a), ("S", claim_s), ("U", claim_u), ("I", claim_i), ("H", claim_h), ("R", claim_r)))
+    return _claims((("A", claim_a), ("S", claim_s), ("N", claim_n), ("U", claim_u), ("I", claim_i), ("H", claim_h),
+                    ("R", claim_r)))
 
 
 def tk_checks() -> list:

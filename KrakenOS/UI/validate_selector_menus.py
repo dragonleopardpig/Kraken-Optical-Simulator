@@ -22,15 +22,16 @@ show it.
           four kinds of entry
   T  a real Tk editor: each of its four menus shows exactly the model's menu; a name added to the
      library appears after a refresh, and an emptied list is one DISABLED line; a real menu entry
-     loads its layout; a real Insert entry INSERTS -- the rows grow and the scene is no longer that
-     of a file (loading an insertable layout over a scene appends it too, and the scene keeps its
-     file, bugs/0973: the row count alone cannot tell a load from an insert)
+     loads its layout; a real Insert entry INSERTS -- from the empty starter the rows grow and the
+     scene has no file, where a load of the same layout would take the layout's (over an open
+     scene the two cannot be told apart: both add the same rows and keep the scene's file,
+     bugs/0973 and 0975)
   Q  a real Qt shell: the ribbon has the four buttons (three under File > Library, one under
      Surfaces > Catalogs), each with an icon; opened, each shows exactly the model's menu -- as it
      is NOW, so a name added since the last opening is there; a real entry loads its layout with the
-     table and the title following and no Tk window; a common component is INSERTED, as in T, and
-     the title drops the file's name; on the FOLDED ribbon's pop-up page a chosen layout loads and
-     the page closes; and the window is no wider than before
+     table and the title following and no Tk window; a common component is INSERTED, as in T; on
+     the FOLDED ribbon's pop-up page another chosen layout loads and the page closes; and the
+     window is no wider than before
 
 Each claim fails on its own: one that raises is reported as that claim's failure.
 """
@@ -201,33 +202,40 @@ def tk_checks() -> list:
     emptied = tk_menu_outline(editor.machine_vision_menu)
     editor.machine_vision_names = kept_names
     editor._refresh_selector_menus()
-    # a real menu entry loads its layout
-    category = editor.layout_menu.nametowidget(editor.layout_menu.entrycget(0, "menu"))
-    label = category.entrycget(0, "label")
-    rows_before = len(editor.rows)
-    category.invoke(0)
-    for _ in range(3):
-        editor.update()
-    loaded = (Path(str(editor.current_layout_file or "")).name, len(editor.rows))
-    # a real Insert > Common Component entry INSERTS: the rows grow and the scene is no longer that
-    # of a file. (Loading an insertable layout over a scene appends it too -- but the scene keeps
-    # its file, bugs/0973; the file is what tells the two apart. Not the status line: the plot
-    # refresh that follows overwrites it, in both interfaces.)
+    # a real Insert > Common Component entry INSERTS. From the empty starter that is plain to see:
+    # the rows grow and the scene has no file -- a LOAD of the same layout there would replace the
+    # starter and take the layout's file. (Over an open scene the two cannot be told apart: both
+    # add the same rows and both leave the scene its file, bugs/0973 and 0975. Nor by the status
+    # line: the plot refresh that follows overwrites it, in both interfaces.)
     component = editor._insert_component_menu.entrycget(0, "label")
+    starter = len(editor.rows)
     editor._insert_component_menu.invoke(0)
     for _ in range(3):
         editor.update()
     inserted = (len(editor.rows), editor.current_layout_file is None)
+    # a real Layouts entry loads its layout -- one that is not insertable, so it REPLACES the scene
+    insertable = set(editor._insertable_common_layout_names())
+    label, loaded = "", ("", 0)
+    for index in range(editor.layout_menu.index("end") + 1):
+        category = editor.layout_menu.nametowidget(editor.layout_menu.entrycget(index, "menu"))
+        plain = [entry for entry in range(category.index("end") + 1) if category.entrycget(entry, "label") not in insertable]
+        if plain:
+            label = category.entrycget(plain[0], "label")
+            category.invoke(plain[0])
+            for _ in range(3):
+                editor.update()
+            loaded = (Path(str(editor.current_layout_file or "")).name, len(editor.rows))
+            break
     return [["T", all(same.values()) and counts["layouts"] >= 100 and counts["machine_vision"] >= 6
              and counts["examples"] >= 30 and counts["insert_component"] >= 1
              and grown == ["Machine Vision added by the guard"]
              and emptied == [("command", "No machine-vision layouts found", False)]
-             and loaded[0].endswith(".py") and loaded[1] > 2 and loaded[1] != rows_before
-             and inserted[0] > loaded[1] and inserted[1],
+             and starter == 2 and inserted[0] > starter and inserted[1]
+             and loaded[0].endswith(".py") and loaded[1] > 2,
              f"each Tk menu shows the model's menu: {same}; entries {counts}; a name added to the library is the last "
-             f"entry after a refresh: {grown}; with none, the menu is {emptied}; the real entry {label!r} "
-             f"loaded {loaded[0]} ({rows_before} -> {loaded[1]} rows); the real Insert entry {component!r} took the "
-             f"rows to {inserted[0]}, and the scene is no longer a file's: {inserted[1]}"]]
+             f"entry after a refresh: {grown}; with none, the menu is {emptied}; from the {starter}-row starter the "
+             f"real Insert entry {component!r} made {inserted[0]} rows and no file: {inserted[1]}; the real Layouts "
+             f"entry {label!r} then loaded {loaded[0]} ({loaded[1]} rows)"]]
 
 
 def qt_checks() -> list:
@@ -276,20 +284,23 @@ def qt_checks() -> list:
     init = tk.Toplevel.__init__
     tk.Toplevel.__init__ = lambda self, *a, **k: (init(self, *a, **k), tk_windows.append(type(self).__name__))[0]
     try:
-        menu = opened("model:layouts")
-        category = next(action for action in menu.actions() if action.menu() is not None)
-        entry = category.menu().actions()[0]
-        rows_before = len(editor.rows)
-        entry.trigger()                            # the real menu entry
-        settle(1.5)
-        loaded = (Path(str(editor.current_layout_file or "")).name, len(editor.rows), window.rows_model.rowCount(),
-                  window.windowTitle())
+        # the component first, from the empty starter: an INSERT leaves the scene without a file, where
+        # a load of the same layout would take the layout's (see T)
         component = opened("model:insert_component").actions()[0]
-        rows_loaded = len(editor.rows)
+        starter = len(editor.rows)
         component.trigger()
         settle(1.5)
         inserted = (component.text(), len(editor.rows), window.rows_model.rowCount(),
                     editor.current_layout_file is None, window.windowTitle())
+        # then a layout that is not insertable, so that it REPLACES the scene
+        insertable = set(editor._insertable_common_layout_names())
+        plain = [(action, entry) for action in opened("model:layouts").actions() if action.menu() is not None
+                 for entry in action.menu().actions() if entry.text() not in insertable]
+        category, entry = plain[0]
+        entry.trigger()                            # the real menu entry
+        settle(1.5)
+        loaded = (Path(str(editor.current_layout_file or "")).name, len(editor.rows), window.rows_model.rowCount(),
+                  window.windowTitle())
         # folded, a tab's page is a pop-up: choosing a layout there loads it AND closes the page
         from PySide6.QtWidgets import QToolButton
 
@@ -300,11 +311,10 @@ def qt_checks() -> list:
         popup_button = next((b for b in popup.findChildren(QToolButton) if b.text() == "Layouts"), None)
         if popup_button is not None:
             popup_button.menu().aboutToShow.emit()
-            # a layout that REPLACES the scene: an insertable one would be appended to the untitled
-            # scene above and leave it untitled (bugs/0973), and there would be no file to see
-            insertable = set(editor._insertable_common_layout_names())
+            # ANOTHER layout that replaces the scene, so that its file is seen to change
             choice = next((entry for action in popup_button.menu().actions() if action.menu() is not None
-                           for entry in action.menu().actions() if entry.text() not in insertable), None)
+                           for entry in action.menu().actions()
+                           if entry.text() not in insertable and entry.text() != plain[0][1].text()), None)
             if choice is not None:
                 choice.trigger()
                 settle(1.5)
@@ -319,19 +329,18 @@ def qt_checks() -> list:
              and counts["layouts"] >= 100 and counts["machine_vision"] >= 6 and counts["examples"] >= 30
              and counts["insert_component"] >= 1 and fresh == ["Machine Vision added by the guard"]
              and emptied == [("command", "No machine-vision layouts found", False)]
-             and loaded[0].endswith(".py") and loaded[1] > 2 and loaded[1] != rows_before and loaded[2] == loaded[1]
-             and loaded[0] in loaded[3] and inserted[1] > rows_loaded and inserted[2] == inserted[1]
-             and inserted[3] and loaded[0] not in inserted[4]
-             and folded[0] and folded[1] and folded[2].endswith(".py")
+             and starter == 2 and inserted[1] > starter and inserted[2] == inserted[1] and inserted[3]
+             and ".py" not in inserted[4]
+             and loaded[0].endswith(".py") and loaded[1] > 2 and loaded[2] == loaded[1] and loaded[0] in loaded[3]
+             and folded[0] and folded[1] and folded[2].endswith(".py") and folded[2] != loaded[0]
              and tk_windows == [] and width <= 1240,
              f"the ribbon places them {sorted(set(placed.values()))} and built {len(built)}, each with an icon: "
              f"{all(icons.values())}; opened, each shows the model's menu: {same}; entries {counts}; a name added since "
-             f"the last opening is there: {fresh}; with none, the menu is {emptied}; the real entry "
-             f"{category.text()!r} > {entry.text()!r} loaded "
-             f"{loaded[0]} ({rows_before} -> {loaded[1]} rows, table {loaded[2]}, title {loaded[3]!r}); the component "
-             f"{inserted[0]!r} took the rows {rows_loaded} -> {inserted[1]} (table {inserted[2]}), the scene is no "
-             f"longer a file's: {inserted[3]}, title {inserted[4]!r}; folded, the File page pops up: {folded[0]}, and "
-             f"a layout chosen there loads ({folded[2]}) and closes the page: {folded[1]}; Tk windows "
+             f"the last opening is there: {fresh}; with none, the menu is {emptied}; from the {starter}-row starter "
+             f"the component {inserted[0]!r} made {inserted[1]} rows (table {inserted[2]}) and no file: {inserted[3]}, "
+             f"title {inserted[4]!r}; the real entry {category.text()!r} > {entry.text()!r} then loaded {loaded[0]} "
+             f"({loaded[1]} rows, table {loaded[2]}, title {loaded[3]!r}); folded, the File page pops up: {folded[0]}, "
+             f"and another layout chosen there loads ({folded[2]}) and closes the page: {folded[1]}; Tk windows "
              f"{tk_windows}; window minimum width {width} px"]]
 
 
