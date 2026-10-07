@@ -26,13 +26,36 @@ Its `messagebox` import was unused.
 
 Nothing a user sees changes.
 
-## What "no service imports tkinter" does not mean
+## What "no service imports tkinter" does not mean -- measured
 
-Importing is not the only way to use it. `layout_editor` copies its own globals -- `tk` among them --
-into some service modules, and code there calls `tk.Menu(...)` with no import of its own. Measured
-now: **one module does, `services/layout_table_workbench.py`, sixteen times.** Phase 738 counts that
-against a third exact list (claim U), next to the five services that import a Tk view package.
-So what is left of 7d is those five, of which the table workbench is the large one.
+Two other roads lead to tkinter, and phase 738 now measures both.
+
+**Through what a module imports.** Until now the guard counted imports of `panels/` and `widgets/`
+at module level: five services. Followed through every `KrakenOS.UI` import, the answer is **six**:
+
+| Module | Its road to tkinter | What it is for |
+|---|---|---|
+| `services/analysis_reports.py` | a report panel -> `panels/report_view.py` | builds the report panels; their handle class `ReportWindow` lives in the Tk report view |
+| `services/tolerance_modeling.py` | its report panel -> `panels/row_form_view.py` | the panel shows forms through the Tk form view |
+| `services/layout_import_export.py` | the glass-catalogue panel -> `panels/row_form_view.py` | three panels; the lens-drawing one is Tk itself |
+| `services/layout_shell_controls.py` | `widgets/` | binds Tk entries' commit keys |
+| `services/layout_table_workbench.py` | `widgets/` | places the Tk table's in-cell entry |
+| `services/three_d_scene_tools.py` | `open3d_inspector.py` | imports the 3D inspector, a Tk window class until phase 7e |
+
+The old count missed the last one, and it counted `panels/main_path_detector_analysis.py`, which
+holds no Tk at all (17 of the 50 modules in `panels/` do not import tkinter themselves).
+
+The reading of the source is not what is trusted: a new claim **R** imports each of the 202 modules
+of these layers in a process of its own and looks at what got loaded. The interpreter names the
+same six.
+
+**Through names nobody imported.** `layout_editor` copies its own globals -- `tk` among them -- into
+some service modules, and code there calls `tk.Menu(...)` with no import of its own. One module
+does, `services/layout_table_workbench.py`, sixteen times (claim U).
+
+So what is left of 7d is those six modules. Two shared pieces would clear most of it: showing a
+form or a report without importing the Tk view first (`present_row_form`, `ReportWindow`), and the
+3D inspector imported when it is opened rather than when the service is.
 
 ## Guard: `validate_popup_helpers_view` (phase 748)
 
@@ -55,3 +78,7 @@ delegating the dismissal.
 **Neighbouring guards, all pass:** the tkinter-import list (738, with its new claim U), the panel
 delegations, the model forms in Qt (721), the surface table's right-click menu (722: 127 entries,
 112 run, no Tk window), the interaction contract (655). **Baseline:** phases 748 and 738 recorded.
+
+Phase 738's three new claims were mutation-checked on their own: a clean service importing a Tk
+view module (caught by I and R), loading tkinter in a way the source scan cannot see (caught by R
+alone), naming `tk` without importing it (caught by U).
