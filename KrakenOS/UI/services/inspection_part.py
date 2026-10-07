@@ -303,7 +303,7 @@ def open_inspection_part_dialog(editor):
     says what polygons to draw and both toolkits draw them -- which is what kept this dialog off
     the framework until now.
     """
-    from KrakenOS.UI.panels.row_form_view import present_row_form
+    from KrakenOS.UI.row_forms.present import present_row_form
     from KrakenOS.UI.row_forms import FormRefused
     from KrakenOS.UI.row_forms.inspection_part import build_inspection_part_form
     from KrakenOS.UI.uihost import host_of

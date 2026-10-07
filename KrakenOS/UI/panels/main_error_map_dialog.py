@@ -10,7 +10,7 @@ from typing import Any, Callable
 from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.error_map import build_error_map_form
 from KrakenOS.UI.uihost import host_of
-from KrakenOS.UI.panels.row_form_view import present_row_form
+from KrakenOS.UI.row_forms.present import present_row_form
 
 
 class MainErrorMapDialog:

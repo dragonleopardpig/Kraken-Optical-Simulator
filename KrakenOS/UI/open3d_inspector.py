@@ -23204,7 +23204,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if not qe.is_enabled():
             self.quick_estimation_var.set(True)
         if shell_host_of(self) is not None:      # bugs/0953: a shell shows it as a row form
-            from KrakenOS.UI.panels.row_form_view import present_row_form
+            from KrakenOS.UI.row_forms.present import present_row_form
             from KrakenOS.UI.row_forms.quick_estimation import build_target_fov_form
 
             # it WAITS, as the Tk window does: Snap to FOV reads the target straight afterwards
@@ -23465,7 +23465,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         if not qe.is_enabled():
             self.quick_estimation_var.set(True)
         if shell_host_of(self) is not None:      # bugs/0953: a shell shows it as a row form
-            from KrakenOS.UI.panels.row_form_view import present_row_form
+            from KrakenOS.UI.row_forms.present import present_row_form
             from KrakenOS.UI.row_forms.quick_estimation import build_fov_solve_form
 
             present_row_form(self, build_fov_solve_form(self, plane), wraplength=320, modal=True, wait=True)
@@ -23900,7 +23900,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
         except Exception:
             pass
         if shell_host_of(self) is not None:      # bugs/0953: a shell shows it as a row form
-            from KrakenOS.UI.panels.row_form_view import present_row_form
+            from KrakenOS.UI.row_forms.present import present_row_form
             from KrakenOS.UI.row_forms.quick_estimation import build_detector_design_form
 
             present_row_form(self, build_detector_design_form(self), wraplength=300, modal=False)
@@ -24293,7 +24293,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
     def _present_step_overlay_resize_form(self, label: str, title: str, prompt: str, fields, axes) -> None:
         """The resize question as a row form (bugs/0950): the same fields, rule and apply as the Tk
         popup, shown by the running shell."""
-        from KrakenOS.UI.panels.row_form_view import present_row_form
+        from KrakenOS.UI.row_forms.present import present_row_form
         from KrakenOS.UI.row_forms.base import FormField, FormRefused, RowForm
 
         keys = [f"size_{index}" for index in range(len(fields))]

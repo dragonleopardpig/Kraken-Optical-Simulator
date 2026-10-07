@@ -8,7 +8,7 @@ from tkinter import ttk
 from typing import Any
 from KrakenOS.UI.optimization_controls import MTF_ALGORITHMS, MTF_MODES
 from KrakenOS.UI.optimization_controls import worker_choices as optimization_worker_choices
-from KrakenOS.UI.panels.row_form_view import present_row_form
+from KrakenOS.UI.row_forms.present import present_row_form
 from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.presets import build_optimization_bounds_form
 

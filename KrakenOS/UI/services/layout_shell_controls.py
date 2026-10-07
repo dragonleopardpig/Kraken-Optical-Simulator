@@ -522,7 +522,7 @@ class LayoutShellControlsMixin:
     def open_interface_preference(self):
         """File > Interface Preference... (bugs/0971): which interface KrakenOS opens in. The same
         form in both; it changes the saved preference, not the running window."""
-        from KrakenOS.UI.panels.row_form_view import present_row_form
+        from KrakenOS.UI.row_forms.present import present_row_form
         from KrakenOS.UI.row_forms.interface_preference import build_interface_preference_form
 
         return present_row_form(self, build_interface_preference_form(self), wraplength=520)

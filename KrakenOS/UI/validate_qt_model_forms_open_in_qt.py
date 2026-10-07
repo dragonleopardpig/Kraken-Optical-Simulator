@@ -39,7 +39,8 @@ SPLITTER, LENS, DETECTOR = 1, 2, 6
 #: sessions, windows with no Qt counterpart yet) -> (render_row_form calls, tkinter dialog calls).
 #: Every other module must have none. The numbers are exact, so this list can only shrink.
 TK_ONLY = {
-    "panels/row_form_view.py": (1, 1),                         # the renderer; present_row_form's fallback
+    "panels/row_form_view.py": (0, 1),                         # the renderer
+    "row_forms/present.py": (1, 0),                            # present_row_form's fallback: Tk draws (0983)
     "panels/mtf_from_image_dialog.py": (0, 4),                 # Tk view of mtf_from_image_session
     "panels/main_optical_solid_face_roles_dialog.py": (0, 1),  # Tk view of face_roles_session
     "panels/main_paraxial_analysis_dialogs.py": (0, 1),        # inside the Tk paraxial calculator

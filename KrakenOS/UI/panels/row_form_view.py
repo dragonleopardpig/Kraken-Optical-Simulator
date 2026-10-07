@@ -12,6 +12,7 @@ from tkinter import messagebox, ttk
 from typing import Any
 
 from KrakenOS.UI.row_forms import FormRefused
+from KrakenOS.UI.row_forms.present import present_row_form  # noqa: F401 -- its home until bugs/0983; still named here
 from KrakenOS.UI.uihost import host_of
 
 #: beyond this many fields a single column is taller than a screen, so pair them up
@@ -70,29 +71,6 @@ def bind_tab_wheel(canvas, inner) -> None:
 
     bind_recursive(canvas)
     bind_recursive(inner)
-
-
-def present_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None, modal: bool = False,
-                     geometry: "str | None" = None, wait: bool = False):
-    """Show `form` wherever the running shell shows forms (bugs/0944).
-
-    A shell that draws its own dialogs installs `show_row_form` on the editor -- the Qt shell,
-    whose Tk root is withdrawn -- and gets the form; otherwise it is Tk's `render_row_form`. A
-    command that ends in a form calls this, so it works in both shells unchanged.
-
-    `geometry` ("1080x620") sizes the window and `wait` returns only once it has closed -- what
-    callers did to the Tk window they got back, which a shell's dialog is not (bugs/0947).
-    """
-    editor = getattr(owner, "editor", None) or owner
-    shell = editor.__dict__.get("show_row_form") if hasattr(editor, "__dict__") else None
-    if callable(shell):
-        return shell(form, on_close=on_close, modal=modal, geometry=geometry, wait=wait)
-    window = render_row_form(owner, form, wraplength=wraplength, on_close=on_close, modal=modal)
-    if geometry:
-        window.geometry(geometry)
-    if wait:
-        owner.wait_window(window)
-    return window
 
 
 def render_row_form(owner: Any, form, *, wraplength: int = 520, on_close=None,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any, Callable
-from KrakenOS.UI.panels.row_form_view import present_row_form
+from KrakenOS.UI.row_forms.present import present_row_form
 from KrakenOS.UI.uihost import host_of
 from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.surface_shape import build_surface_shape_form

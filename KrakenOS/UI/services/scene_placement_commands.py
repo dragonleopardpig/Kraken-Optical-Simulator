@@ -10296,7 +10296,7 @@ class ScenePlacementMixin:
         see ``KrakenOS/UI/row_forms/resize_beam_splitter.py``. A refusal goes to the STATUS
         LINE, as it always did.
         """
-        from KrakenOS.UI.panels.row_form_view import present_row_form
+        from KrakenOS.UI.row_forms.present import present_row_form
         from KrakenOS.UI.row_forms import FormRefused
         from KrakenOS.UI.row_forms.resize_beam_splitter import build_resize_beam_splitter_form
 

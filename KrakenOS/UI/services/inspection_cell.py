@@ -512,7 +512,7 @@ def open_inspection_cell_dialog(editor):
     uses too. The cell VIEW has its own session and a window in each toolkit
     (`inspection_cell_session.py`, bugs/0967) -- this only asks it to open.
     """
-    from KrakenOS.UI.panels.row_form_view import present_row_form
+    from KrakenOS.UI.row_forms.present import present_row_form
     from KrakenOS.UI.row_forms import FormRefused
     from KrakenOS.UI.row_forms.inspection_cell import build_inspection_cell_form
     from KrakenOS.UI.uihost import host_of

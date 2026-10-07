@@ -9211,7 +9211,7 @@ class LayoutTableWorkbenchMixin:
             # another shell draws the editor: the calculator is a row form there (bugs/0930), the
             # one its own action opens. Until bugs/0980 this command built the Tk window whatever
             # the shell.
-            from KrakenOS.UI.panels.row_form_view import present_row_form
+            from KrakenOS.UI.row_forms.present import present_row_form
             from KrakenOS.UI.row_forms.system_selection import build_system_selection_form_model
 
             present_row_form(self, build_system_selection_form_model(self))

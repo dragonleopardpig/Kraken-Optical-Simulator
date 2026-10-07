@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Callable
-from KrakenOS.UI.panels.row_form_view import present_row_form
+from KrakenOS.UI.row_forms.present import present_row_form
 from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.path_component import build_path_component_form
 

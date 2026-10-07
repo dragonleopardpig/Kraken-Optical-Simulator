@@ -11,7 +11,7 @@ bugs/0981 the last: no service imports tkinter now, only the Tk host).
 
   I  the other way in: a module reaches tkinter WITHOUT naming it when something it imports at
      module level does. Followed through every `KrakenOS.UI` import (bugs/0981), six modules of
-     these layers did -- five since bugs/0982 -- each listed with the first step of its road there. (Until then this
+     these layers did -- five since bugs/0982, four since bugs/0983 -- each listed with the first step of its road there. (Until then this
      claim counted imports of `panels/` and `widgets/` -- five -- which missed a service that
      imports the Tk inspector, and counted a `panels/` module that holds no Tk at all.)
   R  the same, asked of the interpreter rather than read from the source: each module of these
@@ -29,7 +29,9 @@ bugs/0981 the last: no service imports tkinter now, only the Tk host).
   C  nor is tkinter's own name the only Tk there is: a service that names a Tk view CLASS at run
      time -- a panel class of a module that imports tkinter, or the 3D inspector -- uses Tk as
      surely, however the name reached it (bugs/0982). Counted per module, exactly: the panel
-     factories (`_main_*`) are most of it, the legacy viewer's calls on the inspector the rest
+     factories (`_main_*`) are most of it, the legacy viewer's calls on the inspector the rest.
+     (53 uses of 48 classes then; 45 of 40 since bugs/0983, when eight panels that only show a
+     form stopped loading tkinter)
   H  the two helpers the scene tools borrowed from the inspector class are functions of their own
      (bugs/0982): a surface's classic colour -- its own when it has one that is not black, else by
      its glass -- and a surface mesh as a deep copy of its own, None when it has no points; the
@@ -66,12 +68,10 @@ TK_IMPORTERS = {
 TK_REACHED_THROUGH = {
     "services/analysis_reports.py": ("panels/main_branch_gaussian_q_dialog.py",
                                      "builds the report panels, whose handle class `ReportWindow` lives in the Tk report view"),
-    "services/layout_import_export.py": ("panels/main_glass_catalog_browser_dialog.py",
-                                         "builds the glass-catalogue, stock-lens and lens-drawing panels (the last is Tk itself)"),
+    "services/layout_import_export.py": ("panels/main_lens_drawing_dialogs.py",
+                                         "builds the lens-drawing panel, which is Tk itself (its other two panels only show forms)"),
     "services/layout_shell_controls.py": ("widgets/__init__.py", "binds Tk entries' commit keys (`bind_entry_commit`)"),
     "services/layout_table_workbench.py": ("widgets/__init__.py", "places the Tk table's in-cell entry (`place_commit_cell_entry`)"),
-    "services/tolerance_modeling.py": ("panels/main_tolerance_report_dialogs.py",
-                                       "builds the tolerance-report panel, which shows forms through the Tk form view"),
 }
 #: module -> how many times it names tkinter at RUN TIME with no import of its own (the name is
 #: put into its globals by `layout_editor`). EXACT: a count that falls must be lowered here.
@@ -83,13 +83,12 @@ TK_NAMES_WITHOUT_IMPORT = {
 #: EXACT: a count that falls must be lowered here.
 TK_CLASSES_NAMED = {
     "services/analysis_reports.py": 6,           # six report-panel factories
-    "services/layout_import_export.py": 4,       # three panel factories, the Tk missing-assets dialog
-    "services/layout_shell_controls.py": 8,      # eight panel factories
-    "services/layout_table_workbench.py": 11,    # eleven panel factories
+    "services/layout_import_export.py": 2,       # the lens-drawing panel's factory, the Tk missing-assets dialog
+    "services/layout_shell_controls.py": 7,      # seven panel factories
+    "services/layout_table_workbench.py": 7,     # seven panel factories
     "services/legacy_3d_scene.py": 4,            # the legacy viewer's calls on the inspector class
     "services/optical_solid_workflow.py": 3,     # two panel factories, one inspector call
     "services/three_d_scene_tools.py": 16,       # opening the 3D view, and the legacy viewer's inspector helpers
-    "services/tolerance_modeling.py": 1,         # one panel factory
 }
 #: the modules bugs/0970 cleaned
 CLEANED = ("services/tolerance_modeling.py", "services/open3d_face_assignment.py", "services/layout_import_export.py",
