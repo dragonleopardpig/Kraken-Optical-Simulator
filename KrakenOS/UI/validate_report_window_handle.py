@@ -17,7 +17,7 @@ what the split added:
      `ReportWindow` there is the same class; every method the class had is still a method of it;
      no module takes the handle from the Tk view any more
   L  asked of the interpreter, each in a process of its own: importing the handle loads neither
-     tkinter nor Qt, and the six report-only panels load no tkinter
+     tkinter nor Qt, and the seven panels that are a report and nothing else of Tk load no tkinter
   N  a handle that was never opened, used in every way, in a fresh process: it is not open, has no
      selection and no control values, refresh / close / select are no-ops -- and no tkinter is loaded
   Q  a handle under a shell, in a fresh process, with a stand-in dialog: open hands the builder to
@@ -37,8 +37,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path("KrakenOS/UI")
+#: found by importing all 49 panels modules, each in a process of its own, before and after the split
 REPORT_ONLY_PANELS = ("main_branch_gaussian_q_dialog", "main_branch_throughput_report_dialog", "main_detector_aperture_report_dialog",
-                      "main_nonseq_scene_graph_dialog", "main_ray_trace_inspectors", "main_source_illumination_report_dialog")
+                      "main_nonseq_scene_graph_dialog", "main_optical_solid_dialogs", "main_ray_trace_inspectors",
+                      "main_source_illumination_report_dialog")
 METHODS = ("__init__", "editor", "_shell_report", "_shell_view", "is_open", "open", "close", "refresh_if_open", "refresh",
            "control_values", "_build", "_set_status", "_make_window", "_make_table", "_make_detail_table", "_render",
            "_insert_tree", "_refresh_controls", "selected_key", "select_key", "select_row", "refresh_detail", "_show_detail",
@@ -174,7 +176,7 @@ def run_checks() -> tuple[bool, list[str]]:
         handle = _fresh(f"import sys\nimport KrakenOS.UI.reports.window\nprint({LOADED})\n")
         panels = {name: _fresh(f"import sys\nimport KrakenOS.UI.panels.{name}\nprint('tkinter' in sys.modules)\n")
                   for name in REPORT_ONLY_PANELS}
-        return (handle == "[]" and all(answer == "False" for answer in panels.values()) and len(panels) == 6,
+        return (handle == "[]" and all(answer == "False" for answer in panels.values()) and len(panels) == 7,
                 f"importing the handle loads {handle}; the {len(panels)} report-only panels that load tkinter when imported: "
                 f"{sorted(name for name, answer in panels.items() if answer != 'False') or 'none'}")
 

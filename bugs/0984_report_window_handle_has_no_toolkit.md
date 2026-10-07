@@ -35,8 +35,12 @@ Nothing a user sees changes in either interface.
 | | Before | After |
 |---|---|---|
 | Modules of the toolkit-free layers that load tkinter when imported | 4 | **3** |
-| Dialog panel modules that load tkinter when imported | 31 of 50 | 32 of 50 do; 18 do not (was 11) |
+| Panel modules that load tkinter when imported (all 49 imported, each in its own process) | 39 | **32** |
 | Tk view classes named in services | 45 uses of 40 classes, 7 modules | 38 uses of 32 classes, 6 modules |
+
+Seven panels were cleared: the six that are a report and nothing else, and the optical-solid
+diagnostics. `main_paraxial_analysis_dialogs` uses the handle too but still loads tkinter, for its
+calculator page.
 
 `services/analysis_reports.py` is clear. The three left: `layout_import_export` (its lens-drawing
 panel is Tk itself), `layout_shell_controls` and `layout_table_workbench` (`widgets/`).
@@ -48,8 +52,8 @@ What the Tk windows and the Qt dialogs DO is held by the guards that already dri
 
 - **S:** the handle names no tkinter; the Tk view has no class; the old name is the same class; all
   26 methods are still there; no module takes the handle from the Tk view.
-- **L:** by the interpreter -- importing the handle loads neither tkinter nor Qt; the six report-only
-  panels load no tkinter.
+- **L:** by the interpreter -- importing the handle loads neither tkinter nor Qt; the seven panels
+  the split cleared load no tkinter.
 - **N:** a handle never opened, used in every way in a fresh process, loads no tkinter and does
   nothing.
 - **Q:** a handle under a shell with a stand-in dialog, in a fresh process -- open, open again,
