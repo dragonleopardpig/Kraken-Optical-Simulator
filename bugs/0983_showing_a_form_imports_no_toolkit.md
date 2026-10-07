@@ -46,3 +46,18 @@ report window), `layout_import_export` (lens drawing), `layout_shell_controls` a
 
 Phase 738's exact lists follow: four modules load tkinter (I and R), 45 uses of Tk view classes (C).
 Phase 721 counts the one remaining call of the Tk renderer in the presenter's new file.
+
+## Checks
+
+**Mutations: 8 of 8 caught** -- the presenter importing the Tk form view when it is imported; a shell
+not given the window size, or its answer not handed back; a panel that is itself asked finding no
+shell; in Tk the window not sized, `wait` not waiting, the close callback dropped; a form-only panel
+importing the presenter from the Tk view again.
+
+**Passing after the change:** the 28 gate phases about forms (633-688, 721, 723, 725, 736, 739, 747),
+phase 738 with its exact lists at four modules, the interaction contract (655), the shared Tk form
+view guard, the Advanced Surface and source-manager guards that read the presenter's source, the
+panel delegations.
+
+**Baseline:** phases 749 and 738 recorded (pass; 748 phases). The full Tk gate was last run at
+ff4c2088.
