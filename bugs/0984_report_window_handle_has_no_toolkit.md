@@ -55,3 +55,22 @@ What the Tk windows and the Qt dialogs DO is held by the guards that already dri
 - **Q:** a handle under a shell with a stand-in dialog, in a fresh process -- open, open again,
   refresh, the selection, a verb, export, close all go to the dialog as they should, and neither
   tkinter nor the Tk view is ever imported.
+
+## Checks
+
+**Mutations: 10 of 10 caught.** Nine at once: the handle importing the Tk view when imported; a
+handle with no Tk window asking the Tk view whether it is open, or on close; under a shell, open
+building a Tk window as well, refresh not giving the dialog the new report, the selection or the
+controls not asked of the dialog; a method of the class gone; a panel taking the handle from the Tk
+view again.
+
+The tenth survived the first run: a shell's dialog that the USER closed still counting as open.
+The guard only ever closed the dialog through the handle. It now closes it as a user does and
+requires the handle to notice -- not open, nothing rebuilt on Update, a new dialog on the next open.
+
+**Passing after the change:** the four guards that drive the Tk report windows (0894-0897), the
+interaction contract (655), phase 738 at three modules, the panel delegations, and 17 gate phases
+about reports and their panels (638-645, 663, 682-685, 715, 718, 721, 722).
+
+**Baseline:** phases 750 and 738 recorded (pass; 749 phases). The full Tk gate was last run at
+ff4c2088.
