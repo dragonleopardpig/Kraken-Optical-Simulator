@@ -265,6 +265,7 @@ from KrakenOS.UI.panels.main_nonseq_scene_graph_dialog import MainNonSequentialS
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
 from KrakenOS.UI.panels.main_bug_flag_windows import MainBugFlagWindows
 from KrakenOS.UI.panels.main_led_edge_prompt import MainLedEdgePrompt
+from KrakenOS.UI.panels.main_popup_helpers import MainPopupHelpers
 from KrakenOS.UI.panels.main_text_copy import MainTextCopy
 from KrakenOS.UI.panels.main_window import MainWindowBuilder
 from KrakenOS.UI.panels.main_optical_solid_face_roles_dialog import MainOpticalSolidFaceRolesDialog
@@ -3087,6 +3088,23 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
 
     def _build_menu(self) -> None:
         self._main_window_builder()._build_menu()
+
+    # ---- popup-menu dismissal and dialog centring: panels/main_popup_helpers.py (bugs/0981) ------
+    def _main_popup_helpers(self) -> MainPopupHelpers:
+        panel = self.__dict__.get("_main_popup_helpers_instance")
+        if panel is None:
+            panel = MainPopupHelpers(self)
+            self._main_popup_helpers_instance = panel
+        return panel
+
+    def _dismiss_popup_menu_event(self, event=None) -> None:
+        self._main_popup_helpers()._dismiss_popup_menu_event(event)
+
+    def _center_dialog_over_main_window(self, dialog) -> None:
+        self._main_popup_helpers()._center_dialog_over_main_window(dialog)
+
+    def _center_dialog_on_screen(self, dialog) -> None:
+        self._main_popup_helpers()._center_dialog_on_screen(dialog)
 
     # ---- the 2D bug flag's Tk windows: panels/main_bug_flag_windows.py (bugs/0979) ----------------
     def _main_bug_flag_windows(self) -> MainBugFlagWindows:

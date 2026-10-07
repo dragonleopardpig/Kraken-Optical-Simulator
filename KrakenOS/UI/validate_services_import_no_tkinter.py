@@ -6,8 +6,8 @@ tkinter. Six did not need to -- five never used what they imported, one used it 
 dialog's parent (which is a Qt widget under the Qt shell) -- and a seventh made two `tk.BooleanVar`s
 that no other host can make. The seven left each held a real Tk window or menu; they are listed
 here with what they hold, and move out one at a time (bugs/0972 moved the first, bugs/0976 the
-second, bugs/0977 the third, bugs/0978 the fourth, bugs/0979 the fifth, bugs/0980 the sixth: one
-left, `paraxial_tools`).
+second, bugs/0977 the third, bugs/0978 the fourth, bugs/0979 the fifth, bugs/0980 the sixth and
+bugs/0981 the last: no service imports tkinter now, only the Tk host).
 
   I  the other way in: a service that imports a Tk VIEW module (`panels/`, `widgets/`) at module
      level reaches tkinter without naming it. Those are counted too, against their own exact list
@@ -16,6 +16,11 @@ left, `paraxial_tools`).
      and every entry there still does. A new importer fails here; a cleaned module must be deleted
      from the list -- so it can only shrink. (An import under `if TYPE_CHECKING:` is not a run-time
      import.)
+  U  importing is not the only way to USE it: `layout_editor` copies its own globals -- `tk`
+     among them -- into some service modules (`_sync_layout_globals`), and code there calls
+     `tk.Menu(...)` with no import of its own. Measured with bugs/0981: one module does, sixteen
+     times. Counted against an exact list too, so "no service imports tkinter" is not read as
+     "no service uses it"
   G  no GUARD reaches for a tkinter name THROUGH one of those modules (`fa_mod.tk.Menu = Fake`).
      That works only while the module still has its own `import tkinter as tk`, and raises
      AttributeError the day it is cleaned: bugs/0970 broke two guards that way (phases 293 and
@@ -35,7 +40,6 @@ ROOT = Path("KrakenOS/UI")
 LAYERS = ("services", "reports", "row_forms", "uihost", "qt")
 #: module -> the Tk code it still holds. EXACT: a port deletes its entry.
 TK_IMPORTERS = {
-    "services/paraxial_tools.py": "Tk popup-menu and dialog-centring helpers",
     "uihost/tk_host.py": "the Tk host itself",
 }
 #: A service can also reach Tk WITHOUT naming it: by importing a Tk view module (`panels/`,
@@ -47,6 +51,11 @@ TK_VIEW_IMPORTERS = {
     "services/layout_shell_controls.py": "binds Tk entries' commit keys (`bind_entry_commit`)",
     "services/layout_table_workbench.py": "places the Tk table's in-cell entry (`place_commit_cell_entry`)",
     "services/tolerance_modeling.py": "builds the Tk tolerance-report panel",
+}
+#: module -> how many times it names tkinter at RUN TIME with no import of its own (the name is
+#: put into its globals by `layout_editor`). EXACT: a count that falls must be lowered here.
+TK_NAMES_WITHOUT_IMPORT = {
+    "services/layout_table_workbench.py": 16,
 }
 #: the modules bugs/0970 cleaned
 CLEANED = ("services/tolerance_modeling.py", "services/open3d_face_assignment.py", "services/layout_import_export.py",
@@ -110,6 +119,43 @@ def tk_view_importers() -> dict:
     return found
 
 
+def _annotation_nodes(tree) -> set:
+    """ids of the nodes inside annotations (never evaluated under `from __future__ import annotations`)."""
+    inside: set = set()
+    for node in ast.walk(tree):
+        notes = []
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            arguments = node.args
+            notes += [a.annotation for a in arguments.args + arguments.kwonlyargs + arguments.posonlyargs if a.annotation]
+            notes += [a.annotation for a in (arguments.vararg, arguments.kwarg) if a is not None and a.annotation]
+            if node.returns:
+                notes.append(node.returns)
+        elif isinstance(node, ast.AnnAssign):
+            notes.append(node.annotation)
+        for note in notes:
+            inside.update(id(inner) for inner in ast.walk(note))
+    return inside
+
+
+def tk_names_without_import(importers) -> dict:
+    """module -> how many times it names tkinter at run time although it does not import it."""
+    found: dict = {}
+    for layer in LAYERS:
+        if layer == "qt":
+            continue
+        for path in sorted((ROOT / layer).rglob("*.py")):
+            name = path.relative_to(ROOT).as_posix()
+            if name in importers:
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            tree = ast.parse(text)
+            skip = _annotation_nodes(tree) if "from __future__ import annotations" in text else set()
+            count = sum(1 for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id in TK_NAMES and id(node) not in skip)
+            if count:
+                found[name] = count
+    return found
+
+
 def _layer_module_file(dotted: str) -> str:
     """"services/x.py" for "KrakenOS.UI.services.x" when that is a module of the toolkit-free layers."""
     prefix = "KrakenOS.UI."
@@ -168,6 +214,12 @@ def run_checks() -> tuple[bool, list[str]]:
                  f"{len(indirect)} modules import a Tk view package (panels, widgets) at module level: "
                  f"{sorted(name.split('/')[-1] for name in indirect)}; not in the list: {unlisted_views or 'none'}; listed "
                  f"but clean now (delete the entry): {stale_views or 'none'}"])
+
+    injected = tk_names_without_import(set(found))
+    rows.append(["U", injected == TK_NAMES_WITHOUT_IMPORT,
+                 f"modules that name tkinter at run time with no import of their own: {injected or 'none'} (listed: "
+                 f"{TK_NAMES_WITHOUT_IMPORT}; a new module or a higher count is a new use, a lower count must be lowered "
+                 f"in the list)"])
 
     reaching = guards_reaching_for_tkinter(set(found))
     guards_scanned = len(list(ROOT.glob("validate_*.py")))

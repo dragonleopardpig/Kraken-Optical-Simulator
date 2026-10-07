@@ -15,8 +15,6 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-import tkinter as tk
-from tkinter import messagebox
 import warnings
 import webbrowser
 
@@ -789,72 +787,21 @@ class ParaxialToolsMixin:
 
 
     def _cleanup_current_popup_menu(self) -> None:
+        """The table's popup menu is done with: take it down and forget which cell it was on.
+
+        Whatever made the menu takes it down by its own two calls -- a Tk menu, or the recording
+        menu a shell renders. Taking a menu down must never fail, so nothing these raise is passed
+        on (it was `tk.TclError` alone, which is why this module imported tkinter -- bugs/0981)."""
         menu = self.popup_menu
         if menu is not None:
-            try:
-                menu.grab_release()
-            except tk.TclError:
-                pass
-            try:
-                menu.destroy()
-            except tk.TclError:
-                pass
+            for take_down in ("grab_release", "destroy"):
+                try:
+                    getattr(menu, take_down)()
+                except Exception:
+                    pass
             self.popup_menu = None
         self.current_menu_row_id = None
         self.current_menu_field = None
-
-    @staticmethod
-    def _event_inside_widget_root_bounds(event: tk.Event, widget: tk.Widget) -> bool:
-        try:
-            x_root = int(event.x_root)
-            y_root = int(event.y_root)
-            widget.update_idletasks()
-            widget_x = int(widget.winfo_rootx())
-            widget_y = int(widget.winfo_rooty())
-            widget_w = max(int(widget.winfo_width()), 1)
-            widget_h = max(int(widget.winfo_height()), 1)
-        except Exception:
-            return False
-        return widget_x <= x_root < widget_x + widget_w and widget_y <= y_root < widget_y + widget_h
-
-    def _dismiss_popup_menu_event(self, event: tk.Event | None = None) -> None:
-        if self.popup_menu is None:
-            return
-        if event is not None:
-            widget = getattr(event, "widget", None)
-            if isinstance(widget, tk.Menu) and self._event_inside_widget_root_bounds(event, widget):
-                return
-        self._cleanup_current_popup_menu()
-
-    def _center_dialog_over_main_window(self, dialog: tk.Toplevel) -> None:
-        dialog.update_idletasks()
-        parent_x = self.winfo_rootx()
-        parent_y = self.winfo_rooty()
-        parent_w = max(self.winfo_width(), 1)
-        parent_h = max(self.winfo_height(), 1)
-        dialog_w = max(dialog.winfo_width(), 1)
-        dialog_h = max(dialog.winfo_height(), 1)
-        pos_x = parent_x + max((parent_w - dialog_w) // 2, 0)
-        pos_y = parent_y + max((parent_h - dialog_h) // 2, 0)
-        dialog.geometry(f"+{pos_x}+{pos_y}")
-
-    @staticmethod
-    def _center_dialog_on_screen(dialog: tk.Toplevel) -> None:
-        def place_dialog() -> None:
-            if not dialog.winfo_exists():
-                return
-            dialog.update_idletasks()
-            dialog_w = max(dialog.winfo_width(), dialog.winfo_reqwidth(), 1)
-            dialog_h = max(dialog.winfo_height(), dialog.winfo_reqheight(), 1)
-            screen_w = max(dialog.winfo_screenwidth(), 1)
-            screen_h = max(dialog.winfo_screenheight(), 1)
-            pos_x = max((screen_w - dialog_w) // 2, 0)
-            pos_y = max((screen_h - dialog_h) // 2, 0)
-            dialog.geometry(f"+{pos_x}+{pos_y}")
-
-        place_dialog()
-        dialog.after_idle(place_dialog)
-        dialog.after(80, place_dialog)
 
     def show_formula_help(self) -> None:
         try:
