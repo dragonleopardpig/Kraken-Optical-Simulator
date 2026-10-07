@@ -140,31 +140,44 @@ class QtUiHost(UiHost):
         self._box().critical(self._parent_for(options), str(title or ""), str(message or ""))
         return "ok"
 
+    def _default_button(self, options, **buttons):
+        """Tk's ``default=`` option -- the button Enter presses -- as a Qt button (bugs/0988).
+
+        Without it the first button answers, in Qt as in Tk. With it the caller has said which
+        answer is the safe one: a question that defaults to "no" because yes destroys something
+        must not answer yes to Enter in this shell only.
+        """
+        return buttons.get(str(options.get("default") or "").strip().lower(), self._box().StandardButton.NoButton)
+
     def askyesno(self, title=None, message=None, **options):
         box = self._box()
-        answer = box.question(self._parent_for(options), str(title or ""), str(message or ""),
-                              box.StandardButton.Yes | box.StandardButton.No)
-        return answer == box.StandardButton.Yes
+        yes, no = box.StandardButton.Yes, box.StandardButton.No
+        answer = box.question(self._parent_for(options), str(title or ""), str(message or ""), yes | no,
+                              self._default_button(options, yes=yes, no=no))
+        return answer == yes
 
     def askokcancel(self, title=None, message=None, **options):
         box = self._box()
-        answer = box.question(self._parent_for(options), str(title or ""), str(message or ""),
-                              box.StandardButton.Ok | box.StandardButton.Cancel)
-        return answer == box.StandardButton.Ok
+        ok, cancel = box.StandardButton.Ok, box.StandardButton.Cancel
+        answer = box.question(self._parent_for(options), str(title or ""), str(message or ""), ok | cancel,
+                              self._default_button(options, ok=ok, cancel=cancel))
+        return answer == ok
 
     def askyesnocancel(self, title=None, message=None, **options):
         box = self._box()
-        answer = box.question(self._parent_for(options), str(title or ""), str(message or ""),
-                              box.StandardButton.Yes | box.StandardButton.No | box.StandardButton.Cancel)
-        if answer == box.StandardButton.Cancel:
+        yes, no, cancel = box.StandardButton.Yes, box.StandardButton.No, box.StandardButton.Cancel
+        answer = box.question(self._parent_for(options), str(title or ""), str(message or ""), yes | no | cancel,
+                              self._default_button(options, yes=yes, no=no, cancel=cancel))
+        if answer == cancel:
             return None
-        return answer == box.StandardButton.Yes
+        return answer == yes
 
     def askretrycancel(self, title=None, message=None, **options):
         box = self._box()
-        answer = box.warning(self._parent_for(options), str(title or ""), str(message or ""),
-                             box.StandardButton.Retry | box.StandardButton.Cancel)
-        return answer == box.StandardButton.Retry
+        retry, cancel = box.StandardButton.Retry, box.StandardButton.Cancel
+        answer = box.warning(self._parent_for(options), str(title or ""), str(message or ""), retry | cancel,
+                             self._default_button(options, retry=retry, cancel=cancel))
+        return answer == retry
 
     def askquestion(self, title=None, message=None, **options):
         return "yes" if self.askyesno(title, message, **options) else "no"

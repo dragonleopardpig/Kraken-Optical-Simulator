@@ -157,6 +157,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0985 | The two entry-commit binders of the left panel are methods of the Tk panels that use them (optimization, atmosphere); the model keeps what a commit does, `_commit_manual_update`. `services/layout_shell_controls.py` stops loading tkinter | phase 7d |
 | 0986 | The lens-drawing properties' Tk window is `panels/lens_drawing_properties_view.py`, imported when Tk draws; the panel and `services/layout_import_export.py` stop loading tkinter | phase 7d |
 | 0987 | What the Tk surface table draws over its rows -- selection and active-cell borders, grid, variable markers, the in-cell entry -- is `panels/main_surface_table_overlays.py`; the choice menu joins the popup helpers and the Edit menu's undo state the window builder. `services/layout_table_workbench.py`, the last, stops loading and naming tkinter | phase 7d |
+| 0988 | The Qt host's four questions honour `default=`: Enter on "Replace the scene now?" answered Yes in the Qt shell and No in Tk | parity |
 | 0964 | The Qt shell had NO 2D plot (built only by its guard): now a 2D Plot panel with the Tk plot toolbar's six controls (plot2d_toolbar.PLOT_2D), Trace Now, Update, Ray Inspector; an Update shows it | phase 6 |
 | 0963 | The ribbon folds by the WINDOW's height (on crossing 1100 px), not the screen's; a fold by hand is kept | shell |
 | 0962 | The top edge's panel tabs ride in the ribbon's tab row, no row of their own | shell |
