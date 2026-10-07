@@ -9,9 +9,14 @@ here with what they hold, and move out one at a time (bugs/0972 moved the first,
 second, bugs/0977 the third, bugs/0978 the fourth, bugs/0979 the fifth, bugs/0980 the sixth and
 bugs/0981 the last: no service imports tkinter now, only the Tk host).
 
-  I  the other way in: a service that imports a Tk VIEW module (`panels/`, `widgets/`) at module
-     level reaches tkinter without naming it. Those are counted too, against their own exact list
-     (bugs/0972) -- five services, each building a Tk delegation panel or binding a Tk widget
+  I  the other way in: a module reaches tkinter WITHOUT naming it when something it imports at
+     module level does. Followed through every `KrakenOS.UI` import (bugs/0981), six modules of
+     these layers do, each listed with the first step of its road there. (Until then this
+     claim counted imports of `panels/` and `widgets/` -- five -- which missed a service that
+     imports the Tk inspector, and counted a `panels/` module that holds no Tk at all.)
+  R  the same, asked of the interpreter rather than read from the source: each module of these
+     layers is imported in a process of its own, and tkinter is loaded afterwards for exactly
+     the modules claim I lists -- so the reading of the source is not what is trusted
   S  the scan: every module of those layers that imports tkinter at run time is in `TK_IMPORTERS`,
      and every entry there still does. A new importer fails here; a cleaned module must be deleted
      from the list -- so it can only shrink. (An import under `if TYPE_CHECKING:` is not a run-time
@@ -34,6 +39,10 @@ from __future__ import annotations
 
 import ast
 import importlib
+import os
+import subprocess
+import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path("KrakenOS/UI")
@@ -42,15 +51,19 @@ LAYERS = ("services", "reports", "row_forms", "uihost", "qt")
 TK_IMPORTERS = {
     "uihost/tk_host.py": "the Tk host itself",
 }
-#: A service can also reach Tk WITHOUT naming it: by importing a Tk view module (`panels/`,
-#: `widgets/`) at module level. Counted separately, and as exactly (bugs/0972).
-TK_VIEW_PACKAGES = ("KrakenOS.UI.panels", "KrakenOS.UI.widgets")
-TK_VIEW_IMPORTERS = {
-    "services/analysis_reports.py": "builds the seven Tk report / inspector delegation panels",
-    "services/layout_import_export.py": "builds the Tk glass-catalogue, lens-drawing and stock-lens panels",
-    "services/layout_shell_controls.py": "binds Tk entries' commit keys (`bind_entry_commit`)",
-    "services/layout_table_workbench.py": "places the Tk table's in-cell entry (`place_commit_cell_entry`)",
-    "services/tolerance_modeling.py": "builds the Tk tolerance-report panel",
+#: A module also reaches tkinter WITHOUT naming it, when something it imports at module level does
+#: (bugs/0981: followed through every KrakenOS.UI import). module -> the first step of its road
+#: there, and what that is for. EXACT: a module that no longer reaches it must be deleted here.
+TK_REACHED_THROUGH = {
+    "services/analysis_reports.py": ("panels/main_branch_gaussian_q_dialog.py",
+                                     "builds the report panels, whose handle class `ReportWindow` lives in the Tk report view"),
+    "services/layout_import_export.py": ("panels/main_glass_catalog_browser_dialog.py",
+                                         "builds the glass-catalogue, stock-lens and lens-drawing panels (the last is Tk itself)"),
+    "services/layout_shell_controls.py": ("widgets/__init__.py", "binds Tk entries' commit keys (`bind_entry_commit`)"),
+    "services/layout_table_workbench.py": ("widgets/__init__.py", "places the Tk table's in-cell entry (`place_commit_cell_entry`)"),
+    "services/three_d_scene_tools.py": ("open3d_inspector.py", "imports the 3D inspector, a Tk window class until phase 7e"),
+    "services/tolerance_modeling.py": ("panels/main_tolerance_report_dialogs.py",
+                                       "builds the tolerance-report panel, which shows forms through the Tk form view"),
 }
 #: module -> how many times it names tkinter at RUN TIME with no import of its own (the name is
 #: put into its globals by `layout_editor`). EXACT: a count that falls must be lowered here.
@@ -96,27 +109,98 @@ def tkinter_importers() -> dict:
     return found
 
 
-def tk_view_importers() -> dict:
-    """module -> the line numbers where it imports a Tk view package at MODULE level (an import
-    inside a function is how a service asks a view to do something, and runs only when asked)."""
-    found: dict = {}
+def _ui_module_file(dotted: str):
+    """The file of a `KrakenOS.UI...` module or package; None for anything else."""
+    if not dotted.startswith("KrakenOS.UI"):
+        return None
+    relative = dotted[len("KrakenOS.UI"):].lstrip(".").replace(".", "/")
+    for candidate in (ROOT / (relative + ".py"), ROOT / relative / "__init__.py"):
+        if relative and candidate.is_file():
+            return candidate
+    return None
+
+
+def _module_level_imports(path) -> tuple:
+    """(does it import tkinter at module level, the dotted names it imports there). "Module level"
+    takes in a top-level try / if / with; an import inside a function runs only when asked."""
+    tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+    names, direct, pending = set(), False, list(tree.body)
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (ast.Try, ast.If, ast.With)):
+            pending.extend(node.body + getattr(node, "orelse", []) + getattr(node, "finalbody", [])
+                           + [inner for handler in getattr(node, "handlers", []) for inner in handler.body])
+        elif node.__class__ is ast.Import:
+            direct = direct or any(alias.name.split(".")[0] == "tkinter" for alias in node.names)
+            names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0:
+            direct = direct or (node.module or "").split(".")[0] == "tkinter"
+            names.add(node.module or "")
+            names.update(f"{node.module}.{alias.name}" for alias in node.names)
+    return direct, names
+
+
+def tkinter_reached_through() -> dict:
+    """module of the toolkit-free layers -> its road to tkinter (the files, in order), for every
+    module that does not import tkinter itself but reaches it at module level."""
+    roads: dict = {}
+
+    def road(path, seen=()):
+        if path in roads:
+            return roads[path]
+        if path in seen:
+            return []
+        direct, names = _module_level_imports(path)
+        found: list = [path.relative_to(ROOT).as_posix()] if direct else []
+        if not direct:
+            for name in sorted(names):
+                target = _ui_module_file(name)
+                if target is None or target == path:
+                    continue
+                onward = road(target, seen + (path,))
+                if onward:
+                    found = [path.relative_to(ROOT).as_posix()] + onward
+                    break
+        roads[path] = found
+        return found
+
+    reached: dict = {}
     for layer in LAYERS:
         if layer == "qt":
             continue
         for path in sorted((ROOT / layer).rglob("*.py")):
-            tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
-            lines = []
-            for node in tree.body:
-                names = []
-                if node.__class__ is ast.Import:
-                    names = [alias.name for alias in node.names]
-                elif isinstance(node, ast.ImportFrom) and node.level == 0:
-                    names = [node.module or ""] + [f"{node.module}.{alias.name}" for alias in node.names]
-                if any(name == package or name.startswith(package + ".") for name in names for package in TK_VIEW_PACKAGES):
-                    lines.append(node.lineno)
-            if lines:
-                found[path.relative_to(ROOT).as_posix()] = lines
-    return found
+            steps = road(path)
+            if len(steps) > 1:
+                reached[steps[0]] = steps[1:]
+    return reached
+
+
+_PROBE = ("import sys, importlib\n"
+          "try:\n"
+          "    importlib.import_module(sys.argv[1])\n"
+          "    print('LOADED' if 'tkinter' in sys.modules else 'CLEAN')\n"
+          "except Exception as exc:\n"
+          "    print('ERROR ' + type(exc).__name__ + ': ' + str(exc)[:80])\n")
+
+
+def tkinter_loaded_on_import() -> dict:
+    """module -> "LOADED" / "CLEAN" / "ERROR ...": what importing it, alone in a fresh interpreter,
+    does to `sys.modules`. One process per module -- an import cannot be undone in one process."""
+    paths = [path for layer in LAYERS if layer != "qt" for path in sorted((ROOT / layer).rglob("*.py"))]
+
+    def probe(path) -> tuple:
+        dotted = "KrakenOS.UI." + path.relative_to(ROOT).with_suffix("").as_posix().replace("/", ".")
+        dotted = dotted[: -len(".__init__")] if dotted.endswith(".__init__") else dotted
+        try:
+            done = subprocess.run([sys.executable, "-c", _PROBE, dotted], capture_output=True, text=True, timeout=300,
+                                  cwd=str(Path.cwd()))
+            answer = (done.stdout.strip().splitlines() or ["ERROR no answer: " + done.stderr.strip()[-80:]])[-1]
+        except subprocess.TimeoutExpired:
+            answer = "ERROR timed out"
+        return path.relative_to(ROOT).as_posix(), answer
+
+    with ThreadPoolExecutor(max_workers=max(1, min(4, (os.cpu_count() or 2) - 1))) as pool:
+        return dict(pool.map(probe, paths))
 
 
 def _annotation_nodes(tree) -> set:
@@ -207,13 +291,23 @@ def run_checks() -> tuple[bool, list[str]]:
                  f"{len(found)} modules of {'/'.join(LAYERS)} import tkinter at run time, {len(services)} of them services "
                  f"(14 before bugs/0970); not in the list: {unlisted or 'none'}; listed but clean now (delete the entry): "
                  f"{stale or 'none'}"])
-    indirect = tk_view_importers()
-    unlisted_views = sorted(set(indirect) - set(TK_VIEW_IMPORTERS))
-    stale_views = sorted(set(TK_VIEW_IMPORTERS) - set(indirect))
-    rows.append(["I", not unlisted_views and not stale_views,
-                 f"{len(indirect)} modules import a Tk view package (panels, widgets) at module level: "
-                 f"{sorted(name.split('/')[-1] for name in indirect)}; not in the list: {unlisted_views or 'none'}; listed "
-                 f"but clean now (delete the entry): {stale_views or 'none'}"])
+    reached = tkinter_reached_through()
+    unlisted_roads = sorted(set(reached) - set(TK_REACHED_THROUGH))
+    stale_roads = sorted(set(TK_REACHED_THROUGH) - set(reached))
+    moved_roads = sorted(name for name in set(reached) & set(TK_REACHED_THROUGH) if reached[name][0] != TK_REACHED_THROUGH[name][0])
+    rows.append(["I", not unlisted_roads and not stale_roads and not moved_roads,
+                 f"{len(reached)} modules reach tkinter through what they import at module level: "
+                 f"{ {name.split('/')[-1]: steps[0] for name, steps in reached.items()} }; not in the list: "
+                 f"{unlisted_roads or 'none'}; listed but clean now (delete the entry): {stale_roads or 'none'}; reached by "
+                 f"another road than listed: {moved_roads or 'none'}"])
+
+    probed = tkinter_loaded_on_import()
+    loaded = sorted(name for name, answer in probed.items() if answer == "LOADED")
+    failed = {name: answer for name, answer in probed.items() if answer not in ("LOADED", "CLEAN")}
+    rows.append(["R", loaded == sorted(TK_REACHED_THROUGH) and not failed and len(probed) >= 150,
+                 f"{len(probed)} modules each imported in a process of its own: tkinter is loaded for "
+                 f"{[name.split('/')[-1] for name in loaded]}; the list has {len(TK_REACHED_THROUGH)}; could not be imported: "
+                 f"{failed or 'none'}"])
 
     injected = tk_names_without_import(set(found))
     rows.append(["U", injected == TK_NAMES_WITHOUT_IMPORT,
