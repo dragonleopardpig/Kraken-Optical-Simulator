@@ -508,7 +508,10 @@ def _evaluate_checks() -> tuple[list, dict]:
     main_branch_gaussian_q_factory = inspect.getsource(KrakenLayoutEditor._main_branch_gaussian_q_dialog)
     # the four report panels are widgets over `reports/` builders and the shared Tk renderer
     # (bugs/0894), so what each report SHOWS is asserted against its builder, not its dialog
-    report_view_source = inspect.getsource(report_view)
+    # the report window is two modules since bugs/0984: the Tk view, and the toolkit-free handle
+    from KrakenOS.UI.reports import window as report_window
+
+    report_view_source = inspect.getsource(report_view) + inspect.getsource(report_window)
     branch_throughput_builder = inspect.getsource(reports_branch_throughput)
     source_illumination_builder = inspect.getsource(reports_source_illumination)
     detector_aperture_builder = inspect.getsource(reports_detector_aperture)

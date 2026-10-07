@@ -13,7 +13,7 @@ from KrakenOS.UI.branch_throughput_analysis import (
     filtered_branch_throughput_records,
     normalize_branch_throughput_filter_label as _normalize_path_filter_label,
 )
-from KrakenOS.UI.panels.report_view import ReportWindow
+from KrakenOS.UI.reports.window import ReportWindow
 from KrakenOS.UI.reports import build_branch_throughput_report
 
 

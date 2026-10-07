@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from KrakenOS.UI.panels.report_view import ReportWindow
+from KrakenOS.UI.reports.window import ReportWindow
 from KrakenOS.UI.reports import build_ray_inspector_report, build_trace_path_report
 from KrakenOS.UI.reports.trace_paths import selected_ray_index
 

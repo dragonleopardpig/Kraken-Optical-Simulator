@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from KrakenOS.UI.panels.report_view import ReportWindow
+from KrakenOS.UI.reports.window import ReportWindow
 from KrakenOS.UI.reports import build_nonseq_scene_graph_report
 from KrakenOS.UI.reports.nonseq_scene_graph import record_for
 

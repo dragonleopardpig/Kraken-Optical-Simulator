@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from KrakenOS.UI.panels.report_view import ReportWindow
+from KrakenOS.UI.reports.window import ReportWindow
 from KrakenOS.UI.reports.optical_solid_diagnostics import (NO_SOLIDS, TITLE,
                                                           build_optical_solid_diagnostics_report,
                                                           optical_solid_diagnostics_text)

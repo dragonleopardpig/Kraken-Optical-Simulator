@@ -19,7 +19,7 @@ from KrakenOS.UI.paraxial_calculator import (
     PROMPT as PARAXIAL_PROMPT, field_states as paraxial_field_states, format_calc,
     initial_inputs as paraxial_initial_inputs,
     load_from_layout as load_paraxial_from_layout, solve as solve_paraxial)
-from KrakenOS.UI.panels.report_view import ReportWindow
+from KrakenOS.UI.reports.window import ReportWindow
 from KrakenOS.UI.reports.gaussian_beam import build_gaussian_beam_report
 from KrakenOS.UI.reports.paraxial_matrix import build_paraxial_matrix_report
 from KrakenOS.UI.solve_reviews import best_focus_review, folded_mirror_solve_review, paraxial_solve_review

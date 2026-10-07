@@ -166,7 +166,10 @@ def run_checks() -> tuple[bool, list[str]]:
            + ", ".join(f"{name[5:].replace('_', ' ')} {size}" for name, size in sizes.items())
            + " lines")
 
-    view = inspect.getsource(report_view)
+    # the report window is two modules since bugs/0984: the Tk view, and the toolkit-free handle
+    from KrakenOS.UI.reports import window as report_window
+
+    view = inspect.getsource(report_view) + inspect.getsource(report_window)
     ok("report.cell(index, column)" in view and "report.write_csv(path)" in view
        and "report.detail_text" in view,
        "R2: the renderer asks the report for every cell, the CSV and the detail prose")

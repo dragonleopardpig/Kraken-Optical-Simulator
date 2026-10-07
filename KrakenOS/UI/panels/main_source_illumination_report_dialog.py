@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from KrakenOS.UI.panels.report_view import ReportWindow
+from KrakenOS.UI.reports.window import ReportWindow
 from KrakenOS.UI.reports import build_source_illumination_report
 from KrakenOS.UI.reports.source_illumination import AUTO
 from KrakenOS.UI.source_illumination_analysis import source_illumination_record_detail_text
