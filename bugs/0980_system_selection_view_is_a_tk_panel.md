@@ -37,3 +37,18 @@ Nothing a user sees changes in either interface.
 
 Two guards named the old place and now read the new one: the calculator's own (0631, its shared-form
 and self-fitting-window checks) and the Qt constraints / selection guard (phase 709).
+
+## Checks
+
+**Mutations: 8 of 8 caught.** Seven at once: the command building the Tk window whatever the shell,
+or opening nothing under a shell; the core importing tkinter again; the form not recomputing as you
+type; the window not resizable, or without Close; the 3D left panel taking the form from the core.
+
+The eighth survived the first run: the form leaving the wavelength out of what it hands the model.
+The guard had typed 0.55, which is the form's own default, so nothing changed. It now types 0.85
+and requires the result to change, and catches it.
+
+**Neighbouring guards, all pass:** the calculator's own (0631), the Qt constraints / selection guard
+(709), the tkinter-import list (738: one service now), the inspector's popups (723: seven window
+builders, all ask the shell first, none Tk-only), the model forms in Qt (721), menu parity (718),
+the interaction contract (655). **Baseline:** phase 747 recorded.
