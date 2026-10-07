@@ -11,7 +11,7 @@ bugs/0981 the last: no service imports tkinter now, only the Tk host).
 
   I  the other way in: a module reaches tkinter WITHOUT naming it when something it imports at
      module level does. Followed through every `KrakenOS.UI` import (bugs/0981), six modules of
-     these layers do, each listed with the first step of its road there. (Until then this
+     these layers did -- five since bugs/0982 -- each listed with the first step of its road there. (Until then this
      claim counted imports of `panels/` and `widgets/` -- five -- which missed a service that
      imports the Tk inspector, and counted a `panels/` module that holds no Tk at all.)
   R  the same, asked of the interpreter rather than read from the source: each module of these
@@ -26,6 +26,15 @@ bugs/0981 the last: no service imports tkinter now, only the Tk host).
      `tk.Menu(...)` with no import of its own. Measured with bugs/0981: one module does, sixteen
      times. Counted against an exact list too, so "no service imports tkinter" is not read as
      "no service uses it"
+  C  nor is tkinter's own name the only Tk there is: a service that names a Tk view CLASS at run
+     time -- a panel class of a module that imports tkinter, or the 3D inspector -- uses Tk as
+     surely, however the name reached it (bugs/0982). Counted per module, exactly: the panel
+     factories (`_main_*`) are most of it, the legacy viewer's calls on the inspector the rest
+  H  the two helpers the scene tools borrowed from the inspector class are functions of their own
+     (bugs/0982): a surface's classic colour -- its own when it has one that is not black, else by
+     its glass -- and a surface mesh as a deep copy of its own, None when it has no points; the
+     inspector's two methods are still there and give the same. And every helper a service still
+     calls on the inspector class through `_inspector_class()` is one the class has
   G  no GUARD reaches for a tkinter name THROUGH one of those modules (`fa_mod.tk.Menu = Fake`).
      That works only while the module still has its own `import tkinter as tk`, and raises
      AttributeError the day it is cleaned: bugs/0970 broke two guards that way (phases 293 and
@@ -61,7 +70,6 @@ TK_REACHED_THROUGH = {
                                          "builds the glass-catalogue, stock-lens and lens-drawing panels (the last is Tk itself)"),
     "services/layout_shell_controls.py": ("widgets/__init__.py", "binds Tk entries' commit keys (`bind_entry_commit`)"),
     "services/layout_table_workbench.py": ("widgets/__init__.py", "places the Tk table's in-cell entry (`place_commit_cell_entry`)"),
-    "services/three_d_scene_tools.py": ("open3d_inspector.py", "imports the 3D inspector, a Tk window class until phase 7e"),
     "services/tolerance_modeling.py": ("panels/main_tolerance_report_dialogs.py",
                                        "builds the tolerance-report panel, which shows forms through the Tk form view"),
 }
@@ -69,6 +77,19 @@ TK_REACHED_THROUGH = {
 #: put into its globals by `layout_editor`). EXACT: a count that falls must be lowered here.
 TK_NAMES_WITHOUT_IMPORT = {
     "services/layout_table_workbench.py": 16,
+}
+#: module -> how many times it names a Tk view CLASS at run time (a class of a `panels/` module
+#: that imports tkinter, or `Kraken3DInspector`), by import or through the editor's copied globals.
+#: EXACT: a count that falls must be lowered here.
+TK_CLASSES_NAMED = {
+    "services/analysis_reports.py": 6,           # six report-panel factories
+    "services/layout_import_export.py": 4,       # three panel factories, the Tk missing-assets dialog
+    "services/layout_shell_controls.py": 8,      # eight panel factories
+    "services/layout_table_workbench.py": 11,    # eleven panel factories
+    "services/legacy_3d_scene.py": 4,            # the legacy viewer's calls on the inspector class
+    "services/optical_solid_workflow.py": 3,     # two panel factories, one inspector call
+    "services/three_d_scene_tools.py": 16,       # opening the 3D view, and the legacy viewer's inspector helpers
+    "services/tolerance_modeling.py": 1,         # one panel factory
 }
 #: the modules bugs/0970 cleaned
 CLEANED = ("services/tolerance_modeling.py", "services/open3d_face_assignment.py", "services/layout_import_export.py",
@@ -140,36 +161,40 @@ def _module_level_imports(path) -> tuple:
     return direct, names
 
 
+_ROADS: dict = {}
+
+
+def road_to_tkinter(path, _seen=()) -> list:
+    """The files, in order, by which importing ``path`` loads tkinter at module level: [] when it
+    does not, [itself] when it imports tkinter itself."""
+    if path in _ROADS:
+        return _ROADS[path]
+    if path in _seen:
+        return []
+    direct, names = _module_level_imports(path)
+    found: list = [path.relative_to(ROOT).as_posix()] if direct else []
+    if not direct:
+        for name in sorted(names):
+            target = _ui_module_file(name)
+            if target is None or target == path:
+                continue
+            onward = road_to_tkinter(target, _seen + (path,))
+            if onward:
+                found = [path.relative_to(ROOT).as_posix()] + onward
+                break
+    _ROADS[path] = found
+    return found
+
+
 def tkinter_reached_through() -> dict:
-    """module of the toolkit-free layers -> its road to tkinter (the files, in order), for every
+    """module of the toolkit-free layers -> its road to tkinter (the files after itself), for every
     module that does not import tkinter itself but reaches it at module level."""
-    roads: dict = {}
-
-    def road(path, seen=()):
-        if path in roads:
-            return roads[path]
-        if path in seen:
-            return []
-        direct, names = _module_level_imports(path)
-        found: list = [path.relative_to(ROOT).as_posix()] if direct else []
-        if not direct:
-            for name in sorted(names):
-                target = _ui_module_file(name)
-                if target is None or target == path:
-                    continue
-                onward = road(target, seen + (path,))
-                if onward:
-                    found = [path.relative_to(ROOT).as_posix()] + onward
-                    break
-        roads[path] = found
-        return found
-
     reached: dict = {}
     for layer in LAYERS:
         if layer == "qt":
             continue
         for path in sorted((ROOT / layer).rglob("*.py")):
-            steps = road(path)
+            steps = road_to_tkinter(path)
             if len(steps) > 1:
                 reached[steps[0]] = steps[1:]
     return reached
@@ -240,6 +265,36 @@ def tk_names_without_import(importers) -> dict:
     return found
 
 
+def tk_view_classes() -> set:
+    """The names of the Tk view classes: every class of a `panels/` module whose import loads
+    tkinter (itself, or through the Tk report / form views), and the 3D inspector -- a
+    `tk.Toplevel` until phase 7e."""
+    names = {"Kraken3DInspector"}
+    for path in sorted((ROOT / "panels").glob("*.py")):
+        if road_to_tkinter(path):
+            names.update(node.name for node in ast.parse(path.read_text(encoding="utf-8")).body if isinstance(node, ast.ClassDef))
+    return names
+
+
+def tk_classes_named() -> dict:
+    """module -> how many times it names one of those classes at run time (outside an annotation),
+    a call of `_inspector_class()` -- the accessor bugs/0982 put in front of the inspector -- included."""
+    classes = tk_view_classes()
+    found: dict = {}
+    for layer in LAYERS:
+        if layer == "qt":
+            continue
+        for path in sorted((ROOT / layer).rglob("*.py")):
+            text = path.read_text(encoding="utf-8", errors="replace")
+            tree = ast.parse(text)
+            skip = _annotation_nodes(tree) if "from __future__ import annotations" in text else set()
+            count = sum(1 for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id in classes and id(node) not in skip)
+            count += sum(1 for node in ast.walk(tree) if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "_inspector_class")
+            if count:
+                found[path.relative_to(ROOT).as_posix()] = count
+    return found
+
+
 def _layer_module_file(dotted: str) -> str:
     """"services/x.py" for "KrakenOS.UI.services.x" when that is a module of the toolkit-free layers."""
     prefix = "KrakenOS.UI."
@@ -274,6 +329,58 @@ def guards_reaching_for_tkinter(importers) -> dict:
         if hits:
             found[path.name] = hits
     return found
+
+
+def _helpers_claim() -> list:
+    try:
+        from types import SimpleNamespace
+
+        import numpy as np
+        import pyvista as pv
+
+        from KrakenOS.UI.open3d_inspector import Kraken3DInspector
+        from KrakenOS.UI.services import open3d_scene_look as look
+        from KrakenOS.UI.services.open3d_mesh_basics import mesh_with_transform
+
+        surfaces = {"own": SimpleNamespace(Color=[0.2, 0.4, 0.6], Glass="BK7"),
+                    "black, glass": SimpleNamespace(Color=[0, 0, 0], Glass="BK7"),
+                    "mirror": SimpleNamespace(Color=[0, 0, 0], Glass="mirror"),
+                    "absorber": SimpleNamespace(Color=None, Glass="ABSORB"),
+                    "nothing": SimpleNamespace()}
+        colors = {name: tuple(look.surface_color(surface)) for name, surface in surfaces.items()}
+        expected = {"own": (0.2, 0.4, 0.6), "black, glass": look.CLASSIC_GLASS_COLOR, "mirror": look.CLASSIC_MIRROR_COLOR,
+                    "absorber": look.CLASSIC_ABSORB_COLOR, "nothing": look.CLASSIC_GLASS_COLOR}
+        same_colors = all(tuple(Kraken3DInspector._surface_color(surface)) == colors[name] for name, surface in surfaces.items())
+        sphere = pv.Sphere(radius=2.0)
+        copy = mesh_with_transform(sphere, np.eye(4) * 5.0)
+        untouched = bool(copy is not sphere and np.allclose(np.asarray(copy.points), np.asarray(sphere.points)))
+        copy.points[0] = (99.0, 99.0, 99.0)
+        deep = float(np.asarray(sphere.points)[0][0]) != 99.0
+        refused = [mesh_with_transform(pv.PolyData(), None), mesh_with_transform(object(), None)]
+        wrapper = Kraken3DInspector._mesh_with_transform(sphere, None)
+        # the calls that stayed on the inspector class, now through an accessor: each names a real helper
+        from KrakenOS.UI.services import three_d_scene_tools
+
+        borrowed: set = set()
+        for path in sorted((ROOT / "services").rglob("*.py")):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8", errors="replace"))):
+                if (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Call)
+                        and getattr(node.value.func, "id", "") == "_inspector_class"):
+                    borrowed.add(node.attr)
+        missing = sorted(name for name in borrowed if not callable(getattr(Kraken3DInspector, name, None)))
+        accessor = three_d_scene_tools._inspector_class() is Kraken3DInspector
+        ok = (colors == expected and same_colors and untouched and deep and refused == [None, None]
+              and wrapper is not None and int(wrapper.n_points) == int(sphere.n_points)
+              and accessor and len(borrowed) >= 5 and not missing)
+        return ["H", ok,
+                f"classic colours {dict((name, tuple(round(c, 3) for c in color)) for name, color in colors.items())}; the "
+                f"inspector's method gives the same: {same_colors}; a mesh comes back as its own deep copy with the points "
+                f"unmoved ({untouched}, {deep}); an empty mesh and a non-mesh give {refused}; the inspector's method still "
+                f"returns one of {int(wrapper.n_points) if wrapper is not None else None} points; the accessor returns the "
+                f"inspector class ({accessor}) and the {len(borrowed)} helpers called on it {sorted(borrowed)} all exist "
+                f"(missing: {missing or 'none'})"]
+    except Exception as exc:        # a claim that raises is ITS failure
+        return ["H", False, f"raised {type(exc).__name__}: {exc}"]
 
 
 def run_checks() -> tuple[bool, list[str]]:
@@ -314,6 +421,13 @@ def run_checks() -> tuple[bool, list[str]]:
                  f"modules that name tkinter at run time with no import of their own: {injected or 'none'} (listed: "
                  f"{TK_NAMES_WITHOUT_IMPORT}; a new module or a higher count is a new use, a lower count must be lowered "
                  f"in the list)"])
+
+    named = tk_classes_named()
+    rows.append(["C", named == TK_CLASSES_NAMED,
+                 f"modules that name a Tk view class at run time ({len(tk_view_classes())} such classes): {named} "
+                 f"-- {sum(named.values())} uses; listed: {sum(TK_CLASSES_NAMED.values())} in {len(TK_CLASSES_NAMED)} modules"])
+
+    rows.append(_helpers_claim())
 
     reaching = guards_reaching_for_tkinter(set(found))
     guards_scanned = len(list(ROOT.glob("validate_*.py")))

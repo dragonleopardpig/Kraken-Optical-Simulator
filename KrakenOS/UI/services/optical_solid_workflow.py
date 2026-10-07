@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from KrakenOS.UI.optical_solid_metadata import OPTICAL_SOLID_FACE_PORT_DEFAULT
+from KrakenOS.UI.services.open3d_mesh_basics import mesh_with_transform
 from KrakenOS.UI.uihost import host_of
 
 
@@ -2053,7 +2054,7 @@ class LayoutOpticalSolidWorkflowMixin:
                 add_mesh(
                     f"surface_{index}_{row.name or row.surface}",
                     _drawn_size(
-                        Kraken3DInspector._mesh_with_transform(
+                        mesh_with_transform(
                             surfaces[index], transforms[index]
                         ),
                         row,

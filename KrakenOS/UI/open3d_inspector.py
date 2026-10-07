@@ -52,6 +52,7 @@ from KrakenOS.UI.services.open3d_live_refresh import DEFAULT_LIVE_REFRESH_DELAY_
 from KrakenOS.UI.services.open3d_mouse_bindings import Open3DMouseBindingsService
 from KrakenOS.UI.services.open3d_round_lens_pick import step_feature_pick_for_display_xy
 from KrakenOS.UI.services import open3d_scene_look as scene_look
+from KrakenOS.UI.services.open3d_mesh_basics import mesh_with_transform
 from KrakenOS.UI.services.open3d_scene_refresh import Open3DSceneRefreshService
 from KrakenOS.UI.services.open3d_abstract_widget import WidgetRegistry
 from KrakenOS.UI.services.open3d_application_logic import Open3DApplicationLogic
@@ -6288,47 +6289,11 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
     @staticmethod
     def _surface_color(surface) -> tuple[float, float, float]:
-        absorb_color = (10 / 256.0, 23 / 256.0, 24 / 256.0)
-        mirror_color = scene_look.CLASSIC_MIRROR_COLOR
-        glass_color = scene_look.CLASSIC_GLASS_COLOR
-        try:
-            color = tuple(float(v) for v in surface.Color)
-            if len(color) == 3 and any(abs(v) > 1e-9 for v in color):
-                return color
-        except Exception:
-            pass
-        glass = str(getattr(surface, "Glass", "") or "").upper()
-        if glass == "MIRROR":
-            return mirror_color
-        if glass == "ABSORB":
-            return absorb_color
-        return glass_color
+        return scene_look.surface_color(surface)
 
     @staticmethod
     def _mesh_with_transform(poly, transform) -> pv.DataSet | None:
-        try:
-            mesh = pv.wrap(poly)
-        except Exception:
-            return None
-        try:
-            mesh = mesh.extract_surface(algorithm="dataset_surface")
-        except Exception:
-            pass
-        try:
-            mesh = mesh.copy(deep=True)
-        except Exception:
-            return None
-        try:
-            pts = np.asarray(mesh.points, dtype=float)
-        except Exception:
-            return None
-        if pts.size == 0:
-            return None
-        # Kraken's SYSTEM.AAA blocks are already in display/world coordinates.
-        # TRANS_2A is for tracing into local surface coordinates; applying it
-        # here doubles the axial positions and moves optical markers away from
-        # imported STEP hardware.
-        return mesh
+        return mesh_with_transform(poly, transform)
 
     def _set_row_highlight(self, row_index: int | None) -> None:
         self._set_row_highlights([] if row_index is None else [int(row_index)])

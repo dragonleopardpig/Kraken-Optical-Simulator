@@ -22,7 +22,6 @@ import warnings
 import numpy as np
 
 import KrakenOS as Kos
-from KrakenOS.UI.open3d_inspector import Kraken3DInspector
 from KrakenOS.UI.scene_geometry import (
     SceneBundle,
     SceneTarget3D,
@@ -49,6 +48,8 @@ from KrakenOS.UI.nonseq_output_ports import (
     optical_solid_output_port_pose_overrides,
     optical_solid_output_port_runtime_transform_override,
 )
+from KrakenOS.UI.services import open3d_scene_look as scene_look
+from KrakenOS.UI.services.open3d_mesh_basics import mesh_with_transform
 from KrakenOS.UI.services.best_focus_surface import (
     best_focus_surface_faces,
     best_focus_surface_ring_polylines,
@@ -191,6 +192,18 @@ def _color_to_rgb_tuple(color: object) -> tuple[float, float, float]:
     return _layout_module()._color_to_rgb_tuple(color)
 
 
+def _inspector_class():
+    """The 3D inspector class: the VIEW `open_3d_view` opens, and the owner of a few static helpers
+    the legacy viewer code below still calls (actor keys, feature picks, selection styling).
+
+    Imported when one of those is needed, not with this module: it is a Tk window class until
+    phase 7e, and importing it here made everything that imports this service load tkinter
+    (bugs/0982). The calls are still there -- phase 738 counts them."""
+    from KrakenOS.UI.open3d_inspector import Kraken3DInspector
+
+    return Kraken3DInspector
+
+
 class ThreeDSceneToolsMixin:
     def open_3d_view(self) -> None:
         try:
@@ -198,7 +211,7 @@ class ThreeDSceneToolsMixin:
             if vtkTkRenderWindowInteractor is not None:
                 try:
                     if self._three_d_inspector is None or not self._three_d_inspector.winfo_exists():
-                        self._three_d_inspector = Kraken3DInspector(self)
+                        self._three_d_inspector = _inspector_class()(self)
                     if self._three_d_inspector.available:
                         # bugs/0906: an inspector a shell hosts is shown BY the shell -- its
                         # Toplevel holds only hidden panels and must never be deiconified
@@ -2317,7 +2330,7 @@ class ThreeDSceneToolsMixin:
                 if body_mesh is not None and int(getattr(body_mesh, "n_points", 0)) > 0:
                     mesh = body_mesh
             if mesh is None:
-                mesh = Kraken3DInspector._mesh_with_transform(surfaces[index], row_transform)
+                mesh = mesh_with_transform(surfaces[index], row_transform)
                 # bugs/0627: the built disc of a blackbox member is 2x its drawn size
                 # (bugs/0624, trace-only) -- the display shows the DRAWN diameter.
                 if index in blackbox_members:
@@ -2330,7 +2343,7 @@ class ThreeDSceneToolsMixin:
                 continue
             mesh = ThreeDSceneToolsMixin._reference_mesh_with_row_diameter(mesh, row)
             surface = surface_descriptors[index]
-            mesh_color = (0.10, 0.62, 0.72) if file_backed_optical_solid else Kraken3DInspector._surface_color(surface)
+            mesh_color = (0.10, 0.62, 0.72) if file_backed_optical_solid else scene_look.surface_color(surface)
             # Default-opacity tuning: file-backed legacy STL bodies
             # stay at 0.30 (their own glassy treatment lives in the
             # scene-refresh clamp), mirrors near-opaque, all other
@@ -2824,7 +2837,7 @@ class ThreeDSceneToolsMixin:
                     row=row,
                     surface=surface,
                     mesh=body,
-                    color=Kraken3DInspector._surface_color(surface),
+                    color=scene_look.surface_color(surface),
                     opacity=body_opacity,
                     is_stop=self._legacy_3d_is_stop_plane(row),
                     is_body=True,
@@ -5971,7 +5984,7 @@ class ThreeDSceneToolsMixin:
         actor_row_map = scene_info.setdefault("actor_row_map", {})
         for actor in list(row_actor_map.get(int(row_index), []) or []):
             try:
-                actor_key = Kraken3DInspector._actor_key(actor)
+                actor_key = _inspector_class()._actor_key(actor)
                 if actor_key is not None:
                     actor_row_map.pop(actor_key, None)
                 plotter.remove_actor(actor, render=False)
@@ -6022,7 +6035,7 @@ class ThreeDSceneToolsMixin:
             actor.SetPickable(True)
         except Exception:
             pass
-        actor_key = Kraken3DInspector._actor_key(actor)
+        actor_key = _inspector_class()._actor_key(actor)
         if actor_key is not None:
             actor_row_map[actor_key] = int(row_index)
         try:
@@ -6133,7 +6146,7 @@ class ThreeDSceneToolsMixin:
             actor = picker.GetActor()
         except Exception:
             actor = None
-        actor_key = Kraken3DInspector._actor_key(actor)
+        actor_key = _inspector_class()._actor_key(actor)
         scene_info = dict(getattr(plotter, "_kraken_scene", {}) or {})
         step_label = scene_info.get("cad_step_actor_map", {}).get(actor_key) if actor_key is not None else None
         if step_label is not None and (axis_pick_any or step_label == target_label):
@@ -6144,8 +6157,8 @@ class ThreeDSceneToolsMixin:
             hover_key = (actor_key, cell_id)
             outline = None
             if hover_key != getattr(plotter, "_kraken_step_hover_key", None):
-                feature = Kraken3DInspector._picked_feature_info(actor, picker)
-                outline = Kraken3DInspector._hover_overlay_for_feature(feature[0], feature[1]) if feature is not None else None
+                feature = _inspector_class()._picked_feature_info(actor, picker)
+                outline = _inspector_class()._hover_overlay_for_feature(feature[0], feature[1]) if feature is not None else None
             self._legacy_3d_set_step_hover_outline(plotter, outline, hover_key)
             self._legacy_3d_set_cursor(plotter, True)
             if led_edge_pick:
@@ -6227,7 +6240,7 @@ class ThreeDSceneToolsMixin:
         except Exception as exc:
             self.append_debug(f"Legacy 3D pick failed: {exc}")
             return
-        actor_key = Kraken3DInspector._actor_key(actor)
+        actor_key = _inspector_class()._actor_key(actor)
         scene_info = dict(getattr(plotter, "_kraken_scene", {}) or {})
         step_label = scene_info.get("cad_step_actor_map", {}).get(actor_key) if actor_key is not None else None
         axis_pick_any = bool(getattr(self, "_cad_axis_pick_any", False))
@@ -6236,7 +6249,7 @@ class ThreeDSceneToolsMixin:
                 if step_label != "led":
                     self.status_var.set("Pick an edge on the LED STEP for Object-to-LED distance.")
                     return
-                feature = Kraken3DInspector._picked_feature_info(actor, picker)
+                feature = _inspector_class()._picked_feature_info(actor, picker)
                 if feature is None:
                     try:
                         center = np.asarray(picker.GetPickPosition(), dtype=float)
@@ -6259,7 +6272,7 @@ class ThreeDSceneToolsMixin:
             if requested_label is not None and requested_label != step_label:
                 self.status_var.set(f"CAD STEP picked: {step_label}. Center mode is armed for {str(requested_label).upper()}.")
                 return
-            feature = Kraken3DInspector._picked_feature_info(actor, picker)
+            feature = _inspector_class()._picked_feature_info(actor, picker)
             if feature is None:
                 try:
                     center = np.asarray(picker.GetPickPosition(), dtype=float)
@@ -6420,10 +6433,10 @@ class ThreeDSceneToolsMixin:
         ray_actor_map = dict(scene_info.get("ray_actor_map", {}) or {})
         if current is not None:
             for actor in ray_actor_map.get(int(current), []):
-                Kraken3DInspector._set_ray_actor_selected(actor, False)
+                _inspector_class()._set_ray_actor_selected(actor, False)
         if ray_index is not None:
             for actor in ray_actor_map.get(int(ray_index), []):
-                Kraken3DInspector._set_ray_actor_selected(actor, True)
+                _inspector_class()._set_ray_actor_selected(actor, True)
         setattr(plotter, "_kraken_selected_ray", ray_index)
         try:
             plotter.render()
@@ -6441,10 +6454,10 @@ class ThreeDSceneToolsMixin:
         cad_step_actors = dict(scene_info.get("cad_step_actors", {}) or {})
         if current is not None:
             for _kind, actor in list(cad_step_actors.get(current, []) or []):
-                Kraken3DInspector._set_step_actor_selected(actor, False)
+                _inspector_class()._set_step_actor_selected(actor, False)
         if label is not None:
             for _kind, actor in list(cad_step_actors.get(label, []) or []):
-                Kraken3DInspector._set_step_actor_selected(actor, True)
+                _inspector_class()._set_step_actor_selected(actor, True)
         setattr(plotter, "_kraken_selected_step", label)
         try:
             plotter.render()
@@ -6638,7 +6651,7 @@ class ThreeDSceneToolsMixin:
                 line_width=float(style["line_width"]),
                 pickable=True,
             )
-            actor_key = Kraken3DInspector._actor_key(actor)
+            actor_key = _inspector_class()._actor_key(actor)
             if actor_key is not None:
                 scene_info["actor_ray_map"][actor_key] = int(ray_index)
                 scene_info["ray_actor_map"].setdefault(int(ray_index), []).append(actor)
@@ -6682,7 +6695,7 @@ class ThreeDSceneToolsMixin:
                         smooth_shading=False,
                         pickable=True,
                     )
-                    marker_key = Kraken3DInspector._actor_key(marker_actor)
+                    marker_key = _inspector_class()._actor_key(marker_actor)
                     if marker_key is not None:
                         scene_info["actor_ray_map"][marker_key] = int(ray_index)
                         scene_info["ray_actor_map"].setdefault(int(ray_index), []).append(marker_actor)

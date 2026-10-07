@@ -112,6 +112,28 @@ def _same(color, reference, tolerance: float = 2e-3) -> bool:
         return False
 
 
+#: an absorbing surface (a stop, a baffle) in the classic palette
+CLASSIC_ABSORB_COLOR = (10 / 256.0, 23 / 256.0, 24 / 256.0)
+
+
+def surface_color(surface) -> tuple:
+    """The CLASSIC colour a table surface is asked for in: its own `Color` when it has one that is
+    not black, else by its glass -- a mirror, an absorber, or glass. (It was a static method of
+    the 3D inspector; the scene tools need it without the inspector -- bugs/0982.)"""
+    try:
+        color = tuple(float(v) for v in surface.Color)
+        if len(color) == 3 and any(abs(v) > 1e-9 for v in color):
+            return color
+    except Exception:
+        pass
+    glass = str(getattr(surface, "Glass", "") or "").upper()
+    if glass == "MIRROR":
+        return CLASSIC_MIRROR_COLOR
+    if glass == "ABSORB":
+        return CLASSIC_ABSORB_COLOR
+    return CLASSIC_GLASS_COLOR
+
+
 def mesh_look(color, opacity: float, line_width: float, *, wireframe: bool = False) -> Optional[MeshLook]:
     """The MODERN drawing of a table element's actor asked for in the classic palette, or None
     when the modern look has nothing to say about it (any other colour is the scene's own
