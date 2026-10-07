@@ -162,12 +162,14 @@ def qt_runtime_checks() -> list[list]:
             cls.calls.append((kind, title, text))
             return cls.answer
 
+        # QMessageBox's own signature: the fifth argument is the default button (the host passes it
+        # since bugs/0988; what it does on the real dialog is `validate_qt_question_default`)
         @classmethod
-        def question(cls, parent, title, text, buttons=None):
+        def question(cls, parent, title, text, buttons=None, default_button=None):
             return cls._record("question", parent, title, text, buttons)
 
         @classmethod
-        def warning(cls, parent, title, text, buttons=None):
+        def warning(cls, parent, title, text, buttons=None, default_button=None):
             return cls._record("warning", parent, title, text, buttons)
 
         @classmethod
