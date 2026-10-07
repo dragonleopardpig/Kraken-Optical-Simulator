@@ -263,6 +263,7 @@ from KrakenOS.UI.panels.main_glass_catalog_browser_dialog import MainGlassCatalo
 from KrakenOS.UI.panels.main_lens_drawing_dialogs import MainLensDrawingDialogs
 from KrakenOS.UI.panels.main_nonseq_scene_graph_dialog import MainNonSequentialSceneGraphDialog
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
+from KrakenOS.UI.panels.main_led_edge_prompt import MainLedEdgePrompt
 from KrakenOS.UI.panels.main_text_copy import MainTextCopy
 from KrakenOS.UI.panels.main_window import MainWindowBuilder
 from KrakenOS.UI.panels.main_optical_solid_face_roles_dialog import MainOpticalSolidFaceRolesDialog
@@ -3085,6 +3086,14 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
 
     def _build_menu(self) -> None:
         self._main_window_builder()._build_menu()
+
+    def _main_led_edge_prompt(self) -> MainLedEdgePrompt:
+        """The Tk window that asks for the LED edge distance (bugs/0977)."""
+        panel = self.__dict__.get("_main_led_edge_prompt_instance")
+        if panel is None:
+            panel = MainLedEdgePrompt(self)
+            self._main_led_edge_prompt_instance = panel
+        return panel
 
     # ---- copy / paste on the Tk widgets: the view lives in panels/main_text_copy.py (bugs/0976) ----
     def _main_text_copy(self) -> MainTextCopy:

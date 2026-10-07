@@ -6,8 +6,7 @@ from dataclasses import asdict
 import functools
 import hashlib
 from pathlib import Path
-import tkinter as tk
-from tkinter import messagebox, ttk
+from typing import Any
 
 import numpy as np
 
@@ -2220,7 +2219,7 @@ class ScenePlacementMixin:
 
     def import_lens_step(
         self,
-        dialog_parent: tk.Misc | None = None,
+        dialog_parent: Any = None,
         *,
         title: str = "Import lens STEP",
         display_label: str = "Lens STEP",
@@ -2243,7 +2242,7 @@ class ScenePlacementMixin:
 
     def import_optical_step(
         self,
-        dialog_parent: tk.Misc | None = None,
+        dialog_parent: Any = None,
         *,
         path: Path | str | None = None,
         refresh_open_3d: bool = True,
@@ -2256,7 +2255,7 @@ class ScenePlacementMixin:
 
     def import_camera_step(
         self,
-        dialog_parent: tk.Misc | None = None,
+        dialog_parent: Any = None,
         *,
         path: Path | str | None = None,
         refresh_open_3d: bool = True,
@@ -2272,7 +2271,7 @@ class ScenePlacementMixin:
 
     def import_led_step(
         self,
-        dialog_parent: tk.Misc | None = None,
+        dialog_parent: Any = None,
         *,
         refresh_open_3d: bool = True,
     ) -> Path | None:
@@ -2325,9 +2324,12 @@ class ScenePlacementMixin:
         self.status_var.set(f"LED edge distance: {float(value):.3g} mm")
         self._refresh_open_3d_views(step_label="led")
 
-    def _ask_led_edge_distance(self, initial_value: float, *, parent: tk.Misc | None = None) -> float | None:
+    def _ask_led_edge_distance(self, initial_value: float, *, parent: Any = None) -> float | None:
+        """The LED's edge distance as the user types it (never below zero), or None when they cancel.
+        A shell asks in its own window (bugs/0950); the Tk app keeps its small hand-placed window,
+        which is `panels/main_led_edge_prompt.py` (bugs/0977)."""
         shell = shell_host_of(self)
-        if shell is not None:          # bugs/0950: a shell asks in its own window
+        if shell is not None:
             value = shell.askfloat(
                 "LED Edge Distance",
                 "Distance from object plane to the object-side LED box edge [mm]",
@@ -2335,42 +2337,7 @@ class ScenePlacementMixin:
                 minvalue=0.0,
             )
             return None if value is None else max(float(value), 0.0)
-        value_var = tk.StringVar(value=f"{max(float(initial_value), 0.0):g}")
-        value_holder: dict[str, float] = {}
-
-        dialog_parent = parent or self
-        dialog = tk.Toplevel(dialog_parent)
-        dialog.withdraw()
-        dialog.title("LED Edge Distance")
-        dialog.transient(dialog_parent)
-        dialog.grab_set()
-        dialog.resizable(False, False)
-
-        ttk.Label(
-            dialog,
-            text="Distance from object plane to the object-side LED box edge [mm]",
-        ).grid(row=0, column=0, columnspan=2, padx=12, pady=(12, 6), sticky="w")
-        entry = ttk.Entry(dialog, textvariable=value_var, width=18)
-        entry.grid(row=1, column=0, columnspan=2, padx=12, pady=(0, 12), sticky="ew")
-
-        def accept() -> None:
-            try:
-                value_holder["value"] = max(float(value_var.get()), 0.0)
-            except ValueError:
-                self.status_var.set("Invalid LED edge distance.")
-                return
-            dialog.destroy()
-
-        ttk.Button(dialog, text="Save", command=accept).grid(row=2, column=0, padx=(12, 4), pady=(0, 12), sticky="e")
-        ttk.Button(dialog, text="Cancel", command=dialog.destroy).grid(row=2, column=1, padx=(4, 12), pady=(0, 12), sticky="w")
-        dialog.bind("<Return>", lambda _event: accept())
-        dialog.bind("<Escape>", lambda _event: dialog.destroy())
-        self._show_centered_dialog(dialog)
-        entry.focus_set()
-        self.wait_window(dialog)
-
-        value = value_holder.get("value")
-        return float(value) if value is not None else None
+        return self._main_led_edge_prompt().ask_led_edge_distance(initial_value, parent=parent)
 
     def rotate_led_step_z(self, delta_deg: float) -> None:
         self.rotate_step_z("led", delta_deg)
