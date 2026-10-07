@@ -36,3 +36,16 @@ The Tk interface is unchanged.
   the status says so, and no folder is asked for.
 - **Q:** sixteen real Qt dialogs opened by the host and answered by pressing Enter -- with a default,
   that button is the dialog's default button, has the focus, and is what Enter answers.
+
+## Checks
+
+**Mutations: 9 of 9 caught, each by exactly the claim expected.** Each of the four Qt questions
+dropping the default again; "no" taken for Yes; the model asking with default yes, going on when
+answered no, or asking with nothing to discard; the Tk host dropping the option.
+
+**A guard I broke and fixed:** the Qt host's own guard (`validate_open3d_0854_qt_ui_host`) stands
+in for `QMessageBox` with a fake whose `question` took four arguments; the host passes the default
+button as the fifth now. I committed the fix with that guard failing -- the commit ran after the
+neighbour loop whatever its result -- and gave the fake Qt's real signature in the next commit.
+
+**Baseline:** phase 754 recorded (pass; 753 phases).
