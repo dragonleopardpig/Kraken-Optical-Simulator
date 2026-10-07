@@ -45,3 +45,28 @@ This guard holds what the move added:
 - **T:** the Tk app -- a Tk window owned by the editor, titled as the session says, 112 entries
   (8 surfaces x 14 properties) and the session's six buttons, waited on; Close answers True, Cancel
   Export False; afterwards the window is gone and the session has no listener left.
+
+## Checks
+
+**Mutations: 12 of 12 caught, each by exactly the claims expected.** The panel importing the Tk
+view, or a Tk widget, when imported; ignoring the shell; asking the shell and then drawing with Tk
+as well; answering True whatever the session says; going on with no lens in the table; not passing
+`for_export` on; the Tk window owned by the panel, not waited on, left up when the session closes,
+leaving its listener on the session, or titled otherwise.
+
+The first run showed a weakness in the guard itself: with the panel ignoring the shell, the Tk
+window it drew waited on nobody, and the claim failed only after the driver's ten-minute timeout.
+Claim Q now refuses any Tk window while the shell is asked, so it fails in seconds and says why.
+
+**Passing after the change:** phase 719 (real typing in the Qt dialog and the Tk window, the same
+properties and byte-identical JSON), the lens-drawing properties and PDF guards, the interaction
+contract (655), the panel delegations, the form presenter (749), and phase 738 at one module.
+
+`validate_fast_contracts` exits 1, on one of its 178 checks: the line budgets of
+`validate_ui_modular_maintainability` (`open3d_inspector.py` 26531 lines against 9000,
+`layout_table_workbench.py` 10359 against 6500, `three_d_scene_tools.py` 6856 against 3000). None
+of the three files is touched here and the counts are the same at the commit before; it is not a
+gated phase.
+
+**Baseline:** phases 752, 738 and 719 recorded (pass; 751 phases). The full Tk gate was last run
+at ff4c2088.
