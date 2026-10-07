@@ -44,3 +44,20 @@ Modules of the toolkit-free layers that load tkinter when imported: 3 -> **2**. 
   atmosphere entries of the hidden panel and the 10 of the settings dialog, bind the four gestures;
   on a real atmosphere entry of the dialog and on an entry bound by the optimization panel each
   gesture calls exactly what it should, and the status line says the plot is owed.
+
+## Checks
+
+**Mutations: 11 of 11 caught, each by exactly the claims expected.** The service importing the Tk
+widgets package again; the model's commit marking the plot owed before the controls follow, or
+ignoring `sync_fields`; the atmosphere binder not syncing, or beginning no history capture; the
+optimization binder beginning no history capture, or syncing as the atmosphere one does; one operand
+entry no longer bound; the settings dialog's, or the hidden panel's, atmosphere entries no longer
+bound; a binder back on the model.
+
+**Passing after the change:** the bindings' own guard (`validate_widget_commit_bindings`), the
+interaction contract (655), the optimization and atmosphere guards (optimization controls, operand
+surface choices, Qt atmosphere settings, optimization in Qt, system controls, preset and bounds
+forms, model variables), the panel delegations, and phase 738 at two modules.
+
+**Baseline:** phases 751 and 738 recorded (pass; 750 phases). The full Tk gate was last run at
+ff4c2088.
