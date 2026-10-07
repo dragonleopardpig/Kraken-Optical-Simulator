@@ -61,3 +61,17 @@ claim **C** (the table above, exactly); new claim **H** -- the two helpers: a su
 black falling through to the glass, mirror, absorber, a surface with nothing; a mesh returned as a
 deep copy with its points unmoved; an empty mesh and a non-mesh refused; the inspector's two methods
 still giving the same.
+
+## Checks
+
+**Mutations: 6 of 6 caught** -- a surface's own colour ignored, a mirror given the glass colour, the
+mesh handed back without copying, a mesh with no points returned, a helper called on the inspector
+class that it does not have (all by H); the service importing the inspector at module level again
+(by I and by the interpreter, R).
+
+**Passing after the change:** phase 738 with its nine claims; the modern look (735), soft STEP bodies
+(728), the un-promoted STEP look (742), the Qt view drawing elements, the interaction contract
+(655), the menu smoke over every layout, four more guards that drive the legacy viewer, and gate
+phases 0-59 (60 pass).
+
+**Baseline:** phase 738 recorded.
