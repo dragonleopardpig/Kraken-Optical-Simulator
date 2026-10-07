@@ -5235,10 +5235,14 @@ def phase_59_object_led_dimension_value_moves_led(
     # The inline editor would prefill |ref_z - fixed_z| (the measured value), not
     # the model thickness -- verify the prefill source contract is in place.
     edit_src = inspect.getsource(Open3DThicknessDimensionService.edit_dimension)
+    # (the Tk window is panels/thickness_inline_editor.py since bugs/0978: the prefill must be
+    # decided before either view is asked -- the shell's prompt, or that window)
     prefill_ok = (
         "_dimension_anchor_override_for_row" in edit_src
+        and "shell.askfloat(" in edit_src
+        and "open_thickness_inline_editor(self, row_index, current)" in edit_src
         and edit_src.index("_dimension_anchor_override_for_row")
-        < edit_src.index("value_var = tk.StringVar")
+        < min(edit_src.index("shell.askfloat("), edit_src.index("open_thickness_inline_editor(self, row_index, current)"))
     )
     result.detail.update(
         {
@@ -16846,6 +16850,10 @@ phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
     721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
     'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
     'qt_model_forms_open_in_qt')
+phase_745_thickness_inline_editor_view = _phase_from_standalone(
+    745, "the inline thickness editor is a Tk panel and the service decides without drawing (0978): the thickness-dimension service imports and names no tkinter and builds no Toplevel, edit_dimension reaches the shell before it asks for the Tk window, and the window and its placing live in the panel module; under a shell the number prompt carries the row's label and the thickness to six figures, the typed value is applied to that row, a cancel and a non-finite value say so and apply nothing, the last row is refused, a re-anchored row is prefilled with its measured distance and a trailing spacer with its real gap, and the Tk window is never asked for; the Tk window keeps its title, label, prefill, OK, its Return, keypad Enter and Escape keys and its close button, stays open with a status line for a value that is no number, closes and changes the row for a number, is one window when opened again, and cancels without change when closed",
+    'KrakenOS.UI.validate_thickness_inline_editor_view',
+    'thickness_inline_editor_view')
 phase_744_led_edge_prompt_view = _phase_from_standalone(
     744, "the LED edge-distance window is a Tk panel and the service asks without drawing (0977): the placement service imports and names no tkinter and builds no Toplevel, its prompt reaches the shell before it delegates to a method the panel class defines; under a shell the number prompt is asked with the title, the prompt, the distance prefilled and a floor of zero, a negative answer comes back as zero and a cancel as None, and the Tk panel is never built; the Tk window keeps its title, prompt, prefill, Save and Cancel and its Return and Escape keys, takes the typed value, leaves the window open with a status line for a value that is no number, and gives None on Cancel",
     'KrakenOS.UI.validate_led_edge_prompt_view',
@@ -16871,7 +16879,7 @@ phase_739_interface_preference = _phase_from_standalone(
     'KrakenOS.UI.validate_interface_preference',
     'interface_preference')
 phase_738_services_import_no_tkinter = _phase_from_standalone(
-    738, "the toolkit-free layers import no tkinter, by a list that may only shrink (0970): every module of services, reports, row_forms, uihost and qt that imports tkinter at run time is in the guard's exact list with what Tk code it still holds -- four services and the Tk host, down from fourteen services (0972, 0976 and 0977 each moved one); the services that import a Tk view package (panels, widgets) at module level are in a second exact list, five of them; no guard reaches for a tkinter name through a module that does not import it (the full Tk gate found two that did, phases 293 and 296); the seven cleaned modules import and refer to no tkinter name; and a station loaded with no inspector gets its two inspector switches from the editor's UI host, so a toolkit-free owner gets both where the old tk.BooleanVar code made none",
+    738, "the toolkit-free layers import no tkinter, by a list that may only shrink (0970): every module of services, reports, row_forms, uihost and qt that imports tkinter at run time is in the guard's exact list with what Tk code it still holds -- three services and the Tk host, down from fourteen services (0972, 0976, 0977 and 0978 each moved one); the services that import a Tk view package (panels, widgets) at module level are in a second exact list, five of them; no guard reaches for a tkinter name through a module that does not import it (the full Tk gate found two that did, phases 293 and 296); the seven cleaned modules import and refer to no tkinter name; and a station loaded with no inspector gets its two inspector switches from the editor's UI host, so a toolkit-free owner gets both where the old tk.BooleanVar code made none",
     'KrakenOS.UI.validate_services_import_no_tkinter',
     'services_import_no_tkinter')
 phase_737_operand_surface_choices = _phase_from_standalone(
@@ -17815,6 +17823,7 @@ def main() -> int:
             phase_742_unpromoted_step_look,
             phase_743_text_copy_view,
             phase_744_led_edge_prompt_view,
+            phase_745_thickness_inline_editor_view,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

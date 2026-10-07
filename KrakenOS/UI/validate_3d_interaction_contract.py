@@ -583,6 +583,10 @@ def _evaluate_checks() -> tuple[list, dict]:
     thickness_drag_motion = inspect.getsource(Open3DThicknessDimensionService.apply_drag_motion)
     thickness_drag_finish = inspect.getsource(Open3DThicknessDimensionService.finish_drag)
     thickness_service_source = inspect.getsource(Open3DThicknessDimensionService)
+    # the inline editor's Tk window is a panel module since bugs/0978
+    from KrakenOS.UI.panels import thickness_inline_editor as _thickness_inline_editor
+
+    thickness_editor_view = inspect.getsource(_thickness_inline_editor)
     # a dimension click is now classified, then handled by a Slicer-style widget
     pick_classifier = inspect.getsource(PickClassifier)
     thickness_widget = inspect.getsource(ThicknessDimensionWidget)
@@ -1511,16 +1515,18 @@ def _evaluate_checks() -> tuple[list, dict]:
             and PickTarget.THICKNESS_DIMENSION.value == "thickness_dimension"
             and "GetViewProp" in pick
             and "inspector._edit_open3d_thickness_dimension(int(row_index))" in thickness_widget
-            and "tk.Toplevel" in thickness_service_source
-            and "ttk.Entry" in thickness_edit
-            and "<FocusOut>" in thickness_edit
-            and "<Return>" in thickness_edit
-            and "<Escape>" in thickness_edit
-            and "simpledialog.askfloat" not in thickness_service_source
+            and "open_thickness_inline_editor(self, row_index, current)" in thickness_edit
+            and "tk.Toplevel" in thickness_editor_view
+            and "tk.Toplevel" not in thickness_service_source
+            and "ttk.Entry" in thickness_editor_view
+            and "<FocusOut>" in thickness_editor_view
+            and "<Return>" in thickness_editor_view
+            and "<Escape>" in thickness_editor_view
+            and "simpledialog.askfloat" not in thickness_service_source + thickness_editor_view
             # it DOES grab now, on purpose: the embedded VTK canvas took focus-follows-mouse
             # focus while the user was typing, which is what made the editor vanish
-            and "window.grab_set()" in thickness_service_source
-            and "self.apply_dimension_value(row_index, next_value)" in thickness_edit
+            and "window.grab_set()" in thickness_editor_view
+            and "service.apply_dimension_value(row_index, next_value)" in thickness_editor_view
             and "has_inline_editor" in thickness_service_source
             and "thickness edit" in active_operation_labels
             and "cancel_inline_editor" in operation_cancel

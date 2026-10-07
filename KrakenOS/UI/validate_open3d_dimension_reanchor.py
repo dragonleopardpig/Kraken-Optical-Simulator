@@ -291,9 +291,11 @@ def _test_edit_dimension_prefills_measured_value() -> None:
     if "_dimension_anchor_override_for_row" not in src:
         raise AssertionError("edit_dimension must consult the re-anchor override for its prefill")
     override_pos = src.index("_dimension_anchor_override_for_row")
-    value_var_pos = src.index("value_var = tk.StringVar")
-    if not (override_pos < value_var_pos):
-        raise AssertionError("the override prefill must run before value_var is built")
+    # the Tk window is panels/thickness_inline_editor.py since bugs/0978; the prefill must be
+    # decided before EITHER view is asked -- the shell's prompt, or that window
+    asked = [src.index("shell.askfloat("), src.index("open_thickness_inline_editor(self, row_index, current)")]
+    if not (override_pos < min(asked)):
+        raise AssertionError("the override prefill must run before the editor is asked for")
     print("edit_dimension prefills the measured value (bugs/0054 source contract) OK")
 
 
