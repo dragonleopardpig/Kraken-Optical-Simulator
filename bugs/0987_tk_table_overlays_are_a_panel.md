@@ -88,3 +88,33 @@ inspector class (7e) -- and the cell parser still reads the hidden Tk table (7b)
   markers; the outlines of the selection and of the active cell, and their state on the editor; the
   in-cell entry, typed into and committed to the model's row, and cancelled; the two choice menus,
   one chosen from; the Edit menu's states; scrolling.
+
+## Checks
+
+**Mutations: 28 of 29 caught.** Among them the two traps of the move -- the panel asking its own
+dict whether there is a table, or which outlines are up -- and the third one that a panel can fall
+into, keeping underscore state on itself as some panels do. Also: the choice menu owned by the
+panel, or posted past the editor's poster; the in-cell entry off its cell, without Escape,
+committing to another field, or opening empty; the undo state told the wrong way round, or not told
+to a shell; a separator one pixel off; re-drawing piling overlays up; markers not drawn, or not
+clickable; a scroll that schedules no re-draw; a row that is gone staying the active cell; a
+pending re-draw never cleared.
+
+Two survived the first run:
+
+- **A selection outline's right edge 10 px inside the table.** A hole in the guard: it compared an
+  outline's bounding box, which is still right when one side is misplaced, because the two sides
+  across it span it. Claims B and X compare the four 2-pixel pieces now, and catch it -- with the
+  same slip on the active cell's outline, and a bottom edge on the wrong row.
+- **The active cell's outline not re-placed by the horizontal-scroll handler.** Not a hole: three
+  paths re-place that outline after a horizontal scroll (the handler, the table's own scroll
+  callback, and the grid re-draw), and with one cut the outline still follows the cell. With all
+  three cut the guard fails, so the claim is live; the handler's own call is redundant.
+
+**Passing after the change:** the popup-helpers guard (748), the panel delegations, the interaction
+contract (655), the commit bindings, the table component workflow and scene row mapping guards, the
+Qt table's context menu (722), the selector menus (740), phase 738 with both lists empty -- and the
+twelve guards that build a fake editor from the table mixin alone, any of which a method that left
+the mixin could have broken.
+
+**Baseline:** phases 753, 738 and 748 recorded (pass; 752 phases).
