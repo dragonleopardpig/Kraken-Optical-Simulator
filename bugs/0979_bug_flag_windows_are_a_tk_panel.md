@@ -39,3 +39,19 @@ goes to a temp folder, and no screen grabber is run.
   and marks only the second, and the status line counts it; the description window is titled for
   the bundle, is not modal, has Save, Close and Ctrl+Return; Save writes the words; Close (even
   with words typed) and the window's own close button leave the description empty.
+
+## Checks
+
+**Mutations: 12 of 12 caught.** Eleven at once: Save with no words writing an empty description,
+not updating state.json, replacing it, or raising on a failed write; the service importing tkinter
+again; the editor no longer delegating the scan; the scan walking nothing; no window ever marked
+oversized; Close saving the typed words; the window made modal; its close button unwired.
+
+The twelfth survived the first run: the description window parented to the PANEL object instead of
+the editor. The panel forwards to the editor, so the window is built all the same -- only its
+`master` differs, and a window whose master is not a widget is a trap for the next
+`transient(master)` (bugs/0955). The guard now checks the owner, and catches it.
+
+**Neighbouring guards, all pass:** the tkinter-import list (738: two services now), the inspector's
+popups in both interfaces (723), the panel delegations (148), the Qt shell's own flag, the
+interaction contract (655). **Baseline:** phase 746 recorded.

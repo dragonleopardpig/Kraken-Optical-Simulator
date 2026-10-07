@@ -47,3 +47,15 @@ That the window opens on a real scene and the typed value lands, in both interfa
   close button; "abc" and "inf" leave it open with "Thickness must be a finite number."; a number
   closes it and changes the row; opened again there is one window; the close button cancels and
   changes nothing.
+
+## Checks
+
+**Mutations: 11 of 11 caught** -- under a shell a non-finite value applied, the Tk window asked for
+anyway, the shell not asked, a trailing spacer prefilled with its stored thickness; the service
+importing tkinter again; the Tk window accepting infinity, closing on a value that is no number,
+its close button or keypad Enter unwired, not registered with the service (a second one piles up),
+the typed value not applied.
+
+**Neighbouring guards, all pass:** the interaction contract (655), the re-anchor guard, phase 59,
+the trailing-spacer and object-to-LED dimension guards, the tkinter-import list (738), the
+inspector's popups in both interfaces (723). **Baseline:** phase 745 recorded.

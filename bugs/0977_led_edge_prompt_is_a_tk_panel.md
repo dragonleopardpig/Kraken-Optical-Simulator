@@ -32,3 +32,14 @@ This guard holds what that one does not:
 - **T:** the Tk window in a real Tk editor -- title, prompt, prefill, buttons, keys; Save takes the
   value, a negative one as zero; "abc" leaves the window open with "Invalid LED edge distance.";
   Cancel gives None.
+
+## Checks
+
+**Mutations: 9 of 9 caught** -- under a shell a negative answer not floored, the prompt asked with
+no floor, the Tk panel asked for anyway; the service importing tkinter again; the Tk window not
+flooring a negative value, closing on a value that is no number, not prefilled, Escape unbound, or
+parented to the panel object.
+
+**Neighbouring guards, all pass:** the tkinter-import list (738), the inspector's popups in both
+interfaces (723), the panel delegations, the two LED distance guards (139, 280), the interaction
+contract (655). **Baseline:** phase 744 recorded.
