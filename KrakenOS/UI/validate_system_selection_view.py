@@ -114,9 +114,11 @@ def tk_checks() -> list:
         host = ttk.Frame(editor.root)
         form = build_system_selection_form(host, editor, compact=False, prefill=False)
         entries = widgets(host, ttk.Entry)
+        # every value differs from the form's own default (the wavelength starts at 0.55), so an input
+        # the form forgot to hand the model would show
         typed = {"fov_w": "55", "fov_h": "8.3", "resolution": "10.99", "wd_min": "100", "sensor_w": "23",
-                 "sensor_h": "23", "wavelength": "0.55"}
-        steps = []
+                 "sensor_h": "23", "wavelength": "0.85"}
+        steps, texts = [], [str(form.out_var.get())]
         values = {key: "" for key in INPUTS}
         values["wavelength"] = "0.55"                       # the form's own default
         for entry, key in zip(entries, INPUTS):
@@ -124,7 +126,9 @@ def tk_checks() -> list:
             entry.insert(0, typed[key])
             values[key] = typed[key]
             steps.append(str(form.out_var.get()) == system_selection_text(values, None))
+            texts.append(str(form.out_var.get()))
         full = str(form.out_var.get())
+        changed = [after != before for before, after in zip(texts, texts[1:])]
         entries[2].delete(0, "end")
         entries[2].insert(0, "abc")
         values["resolution"] = "abc"
@@ -135,10 +139,12 @@ def tk_checks() -> list:
         pump()
         closed = len(calculators()) == before
         return (shown == {"windows": 1, "entries": 7, "buttons": ["Close"], "resizable": (True, True), "owner_is_root": True}
-                and len(entries) == 7 and all(steps) and len(full) > 80 and garbled == (True, True) and closed,
+                and len(entries) == 7 and all(steps) and changed[2] and changed[6] and len(full) > 80
+                and garbled == (True, True) and closed,
                 f"the command opens {shown['windows']} window with {shown['entries']} entries, buttons {shown['buttons']}, "
-                f"resizable {shown['resizable']}; after each of the 7 inputs the form shows the model's text: {steps} "
-                f"({len(full)} characters with all typed); a resolution of 'abc' shows the model's answer for that too "
+                f"resizable {shown['resizable']}; after each of the 7 inputs the form shows the model's text: {steps}; "
+                f"the text changed at each input: {changed} ({len(full)} characters with all typed, the wavelength "
+                f"last); a resolution of 'abc' shows the model's answer for that too "
                 f"{garbled}; Close closes it: {closed}")
 
     return _claims((("T", claim_t),))
