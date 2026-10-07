@@ -24,8 +24,9 @@ what the split added:
      the shell and takes the report from its dialog; open again refreshes and raises it; refresh
      rebuilds with the dialog's control values and gives the dialog the new report; the selection
      is asked of and set on the dialog; the report's verb runs with the controls and the
-     selection; export asks the host for a path and writes the CSV; close closes the dialog --
-     and neither tkinter nor the Tk view was ever imported
+     selection; export asks the host for a path and writes the CSV; a dialog the USER closed is
+     noticed -- the handle is no longer open, Update rebuilds nothing, and open makes a new
+     dialog; close closes the dialog -- and neither tkinter nor the Tk view was ever imported
 """
 from __future__ import annotations
 
@@ -115,10 +116,19 @@ selection = {{"select_key": key_after_select_key, "select_row": handle.selected_
 verb = handle.run_action(handle.report.actions[0])
 exported = handle.export_csv()
 rows = list(csv.reader(open(work / "out.csv", newline="", encoding="utf-8"))) if (work / "out.csv").exists() else []
+# the USER closes the shell's dialog: the handle must notice, not go on talking to a dead window
+view.visible = False
+builds = len(built)
+noticed = [handle.is_open(), handle.shell_view is None]
+handle.refresh_if_open()
+noticed.append(len(built) - builds)
+reopened = handle.open()
+noticed += [reopened is not view, len(shown), handle.is_open()]
 handle.close()
 print(json.dumps({{"first": first, "second": second, "third": third, "selection": selection,
                   "verb": [verb, ran], "export": [Path(exported).name if exported else "", len(rows), status[-1] if status else ""],
-                  "closed": [view.calls[-1], handle.is_open(), handle.shell_view is None], "loaded": {LOADED}}}))
+                  "user_closed": noticed,
+                  "closed": [reopened.calls[-1], handle.is_open(), handle.shell_view is None], "loaded": {LOADED}}}))
 '''
 
 
@@ -186,13 +196,16 @@ def run_checks() -> tuple[bool, list[str]]:
             "selection": {"select_key": 2, "select_row": 1, "dialog_calls": [["select_key", 2], ["select_master_row", 1]]},
             "verb": ["marked", [[{"scale": "5"}, 1]]],
             "export": ["out.csv", 4, "Guard CSV exported: out.csv"],
+            "user_closed": [False, True, 0, True, 2, True],
             "closed": ["close", False, True],
             "loaded": [],
         }
         wrong = sorted(key for key in expected if data.get(key) != expected[key])
         return (wrong == [],
                 f"under a shell: opened {data['first']}; opened again {data['second']}; refreshed {data['third']}; selection "
-                f"{data['selection']}; the verb {data['verb']}; export {data['export']}; closed {data['closed']}; loaded "
+                f"{data['selection']}; the verb {data['verb']}; export {data['export']}; after the USER closed the dialog "
+                f"(open, forgotten, rebuilds on Update, a new dialog on open, dialogs made, open) {data['user_closed']}; "
+                f"closed {data['closed']}; loaded "
                 f"{data['loaded']}" + (f" -- NOT as expected: {wrong}" if wrong else ""))
 
     rows = _claims((("S", s), ("L", l), ("N", n), ("Q", q)))
