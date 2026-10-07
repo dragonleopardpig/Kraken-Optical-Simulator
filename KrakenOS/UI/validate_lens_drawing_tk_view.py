@@ -16,7 +16,7 @@ shells leave the same properties is phase 719 (bugs/0945). This guard holds what
   Q  under a shell, on a headless editor: with no lens in the table the host is told so and the
      shell is not asked; with the two-arm doublets loaded the shell is handed a session of its 8
      lens surfaces, and the command answers True when the session is continued and False when it
-     is cancelled, `for_export` passed on -- and the Tk view is never imported
+     is cancelled, `for_export` passed on -- and no Tk window is made, the Tk view never imported
   T  the Tk app, no shell: the window is a Tk window owned by the editor, titled as the session
      says, with one entry per surface and property and the session's six buttons, waited on; Close
      answers True and Cancel Export answers False; afterwards the window is gone and the session
@@ -89,6 +89,8 @@ def pure_checks() -> list:
 
 def shell_checks() -> list:
     def claim_q():
+        import tkinter as tk
+
         from KrakenOS.UI.layout_editor import KrakenLayoutEditor
         from KrakenOS.UI.lens_drawing_session import MESSAGE_TITLE, NO_LENSES, has_lens_elements
         from KrakenOS.UI.uihost import ScriptedUiHost
@@ -102,19 +104,31 @@ def shell_checks() -> list:
 
         editor.layout_files[LAYOUT.stem] = LAYOUT
         editor.load_layout_by_name(LAYOUT.stem, refresh=False)
-        editor.show_lens_drawing_properties = lambda session: (handed.append(session), session.continue_without_changes())
-        continued = editor._open_lens_drawing_surface_properties_dialog()
-        editor.show_lens_drawing_properties = lambda session: (handed.append(session), session.cancel())
-        cancelled = editor._open_lens_drawing_surface_properties_dialog(for_export=True)
+        # a Tk window here would also WAIT, on nobody: refuse it at once, so the claim fails instead of hanging
+        tk_windows: list = []
+
+        def refuse(self, *_a, **_k):
+            tk_windows.append(type(self).__name__)
+            raise RuntimeError("a Tk window was made under a shell")
+
+        init, tk.Toplevel.__init__ = tk.Toplevel.__init__, refuse
+        try:
+            editor.show_lens_drawing_properties = lambda session: (handed.append(session), session.continue_without_changes())
+            continued = editor._open_lens_drawing_surface_properties_dialog()
+            editor.show_lens_drawing_properties = lambda session: (handed.append(session), session.cancel())
+            cancelled = editor._open_lens_drawing_surface_properties_dialog(for_export=True)
+        finally:
+            tk.Toplevel.__init__ = init
         sessions = [(len(session.surface_indices), bool(session.for_export)) for session in handed]
         told = len(host.asked("showinfo"))
         view_imported = VIEW_MODULE in sys.modules
         return (empty == (False, False, 0, [[MESSAGE_TITLE, NO_LENSES]]) and continued is True and cancelled is False
-                and sessions == [(LENS_SURFACES, False), (LENS_SURFACES, True)] and told == 1 and not view_imported,
+                and sessions == [(LENS_SURFACES, False), (LENS_SURFACES, True)] and told == 1 and tk_windows == []
+                and not view_imported,
                 f"with no lens in the table (lens elements {empty[0]}) the command answers {empty[1]}, the shell is asked "
                 f"{empty[2]} times and the host is told {empty[3]}; with the doublets loaded the shell is handed sessions of "
                 f"(surfaces, for_export) {sessions}; continued answers {continued}, cancelled answers {cancelled}; the host was "
-                f"told {told} time in all; the Tk view was imported: {view_imported}")
+                f"told {told} time in all; Tk windows made {tk_windows}; the Tk view was imported: {view_imported}")
 
     return _claims((("Q", claim_q),))
 
