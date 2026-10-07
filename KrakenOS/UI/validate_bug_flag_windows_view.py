@@ -17,7 +17,8 @@ Nothing guarded the 2D flag before this, so this guard runs it end to end as wel
   T  a real Tk editor, with every flag written to a temp folder: a flag taken with a small and an
      oversized Tk window open lists both in state.json with their sizes and marks only the
      oversized one, and the status line counts it; the description window is titled for the
-     bundle, is NOT modal, has Save and Close and Ctrl+Return; Save writes the words and closes
+     bundle, is NOT modal, is owned by the editor (not by the panel object), has Save and Close
+     and Ctrl+Return; Save writes the words and closes
      it; Close -- even with words typed -- and the window's own close button keep the flag with
      its description empty
 """
@@ -177,6 +178,9 @@ def tk_checks() -> list:
         shown = {"under_temp": work in bundle.parents, "buttons": [str(b.cget("text")) for b in widgets(window, ttk.Button)],
                  "prompt": [str(w.cget("text")).splitlines()[0] for w in widgets(window, ttk.Label)],
                  "modal": window.grab_current() is not None,
+                 # its owner is the editor, never the panel object (which only forwards to it): a Tk
+                 # window whose master is not a widget is a trap for the next `transient(master)`
+                 "owner_is_editor": window.master is editor,
                  "ctrl_return": bool(widgets(window, tk.Text)[0].bind("<Control-Return>")),
                  "close": bool(window.protocol("WM_DELETE_WINDOW"))}
         widgets(window, tk.Text)[0].insert("1.0", "the dialog runs off the screen")
@@ -207,13 +211,14 @@ def tk_checks() -> list:
                 and "(1 dialog(s) exceed the screen)" in flagged_status
                 and shown == {"under_temp": True, "buttons": ["Save", "Close"],
                               "prompt": ["Describe the 2D bug (the editor stays usable while this is open)."],
-                              "modal": False, "ctrl_return": True, "close": True}
+                              "modal": False, "owner_is_editor": True, "ctrl_return": True, "close": True}
                 and saved == (True, "the dialog runs off the screen\n", "the dialog runs off the screen",
                               f"Flag description saved: {bundle.name}")
                 and closed == (True, "", f"Flag kept without description: {second.name}", "")
                 and by_button == (True, "", f"Flag kept without description: {third.name}", True),
                 f"a flag taken with two Tk windows open lists them as {listed} and marks {oversized_titles}; status "
-                f"{flagged_status[-58:]!r}; the description window has {shown['buttons']}, modal {shown['modal']}, Ctrl+Return "
+                f"{flagged_status[-58:]!r}; the description window has {shown['buttons']}, modal {shown['modal']}, owned by "
+                f"the editor {shown['owner_is_editor']}, Ctrl+Return "
                 f"{shown['ctrl_return']}; Save wrote {saved[1]!r} and says {saved[3]!r}; Close with words typed left the "
                 f"description {closed[1]!r} and says {closed[2]!r}; the window's close button left it {by_button[1]!r} "
                 f"(bundle kept {by_button[3]})")
