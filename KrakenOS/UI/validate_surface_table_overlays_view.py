@@ -26,8 +26,9 @@ drew. So the Tk claims are about what is ON the table, measured against the tabl
      line under every visible row; each variable cell carries a "V" inside its right edge, and a
      click on one makes that cell the active one; re-drawing replaces the overlays instead of
      piling them up
-  B  each block of selected rows is outlined across the table's width, and deselecting destroys
-     the outlines; the active cell is outlined exactly; a row that is gone is forgotten ON THE
+  B  each block of selected rows is outlined across the table's width -- piece by piece, four
+     2-pixel edges -- and deselecting destroys the outlines; the active cell is outlined the
+     same way, exactly on its cell; a row that is gone is forgotten ON THE
      EDITOR and its outline hidden; a scheduled re-draw is pending on the editor, is not scheduled
      twice, and is cleared once it has run
   E  double-click editing: the entry sits exactly on the cell, inside the table, holding the
@@ -214,9 +215,13 @@ def tk_checks() -> list:
         return (int(widget.winfo_x()), int(widget.winfo_y()), int(widget.winfo_x()) + int(widget.winfo_width()),
                 int(widget.winfo_y()) + int(widget.winfo_height()))
 
-    def outline(widgets) -> tuple:
-        boxes = [box(widget) for widget in widgets]
-        return (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
+    def pieces(widgets) -> list:
+        return sorted(box(widget) for widget in widgets)
+
+    def edges(x0: int, y0: int, x1: int, y1: int) -> list:
+        """The four 2-pixel pieces that outline that rectangle. Piece by piece: the bounding box of an
+        outline is still right when one side is misplaced, because the two sides across it span it."""
+        return sorted([(x0, y0, x1, y0 + 2), (x0, y1 - 2, x1, y1), (x0, y0, x0 + 2, y1), (x1 - 2, y0, x1, y1)])
 
     def cell(item: str, field: str) -> tuple:
         x, y, w, h = table.bbox(item, column(field))
@@ -292,8 +297,7 @@ def tk_checks() -> list:
         for first, last in blocks:
             top, bottom = table.bbox(first, column("thickness"))[1], sum(table.bbox(last, column("thickness"))[i] for i in (1, 3))
             mine = [w for w in frames if top <= int(w.winfo_y()) < bottom]
-            outlined.append(len(mine) == 4 and outline(mine) == (0, top, width, bottom)
-                            and all(min(int(w.winfo_width()), int(w.winfo_height())) == 2 for w in mine))
+            outlined.append(pieces(mine) == edges(0, top, width, bottom))
         on_editor = len(editor._selection_border_overlays)
         editor._clear_table_selection()
         settle()
@@ -304,7 +308,8 @@ def tk_checks() -> list:
         editor._active_cell = (item, column("thickness"))
         editor._update_active_cell_border()
         settle(4)
-        active = outline(editor._cell_border_parts) == cell(item, "thickness") and len(overlays("Frame", ACTIVE_COLOR)) == 4
+        active = (pieces(editor._cell_border_parts) == edges(*cell(item, "thickness"))
+                  and len(overlays("Frame", ACTIVE_COLOR)) == 4)
 
         editor._active_cell = ("no-such-row", "#3")
         editor._update_active_cell_border()
@@ -447,7 +452,7 @@ def tk_checks() -> list:
         settle()
         view = float(table.xview()[0])
         after = cell(item, "thickness")
-        followed = outline(editor._cell_border_parts) == after
+        followed = pieces(editor._cell_border_parts) == edges(*after)
         calls: list = []
         bar = SimpleNamespace(set=lambda first, last: calls.append((first, last)))
         editor._grid_after_id = None
@@ -456,7 +461,7 @@ def tk_checks() -> list:
         editor._on_table_xview("moveto", 0.0)
         editor._on_table_xscroll(bar, "0.1", "0.6")
         settle()
-        back = outline(editor._cell_border_parts) == cell(item, "thickness") == before
+        back = pieces(editor._cell_border_parts) == edges(*before) and cell(item, "thickness") == before
         return (abs(view - 0.15) < 0.01 and after[0] < before[0] - 50 and followed and calls == [("0.0", "0.5"), ("0.1", "0.6")]
                 and scheduled and back,
                 f"moving the view to 0.15 leaves it at {view:.3f}; the cell went from x {before[0]} to {after[0]} and its outline "
