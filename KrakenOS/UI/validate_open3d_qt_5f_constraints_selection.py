@@ -30,7 +30,8 @@ def tk_checks() -> list:
 
     from KrakenOS.UI import design_constraints_model as model
     from KrakenOS.UI.layout_editor import KrakenLayoutEditor
-    from KrakenOS.UI.services.system_selection import build_system_selection_form, system_selection_text
+    from KrakenOS.UI.panels.system_selection_view import build_system_selection_form
+    from KrakenOS.UI.services.system_selection import system_selection_text
     from KrakenOS.UI.validate_open3d_penta_telescope_comprehensive import _open_inspector
 
     app = KrakenLayoutEditor(headless=True)

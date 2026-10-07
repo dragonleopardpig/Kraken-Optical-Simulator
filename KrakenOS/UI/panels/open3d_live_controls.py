@@ -131,7 +131,7 @@ class Open3DLiveControlsPanel:
 
     def build_system_selection_controls(self, parent: tk.Widget) -> None:
         # bugs/0632: the bugs/0631 sizing calculator, embedded compact in the left panel.
-        from KrakenOS.UI.services.system_selection import build_system_selection_form
+        from KrakenOS.UI.panels.system_selection_view import build_system_selection_form
 
         form = build_system_selection_form(parent, self.editor, compact=True)
         ttk.Button(parent, text="↺ From scene", command=form.set_prefill).grid(

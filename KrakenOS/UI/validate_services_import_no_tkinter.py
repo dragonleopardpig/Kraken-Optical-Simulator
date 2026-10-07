@@ -6,7 +6,8 @@ tkinter. Six did not need to -- five never used what they imported, one used it 
 dialog's parent (which is a Qt widget under the Qt shell) -- and a seventh made two `tk.BooleanVar`s
 that no other host can make. The seven left each held a real Tk window or menu; they are listed
 here with what they hold, and move out one at a time (bugs/0972 moved the first, bugs/0976 the
-second, bugs/0977 the third, bugs/0978 the fourth, bugs/0979 the fifth: two left).
+second, bugs/0977 the third, bugs/0978 the fourth, bugs/0979 the fifth, bugs/0980 the sixth: one
+left, `paraxial_tools`).
 
   I  the other way in: a service that imports a Tk VIEW module (`panels/`, `widgets/`) at module
      level reaches tkinter without naming it. Those are counted too, against their own exact list
@@ -35,7 +36,6 @@ LAYERS = ("services", "reports", "row_forms", "uihost", "qt")
 #: module -> the Tk code it still holds. EXACT: a port deletes its entry.
 TK_IMPORTERS = {
     "services/paraxial_tools.py": "Tk popup-menu and dialog-centring helpers",
-    "services/system_selection.py": "the Tk System Selection window",
     "uihost/tk_host.py": "the Tk host itself",
 }
 #: A service can also reach Tk WITHOUT naming it: by importing a Tk view module (`panels/`,

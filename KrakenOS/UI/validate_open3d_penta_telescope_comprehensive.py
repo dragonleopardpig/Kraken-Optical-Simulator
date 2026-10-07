@@ -16850,6 +16850,10 @@ phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
     721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
     'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
     'qt_model_forms_open_in_qt')
+phase_747_system_selection_view = _phase_from_standalone(
+    747, "the System Selection Calculator's Tk form is a panel module and the command picks the view (0980): the calculator's core imports and names no tkinter, not even inside a function, and no longer has the two view functions, which the panel module defines; the command checks for a shell before it reaches for the Tk window and the 3D left panel takes the form from the panel module; in the Tk app the command opens one resizable window with seven entries and Close, the form shows exactly what the model computes after each typed input including a value that is no number, and Close closes it; in the Qt shell the same command opens the calculator's Qt form, makes no Tk window and never asks for the Tk view",
+    'KrakenOS.UI.validate_system_selection_view',
+    'system_selection_view')
 phase_746_bug_flag_windows_view = _phase_from_standalone(
     746, "the 2D bug flag's Tk windows are a panel and the recorder does not draw (0979): the bug-recorder service imports and names no tkinter and builds no Toplevel, the panel class defines the open-window scan and the description window and the editor delegates both; Save with words writes description.txt and state.json's description keeping its other keys, Save with none and Close write nothing and say the flag is kept, and a missing state file or bundle folder is a debug line; in a real Tk editor, with every flag written to a temp folder, a flag taken with a small and an oversized window open lists both with their sizes and marks only the oversized one, the description window is titled for the bundle, is not modal, has Save, Close and Ctrl+Return, Save writes the words and Close and the window's own close button leave the description empty",
     'KrakenOS.UI.validate_bug_flag_windows_view',
@@ -16883,7 +16887,7 @@ phase_739_interface_preference = _phase_from_standalone(
     'KrakenOS.UI.validate_interface_preference',
     'interface_preference')
 phase_738_services_import_no_tkinter = _phase_from_standalone(
-    738, "the toolkit-free layers import no tkinter, by a list that may only shrink (0970): every module of services, reports, row_forms, uihost and qt that imports tkinter at run time is in the guard's exact list with what Tk code it still holds -- two services and the Tk host, down from fourteen services (0972 and 0976 to 0979 each moved one); the services that import a Tk view package (panels, widgets) at module level are in a second exact list, five of them; no guard reaches for a tkinter name through a module that does not import it (the full Tk gate found two that did, phases 293 and 296); the seven cleaned modules import and refer to no tkinter name; and a station loaded with no inspector gets its two inspector switches from the editor's UI host, so a toolkit-free owner gets both where the old tk.BooleanVar code made none",
+    738, "the toolkit-free layers import no tkinter, by a list that may only shrink (0970): every module of services, reports, row_forms, uihost and qt that imports tkinter at run time is in the guard's exact list with what Tk code it still holds -- one service and the Tk host, down from fourteen services (0972 and 0976 to 0980 each moved one); the services that import a Tk view package (panels, widgets) at module level are in a second exact list, five of them; no guard reaches for a tkinter name through a module that does not import it (the full Tk gate found two that did, phases 293 and 296); the seven cleaned modules import and refer to no tkinter name; and a station loaded with no inspector gets its two inspector switches from the editor's UI host, so a toolkit-free owner gets both where the old tk.BooleanVar code made none",
     'KrakenOS.UI.validate_services_import_no_tkinter',
     'services_import_no_tkinter')
 phase_737_operand_surface_choices = _phase_from_standalone(
@@ -17829,6 +17833,7 @@ def main() -> int:
             phase_744_led_edge_prompt_view,
             phase_745_thickness_inline_editor_view,
             phase_746_bug_flag_windows_view,
+            phase_747_system_selection_view,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

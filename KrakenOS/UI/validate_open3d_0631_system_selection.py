@@ -120,9 +120,12 @@ def run_checks():
     # bugs/0632: the form is shared by the dialog AND the 3D left panel; the dialog self-fits.
     from KrakenOS.UI.panels import open3d_live_controls as lc
 
-    has_form = hasattr(ss, "build_system_selection_form")
+    # the Tk form and its window are panels/system_selection_view.py since bugs/0980
+    from KrakenOS.UI.panels import system_selection_view as ss_view
+
+    has_form = hasattr(ss_view, "build_system_selection_form")
     panel_src = inspect.getsource(lc.Open3DLiveControlsPanel)
-    dialog_src = inspect.getsource(ss.open_system_selection_dialog)
+    dialog_src = inspect.getsource(ss_view.open_system_selection_dialog)
     if not has_form:
         ok = False
         notes.append("FAIL: D (bugs/0632): the shared build_system_selection_form is gone")

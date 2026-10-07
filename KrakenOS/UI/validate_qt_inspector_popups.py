@@ -41,10 +41,7 @@ SOURCES = ("KrakenOS/UI/open3d_inspector.py", "KrakenOS/UI/services")
 #: what a function must reach BEFORE its Toplevel to count as asking the shell first
 SHELL_MARKS = ("shell_host_of(", '"show_flag_description"', '"show_report"')
 #: Toplevel builders that do not ask the shell yet -> why. Exact: a port must delete its entry.
-KNOWN_TK_POPUPS = {
-    "system_selection.py:open_system_selection_dialog":
-        "reached from the Tk menu bar only; the Qt action opens the calculator's row form",
-}
+KNOWN_TK_POPUPS: dict = {}          # the last two became panels (bugs/0979, 0980); nothing is listed now
 
 
 # ---- S -----------------------------------------------------------------------------------------
