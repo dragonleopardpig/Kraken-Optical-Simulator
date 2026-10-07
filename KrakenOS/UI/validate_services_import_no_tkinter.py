@@ -11,8 +11,8 @@ bugs/0981 the last: no service imports tkinter now, only the Tk host).
 
   I  the other way in: a module reaches tkinter WITHOUT naming it when something it imports at
      module level does. Followed through every `KrakenOS.UI` import (bugs/0981), six modules of
-     these layers did -- five since bugs/0982, four since bugs/0983, three since bugs/0984, two since bugs/0985 -- each
-     listed with the first
+     these layers did -- five since bugs/0982, four since bugs/0983, three since bugs/0984, two since bugs/0985, one
+     since bugs/0986 -- each listed with the first
      step of its road there. (Until then this
      claim counted imports of `panels/` and `widgets/` -- five -- which missed a service that
      imports the Tk inspector, and counted a `panels/` module that holds no Tk at all.)
@@ -33,7 +33,8 @@ bugs/0981 the last: no service imports tkinter now, only the Tk host).
      surely, however the name reached it (bugs/0982). Counted per module, exactly: the panel
      factories (`_main_*`) are most of it, the legacy viewer's calls on the inspector the rest.
      (53 uses of 48 classes then; 45 of 40 since bugs/0983, when eight panels that only show a
-     form stopped loading tkinter; 38 of 32 since bugs/0984, when the report panels did)
+     form stopped loading tkinter; 38 of 32 since bugs/0984, when the report panels did; 37 of
+     31 since bugs/0986, when the lens-drawing panel did)
   H  the two helpers the scene tools borrowed from the inspector class are functions of their own
      (bugs/0982): a surface's classic colour -- its own when it has one that is not black, else by
      its glass -- and a surface mesh as a deep copy of its own, None when it has no points; the
@@ -68,8 +69,6 @@ TK_IMPORTERS = {
 #: (bugs/0981: followed through every KrakenOS.UI import). module -> the first step of its road
 #: there, and what that is for. EXACT: a module that no longer reaches it must be deleted here.
 TK_REACHED_THROUGH = {
-    "services/layout_import_export.py": ("panels/main_lens_drawing_dialogs.py",
-                                         "builds the lens-drawing panel, which is Tk itself (its other two panels only show forms)"),
     "services/layout_table_workbench.py": ("widgets/__init__.py", "places the Tk table's in-cell entry (`place_commit_cell_entry`)"),
 }
 #: module -> how many times it names tkinter at RUN TIME with no import of its own (the name is
@@ -81,7 +80,7 @@ TK_NAMES_WITHOUT_IMPORT = {
 #: that imports tkinter, or `Kraken3DInspector`), by import or through the editor's copied globals.
 #: EXACT: a count that falls must be lowered here.
 TK_CLASSES_NAMED = {
-    "services/layout_import_export.py": 2,       # the lens-drawing panel's factory, the Tk missing-assets dialog
+    "services/layout_import_export.py": 1,       # the Tk missing-assets dialog
     "services/layout_shell_controls.py": 7,      # seven panel factories
     "services/layout_table_workbench.py": 7,     # seven panel factories
     "services/legacy_3d_scene.py": 4,            # the legacy viewer's calls on the inspector class

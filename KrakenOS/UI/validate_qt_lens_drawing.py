@@ -38,7 +38,8 @@ def static_checks() -> list:
     import re
 
     sources = {name: Path(f"KrakenOS/UI/{name}").read_text(encoding="utf-8")
-               for name in ("panels/main_lens_drawing_dialogs.py", "lens_drawing_session.py")}
+               for name in ("panels/main_lens_drawing_dialogs.py", "panels/lens_drawing_properties_view.py",
+                            "lens_drawing_session.py")}        # the Tk window is a module of its own (bugs/0986)
     direct = {name: re.findall(r"\b(?:messagebox|filedialog|simpledialog)\.\w+\(", text)
               for name, text in sources.items()}
     return [["S", not any(direct.values()), f"direct tkinter dialog calls: {direct}"]]
