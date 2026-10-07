@@ -263,6 +263,7 @@ from KrakenOS.UI.panels.main_glass_catalog_browser_dialog import MainGlassCatalo
 from KrakenOS.UI.panels.main_lens_drawing_dialogs import MainLensDrawingDialogs
 from KrakenOS.UI.panels.main_nonseq_scene_graph_dialog import MainNonSequentialSceneGraphDialog
 from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
+from KrakenOS.UI.panels.main_bug_flag_windows import MainBugFlagWindows
 from KrakenOS.UI.panels.main_led_edge_prompt import MainLedEdgePrompt
 from KrakenOS.UI.panels.main_text_copy import MainTextCopy
 from KrakenOS.UI.panels.main_window import MainWindowBuilder
@@ -3086,6 +3087,20 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
 
     def _build_menu(self) -> None:
         self._main_window_builder()._build_menu()
+
+    # ---- the 2D bug flag's Tk windows: panels/main_bug_flag_windows.py (bugs/0979) ----------------
+    def _main_bug_flag_windows(self) -> MainBugFlagWindows:
+        panel = self.__dict__.get("_main_bug_flag_windows_instance")
+        if panel is None:
+            panel = MainBugFlagWindows(self)
+            self._main_bug_flag_windows_instance = panel
+        return panel
+
+    def _collect_open_toplevels(self) -> list:
+        return self._main_bug_flag_windows()._collect_open_toplevels()
+
+    def _open_2d_flag_description_dialog(self, *, bundle_dir, state_path) -> None:
+        self._main_bug_flag_windows()._open_2d_flag_description_dialog(bundle_dir=bundle_dir, state_path=state_path)
 
     def _main_led_edge_prompt(self) -> MainLedEdgePrompt:
         """The Tk window that asks for the LED edge distance (bugs/0977)."""
