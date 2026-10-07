@@ -62,7 +62,7 @@ Claim Q now refuses any Tk window while the shell is asked, so it fails in secon
 properties and byte-identical JSON), the lens-drawing properties and PDF guards, the interaction
 contract (655), the panel delegations, the form presenter (749), and phase 738 at one module.
 
-`validate_fast_contracts` exits 1, on one of its 178 checks: the line budgets of
+`validate_fast_contracts` exits 1, on one of the 38 checks it ran (37 pass): the line budgets of
 `validate_ui_modular_maintainability` (`open3d_inspector.py` 26531 lines against 9000,
 `layout_table_workbench.py` 10359 against 6500, `three_d_scene_tools.py` 6856 against 3000). None
 of the three files is touched here and the counts are the same at the commit before; it is not a
