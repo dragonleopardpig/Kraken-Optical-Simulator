@@ -8,6 +8,7 @@ from tkinter import ttk
 from typing import Any
 
 from KrakenOS.UI.system_controls import ATMOSPHERE_CONTROL_SPECS, ATMOSPHERE_NOTE, ATMOSPHERE_TITLE
+from KrakenOS.UI.widgets import bind_entry_commit
 
 
 
@@ -33,6 +34,14 @@ class MainAtmospherePanel:
             object.__setattr__(self, name, value)
             return
         setattr(self.editor, name, value)
+
+    def _bind_deferred_manual_update(self, widget: tk.Widget) -> None:
+        """An atmosphere entry commits on Return, the keypad's Enter and on leaving it.
+
+        What a commit DOES is the model's, `_commit_manual_update`; the binding is Tk, and the
+        panel's own since bugs/0985 -- it is the only one that binds these.
+        """
+        bind_entry_commit(widget, self._commit_manual_update, on_focus_in=self._begin_history_capture)
 
     def build_hidden_panel(self, parent: tk.Widget) -> None:
         for column in range(2):

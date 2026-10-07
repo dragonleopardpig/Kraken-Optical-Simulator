@@ -11,6 +11,7 @@ from KrakenOS.UI.optimization_controls import worker_choices as optimization_wor
 from KrakenOS.UI.row_forms.present import present_row_form
 from KrakenOS.UI.row_forms import FormRefused
 from KrakenOS.UI.row_forms.presets import build_optimization_bounds_form
+from KrakenOS.UI.widgets import bind_entry_commit
 
 
 class MainOptimizationPanel:
@@ -28,6 +29,13 @@ class MainOptimizationPanel:
             object.__setattr__(self, name, value)
             return
         setattr(self.editor, name, value)
+
+    def _bind_deferred_refresh(self, widget: tk.Widget) -> None:
+        """An operand entry commits on Return, the keypad's Enter and on leaving it: the plot is owed.
+
+        The panel's own since bugs/0985 -- it is the only one that binds these, and the binding is Tk.
+        """
+        bind_entry_commit(widget, self._mark_plot_update_pending, on_focus_in=self._begin_history_capture)
 
     def edit_current_bounds(self) -> None:
         # docs/design_qt_migration.md phase 3 (bugs/0891): the bounds, their one rule (lower

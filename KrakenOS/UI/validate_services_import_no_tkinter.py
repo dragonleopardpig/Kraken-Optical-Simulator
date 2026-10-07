@@ -11,7 +11,8 @@ bugs/0981 the last: no service imports tkinter now, only the Tk host).
 
   I  the other way in: a module reaches tkinter WITHOUT naming it when something it imports at
      module level does. Followed through every `KrakenOS.UI` import (bugs/0981), six modules of
-     these layers did -- five since bugs/0982, four since bugs/0983, three since bugs/0984 -- each listed with the first
+     these layers did -- five since bugs/0982, four since bugs/0983, three since bugs/0984, two since bugs/0985 -- each
+     listed with the first
      step of its road there. (Until then this
      claim counted imports of `panels/` and `widgets/` -- five -- which missed a service that
      imports the Tk inspector, and counted a `panels/` module that holds no Tk at all.)
@@ -69,7 +70,6 @@ TK_IMPORTERS = {
 TK_REACHED_THROUGH = {
     "services/layout_import_export.py": ("panels/main_lens_drawing_dialogs.py",
                                          "builds the lens-drawing panel, which is Tk itself (its other two panels only show forms)"),
-    "services/layout_shell_controls.py": ("widgets/__init__.py", "binds Tk entries' commit keys (`bind_entry_commit`)"),
     "services/layout_table_workbench.py": ("widgets/__init__.py", "places the Tk table's in-cell entry (`place_commit_cell_entry`)"),
 }
 #: module -> how many times it names tkinter at RUN TIME with no import of its own (the name is

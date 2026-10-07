@@ -4,7 +4,6 @@ from __future__ import annotations
 from KrakenOS.UI.analysis_modes import selection_label
 from KrakenOS.UI.system_controls import control_for
 from KrakenOS.UI.services.open3d_live_refresh import MAIN_PANEL_LIVE_REFRESH_DELAY_MS
-from KrakenOS.UI.widgets import bind_entry_commit
 from KrakenOS.UI.uihost import host_of
 
 
@@ -627,22 +626,18 @@ class LayoutShellControlsMixin:
     def _build_results_panel(self, parent) -> None:
         self._main_information_panel().build(parent)
 
-    def _bind_deferred_refresh(self, widget: Any) -> None:
-        bind_entry_commit(
-            widget,
-            self._mark_plot_update_pending,
-            on_focus_in=self._begin_history_capture,
-        )
+    def _commit_manual_update(self, _event=None, *, sync_fields: bool = False) -> None:
+        """What a committed left-panel entry does: the controls follow it, then the plot is owed.
 
-    def _bind_deferred_manual_update(self, widget: Any, *, sync_fields: bool = False) -> None:
-        def _on_commit(_event=None):
-            if sync_fields:
-                self._sync_object_controls()
-            else:
-                self._sync_left_mode_controls()
-            self._mark_plot_update_pending()
-
-        bind_entry_commit(widget, _on_commit, on_focus_in=self._begin_history_capture)
+        The GESTURE that commits -- Return, the keypad's Enter, leaving the field -- is the view's:
+        the Tk panels bind it themselves (bugs/0985), `panels/main_atmosphere_panel.py` this one and
+        `panels/main_optimization_panel.py` the plain `_mark_plot_update_pending`.
+        """
+        if sync_fields:
+            self._sync_object_controls()
+        else:
+            self._sync_left_mode_controls()
+        self._mark_plot_update_pending()
 
     def _invalidate_preview_scene_trace(self, reason: str = "") -> None:
         self._preview_scene_trace_dirty = True
