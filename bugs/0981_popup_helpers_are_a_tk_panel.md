@@ -43,3 +43,15 @@ So what is left of 7d is those five, of which the table workbench is the large o
 - **T:** a real Tk editor -- the three bindings; a click on a real popup menu leaves it, a click
   beside it or on another widget and a dismissal with no event take it down; a 300 x 200 dialog
   lands centred over the main window and on the screen, to the pixel.
+
+## Checks
+
+**Mutations: 10 of 10 caught** -- the clean-up destroying the menu before releasing its grab,
+stopping at a take-down that raises, keeping the cell, or not forgetting the menu; the service
+importing tkinter again; a click on the menu dismissing it, a click beside it leaving it; a dialog
+put at the main window's corner; centring on the screen only across; the editor no longer
+delegating the dismissal.
+
+**Neighbouring guards, all pass:** the tkinter-import list (738, with its new claim U), the panel
+delegations, the model forms in Qt (721), the surface table's right-click menu (722: 127 entries,
+112 run, no Tk window), the interaction contract (655). **Baseline:** phases 748 and 738 recorded.
