@@ -27,7 +27,6 @@ from KrakenOS.UI.services.machine_vision_folder_import import (
     render_surrogate_layout_source,
 )
 from KrakenOS.UI.services.open3d_timing import open3d_timing_event, open3d_timing_span
-from KrakenOS.UI.widgets import place_commit_cell_entry
 from KrakenOS.UI.uihost import host_of
 
 
@@ -201,7 +200,7 @@ class LayoutTableWorkbenchMixin:
             return
         try:
             self._table_selection_after_id = host_of(self).after_idle(self._emit_custom_table_selection_changed)
-        except tk.TclError:
+        except Exception:
             self._table_selection_after_id = None
 
     def _emit_custom_table_selection_changed(self) -> None:
@@ -817,7 +816,7 @@ class LayoutTableWorkbenchMixin:
                 "splitter, camera, LED and any promoted solids are removed and a fresh "
                 "single-lens layout is loaded." + swap_hint + "\n\nReplace the scene now?",
                 parent=parent,
-                default=messagebox.NO,
+                default="no",
             ):
                 self.status_var.set("Import Lens from Folder cancelled; scene kept.")
                 return None
@@ -1969,7 +1968,6 @@ class LayoutTableWorkbenchMixin:
         self.lens_step_largest_component_only = bool(settings.get("lens_step_largest_component_only", False))  # bugs/0715
         # rotation_{x,y,z}_deg / axis_offset_xy / placement_offset_xyz / reverse_direction:
         # PRESERVED (untouched) so the swapped lens keeps the pose the user aligned it to.
-
 
     def lens_surrogate_glass_aperture_mm(self) -> "float | None":
         """bugs/0819: the vendor's MEASURED glass aperture for the scene's imaging-lens STEP.
@@ -3277,22 +3275,12 @@ class LayoutTableWorkbenchMixin:
         self._update_undo_redo_buttons()
 
     def _update_undo_redo_buttons(self) -> None:
-        undo_state = "normal" if self._undo_stack else "disabled"
-        redo_state = "normal" if self._redo_stack else "disabled"
-        if self._edit_menu is not None:
-            try:
-                self._edit_menu.entryconfigure("Undo", state=undo_state)
-                self._edit_menu.entryconfigure("Redo", state=redo_state)
-            except tk.TclError:
-                pass
-        if self._undo_button is not None:
-            self._undo_button.configure(state=undo_state)
-        if self._redo_button is not None:
-            self._redo_button.configure(state=redo_state)
+        can_undo, can_redo = bool(self._undo_stack), bool(self._redo_stack)
+        self._show_tk_undo_state(can_undo, can_redo)         # the Tk Edit menu: panels/main_window.py
         # a shell's own Undo / Redo follow the same history (bugs/0942)
         show = self.__dict__.get("show_undo_state")
         if callable(show):
-            show(bool(self._undo_stack), bool(self._redo_stack))
+            show(can_undo, can_redo)
 
     def undo(self) -> None:
         if not self._undo_stack:
@@ -4929,255 +4917,6 @@ class LayoutTableWorkbenchMixin:
         host_of(self).update_idletasks()
         self._schedule_active_cell_border_update()
         self._schedule_table_grid_update(delay=1)
-
-    def _hide_active_cell_border(self) -> None:
-        for part in self._cell_border_parts:
-            part.place_forget()
-
-    def _clear_selection_row_borders(self) -> None:
-        overlays = self.__dict__.get("_selection_border_overlays", [])
-        for part in overlays:
-            try:
-                part.destroy()
-            except Exception:
-                pass
-        self._selection_border_overlays = []
-
-    def _update_selection_row_borders(self) -> None:
-        if "table" not in self.__dict__:
-            return
-        self._clear_selection_row_borders()
-        selected = list(self.table.selection())
-        if not selected:
-            return
-        border_color = "#2563eb"
-        table_width = max(int(self.table.winfo_width()), 1)
-        columns = list(self.table["columns"])
-        children = list(self.table.get_children())
-        selected_indices = sorted(children.index(item) for item in selected if item in children)
-        if not selected_indices:
-            return
-
-        blocks: list[list[int]] = []
-        for index in selected_indices:
-            if not blocks or index != blocks[-1][-1] + 1:
-                blocks.append([index])
-            else:
-                blocks[-1].append(index)
-
-        def row_bbox(item: str) -> tuple[int, int, int, int] | None:
-            for column_index in range(1, len(columns) + 1):
-                bbox = self.table.bbox(item, f"#{column_index}")
-                if bbox and len(bbox) == 4:
-                    return bbox
-            return None
-
-        for block in blocks:
-            visible_ranges: list[tuple[int, int]] = []
-            for index in block:
-                item = children[index]
-                if not self.table.exists(item):
-                    continue
-                bbox = row_bbox(item)
-                if not bbox:
-                    continue
-                _x, y, _width, height = bbox
-                if height <= 0:
-                    continue
-                visible_ranges.append((y, y + height))
-            if not visible_ranges:
-                continue
-            y_top = min(start for start, _end in visible_ranges)
-            y_bottom = max(end for _start, end in visible_ranges)
-            height = max(0, y_bottom - y_top)
-            if height <= 0:
-                continue
-            top = tk.Frame(self.table, bg=border_color, height=2)
-            bottom = tk.Frame(self.table, bg=border_color, height=2)
-            left = tk.Frame(self.table, bg=border_color, width=2)
-            right = tk.Frame(self.table, bg=border_color, width=2)
-            top.place(x=0, y=y_top, width=table_width, height=2)
-            bottom.place(x=0, y=y_bottom - 2, width=table_width, height=2)
-            left.place(x=0, y=y_top, width=2, height=height)
-            right.place(x=table_width - 2, y=y_top, width=2, height=height)
-            self._selection_border_overlays.extend([top, bottom, left, right])
-
-    def _update_active_cell_border(self, _event: tk.Event | None = None) -> None:
-        self._active_cell_border_after_id = None
-        if self._active_cell is None:
-            self._hide_active_cell_border()
-            self._update_selection_row_borders()
-            return
-        row_id, column_id = self._active_cell
-        if not self.table.exists(row_id):
-            self._active_cell = None
-            self._hide_active_cell_border()
-            self._update_selection_row_borders()
-            return
-        try:
-            bbox = self.table.bbox(row_id, column_id)
-        except tk.TclError:
-            self._hide_active_cell_border()
-            self._update_selection_row_borders()
-            return
-        if not bbox or len(bbox) != 4:
-            self._hide_active_cell_border()
-            self._update_selection_row_borders()
-            return
-        x, y, width, height = bbox
-        if width <= 0 or height <= 0:
-            self._hide_active_cell_border()
-            self._update_selection_row_borders()
-            return
-        self._update_selection_row_borders()
-        top, bottom, left, right = self._cell_border_parts
-        top.place(x=x, y=y, width=width, height=2)
-        bottom.place(x=x, y=y + height - 2, width=width, height=2)
-        left.place(x=x, y=y, width=2, height=height)
-        right.place(x=x + width - 2, y=y, width=2, height=height)
-
-    def _schedule_active_cell_border_update(self, *, delay: int | None = None) -> None:
-        if self._active_cell_border_after_id is not None:
-            return
-        try:
-            if delay is None:
-                self._active_cell_border_after_id = host_of(self).after_idle(self._update_active_cell_border)
-            else:
-                self._active_cell_border_after_id = host_of(self).after(max(0, int(delay)), self._update_active_cell_border)
-        except tk.TclError:
-            self._active_cell_border_after_id = None
-
-    def _on_table_scroll(self, scrollbar: ttk.Scrollbar, first: str, last: str) -> None:
-        scrollbar.set(first, last)
-        self._schedule_table_grid_update()
-        self._schedule_active_cell_border_update()
-
-    def _on_table_xview(self, *args: object) -> None:
-        self.table.xview(*args)
-        self._schedule_table_grid_update(delay=16)
-        self._update_active_cell_border()
-
-    def _on_table_xscroll(self, scrollbar: ttk.Scrollbar, first: str, last: str) -> None:
-        scrollbar.set(first, last)
-        self._update_active_cell_border()
-
-    def _clear_table_grid(self) -> None:
-        for part in self._grid_overlays:
-            part.destroy()
-        self._grid_overlays.clear()
-
-    def _table_grid_context(self) -> tuple[list[str], tuple[str, ...], list[tuple[str, tuple[int, int, int, int]]]]:
-        columns = list(self.table["columns"])
-        items = tuple(self.table.get_children())
-        visible_bboxes = []
-        if columns and items:
-            column_ids = [f"#{column_index}" for column_index in range(1, len(columns) + 1)]
-            for item in items:
-                for column_id in column_ids:
-                    bbox = self.table.bbox(item, column_id)
-                    if bbox:
-                        visible_bboxes.append((item, bbox))
-                        break
-        return columns, items, visible_bboxes
-
-    def _schedule_table_grid_update(self, _event: tk.Event | None = None, delay: int = 30) -> None:
-        if self._grid_after_id is not None:
-            try:
-                host_of(self).after_cancel(self._grid_after_id)
-            except tk.TclError:
-                pass
-            self._grid_after_id = None
-        try:
-            self._grid_after_id = host_of(self).after(max(0, int(delay)), self._update_table_grid)
-        except tk.TclError:
-            self._grid_after_id = None
-
-    def _update_table_grid(self, _event: tk.Event | None = None) -> None:
-        self._grid_after_id = None
-        self._clear_table_grid()
-        columns, items, visible_bboxes = self._table_grid_context()
-        grid_color = "#e2e7ef"
-        if not columns or not items or not visible_bboxes:
-            return
-        data_top = min(bbox[1] for _, bbox in visible_bboxes)
-        data_bottom = max(bbox[1] + bbox[3] for _, bbox in visible_bboxes)
-        data_height = max(0, data_bottom - data_top)
-        if data_height <= 0:
-            return
-
-        first_item = visible_bboxes[0][0]
-        for column_index in range(1, len(columns)):
-            bbox = self.table.bbox(first_item, f"#{column_index}")
-            if not bbox:
-                continue
-            x, _y, width, _height = bbox
-            separator = tk.Frame(self.table, bg=grid_color, width=1)
-            separator.place(x=x + width - 1, y=data_top, width=1, height=data_height)
-            self._grid_overlays.append(separator)
-
-        for item, bbox in visible_bboxes:
-            _x, y, width, height = bbox
-            row_line = tk.Frame(self.table, bg=grid_color, height=1)
-            row_line.place(x=0, y=y + height - 1, relwidth=1.0, height=1)
-            self._grid_overlays.append(row_line)
-
-        self._draw_optimization_cell_markers(items, columns)
-        self._schedule_active_cell_border_update()
-
-    def _draw_optimization_cell_markers(self, items: tuple[str, ...], columns: list[str]) -> None:
-        if not items or not columns:
-            return
-        field_to_column = {field: f"#{index + 1}" for index, field in enumerate(columns)}
-        for item in items:
-            row_index = self._table_item_row_index(item)
-            if row_index is None or not (0 <= row_index < len(self.rows)):
-                continue
-            row = self.rows[row_index]
-            for field in self._optimization_marker_fields_for_row(row):
-                column_id = field_to_column.get(field)
-                if not column_id:
-                    continue
-                bbox = self.table.bbox(item, column_id)
-                if not bbox or len(bbox) != 4:
-                    continue
-                x, y, width, height = bbox
-                if width <= 24 or height <= 8:
-                    continue
-                marker_width = min(max(16, int(width * 0.22)), 24)
-                marker = tk.Label(
-                    self.table,
-                    text=OPTIMIZATION_CELL_MARKER_TEXT,
-                    bg=OPTIMIZATION_CELL_MARKER_BG,
-                    fg=OPTIMIZATION_CELL_MARKER_FG,
-                    bd=1,
-                    relief="solid",
-                    padx=0,
-                    pady=0,
-                    font=("TkDefaultFont", 8, "bold"),
-                )
-                marker.place(
-                    x=x + width - marker_width - 1,
-                    y=y + 2,
-                    width=marker_width,
-                    height=max(1, height - 4),
-                )
-                marker.bind(
-                    "<Button-1>",
-                    lambda event, selected_item=item, selected_field=field: self._on_optimization_marker_click(
-                        event,
-                        selected_item,
-                        selected_field,
-                    ),
-                )
-                marker.bind(
-                    "<Button-3>",
-                    lambda event, selected_item=item, selected_field=field: self._on_optimization_marker_click(
-                        event,
-                        selected_item,
-                        selected_field,
-                    ),
-                )
-                self._grid_overlays.append(marker)
 
     def _on_optimization_marker_click(self, event: tk.Event, row_id: str, field: str) -> str:
         if not self.table.exists(row_id) or field not in FIELDS:
@@ -7510,7 +7249,6 @@ class LayoutTableWorkbenchMixin:
     def open_detector_settings(self, row_index: int) -> None:
         self._main_scene_element_dialogs().open_detector_settings(row_index)
 
-
     def _scene_target_editor_kind_for_row(self, row_index: int) -> str:
         if not (0 <= int(row_index) < len(self.rows)):
             return "auto"
@@ -7644,14 +7382,11 @@ class LayoutTableWorkbenchMixin:
     def open_scene_target_editor(self, row_index: int | None = None) -> None:
         self._main_scene_element_dialogs().open_scene_target_editor(row_index)
 
-
     def open_selected_path_local_pose_editor(self) -> None:
         self._main_scene_element_dialogs().open_selected_path_local_pose_editor()
 
-
     def open_element_settings(self) -> None:
         self._main_scene_element_dialogs().open_element_settings()
-
 
     def flip_selected(self) -> None:
         indices = self._selected_table_indices()
@@ -7776,13 +7511,7 @@ class LayoutTableWorkbenchMixin:
             )
             return
         else:
-            editor = place_commit_cell_entry(
-                self.table,
-                value=current_value,
-                bbox=tuple(int(value) for value in bbox),
-                on_commit=lambda: self._finish_edit(row_id, field),
-                on_cancel=self._cancel_edit,
-            )
+            editor = self._place_cell_editor(row_id, field, current_value, bbox)
         self.editor = editor
         self._editor_row_id = row_id
         self._editor_field = field
@@ -8695,7 +8424,6 @@ class LayoutTableWorkbenchMixin:
         self.current_menu_field = field
         return self._main_context_menu().build_cell_menu(row_index, field, MenuModel())
 
-
     def _finish_edit(self, row_id: str, field: str, quiet: bool = False) -> None:
         if self.editor is None:
             return
@@ -8844,33 +8572,6 @@ class LayoutTableWorkbenchMixin:
         if self.editor is None or self._editor_row_id is None or self._editor_field is None:
             return
         self._finish_edit(self._editor_row_id, self._editor_field, quiet=True)
-
-    def _show_choice_menu(
-        self,
-        row_id: str,
-        field: str,
-        values: tuple[str, ...],
-        x_root: int,
-        y_root: int,
-    ) -> None:
-        self._cleanup_current_popup_menu()
-        menu = tk.Menu(self, tearoff=0)
-        for value in values:
-            menu.add_command(
-                label=value,
-                command=lambda selected=value: self._apply_choice(row_id, field, selected),
-            )
-        self._post_popup_menu(menu, x_root, y_root)
-
-    def _post_popup_menu(self, menu: tk.Menu, x_root: int, y_root: int) -> None:
-        self.popup_menu = menu
-        try:
-            menu.tk_popup(x_root, y_root)
-        finally:
-            try:
-                menu.grab_release()
-            except tk.TclError:
-                pass
 
     def _apply_choice(self, row_id: str, field: str, value: str) -> None:
         self._begin_history_capture()
@@ -10347,7 +10048,6 @@ class LayoutTableWorkbenchMixin:
         if cell is not None:
             self.clear_bounds_for_cell(*cell)
         self._cleanup_current_popup_menu()
-
 
     def clear_optimization_marks(self) -> None:
         for row in self.rows:

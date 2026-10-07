@@ -38,6 +38,21 @@ class MainWindowBuilder:
             return
         setattr(self.editor, name, value)
 
+    def _show_tk_undo_state(self, can_undo: bool, can_redo: bool) -> None:
+        """Undo and Redo of the Tk Edit menu follow the history (bugs/0987: this was in the model)."""
+        undo_state = "normal" if can_undo else "disabled"
+        redo_state = "normal" if can_redo else "disabled"
+        if self._edit_menu is not None:
+            try:
+                self._edit_menu.entryconfigure("Undo", state=undo_state)
+                self._edit_menu.entryconfigure("Redo", state=redo_state)
+            except tk.TclError:
+                pass
+        if self._undo_button is not None:
+            self._undo_button.configure(state=undo_state)
+        if self._redo_button is not None:
+            self._redo_button.configure(state=redo_state)
+
     def _build_menu(self) -> None:
         menubar = tk.Menu(self.editor)
         file_menu = tk.Menu(menubar, tearoff=0)

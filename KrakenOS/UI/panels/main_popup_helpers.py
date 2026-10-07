@@ -9,6 +9,9 @@ tkinter for view code:
   which is what makes it land under Wayland).
 
 WHAT is cleaned up when a popup menu goes (`_cleanup_current_popup_menu`) stays in the service.
+
+Since bugs/0987 also the popup menu itself: the choice menu of a Surface or Material cell, and the
+posting of any popup menu the table shows.
 """
 from __future__ import annotations
 
@@ -53,6 +56,34 @@ class MainPopupHelpers:
             if isinstance(widget, tk.Menu) and self._event_inside_widget_root_bounds(event, widget):
                 return
         self._cleanup_current_popup_menu()
+
+    def _show_choice_menu(
+        self,
+        row_id: str,
+        field: str,
+        values: tuple[str, ...],
+        x_root: int,
+        y_root: int,
+    ) -> None:
+        self._cleanup_current_popup_menu()
+        menu = tk.Menu(self.editor, tearoff=0)      # the editor is the widget; a panel is not
+        for value in values:
+            menu.add_command(
+                label=value,
+                command=lambda selected=value: self._apply_choice(row_id, field, selected),
+            )
+        # through the editor, as it always went: whoever replaces the editor's poster sees this menu too
+        self.editor._post_popup_menu(menu, x_root, y_root)
+
+    def _post_popup_menu(self, menu: tk.Menu, x_root: int, y_root: int) -> None:
+        self.popup_menu = menu
+        try:
+            menu.tk_popup(x_root, y_root)
+        finally:
+            try:
+                menu.grab_release()
+            except tk.TclError:
+                pass
 
     def _center_dialog_over_main_window(self, dialog: tk.Toplevel) -> None:
         dialog.update_idletasks()

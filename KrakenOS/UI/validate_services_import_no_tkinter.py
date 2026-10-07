@@ -11,9 +11,8 @@ bugs/0981 the last: no service imports tkinter now, only the Tk host).
 
   I  the other way in: a module reaches tkinter WITHOUT naming it when something it imports at
      module level does. Followed through every `KrakenOS.UI` import (bugs/0981), six modules of
-     these layers did -- five since bugs/0982, four since bugs/0983, three since bugs/0984, two since bugs/0985, one
-     since bugs/0986 -- each listed with the first
-     step of its road there. (Until then this
+     these layers did -- five since bugs/0982, then one fewer with each of bugs/0983 to 0986, and NONE since
+     bugs/0987: the list is empty, and a module that reaches tkinter again fails here. (Until 0981 this
      claim counted imports of `panels/` and `widgets/` -- five -- which missed a service that
      imports the Tk inspector, and counted a `panels/` module that holds no Tk at all.)
   R  the same, asked of the interpreter rather than read from the source: each module of these
@@ -25,9 +24,10 @@ bugs/0981 the last: no service imports tkinter now, only the Tk host).
      import.)
   U  importing is not the only way to USE it: `layout_editor` copies its own globals -- `tk`
      among them -- into some service modules (`_sync_layout_globals`), and code there calls
-     `tk.Menu(...)` with no import of its own. Measured with bugs/0981: one module does, sixteen
-     times. Counted against an exact list too, so "no service imports tkinter" is not read as
-     "no service uses it"
+     `tk.Menu(...)` with no import of its own. Measured with bugs/0981: one module did, sixteen
+     times -- the Tk surface table's borders, grid, markers and choice menu. None does since
+     bugs/0987, when that drawing code became a panel; the list is empty, so "no service imports
+     tkinter" is not read as "no service uses it"
   C  nor is tkinter's own name the only Tk there is: a service that names a Tk view CLASS at run
      time -- a panel class of a module that imports tkinter, or the 3D inspector -- uses Tk as
      surely, however the name reached it (bugs/0982). Counted per module, exactly: the panel
@@ -68,14 +68,10 @@ TK_IMPORTERS = {
 #: A module also reaches tkinter WITHOUT naming it, when something it imports at module level does
 #: (bugs/0981: followed through every KrakenOS.UI import). module -> the first step of its road
 #: there, and what that is for. EXACT: a module that no longer reaches it must be deleted here.
-TK_REACHED_THROUGH = {
-    "services/layout_table_workbench.py": ("widgets/__init__.py", "places the Tk table's in-cell entry (`place_commit_cell_entry`)"),
-}
+TK_REACHED_THROUGH: dict = {}      # empty since bugs/0987
 #: module -> how many times it names tkinter at RUN TIME with no import of its own (the name is
 #: put into its globals by `layout_editor`). EXACT: a count that falls must be lowered here.
-TK_NAMES_WITHOUT_IMPORT = {
-    "services/layout_table_workbench.py": 16,
-}
+TK_NAMES_WITHOUT_IMPORT: dict = {}     # empty since bugs/0987
 #: module -> how many times it names a Tk view CLASS at run time (a class of a `panels/` module
 #: that imports tkinter, or `Kraken3DInspector`), by import or through the editor's copied globals.
 #: EXACT: a count that falls must be lowered here.

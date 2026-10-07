@@ -266,6 +266,7 @@ from KrakenOS.UI.panels.main_optimization_panel import MainOptimizationPanel
 from KrakenOS.UI.panels.main_bug_flag_windows import MainBugFlagWindows
 from KrakenOS.UI.panels.main_led_edge_prompt import MainLedEdgePrompt
 from KrakenOS.UI.panels.main_popup_helpers import MainPopupHelpers
+from KrakenOS.UI.panels.main_surface_table_overlays import MainSurfaceTableOverlays
 from KrakenOS.UI.panels.main_text_copy import MainTextCopy
 from KrakenOS.UI.panels.main_window import MainWindowBuilder
 from KrakenOS.UI.panels.main_optical_solid_face_roles_dialog import MainOpticalSolidFaceRolesDialog
@@ -3089,6 +3090,9 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
     def _build_menu(self) -> None:
         self._main_window_builder()._build_menu()
 
+    def _show_tk_undo_state(self, can_undo: bool, can_redo: bool) -> None:
+        self._main_window_builder()._show_tk_undo_state(can_undo, can_redo)
+
     # ---- popup-menu dismissal and dialog centring: panels/main_popup_helpers.py (bugs/0981) ------
     def _main_popup_helpers(self) -> MainPopupHelpers:
         panel = self.__dict__.get("_main_popup_helpers_instance")
@@ -3105,6 +3109,62 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
 
     def _center_dialog_on_screen(self, dialog) -> None:
         self._main_popup_helpers()._center_dialog_on_screen(dialog)
+
+    def _show_choice_menu(self, row_id: str, field: str, values, x_root: int, y_root: int) -> None:
+        self._main_popup_helpers()._show_choice_menu(row_id, field, values, x_root, y_root)
+
+    def _post_popup_menu(self, menu, x_root: int, y_root: int) -> None:
+        self._main_popup_helpers()._post_popup_menu(menu, x_root, y_root)
+
+    # ---- what the Tk surface table draws over its rows: panels/main_surface_table_overlays.py (bugs/0987) ----
+    def _main_surface_table_overlays(self) -> MainSurfaceTableOverlays:
+        panel = self.__dict__.get("_main_surface_table_overlays_instance")
+        if panel is None:
+            panel = MainSurfaceTableOverlays(self)
+            self._main_surface_table_overlays_instance = panel
+        return panel
+
+    def _hide_active_cell_border(self) -> None:
+        self._main_surface_table_overlays()._hide_active_cell_border()
+
+    def _clear_selection_row_borders(self) -> None:
+        self._main_surface_table_overlays()._clear_selection_row_borders()
+
+    def _update_selection_row_borders(self) -> None:
+        self._main_surface_table_overlays()._update_selection_row_borders()
+
+    def _update_active_cell_border(self, _event=None) -> None:
+        self._main_surface_table_overlays()._update_active_cell_border(_event)
+
+    def _schedule_active_cell_border_update(self, *, delay: "int | None" = None) -> None:
+        self._main_surface_table_overlays()._schedule_active_cell_border_update(delay=delay)
+
+    def _on_table_scroll(self, scrollbar, first: str, last: str) -> None:
+        self._main_surface_table_overlays()._on_table_scroll(scrollbar, first, last)
+
+    def _on_table_xview(self, *args: object) -> None:
+        self._main_surface_table_overlays()._on_table_xview(*args)
+
+    def _on_table_xscroll(self, scrollbar, first: str, last: str) -> None:
+        self._main_surface_table_overlays()._on_table_xscroll(scrollbar, first, last)
+
+    def _clear_table_grid(self) -> None:
+        self._main_surface_table_overlays()._clear_table_grid()
+
+    def _table_grid_context(self):
+        return self._main_surface_table_overlays()._table_grid_context()
+
+    def _schedule_table_grid_update(self, _event=None, delay: int = 30) -> None:
+        self._main_surface_table_overlays()._schedule_table_grid_update(_event, delay)
+
+    def _update_table_grid(self, _event=None) -> None:
+        self._main_surface_table_overlays()._update_table_grid(_event)
+
+    def _draw_optimization_cell_markers(self, items, columns) -> None:
+        self._main_surface_table_overlays()._draw_optimization_cell_markers(items, columns)
+
+    def _place_cell_editor(self, row_id: str, field: str, value: str, bbox):
+        return self._main_surface_table_overlays()._place_cell_editor(row_id, field, value, bbox)
 
     # ---- the 2D bug flag's Tk windows: panels/main_bug_flag_windows.py (bugs/0979) ----------------
     def _main_bug_flag_windows(self) -> MainBugFlagWindows:
