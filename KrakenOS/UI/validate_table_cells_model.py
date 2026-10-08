@@ -20,7 +20,8 @@ must stay true:
      -- and knows it is in a path view, where the pose columns are path-local
   P  the parser reads the model, not the widget: a text written straight into the Tk widget is NOT
      parsed; a text given to the model is, and the Tk table shows it; the two builder scripts'
-     rename, which used to write into the widget, survives a parse
+     rename, which used to write into the widget, survives a parse; the image row's diameter,
+     re-formatted on its own between syncs, reaches the model's cell and the Tk table alike
   V  the Tk table shows exactly the model's cells -- same rows, same order, same texts, same tags
      -- after a load, a committed cell, a chosen material, a path view and back; in a path view
      the headings are the path-local ones, and the model knows the mode
@@ -235,11 +236,26 @@ def tk_checks() -> list:
             renamed[index] = (editor.rows[index].name == name,
                               str(table.set(editor._table_item_for_row_index(index), "name")) == name)
         editor.commit_cell(3, "thickness", repr(before))
+
+        # the image row's diameter is re-formatted on its own, between syncs: that one cell must reach the model too
+        image = len(editor.rows) - 1
+        image_item = editor._table_item_for_row_index(image)
+        diameter = FIELDS.index("diameter")
+        image_before = editor._table_cells().text(image_item, diameter)
+        editor.rows[image].diameter = 77.5
+        editor._sync_image_row_table_value()
+        image_cells = (editor._table_cells().text(image_item, diameter), str(table.set(image_item, "diameter")))
+        editor._read_rows_from_table()
+        image_parsed = float(editor.rows[image].diameter)
+        image_ok = (image_cells[0] == image_cells[1] and "77.5" in image_cells[0] and "77.5" not in image_before
+                    and image_parsed == 77.5)
         return (before not in (999.0, 8.5) and widget_only == (before, "999", repr(before).rstrip("0").rstrip("."))
-                and told == "8.5" and through_model == 8.5 and renamed == {4: (True, True), 5: (True, True)},
+                and told == "8.5" and through_model == 8.5 and renamed == {4: (True, True), 5: (True, True)} and image_ok,
                 f"a thickness of {before}: with 999 written into the Tk widget only, a parse leaves (the row, the widget, "
                 f"the model's cell) {widget_only}; given to the model as 8.5 the Tk table shows {told!r} and a parse makes it "
-                f"{through_model}; the two builders' rename (kept by a parse, shown by the Tk table): {renamed}")
+                f"{through_model}; the two builders' rename (kept by a parse, shown by the Tk table): {renamed}; the image "
+                f"row's diameter set to 77.5 and re-formatted on its own reads (the model's cell, the Tk table) {image_cells} "
+                f"(was {image_before!r}) and a parse leaves {image_parsed}")
 
     def claim_v():
         states = {"after the load": (shown(), model())}
