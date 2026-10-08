@@ -438,7 +438,45 @@ VIEWPORT_KEYS = (
     ("S", "_flag_bug_event"),
 )
 
-class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
+class Kraken3DInspectorWindow(tk.Toplevel):
+    """The Tk window the 3D inspector owns (bugs/0992). A class of its own only so that Tk names the
+    window for what it is (`.!kraken3dinspectorwindow`) and no other dialog's path is renumbered."""
+
+
+class Kraken3DInspector(Open3DDebugToolsMixin):
+    # ---- docs/design_qt_migration.md step 1d (bugs/0992): stand in for the Tk window it owns ------
+    # The inspector WAS a `tk.Toplevel`, so the 3D view could only ever exist as a Tk window -- even
+    # in the Qt shell, where that window is withdrawn and never shown. It owns one now, as the
+    # editor owns its root (bugs/0853), and forwards to it whatever it does not define: the
+    # semantics a `tk.Toplevel` subclass had, so `ttk.Frame(self)`, `self.after(...)`,
+    # `tk.Toplevel(self)` and `parent=self` keep working unchanged.
+    def __getattr__(self, name: str):
+        """Anything the inspector does not define is looked up on the window it owns. An inspector
+        built with __new__ (guards build them) has no window and gets a clean AttributeError."""
+        window = self.__dict__.get("window")
+        if window is None or name == "window":
+            raise AttributeError(name)
+        return getattr(window, name)
+
+    def __str__(self) -> str:
+        # Tk takes a widget as its path: `transient(self)`, `parent=self`
+        window = self.__dict__.get("window")
+        return str(window) if window is not None else object.__repr__(self)
+
+    @property
+    def _last_child_ids(self):
+        # tkinter numbers child widgets per master and ASSIGNS a fresh counter to a master that has
+        # none; keep one counter -- the window's -- so a widget parented to the inspector and one
+        # parented to its window can never both be named `.!frame`.
+        window = self.__dict__.get("window")
+        return None if window is None else window._last_child_ids
+
+    @_last_child_ids.setter
+    def _last_child_ids(self, value) -> None:
+        window = self.__dict__.get("window")
+        if window is not None:
+            window._last_child_ids = value
+
     # Pick state lives on a SelectionModel that survives RemoveAllViewProps().
     # These five properties are compatibility shims so existing call sites
     # (`self._picked_row_index = X`, `self._picked_step_label`, ...) keep
@@ -577,7 +615,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin, tk.Toplevel):
 
     def __init__(self, editor: "KrakenLayoutEditor", *, vtk_host=None) -> None:
         _load_3d_backends()
-        super().__init__(editor)
+        self.window = Kraken3DInspectorWindow(editor)
         self.editor = editor
         # bugs/0906 (docs/design_qt_migration.md phase 5a): `vtk_host` is a VTK widget a shell
         # already made -- the Qt shell's QVTKRenderWindowInteractor. The inspector then draws

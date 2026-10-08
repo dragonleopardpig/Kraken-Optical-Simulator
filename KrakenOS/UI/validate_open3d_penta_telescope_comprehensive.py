@@ -16850,6 +16850,10 @@ phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
     721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
     'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
     'qt_model_forms_open_in_qt')
+phase_758_inspector_owns_its_window = _phase_from_standalone(
+    758, "the 3D inspector owns its Tk window instead of being one (0992, step 1d for the inspector): the inspector is not a Tk widget, the window it owns is a Toplevel child of the editor and str(inspector) is the window's path; after and update through the inspector run a callback and the title, state and existence answer; widgets parented to the inspector and to its window share one naming counter; Tk takes the inspector where it takes a window -- a dialog's master, transient, a variable's and a menu's master, an argument of a Tk command; a raising callback of a widget inside the inspector reaches the editor's handler; an inspector built with __new__ raises a clean AttributeError, also through a property whose own attribute is missing; closing destroys the window and the editor forgets the inspector; in the Qt shell the hosted inspector is the same kind of object with its window withdrawn, drawing into the Qt widget and scheduling on the shell's host",
+    'KrakenOS.UI.validate_inspector_owns_its_window',
+    'inspector_owns_its_window')
 phase_757_undo_restores_selected_rows = _phase_from_standalone(
     757, "Undo and Redo put the selection back on the rows that were selected (0991): the history keeps row numbers and they were restored as places in the table, which a source row above or a path view shifts; on a headless editor holding the two-arm doublets, rows 2 and 3 selected, a cell committed and Undo leave rows 2 and 3 selected with the focus on row 2, Redo the same, Delete then removes exactly those two rows and undoing the delete selects them again, a row selected in a path view comes back as that row, and a scene with no source row behaves as it always did; in the Tk interface the selection's outline after Undo is drawn on rows 2 and 3, measured against the table's own cells, and Delete removes those rows; in the Qt interface the Qt table and the model name the same rows after Undo",
     'KrakenOS.UI.validate_undo_restores_selected_rows',
@@ -17884,6 +17888,7 @@ def main() -> int:
             phase_755_table_cells_model,
             phase_756_table_selection_model,
             phase_757_undo_restores_selected_rows,
+            phase_758_inspector_owns_its_window,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
