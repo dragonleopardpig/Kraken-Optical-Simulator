@@ -292,7 +292,8 @@ def tk_checks() -> list:
                 f"its headings are the path-local ones: {path_headings == expected_local} "
                 f"({sum(1 for f in FIELDS if path_headings[f] != plain_headings[f])} differ from the plain ones)")
 
-    return _claims((("P", claim_p), ("V", claim_v)))
+    # V first: its "after the load" is then the load's own table, before P types into it
+    return _claims((("V", claim_v), ("P", claim_p)))
 
 
 def _run(call: str, claim: str, needs_display: bool) -> list:
