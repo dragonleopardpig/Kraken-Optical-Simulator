@@ -68,7 +68,7 @@ def _rename_row(app: KrakenLayoutEditor, row_index: int, name: str) -> None:
     Promotion gives every body the same generic "Promoted OPTICAL STEP
     optical solid" name. Replace it with a friendly label so the saved
     layout reads cleanly when opened in the editor. We update both
-    `app.rows[i].name` and the Tk table cell so a later
+    `app.rows[i].name` and the table's cell so a later
     `_read_rows_from_table` (called by `save_layout`) doesn't revert
     the rename. The table's iid scheme isn't positional, so use the
     editor's `_table_item_for_row_index` lookup instead of indexing
@@ -83,15 +83,8 @@ def _rename_row(app: KrakenLayoutEditor, row_index: int, name: str) -> None:
         item = app._table_item_for_row_index(row_index)
         if not item:
             return
-        cols = list(app.table["columns"])
-        if "name" not in cols:
-            return
-        name_col = cols.index("name")
-        current = list(app.table.item(item, "values"))
-        while len(current) <= name_col:
-            current.append("")
-        current[name_col] = name
-        app.table.item(item, values=current)
+        # the table's cells are the model's (bugs/0989): the parser reads the name there
+        app._set_table_cell_text(item, "name", name)
     except Exception:
         pass
 

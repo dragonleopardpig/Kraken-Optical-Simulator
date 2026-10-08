@@ -13,7 +13,9 @@ def _layout_module():
 
 
 class EditableTableRowService:
-    """Read committed table cells back into SurfaceRow records."""
+    """Read committed table cells back into SurfaceRow records.
+
+    The cells are the model's (`services/table_cells.py`): nothing here asks a table widget."""
 
     def __init__(self, editor: Any) -> None:
         object.__setattr__(self, "editor", editor)
@@ -40,11 +42,12 @@ class EditableTableRowService:
         _parse_float_sequence_text = le._parse_float_sequence_text
         rows = [SurfaceRow(**asdict(row)) for row in self.rows]
         path_local_pose_edits: dict[tuple[int, int], dict[str, object]] = {}
-        for item in self.table.get_children():
+        cells = self._table_cells()          # the model's cells, not a widget's (bugs/0989)
+        for item in cells.items():
             row_index = self._table_item_row_index(item)
             if row_index is None or not (0 <= row_index < len(rows)):
                 continue
-            values = self.table.item(item, "values")
+            values = cells.values(item)
             fields = {field: values[index] if index < len(values) else "" for index, field in enumerate(FIELDS)}
             previous = self.rows[row_index] if row_index < len(self.rows) else SurfaceRow(label=str(row_index))
             surface = str(fields["surface"] or previous.surface)

@@ -488,7 +488,7 @@ class LayoutImportExportMixin:
         )
         self._normalize_special_rows()
         self._sync_table()
-        items = self.table.get_children()
+        items = self._table_cells().items()
         selected_items = items[insert_at : insert_at + len(new_rows)]
         if selected_items:
             self.table.selection_set(selected_items)

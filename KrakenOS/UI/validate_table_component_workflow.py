@@ -94,6 +94,21 @@ def _layout_path_by_title(title: str) -> Path:
     raise ValueError(f"Common layout not found: {title}")
 
 
+def _show_rows(editor) -> None:
+    """What the real `_sync_table` does, for this fake: the fake Tk table lists the rows, and so do the
+    model's cells -- which is where the parser and the row lookups ask since bugs/0989."""
+    editor.table.sync(editor.rows)
+    _show_cells(editor)
+
+
+def _show_cells(editor) -> None:
+    """The model's cells take the texts the fake table holds."""
+    cells = editor._table_cells()
+    cells.clear()
+    for item in editor.table.get_children():
+        cells.add(item, editor.table.item(item, "values"))
+
+
 def _headless_editor() -> KrakenLayoutEditor:
     editor = KrakenLayoutEditor.__new__(KrakenLayoutEditor)
     editor.headless = True
@@ -103,7 +118,7 @@ def _headless_editor() -> KrakenLayoutEditor:
         SurfaceRow(surface="Image", name="Image", thickness=0.0, diameter=25.0, glass="AIR"),
     ]
     editor.table = _FakeTable()
-    editor.table.sync(editor.rows)
+    _show_rows(editor)
     editor.editor = None
     editor._editor_row_id = None
     editor._editor_field = None
@@ -137,7 +152,7 @@ def _headless_editor() -> KrakenLayoutEditor:
     editor.clipboard_get = lambda: editor._clipboard_text
 
     def sync_table() -> None:
-        editor.table.sync(editor.rows)
+        _show_rows(editor)
 
     editor._sync_table = sync_table
     return editor
@@ -315,6 +330,7 @@ def validate_table_component_workflow() -> list[TableComponentWorkflowCheck]:
                 if index == 1:
                     values[FIELDS.index("desp_y")] = "-5,0,5"
                 parse_app.table.set_values(index, values)
+            _show_cells(parse_app)
             parse_app._read_rows_from_table()
             parsed_desp_y = parse_app.rows[1].desp_y
             parsed_values = KrakenLayoutEditor._pose_tolerance_overlay_values(parse_app.rows[1], "desp_y")
@@ -344,6 +360,7 @@ def validate_table_component_workflow() -> list[TableComponentWorkflowCheck]:
                 if index == 1:
                     values[FIELDS.index("desp_y")] = "-5,0,5"
                 group_app.table.set_values(index, values)
+            _show_cells(group_app)
             group_app._read_rows_from_table()
             group_values = [
                 KrakenLayoutEditor._pose_tolerance_overlay_values(group_app.rows[index], "desp_y")

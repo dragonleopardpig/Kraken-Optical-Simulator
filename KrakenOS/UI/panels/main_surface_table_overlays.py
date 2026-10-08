@@ -8,7 +8,10 @@ widgets over itself:
 - the "V" marker on a cell that is an optimization variable;
 - the entry a cell is edited in.
 
-All of it was in `services/layout_table_workbench.py` -- the last module of the toolkit-free layers
+And, since bugs/0989, the rows themselves: what a cell SAYS is the model's
+(`services/table_cells.py`), and this module puts those texts into the `ttk.Treeview`.
+
+The overlays were in `services/layout_table_workbench.py` -- the last module of the toolkit-free layers
 to name tkinter at run time, and to load it when imported. WHICH rows are selected, which cell is
 active, which cells are variables and what a committed edit does stay there; this module only
 draws, and re-draws when the table scrolls.
@@ -293,6 +296,37 @@ class MainSurfaceTableOverlays:
                     ),
                 )
                 self._grid_overlays.append(marker)
+
+    # ---- the rows themselves: the Tk table SHOWS the model's cells (bugs/0989) -------------------
+    # `services/table_cells.py` holds what a cell says; the parser reads it there. These three put it
+    # on screen, and do nothing when there is no Tk table to put it on.
+    def _show_tk_table_rows(self) -> None:
+        """Every row replaced by the model's: its texts, in order, with its colour tags."""
+        table = self.editor.__dict__.get("table")
+        if table is None:
+            return
+        cells = self._table_cells()
+        table.delete(*table.get_children())
+        for item in cells.items():
+            table.insert("", "end", iid=item, values=cells.values(item), tags=cells.tags(item))
+
+    def _show_tk_table_cell(self, item: str, field: str, text: str) -> None:
+        """One cell's text, as the model now has it."""
+        table = self.editor.__dict__.get("table")
+        if table is None or not table.exists(item):
+            return
+        table.set(item, field, text)
+
+    def _show_tk_table_headings(self, labels: dict) -> None:
+        """The column headings: they change with the path view."""
+        table = self.editor.__dict__.get("table")
+        if table is None:
+            return
+        for field, label in labels.items():
+            try:
+                table.heading(field, text=label)
+            except Exception:
+                continue
 
     def _place_cell_editor(self, row_id: str, field: str, value: str, bbox) -> ttk.Entry:
         """The entry a cell is edited in, placed over the cell: Return or leaving it commits, Escape cancels."""

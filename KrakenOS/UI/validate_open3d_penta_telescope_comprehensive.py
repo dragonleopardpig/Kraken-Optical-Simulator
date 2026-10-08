@@ -16850,6 +16850,10 @@ phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
     721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
     'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
     'qt_model_forms_open_in_qt')
+phase_755_table_cells_model = _phase_from_standalone(
+    755, "the surface table's cells are the model's and the cell parser no longer reads a Tk widget (0989): no module of the toolkit-free layers asks the editor's Tk table about its cells, 0 uses where there were 26, and what they still ask it about -- the selection and the pointer -- is counted exactly and may only shrink; the cell store keeps rows in the order added with their texts and tags, sets one text and pads a short row, and a row that is not there takes nothing; a headless editor whose Tk table is destroyed and removed takes the same thirty cell edits and path-view changes as one that has it, with the same answers and the same rows; a text written straight into the Tk widget is not parsed while a text given to the model is, the Tk table shows it, and the two builder scripts' rename survives a parse; the Tk table shows exactly the model's cells -- rows, order, texts and tags -- after a load, a committed cell, a chosen material, a path view and back, with the path-local headings in a path view",
+    'KrakenOS.UI.validate_table_cells_model',
+    'table_cells_model')
 phase_754_qt_question_default = _phase_from_standalone(
     754, "a question's default answer is the same in both shells (0988): the Tk host hands the default to tkinter unchanged for each of its four questions; the model's one question that names a default -- Import Lens from Folder replaces the scene -- is not asked when there is nothing to discard, and with a camera body attached is asked once with default no, the scene kept, the status saying so and no folder asked for when answered no; the real Qt dialogs opened by the Qt host and answered by pressing Enter have that button as their default button, focused, and answer it, for yes/no, ok/cancel, yes/no/cancel and retry/cancel, while with no default or a word that is no button the affirmative button answers as Tk's first button does",
     'KrakenOS.UI.validate_qt_question_default',
@@ -17869,6 +17873,7 @@ def main() -> int:
             phase_752_lens_drawing_tk_view,
             phase_753_surface_table_overlays_view,
             phase_754_qt_question_default,
+            phase_755_table_cells_model,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

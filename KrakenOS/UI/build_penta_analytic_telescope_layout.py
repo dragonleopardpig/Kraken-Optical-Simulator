@@ -240,15 +240,8 @@ def _rename_row(app: KrakenLayoutEditor, row_index: int, name: str) -> None:
         item = app._table_item_for_row_index(row_index)
         if not item:
             return
-        cols = list(app.table["columns"])
-        if "name" not in cols:
-            return
-        name_col = cols.index("name")
-        current = list(app.table.item(item, "values"))
-        while len(current) <= name_col:
-            current.append("")
-        current[name_col] = name
-        app.table.item(item, values=current)
+        # the table's cells are the model's (bugs/0989): the parser reads the name there
+        app._set_table_cell_text(item, "name", name)
     except Exception:
         pass
 

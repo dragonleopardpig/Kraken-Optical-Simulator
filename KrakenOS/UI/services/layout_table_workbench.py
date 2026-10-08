@@ -27,6 +27,7 @@ from KrakenOS.UI.services.machine_vision_folder_import import (
     render_surrogate_layout_source,
 )
 from KrakenOS.UI.services.open3d_timing import open3d_timing_event, open3d_timing_span
+from KrakenOS.UI.services.table_cells import TableCells
 from KrakenOS.UI.uihost import host_of
 
 
@@ -124,7 +125,7 @@ class LayoutTableWorkbenchMixin:
         self._native_table_selection_remove = self.table.selection_remove
 
         def selection() -> tuple[str, ...]:
-            selected = tuple(item for item in self._table_selected_items if self.table.exists(item))
+            selected = tuple(item for item in self._table_selected_items if self._table_cells().exists(item))
             if len(selected) != len(self._table_selected_items):
                 self._table_selected_items = list(selected)
             return selected
@@ -133,7 +134,7 @@ class LayoutTableWorkbenchMixin:
             ordered: list[str] = []
             seen: set[str] = set()
             for item in self._flatten_table_item_args(*items):
-                if self.table.exists(item) and item not in seen:
+                if self._table_cells().exists(item) and item not in seen:
                     ordered.append(item)
                     seen.add(item)
             self._table_selected_items = ordered
@@ -151,7 +152,7 @@ class LayoutTableWorkbenchMixin:
             selected = list(selection())
             seen = set(selected)
             for item in self._flatten_table_item_args(*items):
-                if self.table.exists(item) and item not in seen:
+                if self._table_cells().exists(item) and item not in seen:
                     selected.append(item)
                     seen.add(item)
             self._table_selected_items = selected
@@ -162,7 +163,7 @@ class LayoutTableWorkbenchMixin:
             selected = list(selection())
             selected_set = set(selected)
             for item in self._flatten_table_item_args(*items):
-                if not self.table.exists(item):
+                if not self._table_cells().exists(item):
                     continue
                 if item in selected_set:
                     selected_set.remove(item)
@@ -236,7 +237,7 @@ class LayoutTableWorkbenchMixin:
         self._sync_surface_selection(self._current_selected_row_index(), from_table=True)
 
     def _clear_table_selection(self) -> None:
-        items = list(self.table.get_children())
+        items = list(self._table_cells().items())
         if items:
             self.table.selection_remove(*items)
         self.table.focus("")
@@ -3240,7 +3241,7 @@ class LayoutTableWorkbenchMixin:
                 self._normalize_special_rows()
                 self._sync_table()
                 selected_indices = [int(index) for index in state.get("selected_indices", []) if isinstance(index, int)]
-                items = list(self.table.get_children())
+                items = list(self._table_cells().items())
                 selected_items = [items[index] for index in selected_indices if 0 <= index < len(items)]
                 if selected_items:
                     self.table.selection_set(selected_items)
@@ -4065,16 +4066,28 @@ class LayoutTableWorkbenchMixin:
             except ValueError:
                 return None
         try:
-            return int(self.table.index(text))
+            return int(self._table_cells().index(text))
         except Exception:
             return None
 
     def _table_item_for_row_index(self, row_index: int) -> str | None:
         item = self._table_iid_for_row_index(row_index)
-        try:
-            return item if self.table.exists(item) else None
-        except Exception:
-            return None
+        return item if self._table_cells().exists(item) else None
+
+    # ---- the table's cells are the model's (bugs/0989): services/table_cells.py --------------------
+    def _table_cells(self) -> TableCells:
+        """What the table shows and the parser reads -- filled by `_sync_table`, one text at a time
+        by a committed cell. Each shell's table is a view of it."""
+        cells = self.__dict__.get("_table_cells_instance")
+        if cells is None:
+            cells = TableCells()
+            self._table_cells_instance = cells
+        return cells
+
+    def _set_table_cell_text(self, item: str, field: str, text: str) -> None:
+        """One cell takes a text -- typed, chosen, or re-formatted -- and holds it until the next sync."""
+        self._table_cells().set_text(item, FIELDS.index(field), text)
+        self._show_tk_table_cell(item, field, str(text))
 
     @staticmethod
     def _table_iid_for_scene_source_record(record) -> str:
@@ -4111,17 +4124,12 @@ class LayoutTableWorkbenchMixin:
         return self._format_table_float(float(metadata.get(metadata_key, 0.0)))
 
     def _sync_table_headings(self) -> None:
-        table = self.__dict__.get("table")
-        if table is None:
-            return
         local_mode = self._path_local_table_mode_enabled()
         self._table_path_local_mode_active = local_mode
-        for field in FIELDS:
-            label = PATH_LOCAL_COLUMN_LABELS.get(field, COLUMN_LABELS[field]) if local_mode else COLUMN_LABELS[field]
-            try:
-                table.heading(field, text=label)
-            except Exception:
-                continue
+        self._show_tk_table_headings({
+            field: PATH_LOCAL_COLUMN_LABELS.get(field, COLUMN_LABELS[field]) if local_mode else COLUMN_LABELS[field]
+            for field in FIELDS
+        })
 
     def _default_insert_index_for_arm_key(self, arm_key: str) -> int:
         leg_id = self._leg_id_from_arm_key(arm_key)
@@ -4230,7 +4238,8 @@ class LayoutTableWorkbenchMixin:
     def _sync_table(self) -> None:
         self._apply_image_diameter_mode()
         self._sync_table_headings()
-        self.table.delete(*self.table.get_children())
+        cells = self._table_cells()
+        cells.clear()
         self._table_iid_to_row_index = {}
         self._table_iid_to_scene_record = {}
         self._refresh_arm_view_choices()
@@ -4246,7 +4255,7 @@ class LayoutTableWorkbenchMixin:
                 iid = self._table_iid_for_scene_source_record(record)
                 self._table_iid_to_row_index[iid] = None
                 self._table_iid_to_scene_record[iid] = record
-                self.table.insert("", "end", iid=iid, values=self._table_values_for_source_scene_row(record), tags=("scene_source",))
+                cells.add(iid, self._table_values_for_source_scene_row(record), ("scene_source",))
                 continue
             if record.table_row_index is None:
                 continue
@@ -4266,7 +4275,8 @@ class LayoutTableWorkbenchMixin:
             iid = self._table_iid_for_row_index(index)
             self._table_iid_to_row_index[iid] = index
             self._table_iid_to_scene_record[iid] = record
-            self.table.insert("", "end", iid=iid, values=self._table_values_for_surface_row(index, row), tags=tags)
+            cells.add(iid, self._table_values_for_surface_row(index, row), tags)
+        self._show_tk_table_rows()
         self._refresh_analysis_surface_choices()
         self._refresh_operand_surface_choices()
         self._schedule_table_grid_update(delay=1)
@@ -4275,25 +4285,23 @@ class LayoutTableWorkbenchMixin:
             show()
 
     def _sync_image_row_table_value(self) -> None:
-        table = self.__dict__.get("table")
-        if table is None or not self.rows:
-            return
-        items = table.get_children()
-        if not items:
+        cells = self._table_cells()
+        if not self.rows or not cells.items():
             return
         image_item = self._table_item_for_row_index(len(self.rows) - 1)
         if image_item is None:
             return
-        values = list(table.item(image_item, "values"))
-        diameter_index = FIELDS.index("diameter")
-        if len(values) <= diameter_index:
+        if len(cells.values(image_item)) <= FIELDS.index("diameter"):
             return
-        values[diameter_index] = self._table_display_value(
-            self.rows[-1],
+        self._set_table_cell_text(
+            image_item,
             "diameter",
-            self._format_table_float(self.rows[-1].diameter),
+            self._table_display_value(
+                self.rows[-1],
+                "diameter",
+                self._format_table_float(self.rows[-1].diameter),
+            ),
         )
-        table.item(image_item, values=values)
 
     def analysis_surface_options(self) -> list[str]:
         """The surfaces an analysis or a non-sequential target can name: "Auto", then each row.
@@ -4740,7 +4748,7 @@ class LayoutTableWorkbenchMixin:
             self._clear_table_selection()
             return "break"
         self._active_cell = (row_id, column_id)
-        children = list(self.table.get_children())
+        children = list(self._table_cells().items())
         shift_pressed = bool(event.state & 0x0001)
         control_pressed = bool(event.state & 0x0004)
         if column_id == "#1" and children and not shift_pressed:
@@ -4846,7 +4854,7 @@ class LayoutTableWorkbenchMixin:
 
     def _move_active_cell(self, event: tk.Event) -> str:
         self.table.focus_set()
-        children = list(self.table.get_children())
+        children = list(self._table_cells().items())
         if not children:
             return "break"
         if self._active_cell is None:
@@ -4919,7 +4927,7 @@ class LayoutTableWorkbenchMixin:
         self._schedule_table_grid_update(delay=1)
 
     def _on_optimization_marker_click(self, event: tk.Event, row_id: str, field: str) -> str:
-        if not self.table.exists(row_id) or field not in FIELDS:
+        if not self._table_cells().exists(row_id) or field not in FIELDS:
             return "break"
         column_id = f"#{FIELDS.index(field) + 1}"
         self._active_cell = (row_id, column_id)
@@ -7488,7 +7496,7 @@ class LayoutTableWorkbenchMixin:
         bbox = self.table.bbox(row_id, column_id)
         if not bbox or len(bbox) != 4:
             return
-        current_value = self.table.set(row_id, field)
+        current_value = self._table_cells().text(row_id, column_index)
         if field in {"rc", "thickness"}:
             current_value = current_value.replace("*", "").strip()
 
@@ -8442,9 +8450,9 @@ class LayoutTableWorkbenchMixin:
     def commit_cell(self, row_index: int, field: str, value: str, *, quiet: bool = False) -> str:
         """Commit one typed or chosen cell value -- the ONE path both shells take (bugs/0903).
 
-        Returns "" when the value went in, or the reason it did not. Parsing still runs through
-        the Tk table (`_read_rows_from_table`), exactly as a Tk edit always has; routing the Qt
-        table here keeps a single parse path rather than a second one that could disagree.
+        Returns "" when the value went in, or the reason it did not. The text goes into the
+        table's cells (`_table_cells`, the model's since bugs/0989) and the rows are parsed back
+        from them (`_read_rows_from_table`): a single parse path, whichever shell's table was typed in.
         """
         value = str(value).strip()
         if not value:
@@ -8452,8 +8460,7 @@ class LayoutTableWorkbenchMixin:
         if not (0 <= int(row_index) < len(self.rows)) or field == "label":
             return "That cell cannot be edited."
         row_id = self._table_iid_for_row_index(int(row_index))
-        table = getattr(self, "table", None)
-        if table is None or not table.exists(row_id):
+        if not self._table_cells().exists(row_id):
             return f"Row {row_index} is not in the current path view; show all paths to edit it."
         if field in ("surface", "glass"):
             self._apply_choice(row_id, field, value)
@@ -8488,7 +8495,7 @@ class LayoutTableWorkbenchMixin:
         self._begin_history_capture()
         if field == "diameter" and row_index == len(self.rows) - 1:
             self._set_image_diameter_mode("Manual")
-        self.table.set(row_id, field, value)
+        self._set_table_cell_text(row_id, field, value)
         self._read_rows_from_table()
         self._normalize_special_rows()
         self._couple_object_image_diameter_after_edit(row_index, field)
@@ -8575,7 +8582,7 @@ class LayoutTableWorkbenchMixin:
 
     def _apply_choice(self, row_id: str, field: str, value: str) -> None:
         self._begin_history_capture()
-        self.table.set(row_id, field, value)
+        self._set_table_cell_text(row_id, field, value)
         self._read_rows_from_table()
         if field == "surface":
             index = self._table_item_row_index(row_id)

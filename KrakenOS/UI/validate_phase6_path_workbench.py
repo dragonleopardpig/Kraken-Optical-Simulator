@@ -43,24 +43,6 @@ class PathWorkbenchCheck:
     detail: str
 
 
-class _FakeTableRows:
-    def __init__(self, row_values: dict[int, list[str]]) -> None:
-        self._row_values = {int(index): tuple(values) for index, values in row_values.items()}
-
-    def get_children(self):
-        return tuple(f"row_{index}" for index in sorted(self._row_values))
-
-    def item(self, item, option=None):
-        try:
-            row_index = int(str(item).split("_", 1)[1])
-        except Exception:
-            row_index = -1
-        values = self._row_values.get(row_index, ())
-        if option == "values":
-            return values
-        return {"values": values}
-
-
 def _layout_path_by_title(title: str) -> Path:
     for path in sorted(LAYOUTS_DIR.glob("*.py")):
         if path.name.startswith("_") or path.name == "__init__.py":
@@ -403,7 +385,10 @@ def _validate_path_view_virtual_table_pose(editor: KrakenLayoutEditor, splitter_
         edited_values[column["desp_x"]] = "1.5"
         edited_values[column["desp_y"]] = "2.25"
         edited_values[column["desp_z"]] = "50"
-        editor.table = _FakeTableRows({insert_at: edited_values})
+        # the table's cells are the model's (bugs/0989): the typed texts go there, not into a table widget
+        cells = editor._table_cells()
+        cells.clear()
+        cells.add(f"row_{insert_at}", edited_values)
         editor._table_path_local_mode_active = True
         editor._read_rows_from_table()
         edited = editor.rows[insert_at]

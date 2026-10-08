@@ -3166,6 +3166,15 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
     def _place_cell_editor(self, row_id: str, field: str, value: str, bbox):
         return self._main_surface_table_overlays()._place_cell_editor(row_id, field, value, bbox)
 
+    def _show_tk_table_rows(self) -> None:
+        self._main_surface_table_overlays()._show_tk_table_rows()
+
+    def _show_tk_table_cell(self, item: str, field: str, text: str) -> None:
+        self._main_surface_table_overlays()._show_tk_table_cell(item, field, text)
+
+    def _show_tk_table_headings(self, labels: dict) -> None:
+        self._main_surface_table_overlays()._show_tk_table_headings(labels)
+
     # ---- the 2D bug flag's Tk windows: panels/main_bug_flag_windows.py (bugs/0979) ----------------
     def _main_bug_flag_windows(self) -> MainBugFlagWindows:
         panel = self.__dict__.get("_main_bug_flag_windows_instance")
