@@ -75,3 +75,26 @@ means something.
 Three guards that fed the parser through a stand-in Tk table give the texts to the model's cells
 instead (`validate_phase6_path_workbench`, `validate_table_component_workflow`; `validate_scene_row_mapping`
 needed no change).
+
+## Checks
+
+**Mutations: 15 of 15 caught.** The parser reading the Tk widget again; a sync not showing the Tk
+table the rows; a text given to the model not shown, or shown but not kept; "is this row shown"
+asked of the widget; showing the rows needing a Tk table; the rows shown without their tags, or in
+reverse; the path-local mode recorded only when there is a Tk table, as before; the cell store not
+padding a short row, or keeping an id's first place; a hidden row taking an edit; a builder writing
+its rename into the widget again; the path view's headings staying plain.
+
+One survived the first run: **the image row's diameter cell written to the Tk widget only.** The
+guard called that re-format but never changed the diameter, so the text was the same either way. It
+changes it now, and requires the model's cell, the Tk table and a parse to agree.
+
+**Passing after the change:** 22 neighbour guards -- the overlays (753) and popup (748) guards, the
+panel delegations, the interaction contract (655), the selector menus (740), phase 738, the three
+that stood in for the Tk table, and the twelve that build a fake editor from the table mixin alone
+-- and 32 gate phases about the table, rows, undo, saving, the row forms and the Qt table (365, 371,
+373, 410, 424, 439, 510, 514, 594, 595, 599, 619, 624, 631, 636, 647-654, 657, 672, 691, 692, 700,
+722, 737, 749, 753), run one at a time.
+
+**Baseline:** phase 755 recorded (pass; 754 phases). The full Tk gate was last run at 2052dda3,
+before this change; it is owed.
