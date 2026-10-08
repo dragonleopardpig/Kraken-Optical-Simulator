@@ -371,7 +371,9 @@ out to hide model state in Tk widgets just as the dialogs did.
 | 6 matplotlib | **done** (2D plot 0893, FormFigure 0887, MTF from image 0938) | -- |
 | 7 validators + gate | **started**: `--shell qt` harness gate 352/352 (0939, last run 2026-10-05); 76 validators exercise the Qt shell | **validators:** 876 under `KrakenOS/UI`, 162 in no penta phase; 247 build a real editor (94 of them `headless=True`); 78 touch Tk directly (they import tkinter or call `winfo_*`, `event_generate`, `wait_window`, `nametowidget`, `tk.Toplevel`, `ttk.*` -- a wider net than the 63 counted on 10-03); 7 drive the model through `ScriptedUiHost`, 5 build a toolkit-free editor. **product code:** 50 of 342 modules import tkinter -- 26 of 44 panels and 5 of 7 widgets (views: expected), `uihost/tk_host.py`, 4 top-level modules (`layout_editor`, `open3d_inspector`, `context_menu`, `modern_ttk_theme`) and **14 of 151 services** (5 never use it; the other 9 hold 76 references). The editor makes a `tk.Tk()` root whatever the shell, so under Qt every Tk panel is still built, hidden. Then Qt as the default shell and the Tk-retirement decision |
 
-**Gates.** Full Tk gate **753/753 at 2052dda3** (2026-10-07, M90aPro hardware; covers 0974-0988, with all of
+**Gates.** Full Tk gate **756/756 at 1f3e0d19** (2026-10-08, X299 hardware, `--jobs 3`, one pass, 139 min, no group
+killed; covers 0989-0991 -- the table's cells and selection off the Tk table, and the Undo selection fix).
+Before it: full Tk gate 753/753 at 2052dda3 (2026-10-07, M90aPro hardware; covers 0974-0988, with all of
 phase 7d). Two passes again: another session's test run took 7.5 GB, the memory watchdog killed three groups
 that were running alone, and the first pass was stopped with 258 phases reported; the other 495 ran once that
 memory was back (62 min, no group killed). Before it: 738/740 at ff4c2088 (2026-10-06; the two were guards that
