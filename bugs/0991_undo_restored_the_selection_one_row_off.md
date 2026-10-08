@@ -53,3 +53,20 @@ left for a decision rather than slipped in here.
 - **T:** the Tk interface -- after Undo the selection's outline is on rows 2 and 3, measured against
   the table's own cells, and Delete removes those rows.
 - **Q:** the Qt interface -- after Undo the Qt table and the model name the same rows.
+
+## Checks
+
+**Mutations: 4 of 4 caught.** The saved row numbers taken as places again -- the bug itself, which
+fails all three claims; Undo leaving the selection where it is; Undo restoring the selection but not
+the focus item; the selection not captured with the state.
+
+The second one drove a change to the guard before it was run: as first written, nothing selected
+another row between the edit and the Undo, so "restored" and "left alone" looked the same. The
+model claim now selects elsewhere before every Undo and Redo.
+
+**Passing after the change:** the selection and cells guards (756, 755), the three table workflow
+guards, the overlays guard (753), the panel delegations, the interaction contract, and ten gate
+phases about undo and the table (365, 424, 439, 510, 594, 595, 657, 691, 700, 753).
+
+**Baseline:** phase 757 recorded (pass; 756 phases). The full Tk gate was last run at 2052dda3; it
+is owed for 0989-0991.
