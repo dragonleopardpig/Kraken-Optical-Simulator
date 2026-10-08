@@ -76,3 +76,27 @@ one. Both records show it, before and after; it is not from this change, and it 
 - **T:** a real Tk editor -- the widget's methods are the model's; a click, and a Tk panel calling the
   widget, both change what the model answers; nothing is selected natively; the borders follow; the
   focus item is mirrored both ways; a row out of sight is scrolled into view.
+
+## Checks
+
+**Mutations: 16 of 16 caught.** The model asking the Tk table again; a selection keeping a row
+twice; a change not announced; a row that left the table staying selected; the focus item surviving
+a rebuild; the model ignoring the Tk table's own focus item; a focus item not reaching the Tk table;
+the Tk table keeping its own selection methods; scrolling doing nothing; the selection captured for
+undo, or a path's rows selected, only when a Tk table exists; a toggle that only adds; the scene
+placement commands asking a Tk table; the active cell's outline needing one.
+
+Two survived the first run, both gaps in the guard:
+
+- **A selection that stores a row which is not shown.** Every read prunes such a row, so nothing the
+  guard asked could tell -- but it would come back selected the moment the row is shown again. Claim
+  M looks at what was kept, before any read.
+- **The Tk table's native selection not being cleared.** Nothing in the guard ever made the widget
+  select natively. Claim T does, and requires the next change to clear it.
+
+**Passing after the change:** 23 neighbour guards -- as for 0989, with the stand-in table of
+`validate_table_component_workflow` given the model's selection state and pointed at it as the real
+Tk table is -- and the same 32 gate phases, one at a time.
+
+**Baseline:** phases 756 and 755 recorded (pass; 755 phases). The full Tk gate was last run at
+2052dda3, before 0989; it is owed.
