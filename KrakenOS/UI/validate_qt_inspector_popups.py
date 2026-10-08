@@ -320,8 +320,10 @@ def qt_runtime_checks() -> list:
                  f"event discarded {emptied[1]}; Escape with typed text -> saved {escaped[1]!r}; Discard with "
                  f"typed text -> bundle exists {discarded[0]}"])
 
-    # the inspector itself is a Tk object the shell hosts (bugs/0906); it is not a popup
-    popups = [w for w in tk_windows if w is not inspector]
+    # the inspector's own Tk window is something the shell hosts (bugs/0906), not a popup. Until bugs/0992 the
+    # inspector WAS that window; it owns it now, so the window is told apart by `inspector.window`
+    own_window = inspector.__dict__.get("window")
+    popups = [w for w in tk_windows if w is not inspector and w is not own_window]
     rows.append(["N", not popups and not tk_waits,
                  f"Tk popups created {len(popups)}, waits on a Tk window {len(tk_waits)}"])
     return rows
