@@ -14,7 +14,8 @@ and path views, identical before and after. This guard holds what must stay true
      item or to scroll -- counted, 0 (57 before); the model has the eight methods and no longer the
      two that touch the widget; the Tk panel has those and the three that mirror the focus
   M  the model alone, on a headless editor whose Tk table and overlays are removed: a selection
-     keeps the order given, drops repeats and rows that are not shown; add, toggle and remove; a
+     keeps the order given, drops repeats and does not even store a row that is not shown; add,
+     toggle and remove; a
      row that leaves the table is forgotten; three changes in a row announce themselves ONCE; the
      focus item is set, read, cleared, and lost when the rows are rebuilt; with nothing selected
      the focus row answers for the selected surface row; a source row answers with its source id
@@ -22,8 +23,9 @@ and path views, identical before and after. This guard holds what must stay true
      move, group, ungroup, delete, a path view and back -- leaves the same selection, focus item,
      answers and rows after every step
   T  a real Tk editor: the widget's `selection*` ARE the model's -- a click, and a Tk panel calling
-     the widget, both change what the model answers; nothing is ever selected natively; the
-     borders follow the selection; the focus item set through the model is the widget's, one set on
+     the widget, both change what the model answers; nothing is ever selected natively, and
+     what the widget selects on its own is cleared by the next change; the borders follow the
+     selection; the focus item set through the model is the widget's, one set on
      the widget by a Tk panel is what the model answers; a row scrolled out of sight is brought
      into view
 """
@@ -151,7 +153,8 @@ def model_checks() -> list:
         editor._on_table_selection_changed = lambda *a: (announced.append(len(editor._table_selection())), real(*a))[1]
         try:
             editor._set_table_selection(["row_2", "row_1"], "row_2", "nope", None, "")
-            ordered = editor._table_selection()
+            stored = list(editor._table_selected_items)      # what was KEPT, before a read prunes it: a row that is
+            ordered = editor._table_selection()              # not shown must not wait there to be selected when it is
             editor._add_to_table_selection("row_3", "row_1")
             added = editor._table_selection()
             editor._toggle_table_selection("row_2", "row_4")
@@ -191,12 +194,14 @@ def model_checks() -> list:
         source_answers = (bool(source_id), editor._current_selected_row_index(), editor._selected_table_indices())
         editor._clear_table_selection()
         editor.ui.run_due(100)
-        return ("table" not in editor.__dict__ and ordered == ("row_2", "row_1") and added == ("row_2", "row_1", "row_3")
+        return ("table" not in editor.__dict__ and stored == ["row_2", "row_1"]
+                and ordered == ("row_2", "row_1") and added == ("row_2", "row_1", "row_3")
                 and toggled == ("row_1", "row_3", "row_4") and removed == ("row_1", "row_4")
                 and before_idle == [] and after_idle == [2] and forgotten == (("row_1",), ["row_1"])
                 and focus_set == "row_3" and focus_row_answers == ((), 5, None) and focus_after_rebuild == ""
                 and focus_cleared == "" and source_answers == (True, None, []),
-                f"with no Tk table: selecting row 2, row 1, row 2 again, a row that is not shown, nothing -> {ordered}; adding "
+                f"with no Tk table: selecting row 2, row 1, row 2 again, a row that is not shown, nothing -> {ordered} "
+                f"(kept: {stored}); adding "
                 f"row 3 and row 1 -> {added}; toggling rows 2 and 4 -> {toggled}; removing row 3 -> {removed}; announced before "
                 f"idle {before_idle}, once idle {after_idle}; with row 4 gone from the table -> {forgotten}; the focus item set "
                 f"{focus_set!r}; with nothing selected and the focus on row 5 (selection, selected surface row, current row) "
@@ -269,6 +274,13 @@ def tk_checks() -> list:
         through_model = (table.selection(), table.focus(), len(editor._selection_border_overlays),
                          tuple(editor._native_table_selection()))
 
+        editor._native_table_selection_set("row_3")      # as the widget's own bindings would select a row
+        settle()
+        native_set = tuple(editor._native_table_selection())
+        editor._set_table_selection("row_5")
+        settle()
+        native_cleared = (tuple(editor._native_table_selection()), table.selection())
+
         last = editor._table_cells().items()[-1]
         hidden = not table.bbox(last)
         editor._show_table_item(last)
@@ -280,13 +292,17 @@ def tk_checks() -> list:
         return (same_methods == (True, True, True)
                 and clicked == (("row_2", "row_4"), ("row_2", "row_4"), "row_4", "row_4") and native_after_click == ()
                 and borders == 8 and through_widget == (("row_3",), "row_3", [3], 4, ())
-                and through_model == (("row_5", "row_6"), "row_6", 4, ()) and hidden and shown and cleared == ((), "", 0),
+                and through_model == (("row_5", "row_6"), "row_6", 4, ())
+                and native_set == ("row_3",) and native_cleared == ((), ("row_5",))
+                and hidden and shown and cleared == ((), "", 0),
                 f"the Tk table's selection, selection_set and selection_remove are the model's: {same_methods}; a click and "
                 f"a Control-click leave (the widget, the model, the model's focus item, the widget's) {clicked}, natively "
                 f"selected {native_after_click}, {borders} border pieces; a Tk panel selecting and focusing row 3 on the WIDGET "
                 f"leaves the model answering {through_widget[:3]} with {through_widget[3]} border pieces; rows 5 and 6 "
                 f"selected through the MODEL leave the widget answering {through_model[:2]}, {through_model[2]} border "
-                f"pieces, natively selected {through_model[3]}; the last row was out of sight ({hidden}) and is brought "
+                f"pieces, natively selected {through_model[3]}; a row the widget selects natively {native_set} is "
+                f"un-selected there by the next change (natively, the selection) {native_cleared}; the last row was out of "
+                f"sight ({hidden}) and is brought "
                 f"into view ({shown}); cleared {cleared}")
 
     return _claims((("T", claim_t),))
