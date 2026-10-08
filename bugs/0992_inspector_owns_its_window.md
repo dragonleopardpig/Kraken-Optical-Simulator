@@ -67,3 +67,23 @@ the commit before agree with each other, so the comparison means something.
 - **W:** an inspector built with `__new__` raises a clean `AttributeError`, also through a property.
 - **D:** closing destroys the window and the editor forgets the inspector.
 - **Q:** in the Qt shell the hosted inspector is the same kind of object, its window withdrawn.
+
+## Checks
+
+**The inspector's own regression set, at a0b73bb2:** the 352-phase harness passes with the inspector
+as a Tk window (352 pass, 0 fail, 43 min) and hosted in the Qt shell (352 pass, 0 fail, 44 min) --
+one process each, one after the other.
+
+**Mutations: 7 of 7 caught.** The forwarding asking for the window without checking there is one
+(a recursion on an inspector built with `__new__`); the inspector not answering with its window's
+path; a widget-naming counter of its own; the window a child of the Tk root instead of the editor;
+the Qt-hosted inspector's window left on screen; closing leaving the window up; the inspector a
+`tk.Toplevel` again.
+
+**Passing after the change:** 23 neighbour guards -- the fifteen others that build an inspector
+with `__new__`, the editor's own-its-root guard (632), the Qt hosting and viewport seam guards
+(0905, 0906), the interaction contract (655), the panel delegations, the bug-flag windows, and
+phase 738.
+
+**Baseline:** phase 758 recorded (pass; 757 phases). The full Tk gate was last run at 1f3e0d19,
+before this change; the 405 phases outside the harness are owed.
