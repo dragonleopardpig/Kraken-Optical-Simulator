@@ -85,5 +85,16 @@ with `__new__`, the editor's own-its-root guard (632), the Qt hosting and viewpo
 (0905, 0906), the interaction contract (655), the panel delegations, the bug-flag windows, and
 phase 738.
 
-**Baseline:** phase 758 recorded (pass; 757 phases). The full Tk gate was last run at 1f3e0d19,
-before this change; the 405 phases outside the harness are owed.
+**Baseline:** phase 758 recorded (pass; 757 phases).
+
+## Found by the full Tk gate (2026-10-08, M90aPro hardware, at b976aff5)
+
+756 pass, 1 fail of 757 phases in 40.7 min. The one: **phase 723**, `validate_qt_inspector_popups`. It
+counts the Tk windows made while the Qt shell's small prompts are driven, and left out "the inspector itself"
+with `w is not inspector`. Until this change the inspector WAS its Tk window; now the window is
+`inspector.window`, so the guard counted it as one popup. Nothing was wrong in the product: the guard leaves
+out the inspector's own window now (fd834761), and phases 721-724 re-run pass.
+
+It is the one place found where code compared a widget Tk made with the inspector object. The search before
+the change looked for an event's widget, a toplevel, a focus owner and a master; a list of recorded
+`tk.Toplevel` constructions was not among the patterns, and this guard was not among the neighbours run.
