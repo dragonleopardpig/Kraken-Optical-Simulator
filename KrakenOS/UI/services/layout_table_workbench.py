@@ -3241,7 +3241,15 @@ class LayoutTableWorkbenchMixin:
                 self._sync_table()
                 selected_indices = [int(index) for index in state.get("selected_indices", []) if isinstance(index, int)]
                 items = list(self._table_cells().items())
-                selected_items = [items[index] for index in selected_indices if 0 <= index < len(items)]
+                # the state holds ROW numbers. A row's place in the table is another thing as soon as a
+                # source row sits above it, or a path view hides rows: taken as a place, the selection
+                # came back one row off, and Delete then removed the wrong rows (bugs/0991).
+                selected_items = [
+                    item
+                    for index in selected_indices
+                    for item in [self._table_item_for_row_index(index)]
+                    if item is not None
+                ]
                 if selected_items:
                     self._set_table_selection(selected_items)
                     self._set_table_focus_item(selected_items[0])

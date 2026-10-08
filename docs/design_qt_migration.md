@@ -160,6 +160,7 @@ One dialog shape per family; a new dialog of a known shape is a builder plus a m
 | 0988 | The Qt host's four questions honour `default=`: Enter on "Replace the scene now?" answered Yes in the Qt shell and No in Tk | parity |
 | 0989 | The surface table's cells are model state (`services/table_cells.py`): `_sync_table` fills them, a committed cell sets one text, the parser reads them, and the Tk table is a view of them. A headless editor with its Tk table destroyed parses and commits the same | phase 7b |
 | 0990 | Which rows are selected and which has the focus is the model's: eight model methods (the bodies of the closures that had been put on the Tk table), every call site in the model uses them, and the Tk table's `selection*` methods are pointed at them. The same script leaves the same selection with and without a Tk table | phase 7b |
+| 0991 | Undo and Redo put the selection back on the ROWS that were selected: the saved row numbers were restored as places in the table, one row off under a source row or in a path view, and Delete then removed the wrong rows (Tk; the Qt table kept its own selection) | bug fix |
 | 0964 | The Qt shell had NO 2D plot (built only by its guard): now a 2D Plot panel with the Tk plot toolbar's six controls (plot2d_toolbar.PLOT_2D), Trace Now, Update, Ray Inspector; an Update shows it | phase 6 |
 | 0963 | The ribbon folds by the WINDOW's height (on crossing 1100 px), not the screen's; a fold by hand is kept | shell |
 | 0962 | The top edge's panel tabs ride in the ribbon's tab row, no row of their own | shell |

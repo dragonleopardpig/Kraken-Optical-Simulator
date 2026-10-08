@@ -16850,6 +16850,10 @@ phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
     721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
     'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
     'qt_model_forms_open_in_qt')
+phase_757_undo_restores_selected_rows = _phase_from_standalone(
+    757, "Undo and Redo put the selection back on the rows that were selected (0991): the history keeps row numbers and they were restored as places in the table, which a source row above or a path view shifts; on a headless editor holding the two-arm doublets, rows 2 and 3 selected, a cell committed and Undo leave rows 2 and 3 selected with the focus on row 2, Redo the same, Delete then removes exactly those two rows and undoing the delete selects them again, a row selected in a path view comes back as that row, and a scene with no source row behaves as it always did; in the Tk interface the selection's outline after Undo is drawn on rows 2 and 3, measured against the table's own cells, and Delete removes those rows; in the Qt interface the Qt table and the model name the same rows after Undo",
+    'KrakenOS.UI.validate_undo_restores_selected_rows',
+    'undo_restores_selected_rows')
 phase_756_table_selection_model = _phase_from_standalone(
     756, "which rows are selected and which has the focus is the model's and no Tk table is asked (0990): no module of the toolkit-free layers asks the editor's Tk table for its selection, its focus item or to scroll, 0 uses where there were 57, the model has the eight methods and the Tk panel the widget code; on a headless editor whose Tk table and overlays are removed a selection keeps the order given and drops repeats and rows that are not shown, adds, toggles and removes, forgets a row that leaves the table, announces three changes once, and the focus item is set, read, cleared and lost when the rows are rebuilt; with and without a Tk table the same script of selects, a commit, undo and redo, duplicate, move, group, ungroup, delete and a path view leaves the same selection, focus item, answers and rows after every step; on a real Tk editor the widget's selection methods are the model's, a click and a Tk panel calling the widget both change what the model answers, nothing is selected natively, the borders follow, the focus item is mirrored both ways and a row out of sight is brought into view",
     'KrakenOS.UI.validate_table_selection_model',
@@ -17879,6 +17883,7 @@ def main() -> int:
             phase_754_qt_question_default,
             phase_755_table_cells_model,
             phase_756_table_selection_model,
+            phase_757_undo_restores_selected_rows,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
