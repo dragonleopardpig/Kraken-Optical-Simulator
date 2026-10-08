@@ -39,11 +39,12 @@ Nothing a user sees changes in either interface.
 | | Before | After |
 |---|---|---|
 | Uses of the editor's Tk table for its CELLS in the toolkit-free layers | 26 | **0** |
-| ... for the selection (`selection*`, `focus`, `see`) | 58 | 58 |
+| ... for the selection (`selection*`, `focus`, `see`) | 57 | 57 |
 | ... for the pointer and geometry (`bbox`, `identify_*`, `xview`, ...) | 16 | 16 |
 | A headless editor with its Tk table destroyed: 35 cell edits and path-view changes | raised | **same answers, same rows** |
 
-The 58 are the second part of 7b; the 16 are Tk event handlers and go with the editor's Tk side (7f).
+The 57 are the second part of 7b (bugs/0990); the 16 are Tk event handlers and go with the editor's Tk side
+(7f). (This report first said 58: one of them was another table, the ray inspector's -- see bugs/0990.)
 
 ## Proof that nothing changed
 

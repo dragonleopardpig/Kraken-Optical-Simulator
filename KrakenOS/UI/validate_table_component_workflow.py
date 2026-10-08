@@ -119,6 +119,14 @@ def _headless_editor() -> KrakenLayoutEditor:
     ]
     editor.table = _FakeTable()
     _show_rows(editor)
+    # the selection is the model's (bugs/0990): the state `__init__` makes, and the stand-in table
+    # pointed at it exactly as the real Tk table is
+    editor._table_selected_items = []
+    editor._table_selection_after_id = None
+    editor._native_table_selection = None
+    editor._native_table_selection_set = None
+    editor._native_table_selection_remove = None
+    editor._install_border_only_table_selection()
     editor.editor = None
     editor._editor_row_id = None
     editor._editor_field = None

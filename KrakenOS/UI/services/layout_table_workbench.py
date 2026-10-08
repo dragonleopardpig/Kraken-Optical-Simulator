@@ -119,82 +119,82 @@ class LayoutTableWorkbenchMixin:
                 flattened.append(text)
         return flattened
 
-    def _install_border_only_table_selection(self) -> None:
-        self._native_table_selection = self.table.selection
-        self._native_table_selection_set = self.table.selection_set
-        self._native_table_selection_remove = self.table.selection_remove
+    # ---- which rows are selected, and which has the focus: the model's (bugs/0990) ----------------
+    # The Tk table shows a selection as borders, never as its own highlight, so its `selection*`
+    # methods were replaced by closures over a list the editor holds: model state, living in a
+    # widget's methods. It is the model's outright now. The Tk table is pointed at these
+    # (`panels/main_surface_table_overlays.py`), and they work with no table at all.
+    def _table_selection(self) -> tuple[str, ...]:
+        """The selected items, in the order selected; one no longer in the table is forgotten."""
+        selected = tuple(item for item in self._table_selected_items if self._table_cells().exists(item))
+        if len(selected) != len(self._table_selected_items):
+            self._table_selected_items = list(selected)
+        return selected
 
-        def selection() -> tuple[str, ...]:
-            selected = tuple(item for item in self._table_selected_items if self._table_cells().exists(item))
-            if len(selected) != len(self._table_selected_items):
-                self._table_selected_items = list(selected)
-            return selected
+    def _set_table_selection(self, *items: object) -> None:
+        """Exactly these rows are selected -- those of them the table shows."""
+        ordered: list[str] = []
+        seen: set[str] = set()
+        for item in self._flatten_table_item_args(*items):
+            if self._table_cells().exists(item) and item not in seen:
+                ordered.append(item)
+                seen.add(item)
+        self._table_selected_items = ordered
+        self._clear_native_table_selection()
+        self._schedule_custom_table_selection_changed()
 
-        def selection_set(*items: object) -> None:
-            ordered: list[str] = []
-            seen: set[str] = set()
-            for item in self._flatten_table_item_args(*items):
-                if self._table_cells().exists(item) and item not in seen:
-                    ordered.append(item)
-                    seen.add(item)
-            self._table_selected_items = ordered
-            self._clear_native_table_selection()
-            self._schedule_custom_table_selection_changed()
+    def _remove_from_table_selection(self, *items: object) -> None:
+        """These rows are no longer selected."""
+        remove = set(self._flatten_table_item_args(*items))
+        if remove:
+            self._table_selected_items = [item for item in self._table_selected_items if item not in remove]
+        self._clear_native_table_selection()
+        self._schedule_custom_table_selection_changed()
 
-        def selection_remove(*items: object) -> None:
-            remove = set(self._flatten_table_item_args(*items))
-            if remove:
-                self._table_selected_items = [item for item in self._table_selected_items if item not in remove]
-            self._clear_native_table_selection()
-            self._schedule_custom_table_selection_changed()
+    def _add_to_table_selection(self, *items: object) -> None:
+        """These rows are selected too."""
+        selected = list(self._table_selection())
+        seen = set(selected)
+        for item in self._flatten_table_item_args(*items):
+            if self._table_cells().exists(item) and item not in seen:
+                selected.append(item)
+                seen.add(item)
+        self._table_selected_items = selected
+        self._clear_native_table_selection()
+        self._schedule_custom_table_selection_changed()
 
-        def selection_add(*items: object) -> None:
-            selected = list(selection())
-            seen = set(selected)
-            for item in self._flatten_table_item_args(*items):
-                if self._table_cells().exists(item) and item not in seen:
-                    selected.append(item)
-                    seen.add(item)
-            self._table_selected_items = selected
-            self._clear_native_table_selection()
-            self._schedule_custom_table_selection_changed()
+    def _toggle_table_selection(self, *items: object) -> None:
+        """Each of these rows changes sides."""
+        selected = list(self._table_selection())
+        selected_set = set(selected)
+        for item in self._flatten_table_item_args(*items):
+            if not self._table_cells().exists(item):
+                continue
+            if item in selected_set:
+                selected_set.remove(item)
+                selected = [candidate for candidate in selected if candidate != item]
+            else:
+                selected.append(item)
+                selected_set.add(item)
+        self._table_selected_items = selected
+        self._clear_native_table_selection()
+        self._schedule_custom_table_selection_changed()
 
-        def selection_toggle(*items: object) -> None:
-            selected = list(selection())
-            selected_set = set(selected)
-            for item in self._flatten_table_item_args(*items):
-                if not self._table_cells().exists(item):
-                    continue
-                if item in selected_set:
-                    selected_set.remove(item)
-                    selected = [candidate for candidate in selected if candidate != item]
-                else:
-                    selected.append(item)
-                    selected_set.add(item)
-            self._table_selected_items = selected
-            self._clear_native_table_selection()
-            self._schedule_custom_table_selection_changed()
+    def _table_focus_item(self) -> str:
+        """The row the keyboard is on, or "". While there is a Tk table it is the table's own -- its
+        paging keys move it too -- and there, as here, it is lost when the rows are rebuilt."""
+        shown = self._tk_table_focus_item()
+        if shown is not None:
+            return shown
+        return str(self.__dict__.get("_table_focus_item_value", "") or "")
 
-        self.table.selection = selection  # type: ignore[method-assign]
-        self.table.selection_set = selection_set  # type: ignore[method-assign]
-        self.table.selection_remove = selection_remove  # type: ignore[method-assign]
-        self.table.selection_add = selection_add  # type: ignore[method-assign]
-        self.table.selection_toggle = selection_toggle  # type: ignore[method-assign]
+    def _set_table_focus_item(self, item: object) -> None:
+        self._table_focus_item_value = str(item or "")
+        self._show_tk_table_focus_item(self._table_focus_item_value)
 
-    def _clear_native_table_selection(self) -> None:
-        native_selection = self._native_table_selection
-        native_remove = self._native_table_selection_remove
-        if native_selection is None or native_remove is None:
-            return
-        try:
-            selected = tuple(native_selection())
-        except Exception:
-            selected = ()
-        if selected:
-            try:
-                native_remove(*selected)
-            except Exception:
-                pass
+    def _show_table_item(self, item: object) -> None:
+        """Scroll the row into view, where a table shows it."""
+        self._show_tk_table_item(item)
 
     def _schedule_custom_table_selection_changed(self) -> None:
         if self._table_selection_after_id is not None:
@@ -214,14 +214,14 @@ class LayoutTableWorkbenchMixin:
         if getattr(self, "selected_row_indices", None) is not None:
             indices = self._selected_table_indices()
             return indices[0] if indices else None
-        items = self.table.selection()
+        items = self._table_selection()
         if not items:
             return None
         return self._table_item_row_index(items[0])
 
     def _on_table_selection_changed(self, _event: tk.Event | None = None) -> None:
         self._update_selection_row_borders()
-        selected = self.table.selection()
+        selected = self._table_selection()
         if selected:
             source_record = self._table_item_scene_record(selected[0])
             if source_record is not None and getattr(source_record, "kind", "") == SCENE_ROW_SOURCE:
@@ -239,8 +239,8 @@ class LayoutTableWorkbenchMixin:
     def _clear_table_selection(self) -> None:
         items = list(self._table_cells().items())
         if items:
-            self.table.selection_remove(*items)
-        self.table.focus("")
+            self._remove_from_table_selection(*items)
+        self._set_table_focus_item("")
         self._active_cell = None
         self._hide_active_cell_border()
         self._clear_selection_row_borders()
@@ -264,12 +264,12 @@ class LayoutTableWorkbenchMixin:
         ]
         if not selected_items:
             return
-        self.table.selection_set(selected_items)
+        self._set_table_selection(selected_items)
         focus_item = self._table_item_for_row_index(focus_index) if focus_index is not None else None
         if focus_item is None:
             focus_item = selected_items[0]
-        self.table.focus(focus_item)
-        self.table.see(focus_item)
+        self._set_table_focus_item(focus_item)
+        self._show_table_item(focus_item)
         self._selection_anchor_row = focus_item
         self._schedule_active_cell_border_update()
 
@@ -310,9 +310,9 @@ class LayoutTableWorkbenchMixin:
         row_id = self._table_item_for_row_index(index)
         if row_id is None:
             return
-        self.table.selection_set(row_id)
-        self.table.focus(row_id)
-        self.table.see(row_id)
+        self._set_table_selection(row_id)
+        self._set_table_focus_item(row_id)
+        self._show_table_item(row_id)
         self._active_cell = (row_id, "#1")
         self._update_active_cell_border()
         self._sync_surface_selection(index)
@@ -2968,12 +2968,11 @@ class LayoutTableWorkbenchMixin:
         self._update_operand_setup_visibility()
 
     def _capture_editor_state(self) -> dict[str, object]:
-        selected_indices = []
-        if hasattr(self, "table"):
-            try:
-                selected_indices = self._selected_table_indices()
-            except Exception:
-                selected_indices = []
+        # the selection is the model's (bugs/0990): it is captured whether or not a Tk table shows it
+        try:
+            selected_indices = self._selected_table_indices()
+        except Exception:
+            selected_indices = []
         active_cell = None
         if self._active_cell is not None:
             row_id, field = self._active_cell
@@ -3244,11 +3243,11 @@ class LayoutTableWorkbenchMixin:
                 items = list(self._table_cells().items())
                 selected_items = [items[index] for index in selected_indices if 0 <= index < len(items)]
                 if selected_items:
-                    self.table.selection_set(selected_items)
-                    self.table.focus(selected_items[0])
-                    self.table.see(selected_items[0])
+                    self._set_table_selection(selected_items)
+                    self._set_table_focus_item(selected_items[0])
+                    self._show_table_item(selected_items[0])
                 else:
-                    self.table.selection_remove(*items)
+                    self._remove_from_table_selection(*items)
                 active_cell = state.get("active_cell")
                 self._active_cell = None
                 if isinstance(active_cell, dict):
@@ -4240,6 +4239,7 @@ class LayoutTableWorkbenchMixin:
         self._sync_table_headings()
         cells = self._table_cells()
         cells.clear()
+        self._table_focus_item_value = ""       # rebuilt rows have no focus item: a Tk table loses its own the same way
         self._table_iid_to_row_index = {}
         self._table_iid_to_scene_record = {}
         self._refresh_arm_view_choices()
@@ -4755,20 +4755,20 @@ class LayoutTableWorkbenchMixin:
             row_index = self._table_item_row_index(row_id)
             if row_index is None:
                 if control_pressed:
-                    selected = set(self.table.selection())
+                    selected = set(self._table_selection())
                     if row_id in selected:
                         selected.remove(row_id)
                     else:
                         selected.add(row_id)
                     ordered = [item for item in children if item in selected]
                     if ordered:
-                        self.table.selection_set(ordered)
+                        self._set_table_selection(ordered)
                     else:
-                        self.table.selection_remove(*children)
+                        self._remove_from_table_selection(*children)
                 else:
-                    self.table.selection_set(row_id)
+                    self._set_table_selection(row_id)
                 self._selection_anchor_row = row_id
-                self.table.focus(row_id)
+                self._set_table_focus_item(row_id)
                 self._schedule_active_cell_border_update()
                 return "break"
             block_indices = self._element_indices_for_index(self.rows, row_index)
@@ -4780,28 +4780,28 @@ class LayoutTableWorkbenchMixin:
             ]
             self._active_cell = None
             if control_pressed:
-                selected = set(self.table.selection())
+                selected = set(self._table_selection())
                 if block_items and all(item in selected for item in block_items):
                     selected.difference_update(block_items)
                 else:
                     selected.update(block_items or [row_id])
                 ordered = [item for item in children if item in selected]
                 if ordered:
-                    self.table.selection_set(ordered)
+                    self._set_table_selection(ordered)
                 else:
-                    self.table.selection_remove(*children)
+                    self._remove_from_table_selection(*children)
                 self._selection_anchor_row = row_id
-                self.table.focus(row_id)
+                self._set_table_focus_item(row_id)
             else:
-                self.table.selection_set(block_items or [row_id])
+                self._set_table_selection(block_items or [row_id])
                 self._selection_anchor_row = row_id
-                self.table.focus(row_id)
+                self._set_table_focus_item(row_id)
             self._schedule_active_cell_border_update()
             return "break"
         if shift_pressed and children:
             anchor = self._selection_anchor_row
             if anchor not in children:
-                anchor = self.table.focus() or row_id
+                anchor = self._table_focus_item() or row_id
             if anchor not in children:
                 anchor = row_id
             start = children.index(anchor)
@@ -4811,31 +4811,31 @@ class LayoutTableWorkbenchMixin:
             else:
                 selected_range = children[end : start + 1]
             if control_pressed:
-                selected = set(self.table.selection())
+                selected = set(self._table_selection())
                 selected.update(selected_range)
                 ordered = [item for item in children if item in selected]
-                self.table.selection_set(ordered)
+                self._set_table_selection(ordered)
             else:
-                self.table.selection_set(selected_range)
-            self.table.focus(row_id)
+                self._set_table_selection(selected_range)
+            self._set_table_focus_item(row_id)
             self._schedule_active_cell_border_update()
             return "break"
         elif control_pressed:
-            selected = set(self.table.selection())
+            selected = set(self._table_selection())
             if row_id in selected:
                 selected.remove(row_id)
             else:
                 selected.add(row_id)
             ordered = [item for item in children if item in selected]
-            self.table.selection_set(ordered)
+            self._set_table_selection(ordered)
             self._selection_anchor_row = row_id
-            self.table.focus(row_id)
+            self._set_table_focus_item(row_id)
             self._schedule_active_cell_border_update()
             return "break"
         else:
-            self.table.selection_set(row_id)
+            self._set_table_selection(row_id)
             self._selection_anchor_row = row_id
-        self.table.focus(row_id)
+        self._set_table_focus_item(row_id)
         self._schedule_active_cell_border_update()
         return "break"
 
@@ -4877,15 +4877,15 @@ class LayoutTableWorkbenchMixin:
             row_id = children[row_index]
             column_id = f"#{column_index}"
         self._active_cell = (row_id, column_id)
-        self.table.focus(row_id)
-        self.table.selection_set(row_id)
+        self._set_table_focus_item(row_id)
+        self._set_table_selection(row_id)
         self._ensure_active_cell_visible(row_id, column_id)
         self._schedule_active_cell_border_update()
         self._schedule_table_grid_update(delay=1)
         return "break"
 
     def _ensure_active_cell_visible(self, row_id: str, column_id: str) -> None:
-        self.table.see(row_id)
+        self._show_table_item(row_id)
         host_of(self).update_idletasks()
         columns = list(self.table["columns"])
         if column_id == "#2":
@@ -4931,8 +4931,8 @@ class LayoutTableWorkbenchMixin:
             return "break"
         column_id = f"#{FIELDS.index(field) + 1}"
         self._active_cell = (row_id, column_id)
-        self.table.focus(row_id)
-        self.table.selection_set(row_id)
+        self._set_table_focus_item(row_id)
+        self._set_table_selection(row_id)
         self._schedule_active_cell_border_update()
         return "break"
 
@@ -5621,7 +5621,7 @@ class LayoutTableWorkbenchMixin:
             return sorted({int(index) for index in shell() if 0 <= int(index) < len(self.rows)})
         indices = [
             index
-            for item in self.table.selection()
+            for item in self._table_selection()
             for index in [self._table_item_row_index(item)]
             if index is not None
         ]
@@ -5643,7 +5643,7 @@ class LayoutTableWorkbenchMixin:
         when it draws one, else the Tk Treeview -- any item, as these verbs always asked."""
         if getattr(self, "selected_row_indices", None) is not None:
             return bool(self._selected_table_indices())
-        return bool(self.table.selection())
+        return bool(self._table_selection())
 
     def group_selected_as_element(self) -> None:
         if not self._table_has_selection():
@@ -5945,7 +5945,7 @@ class LayoutTableWorkbenchMixin:
         else:
             key = self._arm_key_for_view_label(focus_label)
             indices = self._indices_for_arm_key(key)
-            if indices and self.__dict__.get("table") is not None:
+            if indices:
                 self._select_table_indices(indices, focus_index=indices[0])
             self.status_var.set(
                 f"Path view set to {focus_label}; table and 2-D plot show common path plus this path."
@@ -7528,10 +7528,10 @@ class LayoutTableWorkbenchMixin:
         if getattr(self, "selected_row_indices", None) is not None:
             indices = self._selected_table_indices()
             return indices[0] if indices else None
-        selected = self.table.selection()
+        selected = self._table_selection()
         if selected:
             return self._table_item_row_index(selected[0])
-        focused = self.table.focus()
+        focused = self._table_focus_item()
         if focused:
             return self._table_item_row_index(focused)
         return None

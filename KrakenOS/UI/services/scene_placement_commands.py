@@ -2098,16 +2098,14 @@ class ScenePlacementMixin:
         return result
 
     def _current_selected_scene_source_id(self) -> str:
-        table = self.__dict__.get("table")
-        if table is None:
-            return ""
+        # the selection and the focus item are the model's (bugs/0990); an owner that has neither has no candidate
         candidates: list[str] = []
         try:
-            candidates.extend(str(item) for item in table.selection())
+            candidates.extend(str(item) for item in self._table_selection())
         except Exception:
             pass
         try:
-            focused = str(table.focus() or "")
+            focused = str(self._table_focus_item() or "")
             if focused:
                 candidates.append(focused)
         except Exception:

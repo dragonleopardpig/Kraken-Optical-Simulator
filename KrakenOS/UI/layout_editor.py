@@ -3175,6 +3175,21 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
     def _show_tk_table_headings(self, labels: dict) -> None:
         self._main_surface_table_overlays()._show_tk_table_headings(labels)
 
+    def _install_border_only_table_selection(self) -> None:
+        self._main_surface_table_overlays()._install_border_only_table_selection()
+
+    def _clear_native_table_selection(self) -> None:
+        self._main_surface_table_overlays()._clear_native_table_selection()
+
+    def _tk_table_focus_item(self):
+        return self._main_surface_table_overlays()._tk_table_focus_item()
+
+    def _show_tk_table_focus_item(self, item: str) -> None:
+        self._main_surface_table_overlays()._show_tk_table_focus_item(item)
+
+    def _show_tk_table_item(self, item) -> None:
+        self._main_surface_table_overlays()._show_tk_table_item(item)
+
     # ---- the 2D bug flag's Tk windows: panels/main_bug_flag_windows.py (bugs/0979) ----------------
     def _main_bug_flag_windows(self) -> MainBugFlagWindows:
         panel = self.__dict__.get("_main_bug_flag_windows_instance")

@@ -491,9 +491,9 @@ class LayoutImportExportMixin:
         items = self._table_cells().items()
         selected_items = items[insert_at : insert_at + len(new_rows)]
         if selected_items:
-            self.table.selection_set(selected_items)
-            self.table.focus(selected_items[0])
-            self.table.see(selected_items[0])
+            self._set_table_selection(selected_items)
+            self._set_table_focus_item(selected_items[0])
+            self._show_table_item(selected_items[0])
         return insert_at
 
     def _main_stock_lens_importer_dialog(self) -> MainStockLensImporterDialog:

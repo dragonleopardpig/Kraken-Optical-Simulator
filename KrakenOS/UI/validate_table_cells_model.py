@@ -45,11 +45,14 @@ LAYOUT = Path("KrakenOS/common_optical_layouts/beam_splitter_two_arm_doublets.py
 CELL_METHODS = {"get_children", "item", "set", "insert", "delete", "exists", "index", "heading"}
 SELECTION_METHODS = {"selection", "selection_set", "selection_remove", "selection_add", "selection_toggle", "focus", "see"}
 #: what the toolkit-free layers still ask the editor's Tk table, by kind. EXACT: a count that falls
-#: must be lowered here, so it can only shrink (bugs/0989 took "cells" from 26 to 0).
-#: selection: the table workbench 53, the import/export service 3, the scene placement commands 2
-TK_TABLE_USES = {"selection": 58, "geometry and events": 16}
-TK_TABLE_USE = re.compile(r"\b(?:self|self\.editor|editor)\.table\.(\w+)"
-                          r"|\btable\.(get_children|item|set|insert|delete|exists|index|heading|selection\w*|focus|see)\(")
+#: must be lowered here, so it can only shrink. bugs/0989 took "cells" from 26 to 0; bugs/0990 took
+#: "selection" from 58 to 0 (the table workbench 53, the import/export service 3, the scene
+#: placement commands 2). What is left: the Tk event handlers' questions about the pointer and the
+#: view (`bbox`, `identify_*`, `xview`, ...), and the places that do something only IF there is a
+#: Tk table.
+TK_TABLE_USES = {"geometry and events": 16, "whether there is one": 10}
+TK_TABLE_USE = re.compile(r"\b(?:self|self\.editor|editor)\.table\.(\w+)")
+TK_TABLE_ASKED_FOR = re.compile(r"__dict__\.get\(\"table\"\)|[gh]\w+attr\(self, \"table\"|\"table\" (?:not )?in self\.__dict__")
 TK_NAMES = {"tk", "ttk", "tkfont", "messagebox", "filedialog", "simpledialog"}
 EDITS = (("thickness", "7.25"), ("rc", "-33.5"), ("name", "Edited 007"), ("tilt_x", "1, 2, 3"), ("desp_y", "0.5"),
          ("diameter", "12.5"), ("glass", "F2"), ("k", "abc"), ("surface", "Mirror"), ("tilt_x", "44, 45, 46"))
@@ -74,9 +77,10 @@ def tk_table_uses() -> dict:
             for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
                 if line.strip().startswith("#"):
                     continue
-                for first, second in TK_TABLE_USE.findall(line):
-                    name = first or second
-                    kind = "cells" if name in CELL_METHODS else "selection" if name in SELECTION_METHODS else "geometry and events"
+                kinds = ["cells" if name in CELL_METHODS else "selection" if name in SELECTION_METHODS else "geometry and events"
+                         for name in TK_TABLE_USE.findall(line)]
+                kinds += ["whether there is one"] * len(TK_TABLE_ASKED_FOR.findall(line))
+                for kind in kinds:
                     per_module = found.setdefault(kind, {})
                     key = path.relative_to(ROOT).as_posix()
                     per_module[key] = per_module.get(key, 0) + 1

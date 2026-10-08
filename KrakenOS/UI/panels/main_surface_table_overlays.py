@@ -118,6 +118,8 @@ class MainSurfaceTableOverlays:
 
     def _update_active_cell_border(self, _event: tk.Event | None = None) -> None:
         self._active_cell_border_after_id = None
+        if self.editor.__dict__.get("table") is None:          # no Tk table: nothing to outline (bugs/0990)
+            return
         if self._active_cell is None:
             self._hide_active_cell_border()
             self._update_selection_row_borders()
@@ -208,6 +210,8 @@ class MainSurfaceTableOverlays:
 
     def _update_table_grid(self, _event: tk.Event | None = None) -> None:
         self._grid_after_id = None
+        if self.editor.__dict__.get("table") is None:          # no Tk table: nothing to rule (bugs/0990)
+            return
         self._clear_table_grid()
         columns, items, visible_bboxes = self._table_grid_context()
         grid_color = "#e2e7ef"
@@ -327,6 +331,54 @@ class MainSurfaceTableOverlays:
                 table.heading(field, text=label)
             except Exception:
                 continue
+
+    # ---- the selection: the Tk table is pointed at the model's (bugs/0990) ------------------------
+    def _install_border_only_table_selection(self) -> None:
+        """A selection is drawn as borders, never as the Treeview's own highlight: the widget's
+        `selection*` methods become the model's, so whoever asks the table asks the model. The natives
+        are kept only to clear what the widget selects on its own (a paging key)."""
+        table = self.table
+        self._native_table_selection = table.selection
+        self._native_table_selection_set = table.selection_set
+        self._native_table_selection_remove = table.selection_remove
+        table.selection = self._table_selection  # type: ignore[method-assign]
+        table.selection_set = self._set_table_selection  # type: ignore[method-assign]
+        table.selection_remove = self._remove_from_table_selection  # type: ignore[method-assign]
+        table.selection_add = self._add_to_table_selection  # type: ignore[method-assign]
+        table.selection_toggle = self._toggle_table_selection  # type: ignore[method-assign]
+
+    def _clear_native_table_selection(self) -> None:
+        native_selection = self._native_table_selection
+        native_remove = self._native_table_selection_remove
+        if native_selection is None or native_remove is None:
+            return
+        try:
+            selected = tuple(native_selection())
+        except Exception:
+            selected = ()
+        if selected:
+            try:
+                native_remove(*selected)
+            except Exception:
+                pass
+
+    def _tk_table_focus_item(self):
+        """The Tk table's focus item, or None when there is no Tk table to ask."""
+        table = self.editor.__dict__.get("table")
+        if table is None:
+            return None
+        return str(table.focus() or "")
+
+    def _show_tk_table_focus_item(self, item: str) -> None:
+        table = self.editor.__dict__.get("table")
+        if table is not None:
+            table.focus(item)
+
+    def _show_tk_table_item(self, item) -> None:
+        """Scroll the row into view."""
+        table = self.editor.__dict__.get("table")
+        if table is not None:
+            table.see(item)
 
     def _place_cell_editor(self, row_id: str, field: str, value: str, bbox) -> ttk.Entry:
         """The entry a cell is edited in, placed over the cell: Return or leaving it commits, Escape cancels."""
