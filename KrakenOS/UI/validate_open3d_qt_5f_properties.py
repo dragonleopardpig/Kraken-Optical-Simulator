@@ -1,12 +1,15 @@
 """Phase 5f, part 3c guard (docs/design_qt_migration.md): the Scene Components browser's Properties /
 Selected-Element pane reaches the Qt shell from ONE computation, `properties_for`.
 
-In a real Qt shell on om05a_folded (the hidden Tk pane is updated by the same `_update_properties`,
-so the two can be compared directly):
+In a real Qt shell on om05a_folded. What the pane must show is what `properties_for` worked out;
+while the inspector still has its hidden Tk window, the Tk pane there is updated by the same
+`_update_properties` and is compared too. Without that window (bugs/0998) there is no Tk pane,
+and the claims hold against the model's answer alone:
 
-  P  for a table row and two STEP overlays, the Qt pane shows exactly the Tk pane's five property
-     texts and the same enabled Selected-Element actions; an overlay enables the face direction,
-     a table row does not -- and the overlay case really enables actions (not vacuous)
+  P  for a table row and two STEP overlays, the Qt pane shows exactly the five property texts
+     and the enabled Selected-Element actions the model worked out (and the Tk pane's, where
+     there is one); an overlay enables the face direction, a table row does not -- and the
+     overlay case really enables actions (not vacuous)
   F  the Qt face-direction choice orients the picked face toward the CHOSEN direction: the value
      is passed in (`apply_face_direction`), never read from the Tk combobox's variable, which is
      hidden under the shell and never set by Qt
@@ -46,12 +49,22 @@ def qt_runtime_checks() -> list:
         dock.widget.setCurrentItem(dock.items[iid])
         app.processEvents()
 
+    #: whether the inspector built its hidden Tk pane: it does unless it has no Tk window (bugs/0998)
+    tk_pane = bool(panel._property_vars)
+
     def shown() -> tuple:
+        """(the Qt pane's texts, what they must be, its enabled actions, what those must be)."""
         qt_values = {k: w.text() for k, w in dock.property_labels.items()}
-        tk_values = {k: str(v.get()) for k, v in panel._property_vars.items()}
         qt_buttons = {k: b.isEnabled() for k, b in dock.action_buttons.items()}
-        tk_buttons = {k: str(b.cget("state")) == "normal" for k, b in panel._selection_buttons.items()}
-        return qt_values, tk_values, qt_buttons, tk_buttons
+        model = panel._last_properties              # what `_update_properties` last handed every pane
+        values = {k: str(v) for k, v in model["values"].items()}
+        buttons = {k: bool(model["buttons"].get(k, False)) for k in qt_buttons}
+        if tk_pane:                                 # and the Tk pane says the same, as it always did
+            tk_values = {k: str(v.get()) for k, v in panel._property_vars.items()}
+            tk_buttons = {k: str(b.cget("state")) == "normal" for k, b in panel._selection_buttons.items()}
+            if tk_values != values or tk_buttons != buttons:
+                return qt_values, {"the Tk pane differs from the model": tk_values}, qt_buttons, tk_buttons
+        return qt_values, values, qt_buttons, buttons
 
     import shiboken6
 
@@ -93,7 +106,8 @@ def qt_runtime_checks() -> list:
             table_face = dock.face_direction.isEnabled()
     rows.append(["P", bool(table) and len(overlays) >= 2 and same and overlay_enables and overlay_face
                  and table_face is False,
-                 f"{'; '.join(cases)}; face direction: overlay={overlay_face}, table={table_face}"])
+                 f"{'; '.join(cases)}; face direction: overlay={overlay_face}, table={table_face}"
+                 + ("; the hidden Tk pane says the same" if tk_pane else "; no Tk pane to compare (the inspector has no Tk window)")])
 
     oriented = []
     original = insp.orient_selected_step_face_to_direction
@@ -115,8 +129,14 @@ def qt_runtime_checks() -> list:
     panel.select_from_canvas(overlays[0])
     app.processEvents()
     after = dock.property_labels["kind"].text()
-    rows.append(["C", before != after and after == str(panel._property_vars["kind"].get()),
-                 f"a canvas pick moved the Qt pane from {before!r} to {after!r}"])
+    # against what the MODEL last worked out, not the hidden Tk pane's variable: without the
+    # inspector's Tk window (bugs/0998) there is no such variable, and where there is one it was
+    # set from this
+    worked_out = str(panel._last_properties["values"]["kind"])
+    tk_pane = panel._property_vars.get("kind")
+    rows.append(["C", before != after and after == worked_out and (tk_pane is None or str(tk_pane.get()) == worked_out),
+                 f"a canvas pick moved the Qt pane from {before!r} to {after!r}"
+                 + ("" if tk_pane is None else " (and the hidden Tk pane with it)")])
     return rows
 
 
