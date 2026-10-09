@@ -215,14 +215,16 @@ def _open_qt_shell():
     def pumping(original):
         def run(*args, **kwargs):
             qt_app.processEvents()
-            result = original(*args, **kwargs)
+            result = original(*args, **kwargs) if original is not None else None
             qt_app.processEvents()
             return result
         return run
 
     for target in (editor, inspector):
         for name in ("update", "update_idletasks"):
-            object.__setattr__(target, name, pumping(getattr(target, name)))
+            # built without Tk (KRAKEN_QT_TK_FREE, bugs/0999) the editor and the inspector have no
+            # such Tk call to wrap: the phases' pump is then Qt's alone
+            object.__setattr__(target, name, pumping(getattr(target, name, None)))
     for _ in range(30):
         qt_app.processEvents()
     return editor, inspector, qt_app, window
@@ -14255,6 +14257,15 @@ def phase_304_context_menu_entry_delivery(
     for note in notes:
         result.notes.append(note)
     live_ok = False
+    if "window" in inspector.__dict__ and inspector.__dict__["window"] is None:
+        # Built without a Tk window (KRAKEN_QT_TK_FREE, bugs/0998) the inspector posts no Tk menu
+        # at all: there is no Tk unpost -> invoke order to replay. What a Qt menu entry delivers
+        # is held by the 0907 guard (phase 695).
+        result.notes.append("live: not applicable -- the inspector has no Tk window, so no Tk menu is ever posted")
+        result.passed = bool(passed)
+        result.detail["stub_guard"] = "pass" if passed else "fail"
+        result.detail["live_delivery"] = "not applicable"
+        return result
     try:
         import tkinter as tk
 
