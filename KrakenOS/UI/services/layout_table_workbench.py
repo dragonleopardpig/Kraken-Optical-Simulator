@@ -2273,7 +2273,10 @@ class LayoutTableWorkbenchMixin:
         except Exception:
             return ""
         try:
-            inspector.after(120, lambda: inspector._open_quick_estimation_fov_popup("object"))
+            # on the inspector's HOST. `inspector.after` is a Tk timer on its window, and nothing
+            # runs Tk timers under the Qt shell: the dialog this sentence promises never opened
+            # there (bugs/0998). A Tk inspector's host is that same window.
+            host_of(inspector).after(120, lambda: inspector._open_quick_estimation_fov_popup("object"))
         except Exception as exc:
             self.append_debug(f"post-swap FOV prompt skipped: {exc}")
             return ""

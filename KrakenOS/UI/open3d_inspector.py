@@ -463,6 +463,21 @@ class Kraken3DInspector(Open3DDebugToolsMixin):
         window = self.__dict__.get("window")
         return str(window) if window is not None else object.__repr__(self)
 
+    def winfo_exists(self):
+        """Whether this inspector is still there to draw into.
+
+        The model asks it by Tk's name in twenty places, and until bugs/0998 the answer could
+        only be a Tk window's. With a window it still is exactly that. Hosted in a shell with NO
+        Tk window (docs/design_qt_migration.md phase 7f) the inspector is there until it is
+        closed. One built with __new__ has neither and raises, as it always did.
+        """
+        if "window" not in self.__dict__:
+            raise AttributeError("winfo_exists")
+        window = self.__dict__["window"]
+        if window is not None:
+            return window.winfo_exists()
+        return not self.__dict__.get("_closed", False)
+
     @property
     def _last_child_ids(self):
         # tkinter numbers child widgets per master and ASSIGNS a fresh counter to a master that has
@@ -613,9 +628,15 @@ class Kraken3DInspector(Open3DDebugToolsMixin):
     def _step_clear_aperture_pick_mode(self, value: bool) -> None:
         self._set_pick_mode_flag(InteractionMode.STEP_CLEAR_APERTURE_PICK, value)
 
-    def __init__(self, editor: "KrakenLayoutEditor", *, vtk_host=None) -> None:
+    def __init__(self, editor: "KrakenLayoutEditor", *, vtk_host=None, tk_window: bool = True) -> None:
         _load_3d_backends()
-        self.window = Kraken3DInspectorWindow(editor)
+        # docs/design_qt_migration.md phase 7f (bugs/0998): drawing into a shell's own VTK widget
+        # the inspector needs no Tk window. Without one it builds no Tk panel either, and a
+        # leftover Tk call fails loudly (`__getattr__` has no window to forward to) instead of
+        # reaching a window that is withdrawn and never shown.
+        if not tk_window and vtk_host is None:
+            raise ValueError("an inspector without a Tk window draws into a shell's VTK widget: pass vtk_host=")
+        self.window = Kraken3DInspectorWindow(editor) if tk_window else None
         self.editor = editor
         # bugs/0906 (docs/design_qt_migration.md phase 5a): `vtk_host` is a VTK widget a shell
         # already made -- the Qt shell's QVTKRenderWindowInteractor. The inspector then draws
@@ -629,15 +650,16 @@ class Kraken3DInspector(Open3DDebugToolsMixin):
         self.ui = TkUiHost(self) if vtk_host is None else host_of(editor)
         self.available = False
         self.unavailable_reason = ""
-        self.title("KrakenOS 3D Inspector")
         # Same interpreter as the editor: tk scaling and the named fonts are
         # already scaled by its apply_ui_scale(); only pixel geometry remains,
         # and it follows the factor the editor actually applied.
         ui_scale = getattr(editor, "_kraken_ui_scale", 1.0)
         self._kraken_ui_scale = ui_scale
-        self.geometry(f"{scaled_px(1100, ui_scale)}x{scaled_px(780, ui_scale)}")
-        self.minsize(scaled_px(720, ui_scale), scaled_px(520, ui_scale))
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        if self.window is not None:
+            self.title("KrakenOS 3D Inspector")
+            self.geometry(f"{scaled_px(1100, ui_scale)}x{scaled_px(780, ui_scale)}")
+            self.minsize(scaled_px(720, ui_scale), scaled_px(520, ui_scale))
+            self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self._renderer = None
         # bugs/0112: move/rotate gizmo handles render in a dedicated overlay
@@ -1034,6 +1056,20 @@ class Kraken3DInspector(Open3DDebugToolsMixin):
 
         self._quick_estimation_readout_vars = {key: self.ui.string_var(value="--") for key in READOUT_KEYS}
         self.status_var = self.ui.string_var(value="3D inspector ready")
+
+        if self.window is None:
+            # no Tk window: no Tk panel is built, the shell shows its own (bugs/0998)
+            if vtkRenderer is None:
+                self.unavailable_reason = _VTK_TK_UNAVAILABLE_REASON or "Embedded VTK viewer unavailable."
+                self.status_var.set(self.unavailable_reason)
+                return
+            try:
+                self._attach_shell_viewport(self._shell_vtk_host)
+                self.available = True
+            except Exception as exc:
+                self.unavailable_reason = _short_error_message(exc)
+                self.status_var.set(f"Embedded 3D unavailable: {self.unavailable_reason}")
+            return
 
         self.columnconfigure(0, weight=0)
         self.columnconfigure(1, weight=1)
@@ -26502,6 +26538,7 @@ class Kraken3DInspector(Open3DDebugToolsMixin):
         self._on_close()
 
     def _on_close(self) -> None:
+        self._closed = True         # what `winfo_exists` answers from when there is no Tk window
         dirty = bool(getattr(self, "_stl_placement_dirty", False))
         refresh_sampling_mode = self._active_refresh_sampling_mode()
         self._stl_placement_dirty = False

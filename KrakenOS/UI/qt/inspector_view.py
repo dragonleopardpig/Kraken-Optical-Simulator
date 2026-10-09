@@ -83,7 +83,11 @@ class InspectorView:
         #: handler kinds dispatched, oldest first -- what a guard reads to see the routing
         self.dispatched: list[str] = []
 
-        self.inspector = Kraken3DInspector(editor, vtk_host=self.widget)
+        # docs/design_qt_migration.md phase 7f: EXPERIMENTAL until it is the default -- with
+        # KRAKEN_QT_TK_FREE set the inspector is built without its hidden Tk window (bugs/0998)
+        from KrakenOS.UI.qt.tk_free import tk_free
+
+        self.inspector = Kraken3DInspector(editor, vtk_host=self.widget, tk_window=not tk_free("inspector"))
         # The shell's scene draws imported STEP hardware SOFT (bugs/0958): smooth bodies with one
         # faint pass of their edges, the look of the shell's first 3D view. The user compared the
         # two and called the outlined look "a TK version, not qt". Overlays > Soft STEP bodies
