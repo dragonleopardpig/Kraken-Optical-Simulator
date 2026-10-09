@@ -16850,6 +16850,10 @@ phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
     721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
     'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
     'qt_model_forms_open_in_qt')
+phase_759_editor_without_tk_root = _phase_from_standalone(
+    759, "the editor can be built with no Tk root (0993, phase 7f first step): KrakenLayoutEditor(headless=True, ui=host, tk_root=False) builds no root and no Tk panel -- through a 35-step session it makes no Tk root, widget or variable, its 79 model variables are its host's, a Tk call on it raises AttributeError and without a UI host it is refused; after every step about 300 plain attributes equal the Tk-rooted editor's except an exact list of 16 that still live in a Tk panel (the optimizer's operands, which inputs apply); sixteen reactions of the model hold with no Tk (the source and atmosphere summaries follow their inputs, a typed direction names its preset, the field's label, count and hint follow the object mode, a trace's print reaches the debug log); the Tk window still lays out its panes from the window builder and its field inputs are told what the model decided; the pane layout is no longer in the toolkit-free service and the model names a panel-made Tk widget 61 times in 19 attributes, was 103 in 30",
+    'KrakenOS.UI.validate_editor_without_tk_root',
+    'editor_without_tk_root')
 phase_758_inspector_owns_its_window = _phase_from_standalone(
     758, "the 3D inspector owns its Tk window instead of being one (0992, step 1d for the inspector): the inspector is not a Tk widget, the window it owns is a Toplevel child of the editor and str(inspector) is the window's path; after and update through the inspector run a callback and the title, state and existence answer; widgets parented to the inspector and to its window share one naming counter; Tk takes the inspector where it takes a window -- a dialog's master, transient, a variable's and a menu's master, an argument of a Tk command; a raising callback of a widget inside the inspector reaches the editor's handler; an inspector built with __new__ raises a clean AttributeError, also through a property whose own attribute is missing; closing destroys the window and the editor forgets the inspector; in the Qt shell the hosted inspector is the same kind of object with its window withdrawn, drawing into the Qt widget and scheduling on the shell's host",
     'KrakenOS.UI.validate_inspector_owns_its_window',
@@ -17889,6 +17893,7 @@ def main() -> int:
             phase_756_table_selection_model,
             phase_757_undo_restores_selected_rows,
             phase_758_inspector_owns_its_window,
+            phase_759_editor_without_tk_root,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

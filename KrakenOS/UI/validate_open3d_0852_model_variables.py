@@ -8,16 +8,21 @@ panels those attributes would not exist, and a Qt view cannot create a ``tk.Stri
 Now the hosts make variables (``string_var`` / ``int_var`` / ``double_var`` / ``boolean_var``: a
 real ``tk.*Var`` from TkUiHost, an ``ObservableValue`` otherwise), the editor's and inspector's
 constructors create theirs through ``self.ui``, and ``model_variables.MODEL_VARIABLES`` declares
-the 69 panel-made variables the model uses; ``ensure_model_variables`` creates whichever are
+the 79 panel-made variables the model uses; ``ensure_model_variables`` creates whichever are
 missing, never replacing one. Under Tk the panels have made them all, so nothing changes.
 
   V  ObservableValue behaves like a real tk variable, side by side: coercion on get for each
      kind, write traces with tk's (name, index, mode) signature, trace_remove
   F  the host factories: real tk variables of the right class from TkUiHost, ObservableValues of
      the right kind from ScriptedUiHost
-  R  the registry: a toolkit-free owner gets all 69 with their kinds and start-up values; an
-     existing variable (and its trace) is never replaced; a REAL editor has every one after
-     start-up as a tk variable, holding exactly the registry value -- so the registry is current
+  R  the registry: a toolkit-free owner gets all 79 with their kinds and the values a panel
+     creates them with; an existing variable (and its trace) is never replaced; a REAL editor
+     has every one after start-up as a tk variable, holding exactly the registry value -- so the
+     registry is current -- and an editor built with NO Tk root (bugs/0993) has every one from
+     its host, holding exactly the registry value after ITS start-up: the field value, which
+     start-up changes, is created with what a panel creates it with (`CREATED_WITH`), so the
+     blank scene it begins with is the Tk editor's, image diameter and all. The atmosphere's
+     ten numbers, made and read by name from one list, are declared with that list's defaults
   C  completeness: every panel-made variable model code uses is registered or named
      dialog-scoped, and every registered one is still made by a panel -- a new unregistered
      one fails here. "Uses" includes reaching it by NAME (bugs/0968): ``self.__dict__.get("x_var")``,
@@ -71,7 +76,9 @@ def _panel_made_model_used() -> tuple[set[str], set[str]]:
 def run_checks() -> tuple[bool, list[str]]:
     import tkinter as tk
 
-    from KrakenOS.UI.model_variables import DIALOG_SCOPED_VARIABLES, MODEL_VARIABLES, ensure_model_variables
+    from KrakenOS.UI.model_variables import (CREATED_WITH, DIALOG_SCOPED_VARIABLES, MODEL_VARIABLES,
+                                             ensure_model_variables)
+    from KrakenOS.UI.system_controls import ATMOSPHERE_CONTROL_SPECS
     from KrakenOS.UI.uihost import ObservableValue, ScriptedUiHost, TkUiHost
 
     notes: list[str] = []
@@ -123,13 +130,20 @@ def run_checks() -> tuple[bool, list[str]]:
     created = ensure_model_variables(owner)
     wrong = [n for n, (kind, value) in MODEL_VARIABLES.items()
              if not isinstance(getattr(owner, n), ObservableValue) or getattr(owner, n).kind != kind
-             or getattr(owner, n).get() != value]
+             or getattr(owner, n).get() != CREATED_WITH.get(n, value)]
+    atmosphere = {variable: default for _label, variable, default in ATMOSPHERE_CONTROL_SPECS}
+    undeclared = [n for n, default in atmosphere.items() if MODEL_VARIABLES.get(n) != ("string", default)]
     # 65 since bugs/0901 added source_direction_preset_var, which model code reads through
     # self.__dict__.get(...); 69 since bugs/0968 taught the C scan to see that kind of read and
-    # it found four more
-    ok(len(created) == len(MODEL_VARIABLES) == 69 and not wrong,
-       f"R1: a toolkit-free owner gets all {len(created)} declared variables with their kinds and "
-       f"start-up values ({wrong or 'all right'})")
+    # it found four more; 79 since bugs/0993 declared the atmosphere's ten numbers, which the
+    # panel makes and the model reads by NAME from one list -- no scan saw either end
+    ok(len(created) == len(MODEL_VARIABLES) == 79 and not wrong and len(atmosphere) == 10 and not undeclared
+       and sorted(CREATED_WITH) == ["field_value_var"]
+       and all(CREATED_WITH[n] != MODEL_VARIABLES[n][1] for n in CREATED_WITH),
+       f"R1: a toolkit-free owner gets all {len(created)} declared variables with their kinds and the "
+       f"values a panel creates them with ({wrong or 'all right'}); the {len(atmosphere)} atmosphere numbers "
+       f"are declared with their list's defaults ({undeclared or 'all'}); created with another value than "
+       f"start-up leaves: {sorted(CREATED_WITH)}")
     keep = ObservableValue("string", "user text")
     fired = []
     keep.trace_add("write", lambda *a: fired.append(a))
@@ -148,6 +162,7 @@ def run_checks() -> tuple[bool, list[str]]:
         not_tk = [n for n in MODEL_VARIABLES if not isinstance(getattr(app, n, None), tk2.Variable)]
         drift = [(n, getattr(app, n).get(), d) for n, (_k, d) in MODEL_VARIABLES.items()
                  if n not in not_tk and getattr(app, n).get() != d]
+        tk_scene = [(row.surface, round(float(row.diameter), 6)) for row in app.rows]
         ok(created_real == [] and not not_tk and not drift,
            f"R3: a REAL editor's panels made every declared variable (the registry created "
            f"{created_real or 'none'}), all are tk variables, and each holds exactly the registry's "
@@ -155,9 +170,26 @@ def run_checks() -> tuple[bool, list[str]]:
     finally:
         app.destroy()
 
+    # bugs/0993: the same after-start-up values on an editor with NO Tk root, where the host made
+    # every variable -- and the blank scene start-up leaves is the Tk editor's
+    rootless = KrakenLayoutEditor(headless=True, ui=ScriptedUiHost(answers={}), tk_root=False)
+    made_by_host = rootless._model_variables_created_at_init
+    drift = [(n, getattr(rootless, n).get(), d) for n, (_k, d) in MODEL_VARIABLES.items() if getattr(rootless, n).get() != d]
+    not_host = [n for n in MODEL_VARIABLES if not isinstance(getattr(rootless, n), ObservableValue)]
+    scene = [(row.surface, round(float(row.diameter), 6)) for row in rootless.rows]
+    ok(len(made_by_host) == len(MODEL_VARIABLES) and not drift and not not_host and rootless.root is None
+       and scene == tk_scene and scene[-1] == ("Image", 17.497733),
+       f"R4: an editor with no Tk root gets all {len(made_by_host)} from its host, and after its start-up each "
+       f"holds exactly the registry's value ({drift or 'no drift'}); its blank scene {scene} is the Tk editor's "
+       f"({scene == tk_scene})")
+
     # ---- C: completeness ----------------------------------------------------------------------------
     used, made = _panel_made_model_used()
     unregistered = sorted(used - set(MODEL_VARIABLES) - set(DIALOG_SCOPED_VARIABLES))
+    # the atmosphere panel makes its ten from the list, with setattr -- not an assignment the scan sees
+    atmosphere_panel = (ROOT / "panels/main_atmosphere_panel.py").read_text(encoding="utf-8")
+    if "in enumerate(ATMOSPHERE_CONTROL_SPECS)" in atmosphere_panel and "setattr(self, attr_name, var)" in atmosphere_panel:
+        made = made | set(atmosphere)
     stale = sorted(set(MODEL_VARIABLES) - made)
     ok(not unregistered and not stale,
        f"C: every panel-made variable model code uses is registered or dialog-scoped "

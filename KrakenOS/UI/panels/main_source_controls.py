@@ -405,34 +405,7 @@ class MainSourceControlsPanel:
             pady=(8, 0),
         )
 
-        for var in (
-            self.source_model_var,
-            self.pupil_pattern_var,
-            self.source_radius_var,
-            self.source_cone_angle_var,
-            self.gaussian_input_mode_var,
-            self.gaussian_waist_radius_var,
-            self.gaussian_waist_offset_var,
-            self.gaussian_beam_diameter_var,
-            self.gaussian_full_divergence_var,
-            self.gaussian_m2_var,
-            self.gaussian_waist_side_var,
-            self.pupil_rad_var,
-            self.pupil_theta_var,
-            self.source_power_var,
-            self.source_seed_var,
-            self.source_x_var,
-            self.source_y_var,
-            self.source_z_var,
-            self.source_l_var,
-            self.source_m_var,
-            self.source_n_var,
-            self.source_direction_preset_var,
-            self.source_angular_weight_var,
-        ):
-            var.trace_add("write", lambda *_args: self._update_source_summary())
-        for var in (self.source_l_var, self.source_m_var, self.source_n_var):
-            var.trace_add("write", lambda *_args: self._sync_source_direction_preset_from_lmn())
+        self._install_source_summary_reactions()      # the model's own (bugs/0993)
         self._register_source_mode_controls(
             source_radius_entry=source_radius_entry,
             source_cone_angle_entry=source_cone_angle_entry,

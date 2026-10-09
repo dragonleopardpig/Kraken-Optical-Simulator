@@ -5340,7 +5340,10 @@ class LayoutTableWorkbenchMixin:
             self.field_value_var.set(default_text)
 
     def _sync_field_mode_ui(self) -> None:
-        if not hasattr(self, "field_type_menu"):
+        # the field type's label, the note, the sample count and the status hint are model
+        # variables; only the choice list is a widget's. This returned when there was no Tk menu,
+        # so without Tk panels none of them followed the object mode (bugs/0993).
+        if not hasattr(self, "field_type_var"):
             return
         current_type = self._current_field_type()
         if self._current_object_mode() == "Infinity":
@@ -5359,7 +5362,7 @@ class LayoutTableWorkbenchMixin:
                 "Angle",
             ]
             note = "Preferred: Object semi-height for finite object. Field half-angle remains available as a derived field."
-        self.field_type_menu["values"] = [self._field_type_display_label(value) for value in values]
+        self._show_tk_field_type_choices([self._field_type_display_label(value) for value in values])
         self.field_type_var.set(self._field_type_display_label(current_type))
         if hasattr(self, "field_mode_note_var"):
             self.field_mode_note_var.set(note)
@@ -5369,9 +5372,10 @@ class LayoutTableWorkbenchMixin:
         self._update_field_status_hint()
 
     def _sync_field_sample_count_state(self) -> None:
+        # "NA" while field sampling is inactive is the VARIABLE's value, model state; the entry
+        # only shows it greyed (bugs/0993: this returned when there was no Tk entry)
         field_count_var = self.__dict__.get("field_count_var")
-        field_count_entry = self.__dict__.get("field_count_entry")
-        if field_count_var is None or field_count_entry is None:
+        if field_count_var is None:
             return
         if self._current_source_model() != SOURCE_MODEL_DEFAULT:
             return
@@ -5407,13 +5411,7 @@ class LayoutTableWorkbenchMixin:
                     pass
             state = "disabled"
 
-        for widget in (field_count_entry, self.__dict__.get("field_count_label")):
-            if widget is None:
-                continue
-            try:
-                widget.configure(state=state)
-            except Exception:
-                pass
+        self._show_tk_field_count_state(state)
 
     def add_surface(self) -> None:
         self._begin_history_capture()

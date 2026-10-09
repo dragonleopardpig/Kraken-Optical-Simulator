@@ -544,58 +544,6 @@ class LayoutShellControlsMixin:
     def _close_atmosphere_settings_dialog(self) -> None:
         self._main_atmosphere_panel().close_settings_dialog()
 
-    def _on_control_stack_configure(self, _event=None) -> None:
-        if not hasattr(self, "control_canvas"):
-            return
-        self.control_canvas.configure(scrollregion=self.control_canvas.bbox("all"))
-
-    def _on_control_canvas_configure(self, event=None) -> None:
-        if not hasattr(self, "control_canvas") or not hasattr(self, "control_stack_window"):
-            return
-        width = self.control_canvas.winfo_width() if event is None else int(event.width)
-        self.control_canvas.itemconfigure(self.control_stack_window, width=max(width, 1))
-
-    def _on_left_panel_mousewheel(self, event=None):
-        canvas = getattr(self, "control_canvas", None)
-        if canvas is None or event is None:
-            return None
-        try:
-            pointer_x = canvas.winfo_pointerx()
-            pointer_y = canvas.winfo_pointery()
-            canvas_x = canvas.winfo_rootx()
-            canvas_y = canvas.winfo_rooty()
-            inside_canvas = (
-                canvas_x <= pointer_x < canvas_x + canvas.winfo_width()
-                and canvas_y <= pointer_y < canvas_y + canvas.winfo_height()
-            )
-        except Exception:
-            return None
-        if not inside_canvas:
-            return None
-        try:
-            bbox = canvas.bbox("all")
-            if not bbox or int(bbox[3] - bbox[1]) <= canvas.winfo_height():
-                return "break"
-        except Exception:
-            pass
-
-        delta = 0
-        if getattr(event, "num", None) == 4:
-            delta = -1
-        elif getattr(event, "num", None) == 5:
-            delta = 1
-        else:
-            wheel_delta = int(getattr(event, "delta", 0) or 0)
-            if wheel_delta:
-                delta = -max(1, abs(wheel_delta) // 120) if wheel_delta > 0 else max(1, abs(wheel_delta) // 120)
-        if delta:
-            try:
-                canvas.yview_scroll(delta, "units")
-            except Exception:
-                return None
-            return "break"
-        return None
-
     def _update_field_status_hint(self) -> None:
         if not hasattr(self, "status_hint_var"):
             return
@@ -750,88 +698,6 @@ class LayoutShellControlsMixin:
                 frame.grid()
             else:
                 frame.grid_remove()
-
-    def _pane_present(self, widget: Any) -> bool:
-        if not hasattr(self, "main_pane"):
-            return False
-        widget_name = str(widget)
-        return widget_name in {str(pane) for pane in self.main_pane.panes()}
-
-    def toggle_left_sidebar(self) -> None:
-        if not hasattr(self, "left_sidebar_host"):
-            return
-        if self._pane_present(self.left_sidebar_host):
-            self.main_pane.forget(self.left_sidebar_host)
-            self.left_restore_frame.grid()
-            self._left_sidebar_collapsed = True
-            message = "Left controls hidden."
-        else:
-            self.left_restore_frame.grid_remove()
-            self.main_pane.insert(0, self.left_sidebar_host, weight=0)
-            self._left_sidebar_collapsed = False
-            message = "Left controls shown."
-        self._initial_layout_passes = 40
-        self._set_initial_pane_layout(force=True)
-        if hasattr(self, "status_var"):
-            self.status_var.set(message)
-
-    def toggle_right_sidebar(self) -> None:
-        if not hasattr(self, "right_sidebar_host"):
-            return
-        if self._pane_present(self.right_sidebar_host):
-            self.main_pane.forget(self.right_sidebar_host)
-            self.right_restore_frame.grid()
-            self._right_sidebar_collapsed = True
-            message = "Right panels hidden."
-        else:
-            self.right_restore_frame.grid_remove()
-            self.main_pane.add(self.right_sidebar_host, weight=1)
-            self._right_sidebar_collapsed = False
-            message = "Right panels shown."
-        self._initial_layout_passes = 40
-        self._set_initial_pane_layout(force=True)
-        if hasattr(self, "status_var"):
-            self.status_var.set(message)
-
-    def _set_initial_pane_layout(self, force: bool = False) -> None:
-        host_of(self).update_idletasks()
-        total_width = self.main_pane.winfo_width()
-        if total_width < 500:
-            host_of(self).after(100, self._set_initial_pane_layout)
-            return
-        try:
-            left_visible = hasattr(self, "left_sidebar_host") and self._pane_present(self.left_sidebar_host)
-            right_visible = hasattr(self, "right_sidebar_host") and self._pane_present(self.right_sidebar_host)
-            left_width = max(240, min(360, int(total_width * 0.20)))
-            right_width = max(300, min(460, int(total_width * 0.23)))
-            if left_visible and right_visible:
-                center_min = max(360, int(total_width * 0.42))
-                side_total = left_width + right_width
-                side_limit = max(240, total_width - center_min)
-                if side_total > side_limit:
-                    scale = max(0.35, side_limit / max(side_total, 1))
-                    left_width = max(180, int(left_width * scale))
-                    right_width = max(220, int(right_width * scale))
-                self.main_pane.sashpos(0, left_width)
-                self.main_pane.sashpos(1, max(left_width + 250, total_width - right_width))
-            elif left_visible:
-                self.main_pane.sashpos(0, left_width)
-            elif right_visible:
-                self.main_pane.sashpos(0, max(250, total_width - right_width))
-
-            if hasattr(self, "center_panel"):
-                total_height = self.center_panel.winfo_height()
-                if total_height >= 360:
-                    self.center_panel.sashpos(0, int(total_height * 0.36))
-            if not force:
-                self._initial_layout_passes += 1
-        except Exception:
-            host_of(self).after(100, self._set_initial_pane_layout)
-
-    def _maybe_refresh_initial_pane_layout(self, _event=None) -> None:
-        if self._initial_layout_passes >= 40:
-            return
-        host_of(self).after(100, self._set_initial_pane_layout)
 
     def _layout_menu_category(self, name: str) -> str:
         return layout_menu_category(name, self.layout_files.get(name))
@@ -1348,7 +1214,6 @@ class LayoutShellControlsMixin:
             aim_row_index=aim_row_index,
             aim_face_id=aim_face_id,
         )
-
 
     def toggle_analysis_mode(self, mode: str) -> None:
         current = list(self.selected_analysis_modes)

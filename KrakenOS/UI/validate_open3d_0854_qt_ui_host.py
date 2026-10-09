@@ -296,14 +296,14 @@ def qt_runtime_checks() -> list[list]:
     # ---- Q7 REAL model code on a Qt host -----------------------------------------------------
     from types import MethodType, SimpleNamespace
 
-    from KrakenOS.UI.model_variables import MODEL_VARIABLES, ensure_model_variables
+    from KrakenOS.UI.model_variables import CREATED_WITH, MODEL_VARIABLES, ensure_model_variables
     from KrakenOS.UI.services.layout_analysis_display import LayoutAnalysisDisplayMixin
 
     owner = SimpleNamespace(ui=QtUiHost())
     created = ensure_model_variables(owner)
     kinds_ok = all(isinstance(getattr(owner, name), ObservableValue)
                    and getattr(owner, name).kind == kind
-                   and getattr(owner, name).get() == ObservableValue(kind, value).get()
+                   and getattr(owner, name).get() == ObservableValue(kind, CREATED_WITH.get(name, value)).get()
                    for name, (kind, value) in MODEL_VARIABLES.items())
 
     autosaves: list[float] = []

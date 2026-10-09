@@ -21,6 +21,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from KrakenOS.UI.system_controls import ATMOSPHERE_CONTROL_SPECS
+
 #: name -> (kind, value after start-up). kind: string / int / double / boolean.
 MODEL_VARIABLES: dict[str, tuple[str, Any]] = {
     'analysis_branch_filter_var': ('string', 'All paths'),
@@ -106,6 +108,18 @@ MODEL_VARIABLES: dict[str, tuple[str, Any]] = {
 DIALOG_SCOPED_VARIABLES: frozenset[str] = frozenset()
 
 
+# The atmosphere's ten numbers (bugs/0993). The Tk panel makes them from the same list, by name,
+# and the model reads them by name -- so neither scan saw them, and without the Tk panel an
+# observatory preset filled nothing and a saved layout's numbers were dropped on load.
+MODEL_VARIABLES.update({variable: ("string", default) for _label, variable, default in ATMOSPHERE_CONTROL_SPECS})
+
+#: A variable start-up CHANGES, where it matters what it began as: name -> the value a Tk panel
+#: creates it with. Start-up computes the blank scene's image diameter while the field value is
+#: still this 5.0 (its first table sync runs before the reset zeroes the field), so an editor
+#: that created it with its after-start-up 0.0 began with a different scene (bugs/0993).
+CREATED_WITH: dict[str, Any] = {"field_value_var": "5.0"}
+
+
 def ensure_model_variables(owner) -> list[str]:
     """Create every declared model variable ``owner`` lacks, through its UI host; returns the
     names created. Existing variables are never replaced -- a panel's variable, and any trace a
@@ -119,6 +133,6 @@ def ensure_model_variables(owner) -> list[str]:
     for name, (kind, value) in MODEL_VARIABLES.items():
         if getattr(owner, name, None) is not None:
             continue
-        setattr(owner, name, factories[kind](value=value))
+        setattr(owner, name, factories[kind](value=CREATED_WITH.get(name, value)))
         created.append(name)
     return created

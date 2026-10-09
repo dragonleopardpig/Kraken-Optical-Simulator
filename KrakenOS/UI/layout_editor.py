@@ -193,7 +193,7 @@ from KrakenOS.UI.nonseq_output_ports import (
     optical_solid_output_port_runtime_transform_override,
     select_optical_solid_output_face,
 )
-from KrakenOS.UI.modern_ttk_theme import apply_modern_ttk_theme, apply_ui_scale, scaled_px
+from KrakenOS.UI.modern_ttk_theme import apply_modern_ttk_theme, apply_ui_scale, scaled_px, ui_scale_factor
 from KrakenOS.UI import optical_solid_metadata
 from KrakenOS.UI.services import layout_analysis_display as _layout_analysis_display_module
 from KrakenOS.UI.services import layout_plot_interaction as _layout_plot_interaction_module
@@ -2751,17 +2751,25 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         except Exception:
             pass
 
-    def __init__(self, *, headless: bool = False, ui=None) -> None:
+    def __init__(self, *, headless: bool = False, ui=None, tk_root: bool = True) -> None:
         super().__init__()
+        # docs/design_qt_migration.md phase 7f (bugs/0993): a shell that is not Tk may ask for an
+        # editor with NO Tk root. Then no Tk panel is built either: the model declares its own
+        # variables, keeps its own table cells and selection, draws into a figure of its own, and
+        # anything that still reaches for a Tk widget fails loudly (`__getattr__` has no root to
+        # forward to) instead of quietly reaching a window nobody sees.
+        if not tk_root and ui is None:
+            raise ValueError("an editor without a Tk root needs a UI host: pass ui=")
         # docs/design_qt_migration.md step 1d: the editor OWNS its Tk root instead of BEING one, so
         # the same model can later sit behind a Qt window. Everything that treated the editor as a
         # Tk widget -- panels parenting widgets to it, `editor.update()`, `editor.after(...)`, the
         # 171 validators that do both -- keeps working through __getattr__ below, which forwards
         # to the root exactly what being a tk.Tk used to provide.
-        self.root = tk.Tk()
-        # tkinter reports a callback's exception to the widget tree's root, found by walking
-        # `.master` up -- which now ends at THIS object; set the real root's handler too.
-        self.root.report_callback_exception = self.report_callback_exception
+        self.root = tk.Tk() if tk_root else None
+        if self.root is not None:
+            # tkinter reports a callback's exception to the widget tree's root, found by walking
+            # `.master` up -- which now ends at THIS object; set the real root's handler too.
+            self.root.report_callback_exception = self.report_callback_exception
         # docs/design_qt_migration.md: model/controller code reaches the toolkit only through
         # this host (via uihost.host_of). TkUiHost is today's behaviour by delegation; a guard
         # may pass a ScriptedUiHost to answer dialogs and drive timers without a display.
@@ -2770,15 +2778,19 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         self.ui = ui if ui is not None else TkUiHost(self)
         # KRAKEN_UI_SCALE must land before any point-sized ttk font is set;
         # it also scales the named fonts of this interpreter.
-        self._kraken_ui_scale = apply_ui_scale(self)
-        self._kraken_ttk_style = apply_modern_ttk_theme(self)
         self.headless = headless
-        self.title("KrakenOS Layout Editor")
-        self.geometry(f"{scaled_px(1400, self._kraken_ui_scale)}x{scaled_px(850, self._kraken_ui_scale)}")
-        self.minsize(scaled_px(1100, self._kraken_ui_scale), scaled_px(720, self._kraken_ui_scale))
-        self.protocol("WM_DELETE_WINDOW", self.request_quit)
-        if not self.headless:
-            host_of(self).after(50, self._maximize_window)
+        if self.root is not None:
+            self._kraken_ui_scale = apply_ui_scale(self)
+            self._kraken_ttk_style = apply_modern_ttk_theme(self)
+            self.title("KrakenOS Layout Editor")
+            self.geometry(f"{scaled_px(1400, self._kraken_ui_scale)}x{scaled_px(850, self._kraken_ui_scale)}")
+            self.minsize(scaled_px(1100, self._kraken_ui_scale), scaled_px(720, self._kraken_ui_scale))
+            self.protocol("WM_DELETE_WINDOW", self.request_quit)
+            if not self.headless:
+                host_of(self).after(50, self._maximize_window)
+        else:
+            self._kraken_ui_scale = ui_scale_factor()
+            self._kraken_ttk_style = None
 
         self.current_layout_file: Path | None = None
         self._last_saved_state: dict[str, object] | None = None
@@ -3031,19 +3043,27 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         self._history_txn_depth = 0
         self._history_txn_snapshot: dict[str, object] | None = None
 
-        self._build_menu()
-        self._build_ui()
+        if self.root is not None:
+            self._build_menu()
+            self._build_ui()
+        else:
+            self._make_plot_without_a_toolkit()
         # docs/design_qt_migration.md step 1c: the model declares its own state variables. Under Tk
         # the panels just created every one, so this creates nothing; without Tk panels (a Qt
         # shell, a scripted guard) it creates them all through self.ui.
         from KrakenOS.UI.model_variables import ensure_model_variables
 
         self._model_variables_created_at_init = ensure_model_variables(self)
-        self._bind_global_copy_shortcuts()
-        self.bind_all("<Control-z>", self._undo_event, add="+")
-        self.bind_all("<Control-y>", self._redo_event, add="+")
-        self.bind_all("<Control-Shift-Z>", self._redo_event, add="+")
-        self.bind_all("<Control-Shift-B>", self._flag_bug_2d_event, add="+")
+        if self.root is None:
+            # what the Tk panels do for the MODEL while they build their widgets (bugs/0993)
+            self._install_source_summary_reactions()
+            self._install_atmosphere_summary_reactions()
+        else:
+            self._bind_global_copy_shortcuts()
+            self.bind_all("<Control-z>", self._undo_event, add="+")
+            self.bind_all("<Control-y>", self._redo_event, add="+")
+            self.bind_all("<Control-Shift-Z>", self._redo_event, add="+")
+            self.bind_all("<Control-Shift-B>", self._flag_bug_2d_event, add="+")
         self._reset_debug_log()
         self.load_layouts()
         self.load_examples()
@@ -3060,6 +3080,19 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         self._mark_saved_state()
         self._update_undo_redo_buttons()
         # Backend probing imports Torch/CuPy and may initialise CUDA; do it lazily.
+
+    def _make_plot_without_a_toolkit(self) -> None:
+        """The 2D plot the model draws into, when no Tk panel made one (bugs/0993).
+
+        The model has always drawn into `self.ax` and asked `self.canvas` to redraw; only the
+        canvas was a toolkit's. With no toolkit it is matplotlib's own, and a shell that shows the
+        plot puts its canvas in its place (the Qt shell's `plot2d` does)."""
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+        from matplotlib.figure import Figure
+
+        self.figure = Figure(figsize=(7, 5), dpi=100)
+        self.ax = self.figure.add_subplot(111)
+        self.canvas = FigureCanvasAgg(self.figure)
 
     def _maximize_window(self) -> None:
         # Prefer maximize/zoom over fullscreen so copy/paste and WM behavior remain normal.
@@ -3092,6 +3125,36 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
 
     def _show_tk_undo_state(self, can_undo: bool, can_redo: bool) -> None:
         self._main_window_builder()._show_tk_undo_state(can_undo, can_redo)
+
+    def _show_tk_field_type_choices(self, labels: list) -> None:
+        self._main_window_builder()._show_tk_field_type_choices(labels)
+
+    def _show_tk_field_count_state(self, state: str) -> None:
+        self._main_window_builder()._show_tk_field_count_state(state)
+
+    def _on_control_stack_configure(self, _event=None) -> None:
+        self._main_window_builder()._on_control_stack_configure(_event)
+
+    def _on_control_canvas_configure(self, event=None) -> None:
+        self._main_window_builder()._on_control_canvas_configure(event)
+
+    def _on_left_panel_mousewheel(self, event=None):
+        return self._main_window_builder()._on_left_panel_mousewheel(event)
+
+    def _pane_present(self, widget) -> bool:
+        return self._main_window_builder()._pane_present(widget)
+
+    def toggle_left_sidebar(self) -> None:
+        self._main_window_builder().toggle_left_sidebar()
+
+    def toggle_right_sidebar(self) -> None:
+        self._main_window_builder().toggle_right_sidebar()
+
+    def _set_initial_pane_layout(self, force: bool = False) -> None:
+        self._main_window_builder()._set_initial_pane_layout(force)
+
+    def _maybe_refresh_initial_pane_layout(self, _event=None) -> None:
+        self._main_window_builder()._maybe_refresh_initial_pane_layout(_event)
 
     # ---- popup-menu dismissal and dialog centring: panels/main_popup_helpers.py (bugs/0981) ------
     def _main_popup_helpers(self) -> MainPopupHelpers:

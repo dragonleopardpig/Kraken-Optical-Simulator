@@ -557,7 +557,9 @@ class TracePreviewSamplingMixin:
                 append_debug = self.__dict__.get("append_debug")
                 if callable(append_debug):
                     append_debug(captured)
-                elif "debug_text" in self.__dict__:
+                elif "debug_lines" in self.__dict__:
+                    # the log is the model's (bugs/0898); this asked for the Tk text box, so an
+                    # editor without one dropped what the trace printed (bugs/0993)
                     self.append_debug(captured)
             return system, rays
         finally:

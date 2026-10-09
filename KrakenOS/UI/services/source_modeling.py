@@ -110,6 +110,18 @@ def illumination_emitter_seed_from_module_bounds(bounds, object_plane_z):
     return (cx, cy, z_face), (dx / norm, dy / norm, dz / norm), half_x, half_y
 
 
+#: the source values the summary line is written from. This list was the Tk source panel's
+#: (bugs/0993): it wired the reaction while it built its entries, so no panel meant no reaction.
+SOURCE_SUMMARY_VARIABLES = (
+    "source_model_var", "pupil_pattern_var", "source_radius_var", "source_cone_angle_var",
+    "gaussian_input_mode_var", "gaussian_waist_radius_var", "gaussian_waist_offset_var",
+    "gaussian_beam_diameter_var", "gaussian_full_divergence_var", "gaussian_m2_var",
+    "gaussian_waist_side_var", "pupil_rad_var", "pupil_theta_var", "source_power_var",
+    "source_seed_var", "source_x_var", "source_y_var", "source_z_var", "source_l_var",
+    "source_m_var", "source_n_var", "source_direction_preset_var", "source_angular_weight_var",
+)
+
+
 class SourceModelingMixin:
     def _current_gaussian_waist_radius(self) -> float:
         var = self.__dict__.get("gaussian_waist_radius_var")
@@ -1696,6 +1708,25 @@ class SourceModelingMixin:
             source_summary_var.set(self._format_source_summary())
         except Exception as exc:
             source_summary_var.set(f"Source input invalid: {_short_error_message(exc)}")
+
+    def _install_source_summary_reactions(self) -> None:
+        """The source summary follows the source values, and a typed direction names its preset.
+
+        Both are model state reacting to model state. The Tk source panel calls this where it
+        used to wire the reactions itself; an editor built without Tk panels calls it once its
+        variables exist (bugs/0993)."""
+        for name in SOURCE_SUMMARY_VARIABLES:
+            getattr(self, name).trace_add("write", lambda *_args: self._update_source_summary())
+        for name in ("source_l_var", "source_m_var", "source_n_var"):
+            getattr(self, name).trace_add("write", lambda *_args: self._sync_source_direction_preset_from_lmn())
+
+    def _install_atmosphere_summary_reactions(self) -> None:
+        """The atmosphere summary follows the ten numbers and the plot choice (see the above)."""
+        from KrakenOS.UI.system_controls import ATMOSPHERE_CONTROL_SPECS
+
+        for _label, name, _default in ATMOSPHERE_CONTROL_SPECS:
+            getattr(self, name).trace_add("write", lambda *_args: self._update_atmosphere_summary())
+        self.atmos_plot_mode_var.trace_add("write", lambda *_args: self._update_atmosphere_summary())
 
     def _current_ray_height_factor(self) -> float:
         try:

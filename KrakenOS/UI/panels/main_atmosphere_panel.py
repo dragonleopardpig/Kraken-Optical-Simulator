@@ -101,10 +101,7 @@ class MainAtmospherePanel:
 
         for entry in entries:
             self._bind_deferred_manual_update(entry)
-        for _label, attr_name, _default in ATMOSPHERE_CONTROL_SPECS:
-            var = getattr(self, attr_name)
-            var.trace_add("write", lambda *_args: self._update_atmosphere_summary())
-        self.atmos_plot_mode_var.trace_add("write", lambda *_args: self._update_atmosphere_summary())
+        self._install_atmosphere_summary_reactions()      # the model's own (bugs/0993)
         self._update_atmosphere_summary()
 
     def open_settings_dialog(self) -> None:
