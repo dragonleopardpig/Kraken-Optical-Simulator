@@ -541,7 +541,7 @@ class LayoutAnalysisDisplayMixin:
         self._autosave_after_id = None
         if not self.auto_save_plot_var.get():
             return
-        if self.winfo_width() < 1200 or self.winfo_height() < 700:
+        if not self._plot_window_is_laid_out():
             self._autosave_after_id = host_of(self).after(400, self._do_autosave_plot)
             return
         try:

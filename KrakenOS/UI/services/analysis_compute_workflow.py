@@ -137,11 +137,17 @@ class AnalysisComputeWorkflowMixin:
                 return True, label
             except Exception:
                 continue
+        # No tool for it: the SHELL's clipboard (bugs/0999). Under Tk that is Tk's, set as it always
+        # was -- the host clears and appends on this same root -- and handed over at once. In the
+        # Qt shell it is Qt's: this used to be Tk's by name there too, the clipboard of a hidden
+        # application that nothing pumps, and of no application at all once there is no Tk root.
         try:
-            self.clipboard_clear()
-            self.clipboard_append(text)
-            self.update()
-            return True, "Tk"
+            host = host_of(self)
+            host.clipboard_set(text)
+            hand_over = getattr(self, "update", None)
+            if callable(hand_over):
+                hand_over()
+            return True, type(host).__name__.removesuffix("UiHost") or "clipboard"
         except Exception:
             return False, "none"
 

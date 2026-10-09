@@ -80,13 +80,19 @@ def qt_runtime_checks() -> list:
     renderers = widget.GetRenderWindow().GetRenderers()
     in_window = any(renderers.GetItemAsObject(i) is inspector._renderer
                     for i in range(renderers.GetNumberOfItems()))
-    withdrawn = str(inspector.state()) == "withdrawn"
+    # its Tk window is withdrawn and never shown -- or, when the shell was asked to build the
+    # inspector without one (KRAKEN_QT_TK_FREE, bugs/0998), is not there at all
+    from KrakenOS.UI.qt.tk_free import tk_free
+
+    owned = inspector.__dict__.get("window")
+    toplevel = "none" if owned is None else str(owned.state())
+    withdrawn = toplevel == ("none" if tk_free("inspector") else "withdrawn")
     rows.append(["W", bool(inspector.available) and editor._three_d_inspector is inspector
                  and host_of(inspector) is window.ui and withdrawn and in_window
                  and len(observed) == 5 and inspector._navigation_cube is not None
                  and inspector._vtk_widget is widget,
                  f"the inspector is the editor's (available={inspector.available}), on the shell's "
-                 f"host, its Toplevel {inspector.state()}; its renderer is in the Qt widget's "
+                 f"host, its Toplevel {toplevel}; its renderer is in the Qt widget's "
                  f"window with observers {observed} and the navigation cube"])
 
     # ---- L ---------------------------------------------------------------------------------
@@ -339,11 +345,17 @@ def qt_runtime_checks() -> list:
     # ---- V ---------------------------------------------------------------------------------
     editor.open_3d_view()
     settle()
+    # ... and did not show a Tk window: the one it owns is still withdrawn -- or, built without
+    # one (KRAKEN_QT_TK_FREE, bugs/0998), there is still none
+    from KrakenOS.UI.qt.tk_free import tk_free
+
+    owned = inspector.__dict__.get("window")
+    toplevel = "none" if owned is None else str(owned.state())
     rows.append(["V", editor._three_d_inspector is inspector
-                 and str(inspector.state()) == "withdrawn",
+                 and toplevel == ("none" if tk_free("inspector") else "withdrawn"),
                  f"Open 3D View re-used the Qt inspector "
                  f"({editor._three_d_inspector is inspector}); its Toplevel is "
-                 f"{inspector.state()}"])
+                 f"{toplevel}"])
     window.close()
     return rows
 

@@ -180,6 +180,18 @@ class MainWindowBuilder:
         host_of(self).after(100, self._set_initial_pane_layout)
 
     # ---- the field controls' Tk widgets, told what the model decided (bugs/0993) ---------------------
+    def _plot_window_is_laid_out(self) -> bool:
+        """Whether the window showing the 2D plot has its size yet.
+
+        A Tk window gets it some time after it opens, and a plot auto-saved before that is a
+        thumbnail -- so the auto-save waits. This was `self.winfo_width() < 1200 or ...` in the
+        toolkit-free analysis display (bugs/0999): the same test, where the Tk window is known.
+        Without a Tk window there is nothing of Tk's to wait for.
+        """
+        if self.editor.__dict__.get("root") is None:
+            return True
+        return not (self.editor.winfo_width() < 1200 or self.editor.winfo_height() < 700)
+
     def _show_tk_field_type_choices(self, labels: list) -> None:
         menu = self.editor.__dict__.get("field_type_menu")
         if menu is not None:

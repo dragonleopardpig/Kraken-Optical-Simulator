@@ -37,7 +37,8 @@ comparison, not by reading):
   N  no Tk at all: the editor without a root, driven through the session, makes no Tk root, no
      Tk widget and no Tk variable (counted at tkinter's own constructors); its 79 model variables
      are its host's; a Tk call on it raises AttributeError -- it fails loudly instead of reaching
-     a window nobody sees; it closes cleanly; without a UI host it is refused
+     a window nobody sees; whether it still exists it answers itself, true until it is destroyed
+     (bugs/0999); it closes cleanly; without a UI host it is refused
   S  the same model: after every step every plain attribute of the editor -- the rows, the
      table's cells and selection, the 79 variables, the operands' settings, the undo and redo
      stacks, about 300 in all -- equals the Tk-rooted editor's: the list of known differences
@@ -405,7 +406,7 @@ def session(mode: str, out: str) -> dict:
     step("the variable unmarked", lambda: editor.toggle_optimization_cell(3, "thickness"))
 
     loud = {}
-    for name in ("title", "geometry", "winfo_exists", "bind_all", "tk"):
+    for name in ("title", "geometry", "winfo_children", "bind_all", "tk"):
         try:
             getattr(editor, name)
             loud[name] = "answered"
@@ -418,6 +419,7 @@ def session(mode: str, out: str) -> dict:
         refused = f"{type(exc).__name__}: {exc}"
     host_made = len(editor._model_variables_created_at_init)
     has_root = editor.root is not None
+    exists_before = bool(editor.winfo_exists())         # its own answer when it has no root (bugs/0999)
     from KrakenOS.UI.layout_editor import _load_python_data
 
     in_the_file = list(_load_python_data(saved_file)["settings"]["operands"]) if saved_file.exists() else []
@@ -426,11 +428,16 @@ def session(mode: str, out: str) -> dict:
         closed = "ok"
     except Exception as exc:
         closed = f"RAISED {type(exc).__name__}: {exc}"
+    try:
+        exists_after = bool(editor.winfo_exists())
+    except Exception as exc:        # a destroyed Tk application cannot be asked
+        exists_after = f"cannot be asked ({type(exc).__name__})"
     Path(out).write_text(json.dumps({"steps": steps, "observatory": observatory, "operands": operands}), encoding="utf-8")
     return {"made_at_start": made_at_start, "made": dict(made), "has_root": has_root, "host_made": host_made,
             "loud": loud, "refused": refused, "closed": closed, "steps": len(steps),
             "hash seed": os.environ.get("PYTHONHASHSEED", ""), "operands in the file": in_the_file,
-            "worker after Stop": worker_after_stop.get("state", "no optimization was started")}
+            "worker after Stop": worker_after_stop.get("state", "no optimization was started"),
+            "exists": [exists_before, exists_after]}
 
 
 def _states(path: str) -> tuple[list, dict]:
@@ -692,13 +699,15 @@ def session_checks(tk_meta: dict, none_meta: dict, result: dict) -> list:
         loud = none_meta["loud"]
         return (none_meta["made"] == {} and none_meta["made_at_start"] == {} and none_meta["has_root"] is False
                 and none_meta["host_made"] == 79 and set(loud.values()) == {"AttributeError"} and len(loud) == 5
+                and none_meta["exists"] == [True, False] and tk_meta["exists"][0] is True
                 and none_meta["refused"].startswith("ValueError") and none_meta["closed"] == "ok"
                 and tk_meta["made_at_start"].get("roots") == 1 and tk_meta["made_at_start"].get("widgets", 0) > 300
                 and tk_meta["host_made"] == 0 and tk_meta["closed"] == "ok" and none_meta["steps"] == tk_meta["steps"] >= 35,
                 f"through {none_meta['steps']} steps the editor without a root made Tk objects {none_meta['made'] or 'none'} "
                 f"(the one with a root: {tk_meta['made']}); its host made {none_meta['host_made']} model variables (the "
-                f"Tk panels made all of theirs: {tk_meta['host_made']} by the host); Tk calls on it: {loud}; it closes "
-                f"{none_meta['closed']}; without a UI host: {none_meta['refused']}")
+                f"Tk panels made all of theirs: {tk_meta['host_made']} by the host); Tk calls on it: {loud}; it says it "
+                f"exists until it is destroyed ({none_meta['exists']}); it closes {none_meta['closed']}; without a UI host: "
+                f"{none_meta['refused']}")
 
     def claim_s():
         found = set(result["differing"])

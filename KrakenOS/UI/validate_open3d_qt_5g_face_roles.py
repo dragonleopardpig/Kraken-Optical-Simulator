@@ -85,8 +85,10 @@ def qt_runtime_checks() -> list:
     window.action_manager["face_roles"].trigger()
     settle(0.8)
     dialog = getattr(window, "last_face_roles_dialog", None)
-    tk_windows = [w for w in editor.winfo_children()
-                  if isinstance(w, tk.Toplevel) and "CAD/STL Optical Faces" in str(w.title()) and w.winfo_viewable()]
+    # an editor built with no Tk root (KRAKEN_QT_TK_FREE=all, bugs/0999) cannot have opened a Tk window
+    tk_windows = [] if editor.root is None else [
+        w for w in editor.winfo_children()
+        if isinstance(w, tk.Toplevel) and "CAD/STL Optical Faces" in str(w.title()) and w.winfo_viewable()]
     rows.append(["O", dialog is not None and dialog.isVisible() and not tk_windows and dialog.preview is not None,
                  f"Qt dialog open: {dialog is not None and dialog.isVisible()}; VTK preview: "
                  f"{dialog is not None and dialog.preview is not None}; Tk face windows shown: {len(tk_windows)}"])

@@ -2708,6 +2708,21 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
         root = self.__dict__.get("root")
         return str(root) if root is not None else object.__repr__(self)
 
+    def winfo_exists(self):
+        """Whether the editor is still there.
+
+        The model asks it by Tk's name -- of itself before scheduling a plot refresh, of the
+        editor from the inspector. With a root it is the root's answer, exactly as before. Built
+        with NO Tk root (docs/design_qt_migration.md phase 7f, bugs/0999) the editor is there until
+        it is destroyed. One built with __new__ has neither and raises, as it always did.
+        """
+        if "root" not in self.__dict__:
+            raise AttributeError("winfo_exists")
+        root = self.__dict__["root"]
+        if root is not None:
+            return root.winfo_exists()
+        return not self.__dict__.get("_destroyed", False)
+
     @property
     def _last_child_ids(self):
         # tkinter numbers child widgets per master and ASSIGNS a fresh counter to the master when
@@ -3136,6 +3151,9 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
     def _show_tk_field_type_choices(self, labels: list) -> None:
         self._main_window_builder()._show_tk_field_type_choices(labels)
 
+    def _plot_window_is_laid_out(self) -> bool:
+        return self._main_window_builder()._plot_window_is_laid_out()
+
     def _show_tk_field_count_state(self, state: str) -> None:
         self._main_window_builder()._show_tk_field_count_state(state)
 
@@ -3335,6 +3353,7 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
             pass
 
     def destroy(self) -> None:
+        self._destroyed = True          # what `winfo_exists` answers from when there is no Tk root
         for attr_name in (
             "_active_cell_border_after_id",
             "_grid_after_id",

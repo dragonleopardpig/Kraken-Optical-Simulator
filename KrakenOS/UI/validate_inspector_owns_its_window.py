@@ -28,7 +28,8 @@ guard holds what must stay true:
      not a recursion
   D  closing the inspector destroys its window and the editor forgets it
   Q  in the Qt shell the hosted inspector is the same kind of object: not a Tk widget, owning a
-     window that is withdrawn, drawing into the Qt widget and scheduling on the shell's host
+     window that is withdrawn -- or none, when the shell was asked to build it without one
+     (bugs/0998) -- drawing into the Qt widget and scheduling on the shell's host
 """
 from __future__ import annotations
 
@@ -210,11 +211,18 @@ def qt_checks() -> list:
         settle(2.0)
         inspector = view.inspector
         owned = inspector.window
+        # asked to build the inspector without a Tk window (KRAKEN_QT_TK_FREE, bugs/0998) the shell
+        # hosts the same kind of object, owning none
+        from KrakenOS.UI.qt.tk_free import tk_free
+
+        windowless = tk_free("inspector")
         facts = {"a Tk widget": isinstance(inspector, tk.Misc), "its window is a Toplevel": isinstance(owned, tk.Toplevel),
-                 "the window's state": str(owned.state()), "draws into the Qt widget": inspector._shell_vtk_host is not None,
+                 "the window's state": "none" if owned is None else str(owned.state()),
+                 "draws into the Qt widget": inspector._shell_vtk_host is not None,
                  "schedules on the shell's host": inspector.ui is host_of(editor), "the 3D view is up": bool(inspector.available),
                  "it is the editor's inspector": editor._three_d_inspector is inspector}
-        return (facts == {"a Tk widget": False, "its window is a Toplevel": True, "the window's state": "withdrawn",
+        return (facts == {"a Tk widget": False, "its window is a Toplevel": not windowless,
+                          "the window's state": "none" if windowless else "withdrawn",
                           "draws into the Qt widget": True, "schedules on the shell's host": True, "the 3D view is up": True,
                           "it is the editor's inspector": True},
                 f"the inspector the Qt shell hosts: {facts}")

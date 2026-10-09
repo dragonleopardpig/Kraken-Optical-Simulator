@@ -16850,6 +16850,10 @@ phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
     721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
     'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
     'qt_model_forms_open_in_qt')
+phase_761_qt_shell_without_tk = _phase_from_standalone(
+    761, "the Qt shell can run with no Tk at all (0999, phase 7f): with KRAKEN_QT_TK_FREE=all qt/app builds the editor without a Tk root and qt/inspector_view the inspector without a Tk window -- the whole process, the shell started, the 3D scene built and a session driven, makes no Tk root, widget or variable where it made 1 root, 414 + 247 widgets and 186 variables, with the same actors in the scene; after each of 8 steps about 520 plain attributes of the editor and of the inspector equal the ones of the shell with its hidden Tk application; the editor answers winfo_exists itself and a plot refresh it schedules runs on the shell's host (it asked a Tk root and raised); with no clipboard tool an element's rows copied in the Qt shell are on the Qt clipboard and Paste reads them from there, in both modes (they were Tk's by name: a hidden application nothing pumps); and the plot auto-save does not wait for a Tk window where there is none, waits for the hidden one as it always did, the Tk window's test being 1200 x 700 as before",
+    'KrakenOS.UI.validate_qt_shell_without_tk',
+    'qt_shell_without_tk')
 phase_760_inspector_without_tk_window = _phase_from_standalone(
     760, "the hosted 3D inspector can be built with no Tk window (0998, phase 7f): Kraken3DInspector(editor, vtk_host=widget, tk_window=False) makes no window and builds no Tk panel, and the Qt shell asks for it on request (KRAKEN_QT_TK_FREE=inspector) -- building it then makes no Tk widget and no Tk variable where it made 247 and 38 for a withdrawn Toplevel, with the same 57 actors in the 3D scene; after each of 10 steps of one session about 526 plain attributes of the inspector and of the editor are equal with the window and without, what only the windowed one holds being its Tk widgets and two leftovers of its panels; without a window it answers winfo_exists itself -- true until it is closed, then false, the editor having forgotten it -- a Tk call on it raises AttributeError, without a shell's VTK widget it is refused, and one built with __new__ still raises; and the FOV dialog the model promises after a lens swap is asked for in Tk, in Qt and in Qt without the window (it was a Tk timer of the inspector's window, which nothing runs under Qt: there it never opened)",
     'KrakenOS.UI.validate_inspector_without_tk_window',
@@ -17899,6 +17903,7 @@ def main() -> int:
             phase_758_inspector_owns_its_window,
             phase_759_editor_without_tk_root,
             phase_760_inspector_without_tk_window,
+            phase_761_qt_shell_without_tk,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

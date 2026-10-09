@@ -6,7 +6,7 @@ panels, and the 3D inspector's withdrawn window with its own. Both can be built 
 shell has been measured without them. Until then ``KRAKEN_QT_TK_FREE`` asks for it:
 
     KRAKEN_QT_TK_FREE=inspector    the 3D inspector has no Tk window; the editor keeps its root
-    KRAKEN_QT_TK_FREE=all          neither has (not yet supported by every part of the shell)
+    KRAKEN_QT_TK_FREE=all          neither has: the editor is built with no Tk root (bugs/0993)
 
 Unset, empty or ``0``: as it has always been.
 """

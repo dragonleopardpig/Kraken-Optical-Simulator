@@ -5585,7 +5585,9 @@ class LayoutTableWorkbenchMixin:
 
     def _pasted_surface_rows(self) -> list[SurfaceRow]:
         try:
-            text = self.clipboard_get()
+            # the shell's clipboard: Tk's own under Tk (the host reads it from the same root), the
+            # Qt one where there is no Tk root to read it from (bugs/0999)
+            text = host_of(self).clipboard_get()
         except Exception:
             text = ""
         rows = self._surface_rows_from_clipboard_text(text) if text else []
