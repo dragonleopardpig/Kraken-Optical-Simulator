@@ -68,6 +68,28 @@ def controls_for(spec) -> tuple:
     return tuple(shown)
 
 
+#: Settings every operand HAS, whether or not its card shows them. The Tk card makes a variable
+#: for each and hides the widgets `spec.controls` does not name; the values are saved with the
+#: layout all the same. So a model without the Tk card must have them too (bugs/0995).
+ALWAYS_HELD = ("weight", "target", "wavelength", "field", "surface")
+
+
+def variables_for(spec) -> tuple:
+    """Every setting an operand HOLDS a variable for, shown or not, in card order.
+
+    Wider than `controls_for`: the five every operand holds, and the field point (x, y) an
+    operand evaluated at a spatial frequency holds beside its field.
+    """
+    wanted = set(getattr(spec, "controls", ()) or ()) | set(ALWAYS_HELD)
+    held = []
+    for control in OPERAND_CONTROLS:
+        if control.name in wanted:
+            held.append(control)
+        if control.name == "field" and ("field_xy" in wanted or "frequency" in wanted):
+            held.extend(FIELD_XY_CONTROLS)
+    return tuple(held)
+
+
 #: a setting's starting value, exactly as the Tk card creates it; weight/target come from the
 #: operand's own defaults and the wavelength from the system's
 _FIXED_DEFAULTS = {"field": "0", "field_x": "0", "field_y": "0", "surface": "Auto",

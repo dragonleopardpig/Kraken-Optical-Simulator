@@ -171,7 +171,7 @@ def run_checks() -> tuple[bool, list[str]]:
     from types import SimpleNamespace
 
     from KrakenOS.UI.layout_editor import KrakenLayoutEditor, OPERAND_REGISTRY
-    from KrakenOS.UI.optimization_controls import OPERAND_CONTROLS, controls_for, default_for
+    from KrakenOS.UI.optimization_controls import OPERAND_CONTROLS, controls_for, default_for, variables_for
     from KrakenOS.UI.panels import main_optimization_panel
     from KrakenOS.UI.services import analysis_compute_workflow, layout_shell_controls
     from KrakenOS.UI.services.analysis_compute_workflow import AnalysisComputeWorkflowMixin
@@ -223,7 +223,9 @@ def run_checks() -> tuple[bool, list[str]]:
                                **{control.variables: {} for control in OPERAND_CONTROLS},
                                operand_field_x_vars={}, operand_field_y_vars={})
     made = AnalysisComputeWorkflowMixin.ensure_operand_variables(stand_in)
-    expected = sum(len(controls_for(spec)) for spec in OPERAND_REGISTRY.values())
+    # every setting an operand HOLDS, shown on its card or not (bugs/0995): the Tk card makes those too
+    expected = sum(len(variables_for(spec)) for spec in OPERAND_REGISTRY.values())
+    shown = sum(len(controls_for(spec)) for spec in OPERAND_REGISTRY.values())
 
     editor = KrakenLayoutEditor(headless=True)
     try:
@@ -231,14 +233,15 @@ def run_checks() -> tuple[bool, list[str]]:
         editor.load_layout_by_name(SCENE.stem)
         mismatched = []
         for spec in OPERAND_REGISTRY.values():
-            for control in controls_for(spec):
+            for control in variables_for(spec):
                 variable = getattr(editor, control.variables).get(spec.label)
                 if variable is None or str(variable.get()) != default_for(control, spec, editor):
                     mismatched.append((spec.label, control.name,
                                        None if variable is None else variable.get()))
         tk_made = editor.ensure_operand_variables()
-        ok(made == expected and tk_made == 0 and not mismatched,
-           f"C2: ensure_operand_variables made all {made} settings for a shell-less owner and none "
+        ok(made == expected > shown and tk_made == 0 and not mismatched,
+           f"C2: ensure_operand_variables made all {made} settings the operands hold ({shown} of them shown) "
+           f"for a shell-less owner and none "
            f"where the Tk panel had; the catalogue's defaults are exactly the Tk panel's"
            + (f" -- differ: {mismatched}" if mismatched else ""))
 

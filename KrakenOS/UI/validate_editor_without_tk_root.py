@@ -21,27 +21,35 @@ comparison, not by reading):
   * (bugs/0994) which inputs apply was worked out over the WIDGETS the Tk panels register: with
     no panel nothing was set aside and the sample count was not re-examined. The model goes over
     its own catalogue now -- the same 45 inputs -- and the Tk widgets follow
+  * (bugs/0995) the optimizer's operand settings were variables the Tk optimization panel made
+    with its cards -- five for every operand and five more for the MTF one, most of them never
+    shown -- and the first operand was in use because a Tk list box selected it. The model
+    makes every setting an operand holds and starts with the first operand
 
   N  no Tk at all: the editor without a root, driven through the session, makes no Tk root, no
      Tk widget and no Tk variable (counted at tkinter's own constructors); its 79 model variables
      are its host's; a Tk call on it raises AttributeError -- it fails loudly instead of reaching
      a window nobody sees; it closes cleanly; without a UI host it is refused
   S  the same model: after every step every plain attribute of the editor -- the rows, the
-     table's cells and selection, the 79 variables, the undo and redo stacks, about 290 in all
-     -- equals the Tk-rooted editor's, except EXACTLY the known differences listed below
+     table's cells and selection, the 79 variables, the operands' settings, the undo and redo
+     stacks, about 300 in all -- equals the Tk-rooted editor's: the list of known differences
+     below is empty, and stays exact
   R  the model's own reactions, with no Tk: the summaries follow their inputs, a typed direction
      names its preset, an observatory preset fills the numbers, the field's label, count and
      hint follow the object mode, a settings round trip restores what it saved, what a trace
      prints is in the debug log; an input that stops applying is set aside, the sample count
      is "NA" again once nothing samples the field, and an input found saying "NA" gets the
-     value set aside for it, or else the one it was created with
+     value set aside for it, or else the one it was created with; every operand holds its
+     settings from the start, the first one is in use, and a choice of operands and a setting
+     survive a settings round trip
   T  the Tk window still lays itself out: both sidebars hide and come back with their restore
      strips, the status line and the same sashes; the left panel's canvas tracks its content;
      and its field inputs are still told what the model decided -- the sample count greyed
      while the field is zero and live once it is not, the field types offered in the object
      mode's order; and every registered input's widget is disabled and taken out of the panel
      exactly when the catalogue says the input does not apply, for two source models, with the
-     source row's span and the field panel following the source model
+     source row's span and the field panel following the source model; and the settings the Tk
+     optimization cards make, with their start values, are exactly the ones the model declares
   L  the layering: the eight pane methods are the window builder's and not the service's; the
      two Tk panels wire no variable trace of their own; the model's code names a panel-made Tk
      widget exactly as often as listed below
@@ -72,20 +80,14 @@ HISTORY = ("_undo_stack", "_redo_stack", "_last_saved_state")
 BIG = 6000
 
 #: What still differs between an editor without a Tk root and one with -- model state that
-#: still lives in a Tk panel. EXACT: a family that stops differing must leave this list, and a
-#: new one fails. One cause is left, the subject of the next step of phase 7f:
-#:   * the optimizer's operand settings are variables the Tk optimization panel creates, and the
-#:     selected operands are a Tk list box's selection
-#: (bugs/0994 took "which inputs apply" off this list: `_left_mode_saved_values`, `field_count_var`.)
-KNOWN_DIFFERENCES = {
-    "the optimizer's operands": {
-        "operand_field_vars", "operand_field_x_vars", "operand_field_y_vars", "operand_frequency_vars",
-        "operand_mtf_algorithm_vars", "operand_mtf_mode_vars", "operand_surface_vars", "operand_target_vars",
-        "operand_wavelength_vars", "operand_weight_vars",
-        "_undo_stack: only the operands", "_redo_stack: only the operands", "_last_saved_state: only the operands",
-        "_headless_selected_operand_labels: only without a root",
-    },
-}
+#: still lives in a Tk panel, by cause. EXACT: an attribute that stops differing must leave this
+#: list, and a new one fails. It is EMPTY on this session since bugs/0995 (0993 began with 16:
+#: the optimizer's operands, 14, and which inputs apply, 2); a wider session that finds more
+#: lists them here until they are fixed.
+KNOWN_DIFFERENCES: dict = {}
+#: plain attributes only the editor WITHOUT a root has: where the model keeps what a Tk widget
+#: holds when there is one -- the operands in use, which are a list box's selection under Tk
+ROOTLESS_ONLY_PLAIN = {"_headless_selected_operand_labels"}
 #: plain attributes only the Tk-rooted editor has: its window's own state, none of it model state
 TK_ONLY_PLAIN = {"_selection_anchor_row", "_selection_border_overlays", "analysis_mode_menu", "analysis_mode_vars",
                  "control_stack_window", "projection_display_mode_buttons"}
@@ -185,9 +187,10 @@ def session(mode: str, out: str) -> dict:
     tk.Tk.__init__ = counted("roots", root_init)
 
     from KrakenOS.UI import system_controls
-    from KrakenOS.UI.layout_editor import KrakenLayoutEditor
+    from KrakenOS.UI.layout_editor import OPERAND_REGISTRY, KrakenLayoutEditor
     from KrakenOS.UI.uihost import ScriptedUiHost
 
+    operands = [spec.label for spec in OPERAND_REGISTRY.values()]
     host = ScriptedUiHost(answers={})
     if mode == "tk":
         editor = KrakenLayoutEditor(headless=True, ui=host)
@@ -215,6 +218,7 @@ def session(mode: str, out: str) -> dict:
         cells = editor._table_cells()
         plain["<cells>"] = {"<digest>": _digest([[i, list(cells.values(i)), list(cells.tags(i))] for i in cells.items()])}
         plain["<selection>"] = [list(editor._table_selection()), editor._table_focus_item()]
+        plain["<operands in use>"] = list(editor._selected_operand_labels())
         plain["<plot axes>"] = len(editor.figure.axes)
         return plain
 
@@ -251,6 +255,8 @@ def session(mode: str, out: str) -> dict:
         settings = editor._collect_layout_settings()
         editor.atmos_zenith_deg_var.set("12.5")
         editor.field_value_var.set("9")
+        editor.operand_target_vars[operands[2]].set("77")
+        editor._set_selected_operand_labels([operands[3]])
         editor._apply_layout_settings(settings)
 
     source_models = system_controls.control_for("source_model_var").choices
@@ -296,6 +302,8 @@ def session(mode: str, out: str) -> dict:
     step("atmosphere zenith", lambda: editor.atmos_zenith_deg_var.set("30"))
     step("atmosphere plot", lambda: control("atmos_plot_mode_var", system_controls.ATMOS_PLOT_MODE_VALUES[-1]))
     step("apply atmosphere", lambda: editor.apply_atmosphere_settings())
+    step("two operands", lambda: editor._set_selected_operand_labels([operands[0], operands[2]]))
+    step("an operand's target", lambda: editor.operand_target_vars[operands[2]].set("120"))
     step("settings round trip", settings_round_trip)
     step("refresh the plot", editor.refresh_plot)
     step("add surface", editor.add_surface)
@@ -324,13 +332,13 @@ def session(mode: str, out: str) -> dict:
         closed = "ok"
     except Exception as exc:
         closed = f"RAISED {type(exc).__name__}: {exc}"
-    Path(out).write_text(json.dumps({"steps": steps, "observatory": observatory}), encoding="utf-8")
+    Path(out).write_text(json.dumps({"steps": steps, "observatory": observatory, "operands": operands}), encoding="utf-8")
     return {"made_at_start": made_at_start, "made": dict(made), "has_root": has_root, "host_made": host_made,
             "loud": loud, "refused": refused, "closed": closed, "steps": len(steps)}
 
 
-def _states(path: str) -> tuple[list, str]:
-    """[(label, result, every attribute at that step)] rebuilt from the recorded changes."""
+def _states(path: str) -> tuple[list, dict]:
+    """[(label, result, every attribute at that step)] rebuilt from the recorded changes, and the rest."""
     record = json.loads(Path(path).read_text(encoding="utf-8"))
     now: dict = {}
     out = []
@@ -338,7 +346,7 @@ def _states(path: str) -> tuple[list, str]:
         now = {key: value for key, value in now.items() if key not in gone}
         now.update(changed)
         out.append((label, result, dict(now)))
-    return out, record["observatory"]
+    return out, {key: value for key, value in record.items() if key != "steps"}
 
 
 def _leaves(a, b, path: str = ""):
@@ -362,10 +370,11 @@ def _leaves(a, b, path: str = ""):
 def compare(tk_path: str, none_path: str) -> dict:
     """Which attributes differ between the two recorded sessions, by family, and where."""
     with_root, _ = _states(tk_path)
-    without, observatory = _states(none_path)
+    without, facts = _states(none_path)
     differing: dict = {}
     results = []
     tk_only: set = set()
+    rootless_only: set = set()
     compared = 0
     for (label, tk_result, a), (label_b, none_result, b) in zip(with_root, without):
         if label != label_b or tk_result != "ok" or none_result != "ok":
@@ -377,10 +386,11 @@ def compare(tk_path: str, none_path: str) -> dict:
             if y == "<absent>":
                 tk_only.add(key)
                 continue
-            compared += 1
             if x == "<absent>":
-                differing.setdefault(f"{key}: only without a root", set()).add(label)
-            elif key in HISTORY:
+                rootless_only.add(key)
+                continue
+            compared += 1
+            if key in HISTORY:
                 if x["apart from the operands"] != y["apart from the operands"] or x["entries"] != y["entries"]:
                     differing.setdefault(key, set()).add(label)
                 elif x["all of it"] != y["all of it"]:
@@ -388,8 +398,9 @@ def compare(tk_path: str, none_path: str) -> dict:
             elif x != y:
                 differing.setdefault(key, set()).add(label)
     return {"differing": {key: sorted(labels) for key, labels in differing.items()}, "results": results,
-            "tk_only": sorted(tk_only), "steps": [len(with_root), len(without)],
-            "compared_per_step": compared // max(len(without), 1), "without": without, "observatory": observatory}
+            "tk_only": sorted(tk_only), "rootless_only": sorted(rootless_only), "steps": [len(with_root), len(without)],
+            "compared_per_step": compared // max(len(without), 1), "without": without,
+            "observatory": facts["observatory"], "operands": facts["operands"]}
 
 
 # ---- the Tk window's own layout ------------------------------------------------------------------------
@@ -409,6 +420,26 @@ def tk_window() -> dict:
 
     settle(2.5)
 
+    def operand_settings() -> dict:
+        """What the Tk cards made, beside what the model declares an operand holds."""
+        from KrakenOS.UI.layout_editor import OPERAND_REGISTRY
+        from KrakenOS.UI.optimization_controls import FIELD_XY_CONTROLS, OPERAND_CONTROLS, default_for, variables_for
+
+        tables = sorted({control.variables for control in OPERAND_CONTROLS + FIELD_XY_CONTROLS})
+        made = {table: sorted(getattr(editor, table)) for table in tables}
+        declared = {table: [] for table in tables}
+        wrong = []
+        for spec in OPERAND_REGISTRY.values():
+            for control in variables_for(spec):
+                declared[control.variables].append(spec.label)
+                variable = getattr(editor, control.variables).get(spec.label)
+                if variable is None or str(variable.get()) != default_for(control, spec, editor):
+                    wrong.append((spec.label, control.name, None if variable is None else str(variable.get())))
+        return {"made": made, "declared": {table: sorted(labels) for table, labels in declared.items()}, "wrong": wrong,
+                "settings": sum(len(labels) for labels in made.values()),
+                "in use": list(editor._selected_operand_labels()),
+                "first": [spec.label for spec in OPERAND_REGISTRY.values()][:1]}
+
     def panes() -> dict:
         main = editor.main_pane
         count = len(main.panes())
@@ -421,7 +452,7 @@ def tk_window() -> dict:
                 "status": str(editor.status_var.get()), "width": int(main.winfo_width()),
                 "center sash": int(editor.center_panel.sashpos(0))}
 
-    record = {"start": panes()}
+    record = {"start": panes(), "operands": operand_settings()}
     for label, toggle in (("left hidden", editor.toggle_left_sidebar), ("left back", editor.toggle_left_sidebar),
                           ("right hidden", editor.toggle_right_sidebar), ("both hidden", editor.toggle_left_sidebar),
                           ("left again", editor.toggle_left_sidebar), ("both back", editor.toggle_right_sidebar)):
@@ -550,12 +581,16 @@ def layering_checks(widget_names) -> list:
 
 def session_checks(tk_meta: dict, none_meta: dict, result: dict) -> list:
     without = {label: state for label, _result, state in result["without"]}
+    operands = list(result["operands"])
 
     def value(label: str, name: str) -> str:
         return str(without[label][name]["<var>"])
 
     def set_aside(label: str) -> dict:
         return dict(without[label]["_left_mode_saved_values"])
+
+    def held(label: str, table: str) -> dict:
+        return {name: str(item["<var>"]) for name, item in without[label][table].items()}
 
     def claim_n():
         loud = none_meta["loud"]
@@ -574,12 +609,13 @@ def session_checks(tk_meta: dict, none_meta: dict, result: dict) -> list:
         known = set().union(*KNOWN_DIFFERENCES.values())
         new, fixed = sorted(found - known), sorted(known - found)
         return (not new and not fixed and not result["results"] and result["steps"][0] == result["steps"][1] >= 35
-                and set(result["tk_only"]) == TK_ONLY_PLAIN and result["compared_per_step"] >= 250,
+                and set(result["tk_only"]) == TK_ONLY_PLAIN and set(result["rootless_only"]) == ROOTLESS_ONLY_PLAIN
+                and result["compared_per_step"] >= 250,
                 f"{result['steps'][1]} steps, every one without an error in both ({result['results'] or 'none raised'}); "
-                f"about {result['compared_per_step']} plain attributes compared at each; they differ in {len(found)} -- "
-                + "; ".join(f"{cause}: {len(names & found)} of {len(names)}" for cause, names in KNOWN_DIFFERENCES.items())
-                + f" -- and in nothing else (new: {new or 'none'}; listed but no longer differing: {fixed or 'none'}); plain "
-                f"attributes only the Tk window has: {result['tk_only']}")
+                f"about {result['compared_per_step']} plain attributes compared at each; they differ in {len(found)}"
+                + "".join(f"; {cause}: {len(names & found)} of {len(names)}" for cause, names in KNOWN_DIFFERENCES.items())
+                + f" (new: {new or 'none'}; listed but no longer differing: {fixed or 'none'}); plain attributes only the Tk "
+                f"window has: {result['tk_only']}; only the editor without a root: {result['rootless_only']}")
 
     def claim_r():
         observatory = result["observatory"]
@@ -624,6 +660,22 @@ def session_checks(tk_meta: dict, none_meta: dict, result: dict) -> list:
             "set aside from the start": set_aside("constructed").get("gaussian_m2_var") == "1.0"
             and set_aside("constructed").get("source_seed_var") == "1" == set_aside("load a layout").get("source_seed_var")
             and value("load a layout", "source_seed_var") != "1",
+            "every operand holds its settings from the start": {
+                table: len(held("constructed", table)) for table in (
+                    "operand_weight_vars", "operand_target_vars", "operand_wavelength_vars", "operand_field_vars",
+                    "operand_surface_vars", "operand_field_x_vars", "operand_field_y_vars", "operand_frequency_vars",
+                    "operand_mtf_mode_vars", "operand_mtf_algorithm_vars")} == {
+                "operand_weight_vars": len(operands), "operand_target_vars": len(operands),
+                "operand_wavelength_vars": len(operands), "operand_field_vars": len(operands),
+                "operand_surface_vars": len(operands), "operand_field_x_vars": 1, "operand_field_y_vars": 1,
+                "operand_frequency_vars": 1, "operand_mtf_mode_vars": 1, "operand_mtf_algorithm_vars": 1}
+            and len(operands) == 8 and set(held("constructed", "operand_wavelength_vars").values()) == {"0.55"},
+            "the first operand is in use from the start": without["constructed"]["<operands in use>"] == operands[:1],
+            "a choice of operands and a setting are kept": without["two operands"]["<operands in use>"]
+            == [operands[0], operands[2]] and held("an operand's target", "operand_target_vars")[operands[2]] == "120"
+            != held("two operands", "operand_target_vars")[operands[2]],
+            "settings restore the operands": without["settings round trip"]["<operands in use>"] == [operands[0], operands[2]]
+            and held("settings round trip", "operand_target_vars")[operands[2]] == "120",
             "the sample count is NA once nothing samples the field": value("source model default", "field_count_var") == "NA"
             and set_aside("source model default").get("field_count_var") == "3"
             and value("source direction typed", "field_count_var") == "3",
@@ -673,7 +725,10 @@ def window_checks(record: dict) -> list:
                     and "field_type_var" not in default["set aside"]
                     and (default["source row spans"], default["field panel shown"]) == (["1", "1"], True)
                     and (gaussian["source row spans"], gaussian["field panel shown"]) == (["2", "2"], False))
-        return (not wrong and canvas_ok and field_ok and panel_ok,
+        cards = record["operands"]
+        cards_ok = (cards["made"] == cards["declared"] and not cards["wrong"] and cards["settings"] == 45
+                    and cards["in use"] == cards["first"] and len(cards["first"]) == 1)
+        return (not wrong and canvas_ok and field_ok and panel_ok and cards_ok,
                 f"the Tk window: three panes with sashes at {start['sashes']} of {start['width']} px; each sidebar hides and "
                 f"comes back with its restore strip, the status line and the same sashes (wrong: {wrong or 'none'}); the left "
                 f"panel's canvas tracks its content: {canvas}; the field inputs, blank scene: "
@@ -683,7 +738,9 @@ def window_checks(record: dict) -> list:
                 f"widget is live and in the panel exactly when its input applies (wrong: "
                 f"{(default['wrong'] + gaussian['wrong']) or 'none'}); the source row spans and the field panel shows: "
                 f"{[default['source row spans'], default['field panel shown']]} and "
-                f"{[gaussian['source row spans'], gaussian['field panel shown']]}")
+                f"{[gaussian['source row spans'], gaussian['field panel shown']]}; the Tk cards make {cards['settings']} "
+                f"operand settings, exactly the ones the model declares ({cards['made'] == cards['declared']}) with its start "
+                f"values (wrong: {cards['wrong'] or 'none'}), and {cards['in use']} is in use")
 
     return _claims((("T", claim_t),))
 

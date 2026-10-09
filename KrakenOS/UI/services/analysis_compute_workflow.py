@@ -1108,16 +1108,18 @@ class AnalysisComputeWorkflowMixin:
         """Make any per-operand setting variable no view has made yet; returns how many.
 
         The Tk optimisation panel creates these as it builds its cards, so a shell without that
-        panel would have none (bugs/0904). Existing variables are never replaced.
+        panel would have none (bugs/0904). Existing variables are never replaced. Every setting
+        an operand HOLDS is made, not only the ones its card shows: the Tk card makes those too,
+        and they are saved with the layout (bugs/0995).
         """
-        from KrakenOS.UI.optimization_controls import controls_for, default_for
+        from KrakenOS.UI.optimization_controls import default_for, variables_for
 
         host = getattr(self, "ui", None)
         if host is None:
             return 0
         made = 0
         for spec in OPERAND_REGISTRY.values():
-            for control in controls_for(spec):
+            for control in variables_for(spec):
                 table = getattr(self, control.variables, None)
                 if table is None or spec.label in table:
                     continue

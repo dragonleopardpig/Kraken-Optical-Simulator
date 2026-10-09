@@ -3061,6 +3061,10 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
             # the first look at which inputs apply, while each still holds what it was created
             # with -- the Tk source panel takes it as it finishes building (bugs/0994)
             self._sync_left_mode_controls()
+            # the optimizer's operand settings, and the first operand in use: what the Tk
+            # optimization panel makes with its cards and selects in its list (bugs/0995)
+            self.ensure_operand_variables()
+            self._set_selected_operand_labels([spec.label for spec in list(OPERAND_REGISTRY.values())[:1]])
         else:
             self._bind_global_copy_shortcuts()
             self.bind_all("<Control-z>", self._undo_event, add="+")
