@@ -2,8 +2,10 @@
 
 The Qt shell has always run a hidden Tk application beside itself: the editor's root with every
 Tk panel, and the 3D inspector's withdrawn window with its own. Both can be built without
-(bugs/0993, bugs/0998). With `KRAKEN_QT_TK_FREE=all` the shell asks for neither -- EXPERIMENTAL,
-on request, until it is the default.
+(bugs/0993, bugs/0998). The shell asks for neither -- on request at first
+(`KRAKEN_QT_TK_FREE=all`, bugs/0999), and by DEFAULT since bugs/1000: started with nothing asked
+for it runs without Tk, and `KRAKEN_QT_TK_FREE=0` brings the hidden Tk application back. This
+guard compares the default with `0`.
 
 Run that way, the Qt-era phases of the gate (633-760) found four places where the editor still
 called a Tk method on itself:
@@ -16,10 +18,12 @@ called a Tk method on itself:
   * the plot auto-save waited for the Tk window to reach 1200 x 700: that test is the Tk window
     builder's now, and without a Tk window there is nothing of Tk's to wait for
 
-  A  no Tk: on request the whole process -- the shell started, the 3D scene built, a session
-     driven -- makes no Tk root, no Tk widget and no Tk variable (as it always was: 1 root,
-     hundreds of widgets, the variables); the editor has no root and the inspector no window,
-     and the 3D scene is up with the same actors
+  A  no Tk, by default: started with nothing asked for, the whole process -- the shell started,
+     the 3D scene built, a session driven -- makes no Tk root, no Tk widget and no Tk variable
+     (with `KRAKEN_QT_TK_FREE=0`, as it was: 1 root, hundreds of widgets, the variables); the
+     editor has no root and the inspector no window, the 3D scene is up with the same actors;
+     and the switch means what it says: unset, empty, `all` and `1` are "all", `0` and `off`
+     the hidden Tk application, `inspector` the inspector alone, anything else is refused
   S  the same shell: after every step the plain attributes of the editor and of the inspector
      equal the ones of the shell that has its hidden Tk application -- the actors' addresses
      and the timings in the debug log aside
@@ -237,15 +241,37 @@ def checks(tk_meta: dict, free_meta: dict, result: dict) -> list:
 
     def claim_a():
         before = tk_meta["made"]
+        from KrakenOS.UI.qt import tk_free as switch
+
+        def level(value):
+            saved = os.environ.get("KRAKEN_QT_TK_FREE")
+            try:
+                if value is None:
+                    os.environ.pop("KRAKEN_QT_TK_FREE", None)
+                else:
+                    os.environ["KRAKEN_QT_TK_FREE"] = value
+                try:
+                    return switch.tk_free_level()
+                except ValueError:
+                    return "refused"
+            finally:
+                os.environ.pop("KRAKEN_QT_TK_FREE", None)
+                if saved is not None:
+                    os.environ["KRAKEN_QT_TK_FREE"] = saved
+
+        levels = {str(value): level(value) for value in (None, "", "all", "1", "0", "off", "inspector", "sometimes")}
         return (free_meta["made"] == {} and free_meta["root"] is False and free_meta["window"] == "no window"
-                and free_meta["requested"] == "all" and free_meta["available"] and free_meta["model variables by the host"] == 79
-                and tk_meta["requested"] == "" and tk_meta["root"] is True and before.get("roots starting") == 1
+                and free_meta["requested"] == "" and free_meta["available"] and free_meta["model variables by the host"] == 79
+                and levels == {"None": "all", "": "all", "all": "all", "1": "all", "0": "", "off": "", "inspector": "inspector",
+                               "sometimes": "refused"}
+                and tk_meta["requested"] == "0" and tk_meta["root"] is True and before.get("roots starting") == 1
                 and before.get("widgets starting", 0) > 300 and before.get("widgets building the 3D scene") == 247
                 and tk_meta["window"] == "Kraken3DInspectorWindow, withdrawn"
                 and free_meta["actors"] == tk_meta["actors"] > 20,
-                f"on request the whole Qt shell made Tk objects {free_meta['made'] or 'none'}: the editor has no root, the "
-                f"inspector {free_meta['window']}, the host made all {free_meta['model variables by the host']} model variables "
-                f"(as it always was: {before}); the 3D scene is up in both with {free_meta['actors']} actors")
+                f"started with nothing asked for, the whole Qt shell made Tk objects {free_meta['made'] or 'none'}: the editor "
+                f"has no root, the inspector {free_meta['window']}, the host made all "
+                f"{free_meta['model variables by the host']} model variables (with KRAKEN_QT_TK_FREE=0, as it was: {before}); "
+                f"the 3D scene is up in both with {free_meta['actors']} actors; what the switch means: {levels}")
 
     def claim_s():
         expected_tk = {"inspector": sorted(WINDOW_ONLY_PLAIN), "editor": sorted(TK_ONLY_PLAIN)}
@@ -314,10 +340,10 @@ def _run(call: str, claim: str, tk_free: str) -> dict | list:
     env["PYTHONHASHSEED"] = "1"
     # ONE analysis worker, whatever memory is free: the count is capped by the machine's free
     # memory and the parallel trace agrees with the single one only to the last bits (the full
-    # gate of 2026-10-10). The comparison is about Tk, not about the machine.
+    # gate of 2026-10-09). The comparison is about Tk, not about the machine.
     env["KRAKEN_ANALYSIS_WORKER_MB"] = "1000000"
     env.pop("KRAKEN_QT_TK_FREE", None)
-    if tk_free:
+    if tk_free:                 # "" leaves it UNSET: the shell's own default, which is what claim A is about
         env["KRAKEN_QT_TK_FREE"] = tk_free
     try:
         proc = subprocess.run([sys.executable, "-c", driver], capture_output=True, text=True, timeout=900,
@@ -337,7 +363,7 @@ def run_checks() -> tuple[bool, list[str]]:
     rows: list = []
     with tempfile.TemporaryDirectory() as folder:
         tk_path, free_path = str(Path(folder) / "with_tk.json"), str(Path(folder) / "without.json")
-        metas = [_run(f"session({tk_path!r})", "S", ""), _run(f"session({free_path!r})", "A", "all")]
+        metas = [_run(f"session({tk_path!r})", "S", "0"), _run(f"session({free_path!r})", "A", "")]
         if any(isinstance(meta, list) for meta in metas):
             for meta in metas:
                 rows += meta if isinstance(meta, list) else []

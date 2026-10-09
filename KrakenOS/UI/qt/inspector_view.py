@@ -83,8 +83,8 @@ class InspectorView:
         #: handler kinds dispatched, oldest first -- what a guard reads to see the routing
         self.dispatched: list[str] = []
 
-        # docs/design_qt_migration.md phase 7f: EXPERIMENTAL until it is the default -- with
-        # KRAKEN_QT_TK_FREE set the inspector is built without its hidden Tk window (bugs/0998)
+        # docs/design_qt_migration.md phase 7f: the inspector is built without a Tk window
+        # (bugs/0998; the default since bugs/1000) unless KRAKEN_QT_TK_FREE=0 asks for the hidden one
         from KrakenOS.UI.qt.tk_free import tk_free
 
         self.inspector = Kraken3DInspector(editor, vtk_host=self.widget, tk_window=not tk_free("inspector"))

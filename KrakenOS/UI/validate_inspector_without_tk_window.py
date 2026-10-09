@@ -3,8 +3,9 @@
 In the Qt shell the inspector draws into a Qt widget and takes its input from Qt (bugs/0906), but
 it still made a Tk window -- withdrawn, never shown -- and built its Tk panels into it: 247 widgets
 and 38 Tk variables nobody sees. `Kraken3DInspector(editor, vtk_host=..., tk_window=False)` builds
-neither. The Qt shell asks for it only on request yet (`KRAKEN_QT_TK_FREE=inspector`,
-`qt/tk_free.py`); the default is unchanged until the whole shell has been measured that way.
+neither. The Qt shell asks for it by default since bugs/1000; `KRAKEN_QT_TK_FREE=0` brings the
+hidden window back, `=inspector` leaves only the inspector's out (`qt/tk_free.py`). This guard
+compares `0` with `inspector`.
 
 What the model asked of the Tk window, measured on a session in the Qt shell, was one thing:
 whether it still exists. The inspector answers that itself now -- with a window, the window's
@@ -15,9 +16,9 @@ says "Enter the field you want in the FOV dialog", having asked for that dialog 
 the inspector's window -- and nothing runs Tk timers under the Qt shell, so there the dialog never
 opened. It is asked for on the inspector's host.
 
-  W  in the Qt shell, on request: the inspector has no Tk window, and neither building it nor
-     the session makes one Tk widget or Tk variable for it (as it always was: 247 widgets, 38
-     variables, a withdrawn Toplevel); the 3D scene is up with the same actors
+  W  in the Qt shell the inspector has no Tk window, and neither building it nor the session
+     makes one Tk widget or Tk variable for it (with `KRAKEN_QT_TK_FREE=0`, as it was: 247
+     widgets, 38 variables, a withdrawn Toplevel); the 3D scene is up with the same actors
   S  the same inspector: after every step of one session its plain attributes -- about 200,
      the actors' addresses aside -- and the editor's -- the timings in its debug log aside --
      equal the ones of the inspector that has its Tk window; what only that one holds is its
@@ -272,7 +273,7 @@ def compare(window_path: str, free_path: str) -> dict:
 def checks(window_meta: dict, free_meta: dict, result: dict, tk_meta: dict) -> list:
     def claim_w():
         return (free_meta["window"] == "no window" and free_meta["made building"] == {} and free_meta["available"]
-                and free_meta["requested"] == "inspector" and window_meta["requested"] == ""
+                and free_meta["requested"] == "inspector" and window_meta["requested"] == "0"
                 and window_meta["window"] == "Kraken3DInspectorWindow, withdrawn"
                 and window_meta["made building"] == {"widgets for the inspector": 247, "variables for the inspector": 38}
                 and free_meta["actors"] == window_meta["actors"] > 20 and window_meta["available"],
@@ -334,11 +335,9 @@ def _run(call: str, claim: str, tk_free: str) -> dict | list:
     # machine's free memory at that moment, and the parallel trace agrees with the single one only
     # to the last bits (0.4442048847402281 / ...22785): in a loaded gate on a 14 GB machine the two
     # sessions were given different counts and five trace results "differed" (the full gate of
-    # 2026-10-10, in the editor's guard). The comparison is about Tk, not about the machine.
+    # 2026-10-09, in the editor's guard). The comparison is about Tk, not about the machine.
     env["KRAKEN_ANALYSIS_WORKER_MB"] = "1000000"
-    env.pop("KRAKEN_QT_TK_FREE", None)
-    if tk_free:
-        env["KRAKEN_QT_TK_FREE"] = tk_free
+    env["KRAKEN_QT_TK_FREE"] = tk_free      # always named: unset means "all" since bugs/1000
     try:
         proc = subprocess.run([sys.executable, "-c", driver], capture_output=True, text=True, timeout=900,
                               env=env, cwd=str(Path.cwd()))
@@ -357,8 +356,8 @@ def run_checks() -> tuple[bool, list[str]]:
     rows: list = []
     with tempfile.TemporaryDirectory() as folder:
         window_path, free_path = str(Path(folder) / "window.json"), str(Path(folder) / "free.json")
-        metas = [_run(f"session({window_path!r})", "S", ""), _run(f"session({free_path!r})", "W", "inspector"),
-                 _run("tk_prompt()", "F", "")]
+        metas = [_run(f"session({window_path!r})", "S", "0"), _run(f"session({free_path!r})", "W", "inspector"),
+                 _run("tk_prompt()", "F", "0")]
         if any(isinstance(meta, list) for meta in metas):
             for meta in metas:
                 rows += meta if isinstance(meta, list) else []

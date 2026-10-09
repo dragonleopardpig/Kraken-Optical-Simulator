@@ -904,7 +904,7 @@ def _run(call: str, claim: str, needs_display: bool, config: str = "", hash_seed
     # machine's free memory at that moment, and the parallel trace agrees with the single one only
     # to the last bits (0.4442048847402281 / ...22785): in a loaded gate on a 14 GB machine the two
     # sessions were given different counts and five trace results "differed" (the full gate of
-    # 2026-10-10). The comparison is about Tk, not about the machine.
+    # 2026-10-09). The comparison is about Tk, not about the machine.
     env["KRAKEN_ANALYSIS_WORKER_MB"] = "1000000"
     if config:                  # a configuration folder of its own: no session finds what another left
         Path(config).mkdir(parents=True, exist_ok=True)

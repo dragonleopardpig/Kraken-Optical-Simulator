@@ -75,10 +75,9 @@ def build(argv=None):
     app = QApplication.instance() or QApplication(argv)
 
     host = QtUiHost()
-    # headless: the editor must not maximize or show the Tk tree it still builds. Withdrawing the
-    # root keeps Tk off the screen. With KRAKEN_QT_TK_FREE=all (docs/design_qt_migration.md phase
-    # 7f, EXPERIMENTAL until it is the default) the editor is built with no Tk root at all
-    # (bugs/0993), and there is nothing to withdraw.
+    # The editor is built with no Tk root (bugs/0993; the default since bugs/1000). Asked for the
+    # hidden Tk application of before (KRAKEN_QT_TK_FREE=0, `qt/tk_free.py`) it is built headless
+    # -- it must not maximize or show the Tk tree -- and its root withdrawn, off the screen.
     from KrakenOS.UI.qt.tk_free import tk_free
 
     editor = KrakenLayoutEditor(headless=True, ui=host, tk_root=not tk_free("editor"))
