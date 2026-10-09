@@ -25,6 +25,10 @@ comparison, not by reading):
     with its cards -- five for every operand and five more for the MTF one, most of them never
     shown -- and the first operand was in use because a Tk list box selected it. The model
     makes every setting an operand holds and starts with the first operand
+  * (bugs/0996) widening the session to a saved file found something that is not about Tk: the
+    same scene saved by two processes gave two different files -- the operands were written in
+    the order of a Python set, which is the process's. The two sessions here run under different
+    hash seeds on purpose
 
   N  no Tk at all: the editor without a root, driven through the session, makes no Tk root, no
      Tk widget and no Tk variable (counted at tkinter's own constructors); its 79 model variables
@@ -41,7 +45,12 @@ comparison, not by reading):
      is "NA" again once nothing samples the field, and an input found saying "NA" gets the
      value set aside for it, or else the one it was created with; every operand holds its
      settings from the start, the first one is in use, and a choice of operands and a setting
-     survive a settings round trip
+     survive a settings round trip; the analyses chosen are the model's, and an input that
+     belongs to an analysis applies exactly while that analysis is chosen
+  F  the file: the two editors, in two processes with different hash seeds, save the same
+     scene as the same file byte for byte, at "Save As" and again at "Save" after an edit; the
+     operands are in it in the operand list's order; and opening it brings back what was saved,
+     not the edit made after
   T  the Tk window still lays itself out: both sidebars hide and come back with their restore
      strips, the status line and the same sashes; the left panel's canvas tracks its content;
      and its field inputs are still told what the model decided -- the sample count greyed
@@ -192,6 +201,12 @@ def session(mode: str, out: str) -> dict:
 
     operands = [spec.label for spec in OPERAND_REGISTRY.values()]
     host = ScriptedUiHost(answers={})
+    # ONE path for both sessions, which run one after the other: the path is in the file, in the
+    # status line and in every undo state taken after the save
+    saved_file = Path(out).with_name("saved_scene.py")
+    saved_file.unlink(missing_ok=True)
+    host._answers["asksaveasfilename"] = str(saved_file)
+    host._answers["askopenfilename"] = str(saved_file)
     if mode == "tk":
         editor = KrakenLayoutEditor(headless=True, ui=host)
     else:
@@ -219,6 +234,12 @@ def session(mode: str, out: str) -> dict:
         plain["<cells>"] = {"<digest>": _digest([[i, list(cells.values(i)), list(cells.tags(i))] for i in cells.items()])}
         plain["<selection>"] = [list(editor._table_selection()), editor._table_focus_item()]
         plain["<operands in use>"] = list(editor._selected_operand_labels())
+        plain["<inputs that apply>"] = sorted(item.key for _group, items in system_controls.CONTROL_GROUPS
+                                              for item in items if item.is_relevant(editor))
+        plain["<thicknesses>"] = [repr(float(row.thickness)) for row in editor.rows]
+        plain["<results>"] = {"<digest>": _digest(list(getattr(editor, "results_items", []) or []))}
+        plain["<saved file>"] = ({"<digest>": hashlib.sha1(saved_file.read_bytes()).hexdigest()[:16],
+                                  "bytes": saved_file.stat().st_size} if saved_file.exists() else None)
         plain["<plot axes>"] = len(editor.figure.axes)
         return plain
 
@@ -250,6 +271,13 @@ def session(mode: str, out: str) -> dict:
     def load() -> None:
         editor.layout_files[LAYOUT.stem] = LAYOUT
         editor.load_layout_by_name(LAYOUT.stem, refresh=False)
+
+    def analyses(*wanted: str) -> None:
+        """Choose exactly these analyses, by the toggle a shell's picker calls."""
+        for chosen in list(editor.selected_analysis_modes):
+            editor.toggle_analysis_mode(chosen)
+        for chosen in wanted:
+            editor.toggle_analysis_mode(chosen)
 
     def settings_round_trip() -> None:
         settings = editor._collect_layout_settings()
@@ -312,6 +340,20 @@ def session(mode: str, out: str) -> dict:
     step("trace mode", lambda: control("trace_mode_var", "Sequential"))
     step("reset", editor.reset_layout)
     step("undo the reset", editor.undo)
+    # analyses: which are chosen is the model's (bugs/0899); some inputs apply only with one of them
+    step("analyses: none", lambda: analyses())
+    step("analyses: tolerance compare", lambda: analyses("tolerance_compare"))
+    step("the tolerance view", lambda: control("tolerance_compare_view_var", system_controls.control_for(
+        "tolerance_compare_view_var").choices[-1]))
+    step("analyses: detector map", lambda: analyses("detector_map"))
+    step("detector bins", lambda: control("detector_bins_var", "64"))
+    step("analyses: spot and wavefront", lambda: analyses("spot", "wavefront"))
+    # a file: what is written, and what comes back
+    step("save as", editor.save_layout_as)
+    step("edit after saving", lambda: editor.commit_cell(3, "thickness", "6.5"))
+    step("save", editor.save_layout)
+    step("another edit", lambda: editor.commit_cell(3, "thickness", "9.75"))
+    step("open the saved file", editor.open_layout)
 
     loud = {}
     for name in ("title", "geometry", "winfo_exists", "bind_all", "tk"):
@@ -327,6 +369,9 @@ def session(mode: str, out: str) -> dict:
         refused = f"{type(exc).__name__}: {exc}"
     host_made = len(editor._model_variables_created_at_init)
     has_root = editor.root is not None
+    from KrakenOS.UI.layout_editor import _load_python_data
+
+    in_the_file = list(_load_python_data(saved_file)["settings"]["operands"]) if saved_file.exists() else []
     try:
         editor.destroy()
         closed = "ok"
@@ -334,7 +379,8 @@ def session(mode: str, out: str) -> dict:
         closed = f"RAISED {type(exc).__name__}: {exc}"
     Path(out).write_text(json.dumps({"steps": steps, "observatory": observatory, "operands": operands}), encoding="utf-8")
     return {"made_at_start": made_at_start, "made": dict(made), "has_root": has_root, "host_made": host_made,
-            "loud": loud, "refused": refused, "closed": closed, "steps": len(steps)}
+            "loud": loud, "refused": refused, "closed": closed, "steps": len(steps),
+            "hash seed": os.environ.get("PYTHONHASHSEED", ""), "operands in the file": in_the_file}
 
 
 def _states(path: str) -> tuple[list, dict]:
@@ -399,7 +445,7 @@ def compare(tk_path: str, none_path: str) -> dict:
                 differing.setdefault(key, set()).add(label)
     return {"differing": {key: sorted(labels) for key, labels in differing.items()}, "results": results,
             "tk_only": sorted(tk_only), "rootless_only": sorted(rootless_only), "steps": [len(with_root), len(without)],
-            "compared_per_step": compared // max(len(without), 1), "without": without,
+            "compared_per_step": compared // max(len(without), 1), "without": without, "with_root": with_root,
             "observatory": facts["observatory"], "operands": facts["operands"]}
 
 
@@ -676,6 +722,14 @@ def session_checks(tk_meta: dict, none_meta: dict, result: dict) -> list:
             != held("two operands", "operand_target_vars")[operands[2]],
             "settings restore the operands": without["settings round trip"]["<operands in use>"] == [operands[0], operands[2]]
             and held("settings round trip", "operand_target_vars")[operands[2]] == "120",
+            "the analyses chosen are the model's": [without[label]["selected_analysis_modes"] for label in (
+                "analyses: none", "analyses: tolerance compare", "analyses: detector map", "analyses: spot and wavefront")]
+            == [[], ["tolerance_compare"], ["detector_map"], ["spot", "wavefront"]],
+            "an input applies while its analysis is chosen": [
+                ("tolerance_compare_view_var" in without[label]["<inputs that apply>"],
+                 "detector_bins_var" in without[label]["<inputs that apply>"]) for label in (
+                    "analyses: none", "analyses: tolerance compare", "analyses: detector map", "analyses: spot and wavefront")]
+            == [(False, False), (True, False), (False, True), (False, False)],
             "the sample count is NA once nothing samples the field": value("source model default", "field_count_var") == "NA"
             and set_aside("source model default").get("field_count_var") == "3"
             and value("source direction typed", "field_count_var") == "3",
@@ -684,7 +738,25 @@ def session_checks(tk_meta: dict, none_meta: dict, result: dict) -> list:
         return (not wrong, f"with no Tk, {len(facts) - len(wrong)} of {len(facts)} reactions of the model hold "
                            f"({', '.join(facts)}); not holding: {wrong or 'none'}")
 
-    return _claims((("N", claim_n), ("S", claim_s), ("R", claim_r)))
+    def claim_f():
+        with_root = {label: state for label, _result, state in result["with_root"]}
+        files = {label: (with_root[label]["<saved file>"], without[label]["<saved file>"])
+                 for label in ("another edit", "save as", "save")}
+        before = (with_root["analyses: spot and wavefront"]["<saved file>"], without["analyses: spot and wavefront"]["<saved file>"])
+        thick = [without[label]["<thicknesses>"][3] for label in ("save as", "edit after saving", "another edit", "open the saved file")]
+        seeds = (tk_meta["hash seed"], none_meta["hash seed"])
+        same = all(a == b and a is not None for a, b in files.values())
+        return (seeds == ("1", "2") and before == (None, None) and same and files["save as"][0] != files["save"][0]
+                and files["save"][1]["bytes"] > 20000 and tk_meta["operands in the file"] == none_meta["operands in the file"]
+                == operands and thick[1] == "6.5" != thick[0] and thick[2] == "9.75" and thick[3] == "6.5"
+                and without["open the saved file"]["current_layout_file"] == "path:saved_scene.py",
+                f"two processes with hash seeds {seeds}, one editor with a Tk root and one without: the scene saved by each is "
+                f"the same file ({same}; {files['save'][1]['bytes']} bytes), at Save As and again at Save after an edit "
+                f"(another file: {files['save as'][0] != files['save'][0]}); the operands in it are in the operand list's "
+                f"order ({none_meta['operands in the file'] == operands}); row 3's thickness {thick[0]} was edited to {thick[1]} and "
+                f"saved, edited to {thick[2]}, and opening the file gives {thick[3]}")
+
+    return _claims((("N", claim_n), ("S", claim_s), ("R", claim_r), ("F", claim_f)))
 
 
 def window_checks(record: dict) -> list:
@@ -745,7 +817,7 @@ def window_checks(record: dict) -> list:
     return _claims((("T", claim_t),))
 
 
-def _run(call: str, claim: str, needs_display: bool) -> dict | list:
+def _run(call: str, claim: str, needs_display: bool, config: str = "", hash_seed: str = "") -> dict | list:
     driver = (
         "import json, os\n"
         + ("if not os.environ.get('DISPLAY'):\n"
@@ -758,6 +830,11 @@ def _run(call: str, claim: str, needs_display: bool) -> dict | list:
     )
     env = dict(os.environ)
     env.pop("WAYLAND_DISPLAY", None)
+    if config:                  # a configuration folder of its own: no session finds what another left
+        Path(config).mkdir(parents=True, exist_ok=True)
+        env["KRAKEN_CONFIG_DIR"] = config
+    if hash_seed:               # the order of a set is the process's: what is saved must not be
+        env["PYTHONHASHSEED"] = hash_seed
     try:
         proc = subprocess.run([sys.executable, "-c", driver], capture_output=True, text=True, timeout=900,
                               env=env, cwd=str(Path.cwd()))
@@ -776,8 +853,8 @@ def run_checks() -> tuple[bool, list[str]]:
     rows: list = []
     with tempfile.TemporaryDirectory() as folder:
         tk_path, none_path = str(Path(folder) / "tk.json"), str(Path(folder) / "none.json")
-        tk_meta = _run(f"session('tk', {tk_path!r})", "S", True)
-        none_meta = _run(f"session('none', {none_path!r})", "N", False)
+        tk_meta = _run(f"session('tk', {tk_path!r})", "S", True, str(Path(folder) / "config_tk"), "1")
+        none_meta = _run(f"session('none', {none_path!r})", "N", False, str(Path(folder) / "config_none"), "2")
         if isinstance(tk_meta, list) or isinstance(none_meta, list):
             rows += (tk_meta if isinstance(tk_meta, list) else []) + (none_meta if isinstance(none_meta, list) else [])
         else:

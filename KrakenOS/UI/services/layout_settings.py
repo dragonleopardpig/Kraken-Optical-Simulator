@@ -157,8 +157,9 @@ class LayoutSettingsService:
                 return str(path)
 
         operand_settings: dict[str, dict[str, object]] = {}
-        all_labels = {spec.label for spec in OPERAND_REGISTRY.values()}
-        for label in all_labels:
+        # in the operand list's own order. This went over a SET of the labels, whose order is
+        # the process's: the same scene saved in two sessions gave two different files (bugs/0996)
+        for label in [spec.label for spec in OPERAND_REGISTRY.values()]:
             payload: dict[str, object] = {}
             var = self.operand_weight_vars.get(label)
             if var is not None:
