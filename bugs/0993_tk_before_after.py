@@ -23,8 +23,12 @@ from pathlib import Path
 S = Path(sys.argv[1])
 (S / "records").mkdir(parents=True, exist_ok=True)
 status = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], capture_output=True, text=True).stdout
-FILES = [line[3:] for line in status.splitlines() if line[:2] == " M"]
-assert FILES and all(name.startswith("KrakenOS/UI/") for name in FILES), FILES
+# the files of the product; the guards stay as they are, so the SAME session is run on both
+FILES = [line[3:] for line in status.splitlines()
+         if line[:2] == " M" and line[3:].startswith("KrakenOS/")
+         and not line[3:].rsplit("/", 1)[-1].startswith("validate_")]
+assert FILES, status
+print("the product's modified files:", FILES, flush=True)
 keep = S / "changed_files"
 shutil.rmtree(keep, ignore_errors=True)
 sha = {}

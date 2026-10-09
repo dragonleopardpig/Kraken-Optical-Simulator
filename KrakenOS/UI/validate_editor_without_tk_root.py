@@ -18,6 +18,9 @@ comparison, not by reading):
   * the field value was declared with its value AFTER start-up, so start-up ran from a
     different beginning and the blank scene's image was 4 mm wide, not 17.5
   * the atmosphere's ten numbers were not declared at all (made and read by name)
+  * (bugs/0994) which inputs apply was worked out over the WIDGETS the Tk panels register: with
+    no panel nothing was set aside and the sample count was not re-examined. The model goes over
+    its own catalogue now -- the same 45 inputs -- and the Tk widgets follow
 
   N  no Tk at all: the editor without a root, driven through the session, makes no Tk root, no
      Tk widget and no Tk variable (counted at tkinter's own constructors); its 79 model variables
@@ -28,13 +31,17 @@ comparison, not by reading):
      -- equals the Tk-rooted editor's, except EXACTLY the known differences listed below
   R  the model's own reactions, with no Tk: the summaries follow their inputs, a typed direction
      names its preset, an observatory preset fills the numbers, the field's label, count and
-     hint follow the object mode, a settings round trip restores what it saved, and what a
-     trace prints is in the debug log
+     hint follow the object mode, a settings round trip restores what it saved, what a trace
+     prints is in the debug log; an input that stops applying is set aside, the sample count
+     is "NA" again once nothing samples the field, and an input found saying "NA" gets the
+     value set aside for it, or else the one it was created with
   T  the Tk window still lays itself out: both sidebars hide and come back with their restore
      strips, the status line and the same sashes; the left panel's canvas tracks its content;
      and its field inputs are still told what the model decided -- the sample count greyed
      while the field is zero and live once it is not, the field types offered in the object
-     mode's order
+     mode's order; and every registered input's widget is disabled and taken out of the panel
+     exactly when the catalogue says the input does not apply, for two source models, with the
+     source row's span and the field panel following the source model
   L  the layering: the eight pane methods are the window builder's and not the service's; the
      two Tk panels wire no variable trace of their own; the model's code names a panel-made Tk
      widget exactly as often as listed below
@@ -66,11 +73,10 @@ BIG = 6000
 
 #: What still differs between an editor without a Tk root and one with -- model state that
 #: still lives in a Tk panel. EXACT: a family that stops differing must leave this list, and a
-#: new one fails. Two causes are left, each the subject of a next step of phase 7f:
+#: new one fails. One cause is left, the subject of the next step of phase 7f:
 #:   * the optimizer's operand settings are variables the Tk optimization panel creates, and the
 #:     selected operands are a Tk list box's selection
-#:   * which inputs apply (and the value an inapplicable one is set aside with) is worked out
-#:     over the widgets the Tk panels REGISTER, so with no panel nothing is set aside
+#: (bugs/0994 took "which inputs apply" off this list: `_left_mode_saved_values`, `field_count_var`.)
 KNOWN_DIFFERENCES = {
     "the optimizer's operands": {
         "operand_field_vars", "operand_field_x_vars", "operand_field_y_vars", "operand_frequency_vars",
@@ -78,9 +84,6 @@ KNOWN_DIFFERENCES = {
         "operand_wavelength_vars", "operand_weight_vars",
         "_undo_stack: only the operands", "_redo_stack: only the operands", "_last_saved_state: only the operands",
         "_headless_selected_operand_labels: only without a root",
-    },
-    "which inputs apply": {
-        "_left_mode_saved_values", "field_count_var",
     },
 }
 #: plain attributes only the Tk-rooted editor has: its window's own state, none of it model state
@@ -252,6 +255,16 @@ def session(mode: str, out: str) -> dict:
 
     source_models = system_controls.control_for("source_model_var").choices
     record("constructed", "ok")
+    # on the blank scene the field inputs apply (the layout loaded next has a light source of its own)
+    step("blank: a field", lambda: control("field_value_var", "3.0"))
+    step("blank: field samples", lambda: control("field_count_var", "5"))
+    step("blank: no field", lambda: control("field_value_var", "0"))
+    step("blank: an input says NA, nothing set aside", lambda: (editor.wavelength_var.set("NA"),
+                                                                editor._sync_left_mode_controls()))
+    step("blank: an input says NA, a value set aside", lambda: (
+        editor._left_mode_saved_values.__setitem__("wavelength_var", "0.633"), editor.wavelength_var.set("NA"),
+        editor._sync_left_mode_controls()))
+    step("blank: the wavelength back", lambda: control("wavelength_var", "0.55"))
     step("load a layout", load)
     step("commit a cell", lambda: editor.commit_cell(3, "thickness", "7.25"))
     step("commit a material", lambda: editor.commit_cell(4, "glass", "F2"))
@@ -286,6 +299,8 @@ def session(mode: str, out: str) -> dict:
     step("settings round trip", settings_round_trip)
     step("refresh the plot", editor.refresh_plot)
     step("add surface", editor.add_surface)
+    step("trace mode non-sequential", lambda: control("trace_mode_var", system_controls.TRACE_MODES[1]))
+    step("hit limit", lambda: control("nonseq_ns_limit_var", "150"))
     step("trace mode", lambda: control("trace_mode_var", "Sequential"))
     step("reset", editor.reset_layout)
     step("undo the reset", editor.undo)
@@ -446,7 +461,31 @@ def tk_window() -> dict:
         getattr(editor, system_controls.control_for(name).commit)()
         settle(0.3)
 
+    def panel() -> dict:
+        """Each registered input: does the catalogue say it applies, and what does its widget show?"""
+        wrong, apply = [], 0
+        for registered in editor._left_mode_controls:
+            name = str(registered["var_name"])
+            if not name or name == "field_count_var":       # layout-only widgets; the sample count has its own claim
+                continue
+            applies = bool(system_controls.control_for(name).is_relevant(editor))
+            widget = registered["widget"]
+            shown = (str(widget.cget("state")) != "disabled", bool(widget.winfo_ismapped()))
+            apply += applies
+            if shown != (applies, applies):
+                wrong.append((name, applies, shown))
+        aside = sorted(editor._left_mode_saved_values)
+        return {"inputs": sum(1 for registered in editor._left_mode_controls if registered["var_name"]), "apply": apply,
+                "wrong": wrong, "set aside": aside, "source model": str(editor.source_model_var.get()),
+                "source row spans": [str(editor.source_model_label.grid_info().get("columnspan")),
+                                     str(editor.source_model_menu.grid_info().get("columnspan"))],
+                "field panel shown": bool(editor.field_panel.winfo_ismapped())}
+
     record["field blank"] = field()
+    record["panel default"] = panel()
+    control("source_model_var", system_controls.control_for("source_model_var").choices[1])
+    record["panel gaussian"] = panel()
+    control("source_model_var", system_controls.control_for("source_model_var").choices[0])
     control("object_mode_var", "Finite")
     control("field_value_var", "2.0")
     record["field finite"] = field()
@@ -515,6 +554,9 @@ def session_checks(tk_meta: dict, none_meta: dict, result: dict) -> list:
     def value(label: str, name: str) -> str:
         return str(without[label][name]["<var>"])
 
+    def set_aside(label: str) -> dict:
+        return dict(without[label]["_left_mode_saved_values"])
+
     def claim_n():
         loud = none_meta["loud"]
         return (none_meta["made"] == {} and none_meta["made_at_start"] == {} and none_meta["has_root"] is False
@@ -568,6 +610,23 @@ def session_checks(tk_meta: dict, none_meta: dict, result: dict) -> list:
             != value("atmosphere zenith", "atmosphere_summary_var"),
             "settings restore what they saved": value("settings round trip", "atmos_zenith_deg_var") == "30"
             and value("settings round trip", "field_value_var") == value("apply atmosphere", "field_value_var"),
+            "field samples follow the field": [value(label, "field_count_var") for label in (
+                "constructed", "blank: a field", "blank: field samples", "blank: no field")] == ["NA", "1", "5", "NA"]
+            and set_aside("blank: no field").get("field_count_var") == "5",
+            "an input found saying NA gets its start value":
+                value("blank: an input says NA, nothing set aside", "wavelength_var") == "0.55"
+                and "wavelength_var" not in set_aside("blank: no field"),
+            "or the value set aside for it": value("blank: an input says NA, a value set aside", "wavelength_var") == "0.633"
+            and "wavelength_var" not in set_aside("blank: an input says NA, a value set aside"),
+            "an input that stops applying is set aside": "field_type_var" not in set_aside("blank: no field")
+            and set_aside("load a layout").get("field_type_var") == "Field Half-Angle"
+            and set_aside("load a layout").get("object_mode_var") == "Infinity",
+            "set aside from the start": set_aside("constructed").get("gaussian_m2_var") == "1.0"
+            and set_aside("constructed").get("source_seed_var") == "1" == set_aside("load a layout").get("source_seed_var")
+            and value("load a layout", "source_seed_var") != "1",
+            "the sample count is NA once nothing samples the field": value("source model default", "field_count_var") == "NA"
+            and set_aside("source model default").get("field_count_var") == "3"
+            and value("source direction typed", "field_count_var") == "3",
         }
         wrong = sorted(name for name, held in facts.items() if not held)
         return (not wrong, f"with no Tk, {len(facts) - len(wrong)} of {len(facts)} reactions of the model hold "
@@ -607,12 +666,24 @@ def window_checks(record: dict) -> list:
                     and (finite["samples"], finite["entry"], finite["label"]) == ("1", "normal", "normal")
                     and blank["types"][0] == "Field Half-Angle" and finite["types"][0] == "Object Semi-Height"
                     and sorted(blank["types"]) == sorted(finite["types"]) and len(blank["types"]) == 4)
-        return (not wrong and canvas_ok and field_ok,
+        default, gaussian = record["panel default"], record["panel gaussian"]
+        panel_ok = (default["inputs"] == gaussian["inputs"] == 45 and not default["wrong"] and not gaussian["wrong"]
+                    and gaussian["source model"] == "Gaussian beam" and default["apply"] != gaussian["apply"]
+                    and "gaussian_m2_var" in default["set aside"] and "field_type_var" in gaussian["set aside"]
+                    and "field_type_var" not in default["set aside"]
+                    and (default["source row spans"], default["field panel shown"]) == (["1", "1"], True)
+                    and (gaussian["source row spans"], gaussian["field panel shown"]) == (["2", "2"], False))
+        return (not wrong and canvas_ok and field_ok and panel_ok,
                 f"the Tk window: three panes with sashes at {start['sashes']} of {start['width']} px; each sidebar hides and "
                 f"comes back with its restore strip, the status line and the same sashes (wrong: {wrong or 'none'}); the left "
                 f"panel's canvas tracks its content: {canvas}; the field inputs, blank scene: "
                 f"{[blank['samples'], blank['entry'], blank['types'][0]]}, finite object with a field: "
-                f"{[finite['samples'], finite['entry'], finite['types'][0]]}")
+                f"{[finite['samples'], finite['entry'], finite['types'][0]]}; of {default['inputs']} registered inputs "
+                f"{default['apply']} apply with the default source and {gaussian['apply']} with a Gaussian beam, and each "
+                f"widget is live and in the panel exactly when its input applies (wrong: "
+                f"{(default['wrong'] + gaussian['wrong']) or 'none'}); the source row spans and the field panel shows: "
+                f"{[default['source row spans'], default['field panel shown']]} and "
+                f"{[gaussian['source row spans'], gaussian['field panel shown']]}")
 
     return _claims((("T", claim_t),))
 

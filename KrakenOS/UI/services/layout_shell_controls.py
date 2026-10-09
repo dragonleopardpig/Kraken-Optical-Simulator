@@ -2,7 +2,8 @@ from __future__ import annotations
 
 
 from KrakenOS.UI.analysis_modes import selection_label
-from KrakenOS.UI.system_controls import control_for
+from KrakenOS.UI.model_variables import created_with
+from KrakenOS.UI.system_controls import CONTROL_GROUPS, control_for
 from KrakenOS.UI.services.open3d_live_refresh import MAIN_PANEL_LIVE_REFRESH_DELAY_MS
 from KrakenOS.UI.uihost import host_of
 
@@ -231,21 +232,12 @@ class LayoutShellControlsMixin:
                                          include_label=False)
 
     def _sync_left_mode_controls(self) -> None:
+        """An input that stopped applying, or applies again: the model's part, then the Tk panel's."""
+        self._set_aside_inputs_that_do_not_apply()
         controls = list(getattr(self, "_left_mode_controls", []) or [])
-        if not controls:
-            # no Tk panel registered anything -- a shell still has to hear the new state
-            self._show_control_state()
-            return
-        saved = getattr(self, "_left_mode_saved_values", None)
-        if saved is None:
-            saved = {}
-            self._left_mode_saved_values = saved
-        for control in controls:
-            var_name = str(control.get("var_name", ""))
-            var = getattr(self, var_name, None)
+        for control in controls:        # the widgets the Tk panels registered; none without them
             widget = control.get("widget")
             relevant = control.get("relevant")
-            normal_state = str(control.get("normal_state", "normal"))
             if widget is None or not callable(relevant):
                 continue
             try:
@@ -253,34 +245,48 @@ class LayoutShellControlsMixin:
             except Exception:
                 is_relevant = True
             try:
-                current = str(var.get())
+                widget.configure(state=str(control.get("normal_state", "normal")) if is_relevant else "disabled")
             except Exception:
-                current = ""
-            if is_relevant:
-                if current == "NA":
-                    restored = saved.pop(var_name, str(control.get("fallback", "")))
-                    if restored:
-                        try:
-                            var.set(restored)
-                        except Exception:
-                            pass
-                try:
-                    widget.configure(state=normal_state)
-                except Exception:
-                    pass
-            else:
-                if var is not None and current not in {"", "NA"}:
-                    saved.setdefault(var_name, current)
-                try:
-                    widget.configure(state="disabled")
-                except Exception:
-                    pass
+                pass
             control["visible"] = is_relevant
-        self._sync_left_source_panel_layout()
-        self._sync_left_field_panel_visibility()
-        self._reflow_left_mode_controls()
+        if controls:
+            self._sync_left_source_panel_layout()
+            self._sync_left_field_panel_visibility()
+            self._reflow_left_mode_controls()
         self._sync_field_sample_count_state()
         self._show_control_state()
+
+    def _set_aside_inputs_that_do_not_apply(self) -> None:
+        """Keep the value of an input that does not apply, and give it back when it does again.
+
+        `_left_mode_text` reads an input that says "NA" from what was set aside here. Which input
+        applies is the catalogue's rule (bugs/0902), and so is the list: this ran over the WIDGETS
+        the Tk panels register -- the same inputs, measured -- so with no Tk panel nothing was set
+        aside and the sample count was not re-examined (bugs/0994).
+        """
+        saved = getattr(self, "_left_mode_saved_values", None)
+        if saved is None:
+            saved = {}
+            self._left_mode_saved_values = saved
+        for _group, group_controls in CONTROL_GROUPS:
+            for control in group_controls:
+                var = getattr(self, control.key, None)
+                if var is None:
+                    continue
+                try:
+                    current = str(var.get())
+                except Exception:
+                    current = ""
+                if control.is_relevant(self):
+                    if current == "NA":
+                        restored = saved.pop(control.key, created_with(control.key))
+                        if restored:
+                            try:
+                                var.set(restored)
+                            except Exception:
+                                pass
+                elif current not in {"", "NA"}:
+                    saved.setdefault(control.key, current)
 
     def _show_control_state(self) -> None:
         """Tell the shell that relevance or a live choice list may have changed (bugs/0902).

@@ -120,6 +120,14 @@ MODEL_VARIABLES.update({variable: ("string", default) for _label, variable, defa
 CREATED_WITH: dict[str, Any] = {"field_value_var": "5.0"}
 
 
+def created_with(name: str) -> str:
+    """The text a model variable is created with; "" for a name the registry does not declare."""
+    if name in CREATED_WITH:
+        return str(CREATED_WITH[name])
+    declared = MODEL_VARIABLES.get(name)
+    return "" if declared is None else str(declared[1])
+
+
 def ensure_model_variables(owner) -> list[str]:
     """Create every declared model variable ``owner`` lacks, through its UI host; returns the
     names created. Existing variables are never replaced -- a panel's variable, and any trace a

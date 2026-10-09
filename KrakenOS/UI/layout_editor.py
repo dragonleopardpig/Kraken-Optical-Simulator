@@ -3058,6 +3058,9 @@ class KrakenLayoutEditor(SourceModelingMixin, ToleranceModelingMixin, ScenePlace
             # what the Tk panels do for the MODEL while they build their widgets (bugs/0993)
             self._install_source_summary_reactions()
             self._install_atmosphere_summary_reactions()
+            # the first look at which inputs apply, while each still holds what it was created
+            # with -- the Tk source panel takes it as it finishes building (bugs/0994)
+            self._sync_left_mode_controls()
         else:
             self._bind_global_copy_shortcuts()
             self.bind_all("<Control-z>", self._undo_event, add="+")
