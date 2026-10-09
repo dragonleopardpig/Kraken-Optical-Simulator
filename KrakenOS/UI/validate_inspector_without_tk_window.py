@@ -330,6 +330,12 @@ def _run(call: str, claim: str, tk_free: str) -> dict | list:
     env.pop("WAYLAND_DISPLAY", None)
     env["QT_QPA_PLATFORM"] = "xcb"
     env["PYTHONHASHSEED"] = "1"
+    # ONE analysis worker, whatever memory is free. How many the model starts is capped by the
+    # machine's free memory at that moment, and the parallel trace agrees with the single one only
+    # to the last bits (0.4442048847402281 / ...22785): in a loaded gate on a 14 GB machine the two
+    # sessions were given different counts and five trace results "differed" (the full gate of
+    # 2026-10-10, in the editor's guard). The comparison is about Tk, not about the machine.
+    env["KRAKEN_ANALYSIS_WORKER_MB"] = "1000000"
     env.pop("KRAKEN_QT_TK_FREE", None)
     if tk_free:
         env["KRAKEN_QT_TK_FREE"] = tk_free
