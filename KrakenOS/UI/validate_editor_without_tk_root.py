@@ -25,6 +25,10 @@ comparison, not by reading):
     with its cards -- five for every operand and five more for the MTF one, most of them never
     shown -- and the first operand was in use because a Tk list box selected it. The model
     makes every setting an operand holds and starts with the first operand
+  * (bugs/0997) widening it to the optimizer found one more that is not about Tk: Stop pressed
+    in the first seconds after Start did not stop the worker process -- it was only ever
+    signalled as a process group, which it becomes seconds after it starts -- and it crashed on
+    its own later
   * (bugs/0996) widening the session to a saved file found something that is not about Tk: the
     same scene saved by two processes gave two different files -- the operands were written in
     the order of a Python set, which is the process's. The two sessions here run under different
@@ -46,7 +50,9 @@ comparison, not by reading):
      value set aside for it, or else the one it was created with; every operand holds its
      settings from the start, the first one is in use, and a choice of operands and a setting
      survive a settings round trip; the analyses chosen are the model's, and an input that
-     belongs to an analysis applies exactly while that analysis is chosen
+     belongs to an analysis applies exactly while that analysis is chosen; on a plain lens a
+     cell becomes an optimization variable, a tolerance Monte Carlo runs over it, and an
+     optimization starts and stops
   F  the file: the two editors, in two processes with different hash seeds, save the same
      scene as the same file byte for byte, at "Save As" and again at "Save" after an edit; the
      operands are in it in the operand list's order; and opening it brings back what was saved,
@@ -83,6 +89,8 @@ RESULT_MARK = "ROOTLESS_RESULT "
 SKIP_MARK = "ROOTLESS_SKIP "
 ROOT = Path("KrakenOS/UI")
 LAYOUT = Path("KrakenOS/common_optical_layouts/beam_splitter_two_arm_doublets.py")
+#: a plain sequential lens, for what needs a merit that means something: tolerances, the optimizer
+LENS = Path("KrakenOS/common_optical_layouts/double_gauss_lens.py")
 #: not model state: the host, the root, the plot's toolkit objects
 NOT_COMPARED = {"ui", "root", "_kraken_ttk_style", "figure", "ax", "canvas", "_model_variables_created_at_init"}
 HISTORY = ("_undo_stack", "_redo_stack", "_last_saved_state")
@@ -237,6 +245,10 @@ def session(mode: str, out: str) -> dict:
         plain["<inputs that apply>"] = sorted(item.key for _group, items in system_controls.CONTROL_GROUPS
                                               for item in items if item.is_relevant(editor))
         plain["<thicknesses>"] = [repr(float(row.thickness)) for row in editor.rows]
+        plain["<optimization variables>"] = [variable.normalized_name() for variable in editor._build_optimization_variables()]
+        monte_carlo = editor.__dict__.get("_last_tolerance_monte_carlo_summary")
+        plain["<tolerance run>"] = (None if not monte_carlo else [
+            monte_carlo.get("sample_count"), monte_carlo.get("valid_count"), repr(monte_carlo.get("worst_total_merit"))])
         plain["<results>"] = {"<digest>": _digest(list(getattr(editor, "results_items", []) or []))}
         plain["<saved file>"] = ({"<digest>": hashlib.sha1(saved_file.read_bytes()).hexdigest()[:16],
                                   "bytes": saved_file.stat().st_size} if saved_file.exists() else None)
@@ -278,6 +290,33 @@ def session(mode: str, out: str) -> dict:
             editor.toggle_analysis_mode(chosen)
         for chosen in wanted:
             editor.toggle_analysis_mode(chosen)
+
+    def load_lens() -> None:
+        editor.reset_layout()
+        editor.layout_files[LENS.stem] = LENS
+        editor.load_layout_by_name(LENS.stem, refresh=False)
+
+    worker_after_stop: dict = {}
+
+    def start_and_stop() -> None:
+        """Start an optimization and stop it at once; note what became of its worker process."""
+        editor.start_optimization()
+        worker = editor._optimization_process
+        shut_down = editor._shutdown_optimization_worker
+
+        def watched(*args, **kwargs):
+            result = shut_down(*args, **kwargs)
+            try:        # looked at HERE, before the plot refresh Stop goes on to do gives it time to die by itself
+                worker_after_stop["state"] = "ALIVE" if worker.is_alive() else f"dead, exit code {worker.exitcode}"
+            except ValueError:          # the process object is closed: the editor found it dead and reaped it
+                worker_after_stop["state"] = "stopped and reaped"
+            return result
+
+        editor._shutdown_optimization_worker = watched
+        try:
+            editor.stop_optimization()
+        finally:
+            del editor._shutdown_optimization_worker
 
     def settings_round_trip() -> None:
         settings = editor._collect_layout_settings()
@@ -354,6 +393,16 @@ def session(mode: str, out: str) -> dict:
     step("save", editor.save_layout)
     step("another edit", lambda: editor.commit_cell(3, "thickness", "9.75"))
     step("open the saved file", editor.open_layout)
+    # tolerances and the optimizer, on a plain lens whose focal length a thickness changes
+    step("a plain lens", load_lens)
+    step("a variable", lambda: editor.toggle_optimization_cell(3, "thickness"))
+    step("the lens's operand", lambda: editor._set_selected_operand_labels([operands[2]]))
+    step("a tolerance Monte Carlo", lambda: editor.run_tolerance_monte_carlo(sample_count=3, seed=7))
+    step("one worker", lambda: editor.optimization_workers_var.set("1"))
+    # started and stopped at once: the whole run takes a minute and a half (it is compared once,
+    # outside the gate: bugs/0997); stopped before its first generation it leaves the lens as it was
+    step("an optimization started and stopped", start_and_stop)
+    step("the variable unmarked", lambda: editor.toggle_optimization_cell(3, "thickness"))
 
     loud = {}
     for name in ("title", "geometry", "winfo_exists", "bind_all", "tk"):
@@ -380,7 +429,8 @@ def session(mode: str, out: str) -> dict:
     Path(out).write_text(json.dumps({"steps": steps, "observatory": observatory, "operands": operands}), encoding="utf-8")
     return {"made_at_start": made_at_start, "made": dict(made), "has_root": has_root, "host_made": host_made,
             "loud": loud, "refused": refused, "closed": closed, "steps": len(steps),
-            "hash seed": os.environ.get("PYTHONHASHSEED", ""), "operands in the file": in_the_file}
+            "hash seed": os.environ.get("PYTHONHASHSEED", ""), "operands in the file": in_the_file,
+            "worker after Stop": worker_after_stop.get("state", "no optimization was started")}
 
 
 def _states(path: str) -> tuple[list, dict]:
@@ -730,6 +780,17 @@ def session_checks(tk_meta: dict, none_meta: dict, result: dict) -> list:
                  "detector_bins_var" in without[label]["<inputs that apply>"]) for label in (
                     "analyses: none", "analyses: tolerance compare", "analyses: detector map", "analyses: spot and wavefront")]
             == [(False, False), (True, False), (False, True), (False, False)],
+            "a cell is an optimization variable": [without[label]["<optimization variables>"] for label in (
+                "a plain lens", "a variable", "the variable unmarked")] == [[], ["Front Flint Front Thickness"], []],
+            "a tolerance Monte Carlo runs": without["the lens's operand"]["<tolerance run>"] is None
+            and (without["a tolerance Monte Carlo"]["<tolerance run>"] or [0, 0, "0"])[:2] == [3, 4]
+            and float((without["a tolerance Monte Carlo"]["<tolerance run>"] or [0, 0, "0"])[2]) > 1.0,
+            "an optimization starts and stops": value("an optimization started and stopped", "status_var").startswith(
+                "Optimization stopped") and without["an optimization started and stopped"]["optimization_running"] is False
+            and without["an optimization started and stopped"]["<thicknesses>"] == without["one worker"]["<thicknesses>"]
+            and value("one worker", "optimization_workers_var") == "1",
+            "Stop right after Start leaves no worker process (bugs/0997)":
+                (tk_meta["worker after Stop"], none_meta["worker after Stop"]) == ("stopped and reaped",) * 2,
             "the sample count is NA once nothing samples the field": value("source model default", "field_count_var") == "NA"
             and set_aside("source model default").get("field_count_var") == "3"
             and value("source direction typed", "field_count_var") == "3",

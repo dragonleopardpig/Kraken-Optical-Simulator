@@ -829,6 +829,12 @@ class AnalysisComputeWorkflowMixin:
             try:
                 if force and process.is_alive():
                     self._terminate_process_group(int(process.pid or 0), force=True)
+                    if process.is_alive():
+                        # The worker is a process group of its own only once its job has begun
+                        # (`os.setsid()` there), seconds after the process starts. Until then
+                        # there is no such group to signal, and a Stop that came early left the
+                        # worker running -- to crash on its own later (bugs/0997).
+                        process.kill()
             except Exception:
                 pass
             try:
