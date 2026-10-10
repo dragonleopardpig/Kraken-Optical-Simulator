@@ -16861,6 +16861,10 @@ phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
     721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
     'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
     'qt_model_forms_open_in_qt')
+phase_762_parallel_gate_both_interfaces = _phase_from_standalone(
+    762, "the full gate covers both interfaces (1001, phase 7g): tools/penta_parallel_gate.py, asked for nothing, queues every phase of the Tk suite once and every phase of the suite hosted in the Qt shell once -- the ones the Qt baseline records -- the Tk groups first; --shell tk and --shell qt queue one suite and a list of phases narrows each to what it has of them; a Qt-hosted group is run through the single gate with --shell qt and a Tk group without, each on a display of its own across both suites; the summary adds each interface up separately and is OK only when every group of both ran, reported and passed -- a failed Qt-hosted group, a group that did not run or did not report, a regressed one and an empty plan are each NOT OK, named with their interface; and the real --dry-run prints both suites with the counts the sources give",
+    'KrakenOS.UI.validate_parallel_gate_both_interfaces',
+    'parallel_gate_both_interfaces')
 phase_761_qt_shell_without_tk = _phase_from_standalone(
     761, "the Qt shell runs with no Tk at all, by default since 1000 (0999, 1000; phase 7f): started with nothing asked for, qt/app builds the editor without a Tk root and qt/inspector_view the inspector without a Tk window -- the whole process, the shell started, the 3D scene built and a session driven, makes no Tk root, widget or variable where it made 1 root, 414 + 247 widgets and 186 variables, with the same actors in the scene; after each of 8 steps about 520 plain attributes of the editor and of the inspector equal the ones of the shell with its hidden Tk application; the editor answers winfo_exists itself and a plot refresh it schedules runs on the shell's host (it asked a Tk root and raised); with no clipboard tool an element's rows copied in the Qt shell are on the Qt clipboard and Paste reads them from there, in both modes (they were Tk's by name: a hidden application nothing pumps); and the plot auto-save does not wait for a Tk window where there is none, waits for the hidden one as it always did, the Tk window's test being 1200 x 700 as before",
     'KrakenOS.UI.validate_qt_shell_without_tk',
@@ -17915,6 +17919,7 @@ def main() -> int:
             phase_759_editor_without_tk_root,
             phase_760_inspector_without_tk_window,
             phase_761_qt_shell_without_tk,
+            phase_762_parallel_gate_both_interfaces,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a

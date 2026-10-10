@@ -24,10 +24,18 @@ the validators' scratch files do not collide), and its own cores. Results are co
 baseline by the gate itself; this runner only adds them up. It never writes the baseline: a phase
 that needs recording is re-run through the single gate with `--update-baseline`.
 
+BOTH INTERFACES (bugs/1001, docs/design_qt_migration.md phase 7g). There are two suites, each with
+its own baseline: every phase on the Tk interface, and the harness's own phases run again with the
+3D inspector hosted in the Qt shell (`penta_validator_gate.py --shell qt`). "The full gate" used
+to mean the first only, and the second was run by hand, rarely. One run does both now -- the Qt
+groups are queued after the Tk ones and reported beside them -- unless `--shell tk` or `--shell qt`
+asks for one.
+
 Usage (inside `devenv shell`, like the gate):
-    python tools/penta_parallel_gate.py                    # the whole suite, 3 groups at a time
+    python tools/penta_parallel_gate.py                    # both interfaces, 3 groups at a time
     python tools/penta_parallel_gate.py --jobs 4
-    python tools/penta_parallel_gate.py --phases 633-727   # part of it
+    python tools/penta_parallel_gate.py --shell tk         # the Tk suite only, as before bugs/1001
+    python tools/penta_parallel_gate.py --phases 633-727   # part of it (of each suite that has it)
     python tools/penta_parallel_gate.py --dry-run          # show the groups only
 
 Exit: 0 = every group reported and none had a PASS->FAIL regression; 1 otherwise.
@@ -46,6 +54,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 GATE = REPO_ROOT / "tools" / "penta_validator_gate.py"
+#: the suite hosted in the Qt shell is the phases its own baseline holds: the harness's
+QT_BASELINE = REPO_ROOT / "tools" / "penta_validator_baseline_qt.json"
+#: interface -> what the reports call it
+SHELLS = {"tk": "Tk", "qt": "Qt-hosted"}
 VALIDATOR_SOURCE = REPO_ROOT / "KrakenOS" / "UI" / "validate_open3d_penta_telescope_comprehensive.py"
 PHASE_NAME_RE = re.compile(r"^\s+phase_(\d+)_[A-Za-z0-9_]+,\s*$", re.M)
 RESULT_RE = re.compile(r"\[gate\] phases: (\d+) pass, (\d+) fail")
@@ -69,6 +81,18 @@ def available_gb() -> float:
 def all_phases() -> list[int]:
     """Every phase number the comprehensive validator runs, ascending."""
     return sorted({int(number) for number in PHASE_NAME_RE.findall(VALIDATOR_SOURCE.read_text(encoding="utf-8"))})
+
+
+def qt_hosted_phases() -> list[int]:
+    """The phases that are run again hosted in the Qt shell: the ones the Qt baseline records."""
+    import json
+
+    try:
+        recorded = json.loads(QT_BASELINE.read_text(encoding="utf-8")).get("phases", {})
+    except (OSError, ValueError):
+        return []
+    known = set(all_phases())
+    return sorted(int(number) for number in recorded if int(number) in known)
 
 
 def parse_phases(spec: "str | None", known: list[int]) -> list[int]:
@@ -161,10 +185,61 @@ def spec_of(group: list[int]) -> str:
     return ",".join(str(phase) for phase in group)
 
 
+def plan(shell: str, spec: "str | None") -> list[tuple[str, list[int]]]:
+    """[(interface, group)] in the order they are queued: the Tk suite's groups, then the
+    Qt-hosted one's. `shell` is "tk", "qt" or "both"; `spec` narrows each suite to the phases it
+    has of those named."""
+    planned: list[tuple[str, list[int]]] = []
+    if shell in ("tk", "both"):
+        planned += [("tk", group) for group in plan_groups(parse_phases(spec, all_phases()))]
+    if shell in ("qt", "both"):
+        planned += [("qt", group) for group in plan_groups(parse_phases(spec, qt_hosted_phases()))]
+    return planned
+
+
+def command_for(shell: str, group: list[int], *, index: int, cores: str, python: str, timeout: int) -> list[str]:
+    """One group's command: the single gate on its phases, its own display, its own cores -- and,
+    for the Qt-hosted suite, `--shell qt` (which also selects that suite's baseline)."""
+    command = ["taskset", "-c", cores, "nice", "-n", "15", python, str(GATE),
+               "--phases", spec_of(group), "--display", str(FIRST_DISPLAY + index),
+               "--timeout", str(timeout)]
+    if shell == "qt":
+        command += ["--shell", "qt"]
+    return command
+
+
+def summarize(planned: list[tuple[str, list[int]]], results: dict) -> tuple[bool, list[str]]:
+    """(everything passed, the lines to print). `results` maps a group's index in `planned` to
+    {"pass", "fail", "regressed", "reported", "exit", "log"}; a group with no result did not run."""
+    lines, problems = [], []
+    for shell, label in SHELLS.items():
+        indexes = [index for index, (group_shell, _group) in enumerate(planned) if group_shell == shell]
+        if not indexes:
+            continue
+        phases = sum(len(planned[index][1]) for index in indexes)
+        passed = sum(results.get(index, {}).get("pass", 0) for index in indexes)
+        failed = sum(results.get(index, {}).get("fail", 0) for index in indexes)
+        lines.append(f"[parallel] {label}: {passed} pass, {failed} fail of {phases} phases in {len(indexes)} groups")
+    for index, (shell, group) in enumerate(planned):
+        result = results.get(index)
+        if result is None:
+            problems.append(f"{SHELLS[shell]} group {index} ({spec_of(group)}): did not run")
+        elif not result["reported"] or result["fail"] or result["regressed"] or result["exit"] != 0:
+            problems.append(f"{SHELLS[shell]} group {index} ({spec_of(group)}): {result['pass']} pass, {result['fail']} fail, "
+                            f"reported {result['reported']}, exit {result['exit']} -- {result['log']}")
+    total = sum(len(group) for _shell, group in planned)
+    total_pass = sum(result.get("pass", 0) for result in results.values())
+    lines.append(f"[parallel] groups with a problem: {len(problems)}")
+    lines += [f"[parallel]   {line}" for line in problems]
+    ok = not problems and total_pass == total and total > 0
+    lines.append("[parallel] OK -- every group reported, no failure." if ok else "[parallel] NOT OK.")
+    return ok, lines
+
+
 class Running:
-    def __init__(self, index: int, group: list[int], process, log: Path, cores: str, started: float) -> None:
-        self.index, self.group, self.process, self.log, self.cores, self.started = (
-            index, group, process, log, cores, started)
+    def __init__(self, index: int, shell: str, group: list[int], process, log: Path, cores: str, started: float) -> None:
+        self.index, self.shell, self.group, self.process, self.log, self.cores, self.started = (
+            index, shell, group, process, log, cores, started)
 
 
 def main(argv=None) -> int:
@@ -182,23 +257,29 @@ def main(argv=None) -> int:
     parser.add_argument("--min-gb", type=float, default=2.5,
                         help="below this, the group started last is killed and queued again")
     parser.add_argument("--phases", default=None, help='a subset: "633-727" or "12,88,400-420"')
+    parser.add_argument("--shell", choices=("both", "tk", "qt"), default="both",
+                        help="the interfaces to gate: every phase on Tk, the harness's phases hosted in "
+                             "the Qt shell, or both (default)")
     parser.add_argument("--timeout", type=int, default=7200, help="seconds allowed per group")
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--out", type=Path, default=None, help="where the group logs go (default: a temp dir)")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
 
-    phases = parse_phases(args.phases, all_phases())
-    groups = plan_groups(phases)
+    planned = plan(args.shell, args.phases)
+    groups = [group for _shell, group in planned]
+    phase_total = sum(len(group) for group in groups)
     core_sets = core_sets_for(int(args.jobs), args.cores)
     jobs = len(core_sets)
     out = args.out or Path(tempfile.mkdtemp(prefix="penta_parallel_"))
     out.mkdir(parents=True, exist_ok=True)
-    print(f"[parallel] {len(phases)} phases in {len(groups)} groups, {jobs} at a time on cores {core_sets}; "
+    suites = ", ".join(f"{sum(len(group) for shell, group in planned if shell == key)} {label}"
+                       for key, label in SHELLS.items() if any(shell == key for shell, _group in planned))
+    print(f"[parallel] {phase_total} phases ({suites}) in {len(groups)} groups, {jobs} at a time on cores {core_sets}; "
           f"start above {args.start_gb:g} GB free, kill below {args.min_gb:g} GB; logs in {out}", flush=True)
     if args.dry_run:
-        for index, group in enumerate(groups):
-            print(f"  group {index:2d}: {spec_of(group)} ({len(group)} phases)")
+        for index, (shell, group) in enumerate(planned):
+            print(f"  group {index:2d} {SHELLS[shell]:>9s}: {spec_of(group)} ({len(group)} phases)")
         return 0
 
     queue = list(enumerate(groups))
@@ -214,16 +295,16 @@ def main(argv=None) -> int:
         slot = free_slots.pop(0)
         scratch = out / f"tmp_{index:02d}"
         scratch.mkdir(exist_ok=True)
-        log = out / f"group_{index:02d}_{spec_of(group).replace(',', '_')[:40]}.log"
+        shell = planned[index][0]
+        log = out / f"group_{index:02d}_{shell}_{spec_of(group).replace(',', '_')[:40]}.log"
         env = dict(os.environ)
         env["TMPDIR"] = str(scratch)             # the gate's own log and the validators' scratch files
-        command = ["taskset", "-c", core_sets[slot], "nice", "-n", "15", args.python, str(GATE),
-                   "--phases", spec_of(group), "--display", str(FIRST_DISPLAY + index),
-                   "--timeout", str(args.timeout)]
+        command = command_for(shell, group, index=index, cores=core_sets[slot], python=args.python,
+                              timeout=int(args.timeout))
         with log.open("w") as handle:
             process = subprocess.Popen(command, stdout=handle, stderr=subprocess.STDOUT, cwd=str(REPO_ROOT),
                                        env=env, start_new_session=True)
-        entry = Running(index, group, process, log, core_sets[slot], time.time())
+        entry = Running(index, shell, group, process, log, core_sets[slot], time.time())
         running.append(entry)
         slot_of[index] = slot
 
@@ -239,13 +320,14 @@ def main(argv=None) -> int:
             results[entry.index] = {"group": entry.group, "pass": 0, "fail": 0, "regressed": False,
                                     "reported": False, "exit": "killed for memory while running alone",
                                     "seconds": took, "log": str(entry.log)}
-            print(f"[parallel] group {entry.index} ({spec_of(entry.group)}) killed by the memory watchdog while "
-                  f"it ran ALONE ({available_gb():.1f} GB free): this machine cannot run it now [PROBLEM]", flush=True)
+            print(f"[parallel] {SHELLS[entry.shell]} group {entry.index} ({spec_of(entry.group)}) killed by the memory "
+                  f"watchdog while it ran ALONE ({available_gb():.1f} GB free): this machine cannot run it now [PROBLEM]",
+                  flush=True)
             return
         if killed:
             alone.append((entry.index, entry.group))
-            print(f"[parallel] group {entry.index} ({spec_of(entry.group)}) killed by the memory watchdog after "
-                  f"{took:.0f} s; queued again", flush=True)
+            print(f"[parallel] {SHELLS[entry.shell]} group {entry.index} ({spec_of(entry.group)}) killed by the memory "
+                  f"watchdog after {took:.0f} s; queued again", flush=True)
             return
         passed, failed = (int(match.group(1)), int(match.group(2))) if match else (0, 0)
         regressed = "REGRESSED" in text or "BLOCKED" in text
@@ -254,8 +336,9 @@ def main(argv=None) -> int:
                                 "reported": reported, "exit": entry.process.returncode, "seconds": took,
                                 "log": str(entry.log)}
         mark = "ok" if reported and not failed and not regressed and entry.process.returncode == 0 else "PROBLEM"
-        print(f"[parallel] group {entry.index:2d} {spec_of(entry.group):>9s}: {passed} pass, {failed} fail in "
-              f"{took:.0f} s [{mark}] ({len(results)}/{len(groups)} done, {available_gb():.1f} GB free)", flush=True)
+        print(f"[parallel] group {entry.index:2d} {SHELLS[entry.shell]:>9s} {spec_of(entry.group):>9s}: {passed} pass, "
+              f"{failed} fail in {took:.0f} s [{mark}] ({len(results)}/{len(groups)} done, {available_gb():.1f} GB free)",
+              flush=True)
 
     while queue or alone or running:
         free = available_gb()
@@ -287,17 +370,12 @@ def main(argv=None) -> int:
 
     total_pass = sum(result["pass"] for result in results.values())
     total_fail = sum(result["fail"] for result in results.values())
-    problems = [f"group {index} ({spec_of(result['group'])}): {result['pass']} pass, {result['fail']} fail, "
-                f"reported {result['reported']}, exit {result['exit']} -- {result['log']}"
-                for index, result in sorted(results.items())
-                if not result["reported"] or result["fail"] or result["regressed"] or result["exit"] != 0]
     minutes = (time.time() - began) / 60.0
-    print(f"[parallel] {total_pass} pass, {total_fail} fail of {len(phases)} phases in {minutes:.1f} min; lowest "
-          f"free memory {lowest:.1f} GB; groups with a problem: {len(problems)}", flush=True)
-    for line in problems:
-        print(f"[parallel]   {line}", flush=True)
-    ok = not problems and total_pass == len(phases)
-    print("[parallel] OK -- every group reported, no failure." if ok else "[parallel] NOT OK.", flush=True)
+    print(f"[parallel] {total_pass} pass, {total_fail} fail of {phase_total} phases in {minutes:.1f} min; lowest "
+          f"free memory {lowest:.1f} GB", flush=True)
+    ok, lines = summarize(planned, results)
+    for line in lines:
+        print(line, flush=True)
     return 0 if ok else 1
 
 
