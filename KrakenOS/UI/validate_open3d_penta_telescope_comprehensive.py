@@ -16861,6 +16861,10 @@ phase_721_qt_model_forms_open_in_qt = _phase_from_standalone(
     721, "a form the MODEL opens shows in the running shell (0947): the editor's own form commands -- what the Tk menus, the table's right-click menu and the inspector's verbs call -- ended in Tk's render_row_form and tkinter.messagebox, invisible in the Qt shell; all 19 call sites now go through present_row_form (geometry + wait included) and 18 dialog calls through the host. In a Qt shell 20 commands open 15 Qt dialogs, 3 host refusals, 2 status-line refusals and ZERO Tk windows (before: 14 Tk windows, 2 Tk message boxes); Set bounds waits on its dialog; Tk keeps its windows and sizes; outside a listed set of Tk-only windows that may only shrink, nothing calls render_row_form or a tkinter dialog",
     'KrakenOS.UI.validate_qt_model_forms_open_in_qt',
     'qt_model_forms_open_in_qt')
+phase_763_qt_every_command = _phase_from_standalone(
+    763, "every command of the Qt shell is triggered in the shell as it starts (1002, phase 7g): started with nothing asked for, the way qt.app.run starts it -- no Tk, the real inspector as the 3D scene, the 2D plot beside it -- with a scene loaded, each of the commands in qt.actions.ACTIONS is triggered the way a click does and every question answered cancel; none raises and none reaches Tk (a dialog function, a root, a window, a widget, a variable); each one's first response is the table's -- the question it asks through the UI host, the message it shows, the window it opens, the document it hands over, its own status text and what it changed (rows, the layout file, a check mark, the 3D toolbar, the panels, the camera); the ones that do nothing one can see are exactly the listed ones; nothing leaves the process (the scene file, the flag bundles, the auto-saved picture, the formula sheet); Quit closes the window; and a command added to the registry has to be entered in the table",
+    'KrakenOS.UI.validate_qt_every_command',
+    'qt_every_command')
 phase_762_parallel_gate_both_interfaces = _phase_from_standalone(
     762, "the full gate covers both interfaces (1001, phase 7g): tools/penta_parallel_gate.py, asked for nothing, queues every phase of the Tk suite once and every phase of the suite hosted in the Qt shell once -- the ones the Qt baseline records -- the Tk groups first; --shell tk and --shell qt queue one suite and a list of phases narrows each to what it has of them; a Qt-hosted group is run through the single gate with --shell qt and a Tk group without, each on a display of its own across both suites; the summary adds each interface up separately and is OK only when every group of both ran, reported and passed -- a failed Qt-hosted group, a group that did not run or did not report, a regressed one and an empty plan are each NOT OK, named with their interface; and the real --dry-run prints both suites with the counts the sources give",
     'KrakenOS.UI.validate_parallel_gate_both_interfaces',
@@ -17920,6 +17924,7 @@ def main() -> int:
             phase_760_inspector_without_tk_window,
             phase_761_qt_shell_without_tk,
             phase_762_parallel_gate_both_interfaces,
+            phase_763_qt_every_command,
         ]
         # bugs/0457 tooling: the full marathon is ~2 h on this machine (~19 s/phase x 374),
         # which is far too slow to iterate against. KRAKEN_PENTA_PHASES selects a SUBSET so a
